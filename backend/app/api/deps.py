@@ -458,6 +458,83 @@ async def get_reporting_device(
     return context
 
 
+#: The only ``mint_provenance`` a device principal may carry to use
+#: :func:`get_paired_device`. Coord stamps it (``MintProvenance::Paired``,
+#: serde ``snake_case``) on every ``JwtKeys::issue_device`` mint — pairing,
+#: device self-refresh and the service-authed cold-start mint. An ALLOWLIST,
+#: not a ``!= "bootstrap"`` denylist: an absent claim decodes as coord's
+#: ``Unknown``, which is NOT "not bootstrap", and coord's own docs name the
+#: denylist spelling as the laundering path the claim exists to close.
+PAIRED_MINT_PROVENANCE = "paired"
+
+#: The ``sub_type`` a device principal carries (coord ``SubType::Device``,
+#: serde ``lowercase``). The anonymous ``POST /agents/credential`` mint names
+#: the DEVICE in ``sub`` but is filed under ``agent``, and the attach/create
+#: grants carry their SOURCE device in ``device_id`` — so ``device_id`` alone
+#: never proves a paired device principal; this claim does.
+DEVICE_SUB_TYPE = "device"
+
+
+async def get_paired_device(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> DeviceTokenContext:
+    """Resolve a caller that MUST be a live, PAIRED device principal.
+
+    Stricter than :func:`get_authenticated_device`, for routes whose effect is
+    to hand the device a NEW credential (the ``dmk_`` self-mint): a token that
+    merely verifies is not enough, it must be the device's own paired
+    principal.
+
+    * No bearer → **401** (not the 403 an auto-erroring ``HTTPBearer`` gives).
+    * Bearer fails verification → the verifier's **401** (expired, bad
+      signature, foreign issuer, missing ``user_id``) or **503** (coord JWKS
+      unreachable). Expiry is checked by :func:`_verify_device_jwt` with the
+      verifier's small clock-skew leeway and nothing more.
+    * ``sub_type`` not ``device`` → **403** ``not_a_device_principal`` (an
+      agent credential, including the anonymously-minted bootstrap one, or an
+      attach/create capability grant).
+    * ``mint_provenance`` not ``paired`` → **403**
+      ``device_token_provenance_refused`` (``bootstrap``, ``unknown``/absent,
+      or any agent-class value).
+    * ``device_id`` claim missing/malformed → **401**.
+
+    The PATH-vs-token ``device_id`` comparison is the route's job — this dep
+    does not know the path.
+
+    ``_verify_device_jwt`` is looked up at call time so test suites can stub
+    it at ``deps._verify_device_jwt``.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device authentication required.",
+        )
+    claims, device_user = await _verify_device_jwt(credentials.credentials)
+    if claims.get("sub_type") != DEVICE_SUB_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "not_a_device_principal",
+                "message": "This route accepts only a paired device token.",
+            },
+        )
+    if claims.get("mint_provenance") != PAIRED_MINT_PROVENANCE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_token_provenance_refused",
+                "message": (
+                    "This route accepts only a pairing-issued device token "
+                    "(mint_provenance=paired)."
+                ),
+            },
+        )
+    context = DeviceTokenContext(claims=claims, user=device_user)
+    # Eager: raises the 401 for a token without a usable device_id claim.
+    _ = context.device_id
+    return context
+
+
 async def get_audit_actor_user_optional(
     user: User | None = Depends(current_active_user_optional),
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
