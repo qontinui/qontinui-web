@@ -8314,7 +8314,7 @@
         "type": "object"
       },
       "CiNodeConfig": {
-        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.",
+        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
           "enabled": {
             "default": false,
@@ -8322,11 +8322,17 @@
             "type": "boolean"
           },
           "max_concurrent_builds": {
-            "default": 1,
-            "maximum": 64.0,
-            "minimum": 1.0,
-            "title": "Max Concurrent Builds",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 64.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent Builds"
           },
           "min_free_disk_gb": {
             "default": 20,
