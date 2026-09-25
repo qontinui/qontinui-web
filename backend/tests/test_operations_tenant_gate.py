@@ -242,8 +242,8 @@ def _build_app(*, user_override: Any = None) -> FastAPI:
 
     test_app = FastAPI()
     if user_override is not None:
-        test_app.dependency_overrides[get_current_active_user_async] = (
-            lambda: user_override
+        test_app.dependency_overrides[get_current_active_user_async] = lambda: (
+            user_override
         )
     test_app.include_router(operations_router, prefix=API_PREFIX)
     # Inert unless `_record_request_pool_checkouts` is active; installed on

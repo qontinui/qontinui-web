@@ -502,6 +502,12 @@ async def _job_file_cleanup() -> Any:
     return await cleanup_expired_files()
 
 
+async def _job_render_log_retention() -> Any:
+    from app.jobs.render_log_retention import run_render_log_retention
+
+    return await _run_committed(run_render_log_retention)
+
+
 def install_default_tasks(service: SchedulerService) -> None:
     """Register the canonical Qontinui schedule on ``service``.
 
@@ -655,6 +661,21 @@ def install_default_tasks(service: SchedulerService) -> None:
         ScheduledTask(
             name="file_cleanup",
             coro=_job_file_cleanup,
+            interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Render-log retention (RENDER_LOG_RETENTION_DAYS). Until this job existed
+    # the de facto scheduler was coord's route-serving observer, POSTing the
+    # then-anonymous /api/v1/render-logs/cleanup on each probe cycle (12,063
+    # times in 14 days, coord finding 966c92eb); that route is now
+    # superuser-only, so retention runs here. Hourly + at boot like the other
+    # file-backed cleanups; a 7-day retention needs nothing finer.
+    service.register(
+        ScheduledTask(
+            name="render_log_retention",
+            coro=_job_render_log_retention,
             interval_seconds=3600.0,
             run_at_boot=True,
         )

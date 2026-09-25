@@ -82,6 +82,21 @@ tables ``coord.prompt_documents`` and feeds them through a loop variable, so
 the scanner sees a bare name and the cross-check finds the qualified literal.
 A column of ``*`` declares a whole-table drop.
 
+Edited landed revisions (``--base-ref`` lane only). A changed revision file
+that already exists at the merge base has LANDED — alembic never re-runs it,
+and its drops were judged when it was added — so it is judged by its DELTA
+(``delta_scan``): only a resolved drop whose ``(table, column)`` is new versus
+the merge-base version counts (qontinui-web#1457, which restored ``SET LOCAL
+lock_timeout`` across landed revisions, was otherwise held red on drops that
+landed long before it). The delta applies only when the edit leaves the
+``revision`` / ``down_revision`` identity, the declaration, the unresolved
+sites and the static violations unchanged; any other difference judges the
+file whole. An ADDED file, and every file under ``--files``, is judged whole.
+The scan summary names each delta-judged file and how many landed drops it
+did not re-judge, and both pass verdicts (no drop added; every drop unread)
+repeat the total — so a delta pass never reads as "the changed files drop
+nothing".
+
 What it consults
 ----------------
 Zero ``coord.*`` drops across the changed files — the common case — exits 0
@@ -239,6 +254,10 @@ class FileScan:
     unresolved: list[Unresolved] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
     declared: list[tuple[str, str]] | None = None
+    # Set only by ``delta_scan``: the resolved drops of an EDITED landed
+    # revision that were judged when it landed and are not re-judged now.
+    # ``None`` means the file was judged whole.
+    landed_drops: list[Drop] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -825,6 +844,124 @@ def scan_file(path: Path) -> FileScan:
     return scan_source(path.read_text(encoding="utf-8"), path)
 
 
+def merge_base(base_ref: str) -> str:
+    """The merge base of ``base_ref`` and HEAD. Raises on a git failure."""
+    mb = subprocess.run(
+        ["git", "merge-base", base_ref, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if mb.returncode != 0:
+        raise RuntimeError(
+            f"git merge-base {base_ref} HEAD failed (exit {mb.returncode}): "
+            f"{mb.stderr.strip() or '(no stderr)'}"
+        )
+    return mb.stdout.strip()
+
+
+def base_source(base_sha: str, path: Path) -> str | None:
+    """The revision file's source at ``base_sha`` (the merge base), or ``None``
+    when ``git cat-file -e`` says the path is not there.
+
+    ``None`` sends the file down the ADDED arm, which judges it whole — so any
+    ``cat-file`` failure, not only "path absent", fails STRICT. A ``git show``
+    failure after the path was found, or a non-UTF-8 body, raises (UNKNOWN).
+    """
+    rel = repo_relative(path)
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if exists.returncode != 0:
+        return None
+    shown = subprocess.run(
+        ["git", "show", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if shown.returncode != 0:
+        raise RuntimeError(
+            f"git show <merge-base>:{rel} failed (exit {shown.returncode}): "
+            f"{shown.stderr.decode('utf-8', 'replace').strip() or '(no stderr)'}"
+        )
+    try:
+        return shown.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"<merge-base>:{rel} is not UTF-8: {exc}") from exc
+
+
+_REVISION_LINE = re.compile(
+    r"^(revision|down_revision)\s*(?::[^=]*)?=\s*(.+)$", re.MULTILINE
+)
+
+
+def _revision_identity(source: str) -> list[tuple[str, str]]:
+    return [(m.group(1), m.group(2).strip()) for m in _REVISION_LINE.finditer(source)]
+
+
+def _static_violations(scan: FileScan) -> list[str]:
+    """The scan's static violations with ``<file>:<line>`` locations reduced to
+    ``<file>``, sorted — so an edit that only shifts lines (a ``SET LOCAL`` line
+    inserted above everything) compares equal, while one that ADDS a violation
+    (e.g. removes the only other mention of a declared name, so the declaration
+    cross-check now fails) does not."""
+    label = re.escape(repo_relative(scan.path))
+    return sorted(re.sub(rf"({label}):\d+", r"\1", v) for v in scan.violations)
+
+
+def delta_scan(
+    head: FileScan, base: FileScan, head_source: str, base_source_text: str
+) -> FileScan:
+    """Judge an EDITED landed revision by the resolved drops its edit ADDS.
+
+    A revision that exists at the merge base has already landed (alembic never
+    re-runs it), and every DROP it performed was judged when it was added. So
+    re-judging those drops fails any PR that merely touches a landed revision —
+    qontinui-web#1457, which restores ``SET LOCAL lock_timeout`` across landed
+    revisions, was held red on drops that landed long before it.
+
+    The delta applies ONLY when the edit left everything else the gate reasons
+    about identical: the ``revision`` / ``down_revision`` identity (a rewritten
+    identity is a new migration that WILL run), the declaration, the multiset
+    of unresolved sites up to line numbers (a new or changed site could name a
+    new column the declaration silently covers), and the static violations up
+    to line numbers (an edit must not launder a violation it introduces, such
+    as a declaration whose cross-check it breaks). Any difference returns the
+    head scan unchanged, i.e. the file is judged whole — the strict direction.
+    When the delta applies, a resolved drop is judged only if its
+    ``(table, column)`` is new relative to the base version; a NEW drop in a
+    landed revision is still judged.
+    """
+    same_identity = _revision_identity(head_source) == _revision_identity(
+        base_source_text
+    )
+    same_unresolved = sorted((u.how, u.detail) for u in head.unresolved) == sorted(
+        (u.how, u.detail) for u in base.unresolved
+    )
+    same_violations = _static_violations(head) == _static_violations(base)
+    if not (
+        same_identity
+        and same_unresolved
+        and same_violations
+        and head.declared == base.declared
+    ):
+        return head
+    base_drops = {(d.table, d.column) for d in base.drops}
+    return FileScan(
+        path=head.path,
+        drops=[d for d in head.drops if (d.table, d.column) not in base_drops],
+        unresolved=[],
+        violations=[],
+        declared=head.declared,
+        landed_drops=[d for d in head.drops if (d.table, d.column) in base_drops],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Input selection
 # ---------------------------------------------------------------------------
@@ -1027,12 +1164,34 @@ def _report_scan(scans: list[FileScan], label: str) -> None:
         "unresolved site(s)."
     )
     for s in scans:
-        note(
-            f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
-        )
+        line = f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
+        if s.landed_drops is not None:
+            # Say so rather than let a delta-judged file read as drop-free.
+            line += (
+                f" — edited landed revision, judged by its delta; "
+                f"{len(s.landed_drops)} drop(s) it performed when it landed "
+                "not re-judged"
+            )
+        note(line)
     # stdout is block-buffered under CI; flush so the scan summary lands
     # BEFORE any verdict written to stderr rather than after it.
     sys.stdout.flush()
+
+
+def _landed_drop_count(scans: list[FileScan]) -> int:
+    """Drops in edited landed revisions that ``delta_scan`` did not re-judge."""
+    return sum(len(s.landed_drops or []) for s in scans)
+
+
+def _note_landed_drops(landed: int) -> None:
+    """On a pass, say so when a delta skipped landed drops — a delta pass must
+    not read as "the changed files drop nothing"."""
+    if landed:
+        note(
+            f"  {landed} drop(s) in edited landed revision(s) were judged when "
+            "those revisions landed and were NOT re-checked against coord now "
+            "(see the per-file lines above)."
+        )
 
 
 def check_drops(
@@ -1219,10 +1378,28 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
 
     # 2. Scan each one.
     scans: list[FileScan] = []
+    # ``--files`` mode has no base to compare against, so it always judges
+    # every file whole (strict); only the ``--base-ref`` lane applies the
+    # landed-revision delta.
+    base_sha: str | None = None
+    if args.files is None and files:
+        try:
+            base_sha = merge_base(args.base_ref)
+        except (RuntimeError, OSError) as exc:
+            err(f"could not resolve the merge base with {args.base_ref}: {exc}")
+            return EXIT_VACUOUS
     for path in files:
         try:
-            scans.append(scan_file(path))
-        except OSError as exc:
+            head_text = path.read_text(encoding="utf-8")
+            scan = scan_source(head_text, path)
+            if base_sha is not None:
+                # A revision already on the base has landed: judge only the
+                # drops this PR's edit ADDS to it (see delta_scan).
+                prior = base_source(base_sha, path)
+                if prior is not None:
+                    scan = delta_scan(scan, scan_source(prior, path), head_text, prior)
+            scans.append(scan)
+        except (OSError, RuntimeError) as exc:
             err(f"cannot read {path}: {exc}")
             return EXIT_VACUOUS
         except SyntaxError as exc:
@@ -1249,13 +1426,18 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         note(
             "No coord.* DROP/RENAME in the upgrade path; nothing to check against coord."
         )
+        landed = _landed_drop_count(scans)
+        subject = (
+            "this PR's edits ADD no drop" if landed else "this revision drops nothing"
+        )
         note(
-            "  NB: this pass says this revision drops nothing in coord.*'s UPGRADE "
+            f"  NB: this pass says {subject} in coord.*'s UPGRADE "
             "path. It is NOT evidence that a drop was checked against coord's read "
             "contract — it means none was found in the upgrade path; a DROP written "
             "inside downgrade() (or a helper only downgrade() reaches) is not "
             "scanned, no manifest was fetched, and none was needed."
         )
+        _note_landed_drops(landed)
         return 0
 
     # 4. Only now is coord consulted.
@@ -1318,6 +1500,7 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         f"OK: none of the {len(drops)} dropped surface(s) is read by coord's deployed "
         f"build ({manifest.deployed_sha}) or main ({manifest.main_sha})."
     )
+    _note_landed_drops(_landed_drop_count(scans))
     return 0
 
 

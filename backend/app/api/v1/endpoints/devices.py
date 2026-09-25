@@ -73,8 +73,11 @@ from app.schemas.device import (
 from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
+from app.services.coord_service_account import (
+    CoordServiceAccountDisabledError,
+    coord_service_account,
+)
 from app.services.runner_websocket_manager import get_runner_websocket_manager
-from app.services.strategy import StrategyDisabledError, strategy_client
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
 logger = structlog.get_logger(__name__)
@@ -724,8 +727,8 @@ async def pair_confirm(
     sourced over the HTTP boundary) so an unlinked caller is refused
     before any outbound call.
     """
-    if not strategy_client.enabled:
-        # Reuse the StrategyClient's service-token plumbing for the
+    if not coord_service_account.enabled:
+        # Reuse the CoordServiceAccountClient's service-token plumbing for the
         # outbound call to coord (it's already the established pattern
         # for web→coord HTTP; see
         # qontinui-dev-notes/project-strategy/architectural-decisions.md
@@ -750,7 +753,7 @@ async def pair_confirm(
     # coord's PairCompleteRequest is exactly `{state, device_id}`; the
     # former `web_session_token` sentinel and `user_id` were never
     # verified by anything and are gone.
-    headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
+    headers = await coord_service_account._headers(str(current_user.id))  # noqa: SLF001
     body: dict[str, Any] = {
         "state": payload.state,
         "device_id": payload.device_id,
@@ -860,7 +863,7 @@ async def pair_cli(
     first pairing, and forwarding it would 403 at coord's membership check
     (surfacing here as a 502) and break every sign-in.
     """
-    if not strategy_client.enabled:
+    if not coord_service_account.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
@@ -1207,7 +1210,7 @@ async def exchange_device_machine_credential(
         )
 
     # Fail fast + honest 503 before doing any work when coord is disabled.
-    if not strategy_client.enabled:
+    if not coord_service_account.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
@@ -1222,10 +1225,10 @@ async def exchange_device_machine_credential(
 
     acting_user_id = str(cred.owner_user_id) if cred.owner_user_id else str(device_id)
     try:
-        coord_status, coord_body = await strategy_client.mint_device_token(
+        coord_status, coord_body = await coord_service_account.mint_device_token(
             acting_user_id, str(device_id)
         )
-    except StrategyDisabledError as exc:
+    except CoordServiceAccountDisabledError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
