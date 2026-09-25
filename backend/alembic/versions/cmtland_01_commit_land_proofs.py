@@ -107,7 +107,22 @@ def upgrade() -> None:
             abstain_reason  TEXT,
             detail          TEXT,
             proven_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-            PRIMARY KEY (repo, commit_sha)
+            PRIMARY KEY (repo, commit_sha),
+            -- A row is proof, so the verdict's dependents are enforced here,
+            -- not only described in a comment.
+            CONSTRAINT commit_land_proofs_method_iff_landed
+                CHECK ((verdict = 'landed') = (method IS NOT NULL)),
+            CONSTRAINT commit_land_proofs_landed_names_its_sha
+                CHECK (verdict <> 'landed' OR landed_sha IS NOT NULL),
+            -- Full lowercase 40-hex only: commit_sha is in the key, so an
+            -- abbreviation or a case variant would be a second row for the
+            -- same commit.
+            CONSTRAINT commit_land_proofs_commit_sha_full_hex
+                CHECK (commit_sha ~ '^[0-9a-f]{40}$'),
+            CONSTRAINT commit_land_proofs_landed_sha_full_hex
+                CHECK (landed_sha IS NULL OR landed_sha ~ '^[0-9a-f]{40}$'),
+            CONSTRAINT commit_land_proofs_trunk_tip_full_hex
+                CHECK (trunk_tip IS NULL OR trunk_tip ~ '^[0-9a-f]{40}$')
         )
         """
     )

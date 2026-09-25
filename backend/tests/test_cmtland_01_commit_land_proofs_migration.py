@@ -62,7 +62,7 @@ _COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
     ("trunk_tip", "text", True, None),
     ("patch_id", "text", True, None),
     ("changed_lines", "integer", True, None),
-    ("touched_files", "ARRAY", True, None),
+    ("touched_files", "ARRAY", True, None),  # element type pinned below
     ("abstain_reason", "text", True, None),
     ("detail", "text", True, None),
     ("proven_at", "timestamp with time zone", False, "now()"),
@@ -212,6 +212,7 @@ def _insert(engine: Engine, **overrides: object) -> None:
         "commit_sha": "a" * 40,
         "verdict": "landed",
         "method": "ancestor",
+        "landed_sha": "a" * 40,
         "trunk": "main",
     }
     params.update(overrides)
@@ -219,8 +220,8 @@ def _insert(engine: Engine, **overrides: object) -> None:
         conn.execute(
             text(
                 f"INSERT INTO {_SCHEMA}.{_TABLE} "
-                "(repo, commit_sha, verdict, method, trunk) "
-                "VALUES (:repo, :commit_sha, :verdict, :method, :trunk)"
+                "(repo, commit_sha, verdict, method, landed_sha, trunk) "
+                "VALUES (:repo, :commit_sha, :verdict, :method, :landed_sha, :trunk)"
             ),
             params,
         )
@@ -249,6 +250,18 @@ def test_table_shape_primary_key_and_checks() -> None:
             scalar(
                 engine,
                 f"""
+                SELECT udt_name FROM information_schema.columns
+                 WHERE table_schema = '{_SCHEMA}' AND table_name = '{_TABLE}'
+                   AND column_name = 'touched_files'
+                """,
+            )
+            == "_text"
+        )
+
+        assert (
+            scalar(
+                engine,
+                f"""
                 SELECT string_agg(a.attname, ',' ORDER BY k.ord)
                   FROM pg_constraint c
                   CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
@@ -262,13 +275,29 @@ def test_table_shape_primary_key_and_checks() -> None:
         )
 
         _insert(engine)
-        _insert(engine, commit_sha="b" * 40, verdict="abstain", method=None)
+        _insert(
+            engine, commit_sha="b" * 40, verdict="abstain", method=None, landed_sha=None
+        )
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _insert(engine)  # same (repo, commit_sha)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _insert(engine, commit_sha="c" * 40, verdict="maybe")
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _insert(engine, commit_sha="d" * 40, method="rebase")
+        # The verdict's dependents are enforced, not only commented.
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="e" * 40, method=None)  # landed, no method
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="f" * 40, verdict="abstain", landed_sha=None)
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="1" * 40, landed_sha=None)  # landed, no sha
+        # Full lowercase 40-hex only.
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="abc1234")
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="A" * 40)
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="2" * 40, landed_sha="abc1234")
 
 
 @_needs_pg
