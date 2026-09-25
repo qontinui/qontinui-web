@@ -24,6 +24,11 @@ What is asserted
 4. The index exists, is **``indisvalid``** (a killed CONCURRENTLY build leaves
    an INVALID index that ``IF NOT EXISTS`` would skip on re-run), and its
    recorded definition names the three key columns in order.
+4b. **The PRE-EXISTING ``idx_pr_files_repo_pr`` survives**, through the upgrade
+   and through the downgrade. The deployed coord build still reads by
+   ``(repo, pr_number)`` alone, so dropping the shorter index in the revision
+   that adds the longer one would remove the index the RUNNING code uses — a
+   regression no other assertion here would catch.
 5. **Idempotency:** with the schema already applied, ``alembic stamp`` back to
    the parent and ``upgrade`` again succeeds and leaves the SAME valid index
    (same oid — a re-run must not drop and rebuild a healthy one).
@@ -74,6 +79,9 @@ _PARENT_REVISION_ID = "coord_wu_authored_at_02"
 _REVISION_FILENAME = "coord_pr_files_head_sha_01_head_pinned_file_rows.py"
 
 _INDEX_NAME = "idx_pr_files_repo_pr_head"
+# The index this revision must NOT disturb: the deployed coord build reads by
+# (repo, pr_number) alone, so it is still load-bearing.
+_PRE_EXISTING_INDEX = "idx_pr_files_repo_pr"
 _COLUMN = "head_sha"
 
 _REPO = "qontinui/qontinui-coord"
@@ -115,9 +123,13 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
 def test_the_down_revision_is_on_one_line() -> None:
     """Coord's line-scoped alembic-graph parser must see the parent.
 
-    A formatter-wrapped ``down_revision = (\\n"..."\\n)`` yields no parent to
-    that parser, counts as a second head, and blocks every coord deploy behind
-    ``deploy-coord.yml``'s drift gate. Pin the one-line spelling at the source.
+    coord parses ``down_revision`` line by line and requires the value to start
+    with a quote on the SAME line (``crates/coord/src/enrichment.rs``), so a
+    formatter-wrapped ``down_revision = (\\n"..."\\n)`` yields no parent there at
+    all — the revision drops out of the edges coord derives for a PR touching
+    alembic. qontinui-web's own head gate tolerates the wrapped form, so this is
+    a coord-side constraint that nothing in THIS repo would catch. Pin the
+    one-line spelling at the source.
     """
     source = _revision_source()
     assert re.search(
@@ -272,13 +284,15 @@ def test_coord_pr_files_head_sha_01_adds_nullable_head_sha_and_index() -> None:
             "'not this head's list', which is what makes coord hold"
         )
         assert _paths_at_head(engine, _OLD_HEAD) == {"src/stale.rs"}
-        # The NULL row is in the table and in neither answer. Stated as its own
-        # assertion because it is three-valued logic doing the work, not a
-        # filter anyone wrote: `NULL = '1111…'` is UNKNOWN, so the row drops.
-        assert _file_count(engine) == 4, "all four rows are present in the table"
-        assert ".github/workflows/ci.yml" not in _paths_at_head(
-            engine, _CURRENT_HEAD
-        ), "a NULL head_sha must never satisfy a head equality predicate"
+        # The NULL-head row is IN the table and in NEITHER answer above — which
+        # is three-valued logic doing the work, not a filter anyone wrote
+        # (`NULL = '1111…'` is UNKNOWN, so the row drops). The exact-set
+        # equalities above already exclude it; this counts the table to prove
+        # they excluded it rather than that it was never inserted.
+        assert _file_count(engine) == 4, (
+            "all four rows must be present — the two head-pinned reads above "
+            "exclude the NULL-head row by predicate, not by absence"
+        )
 
         # 4. The index exists, is VALID, and keys the three columns in order.
         assert index_exists(engine, _INDEX_NAME)
@@ -290,6 +304,12 @@ def test_coord_pr_files_head_sha_01_adds_nullable_head_sha_and_index() -> None:
         assert "(repo, pr_number, head_sha)" in indexdef, indexdef
         assert "UNIQUE" not in indexdef, (
             f"the index must not be unique — a PR has many files: {indexdef!r}"
+        )
+        # 4b. The shorter index the DEPLOYED coord build reads by must survive.
+        assert index_exists(engine, _PRE_EXISTING_INDEX), (
+            f"{_PRE_EXISTING_INDEX} must survive this revision — coord's "
+            "deployed build still reads coord.pr_files by (repo, pr_number) "
+            "alone, so dropping it here breaks a running reader"
         )
 
         # 5. Idempotency — re-running the revision over its own schema leaves
@@ -351,6 +371,10 @@ def test_coord_pr_files_head_sha_01_adds_nullable_head_sha_and_index() -> None:
         )
         assert _file_count(engine) == rows_before, (
             "downgrade must not delete pr_files rows"
+        )
+        assert index_exists(engine, _PRE_EXISTING_INDEX), (
+            f"downgrade must leave {_PRE_EXISTING_INDEX} alone — it is not "
+            "this revision's to drop"
         )
 
         run_alembic(root, url, "upgrade", _REVISION_ID)

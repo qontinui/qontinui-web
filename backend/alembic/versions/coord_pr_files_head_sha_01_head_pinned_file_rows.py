@@ -13,7 +13,7 @@ What this adds
 
 One nullable column and one index on ``coord.pr_files``::
 
-    ALTER TABLE coord.pr_files ADD COLUMN head_sha TEXT
+    ALTER TABLE coord.pr_files ADD COLUMN IF NOT EXISTS head_sha TEXT
 
     CREATE INDEX CONCURRENTLY idx_pr_files_repo_pr_head
     ON coord.pr_files (repo, pr_number, head_sha)
@@ -79,9 +79,22 @@ QUEUED ACCESS EXCLUSIVE request blocks every reader and writer arriving behind
 it. ``coord.pr_files`` is written by every hydration tick, so the ALTER bounds
 its wait with ``SET LOCAL lock_timeout = '3s'`` (the convention of
 ``coord_alerts_claim_01`` and ``coord_agent_questions_audience``): failing fast
-is a retry, stalling is an outage. ``RESET lock_timeout`` afterwards is REQUIRED
-— ``env.py`` runs every revision of one ``alembic upgrade`` in a single
-transaction, so an unreset ``SET LOCAL`` would leak into every later revision.
+is a retry, stalling is an outage. RESETTING it afterwards is REQUIRED —
+``env.py`` runs every revision of one ``alembic upgrade`` in a single
+transaction (one ``context.begin_transaction()``, no
+``transaction_per_migration``), so an uncleared ``SET LOCAL`` would leak into
+every later revision.
+
+The reset is spelled ``SET LOCAL lock_timeout = DEFAULT``, NOT ``RESET
+lock_timeout``, for two independent reasons. ``RESET`` is SESSION-scoped, so it
+would also clear a ``lock_timeout`` the deployer had set before invoking
+alembic — a wider effect than this revision is entitled to; ``SET LOCAL … =
+DEFAULT`` undoes only what this revision did, within the run's transaction. And
+coord's migration classifier admits only ``SET LOCAL
+lock_timeout|statement_timeout = <value>`` and rejects ``RESET`` by name
+(``crates/coord/src/pr_merge/migration_classifier.rs`` ``classify_set_statement``,
+pinned as a test case), so the ``RESET`` spelling the precedents use is one
+avoidable Reject. The precedents predate that arm; do not copy them here.
 
 The index is built ``CONCURRENTLY`` (a plain ``CREATE INDEX`` takes a
 write-blocking ``SHARE`` lock for the duration of a scan over the whole table).
@@ -90,12 +103,33 @@ write-blocking ``SHARE`` lock for the duration of a scan over the whole table).
 precedent. The ALTER runs first so the autocommit block's implicit COMMIT
 publishes the column before the index build needs it.
 
+**Consequence of that implicit COMMIT, stated rather than left to be
+discovered:** the ``ADD COLUMN`` is committed before ``alembic_version`` is
+stamped, so a failed index build leaves the column PRESENT and this revision
+UNSTAMPED. That is safe here only because both halves are idempotent — re-running
+the revision is the correct repair, not a manual fixup. A revision whose upgrade
+were not idempotent must not use an autocommit block this way.
+
 A killed or failed CONCURRENTLY build leaves an **INVALID** index of the same
 name, which the planner never uses and which ``IF NOT EXISTS`` alone would keep
 — a migration reporting success while the index never serves a query. So before
 the CREATE, the upgrade looks the index up in ``pg_index`` and, if it exists with
 ``indisvalid = false``, drops it (CONCURRENTLY) so the CREATE rebuilds it. A
-re-run ends with a valid index or a loud failure.
+re-run therefore ends with a valid index or a loud failure **for the INVALID
+case**. It does not cover a VALID index of this name with a DIFFERENT definition
+(a hand-built one, or a renamed leftover): ``IF NOT EXISTS`` matches on NAME
+alone, so such an index is kept silently and the declared access path would not
+exist. That is an accepted limit — nothing in this tree creates an index under
+this name — not a case the code handles.
+
+Note what the INVALID-index repair costs: it puts a ``DROP INDEX CONCURRENTLY``
+on the UPGRADE path, and coord's migration classifier rejects any statement
+beginning ``DROP`` unconditionally (``downgrade()`` is excluded from
+classification; ``upgrade()`` is not). So this revision is expected to classify
+as Reject and to need its ``migrations`` escalate block cleared, additive and
+reversible though it is — the plan anticipates exactly that, and the repair is
+worth more than the classification: without it a killed build leaves an index
+that silently serves nothing.
 
 Downgrade drops the index (CONCURRENTLY) and then the column. The head pinning is
 lost, which is the correct reversal of an additive revision — every row reverts
@@ -149,8 +183,11 @@ def upgrade() -> None:
     )
     # SET LOCAL is transaction-scoped and env.py wraps the WHOLE run in one
     # transaction, so without this reset the 3s timeout leaks into every
-    # revision that lands after this one.
-    op.execute("RESET lock_timeout")
+    # revision that lands after this one. `SET LOCAL ... = DEFAULT` rather than
+    # `RESET`: RESET is session-scoped (it would also clear a lock_timeout the
+    # deployer set outside alembic), and coord's migration classifier rejects
+    # `RESET` by name. See the module docstring.
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     with op.get_context().autocommit_block():
         # A failed earlier CONCURRENTLY build leaves an INVALID index that
@@ -184,4 +221,6 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS head_sha
         """
     )
-    op.execute("RESET lock_timeout")
+    # Same reset, same reasons as in upgrade(): `SET LOCAL ... = DEFAULT`,
+    # never `RESET`.
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
