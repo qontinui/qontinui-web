@@ -16,12 +16,13 @@ Access model (coord finding 966c92eb; the router used to be fully anonymous):
   deletion) are therefore visible to superusers only.
 - Images attach only to a render log the caller owns.
 - The destructive routes (``DELETE ""`` and ``POST /cleanup``) are
-  superuser-only. Nothing schedules the retention cleanup server-side, so it
-  stays an HTTP route, behind superuser auth.
+  superuser-only. Retention runs server-side as the scheduled job
+  ``render_log_retention`` (``app.jobs.render_log_retention``); ``/cleanup``
+  calls the same core on demand.
+- Deleting image files never leaves ``RENDER_LOG_IMAGE_DIR``, whatever a
+  stored ``file_path`` says.
 """
 
-import re
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -36,7 +37,11 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_superuser_async,
 )
-from app.core.config import settings
+from app.jobs.render_log_retention import (
+    delete_render_logs_older_than_retention,
+    get_image_storage_path,
+    unlink_stored_images,
+)
 from app.models.render_log import RenderImage, RenderLog
 from app.models.user import User
 from app.schemas.render_log import (
@@ -56,10 +61,22 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-# A stored image's extension comes from the client-supplied filename, so it is
-# accepted only when it is a short run of alphanumerics; anything else is
-# stored as ``.png``.
-_SAFE_IMAGE_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}")
+# The only image types a render log stores. The extension comes from the
+# client-supplied filename and the stored MIME type is derived from it here; the
+# client's Content-Type is never stored. Anything else is refused (422) rather
+# than coerced to ``.png``: coercion would label arbitrary bytes (an ``.html``
+# page, say) as an image, and no caller uploads anything but these types.
+_IMAGE_MIME_BY_EXT: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+# Upload cap. The app has no shared upload-size constant (each upload module
+# defines its own); 10 MB matches ``images.py`` and ``project_image_service``.
+MAX_RENDER_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 def _scope_to_caller[S: Select[Any]](query: S, user: User) -> S:
@@ -80,13 +97,6 @@ def _not_found() -> HTTPException:
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Render log not found",
     )
-
-
-def get_image_storage_path() -> Path:
-    """Get the image storage directory path."""
-    base_path = Path(settings.RENDER_LOG_IMAGE_DIR)
-    base_path.mkdir(parents=True, exist_ok=True)
-    return base_path
 
 
 @router.get(
@@ -341,18 +351,31 @@ async def upload_render_image(
     if not log:
         raise _not_found()
 
+    ext = Path(file.filename or "").suffix.lower()
+    mime_type = _IMAGE_MIME_BY_EXT.get(ext)
+    if mime_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Unsupported image type; allowed extensions: "
+                + ", ".join(sorted(_IMAGE_MIME_BY_EXT))
+            ),
+        )
+
+    # Read one byte past the cap, so an oversized upload is detected without
+    # buffering all of it.
+    content = await file.read(MAX_RENDER_IMAGE_BYTES + 1)
+    if len(content) > MAX_RENDER_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Image too large; maximum is {MAX_RENDER_IMAGE_BYTES} bytes",
+        )
+
     # The filename is built only from server-controlled parts. It used to embed
     # the client-supplied ``session_id``, which let a caller write outside the
     # storage directory with a ``../`` session id.
-    suffix = Path(file.filename or "").suffix
-    ext = suffix if _SAFE_IMAGE_EXT.fullmatch(suffix) else ".png"
     filename = f"{render_log_id}_{uuid4().hex}{ext}"
-    storage_path = get_image_storage_path()
-    file_path = storage_path / filename
-
-    # Save file
-    content = await file.read()
-    file_path.write_bytes(content)
+    (get_image_storage_path() / filename).write_bytes(content)
 
     # Create database record
     render_image = RenderImage(
@@ -361,7 +384,7 @@ async def upload_render_image(
         element_selector=element_selector,
         file_path=filename,  # Store relative path
         file_size_bytes=len(content),
-        mime_type=file.content_type,
+        mime_type=mime_type,
     )
 
     db.add(render_image)
@@ -412,14 +435,9 @@ async def clear_render_logs(
     image_result = await db.execute(image_query)
     images_to_delete = image_result.all()
 
-    # Delete image files
-    storage_path = get_image_storage_path()
-    deleted_files = 0
-    for _, file_path in images_to_delete:
-        full_path = storage_path / file_path
-        if full_path.exists():
-            full_path.unlink()
-            deleted_files += 1
+    deleted_files = unlink_stored_images(
+        get_image_storage_path(), (file_path for _, file_path in images_to_delete)
+    )
 
     # Build delete query for logs
     log_query = delete(RenderLog)
@@ -459,47 +477,15 @@ async def cleanup_old_render_logs(
     db: AsyncSession = Depends(get_async_db),
     _superuser: User = Depends(get_current_superuser_async),
 ) -> ClearRenderLogsResponse:
-    """Cleanup old render logs based on retention settings. Superuser only.
+    """Run render-log retention now, across every user. Superuser only.
 
-    Nothing runs this retention on a schedule server-side, so it stays an HTTP
-    route; it deletes across every user, hence the superuser requirement.
+    The scheduled job ``render_log_retention`` runs the same core hourly; this
+    route is the on-demand trigger.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=settings.RENDER_LOG_RETENTION_DAYS)
-
-    # Get images to delete
-    image_query = (
-        select(RenderImage.id, RenderImage.file_path)
-        .join(RenderLog)
-        .filter(RenderLog.timestamp < cutoff)
-    )
-    image_result = await db.execute(image_query)
-    images_to_delete = image_result.all()
-
-    # Delete image files
-    storage_path = get_image_storage_path()
-    deleted_files = 0
-    for _, file_path in images_to_delete:
-        full_path = storage_path / file_path
-        if full_path.exists():
-            full_path.unlink()
-            deleted_files += 1
-
-    # Delete old logs (cascades to images)
-    result = await db.execute(delete(RenderLog).filter(RenderLog.timestamp < cutoff))
-    deleted_snapshots = result.rowcount  # type: ignore[attr-defined]
+    outcome = await delete_render_logs_older_than_retention(db)
     await db.commit()
-
-    logger.info(
-        "Cleaned up old render logs",
-        deleted_snapshots=deleted_snapshots,
-        deleted_images=len(images_to_delete),
-        deleted_files=deleted_files,
-        cutoff=cutoff.isoformat(),
-        retention_days=settings.RENDER_LOG_RETENTION_DAYS,
-    )
-
     return ClearRenderLogsResponse(
-        deleted_snapshots=deleted_snapshots,
-        deleted_images=len(images_to_delete),
-        deleted_files=deleted_files,
+        deleted_snapshots=outcome.deleted_snapshots,
+        deleted_images=outcome.deleted_images,
+        deleted_files=outcome.deleted_files,
     )

@@ -19,6 +19,7 @@ the route actually deleted.
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -86,11 +87,13 @@ async def _make_log(
     return log
 
 
-async def _make_image(db, log: RenderLog) -> RenderImage:
+async def _make_image(
+    db, log: RenderLog, *, file_path: str | None = None
+) -> RenderImage:
     image = RenderImage(
         render_log_id=log.id,
         image_type="screenshot",
-        file_path=f"missing_{uuid4().hex}.png",
+        file_path=file_path or f"missing_{uuid4().hex}.png",
         file_size_bytes=1,
         mime_type="image/png",
     )
@@ -103,9 +106,11 @@ async def _make_image(db, log: RenderLog) -> RenderImage:
 class _Env:
     """A client plus the users it can authenticate as, by bearer."""
 
-    def __init__(self, client: httpx.AsyncClient, db) -> None:
+    def __init__(self, client: httpx.AsyncClient, db, image_dir: Path) -> None:
         self.client = client
         self.db = db
+        # A subdirectory, so a test can place a file just OUTSIDE it.
+        self.image_dir = image_dir
         self.tokens: dict[str, User] = {}
 
     def auth(self, user: User) -> dict[str, str]:
@@ -120,7 +125,7 @@ async def env(async_db_session, tmp_path) -> AsyncIterator[_Env]:
     client = httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     )
-    e = _Env(client, async_db_session)
+    e = _Env(client, async_db_session, tmp_path / "images")
 
     async def _verify(token: str, _session) -> User:
         from app.auth.cognito_user import CognitoAuthError
@@ -136,8 +141,8 @@ async def env(async_db_session, tmp_path) -> AsyncIterator[_Env]:
             side_effect=_verify,
         ),
         patch(
-            "app.api.v1.endpoints.render_logs.settings.RENDER_LOG_IMAGE_DIR",
-            str(tmp_path),
+            "app.jobs.render_log_retention.settings.RENDER_LOG_IMAGE_DIR",
+            str(e.image_dir),
         ),
     ):
         async with client:
@@ -299,21 +304,106 @@ async def test_image_upload_to_another_users_log_is_404(env):
 
 
 @pytest.mark.asyncio
-async def test_image_upload_filename_ignores_the_client_session_id(env, tmp_path):
+async def test_image_upload_filename_ignores_the_client_session_id(env):
     alice = await _make_user(env.db)
     mine = await _make_log(env.db, alice, session_id="../../escape")
 
-    response = await env.client.post(
-        f"{PREFIX}/{mine.id}/images",
-        params={"image_type": "screenshot"},
-        files={"file": ("x.p/../ng", b"png", "image/png")},
-        headers=env.auth(alice),
-    )
+    response = await _upload(env, alice, mine, "x.png")
 
     assert response.status_code == 201, response.text
     stored = response.json()["file_path"]
     assert "/" not in stored and "\\" not in stored and ".." not in stored
-    assert (tmp_path / stored).is_file()
+    assert (env.image_dir / stored).is_file()
+
+
+async def _upload(
+    env,
+    user: User,
+    log: RenderLog,
+    filename: str,
+    *,
+    content: bytes = b"png",
+    content_type: str = "image/png",
+):
+    return await env.client.post(
+        f"{PREFIX}/{log.id}/images",
+        params={"image_type": "screenshot"},
+        files={"file": (filename, content, content_type)},
+        headers=env.auth(user),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["x.html", "x.png.", "x", "x.svg", "x.png.exe"])
+async def test_image_upload_rejects_a_non_allowlisted_extension(env, filename):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+
+    response = await _upload(env, alice, mine, filename)
+
+    assert response.status_code == 422, response.text
+    rows = await env.db.execute(
+        select(RenderImage.id).where(RenderImage.render_log_id == mine.id)
+    )
+    assert rows.all() == []
+    assert not env.image_dir.exists() or not any(env.image_dir.iterdir())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("filename", "expected_mime"),
+    [
+        ("x.png", "image/png"),
+        ("x.JPG", "image/jpeg"),
+        ("x.jpeg", "image/jpeg"),
+        ("x.webp", "image/webp"),
+        ("x.gif", "image/gif"),
+    ],
+)
+async def test_image_upload_mime_type_is_derived_from_the_extension(
+    env, filename, expected_mime
+):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+
+    # The client's Content-Type is a lie; it must not be what gets stored.
+    response = await _upload(env, alice, mine, filename, content_type="text/html")
+
+    assert response.status_code == 201, response.text
+    assert response.json()["mime_type"] == expected_mime
+    assert response.json()["file_path"].endswith(Path(filename).suffix.lower())
+
+
+@pytest.mark.asyncio
+async def test_image_upload_over_the_size_cap_is_413(env):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+
+    with patch("app.api.v1.endpoints.render_logs.MAX_RENDER_IMAGE_BYTES", 4):
+        at_cap = await _upload(env, alice, mine, "x.png", content=b"1234")
+        over = await _upload(env, alice, mine, "x.png", content=b"12345")
+
+    assert at_cap.status_code == 201, at_cap.text
+    assert over.status_code == 413, over.text
+    rows = await env.db.execute(
+        select(RenderImage.id).where(RenderImage.render_log_id == mine.id)
+    )
+    assert len(rows.all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_superuser_cannot_upload_to_another_users_log(env):
+    admin = await _make_user(env.db, superuser=True)
+    bob = await _make_user(env.db)
+    bobs = await _make_log(env.db, bob, session_id="bob-s")
+
+    response = await _upload(env, admin, bobs, "x.png")
+
+    assert response.status_code == 404, response.text
+    rows = await env.db.execute(
+        select(RenderImage.id).where(RenderImage.render_log_id == bobs.id)
+    )
+    assert rows.all() == []
 
 
 @pytest.mark.asyncio
@@ -416,3 +506,148 @@ async def test_superuser_reads_every_row_including_ownerless_ones(env):
     for log_id in (bobs.id, anon.id):
         response = await env.client.get(f"{PREFIX}/{log_id}", headers=env.auth(admin))
         assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_superuser_sees_every_row_on_list_sessions_and_stats(env):
+    admin = await _make_user(env.db, superuser=True)
+    alice = await _make_user(env.db)
+    bob = await _make_user(env.db)
+    tag = uuid4().hex[:8]
+    alices = await _make_log(env.db, alice, session_id=f"alice-{tag}")
+    bobs = await _make_log(env.db, bob, session_id=f"bob-{tag}")
+    anon = await _make_log(env.db, None, session_id=f"anon-{tag}")
+    await _make_image(env.db, bobs)
+
+    listed = await env.client.get(
+        PREFIX, params={"page_size": 200}, headers=env.auth(admin)
+    )
+    assert listed.status_code == 200, listed.text
+    ids = {item["id"] for item in listed.json()["items"]}
+    assert {alices.id, bobs.id, anon.id} <= ids
+
+    sessions = await env.client.get(
+        f"{PREFIX}/sessions", params={"limit": 200}, headers=env.auth(admin)
+    )
+    assert sessions.status_code == 200, sessions.text
+    names = {s["session_id"] for s in sessions.json()}
+    assert {f"alice-{tag}", f"bob-{tag}", f"anon-{tag}"} <= names
+
+    admin_stats = (
+        await env.client.get(f"{PREFIX}/stats", headers=env.auth(admin))
+    ).json()
+    alice_stats = (
+        await env.client.get(f"{PREFIX}/stats", headers=env.auth(alice))
+    ).json()
+    assert alice_stats["total_snapshots"] == 1
+    assert alice_stats["image_count"] == 0
+    assert admin_stats["total_snapshots"] >= 3
+    assert admin_stats["total_sessions"] >= 3
+    assert admin_stats["image_count"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Deleting image files never leaves the storage directory
+# ---------------------------------------------------------------------------
+
+
+def _outside_victim(env: _Env) -> Path:
+    """A file just outside the image dir, which a ``../`` row value names."""
+    env.image_dir.mkdir(parents=True, exist_ok=True)
+    victim = env.image_dir.parent / f"victim_{uuid4().hex}.png"
+    victim.write_bytes(b"do not delete")
+    return victim
+
+
+@pytest.mark.asyncio
+async def test_superuser_delete_skips_an_image_path_outside_storage(env):
+    admin = await _make_user(env.db, superuser=True)
+    alice = await _make_user(env.db)
+    session_id = f"s-{uuid4().hex[:8]}"
+    log = await _make_log(env.db, alice, session_id=session_id)
+    victim = _outside_victim(env)
+    inside = env.image_dir / "inside.png"
+    inside.write_bytes(b"png")
+    await _make_image(env.db, log, file_path=f"../{victim.name}")
+    await _make_image(env.db, log, file_path="inside.png")
+
+    response = await env.client.request(
+        "DELETE",
+        PREFIX,
+        json={"confirm": True, "session_id": session_id},
+        headers=env.auth(admin),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["deleted_images"] == 2
+    assert response.json()["deleted_files"] == 1
+    assert victim.is_file(), "a ../ file_path unlinked a file outside storage"
+    assert not inside.exists()
+
+
+# ---------------------------------------------------------------------------
+# The scheduled retention job
+# ---------------------------------------------------------------------------
+
+
+def test_render_log_retention_is_scheduled_hourly_and_at_boot():
+    from app.core.scheduler import (
+        SchedulerService,
+        _job_render_log_retention,
+        install_default_tasks,
+    )
+
+    service = SchedulerService()
+    install_default_tasks(service)
+
+    task = service._tasks["render_log_retention"]
+    assert task.coro is _job_render_log_retention
+    assert task.interval_seconds == 3600.0
+    assert task.run_at_boot
+
+
+@pytest.mark.asyncio
+async def test_scheduled_retention_job_deletes_expired_rows_and_files_only(env):
+    """Drive the REAL scheduler job coroutine end to end.
+
+    ``_run_committed`` opens ``AsyncSessionLocal()``; it is pointed at this
+    test's session so the job's delete and commit land where the assertions
+    read, and roll back with the test.
+    """
+    from app.core.scheduler import _job_render_log_retention
+
+    alice = await _make_user(env.db)
+    old = await _make_log(env.db, alice, session_id="alice-s", age=timedelta(days=30))
+    fresh = await _make_log(env.db, alice, session_id="alice-s")
+    orphan_old = await _make_log(
+        env.db, None, session_id="anon-s", age=timedelta(days=8)
+    )
+    victim = _outside_victim(env)
+    old_file = env.image_dir / "old.png"
+    old_file.write_bytes(b"png")
+    fresh_file = env.image_dir / "fresh.png"
+    fresh_file.write_bytes(b"png")
+    await _make_image(env.db, old, file_path="old.png")
+    await _make_image(env.db, old, file_path=f"../{victim.name}")
+    await _make_image(env.db, fresh, file_path="fresh.png")
+
+    class _SessionCtx:
+        async def __aenter__(self):
+            return env.db
+
+        async def __aexit__(self, *exc):
+            return False
+
+    with patch("app.db.session.AsyncSessionLocal", lambda: _SessionCtx()):
+        result = await _job_render_log_retention()
+
+    assert result["deleted_images"] >= 2
+    assert result["deleted_files"] == 1
+    assert result["deleted_snapshots"] >= 2
+    remaining = await env.db.execute(
+        select(RenderLog.id).where(RenderLog.id.in_([old.id, fresh.id, orphan_old.id]))
+    )
+    assert remaining.scalars().all() == [fresh.id]
+    assert not old_file.exists()
+    assert fresh_file.is_file()
+    assert victim.is_file(), "a ../ file_path unlinked a file outside storage"
