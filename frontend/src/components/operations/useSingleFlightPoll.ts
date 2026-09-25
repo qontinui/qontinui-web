@@ -39,7 +39,7 @@ import { useCallback, useEffect, useRef } from "react";
  * One poll. `isCurrent()` is false once the setup that started this flight
  * has been torn down; a poll must check it before writing state.
  */
-export type SingleFlightPollFn = (isCurrent: () => boolean) => Promise<void>;
+export type SingleFlightPollFn = (isCurrent: () => boolean) => Promise<unknown>;
 
 export interface UseSingleFlightResult {
   /**
@@ -66,7 +66,25 @@ export type UseSingleFlightPollResult = Pick<UseSingleFlightResult, "refresh">;
  * latch guards nothing.
  *
  * `fn`'s `isCurrent()` turns false when `fn` changes or the component
- * unmounts; nothing is started after unmount.
+ * unmounts; nothing is started after unmount. See `activeRef` for the one
+ * ordering rule a caller must follow.
+ *
+ * ## Why this is not `useGuardedPoll`
+ *
+ * `components/admin/coord/useGuardedPoll.ts` is the other polling primitive,
+ * and both exist on purpose (decided by capability first):
+ *
+ * - `useGuardedPoll` lets an operator's refresh CLICK run beside an
+ *   outstanding tick, and orders the answers with two generations (per
+ *   question, per request), so an overtaken FAILURE can still speak for the
+ *   question on screen. That is the list pages' capability: a paging or
+ *   filter change must answer at once, not after a slow read.
+ * - This hook never has two requests on the wire: a refresh during a flight
+ *   TRAILS it, once. That is the dashboard polls' capability: a bounded
+ *   per-viewer load on coord however slow coord gets (D5), which
+ *   `useGuardedPoll`'s overlapping refresh cannot give.
+ *
+ * Folding one into the other would remove one of the two capabilities.
  */
 export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
   const fnRef = useRef(fn);
@@ -75,8 +93,17 @@ export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
   // Bumped on every setup AND teardown, so a flight started under one setup
   // can tell that it no longer speaks for the component.
   const generationRef = useRef(0);
-  // False after unmount: a trailing run queued by the last flight must not go
-  // out after the component is gone.
+  /**
+   * True from this hook's own mount effect until its cleanup. A trailing run
+   * queued by the last flight must not go out after the component is gone.
+   *
+   * ⚠️ ORDERING: it starts `false` and is set by an EFFECT, so a caller must
+   * call `useSingleFlight` BEFORE declaring any effect that calls `refresh` /
+   * `tick` on mount. React runs a component's effects in declaration order;
+   * an earlier-declared effect's call would find `activeRef` still false and
+   * be dropped silently — on first mount and again on every StrictMode
+   * re-mount. `useSingleFlightPoll` satisfies this by construction.
+   */
   const activeRef = useRef(false);
 
   const start = useCallback((): Promise<void> => {
@@ -88,7 +115,11 @@ export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
     // is recorded (which would leave a settled promise in the latch and skip
     // every later tick forever).
     const flight: Promise<void> = Promise.resolve()
-      .then(() => fnRef.current(isCurrent))
+      // Superseded (unmount or a new `fn`) before the microtask ran: send
+      // nothing — its answer would be discarded anyway.
+      .then(async () => {
+        if (isCurrent()) await fnRef.current(isCurrent);
+      })
       .catch((err: unknown) => {
         console.error("[useSingleFlight] poll rejected", err);
       })

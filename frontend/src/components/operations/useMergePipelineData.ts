@@ -45,6 +45,18 @@
 //      `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5),
 //      so a 504 costs one request and the next batch is the retry. Rule 1 is
 //      this hook's own single-flight, which predates `useSingleFlight`.
+//
+// Two reads sit OUTSIDE rule 1's batch latch, deliberately:
+//
+//   - `fetchMergedPrs` runs on its own slower chain under its OWN latch
+//     (`mergedReadRef`, see `readMergedIfStale`), with no client retry, so it
+//     is single-flight too — just not behind the hot batch, which a 20 s
+//     merged read would otherwise starve.
+//   - `onSuggestionAction`'s `fetchSuggestions` re-read runs once per
+//     operator click, right after that click's POST, so the acted-on row
+//     leaves the list at once. It is operator-triggered and bounded by the
+//     clicks (the action button is busy while it runs), and it passes
+//     `COORD_DASHBOARD_POLL_OPTIONS` like the batch read of the same route.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";

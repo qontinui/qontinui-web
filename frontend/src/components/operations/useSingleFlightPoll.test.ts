@@ -157,6 +157,14 @@ describe("useSingleFlightPoll", () => {
     expect(poll).toHaveBeenCalledTimes(1);
   });
 
+  it("sends nothing when unmounted before the poll's microtask ran", async () => {
+    const poll = vi.fn(() => Promise.resolve());
+    const { unmount } = renderHook(() => useSingleFlightPoll(poll, INTERVAL));
+    unmount();
+    await flush();
+    expect(poll).not.toHaveBeenCalled();
+  });
+
   it("a poll that rejects does not leave the latch stuck", async () => {
     const poll = vi.fn(() => Promise.reject(new Error("boom")));
     vi.spyOn(console, "error").mockImplementation(() => {});
