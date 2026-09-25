@@ -1,7 +1,7 @@
 """coord.gate_corrections — the forward-only annotation store for a mis-predicated gate
 
 Revision ID: gatecorr_01_coord_gate_corrections
-Revises: route_serving_host_passes_01
+Revises: overview_02_authoring_core
 Create Date: 2026-09-21
 
 Phase 7 (web slice) of plan
@@ -189,7 +189,7 @@ revision: str = "gatecorr_01_coord_gate_corrections"
 # the head gate's offline parser (`scripts/ci/_alembic_graph.py` `DOWN_RE`)
 # reads the right-hand side as `(\([^)]*\)|[^\n]+)`, so a parenthesised list may
 # wrap across lines but a bare tuple spilling past a `)` cannot.
-down_revision: str | Sequence[str] | None = "route_serving_host_passes_01"
+down_revision: str | Sequence[str] | None = "overview_02_authoring_core"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
