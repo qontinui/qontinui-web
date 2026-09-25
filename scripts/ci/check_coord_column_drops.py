@@ -93,7 +93,9 @@ landed long before it). The delta applies only when the edit leaves the
 sites and the static violations unchanged; any other difference judges the
 file whole. An ADDED file, and every file under ``--files``, is judged whole.
 The scan summary names each delta-judged file and how many landed drops it
-did not re-judge.
+did not re-judge, and both pass verdicts (no drop added; every drop unread)
+repeat the total — so a delta pass never reads as "the changed files drop
+nothing".
 
 What it consults
 ----------------
