@@ -108186,6 +108186,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Clear render logs",
         "tags": [
           "render-logs"
@@ -108299,6 +108304,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "List render logs",
         "tags": [
           "render-logs"
@@ -108366,6 +108376,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Cleanup old render logs",
         "tags": [
           "render-logs"
@@ -108418,6 +108433,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "List render log sessions",
         "tags": [
           "render-logs"
@@ -108440,6 +108460,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get render logging statistics",
         "tags": [
           "render-logs"
@@ -108483,6 +108508,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get render log",
         "tags": [
           "render-logs"
@@ -108565,6 +108595,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Upload render image",
         "tags": [
           "render-logs"
