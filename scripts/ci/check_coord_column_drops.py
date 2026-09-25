@@ -82,6 +82,19 @@ tables ``coord.prompt_documents`` and feeds them through a loop variable, so
 the scanner sees a bare name and the cross-check finds the qualified literal.
 A column of ``*`` declares a whole-table drop.
 
+Edited landed revisions (``--base-ref`` lane only). A changed revision file
+that already exists at the merge base has LANDED — alembic never re-runs it,
+and its drops were judged when it was added — so it is judged by its DELTA
+(``delta_scan``): only a resolved drop whose ``(table, column)`` is new versus
+the merge-base version counts (qontinui-web#1457, which restored ``SET LOCAL
+lock_timeout`` across landed revisions, was otherwise held red on drops that
+landed long before it). The delta applies only when the edit leaves the
+``revision`` / ``down_revision`` identity, the declaration, the unresolved
+sites and the static violations unchanged; any other difference judges the
+file whole. An ADDED file, and every file under ``--files``, is judged whole.
+The scan summary names each delta-judged file and how many landed drops it
+did not re-judge.
+
 What it consults
 ----------------
 Zero ``coord.*`` drops across the changed files — the common case — exits 0
@@ -239,6 +252,10 @@ class FileScan:
     unresolved: list[Unresolved] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
     declared: list[tuple[str, str]] | None = None
+    # Set only by ``delta_scan``: the resolved drops of an EDITED landed
+    # revision that were judged when it landed and are not re-judged now.
+    # ``None`` means the file was judged whole.
+    landed_drops: list[Drop] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +902,16 @@ def _revision_identity(source: str) -> list[tuple[str, str]]:
     return [(m.group(1), m.group(2).strip()) for m in _REVISION_LINE.finditer(source)]
 
 
+def _static_violations(scan: FileScan) -> list[str]:
+    """The scan's static violations with ``<file>:<line>`` locations reduced to
+    ``<file>``, sorted — so an edit that only shifts lines (a ``SET LOCAL`` line
+    inserted above everything) compares equal, while one that ADDS a violation
+    (e.g. removes the only other mention of a declared name, so the declaration
+    cross-check now fails) does not."""
+    label = re.escape(repo_relative(scan.path))
+    return sorted(re.sub(rf"({label}):\d+", r"\1", v) for v in scan.violations)
+
+
 def delta_scan(
     head: FileScan, base: FileScan, head_source: str, base_source_text: str
 ) -> FileScan:
@@ -898,9 +925,11 @@ def delta_scan(
 
     The delta applies ONLY when the edit left everything else the gate reasons
     about identical: the ``revision`` / ``down_revision`` identity (a rewritten
-    identity is a new migration that WILL run), the declaration, and the
-    multiset of unresolved sites (a new or moved unresolved site could name a
-    new column the declaration silently covers). Any difference returns the
+    identity is a new migration that WILL run), the declaration, the multiset
+    of unresolved sites up to line numbers (a new or changed site could name a
+    new column the declaration silently covers), and the static violations up
+    to line numbers (an edit must not launder a violation it introduces, such
+    as a declaration whose cross-check it breaks). Any difference returns the
     head scan unchanged, i.e. the file is judged whole — the strict direction.
     When the delta applies, a resolved drop is judged only if its
     ``(table, column)`` is new relative to the base version; a NEW drop in a
@@ -912,7 +941,13 @@ def delta_scan(
     same_unresolved = sorted((u.how, u.detail) for u in head.unresolved) == sorted(
         (u.how, u.detail) for u in base.unresolved
     )
-    if not (same_identity and same_unresolved and head.declared == base.declared):
+    same_violations = _static_violations(head) == _static_violations(base)
+    if not (
+        same_identity
+        and same_unresolved
+        and same_violations
+        and head.declared == base.declared
+    ):
         return head
     base_drops = {(d.table, d.column) for d in base.drops}
     return FileScan(
@@ -921,6 +956,7 @@ def delta_scan(
         unresolved=[],
         violations=[],
         declared=head.declared,
+        landed_drops=[d for d in head.drops if (d.table, d.column) in base_drops],
     )
 
 
@@ -1126,9 +1162,15 @@ def _report_scan(scans: list[FileScan], label: str) -> None:
         "unresolved site(s)."
     )
     for s in scans:
-        note(
-            f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
-        )
+        line = f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
+        if s.landed_drops is not None:
+            # Say so rather than let a delta-judged file read as drop-free.
+            line += (
+                f" — edited landed revision, judged by its delta; "
+                f"{len(s.landed_drops)} drop(s) it performed when it landed "
+                "not re-judged"
+            )
+        note(line)
     # stdout is block-buffered under CI; flush so the scan summary lands
     # BEFORE any verdict written to stderr rather than after it.
     sys.stdout.flush()
