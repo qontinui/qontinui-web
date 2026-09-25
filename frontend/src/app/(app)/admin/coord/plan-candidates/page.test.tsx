@@ -152,6 +152,23 @@ describe("/admin/coord/plan-candidates consumes /plan-library/candidates", () =>
     ).toHaveTextContent("UNKNOWN, not unblocked");
   });
 
+  it("names the model tier a rated row routes to, from the envelope's map", async () => {
+    const user = userEvent.setup();
+    get.mockResolvedValue(
+      response({
+        items: [candidate({ difficulty: "high" })],
+        model_tiers: { high: "Fable 5.1", medium: "Opus 5", low: "Fast tier" },
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const row = await screen.findByTestId("coord-candidate-row");
+    await user.click(within(row).getByRole("button"));
+    expect(
+      await screen.findByTestId("coord-candidate-difficulty")
+    ).toHaveTextContent("difficulty: high — route to Fable 5.1");
+  });
+
   it("does not say the edges were walked when no dependency list was served", async () => {
     // `document_state: "present"` and an ABSENT `unmet_depends_on`:
     // `describeReadiness` badges the row "blockers not served", and the panel

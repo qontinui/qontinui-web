@@ -4,6 +4,7 @@ from app.services.email.email_composers import (
     BetaWelcomeEmailComposer,
     EmailVerificationComposer,
     FeedbackEmailComposer,
+    MemberAddedNoticeComposer,
     PasswordResetEmailComposer,
     ResendVerificationEmailComposer,
 )
@@ -18,4 +19,5 @@ __all__ = [
     "EmailVerificationComposer",
     "ResendVerificationEmailComposer",
     "FeedbackEmailComposer",
+    "MemberAddedNoticeComposer",
 ]

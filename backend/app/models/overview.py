@@ -36,7 +36,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -76,6 +76,20 @@ TASK_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
 
 #: Enforced by ``ck_overview_cost_lines_kind``.
 COST_LINE_KINDS: tuple[str, ...] = ("build_non_labour", "run_annual")
+
+#: The coord tenant roles a project may grant overview editing to. ``admin``
+#: is always among them (``ck_overview_settings_editing_roles``): widening
+#: who may edit is the setting's purpose, and it must never be usable to lock
+#: the project's own administrators out.
+EDITING_ROLES: tuple[str, ...] = ("admin", "agent_supervisor", "operator")
+
+#: Where a write came from. ``ui`` — the overview pages; ``api`` — any other
+#: caller, including an unattended agent; ``import`` — a bulk import (CSV
+#: paste, mermaid gantt). Enforced by ``ck_overview_change_log_source``.
+CHANGE_SOURCES: tuple[str, ...] = ("ui", "api", "import")
+
+#: Enforced by ``ck_overview_change_log_action``.
+CHANGE_ACTIONS: tuple[str, ...] = ("create", "update", "delete")
 
 _SCHEMA = "overview"
 
@@ -127,6 +141,11 @@ class OverviewSettings(_AuditMixin, Base):
             "working_day_factor > 0 AND working_day_factor <= 1",
             name="ck_overview_settings_working_day_factor",
         ),
+        CheckConstraint(
+            "editing_roles IS NULL OR ('admin' = ANY(editing_roles) AND "
+            "editing_roles <@ '{admin,agent_supervisor,operator}'::text[])",
+            name="ck_overview_settings_editing_roles",
+        ),
         {"schema": _SCHEMA},
     )
 
@@ -157,6 +176,22 @@ class OverviewSettings(_AuditMixin, Base):
         default=Decimal("1.0"),
     )
     first_value_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Which tenant roles may edit this project's overview. Authorization
+    #: resolves it per request (``app.overview.permissions``); the same answer
+    #: is served on every read so the UI renders controls from what the API
+    #: enforces. Resources stored OUTSIDE this database (coord's intent
+    #: documents) follow their own store's rule and ignore it.
+    #: NULLABLE, and a NULL reads as ``{admin}`` everywhere (see
+    #: ``app.overview.permissions``). The column is nullable only so its
+    #: migration is provably additive — ``NOT NULL`` on an added column is a
+    #: shape coord's migration classifier refuses to land unattended — never
+    #: to give NULL a meaning of its own.
+    editing_roles: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text),
+        nullable=True,
+        server_default=text("'{admin}'::text[]"),
+        default=lambda: ["admin"],
+    )
 
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
@@ -669,3 +704,74 @@ class CalendarBreak(_AuditMixin, Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     estimate: Mapped[Estimate] = relationship(back_populates="calendar_breaks")
+
+
+class ChangeLog(Base):
+    """One row per write to any overview resource — the audit trail.
+
+    Append-only. ``before`` / ``after`` are the resource's own read shape on
+    either side of the write (``null`` for the side that did not exist), so
+    "who changed this number, and from what" is answerable without the
+    resource keeping versions of its own. ``record_id`` is TEXT because not
+    every resource is keyed by a UUID: coord's intent documents are addressed
+    ``<kind>:<name>``.
+
+    ``idempotency_key`` makes a create safe to retry: a second create carrying
+    the same key finds this row and returns the record it made instead of
+    making another (``uq_overview_change_log_idempotency``).
+    """
+
+    __tablename__ = "change_log"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('ui', 'api', 'import')",
+            name="ck_overview_change_log_source",
+        ),
+        CheckConstraint(
+            "action IN ('create', 'update', 'delete')",
+            name="ck_overview_change_log_action",
+        ),
+        Index(
+            "ix_overview_change_log_record",
+            "tenant_id",
+            "resource",
+            "record_id",
+            "created_at",
+        ),
+        Index(
+            "uq_overview_change_log_idempotency",
+            "tenant_id",
+            "resource",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    resource: Mapped[str] = mapped_column(Text, nullable=False)
+    record_id: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    version_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    version_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )

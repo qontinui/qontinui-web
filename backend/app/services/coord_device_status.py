@@ -24,7 +24,7 @@ Three pieces ship here:
 
 The mint path requires `COORD_ADMIN_SECRET` to be set; without it the
 device-status surface returns 503 (same posture as
-:mod:`app.services.strategy`). The minted token's `tenant_id` claim
+:mod:`app.services.coord_service_account`). The minted token's `tenant_id` claim
 is the sole authorization input coord uses to scope subscription
 topics on `/ws/device-status` (`device_status:<tenant_uuid>`) — the
 admin secret + tenant resolution upstream guarantee an operator can
@@ -218,13 +218,17 @@ def _coord_ws_base() -> str:
 # pattern the principal is entitled to; a caller-supplied ``?pattern=`` is
 # refused) — plan
 # 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose
-# Phase 2. These four are the ones a tenant-scoped service token (the web
+# Phase 2. These three are the ones a tenant-scoped service token (the web
 # backend's identity) is admitted to:
 #
-#   strategy → events.strategy.*   (presence + mentions on /strategy)
 #   merge    → events.merge.*      (the merge-pipeline hero's refetch trigger)
 #   claims   → events.claims
 #   branches → events.branches
+#
+# A fourth, ``strategy`` → ``events.strategy.*``, was retired with the
+# strategy collaboration feature (plan
+# 2026-09-20-remove-the-strategy-collaboration-feature): nothing publishes
+# that family any more and coord now refuses the name.
 #
 # ``device`` and ``device_ci`` are deliberately ABSENT: those resolve to the
 # token's own ``device_id`` claim (``events.agent.spawn_requested.<device>``
@@ -234,8 +238,8 @@ def _coord_ws_base() -> str:
 # change: every name here must also be in coord's map, or the upstream
 # refuses 403 ``unknown_subscription``.
 #: Subscription name → the channel FAMILY it is entitled to, spelled the way
-#: coord resolves it: a trailing ``.`` means "prefix" (``events.strategy.*``
-#: → every ``events.strategy.<anything>``), no trailing ``.`` means the exact
+#: coord resolves it: a trailing ``.`` means "prefix" (``events.merge.*``
+#: → every ``events.merge.<anything>``), no trailing ``.`` means the exact
 #: channel. The bridge enforces this on EVERY relayed frame
 #: (:func:`channel_in_family`), not only at the upgrade: against a coord that
 #: predates the ``?subscribe=`` half (``WsParams { pattern }`` defaulting to
@@ -244,7 +248,6 @@ def _coord_ws_base() -> str:
 #: ``events.agent.spawn_requested.<device>`` frames whose JWT payloads this
 #: plan exists to take off it — into every operator's browser.
 COORD_EVENTS_FAMILIES: dict[str, str] = {
-    "strategy": "events.strategy.",
     "merge": "events.merge.",
     "claims": "events.claims",
     "branches": "events.branches",
@@ -310,9 +313,9 @@ def build_coord_events_ws_url(token: str, subscribe: str) -> str:
 #: leg alive. 20s mirrors that same margin on the newly-added leg.
 COORD_EVENTS_KEEPALIVE_INTERVAL_S: float = 20.0
 
-#: The frame itself. Deliberately has NO ``channel`` key: `useStrategyWebSocket`
-#: keys its per-frame handling off `channel` already, so the channel-less
-#: shape alone makes it inert there with no code change. `useMergePipelineData`
+#: The frame itself. Deliberately has NO ``channel`` key, so a consumer that
+#: keys its per-frame handling off `channel` finds it inert with no code
+#: change. `useMergePipelineData`
 #: treats ANY message as "something changed, refetch" — it has no channel to
 #: key off — so it checks for this exact `{"type":"keepalive"}` shape
 #: explicitly (`isKeepaliveFrame`) before that frontend change landed

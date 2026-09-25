@@ -12,7 +12,7 @@ Phase 3 of plan ``2026-07-02-runner-device-machine-key-cold-start.md`` (4b):
   malformed/unknown => 401, revoked/expired => 403.
 
 Unit posture (``tests/conftest.py``): TestClient with dependency overrides +
-patched coord/StrategyClient calls; the auth dep is exercised directly.
+patched coord/CoordServiceAccountClient calls; the auth dep is exercised directly.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 from app.crud import device_machine_credential_crud as dmk_crud
 from app.models.devenv import DeviceMachineCredential
 from app.services import coord_device
-from app.services.strategy import strategy_client
+from app.services.coord_service_account import coord_service_account
 
 API_PREFIX = "/api/v1/devices"
 _USER_ID = uuid4()
@@ -56,7 +56,7 @@ def _mock_user() -> MagicMock:
 
 def _patch_enabled(*, enabled: bool = True):
     return patch.object(
-        strategy_client,
+        coord_service_account,
         "_admin_secret",
         "test-secret" if enabled else None,
     )
@@ -250,7 +250,7 @@ class TestExchangeEndpoint:
             _patch_enabled(),
             patch.object(dmk_crud, "bump_last_used", AsyncMock()) as mock_bump,
             patch.object(
-                strategy_client,
+                coord_service_account,
                 "mint_device_token",
                 AsyncMock(return_value=(200, {"token": "device-jwt-xyz"})),
             ) as mock_mint,
@@ -273,7 +273,7 @@ class TestExchangeEndpoint:
             _patch_enabled(),
             patch.object(dmk_crud, "bump_last_used", AsyncMock()) as mock_bump,
             patch.object(
-                strategy_client, "mint_device_token", AsyncMock()
+                coord_service_account, "mint_device_token", AsyncMock()
             ) as mock_mint,
         ):
             resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
@@ -287,7 +287,7 @@ class TestExchangeEndpoint:
             _patch_enabled(enabled=False),
             patch.object(dmk_crud, "bump_last_used", AsyncMock()),
             patch.object(
-                strategy_client, "mint_device_token", AsyncMock()
+                coord_service_account, "mint_device_token", AsyncMock()
             ) as mock_mint,
         ):
             resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
@@ -300,7 +300,7 @@ class TestExchangeEndpoint:
             _patch_enabled(),
             patch.object(dmk_crud, "bump_last_used", AsyncMock()),
             patch.object(
-                strategy_client,
+                coord_service_account,
                 "mint_device_token",
                 AsyncMock(return_value=(400, {"error": "bad device"})),
             ),

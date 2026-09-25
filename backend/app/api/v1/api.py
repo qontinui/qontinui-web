@@ -115,6 +115,7 @@ from app.api.v1.endpoints import (
     screenshots,
     security_endpoints,
     semantic_search,
+    served_routes,
     session_repository,
     settings,
     skills,
@@ -122,7 +123,6 @@ from app.api.v1.endpoints import (
     state_discovery,
     state_discovery_results,
     state_machine_configs,
-    strategy,
     task_runs,
     template_capture,
     training,
@@ -141,6 +141,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import testing as testing_pkg
 from app.extensions import register_cloud_extensions
+from app.overview.router import router as overview_authoring_router
 
 api_router = APIRouter()
 
@@ -276,6 +277,12 @@ api_router.include_router(
 # ``X-Qontinui-Active-Tenant`` to this prefix (``ACTIVE_TENANT_URL_PREFIXES``
 # in ``frontend/src/services/http-client.ts``).
 api_router.include_router(overview.router, prefix="/overview", tags=["overview"])
+# The overview authoring contract (plan 2026-09-20-overview-authoring-layer):
+# the resource catalog, the change log, and the generic CRUD routes the
+# registry builds. Same prefix, disjoint paths.
+api_router.include_router(
+    overview_authoring_router, prefix="/overview", tags=["overview"]
+)
 # Environments digital-twin — user-scoped management API + machine-key agent API.
 api_router.include_router(devenv.router, prefix="/devenv", tags=["environments"])
 api_router.include_router(
@@ -352,6 +359,13 @@ api_router.include_router(task_runs.router, prefix="/task-runs", tags=["task-run
 # Render logging for development debugging (disabled in production)
 api_router.include_router(
     render_logs.router, prefix="/render-logs", tags=["render-logs"]
+)
+# The served-routes inventory coord's route-serving observer reads instead of
+# probing each route with its documented verb. Public, and hidden from the
+# schema (it counts itself in its own hidden_count). Plan
+# 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb.
+api_router.include_router(
+    served_routes.router, prefix="/meta", tags=["meta"], include_in_schema=False
 )
 # UI Bridge state discovery and management
 api_router.include_router(ui_bridge_states.router, tags=["ui-bridge-states"])
@@ -477,8 +491,6 @@ api_router.include_router(files_sharing.router, prefix="/files", tags=["files-sh
 api_router.include_router(
     device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
 )
-# Strategy Collaboration (Phase 1, read-only doc proxy → coord)
-api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
 # Agent sessions observability — Side D / Phase 4 of plan
 # coord-agent-session-id-tracking.md. Lists sessions from
 # coord.agent_sessions + per-session lineage timeline.
