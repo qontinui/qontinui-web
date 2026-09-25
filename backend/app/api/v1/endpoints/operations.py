@@ -9261,6 +9261,143 @@ async def put_fleet_policy(
     )
 
 
+# ---- Tenant transcript-sync consent proxy -------------------------------
+#
+# Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
+# Phase 3 (§3.6). Coord gates session-output ingest on
+# ``coord.tenant_policies.transcript_sync_enabled`` (qontinui-coord#2480): while
+# it is ``false`` coord refuses every chunk, on both the ``pty`` and the
+# ``transcript`` stream. This is the console's door onto that one flag.
+#
+# It proxies coord's ``GET``/``PATCH /tenant-policy`` — but deliberately exposes
+# only the transcript-sync SLICE of the policy, under a path that says so.
+# ``session_coordination_enabled`` (the Phase 10 cutover flag) rides the same
+# GET, and coord keeps it off the HTTP write surface on purpose; showing it on a
+# page with a toggle beside it would invite reading it as editable.
+#
+# Two coord wire facts this encodes once:
+#
+# 1. Coord's GET requires ``?tenant_id=`` and 403s unless it EQUALS the
+#    principal's tenant — which coord resolves AFTER applying the forwarded
+#    ``X-Qontinui-Active-Tenant`` override. ``get_tenant_id`` returns the HOME
+#    tenant, so passing it here would 403 every operator who has switched
+#    project. The query param is therefore the EFFECTIVE tenant.
+# 2. Coord's PATCH body is ``#[serde(deny_unknown_fields)]`` and carries no
+#    ``tenant_id`` at all: the write lands in the operator's own (effective)
+#    tenant by construction. The body is assembled here from a closed model.
+
+
+class TenantTranscriptSyncView(BaseModel):
+    """The tenant's transcript-sync consent, as coord resolves it."""
+
+    #: ``None`` when coord's answer carried no such field (a coord that predates
+    #: qontinui-coord#2480). That is UNKNOWN — it is NOT "on", even though the
+    #: column defaults to ``true``, because a coord that cannot report the flag
+    #: also does not enforce it.
+    transcript_sync_enabled: bool | None
+    #: ``True`` when coord read the flag as ``false`` only because its column is
+    #: not provisioned yet (the fail-closed deploy-ordering stand-in) — so an
+    #: "off" here was not an admin's decision.
+    column_missing: bool = False
+    #: Whether the caller may write — the SAME effective-tenant rule
+    #: ``require_coord_tenant_admin`` applies to the PATCH. UI gating only;
+    #: coord re-checks with ``rbac::is_tenant_admin``.
+    can_edit: bool
+
+
+class TenantTranscriptSyncPatch(BaseModel):
+    """Closed body for the transcript-sync write — see wire fact 2 above."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transcript_sync_enabled: bool
+
+
+class TenantTranscriptSyncWriteResult(BaseModel):
+    """What was written, and — separately — what coord now reads back.
+
+    ``effective`` is ``None`` with ``readback_error`` set when coord accepted
+    the write but did not return the policy it re-read (its own post-upsert
+    SELECT failed). That is UNKNOWN, not "applied".
+    """
+
+    written: bool
+    effective: TenantTranscriptSyncView | None = None
+    readback_error: str | None = None
+
+
+def _transcript_sync_view(payload: Any, *, can_edit: bool) -> TenantTranscriptSyncView:
+    """Project coord's ``TenantPolicy`` body onto the transcript-sync slice."""
+    body = payload if isinstance(payload, dict) else {}
+    enabled = body.get("transcript_sync_enabled")
+    return TenantTranscriptSyncView(
+        transcript_sync_enabled=enabled if isinstance(enabled, bool) else None,
+        # Coord serves the marker only while it is true.
+        column_missing=body.get("transcript_sync_column_missing") is True,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/tenant-policy/transcript-sync", response_model=TenantTranscriptSyncView)
+async def get_tenant_transcript_sync(
+    request: Request,
+    home_tenant_id: UUID = Depends(get_tenant_id),
+) -> TenantTranscriptSyncView:
+    """Read whether coord accepts session output for the caller's tenant.
+
+    ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
+    ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
+    that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
+    authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
+    is not an admin of this tenant is refused ``admin_required`` — an enabled
+    button would promise a write coord will not take.
+    """
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    effective = _effective_tenant_id(identity, active) or home_tenant_id
+    payload = await _proxy_coord_get(
+        "/tenant-policy",
+        params={"tenant_id": str(effective)},
+        tenant_id=effective,
+    )
+    can_edit = "admin" in _effective_tenant_roles(identity, active)
+    return _transcript_sync_view(payload, can_edit=can_edit)
+
+
+@router.patch(
+    "/tenant-policy/transcript-sync",
+    response_model=TenantTranscriptSyncWriteResult,
+)
+async def patch_tenant_transcript_sync(
+    body: TenantTranscriptSyncPatch,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> TenantTranscriptSyncWriteResult:
+    """Turn transcript sync on or off for the caller's effective tenant.
+
+    Tenant-admin gated web-side; coord re-checks and answers 403
+    ``admin_required`` otherwise, and 503 ``column_not_present`` while the
+    column's migration has not reached its database — both pass through
+    verbatim. Coord re-reads the policy after its upsert and returns it, so no
+    second round trip is needed for the read-back.
+    """
+    answer = await _proxy_coord_patch(
+        "/tenant-policy",
+        body.model_dump(),
+        tenant_id=tenant_id,
+    )
+    if isinstance(answer, dict) and isinstance(
+        answer.get("transcript_sync_enabled"), bool
+    ):
+        # The caller passed `require_coord_tenant_admin`, so `can_edit` is
+        # settled without another `/admin/coord/me` read.
+        return TenantTranscriptSyncWriteResult(
+            written=True, effective=_transcript_sync_view(answer, can_edit=True)
+        )
+    readback_error = "coord accepted the write but did not return the policy it re-read"
+    logger.warning("tenant_policy.readback_failed", detail=readback_error)
+    return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
+
+
 # ---- Priority-sets + composition-rules CRUD proxy -----------------------
 #
 # Plan ``2026-05-15-priority-sets-write-path-and-implementation-set.md``
