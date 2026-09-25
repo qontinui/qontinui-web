@@ -530,7 +530,7 @@ async def startup_event():
     # next_fire_at` — so there is nothing to re-hydrate into Redis, and a Redis
     # flush can no longer drop a schedule.)
 
-    # Strategy Collaboration (Phase 1) service-account bridge. No-op
+    # Coord service-account bridge (used by device pairing). No-op
     # until COORD_ADMIN_SECRET is set; fail-fast when set-but-misconfig.
     #
     # Skipped under tests because "no-op unless COORD_ADMIN_SECRET is set" is
@@ -538,14 +538,14 @@ async def startup_event():
     # box that exports it for coord work would have the test process mint a real
     # token against coord over the network at boot (fail-fast → raises and kills
     # the whole session) and then keep a `_refresh_loop` task alive for the rest
-    # of it. `/strategy` route tests build their own client and mock the mint;
+    # of it. Device-pairing route tests build their own client and mock the mint;
     # the live-coord ones live under tests/integration/, which conftest ignores.
     if skip_side_effects:
-        logger.info("strategy_client_startup_skipped", reason="TESTING=1")
+        logger.info("coord_service_account_startup_skipped", reason="TESTING=1")
     else:
-        from app.services.strategy import strategy_client
+        from app.services.coord_service_account import coord_service_account
 
-        await strategy_client.startup()
+        await coord_service_account.startup()
 
     # Recording-pipeline async-run recovery (Phase 4 of plan
     # 2026-05-17-web-runner-ws-bridge-plan-b.md). Flips stale

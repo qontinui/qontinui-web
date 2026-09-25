@@ -129,7 +129,7 @@ def booted_app() -> Generator[TestClient, None, None]:
     place for every run — including runs of a single file. The other half of the
     fix is that startup itself is now inert under tests: `app/main.py`'s
     `_boot_side_effects_disabled()` gates `init_db`, the wrapper-registry sync
-    loop, the strategy service-account mint and the recording-pipeline recovery
+    loop, the coord service-account mint and the recording-pipeline recovery
     UPDATE on `TESTING=1` (set at the top of this file). `scheduler.start()` is
     deliberately still live — see the comment on
     QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED above.

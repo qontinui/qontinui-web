@@ -122,7 +122,6 @@ from app.api.v1.endpoints import (
     state_discovery,
     state_discovery_results,
     state_machine_configs,
-    strategy,
     task_runs,
     template_capture,
     training,
@@ -477,8 +476,6 @@ api_router.include_router(files_sharing.router, prefix="/files", tags=["files-sh
 api_router.include_router(
     device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
 )
-# Strategy Collaboration (Phase 1, read-only doc proxy → coord)
-api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
 # Agent sessions observability — Side D / Phase 4 of plan
 # coord-agent-session-id-tracking.md. Lists sessions from
 # coord.agent_sessions + per-session lineage timeline.

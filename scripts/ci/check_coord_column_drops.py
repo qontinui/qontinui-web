@@ -825,6 +825,105 @@ def scan_file(path: Path) -> FileScan:
     return scan_source(path.read_text(encoding="utf-8"), path)
 
 
+def merge_base(base_ref: str) -> str:
+    """The merge base of ``base_ref`` and HEAD. Raises on a git failure."""
+    mb = subprocess.run(
+        ["git", "merge-base", base_ref, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if mb.returncode != 0:
+        raise RuntimeError(
+            f"git merge-base {base_ref} HEAD failed (exit {mb.returncode}): "
+            f"{mb.stderr.strip() or '(no stderr)'}"
+        )
+    return mb.stdout.strip()
+
+
+def base_source(base_sha: str, path: Path) -> str | None:
+    """The revision file's source at ``base_sha`` (the merge base), or ``None``
+    when ``git cat-file -e`` says the path is not there.
+
+    ``None`` sends the file down the ADDED arm, which judges it whole — so any
+    ``cat-file`` failure, not only "path absent", fails STRICT. A ``git show``
+    failure after the path was found, or a non-UTF-8 body, raises (UNKNOWN).
+    """
+    rel = repo_relative(path)
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if exists.returncode != 0:
+        return None
+    shown = subprocess.run(
+        ["git", "show", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if shown.returncode != 0:
+        raise RuntimeError(
+            f"git show <merge-base>:{rel} failed (exit {shown.returncode}): "
+            f"{shown.stderr.decode('utf-8', 'replace').strip() or '(no stderr)'}"
+        )
+    try:
+        return shown.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"<merge-base>:{rel} is not UTF-8: {exc}") from exc
+
+
+_REVISION_LINE = re.compile(
+    r"^(revision|down_revision)\s*(?::[^=]*)?=\s*(.+)$", re.MULTILINE
+)
+
+
+def _revision_identity(source: str) -> list[tuple[str, str]]:
+    return [(m.group(1), m.group(2).strip()) for m in _REVISION_LINE.finditer(source)]
+
+
+def delta_scan(
+    head: FileScan, base: FileScan, head_source: str, base_source_text: str
+) -> FileScan:
+    """Judge an EDITED landed revision by the resolved drops its edit ADDS.
+
+    A revision that exists at the merge base has already landed (alembic never
+    re-runs it), and every DROP it performed was judged when it was added. So
+    re-judging those drops fails any PR that merely touches a landed revision —
+    qontinui-web#1457, which restores ``SET LOCAL lock_timeout`` across landed
+    revisions, was held red on drops that landed long before it.
+
+    The delta applies ONLY when the edit left everything else the gate reasons
+    about identical: the ``revision`` / ``down_revision`` identity (a rewritten
+    identity is a new migration that WILL run), the declaration, and the
+    multiset of unresolved sites (a new or moved unresolved site could name a
+    new column the declaration silently covers). Any difference returns the
+    head scan unchanged, i.e. the file is judged whole — the strict direction.
+    When the delta applies, a resolved drop is judged only if its
+    ``(table, column)`` is new relative to the base version; a NEW drop in a
+    landed revision is still judged.
+    """
+    same_identity = _revision_identity(head_source) == _revision_identity(
+        base_source_text
+    )
+    same_unresolved = sorted((u.how, u.detail) for u in head.unresolved) == sorted(
+        (u.how, u.detail) for u in base.unresolved
+    )
+    if not (same_identity and same_unresolved and head.declared == base.declared):
+        return head
+    base_drops = {(d.table, d.column) for d in base.drops}
+    return FileScan(
+        path=head.path,
+        drops=[d for d in head.drops if (d.table, d.column) not in base_drops],
+        unresolved=[],
+        violations=[],
+        declared=head.declared,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Input selection
 # ---------------------------------------------------------------------------
@@ -1219,10 +1318,28 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
 
     # 2. Scan each one.
     scans: list[FileScan] = []
+    # ``--files`` mode has no base to compare against, so it always judges
+    # every file whole (strict); only the ``--base-ref`` lane applies the
+    # landed-revision delta.
+    base_sha: str | None = None
+    if args.files is None and files:
+        try:
+            base_sha = merge_base(args.base_ref)
+        except (RuntimeError, OSError) as exc:
+            err(f"could not resolve the merge base with {args.base_ref}: {exc}")
+            return EXIT_VACUOUS
     for path in files:
         try:
-            scans.append(scan_file(path))
-        except OSError as exc:
+            head_text = path.read_text(encoding="utf-8")
+            scan = scan_source(head_text, path)
+            if base_sha is not None:
+                # A revision already on the base has landed: judge only the
+                # drops this PR's edit ADDS to it (see delta_scan).
+                prior = base_source(base_sha, path)
+                if prior is not None:
+                    scan = delta_scan(scan, scan_source(prior, path), head_text, prior)
+            scans.append(scan)
+        except (OSError, RuntimeError) as exc:
             err(f"cannot read {path}: {exc}")
             return EXIT_VACUOUS
         except SyntaxError as exc:
