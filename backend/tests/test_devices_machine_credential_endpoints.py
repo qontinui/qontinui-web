@@ -397,3 +397,231 @@ class TestPairCliAutoMint:
         body = resp.json()
         assert body["token"] == "device-jwt"
         assert body["device_machine_key"] is None
+
+
+# ---------------------------------------------------------------------------
+# POST /{id}/machine-credential/self-mint — live PAIRED device JWT, own device
+#
+# Plan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.
+# The auth dep (``deps.get_paired_device``) runs for real; only the JWKS
+# verification (``deps._verify_device_jwt`` / ``coord_jwks_client``) and the
+# DB reads are stubbed.
+# ---------------------------------------------------------------------------
+
+
+_TENANT_ID = uuid4()
+
+
+def _device_claims(**overrides):
+    claims = {
+        "sub": f"device:{_DEVICE_ID}",
+        "sub_type": "device",
+        "device_id": str(_DEVICE_ID),
+        "user_id": str(_USER_ID),
+        "tenant_id": str(uuid4()),  # a slot tenant — must NOT be used
+        "mint_provenance": "paired",
+    }
+    claims.update(overrides)
+    return {k: v for k, v in claims.items() if v is not None}
+
+
+class TestSelfMintEndpoint:
+    _URL = f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/self-mint"
+    _AUTH = {"Authorization": "Bearer device-jwt"}
+
+    def _app(self) -> FastAPI:
+        from app.api.deps import get_async_db
+        from app.api.v1.endpoints.devices import router
+
+        app = FastAPI()
+        app.dependency_overrides[get_async_db] = _fake_db
+        app.include_router(router, prefix=API_PREFIX)
+        return app
+
+    def _verify(self, claims):
+        return patch(
+            "app.api.deps._verify_device_jwt",
+            AsyncMock(return_value=(claims, _mock_user())),
+        )
+
+    def _device_row(self, user_id=_USER_ID, tenant_id=_TENANT_ID):
+        from app.crud import device_crud
+
+        return patch.object(
+            device_crud,
+            "get_device_owner_and_tenant",
+            AsyncMock(return_value=(user_id, tenant_id)),
+        )
+
+    def _mint(self):
+        cred = MagicMock()
+        cred.dmk_prefix = "dmk_selfmint12"
+        cred.expires_at = datetime.now(UTC) + timedelta(days=60)
+        return patch.object(
+            dmk_crud,
+            "mint",
+            AsyncMock(return_value=("dmk_self-minted-secret", cred)),
+        )
+
+    def _existing(self, cred=None):
+        return patch.object(dmk_crud, "get_by_device", AsyncMock(return_value=cred))
+
+    def test_matching_live_device_jwt_mints(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._device_row(),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["device_id"] == str(_DEVICE_ID)
+        assert body["device_machine_key"] == "dmk_self-minted-secret"
+        assert body["prefix"] == "dmk_selfmint12"
+        assert body["expires_at"] is not None
+        kwargs = mock_mint.call_args.kwargs
+        assert kwargs["device_id"] == _DEVICE_ID
+        assert kwargs["owner_user_id"] == _USER_ID
+        # Home tenant from coord.devices, never the token's slot claim.
+        assert kwargs["tenant_id"] == _TENANT_ID
+        # Normal TTL: the helper does not override the crud default.
+        assert "ttl_days" not in kwargs
+
+    def test_existing_unexpired_key_is_rotated(self) -> None:
+        client = TestClient(self._app())
+        live = DeviceMachineCredential(
+            device_id=_DEVICE_ID,
+            dmk_hash="x",
+            dmk_prefix="dmk_x",
+            expires_at=datetime.now(UTC) + timedelta(days=50),
+        )
+        with (
+            self._verify(_device_claims()),
+            self._device_row(),
+            self._existing(live),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 201, resp.text
+        mock_mint.assert_awaited_once()
+
+    def test_expired_device_jwt_is_401(self) -> None:
+        from app.services.coord_jwks import CoordTokenExpiredError, coord_jwks_client
+
+        client = TestClient(self._app())
+        with (
+            patch.object(
+                coord_jwks_client,
+                "verify_token",
+                AsyncMock(side_effect=CoordTokenExpiredError("token expired")),
+            ),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 401, resp.text
+        mock_mint.assert_not_called()
+
+    def test_no_auth_is_401(self) -> None:
+        client = TestClient(self._app())
+        with self._mint() as mock_mint:
+            resp = client.post(self._URL)
+        assert resp.status_code == 401, resp.text
+        mock_mint.assert_not_called()
+
+    def test_foreign_device_id_is_403(self) -> None:
+        client = TestClient(self._app())
+        other = uuid4()
+        with (
+            self._verify(_device_claims(device_id=str(other), sub=f"device:{other}")),
+            self._device_row(),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_mismatch"
+        mock_mint.assert_not_called()
+
+    @pytest.mark.parametrize("provenance", ["bootstrap", "unknown", None])
+    def test_non_paired_provenance_is_403(self, provenance) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims(mint_provenance=provenance)),
+            self._device_row(),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_token_provenance_refused"
+        mock_mint.assert_not_called()
+
+    @pytest.mark.parametrize("sub_type", ["agent", "attach_grant", "create_grant"])
+    def test_non_device_principal_is_403(self, sub_type) -> None:
+        # The anonymous /agents/credential mint names the device in ``sub``
+        # but is an ``agent``; grants carry their SOURCE device_id.
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims(sub_type=sub_type)),
+            self._device_row(),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "not_a_device_principal"
+        mock_mint.assert_not_called()
+
+    def test_device_owned_by_another_user_is_403(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._device_row(user_id=uuid4()),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_not_owned"
+        mock_mint.assert_not_called()
+
+    def test_unknown_device_is_403(self) -> None:
+        from app.crud import device_crud
+
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            patch.object(
+                device_crud,
+                "get_device_owner_and_tenant",
+                AsyncMock(return_value=None),
+            ),
+            self._existing(),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        mock_mint.assert_not_called()
+
+    def test_revoked_key_is_not_reminted(self) -> None:
+        client = TestClient(self._app())
+        revoked = DeviceMachineCredential(
+            device_id=_DEVICE_ID,
+            dmk_hash="x",
+            dmk_prefix="dmk_x",
+            expires_at=datetime.now(UTC) + timedelta(days=10),
+            revoked_at=datetime.now(UTC),
+        )
+        with (
+            self._verify(_device_claims()),
+            self._device_row(),
+            self._existing(revoked),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_machine_key_revoked"
+        mock_mint.assert_not_called()
