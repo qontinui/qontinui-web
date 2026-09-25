@@ -15,6 +15,8 @@
  *   must be exactly `true`, and a usable `current_slug` must be present;
  * - deleting the historical row still sends the STORED `tenant_slug` — the
  *   DELETE key is what coord stored, not what the tenant is called today;
+ * - the collapsed panel header counts the historical rows, so they are
+ *   noticeable without opening the table that carries their hint;
  * - "Move to <current_slug>" POSTs under the current slug FIRST and deletes
  *   the stored row only after that landed, so a failed create never drops
  *   the grant, and a failed delete is reported as leaving the old row behind.
@@ -136,6 +138,10 @@ let postStatus = 200;
 let deleteStatus = 200;
 /** Rows appended to the listing for one test. */
 let extraRows: Array<Record<string, unknown>> = [];
+/** When set, REPLACES the listing's fixture rows for one test. */
+let listRows: Array<Record<string, unknown>> | null = null;
+/** Status of the listing GET; non-200 makes the read fail. */
+let listStatus = 200;
 
 beforeEach(() => {
   localStorage.clear();
@@ -146,6 +152,8 @@ beforeEach(() => {
   postStatus = 200;
   deleteStatus = 200;
   extraRows = [];
+  listRows = null;
+  listStatus = 200;
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     const path = url.replace(/^https?:\/\/[^/]+/, "");
@@ -160,8 +168,11 @@ beforeEach(() => {
         mutations.push("POST");
         return jsonResponse(postStatus, postStatus === 200 ? {} : { detail: "create boom" });
       }
+      if (listStatus !== 200) {
+        return jsonResponse(listStatus, { detail: "list boom" });
+      }
       return jsonResponse(200, {
-        group_tenant_roles: [
+        group_tenant_roles: listRows ?? [
           HISTORICAL,
           CURRENT,
           LEGACY,
@@ -406,5 +417,78 @@ describe("historical-slug group mappings", () => {
       tenant_slug: "acme-renamed",
       auto_create_tenant: false,
     });
+  });
+
+  it("counts historical rows on the collapsed panel header", async () => {
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openAdvanced(user_);
+    // Only HISTORICAL qualifies: the flag without a usable current_slug, and
+    // a differing current_slug without the flag, are not counted.
+    const badge = await screen.findByTestId(
+      "coord-group-roles-historical-summary"
+    );
+    expect(badge).toHaveTextContent("1 on a renamed slug");
+    expect(screen.queryByTestId("coord-group-roles-table")).toBeNull();
+  });
+
+  it("shows no historical count when no row is historical", async () => {
+    listRows = [CURRENT, LEGACY, NOT_FLAGGED_DIFFERING];
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openAdvanced(user_);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-group-roles-summary")).toHaveTextContent(
+        "3"
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-group-roles-historical-summary")
+    ).toBeNull();
+  });
+
+  it("clears the historical count once Move re-points the row", async () => {
+    const { user_ } = await openMappingsTable();
+    expect(
+      screen.getByTestId("coord-group-roles-historical-summary")
+    ).toHaveTextContent("1 on a renamed slug");
+    // What the reload after a successful move lists: the row now lives under
+    // the current slug.
+    listRows = [
+      { ...HISTORICAL, tenant_slug: "acme-renamed", historical_slug: false },
+      CURRENT,
+    ];
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-group-roles-summary")).toHaveTextContent(
+        "2"
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-group-roles-historical-summary")
+    ).toBeNull();
+  });
+
+  it("hides the historical count when a reload fails", async () => {
+    // A failed read leaves the previous rows in state; the count must not
+    // keep asserting them beside a summary that now says "unknown".
+    const { user_ } = await openMappingsTable();
+    expect(
+      screen.getByTestId("coord-group-roles-historical-summary")
+    ).toBeInTheDocument();
+    listStatus = 500;
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-group-roles-summary")).toHaveTextContent(
+        "unknown"
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-group-roles-historical-summary")
+    ).toBeNull();
   });
 });

@@ -1750,6 +1750,13 @@ function GroupTenantRolesSection({
     [load, rows]
   );
 
+  // Only a settled, successful read counts — a failed or loading read has no
+  // rows to judge, and the count badge already says "unknown" / "–" for it.
+  const historicalCount =
+    loading || error
+      ? 0
+      : rows.filter((r) => historicalRenameTarget(r) !== null).length;
+
   return (
     // R7 — infrastructural SSO wiring, below the members table and behind a
     // click. The mapping COUNT stays on the header while closed: an empty
@@ -1762,6 +1769,7 @@ function GroupTenantRolesSection({
       defaultOpen={false}
       storageKey="coord-members-group-roles"
       summary={(
+        <>
         <Badge
           variant="outline"
           className={`font-mono text-[11px]${
@@ -1780,6 +1788,20 @@ function GroupTenantRolesSection({
               false `0` worth closing. */}
           {loading ? "–" : error ? "unknown" : rows.length}
         </Badge>
+        {/* A historical-slug row still grants at every login, and its hint and
+            "Move to" button live in the table this panel hides by default —
+            so the header says how many there are, as it does for the count. */}
+        {historicalCount > 0 ? (
+          <Badge
+            variant="outline"
+            className="font-mono text-[11px] text-amber-600 dark:text-amber-400"
+            title="Mappings stored under a slug their tenant was renamed away from. Open this panel and use “Move to” on each."
+            data-testid="coord-group-roles-historical-summary"
+          >
+            {historicalCount} on a renamed slug
+          </Badge>
+        ) : null}
+        </>
       )}
       contentClassName="space-y-4"
     >
