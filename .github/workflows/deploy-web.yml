@@ -362,7 +362,7 @@ jobs:
           if path.exists():
               cfg = tomllib.loads(path.read_text())
               for p in cfg.get("deploy", {}).get("health_probes") or []:
-                  if rollback and p.get("skip_on_rollback"):
+                  if rollback and p.get("skip_on_rollback") is True:
                       continue
                   out = {
                       "endpoint": p["endpoint"],
