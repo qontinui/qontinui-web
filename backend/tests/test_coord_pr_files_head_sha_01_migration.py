@@ -2,7 +2,7 @@
 
 The revision adds one nullable column to ``coord.pr_files`` and one index::
 
-    ALTER TABLE coord.pr_files ADD COLUMN head_sha TEXT
+    ALTER TABLE coord.pr_files ADD COLUMN IF NOT EXISTS head_sha TEXT
 
     CREATE INDEX CONCURRENTLY idx_pr_files_repo_pr_head
     ON coord.pr_files (repo, pr_number, head_sha)
@@ -78,6 +78,11 @@ _REVISION_ID = "coord_pr_files_head_sha_01"
 _PARENT_REVISION_ID = "coord_wu_authored_at_02"
 _REVISION_FILENAME = "coord_pr_files_head_sha_01_head_pinned_file_rows.py"
 
+# The one statement in upgrade() that legitimately spells the SQL keyword
+# DEFAULT — the lock-guard restore. See
+# `test_the_upgrade_adds_no_default_and_no_backfill`.
+_LOCK_GUARD_RESTORE = 'op.execute("SET LOCAL lock_timeout = DEFAULT")'
+
 _INDEX_NAME = "idx_pr_files_repo_pr_head"
 # The index this revision must NOT disturb: the deployed coord build reads by
 # (repo, pr_number) alone, so it is still load-bearing.
@@ -136,8 +141,8 @@ def test_the_down_revision_is_on_one_line() -> None:
         r'^down_revision[^=\n]*=\s*["\'][^"\'\n]+["\']\s*$', source, re.MULTILINE
     ), (
         f"{_REVISION_FILENAME} must declare down_revision as a single-line "
-        "string literal; a wrapped or parenthesised spelling is invisible to "
-        "the line-scoped graph parser and reads as a second head."
+        "string literal; a wrapped or parenthesised spelling yields no parent "
+        "to coord's line-scoped graph parser at all."
     )
 
 
@@ -153,7 +158,20 @@ def test_the_upgrade_adds_no_default_and_no_backfill() -> None:
     """
     source = _revision_source()
     upgrade = source.split("def upgrade()", 1)[1].split("def downgrade()", 1)[0]
-    assert "DEFAULT" not in upgrade.upper(), (
+
+    # `DEFAULT` has one legitimate occurrence in the upgrade: the lock-guard
+    # restore, which spells the SQL keyword for an unrelated reason. Exempt
+    # exactly that statement and the prose around it, so the assertion still
+    # reads the DDL. The exemption is guarded rather than assumed — if the
+    # restore is ever renamed or removed this test says so instead of
+    # silently widening.
+    assert upgrade.count(_LOCK_GUARD_RESTORE) == 1, (
+        f"expected exactly one {_LOCK_GUARD_RESTORE!r} in upgrade(); the "
+        "DEFAULT exemption below is scoped to it, so a change here must be "
+        "made deliberately"
+    )
+    ddl = re.sub(r"#[^\n]*", "", upgrade).replace(_LOCK_GUARD_RESTORE, "")
+    assert "DEFAULT" not in ddl.upper(), (
         "head_sha must have no default — an existing row's head is UNKNOWN"
     )
     assert "UPDATE" not in upgrade.upper(), (
