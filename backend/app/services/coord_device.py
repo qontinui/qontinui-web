@@ -23,6 +23,9 @@ Endpoints (all GET, bearer-authed, + ``x-qontinui-user-id`` header):
 * ``GET /coord/devices/by-user`` → ``{"devices": [<row>...], "count": N}``
   — the user's paired devices (each a full ``coord.devices`` row as JSON).
 * ``GET /coord/devices/:id/owned`` → ``<row>``, 404 if not owned.
+* ``GET /coord/devices/:id/state`` → the device's liveness row, including
+  its ``tenant_id``; the one read here authorized by a forwarded **device**
+  JWT rather than an operator bearer (the dmk ``/self-mint`` route).
 
 Transport failures map to 502 (ConnectError) / 504 (TimeoutException),
 the same posture as ``operations.py::_proxy_coord_get`` and
@@ -225,4 +228,38 @@ async def get_owned_device(
     raise HTTPException(
         status_code=502,
         detail="coord /coord/devices/:id/owned returned a non-object payload",
+    )
+
+
+async def get_device_state(
+    device_id: str | UUID,
+    *,
+    device_bearer: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    """Return coord's ``GET /coord/devices/:id/state`` row, or ``None`` on 404.
+
+    Unlike the reads above this is authorized by a **device** JWT, forwarded
+    verbatim: coord gates the route on ``FleetPrincipal``, which accepts an
+    operator bearer or a device JWT carrying a ``tenant_id`` claim. The row's
+    ``tenant_id`` is the same ``coord.devices.tenant_id`` column
+    ``GET /coord/devices/:id/owned`` returns to an operator. ``user_id`` only
+    fills the header ``_get`` always sends; this route ignores it.
+
+    Same transport posture as the other reads: 502 unreachable, 504 timeout,
+    502 ``upstream_error`` on a coord 5xx, coord's own 4xx verbatim.
+    """
+    payload = await _get(
+        f"/coord/devices/{device_id}/state",
+        bearer=device_bearer,
+        user_id=user_id,
+        allow_404=True,
+    )
+    if payload is None:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    raise HTTPException(
+        status_code=502,
+        detail="coord /coord/devices/:id/state returned a non-object payload",
     )

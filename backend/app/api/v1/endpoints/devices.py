@@ -1195,9 +1195,13 @@ async def self_mint_device_machine_credential(
 
     * the token's ``device_id`` claim MUST equal the path → else 403
       ``device_mismatch``. A device mints only its own key.
-    * the ``coord.devices`` row must exist and its ``user_id`` equal the
-      token's ``user_id`` → else 403 ``device_not_owned``. The key's owner is
-      that user, exactly as the user-bearer route records it.
+    * coord must know the device: ``GET /coord/devices/{id}/state``,
+      forwarding the caller's verified device JWT (5 s budget). A 404 → 403
+      ``device_not_owned``; a row naming a different ``device_id`` → 403
+      ``device_mismatch``; coord refusing the forwarded token (401/403) → 403
+      ``coord_refused_device_token``; coord unreachable, timed out, or 5xx →
+      **503**, and nothing is minted — an unanswered lookup is UNKNOWN, never
+      a licence to mint.
     * an existing key that an operator REVOKED is not re-minted → 403
       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
       on rotation, so without this a device could undo its own revocation;
@@ -1211,12 +1215,26 @@ async def self_mint_device_machine_credential(
     undone and two concurrent self-mints cannot both rotate (the second sees
     the first's fresh key and gets the 409).
 
-    **Tenant**: the device's home tenant, ``coord.devices.tenant_id`` — the
-    same column the user-bearer route reads through coord's ``/owned`` (which
-    refuses a device JWT, hence the direct read; see
-    :func:`device_crud.get_device_owner_and_tenant`). The token's own
+    **Owner**: the verified device JWT's ``user_id`` claim. Coord writes that
+    claim from ``coord.devices.user_id`` on every mint path — pairing
+    (``pair-complete`` / ``pair-cli`` mint for the user they bind to the
+    device), ``service-mint`` (reads the row), and refresh (carries the
+    claim forward). The read boundary forbids web reading ``coord.devices``
+    directly, and no coord read route that accepts a device JWT returns the
+    owner, so the claim is the owner source. Its one gap: a device RE-PAIRED
+    to another user leaves the old user's still-unexpired tokens live, and
+    such a token can enrol a key recorded under the old user until it
+    expires. That key is still bound to this device and nothing more, and
+    ``/exchange`` → coord ``service-mint`` re-resolves the owner and tenant
+    from ``coord.devices`` itself, so the JWT it yields is the CURRENT
+    owner's — the stale owner field grants nothing.
+
+    **Tenant**: the ``tenant_id`` of coord's ``/state`` row — the same
+    ``coord.devices.tenant_id`` column the user-bearer route reads through
+    ``/owned`` (which accepts only an operator bearer). The token's own
     ``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it
-    names whichever tenant slot the token was minted for, not the home tenant.
+    names whichever tenant slot the token was minted for. The stored tenant
+    is a label on the key; ``/exchange`` does not read it.
 
     **When it mints**: only when the device has no key, or its key is expired
     or within 7 days of expiry. The new key gets the normal
@@ -1249,16 +1267,7 @@ async def self_mint_device_machine_credential(
             },
         )
 
-    owner_and_tenant = await device_crud.get_device_owner_and_tenant(db, device_id)
-    if owner_and_tenant is None or owner_and_tenant[0] != device_ctx.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "device_not_owned",
-                "message": "This device is not paired to the token's user.",
-            },
-        )
-    _owner_user_id, tenant_id = owner_and_tenant
+    tenant_id = await _self_mint_device_tenant(device_ctx, device_id)
 
     try:
         return await _mint_machine_credential(
@@ -1292,6 +1301,79 @@ async def self_mint_device_machine_credential(
                     "expiring key. Replace a lost key with the owner's /mint."
                 ),
             },
+        ) from exc
+
+
+async def _self_mint_device_tenant(
+    device_ctx: DeviceTokenContext, device_id: UUID
+) -> UUID:
+    """Ask coord for the device's ``tenant_id`` (``GET /coord/devices/:id/state``)
+    on the caller's own verified device JWT, mapping every non-answer to a
+    refusal. See :func:`self_mint_device_machine_credential` for the table.
+    """
+    if not device_ctx.token:
+        # get_paired_device always sets it; a context without one is a wiring
+        # bug, and minting on an unverifiable lookup is not an option.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Device token unavailable for the coord lookup.",
+        )
+    try:
+        row = await coord_device.get_device_state(
+            device_id,
+            device_bearer=device_ctx.token,
+            user_id=str(device_ctx.user_id),
+        )
+    except HTTPException as exc:
+        if exc.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "coord_refused_device_token",
+                    "message": "Coord refused this device token.",
+                },
+            ) from exc
+        logger.warning(
+            "device_machine_credential_self_mint_coord_unavailable",
+            device_id=str(device_id),
+            status=exc.status_code,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "coord_device_lookup_unavailable",
+                "message": (
+                    "Coord could not confirm this device; nothing was minted. "
+                    "Retry later."
+                ),
+            },
+        ) from exc
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_not_owned",
+                "message": "Coord does not know this device.",
+            },
+        )
+    if str(row.get("device_id")) != str(device_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_mismatch",
+                "message": "Coord answered for a different device.",
+            },
+        )
+    try:
+        return UUID(str(row.get("tenant_id")))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord device state carried no usable tenant_id.",
         ) from exc
 
 

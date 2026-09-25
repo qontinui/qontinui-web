@@ -146,9 +146,14 @@ class DeviceTokenContext:
     Endpoints that only need the user can use :func:`get_authenticated_device_user`.
     """
 
-    def __init__(self, claims: dict, user: User) -> None:
+    def __init__(self, claims: dict, user: User, token: str | None = None) -> None:
         self.claims = claims
         self.user = user
+        #: The verified bearer itself, when the dependency that built this
+        #: context kept it (:func:`get_paired_device` does) — so a route that
+        #: forwards the caller's credential to coord forwards exactly the
+        #: token that was verified, never a cookie or a second header.
+        self.token = token
 
     @property
     def device_id(self) -> UUID:
@@ -529,7 +534,9 @@ async def get_paired_device(
                 ),
             },
         )
-    context = DeviceTokenContext(claims=claims, user=device_user)
+    context = DeviceTokenContext(
+        claims=claims, user=device_user, token=credentials.credentials
+    )
     # Eager: raises the 401 for a token without a usable device_id claim.
     _ = context.device_id
     return context
