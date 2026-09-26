@@ -2026,10 +2026,16 @@ async def get_pr_merge_onboarding_doctor(
     "detail", "remediation"}], "summary": {"pass", "warn", "fail",
     "skip", "ready_to_land"}}``
 
-    with the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /
-    profile_present / merge_enabled / config_yaml / bootstrap_pr /
-    ci_workflow / ruleset_bypass`` and ``status`` in
-    ``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``
+    with coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /
+    repo_archived / profile_present / merge_enabled / config_yaml /
+    bootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /
+    config_yml_current`` (ids are stable and append-only, but NOT positional
+    -- key on ``id``, never on index) and ``status`` in
+    ``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of
+    them passing: ``tenant_mapped / repo_enrolled / profile_present /
+    merge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``
+    (``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and
+    ``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``
     page (the GitHub App's post-install Setup URL target). Operator
     bearer forwarded; coord scopes by the bearer's tenant.
     """

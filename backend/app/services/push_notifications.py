@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.push_device import PushDevice
-from app.models.workflow_event import WorkflowEvent
+from app.models.workflow_event import WorkflowEvent, is_telemetry
 
 logger = structlog.get_logger(__name__)
 
@@ -155,7 +155,18 @@ async def dispatch_push_for_event(db: AsyncSession, event: WorkflowEvent) -> Non
 
     Looks up the user's push tokens and sends a notification via Expo.
     This should be called as a background task after event ingestion.
+
+    Telemetry event types (``is_telemetry``) never send a push: they return
+    before the token lookup.
     """
+    if is_telemetry(str(event.event_type)):
+        logger.debug(
+            "push_skipped_telemetry_event",
+            user_id=event.user_id,
+            event_type=event.event_type,
+        )
+        return
+
     tokens = await get_user_push_tokens(db, event.user_id)
     if not tokens:
         logger.debug(
