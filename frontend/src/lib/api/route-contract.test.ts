@@ -14,9 +14,6 @@
  * snapshot. Fix the client.
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface Captured {
@@ -55,15 +52,10 @@ import {
   getScreenshotUrl,
   getStateScreenshots,
 } from "./integration-testing";
+import { loadSnapshotPaths } from "./route-walker";
 
-const SNAPSHOT_PATH = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../api-client/openapi-schema.json"
-);
-
-const SNAPSHOT_PATHS: Record<string, Record<string, unknown>> = JSON.parse(
-  readFileSync(SNAPSHOT_PATH, "utf8")
-).paths;
+/** Parsed once through the shared loader `route-walker.test.ts` also uses. */
+const SNAPSHOT_PATHS = loadSnapshotPaths();
 
 /** Concrete values the cases pass for path parameters. */
 const DISCOVERY_ID = "11111111-2222-3333-4444-555555555555";
