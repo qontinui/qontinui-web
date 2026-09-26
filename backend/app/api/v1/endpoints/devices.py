@@ -1198,11 +1198,13 @@ async def self_mint_device_machine_credential(
     * coord must know the device: ``GET /coord/devices/{id}/state``,
       forwarding the caller's verified device JWT (5 s budget). A 404 → 403
       ``device_not_owned``; a row naming a different ``device_id`` → 403
-      ``device_mismatch``; coord refusing the forwarded token (401/403) → 403
-      ``coord_refused_device_token``; coord unreachable, timed out, any other
-      transport failure, or 5xx → **503** ``coord_device_lookup_unavailable``;
-      a 200 that is not a JSON object, or whose ``tenant_id`` is missing,
-      null or unparseable → **502** ``coord_device_state_malformed``. In every
+      ``device_mismatch``; coord refusing the forwarded token (401/403 or
+      any other non-404 4xx except 429) → 403 ``coord_refused_device_token``;
+      coord unreachable, timed out, any other transport failure, a 5xx, or a
+      429 rate limit → **503** ``coord_device_lookup_unavailable``; any
+      status below 400 other than 200, a 200 that is not a JSON object, or a
+      row whose ``tenant_id`` is missing, null or unparseable → **502**
+      ``coord_device_state_malformed``. In every
       one of these nothing is minted — an unanswered or unreadable lookup is
       UNKNOWN, never a licence to mint.
     * an existing key that an operator REVOKED is not re-minted → 403
