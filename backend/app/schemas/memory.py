@@ -576,13 +576,17 @@ class MemoryQueryResponse(BoundedReadMeta):
     ``anchored_hits`` is a separate ranked list with its own arm and is not
     covered by them.
 
-    * ``truncated`` — the fused candidate pool held more ids than ``limit``.
-    * ``bound_kind`` — ``exact`` (``total`` = the fused pool size) when no
-      retrieval arm filled its per-arm cap (``memory_store.ARM_LIMIT``), so
-      the pool is the whole match set; ``at_least`` (``total: null``) when an
-      arm filled it, so matches may exist that no arm returned; ``unknown``
-      when an arm filled it but the page shows the whole pool, so whether
-      more exist did not resolve.
+    * ``truncated`` — the fused candidate pool held more ids than ``limit``
+      (judged against the cut, not against ``shown``: a pooled id whose row
+      was not fetched is not "more beyond this page").
+    * ``bound_kind`` — ``exact`` (``total`` = the fused pool size, deduplicated
+      across arms) when no retrieval arm was capped, so the pool is the whole
+      match set; ``at_least`` (``total: null``) when an arm was capped, so
+      matches may exist that no arm returned; ``unknown`` when an arm was
+      capped but the page shows the whole pool, so whether more exist did not
+      resolve. The vector and FTS arms count as capped when they returned
+      ``memory_store.ARM_LIMIT`` ids; the link arm counts as capped whenever
+      it ran (``link_arm == "expanded"``), see below.
     * ``next_cursor`` — ALWAYS ``null``. The order is a computed relevance
       score that moves with every write, so a ranking is not pageable.
     * ``enumerate_via`` — ALWAYS :data:`MEMORY_ENUMERATION_DOOR`
@@ -594,10 +598,12 @@ class MemoryQueryResponse(BoundedReadMeta):
     ``total`` counts CANDIDATES, not relevance: the vector arm has no
     similarity floor, so on a hybrid query every embedded live row that
     passes the filters is a candidate, and a tenant with ``ARM_LIMIT`` or
-    more of them always reads ``at_least``. Saturation is judged on each
-    arm's returned list; the link arm's per-seed fan-out cap is not probed
-    separately, so link neighbours count only as far as the expansion
-    reached them.
+    more of them always reads ``at_least``. Saturation of the vector and
+    FTS arms is judged on each arm's returned list. The link arm's per-seed
+    fan-out cap is applied BEFORE the record filters, so a cut seed cannot be
+    seen in the filtered list; an expanded query is therefore always treated
+    as capped (``at_least`` / ``unknown``, never ``exact``) — the safe
+    direction.
 
     ``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only
     results must never be indistinguishable from hybrid ones. Its three

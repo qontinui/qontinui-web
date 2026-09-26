@@ -24,6 +24,7 @@ from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
 from app.core import bounded_read
 from app.services import memory_store
+from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 
 META_KEYS = {
     "count",
@@ -63,17 +64,39 @@ def _row(memory_id: UUID) -> dict[str, Any]:
     }
 
 
-def _client(monkeypatch: pytest.MonkeyPatch, fts_ids: list[UUID]) -> TestClient:
-    """A client whose FTS arm returns ``fts_ids`` (the vector arm is skipped:
-    no query embedding is sent, so ``vector_arm`` is ``skipped_no_embedding``)."""
+def _client(
+    monkeypatch: pytest.MonkeyPatch,
+    fts_ids: list[UUID],
+    *,
+    vector_ids: list[UUID] | None = None,
+    link_ids: list[UUID] | None = None,
+    missing: frozenset[UUID] = frozenset(),
+) -> TestClient:
+    """A client whose FTS arm returns ``fts_ids``.
+
+    ``vector_ids`` stubs the vector arm (the request must then carry a
+    ``query_embedding``; see :func:`_query`), ``link_ids`` stubs the link
+    arm (the request must set ``link_expansion``), and ``missing`` names
+    pooled ids whose row ``fetch_records`` does not return — a record
+    tombstoned between the arm and the fetch.
+    """
 
     async def _fts_search(*_a: Any, **_k: Any) -> list[UUID]:
         return list(fts_ids)
 
+    async def _has_unmigrated_vectors(*_a: Any, **_k: Any) -> bool:
+        return False
+
+    async def _vector_search(*_a: Any, **_k: Any) -> list[tuple[UUID, float]]:
+        return [(i, 0.9) for i in vector_ids or []]
+
+    async def _link_expansion(*_a: Any, **_k: Any) -> list[UUID]:
+        return list(link_ids or [])
+
     async def _fetch_records(
         _db: Any, _tenant: UUID, ids: list[UUID]
     ) -> dict[UUID, dict[str, Any]]:
-        return {i: _row(i) for i in ids}
+        return {i: _row(i) for i in ids if i not in missing}
 
     async def _bump_access(*_a: Any, **_k: Any) -> None:
         return None
@@ -82,6 +105,9 @@ def _client(monkeypatch: pytest.MonkeyPatch, fts_ids: list[UUID]) -> TestClient:
         return LIVE_ROWS
 
     monkeypatch.setattr(memory_store, "fts_search", _fts_search)
+    monkeypatch.setattr(memory_store, "has_unmigrated_vectors", _has_unmigrated_vectors)
+    monkeypatch.setattr(memory_store, "vector_search", _vector_search)
+    monkeypatch.setattr(memory_store, "link_expansion", _link_expansion)
     monkeypatch.setattr(memory_store, "fetch_records", _fetch_records)
     monkeypatch.setattr(memory_store, "bump_access", _bump_access)
     monkeypatch.setattr(memory_store, "live_row_count", _live_row_count)
@@ -98,13 +124,23 @@ def _client(monkeypatch: pytest.MonkeyPatch, fts_ids: list[UUID]) -> TestClient:
     return TestClient(app)
 
 
-def _query(client: TestClient, limit: int) -> dict[str, Any]:
-    resp = client.post(
-        "/api/v1/memory/query", json={"query_text": "anything", "limit": limit}
-    )
+def _query(
+    client: TestClient,
+    limit: int,
+    *,
+    with_embedding: bool = False,
+    link_expansion: bool = False,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"query_text": "anything", "limit": limit}
+    if with_embedding:
+        body["query_embedding"] = [0.0] * EMBEDDING_DIM
+        body["query_embedding_model"] = EMBEDDING_MODEL_TAG
+    if link_expansion:
+        body["link_expansion"] = True
+    resp = client.post("/api/v1/memory/query", json=body)
     assert resp.status_code == 200, resp.text
-    body: dict[str, Any] = resp.json()
-    return body
+    answer: dict[str, Any] = resp.json()
+    return answer
 
 
 def test_uncapped_pool_larger_than_limit_is_exact_and_truncated(
@@ -191,21 +227,123 @@ def test_every_key_is_present_and_legacy_fields_unchanged(
     assert body.keys() == META_KEYS | LEGACY_KEYS
 
 
+def test_saturated_vector_arm_is_at_least(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The FTS arm is small; only the VECTOR arm filled ARM_LIMIT.
+    vector = [uuid4() for _ in range(memory_store.ARM_LIMIT)]
+    fts = [uuid4() for _ in range(3)]
+    body = _query(
+        _client(monkeypatch, fts, vector_ids=vector), limit=10, with_embedding=True
+    )
+    assert body["vector_arm"] == "hybrid"
+    assert body["bound_kind"] == "at_least"
+    assert body["total"] is None
+    assert body["truncated"] is True
+    assert body["next_cursor"] is None
+    assert body["enumerate_via"] == "GET /api/v1/memory/records"
+
+
+def test_expanded_link_arm_is_at_least_even_when_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every arm is far below ARM_LIMIT, which WOULD read exact — but the link
+    # arm cuts each seed's fan-out before filtering, so a capped seed cannot
+    # be seen in its list, and an expanded query must not claim exactness.
+    fts = [uuid4() for _ in range(6)]
+    links = [uuid4() for _ in range(2)]
+    body = _query(
+        _client(monkeypatch, fts, link_ids=links), limit=3, link_expansion=True
+    )
+    assert body["link_arm"] == "expanded"
+    assert body["bound_kind"] == "at_least"
+    assert body["total"] is None
+    assert body["truncated"] is True
+
+
+def test_expanded_link_arm_shown_whole_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fts = [uuid4() for _ in range(2)]
+    links = [uuid4()]
+    body = _query(
+        _client(monkeypatch, fts, link_ids=links), limit=10, link_expansion=True
+    )
+    assert body["link_arm"] == "expanded"
+    assert len(body["hits"]) == 3
+    assert body["bound_kind"] == "unknown"
+    assert body["truncated"] is None
+    assert body["total"] is None
+
+
+def test_link_arm_without_seeds_does_not_force_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No seeds -> no expansion query ran -> nothing was cut unseen.
+    body = _query(_client(monkeypatch, []), limit=5, link_expansion=True)
+    assert body["link_arm"] == "skipped_no_seeds"
+    assert body["bound_kind"] == "exact"
+    assert body["total"] == 0
+
+
+def test_total_is_the_deduplicated_union_across_arms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared = [uuid4() for _ in range(3)]
+    vector_only = [uuid4() for _ in range(2)]
+    fts_only = [uuid4() for _ in range(4)]
+    body = _query(
+        _client(monkeypatch, shared + fts_only, vector_ids=shared + vector_only),
+        limit=50,
+        with_embedding=True,
+    )
+    # 5 vector + 7 FTS returned ids, 3 in both: the pool is 9, not 12.
+    assert body["bound_kind"] == "exact"
+    assert body["total"] == 9
+    assert len(body["hits"]) == 9
+    assert len({h["memory_id"] for h in body["hits"]}) == 9
+    assert body["truncated"] is False
+
+
+def test_truncated_is_judged_against_limit_not_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The pool is exactly `limit`; one pooled row vanished before the fetch,
+    # so `shown` is limit - 1. Nothing lies past the cut, so not truncated.
+    pool = [uuid4() for _ in range(5)]
+    body = _query(_client(monkeypatch, pool, missing=frozenset({pool[2]})), limit=5)
+    assert len(body["hits"]) == 4
+    assert body["shown"] == 4
+    assert body["total"] == 5
+    assert body["bound_kind"] == "exact"
+    assert body["truncated"] is False
+
+
 # ---------------------------------------------------------------------------
 # The builders themselves (app.core.bounded_read)
 # ---------------------------------------------------------------------------
 
 
 def test_from_probe_mirrors_rust_page_from_probe() -> None:
-    fired = bounded_read.from_probe(11, 10, "tok")
+    fired = bounded_read.from_probe(11, 10, next_cursor="tok", enumerate_via=None)
     assert (fired.shown, fired.truncated, fired.total) == (10, True, None)
     assert fired.bound_kind == bounded_read.BoundKind.at_least
     assert fired.next_cursor == "tok"
-    full = bounded_read.from_probe(10, 10, "tok")
+    full = bounded_read.from_probe(10, 10, next_cursor="tok", enumerate_via=None)
     assert full.bound_kind == bounded_read.BoundKind.complete
     assert full.truncated is False
-    assert full.next_cursor is None  # never beside truncated: false
+    assert full.next_cursor is None  # no next position: the cursor is unused
     assert fired.enumerate_via is None and full.enumerate_via is None  # a walk
+
+
+def test_from_probe_fired_with_no_way_forward_is_refused() -> None:
+    with pytest.raises(ValueError, match="needs a next_cursor"):
+        bounded_read.from_probe(11, 10, next_cursor=None, enumerate_via=None)
+
+
+def test_from_probe_takes_no_positional_or_defaulted_cursor() -> None:
+    with pytest.raises(TypeError):
+        bounded_read.from_probe(11, 10, "tok")  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        bounded_read.from_probe(11, 10, next_cursor="tok")  # type: ignore[call-arg]
 
 
 def test_not_pageable_mirrors_rust_page_not_pageable() -> None:
@@ -221,27 +359,95 @@ def test_not_pageable_mirrors_rust_page_not_pageable() -> None:
     assert all_.enumerate_via == "GET /memory/records"
 
 
+def _raw_meta(
+    *, truncated: bool | None, next_cursor: str | None, enumerate_via: str | None
+) -> bounded_read.BoundedReadMeta:
+    return bounded_read._meta(
+        shown=1,
+        limit=1,
+        total=None,
+        truncated=truncated,
+        bound_kind=bounded_read.BoundKind.at_least,
+        next_cursor=next_cursor,
+        enumerate_via=enumerate_via,
+    )
+
+
 def test_cursor_beside_enumerate_via_is_refused() -> None:
-    with pytest.raises(ValueError):
-        bounded_read._meta(
-            shown=1,
-            limit=1,
-            total=None,
-            truncated=True,
-            bound_kind=bounded_read.BoundKind.at_least,
-            next_cursor="tok",
-            enumerate_via="door",
-        )
+    with pytest.raises(ValueError, match="cannot name enumerate_via"):
+        _raw_meta(truncated=True, next_cursor="tok", enumerate_via="door")
+
+
+@pytest.mark.parametrize("truncated", [False, None])
+def test_cursor_beside_untruncated_is_refused(truncated: bool | None) -> None:
+    with pytest.raises(ValueError, match="only sit beside truncated=True"):
+        _raw_meta(truncated=truncated, next_cursor="tok", enumerate_via=None)
+
+
+def test_truncated_with_no_way_forward_is_refused() -> None:
+    with pytest.raises(ValueError, match="needs a next_cursor"):
+        _raw_meta(truncated=True, next_cursor=None, enumerate_via=None)
+
+
+@pytest.mark.parametrize(
+    ("truncated", "next_cursor", "enumerate_via"),
+    [
+        (True, "tok", None),  # a walk
+        (True, None, "door"),  # a ranking
+        (False, None, None),
+        (False, None, "door"),
+        (None, None, None),
+        (None, None, "door"),
+    ],
+)
+def test_consistent_states_are_accepted(
+    truncated: bool | None, next_cursor: str | None, enumerate_via: str | None
+) -> None:
+    meta = _raw_meta(
+        truncated=truncated, next_cursor=next_cursor, enumerate_via=enumerate_via
+    )
+    assert (meta.truncated, meta.next_cursor, meta.enumerate_via) == (
+        truncated,
+        next_cursor,
+        enumerate_via,
+    )
+
+
+def test_from_count_requires_a_way_forward_when_truncated() -> None:
+    with pytest.raises(ValueError, match="needs a next_cursor"):
+        bounded_read.from_count(5, 5, 9, next_cursor=None, enumerate_via=None)
+    walk = bounded_read.from_count(5, 5, 9, next_cursor="tok", enumerate_via=None)
+    assert (walk.truncated, walk.total, walk.next_cursor) == (True, 9, "tok")
+    ranked = bounded_read.from_count(5, 5, 9, next_cursor=None, enumerate_via="door")
+    assert (ranked.truncated, ranked.next_cursor, ranked.enumerate_via) == (
+        True,
+        None,
+        "door",
+    )
+    assert ranked.bound_kind == bounded_read.BoundKind.exact
 
 
 def test_from_count_unknown_and_unavailable() -> None:
-    exact = bounded_read.from_count(5, 5, 5)
+    exact = bounded_read.from_count(5, 5, 5, next_cursor="tok", enumerate_via=None)
     assert (exact.truncated, exact.total) == (False, 5)
+    assert exact.next_cursor is None  # not truncated: the cursor is unused
     unk = bounded_read.unknown(2, 10)
     assert unk.truncated is None and unk.total is None
     assert unk.bound_kind == bounded_read.BoundKind.unknown
     down = bounded_read.unavailable(10)
     assert down.available is False and down.shown == 0 and down.truncated is None
+
+
+def test_from_ranked_pool_truncated_compares_pool_to_limit() -> None:
+    # A dropped row makes shown < pool == limit: nothing past the cut.
+    meta = bounded_read.from_ranked_pool(
+        shown=4, limit=5, pool_size=5, pool_capped=False, enumerate_via="door"
+    )
+    assert (meta.truncated, meta.total) == (False, 5)
+    over = bounded_read.from_ranked_pool(
+        shown=5, limit=5, pool_size=6, pool_capped=False, enumerate_via="door"
+    )
+    assert (over.truncated, over.total, over.next_cursor) == (True, 6, None)
 
 
 def test_merge_into_serializes_every_key() -> None:

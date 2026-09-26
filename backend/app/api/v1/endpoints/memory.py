@@ -869,11 +869,19 @@ async def query_records(
     # Bound disclosure (plan 2026-09-05-every-bounded-read-is-a-page-that-
     # reads-as-a-corpus, Phase 3), measured BEFORE the cut below. An arm
     # that returned a full ARM_LIMIT was capped in SQL, so the fused pool
-    # may be missing matches no arm returned; only when no arm filled its
-    # cap is the pool the whole match set. ``link_ids`` is empty when the
-    # arm did not run, so it can never read as saturated then.
-    pool_capped = any(
-        len(arm) >= store.ARM_LIMIT for arm in (vector_ids, fts_ids, link_ids)
+    # may be missing matches no arm returned; only when no arm was capped
+    # is the pool the whole match set.
+    #
+    # The link arm is treated as capped WHENEVER it ran. Its per-seed
+    # LATERAL ``LIMIT :arm_limit`` (``memory_store.link_expansion``) cuts
+    # each seed's neighbours BEFORE the record filters are applied, so a
+    # seed whose fan-out was cut can return far fewer than ARM_LIMIT ids
+    # after filtering — a saturated seed is undetectable from the final
+    # list. Assuming capped is the safe direction: it can only turn an
+    # ``exact`` into ``at_least`` / ``unknown``, never claim a completeness
+    # nothing measured.
+    pool_capped = link_arm == "expanded" or any(
+        len(arm) >= store.ARM_LIMIT for arm in (vector_ids, fts_ids)
     )
 
     # Sliced only AFTER the re-fuse, so a link-only hit can displace a
