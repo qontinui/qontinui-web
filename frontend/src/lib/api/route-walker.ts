@@ -200,21 +200,11 @@ const runtimeValue = (
 const literal = (text: string): Resolved => ({ ok: true, texts: [text] });
 
 /**
- * A substitution named like this carries a query string or suffix, not a
- * path segment: the path is cut where it starts.
- */
-const QUERY_NAME =
-  /^(query|qs|querystring|queryparams|params|searchparams|search|suffix|filters?|urlparams)$/i;
-
-/**
  * Marker for "the backend base URL" (`ApiConfig.API_BASE_URL`, …): resolved
  * to nothing, but remembered, because production sets `NEXT_PUBLIC_API_URL`
  * and such a call reaches the backend, never a Next.js handler.
  */
 const ORIGIN = "\u0000";
-
-/** Marker for "the query string starts here"; cut at by `pathOf`. */
-const QUERY_MARK = "?";
 
 function unwrap(expr: ts.Expression): ts.Expression {
   let e = expr;
@@ -548,8 +538,6 @@ class Resolver {
     ) {
       return this.append(this.append(acc, e.left, leading), e.right, leading);
     }
-    if (!atStart && queryName(e) !== null)
-      return concat(acc, literal(QUERY_MARK));
     const part = this.expr(e, atStart);
     if (part.ok) return concat(acc, part);
     // Only a run-time value may stand in as `{param}`; a declared constant
@@ -604,8 +592,10 @@ class Resolver {
     leading: boolean
   ): Resolved {
     if (!this.args.has(decl)) {
-      // `action: "approve" | "reject"`: the type names every value.
-      const values = literalUnion(decl.type, decl);
+      // `action: "approve" | "reject"`: the type names every value. Not for
+      // an optional one (`action?: "approve"`), which may be `undefined`,
+      // nor a union with `undefined`/`null` (`literalUnion` refuses those).
+      const values = decl.questionToken ? null : literalUnion(decl.type, decl);
       if (values) return { ok: true, texts: values };
       return runtimeValue(`parameter \`${name}\``, decl);
     }
@@ -1119,22 +1109,6 @@ function isOrigin(expr: ts.Expression): boolean {
   return /^(ApiConfig\.(API_BASE_URL|getBaseUrl\(\)|getApiUrl\(\))|process\.env\.NEXT_PUBLIC_API_URL)$/.test(
     text
   );
-}
-
-/** The name a substitution is read from, when it looks like a query string. */
-function queryName(e: ts.Expression): string | null {
-  let target = e;
-  // `params.toString()`
-  if (
-    ts.isCallExpression(target) &&
-    ts.isPropertyAccessExpression(target.expression) &&
-    target.expression.name.text === "toString" &&
-    target.arguments.length === 0
-  ) {
-    target = target.expression.expression;
-  }
-  const name = tailName(target);
-  return name !== null && QUERY_NAME.test(name) ? name : null;
 }
 
 /** Strip scheme+host and the query string/fragment. */

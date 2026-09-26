@@ -156,13 +156,25 @@ function describeEntries(entries: BaselineEntry[]): string {
     .join("\n");
 }
 
+/** A path segment the forwarded URL fills at run time (`${id}`). */
+const FWD_PARAM = "{p}";
+/** A query-string suffix (`${url.search}`, `${qs ? `?${qs}` : ""}`). */
+const FWD_QUERY = "?Q";
+
 /**
- * For each exported `GET`/`POST`/… of a route module: the source text of
- * every `fetch(url, …)` URL expression reachable from it — in the verb or a
- * same-file function it calls — plus the initializers and `+=` right-hand
- * sides of the local variables that expression is built from.
+ * For each exported `GET`/`POST`/… of a route module: every PATH the verb can
+ * forward to — one per alternative — for each `fetch(url, …)` in the verb or
+ * a same-file function it calls. A URL is normalised as:
+ *   - a leading `${base}` (the backend origin: `${BACKEND_URL}…`) is dropped;
+ *     it is the ONLY variable whose value is not part of the path, so
+ *     `${ownUrl}/other` forwards to `/other`, not to `ownUrl`;
+ *   - a variable that is the whole URL (`fetch(backendUrl)`) or a whole
+ *     later part (`${backendPath}`) is replaced by its initializer, a
+ *     conditional by each branch, and each `url += "/x"` adds an alternative;
+ *   - a `.search` read, or a conditional whose branches are `""` or start
+ *     with `?`, becomes `FWD_QUERY`; any other substitution `FWD_PARAM`.
  */
-function forwardedUrlTexts(sf: ts.SourceFile): Map<string, string[]> {
+function forwardedPaths(sf: ts.SourceFile): Map<string, string[]> {
   const VERBS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
   const exported = (n: ts.Node) =>
     ts.canHaveModifiers(n) &&
@@ -187,36 +199,103 @@ function forwardedUrlTexts(sf: ts.SourceFile): Map<string, string[]> {
   }
   const within = (n: ts.Node, scope: ts.Node) =>
     n.pos >= scope.pos && n.end <= scope.end;
-  const textsOf = (expr: ts.Expression, scope: ts.Node, seen: Set<string>) => {
-    const out = [expr.getText(sf)];
-    const visit = (n: ts.Node): void => {
-      if (ts.isIdentifier(n) && !seen.has(n.text)) {
-        seen.add(n.text);
-        const find = (m: ts.Node): void => {
-          if (
-            ts.isVariableDeclaration(m) &&
-            ts.isIdentifier(m.name) &&
-            m.name.text === n.text &&
-            m.initializer &&
-            (within(m, scope) || m.parent.parent.parent === sf)
-          )
-            out.push(...textsOf(m.initializer, scope, seen));
-          if (
-            ts.isBinaryExpression(m) &&
-            m.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken &&
-            ts.isIdentifier(m.left) &&
-            m.left.text === n.text &&
-            within(m, scope)
-          )
-            out.push(...textsOf(m.right, scope, seen));
-          ts.forEachChild(m, find);
-        };
-        find(sf);
-      }
-      ts.forEachChild(n, visit);
+  const moduleLevel = (d: ts.VariableDeclaration) =>
+    d.parent.parent.parent === sf;
+  const decl = (name: string, scope: ts.Node) => {
+    let found: ts.VariableDeclaration | undefined;
+    const find = (m: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(m) &&
+        ts.isIdentifier(m.name) &&
+        m.name.text === name &&
+        (within(m, scope) || moduleLevel(m))
+      )
+        found ??= m;
+      ts.forEachChild(m, find);
     };
-    visit(expr);
+    find(sf);
+    return found;
+  };
+  const appends = (name: string, scope: ts.Node): ts.Expression[] => {
+    const out: ts.Expression[] = [];
+    const find = (m: ts.Node): void => {
+      if (
+        ts.isBinaryExpression(m) &&
+        m.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken &&
+        ts.isIdentifier(m.left) &&
+        m.left.text === name &&
+        within(m, scope)
+      )
+        out.push(m.right);
+      ts.forEachChild(m, find);
+    };
+    find(sf);
     return out;
+  };
+  const isQueryOnly = (raw: ts.Expression, scope: ts.Node): boolean => {
+    const e = ts.isParenthesizedExpression(raw) ? raw.expression : raw;
+    if (ts.isPropertyAccessExpression(e) && e.name.text === "search")
+      return true;
+    if (ts.isConditionalExpression(e)) {
+      const q = (b: ts.Expression) => {
+        const t = ts.isParenthesizedExpression(b) ? b.expression : b;
+        const head = ts.isTemplateExpression(t)
+          ? t.head.text
+          : ts.isStringLiteralLike(t)
+            ? t.text
+            : null;
+        return head === "" || (head !== null && head.startsWith("?"));
+      };
+      return q(e.whenTrue) && q(e.whenFalse);
+    }
+    if (ts.isIdentifier(e)) {
+      const d = decl(e.text, scope);
+      return !!d?.initializer && isQueryOnly(d.initializer, scope);
+    }
+    return false;
+  };
+  /** Path alternatives of `raw`; `dropBase` drops a leading `${base}`. */
+  const paths = (
+    raw: ts.Expression,
+    scope: ts.Node,
+    dropBase: boolean,
+    depth = 0
+  ): string[] => {
+    if (depth > 6) return [];
+    const e = ts.isParenthesizedExpression(raw) ? raw.expression : raw;
+    if (ts.isStringLiteralLike(e)) return [e.text];
+    if (ts.isConditionalExpression(e))
+      return [
+        ...paths(e.whenTrue, scope, dropBase, depth + 1),
+        ...paths(e.whenFalse, scope, dropBase, depth + 1),
+      ];
+    if (ts.isIdentifier(e)) {
+      const d = decl(e.text, scope);
+      if (!d?.initializer) return [FWD_PARAM];
+      const own = paths(d.initializer, scope, dropBase, depth + 1);
+      const extra = appends(e.text, scope).flatMap((rhs) =>
+        paths(rhs, scope, false, depth + 1).flatMap((a) =>
+          own.map((o) => o + a)
+        )
+      );
+      return [...own, ...extra];
+    }
+    if (!ts.isTemplateExpression(e)) return [FWD_PARAM];
+    let alts = [e.head.text];
+    e.templateSpans.forEach((span, i) => {
+      let parts: string[];
+      if (i === 0 && dropBase && e.head.text === "") parts = [""];
+      else if (isQueryOnly(span.expression, scope)) parts = [FWD_QUERY];
+      else if (
+        ts.isIdentifier(span.expression) &&
+        decl(span.expression.text, scope)?.initializer &&
+        !alts.every((a) => a.endsWith("/"))
+      )
+        parts = paths(span.expression, scope, false, depth + 1);
+      else parts = [FWD_PARAM];
+      alts = alts.flatMap((a) => parts.map((p) => a + p + span.literal.text));
+    });
+    return alts;
   };
   const result = new Map<string, string[]>();
   for (const [verb, fn] of verbs) {
@@ -231,7 +310,7 @@ function forwardedUrlTexts(sf: ts.SourceFile): Map<string, string[]> {
       ts.forEachChild(n, calls);
     };
     calls(fn);
-    const texts: string[] = [];
+    const out: string[] = [];
     for (const scope of scopes) {
       const fetches = (n: ts.Node): void => {
         if (
@@ -240,15 +319,40 @@ function forwardedUrlTexts(sf: ts.SourceFile): Map<string, string[]> {
           n.expression.text === "fetch" &&
           n.arguments[0]
         )
-          texts.push(...textsOf(n.arguments[0], scope, new Set()));
+          out.push(...paths(n.arguments[0], scope, true));
         ts.forEachChild(n, fetches);
       };
       fetches(scope);
     }
-    result.set(verb, texts);
+    result.set(verb, [...new Set(out)]);
   }
   return result;
 }
+
+/** `/api/v1/ai-tasks/{id}` as a forwarded path, optionally with a query suffix. */
+function ownPathPattern(template: string): RegExp {
+  const body = template
+    .split(/\{[^}]+\}/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join(FWD_PARAM.replace(/[{}]/g, "\\$&"));
+  return new RegExp(`^${body}(${FWD_QUERY.replace("?", "\\?")})?$`);
+}
+
+/**
+ * Proxy verbs that can forward to a path other than their own, and why that
+ * branch never fires for the URL the handler serves. Only these may have
+ * alternatives beyond the own path; each must still have the own path.
+ */
+const BRANCHING_FORWARDERS: ReadonlyMap<string, string> = new Map([
+  [
+    "app/api/v1/execution/runs/[runId]/route.ts PUT",
+    "appends `/complete` only when the request pathname ends in `/complete`; this route's pathname is `/runs/{runId}`",
+  ],
+  [
+    "app/api/v1/users/me/automation-streaming/route.ts POST",
+    "appends `/toggle` / `/reset-limit` only when request.url contains them; those URLs are their own route files",
+  ],
+]);
 
 describe("route walker: the real tree against the OpenAPI snapshot", () => {
   const { sites } = tree;
@@ -319,42 +423,45 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     expect(tree.nextRoutes.every((r) => r.methods.size > 0)).toBe(true);
   });
 
-  it("every unindexed /api/v1 handler's exported verbs each fetch the handler's own path", () => {
-    // Parsed, per verb: a `fetch(...)` in the verb (or a same-file helper it
-    // calls) whose URL expression — following the local consts it is built
-    // from — names the handler's own path, `/api/v1/ai-tasks/{id}` as
-    // `/api/v1/ai-tasks/${…}` with nothing after it. Comments are not
-    // expressions, so a doc comment cannot satisfy it.
+  it("every unindexed /api/v1 handler's exported verbs forward to exactly the handler's own path", () => {
+    // Parsed, per verb: every path its `fetch(...)` calls can forward to
+    // (`forwardedPaths`) must END at the handler's own path, a query-string
+    // suffix aside. Comments are not expressions, so a doc comment cannot
+    // satisfy it; `${ownUrl}/other` forwards to `/other`.
     //
-    // Two handlers branch, and are classified by what each verb forwards for
-    // the URL it SERVES: `execution/runs/[runId]` PUT appends `/complete`
-    // only when the pathname ends in `/complete`, and
-    // `users/me/automation-streaming` POST appends `/toggle` / `/reset-limit`
-    // only when the URL contains them. Neither holds for the handler's own
-    // URL (those suffixes are their own route files), so both forward to
-    // the identical backend path and are proxies — which is what this test
-    // proves: the own-path expression is a fetch URL of that verb.
+    // Two verbs branch, and are classified by what they forward for the URL
+    // they SERVE — see `BRANCHING_FORWARDERS`: there the own path must be
+    // one of the alternatives, and the entry must really be needed.
     const proxies = tree.nextRoutes.filter((r) => r.backendProxy);
     expect(proxies.length).toBeGreaterThan(0);
+    const branching = new Set<string>();
     for (const r of proxies) {
-      const forwarded = new RegExp(
-        r.template
-          .split(/\{[^}]+\}/)
-          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-          .join("\\$\\{\\w+\\}") + "(?![\\w/-])"
-      );
+      const own = ownPathPattern(r.template);
       const source = readFileSync(path.join(SRC_ROOT, r.file), "utf8");
-      const byVerb = forwardedUrlTexts(
+      const byVerb = forwardedPaths(
         ts.createSourceFile(r.file, source, ts.ScriptTarget.Latest, true)
       );
       for (const verb of r.methods) {
-        const texts = byVerb.get(verb) ?? [];
+        const alts = byVerb.get(verb) ?? [];
+        const label = `${r.file} ${verb}`;
+        const others = alts.filter((a) => !own.test(a));
         expect(
-          texts.some((t) => forwarded.test(t)),
-          `${r.file} ${verb} does not fetch ${r.template}: ${texts.join(" | ")}`
+          alts.some((a) => own.test(a)),
+          `${label}: ${alts.join(" | ")}`
         ).toBe(true);
+        if (BRANCHING_FORWARDERS.has(label)) {
+          branching.add(label);
+          expect(others.length, `${label} no longer branches`).toBeGreaterThan(
+            0
+          );
+        } else {
+          expect(others, `${label} forwards elsewhere`).toEqual([]);
+        }
       }
     }
+    expect([...branching].sort()).toEqual(
+      [...BRANCHING_FORWARDERS.keys()].sort()
+    );
     for (const file of NEXT_API_V1_SERVERS)
       expect(tree.nextRoutes.map((r) => r.file)).toContain(file);
   });
@@ -1364,5 +1471,123 @@ describe("S2/S3: caller discovery", () => {
         "features/use.ts"
       ),
     ]);
+  });
+});
+
+describe("S2: the pass-through check itself", () => {
+  const verbPaths = (body: string) =>
+    forwardedPaths(
+      ts.createSourceFile(
+        "app/api/v1/own/[id]/route.ts",
+        `const BACKEND_URL = process.env.BACKEND_URL;\n${body}`,
+        ts.ScriptTarget.Latest,
+        true
+      )
+    ).get("GET") ?? [];
+  const own = ownPathPattern("/api/v1/own/{id}");
+  const onlyOwn = (body: string) => {
+    const alts = verbPaths(body);
+    return alts.length > 0 && alts.every((a) => own.test(a));
+  };
+
+  it("an own-path variable used as a base for another path is not a pass-through", () => {
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string) {
+        const u = \`\${BACKEND_URL}/api/v1/own/\${id}\`;
+        return fetch(\`\${u}/other\`);
+      }`)
+    ).toBe(false);
+  });
+
+  it("a path suffix after the own path is not a pass-through", () => {
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string, suffix: string) {
+        return fetch(\`\${BACKEND_URL}/api/v1/own/\${id}\${suffix}\`);
+      }`)
+    ).toBe(false);
+  });
+
+  it("a comment naming the own path is not a pass-through", () => {
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string) {
+        // fetch(\`\${BACKEND_URL}/api/v1/own/\${id}\`)
+        return fetch(\`\${BACKEND_URL}/api/v1/other/\${id}\`);
+      }`)
+    ).toBe(false);
+  });
+
+  it("the own path with a query suffix is a pass-through", () => {
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string) {
+        const url = new URL(r.url);
+        const qs = url.searchParams.toString();
+        const backendUrl = \`\${BACKEND_URL}/api/v1/own/\${id}\${qs ? \`?\${qs}\` : ""}\`;
+        return fetch(backendUrl, {});
+      }`)
+    ).toBe(true);
+  });
+});
+
+describe("W1 (round 4): query-named substitutions are resolved, not cut", () => {
+  it.each([
+    [
+      "a conditional `suffix`",
+      `export const x = (a: boolean) => { const suffix = a ? "/nope" : ""; return httpClient.get(\`/api/v1/widgets\${suffix}\`); };`,
+    ],
+    [
+      "a constant `suffix`",
+      `const suffix = "/nope/deep"; export const x = () => httpClient.get(\`/api/v1/widgets\${suffix}\`);`,
+    ],
+    [
+      "an object's `search`",
+      `const R = { search: "/nope" }; export const x = () => httpClient.get(\`/api/v1/widgets\${R.search}\`);`,
+    ],
+    [
+      "a constant `filter` segment",
+      `const filter = "archived"; export const x = () => httpClient.get(\`/api/v1/widgets/\${filter}\`);`,
+    ],
+    [
+      "a `filter` parameter before a literal",
+      `export const x = (filter: string) => httpClient.get(\`/api/v1/widgets/\${filter}/nope\`);`,
+    ],
+    [
+      "a wrapper's `params` argument",
+      `function g(params: string) { return httpClient.get(\`/api/v1/widgets\${params}\`); } export const x = () => g("/nope/deep");`,
+    ],
+  ])("%s never passes", (_label, body) => {
+    const entries = fixture(`${PREAMBLE}${body}`);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) expect(["dead", "unresolved"]).toContain(e.reason);
+  });
+
+  it("a query-named value that IS a query string still passes", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        function g(params: string) { return httpClient.get(\`/api/v1/widgets\${params}\`); }
+        export const a = () => g("?x=1");
+        export const b = () => g("");
+        export const c = (qs: string) => httpClient.get(\`/api/v1/widgets\${qs ? \`?\${qs}\` : ""}\`);
+      `)
+    ).toEqual([]);
+  });
+});
+
+describe("S1 (round 4): an optional literal-union parameter is not expanded", () => {
+  it('`action?: "approve"` may be undefined, so it is not read as `approve`', () => {
+    expect(
+      fixture(`${PREAMBLE}
+        export const act = (id: string, action?: "approve") =>
+          httpClient.put(\`/api/v1/widgets/\${id}/\${action}\`, {});
+      `)
+    ).toMatchObject([{ method: "PUT", reason: "unresolved" }]);
+  });
+
+  it('`action: "approve" | undefined` is not expanded either', () => {
+    expect(
+      fixture(`${PREAMBLE}
+        export const act = (id: string, action: "approve" | undefined) =>
+          httpClient.put(\`/api/v1/widgets/\${id}/\${action}\`, {});
+      `)
+    ).toMatchObject([{ method: "PUT", reason: "unresolved" }]);
   });
 });
