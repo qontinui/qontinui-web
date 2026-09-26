@@ -39,7 +39,14 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -69,7 +76,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import devices_to_wire
+from app.api.v1.endpoints.devices import _heartbeat_is_fresh, devices_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
@@ -463,10 +470,19 @@ def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
 
 def _stored_ui_thread_wire(
     block: dict[str, Any], observed_at: datetime | None
-) -> dict[str, Any]:
-    """The fleet-row keys for the block a device's WS heartbeat stored."""
+) -> dict[str, Any] | None:
+    """The fleet-row keys for the block a device's WS heartbeat stored.
+
+    None when the stored block no longer validates (a row written before the
+    write path validated, or by a writer with a different shape) — the caller
+    then falls through to the beacon or UNKNOWN rather than failing the route.
+    """
+    try:
+        parsed = RunnerUiThread.model_validate(block)
+    except ValidationError:
+        return None
     return {
-        "uiThread": RunnerUiThread.model_validate(block).model_dump(mode="json"),
+        "uiThread": parsed.model_dump(mode="json"),
         "uiThreadSource": "device",
         "uiThreadObservedAt": observed_at.isoformat() if observed_at else None,
     }
@@ -581,24 +597,41 @@ async def get_fleet_status(
     # Preferred over the beacon: the device's stored ``coord.devices.ui_thread``,
     # written by the AUTHENTICATED devices-WebSocket heartbeat — durable, the
     # same on every replica, and attributable to the device. Labelled
-    # ``"device"``, observed at the device's own ``last_heartbeat``.
-    stored_by_id: dict[str, tuple[dict[str, Any], datetime | None]] = {
-        str(d.device_id): (d.ui_thread, d.last_heartbeat)
-        for d in runners
-        if d.ui_thread is not None
-    }
+    # ``"device"``, observed at the device's own ``last_heartbeat``. Order:
+    #   1. the stored block while the device's heartbeat is fresh;
+    #   2. else a healthy beacon (the WS heartbeat can stop — relay down —
+    #      while the HTTP beacon keeps arriving, and a current reading beats
+    #      an hours-old stored one);
+    #   3. else the stored block as the last-known reading (its
+    #      ``uiThreadObservedAt`` says how old);
+    #   4. else UNKNOWN.
+    # A stored block that no longer validates is skipped, never a 500 for the
+    # owner's whole fleet view.
+    stored_by_id: dict[str, dict[str, Any]] = {}
+    for d in runners:
+        if d.ui_thread is None:
+            continue
+        stored_wire = _stored_ui_thread_wire(d.ui_thread, d.last_heartbeat)
+        if stored_wire is not None:
+            stored_by_id[str(d.device_id)] = {
+                **stored_wire,
+                "_fresh": _heartbeat_is_fresh(d.last_heartbeat),
+            }
     for wire in wire_runners:
         stored = stored_by_id.get(str(wire.get("id")))
-        if stored is not None:
-            wire.update(_stored_ui_thread_wire(*stored))
-            continue
         beacon = beacon_by_key.get(
             (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
         )
-        if beacon is not None and beacon.is_healthy:
-            wire.update(_ui_thread_wire(beacon))
+        healthy_beacon = beacon if beacon is not None and beacon.is_healthy else None
+        if stored is not None and stored["_fresh"]:
+            chosen = stored
+        elif healthy_beacon is not None and healthy_beacon.ui_thread is not None:
+            chosen = _ui_thread_wire(healthy_beacon)
+        elif stored is not None:
+            chosen = stored
         else:
-            wire.update(_UI_THREAD_UNKNOWN)
+            chosen = _UI_THREAD_UNKNOWN
+        wire.update({k: v for k, v in chosen.items() if not k.startswith("_")})
     for beacon in fleet_status.runners:
         if ((beacon.hostname or "").lower(), beacon.port) in db_keys:
             continue

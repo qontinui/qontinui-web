@@ -350,9 +350,34 @@ class TestStoredBlock:
         )
         device = _owned_device(hostname="spaceship", port=9876)
         device.ui_thread = RUST_UI_THREAD_BLOCK
+        device.last_heartbeat = datetime.now(UTC)
         rows = _fleet_rows(client, device)
         assert rows[0]["uiThread"] == RUST_UI_THREAD_BLOCK
         assert rows[0]["uiThreadSource"] == "device"
+        assert rows[0]["uiThreadObservedAt"] == device.last_heartbeat.isoformat()
+
+    def test_a_fresh_beacon_beats_an_old_stored_block(self, client: TestClient) -> None:
+        # The WS heartbeat stopped (relay down) while the HTTP beacon kept
+        # arriving: the current beacon reading wins over the hours-old stored one.
+        client.post(
+            f"{API_PREFIX}/heartbeat", json=_heartbeat(ui_thread=RUST_UI_THREAD_BLOCK)
+        )
+        device = _owned_device(hostname="spaceship", port=9876)
+        device.ui_thread = {**RUST_UI_THREAD_BLOCK, "wedged": False}
+        device.last_heartbeat = datetime.now(UTC) - timedelta(hours=3)
+        rows = _fleet_rows(client, device)
+        assert rows[0]["uiThread"]["wedged"] is True
+        assert rows[0]["uiThreadSource"] == "beacon_unauthenticated"
+
+    def test_a_malformed_stored_block_does_not_fail_the_fleet_view(
+        self, client: TestClient
+    ) -> None:
+        device = _owned_device(hostname="spaceship", port=9876)
+        device.ui_thread = {"wedged": "maybe"}
+        device.last_heartbeat = datetime.now(UTC)
+        rows = _fleet_rows(client, device)
+        assert rows[0]["uiThread"] is None
+        assert rows[0]["uiThreadSource"] is None
 
     def test_stored_block_is_served_with_no_beacon_at_all(
         self, client: TestClient
@@ -381,6 +406,11 @@ def _ws_env() -> tuple[Any, Any]:
         (RUST_UI_THREAD_BLOCK, RUST_UI_THREAD_BLOCK),
         (None, None),
         ("not-an-object", None),
+        ({"wedged": "maybe"}, None),
+        (
+            {**RUST_UI_THREAD_BLOCK, "nested": {"x": 1}},
+            RUST_UI_THREAD_BLOCK,
+        ),
     ],
 )
 async def test_ws_heartbeat_stores_the_block_by_its_snake_case_name(
@@ -401,3 +431,32 @@ async def test_ws_heartbeat_stores_the_block_by_its_snake_case_name(
     heartbeat.assert_awaited_once()
     assert heartbeat.await_args is not None
     assert heartbeat.await_args.kwargs["ui_thread"] == stored
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_device_overwrites_the_stored_block_every_beat() -> None:
+    """A beat without the block stores None — never a stale verdict carried on."""
+    from app.crud import device_crud
+
+    record = SimpleNamespace(
+        ui_thread=None, ui_error=None, recent_crash=None, derived_status="healthy"
+    )
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = record
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await device_crud.heartbeat_device(
+        db,
+        device_id=uuid4(),
+        restate_healthy=False,
+        status_value="healthy",
+        ui_thread=RUST_UI_THREAD_BLOCK,
+    )
+    assert record.ui_thread == RUST_UI_THREAD_BLOCK
+    await device_crud.heartbeat_device(
+        db, device_id=uuid4(), restate_healthy=False, status_value="healthy"
+    )
+    assert record.ui_thread is None

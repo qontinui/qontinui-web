@@ -46,6 +46,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 from sqlalchemy.exc import IntegrityError
 from starlette.websockets import WebSocketState
@@ -54,6 +55,7 @@ from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
+from app.schemas.dev_dashboard import RunnerUiThread
 from app.services import devenv_auto_enroll
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
@@ -1331,6 +1333,21 @@ async def _route_device_message(
     )
 
 
+def _validated_ui_thread(raw: Any, device_id: UUID) -> dict[str, Any] | None:
+    """The heartbeat's ``ui_thread`` block, normalised for storage, or None."""
+    if raw is None:
+        return None
+    try:
+        return RunnerUiThread.model_validate(raw).model_dump(mode="json")
+    except ValidationError as e:
+        logger.warning(
+            "devices_ws_heartbeat_ui_thread_invalid",
+            device_id=str(device_id),
+            error_count=e.error_count(),
+        )
+        return None
+
+
 async def _handle_heartbeat(
     msg: dict[str, Any],
     device_id: Any,
@@ -1379,10 +1396,11 @@ async def _handle_heartbeat(
     derived_status = msg.get("derived_status")
     # Native UI-thread liveness (plan
     # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
-    # Read by its snake_case name like the three keys above; a non-object is
-    # dropped to None (UNKNOWN) rather than stored as a malformed verdict.
-    raw_ui_thread = msg.get("ui_thread")
-    ui_thread = raw_ui_thread if isinstance(raw_ui_thread, dict) else None
+    # Read by its snake_case name like the three keys above, and stored only
+    # after it validates as ``RunnerUiThread`` — which also applies that
+    # model's bounds on untrusted extras — so the column never holds a block
+    # the fleet read cannot parse. Anything else stores None (UNKNOWN).
+    ui_thread = _validated_ui_thread(msg.get("ui_thread"), device_id)
 
     # One session for every write. This is the hottest path in the file —
     # every device, every ~30s — and registration failures here have already
