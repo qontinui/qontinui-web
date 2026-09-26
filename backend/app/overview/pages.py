@@ -67,7 +67,7 @@ EXCERPT_CHARS = 240
 # Slugs and links
 # ---------------------------------------------------------------------------
 
-_NON_WORD = re.compile(r"[^\w]+|_+", re.UNICODE)
+_NON_WORD = re.compile(r"[\W_]+", re.UNICODE)
 _WIKI_LINK = re.compile(r"\[\[([^\[\]|\n]{1,200})(?:\|[^\[\]\n]{0,200})?\]\]")
 
 
@@ -77,13 +77,19 @@ def slugify(title: str) -> str:
 
     Deterministic and script-preserving on purpose: a ``[[Видение]]`` link and
     a page titled ``Видение`` must reach the same slug on both sides of the
-    wire, which a random fallback for non-Latin titles could not do. A client
-    that resolves ``[[links]]`` itself must fold titles the same way; the
-    server's slug is what a page is stored and linked under either way.
-    Empty when the title has no letter or digit.
+    wire, which a random fallback for non-Latin titles could not do.
+
+    The rule, which a client resolving ``[[links]]`` itself must follow
+    exactly: NFKD; drop nonspacing marks (category ``Mn``); lowercase; each run
+    of anything but a letter or digit becomes one hyphen; trim hyphens; cut to
+    120 code points; trim a trailing hyphen the cut exposed. Every step is
+    expressible in a browser's own Unicode support, so both sides agree on
+    every character both Unicode versions assign (a character newer than this
+    interpreter's Unicode can differ). The two test suites pin the same
+    vectors. Empty when the title has no letter or digit.
     """
     folded = unicodedata.normalize("NFKD", title)
-    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    folded = "".join(c for c in folded if unicodedata.category(c) != "Mn")
     return _NON_WORD.sub("-", folded.lower()).strip("-")[:120].strip("-")
 
 

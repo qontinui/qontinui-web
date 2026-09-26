@@ -139,6 +139,15 @@ class TestSlugs:
         assert slugify("Café — Q4 Launch!") == "cafe-q4-launch"
         assert slugify("Видение проекта") == "видение-проекта"
         assert slugify("snake_case  title") == "snake-case-title"
+        # One hyphen per run, underscores included (a browser folds the same).
+        assert slugify("a_ b__-c") == "a-b-c"
+        # Pinned identically in the frontend's `wiki-links.test.tsx`.
+        assert slugify("İstanbul") == "istanbul"
+        assert slugify("ΟΔΟΣ") == "οδος"  # final sigma
+        assert slugify("½ cup") == "1-2-cup"
+        assert slugify("ﬁle №5") == "file-no5"
+        # The cut lands on a hyphen, which is trimmed.
+        assert slugify("a" * 119 + " b" + "c" * 10) == "a" * 119
         assert slugify("***") == ""
 
     async def test_wiki_links_are_read_once_each_in_order(self) -> None:
