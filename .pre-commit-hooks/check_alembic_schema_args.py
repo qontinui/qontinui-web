@@ -10,7 +10,9 @@ The ``cloud`` schema was added per the cloud-control carve-out
 (tmp_cloud_control_carve_out.md §5). The ``strategy`` schema was
 added for the Strategy Collaboration product (Phase 1, design
 ``plans/2026-05-15-strategy-collaboration-design.md`` §5.2) — the
-6th canonical schema, same precedent as ``cloud``. The ``web``
+6th canonical schema, same precedent as ``cloud``; that product was
+retired and ``strategy_p4_01_drop_schema`` drops the schema, but the
+name stays allowed for the historical revisions that create it. The ``web``
 schema was added for web-side operational tables that don't belong
 to any product surface (e.g. ``web.bridge_audit_log`` per the
 production-safe UI Bridge plan §4.8) — 7th canonical schema, same
@@ -93,6 +95,9 @@ ALLOWED_SCHEMAS = {
     "agent",
     "auth",
     "cloud",
+    # Retired with the Strategy collaboration feature and dropped by
+    # ``strategy_p4_01_drop_schema``; still allowed because the historical
+    # strategy revisions and that revision's ``downgrade()`` name it.
     "strategy",
     "web",
     # ``overview`` holds the business-leader Project Overview's own
