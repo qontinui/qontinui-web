@@ -294,10 +294,21 @@ class TestRegistry:
 
     async def test_every_routed_resource_offers_its_write_models(self) -> None:
         from app.overview.registry import REGISTRY
+        from app.overview.router import router
 
+        posts = {
+            route.path
+            for route in router.routes
+            if "POST" in getattr(route, "methods", set())
+        }
         for spec in REGISTRY.values():
             if "create" in spec.operations:
-                assert spec.create_model is not None, spec.name
+                # A create is either the generic JSON one (a create model) or
+                # a hand-written route on the same path (the multipart upload)
+                # — never an advertised verb with nothing behind it.
+                assert spec.create_model is not None or f"/{spec.path}" in posts, (
+                    spec.name
+                )
             if "update" in spec.operations:
                 assert spec.update_model is not None, spec.name
             fields = spec.read_model.model_fields

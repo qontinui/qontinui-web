@@ -16,8 +16,8 @@ whose version has moved with :class:`StaleVersion`, carrying the server's copy.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from fastapi import Request
@@ -58,6 +58,11 @@ class StoreContext:
     access: OverviewAccess
     db: AsyncSession
     request: Request
+    #: Work to run only once the write's transaction has COMMITTED — e.g.
+    #: deleting a file's stored bytes. Run after the commit, never before, so
+    #: a failed commit cannot leave a row pointing at bytes already deleted.
+    #: The router runs these; a store only appends to it.
+    after_commit: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
 
 
 @dataclass
@@ -126,3 +131,8 @@ class ResourceSpec:
     list_filters: tuple[str, ...] = ()
     store: Callable[..., Any] | None = None
     description: str = ""
+    #: Read-model fields left out of ``overview.change_log`` snapshots on
+    #: create and update, where another table already keeps them in full
+    #: (a page's body is in ``page_versions``). A DELETE snapshot keeps every
+    #: field, because the record and whatever kept its history go with it.
+    audit_exclude: frozenset[str] = frozenset()

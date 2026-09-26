@@ -1,5 +1,6 @@
 """Abstract base class for storage backends."""
 
+import io
 from abc import ABC, abstractmethod
 from typing import BinaryIO
 
@@ -22,6 +23,14 @@ class StorageBackend(ABC):
     def download_file(self, key: str) -> bytes:
         """Download file and return bytes."""
         pass
+
+    def open_stream(self, key: str) -> BinaryIO:
+        """Open a stored file for reading in chunks; the caller closes it.
+
+        This default reads the whole file; a backend that can hand back a
+        stream overrides it so a large file is never held in memory whole.
+        """
+        return io.BytesIO(self.download_file(key))
 
     @abstractmethod
     def delete_file(self, key: str) -> bool:

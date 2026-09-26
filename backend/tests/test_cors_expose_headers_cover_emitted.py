@@ -84,6 +84,9 @@ DELIBERATELY_UNPUBLISHED: dict[str, str] = {
     # `session-repository/api.ts` and `BodyPanel.download`), so nothing reads
     # the server's. Publish it if a caller ever needs the server's spelling.
     "content-disposition": "no JS reader; each caller names its own download",
+    # Set on the overview file download only so the GZip middleware passes the
+    # bytes through; a transfer detail the browser applies itself.
+    "content-encoding": "transfer detail the browser decodes; no JS reader",
     # `etag` is no longer here: the overview authoring contract serves a
     # record's version as its ETag to browser callers, so it is published
     # (`app.overview.router.CONTRACT_RESPONSE_HEADERS`).
