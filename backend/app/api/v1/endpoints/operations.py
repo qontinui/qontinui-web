@@ -81,6 +81,7 @@ from app.schemas.dev_dashboard import (
     RegisteredRunner,
     RunnerHeartbeat,
     RunnerTaskRun,
+    RunnerUiThread,
 )
 from app.services import cognito_admin
 from app.services.cognito_admin import (
@@ -510,6 +511,27 @@ async def get_fleet_status(
     # beacon on a CI-runner host from resolving as the caller's own.
     db_keys = {(r.hostname, r.port) for r in all_devices}
     owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
+
+    # Native UI-thread liveness (plan
+    # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
+    # The block rides the beacon heartbeat, but a PAIRED runner's row above is
+    # built from its ``coord.devices`` row and the beacon for it is skipped by
+    # the ``db_keys`` check below — so without this overlay the fleet view
+    # would carry ``ui_thread`` only for unpaired beacons, i.e. almost never.
+    # Every row carries the ``uiThread`` key; ``None`` is UNKNOWN (no beacon
+    # from that runner on this replica, or a runner predating the block) and
+    # must never be rendered as "not wedged". Matching is by ``(hostname,
+    # port)`` — the same key the beacon merge uses — and applies only to rows
+    # this caller already owns, so it adds no cross-tenant surface beyond the
+    # hostname heuristic documented below.
+    beacon_ui_thread: dict[tuple[Any, Any], RunnerUiThread | None] = {
+        (b.hostname, b.port): b.ui_thread for b in fleet_status.runners
+    }
+    for wire in wire_runners:
+        ui_thread = beacon_ui_thread.get((wire.get("hostname"), wire.get("port")))
+        wire["uiThread"] = (
+            ui_thread.model_dump(mode="json") if ui_thread is not None else None
+        )
     for beacon in fleet_status.runners:
         if (beacon.hostname, beacon.port) in db_keys:
             continue
@@ -535,6 +557,12 @@ async def get_fleet_status(
                 "wsConnected": False,
                 "uiError": None,
                 "recentCrash": None,
+                # Last-reported native UI-thread liveness; None = UNKNOWN.
+                "uiThread": (
+                    beacon.ui_thread.model_dump(mode="json")
+                    if beacon.ui_thread is not None
+                    else None
+                ),
                 "createdAt": beacon.last_heartbeat.isoformat(),
                 # A heartbeat-only beacon has no device WebSocket, so no
                 # instance is connected through this backend — an honest
