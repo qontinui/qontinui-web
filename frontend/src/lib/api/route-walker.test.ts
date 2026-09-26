@@ -31,6 +31,18 @@
  * its own `unresolved` site. So is a URL glued onto a parameter of an
  * anonymous callback (`ids.map((p) => httpClient.get(\`${PREFIX}${p}\`))`).
  *
+ * A `{param}` matches only a template PARAMETER, never a literal segment:
+ * `/users/${userId}/activity` is not served by `/users/me/activity`. When a
+ * `{param}` would have to fill a literal, a named function's parameter makes
+ * that function a wrapper (resolved per caller, as `createCrud("checks")`);
+ * any other value makes the site `unresolved`. A parameter typed as a
+ * string-literal union (`action: "approve" | "reject"`) is checked value by
+ * value. Mid-URL, only run-time values widen to `{param}`: a declared
+ * constant the walker cannot read — a missing key, `Object.freeze`, an alias
+ * or nested/element read it cannot follow, an unfollowable import — is
+ * `unresolved`, and so is a run-time value glued onto a non-`/` path prefix
+ * unless it is a parameter resolved per caller.
+ *
  * A mismatch is classed `dead` (no served path, or a served path without that
  * verb), `websocket` (WS routes are absent from OpenAPI by construction), or
  * `unresolved` (the walker could not read the URL or method statically —
@@ -41,8 +53,10 @@
  *     passes its OWN parameter through is `unresolved`, and its callers are
  *     not followed;
  *   - a member wrapper called on an instance is reported `unresolved`, not
- *     resolved; one called from a file that does not import its module (the
- *     instance handed over some other way) is not seen at all;
+ *     resolved; one called from a file that does not import its module is not
+ *     seen at all — and that includes an instance imported through a barrel
+ *     re-export (`import { api } from "@/services"`) or returned by a hook
+ *     (`useApi().fetchWithAuth(...)`), which count as "not importing it";
  *   - wrappers reached by default import, namespace import or re-export;
  *   - calls through anything that is not an `HttpClient` (bare `fetch`,
  *     axios, the generated `lib/api-client`, `EventSource`, `WebSocket`);
@@ -84,6 +98,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   type BaselineEntry,
@@ -109,10 +124,8 @@ const BACKEND_API = path.resolve(SRC_ROOT, "../../backend/app/api/v1");
 const BASELINE_FILE = path.join(HERE, "known-route-mismatches.json");
 
 const SNAPSHOT_PATHS = loadSnapshotPaths();
-const tree = walkSourceTree(SRC_ROOT);
-const index = buildSnapshotIndex(SNAPSHOT_PATHS, {
-  nextRoutes: tree.nextRoutes,
-});
+const tree = walkSourceTree(SRC_ROOT, SNAPSHOT_PATHS);
+const { index } = tree;
 
 /**
  * The four sites this plan repointed or deleted. None may ever re-enter the
@@ -141,6 +154,100 @@ function describeEntries(entries: BaselineEntry[]): string {
   return entries
     .map((e) => `  ${e.reason}/${e.kind} ${e.method} ${e.path}  (${e.file})`)
     .join("\n");
+}
+
+/**
+ * For each exported `GET`/`POST`/… of a route module: the source text of
+ * every `fetch(url, …)` URL expression reachable from it — in the verb or a
+ * same-file function it calls — plus the initializers and `+=` right-hand
+ * sides of the local variables that expression is built from.
+ */
+function forwardedUrlTexts(sf: ts.SourceFile): Map<string, string[]> {
+  const VERBS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+  const exported = (n: ts.Node) =>
+    ts.canHaveModifiers(n) &&
+    (ts.getModifiers(n) ?? []).some(
+      (m) => m.kind === ts.SyntaxKind.ExportKeyword
+    );
+  const fns = new Map<string, ts.Node>();
+  const verbs = new Map<string, ts.Node>();
+  for (const stmt of sf.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      fns.set(stmt.name.text, stmt);
+      if (exported(stmt) && VERBS.has(stmt.name.text))
+        verbs.set(stmt.name.text, stmt);
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const d of stmt.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+        fns.set(d.name.text, d.initializer);
+        if (exported(stmt) && VERBS.has(d.name.text))
+          verbs.set(d.name.text, d.initializer);
+      }
+    }
+  }
+  const within = (n: ts.Node, scope: ts.Node) =>
+    n.pos >= scope.pos && n.end <= scope.end;
+  const textsOf = (expr: ts.Expression, scope: ts.Node, seen: Set<string>) => {
+    const out = [expr.getText(sf)];
+    const visit = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && !seen.has(n.text)) {
+        seen.add(n.text);
+        const find = (m: ts.Node): void => {
+          if (
+            ts.isVariableDeclaration(m) &&
+            ts.isIdentifier(m.name) &&
+            m.name.text === n.text &&
+            m.initializer &&
+            (within(m, scope) || m.parent.parent.parent === sf)
+          )
+            out.push(...textsOf(m.initializer, scope, seen));
+          if (
+            ts.isBinaryExpression(m) &&
+            m.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken &&
+            ts.isIdentifier(m.left) &&
+            m.left.text === n.text &&
+            within(m, scope)
+          )
+            out.push(...textsOf(m.right, scope, seen));
+          ts.forEachChild(m, find);
+        };
+        find(sf);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(expr);
+    return out;
+  };
+  const result = new Map<string, string[]>();
+  for (const [verb, fn] of verbs) {
+    const scopes = [fn];
+    const calls = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        fns.has(n.expression.text)
+      )
+        scopes.push(fns.get(n.expression.text) as ts.Node);
+      ts.forEachChild(n, calls);
+    };
+    calls(fn);
+    const texts: string[] = [];
+    for (const scope of scopes) {
+      const fetches = (n: ts.Node): void => {
+        if (
+          ts.isCallExpression(n) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === "fetch" &&
+          n.arguments[0]
+        )
+          texts.push(...textsOf(n.arguments[0], scope, new Set()));
+        ts.forEachChild(n, fetches);
+      };
+      fetches(scope);
+    }
+    result.set(verb, texts);
+  }
+  return result;
 }
 
 describe("route walker: the real tree against the OpenAPI snapshot", () => {
@@ -212,11 +319,24 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     expect(tree.nextRoutes.every((r) => r.methods.size > 0)).toBe(true);
   });
 
-  it("every unindexed /api/v1 handler forwards to its own backend path", () => {
+  it("every unindexed /api/v1 handler's exported verbs each fetch the handler's own path", () => {
+    // Parsed, per verb: a `fetch(...)` in the verb (or a same-file helper it
+    // calls) whose URL expression — following the local consts it is built
+    // from — names the handler's own path, `/api/v1/ai-tasks/{id}` as
+    // `/api/v1/ai-tasks/${…}` with nothing after it. Comments are not
+    // expressions, so a doc comment cannot satisfy it.
+    //
+    // Two handlers branch, and are classified by what each verb forwards for
+    // the URL it SERVES: `execution/runs/[runId]` PUT appends `/complete`
+    // only when the pathname ends in `/complete`, and
+    // `users/me/automation-streaming` POST appends `/toggle` / `/reset-limit`
+    // only when the URL contains them. Neither holds for the handler's own
+    // URL (those suffixes are their own route files), so both forward to
+    // the identical backend path and are proxies — which is what this test
+    // proves: the own-path expression is a fetch URL of that verb.
     const proxies = tree.nextRoutes.filter((r) => r.backendProxy);
     expect(proxies.length).toBeGreaterThan(0);
     for (const r of proxies) {
-      // `/api/v1/ai-tasks/{id}` must appear as `/api/v1/ai-tasks/${…}`.
       const forwarded = new RegExp(
         r.template
           .split(/\{[^}]+\}/)
@@ -224,7 +344,16 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
           .join("\\$\\{\\w+\\}") + "(?![\\w/-])"
       );
       const source = readFileSync(path.join(SRC_ROOT, r.file), "utf8");
-      expect(source, `${r.file} is not a pass-through`).toMatch(forwarded);
+      const byVerb = forwardedUrlTexts(
+        ts.createSourceFile(r.file, source, ts.ScriptTarget.Latest, true)
+      );
+      for (const verb of r.methods) {
+        const texts = byVerb.get(verb) ?? [];
+        expect(
+          texts.some((t) => forwarded.test(t)),
+          `${r.file} ${verb} does not fetch ${r.template}: ${texts.join(" | ")}`
+        ).toBe(true);
+      }
     }
     for (const file of NEXT_API_V1_SERVERS)
       expect(tree.nextRoutes.map((r) => r.file)).toContain(file);
@@ -328,16 +457,18 @@ function scanBackendPathParams(): {
 }
 
 describe("MULTI_SEGMENT_TEMPLATE_PARAMS", () => {
+  const scan = scanBackendPathParams();
+
   it("is exactly the backend's `{x:path}` routes, recomputed from source", () => {
     expect(
       [...MULTI_SEGMENT_TEMPLATE_PARAMS]
         .map(([t, n]) => [t, n])
         .sort((a, b) => (a.join(" ") < b.join(" ") ? -1 : 1))
-    ).toEqual(scanBackendPathParams().pairs);
+    ).toEqual(scan.pairs);
   });
 
   it("the backend scan read every route decorator and every `:path` literal", () => {
-    const { decorators, unconsumed } = scanBackendPathParams();
+    const { decorators, unconsumed } = scan;
     expect(decorators).toBeGreaterThan(1000);
     expect(unconsumed, "`{x:path}` strings no decorator scan consumed").toEqual(
       []
@@ -376,13 +507,16 @@ const fixtureIndex = buildSnapshotIndex(
 );
 
 function fixture(source: string): BaselineEntry[] {
-  return mismatchEntries(extractCallSites("fixture.ts", source), fixtureIndex);
+  return mismatchEntries(
+    extractCallSites("fixture.ts", source, undefined, fixtureIndex),
+    fixtureIndex
+  );
 }
 
 /** Several in-memory files, walked as a tree (imports followed between them). */
 function fixtureTree(files: Record<string, string>): BaselineEntry[] {
   return mismatchEntries(
-    walkSources(Object.keys(files), memoryModuleLoader(files)),
+    walkSources(Object.keys(files), memoryModuleLoader(files), fixtureIndex),
     fixtureIndex
   );
 }
@@ -799,7 +933,7 @@ describe("S1: websocket classification", () => {
   });
 });
 
-describe("N1: a glued {param} never passes anything under its prefix", () => {
+describe("N1: a parameter glued onto a path prefix is resolved per caller, or unresolved", () => {
   const WRAP = `${PREAMBLE}
     const PREFIX = "/api/v1/widgets";
     function getW(path: string) { return httpClient.get(\`\${PREFIX}\${path}\`); }
@@ -911,7 +1045,7 @@ describe("N3: method-unresolved sites are keyed per occurrence", () => {
   });
 });
 
-describe("N4: a declared constant read through a property does not widen", () => {
+describe("N4: a missing key or unfollowable object in a property read does not widen", () => {
   const SITE = (decl: string) => `${PREAMBLE}
     ${decl}
     export const x = (id: string) => httpClient.put(\`/api/v1/widgets/\${id}/\${EP.seg}\`, {});
@@ -1006,6 +1140,228 @@ describe("N6: no reference to a wrapper is silently dropped", () => {
         "unresolved",
         "unresolved",
         "features/x.ts"
+      ),
+    ]);
+  });
+});
+
+describe("W1: a {param} never stands in for a literal route segment", () => {
+  it("a named function's parameter filling a literal is resolved per caller", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        function crud(resource: string) {
+          return { list: () => httpClient.get(\`/api/v1/\${resource}\`) };
+        }
+        export const a = crud("nope");
+        export const b = crud("widgets");
+      `)
+    ).toEqual([entry("GET", "/api/v1/nope", "dead", "no-path")]);
+  });
+
+  it("any other value filling a literal is unresolved", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        export const x = (rs: string[]) => { for (const r of rs) httpClient.get(\`/api/v1/\${r}\`); };
+      `)
+    ).toMatchObject([{ method: "GET", reason: "unresolved" }]);
+  });
+
+  it("a {param} against a template parameter still passes", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        export const one = (id: string) => httpClient.get(\`/api/v1/widgets/\${id}\`);
+      `)
+    ).toEqual([]);
+  });
+
+  it("a string-literal-union parameter is checked value by value", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        type Verb = "approve" | "nope";
+        export const act = (id: string, action: Verb) =>
+          httpClient.put(\`/api/v1/widgets/\${id}/\${action}\`, {});
+      `)
+    ).toEqual([
+      entry("PUT", "/api/v1/widgets/{param}/nope", "dead", "no-path"),
+    ]);
+  });
+});
+
+/**
+ * Fixtures whose `{param}` lands on a template PARAMETER, so the W1 rule
+ * (never fill a literal) cannot be what turns them red.
+ */
+function fixtureAgainst(
+  paths: Record<string, Record<string, unknown>>,
+  source: string
+): BaselineEntry[] {
+  const idx = buildSnapshotIndex(paths, { multiSegment: [] });
+  return mismatchEntries(
+    extractCallSites("fixture.ts", source, undefined, idx),
+    idx
+  );
+}
+
+describe("W2: a run-time value glued onto a path prefix is unresolved", () => {
+  const unresolvedOne = [{ method: "GET", reason: "unresolved" }];
+  // `widgets{param}` aligns with `{kind}`, `/{param}{param}` with `{widget_id}`.
+  const W2_PATHS = {
+    "/api/v1/widgets": { get: {} },
+    "/api/v1/{kind}": { get: {} },
+    "/api/v1/widgets/{widget_id}": { get: {} },
+  };
+
+  it("a nested `+` template is judged in context (query values still pass)", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        export const u = (d: string) =>
+          httpClient.get(\`/api/v1/widgets?device_id=\` + \`\${encodeURIComponent(d)}&limit=5\`);
+      `)
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a loop variable",
+      `export const x = () => { for (const s of ["/nope/deep"]) httpClient.get(\`/api/v1/widgets\${s}\`); };`,
+    ],
+    [
+      "`this.x` with no initializer",
+      `class A { go() { return httpClient.get(\`/api/v1/widgets\${this.other}\`); } }`,
+    ],
+    [
+      "a call result",
+      `export const x = () => httpClient.get(\`/api/v1/widgets\${mk()}\`);`,
+    ],
+    [
+      "a destructured parameter",
+      `export const x = ({ s }: { s: string }) => httpClient.get(\`/api/v1/widgets\${s}\`);`,
+    ],
+    [
+      "a caller's own parameter glued inside its argument",
+      `const PREFIX = "/api/v1/widgets";
+       function getW(path: string) { return httpClient.get(\`\${PREFIX}\${path}\`); }
+       export const c = (a: string, b: string) => getW(\`/\${a}\${b}\`);`,
+    ],
+    [
+      "an outer function's parameter under an inner named wrapper",
+      `export function outer(sfx: string) {
+         function inner(base: string) { return httpClient.get(\`\${base}/api/v1/widgets\${sfx}\`); }
+         return inner("");
+       }`,
+    ],
+  ])("%s", (_label, body) => {
+    expect(fixtureAgainst(W2_PATHS, `${PREAMBLE}${body}`)).toMatchObject(
+      unresolvedOne
+    );
+  });
+});
+
+describe("W3: a declared constant's unreadable property does not widen", () => {
+  const SITE = (decl: string, read: string) => `${PREAMBLE}
+    ${decl}
+    export const x = (id: string) => httpClient.put(\`/api/v1/widgets/\${id}/\${${read}}\`, {});
+  `;
+  const unresolvedPut = [{ method: "PUT", reason: "unresolved" }];
+  // A `{field}` parameter, so a widened `{param}` WOULD align and pass.
+  const W3_PATHS = {
+    "/api/v1/widgets/{widget_id}": { get: {} },
+    "/api/v1/widgets/{widget_id}/approve": { put: {} },
+    "/api/v1/widgets/{widget_id}/{field}": { put: {} },
+  };
+  const w3 = (source: string) => fixtureAgainst(W3_PATHS, source);
+
+  it.each([
+    [
+      "Object.freeze without the key",
+      `const EP = Object.freeze({ other: "x" });`,
+      "EP.seg",
+    ],
+    [
+      "an alias of a literal",
+      `const E0 = { other: "x" }; const EP = E0;`,
+      "EP.seg",
+    ],
+    ["a nested read", `const EP = { a: { other: "x" } };`, "EP.a.seg"],
+    ["an element access", `const EP = { other: "x" };`, `EP["seg"]`],
+    [
+      "a computed key",
+      `const EP = { seg: "approve" }; const k = pick();`,
+      "EP[k]",
+    ],
+  ])("%s is unresolved", (_label, decl, read) => {
+    expect(w3(SITE(decl, read))).toMatchObject(unresolvedPut);
+  });
+
+  it.each([
+    [
+      "Object.freeze",
+      `const EP = Object.freeze({ seg: "approve" });`,
+      "EP.seg",
+    ],
+    ["an alias", `const E0 = { seg: "approve" }; const EP = E0;`, "EP.seg"],
+    ["a nested read", `const EP = { a: { seg: "approve" } };`, "EP.a.seg"],
+    ["an element access", `const EP = { seg: "approve" };`, `EP["seg"]`],
+  ])("%s with the key resolves (and passes)", (_label, decl, read) => {
+    expect(w3(SITE(decl, read))).toEqual([]);
+  });
+
+  it("a run-time object's property still widens", () => {
+    expect(
+      w3(`${PREAMBLE}
+        export async function x() {
+          const sm = await load();
+          return httpClient.get(\`/api/v1/widgets/\${sm.projectId}\`);
+        }
+      `)
+    ).toEqual([]);
+  });
+});
+
+describe("S2/S3: caller discovery", () => {
+  const REQ = `${PREAMBLE}
+    export async function request(path: string) {
+      return httpClient.get(\`/api/v1/widgets\${path}\`);
+    }
+    export default 1;`;
+
+  it("a default-plus-named import is followed", () => {
+    expect(
+      fixtureTree({
+        "services/req.ts": REQ,
+        "features/use.ts": `
+          import def, { request } from "@/services/req";
+          export const gone = () => request("/gone/deep");`,
+      })
+    ).toEqual([
+      entry(
+        "GET",
+        "/api/v1/widgets/gone/deep",
+        "dead",
+        "no-path",
+        "features/use.ts"
+      ),
+    ]);
+  });
+
+  it("only React's own dependency arrays are exempt", () => {
+    expect(
+      fixtureTree({
+        "services/req.ts": REQ,
+        "features/use.ts": `
+          import { request } from "@/services/req";
+          export const ok = () => request("");
+          const a = useCallback(() => 1, [request]);
+          useImperativeHandle(ref, () => ({}), [request]);
+          const b = useParallel(opts, [request]);`,
+      })
+    ).toEqual([
+      entry(
+        "?",
+        "<unresolved> request #1",
+        "unresolved",
+        "unresolved",
+        "features/use.ts"
       ),
     ]);
   });
