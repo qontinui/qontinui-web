@@ -40,11 +40,29 @@
 //      stretches the poll gap rather than piling on.
 //   3. Hidden tabs don't poll — a backgrounded dashboard left open for
 //      hours is pure load with nobody reading it.
+//   4. No client retries — every read in the hot batch passes
+//      `COORD_DASHBOARD_POLL_OPTIONS` (plan
+//      `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5),
+//      so a 504 costs one request and the next batch is the retry. Rule 1 is
+//      this hook's own single-flight, which predates `useSingleFlight`.
+//
+// Two reads sit OUTSIDE rule 1's batch latch, deliberately:
+//
+//   - `fetchMergedPrs` runs on its own slower chain under its OWN latch
+//     (`mergedReadRef`, see `readMergedIfStale`), with no client retry, so it
+//     is single-flight too — just not behind the hot batch, which a 20 s
+//     merged read would otherwise starve.
+//   - `onSuggestionAction`'s `fetchSuggestions` re-read runs once per
+//     operator click, right after that click's POST, so the acted-on row
+//     leaves the list at once. It is operator-triggered and bounded by the
+//     clicks (the action button is busy while it runs), and it passes
+//     `COORD_DASHBOARD_POLL_OPTIONS` like the batch read of the same route.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
 import type {
   BlastRadiusBlock,
@@ -271,7 +289,10 @@ export function useMergePipelineData(
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/merge/queue`,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
@@ -303,7 +324,8 @@ export function useMergePipelineData(
   const fetchPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`
+        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -408,7 +430,8 @@ export function useMergePipelineData(
   const fetchEconomics = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`
+        `${OPERATIONS_API}/pr-merge/merge-economics`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -448,7 +471,8 @@ export function useMergePipelineData(
   const fetchSuggestions = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`
+        `${OPERATIONS_API}/pr-merge/suggestions`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -471,7 +495,8 @@ export function useMergePipelineData(
   const fetchGateBlocks = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`
+        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {

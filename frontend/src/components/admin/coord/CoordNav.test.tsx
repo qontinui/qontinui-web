@@ -31,7 +31,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
 }));
 
-
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
@@ -810,7 +809,9 @@ describe("CoordNav", () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         render(<CoordNav />);
-        const fresh = await screen.findByTestId("coord-nav-devops-breach-badge");
+        const fresh = await screen.findByTestId(
+          "coord-nav-devops-breach-badge"
+        );
         expect(fresh).toHaveTextContent("1 refusing work");
         expect(fresh).toHaveAttribute("data-read-stale", "false");
 
@@ -831,9 +832,9 @@ describe("CoordNav", () => {
         // 3. the screen-reader note — `title` is not an accessible name on a
         //    span with content, so without this the qualification reaches only
         //    a sighted mouse user.
-        expect(
-          stale.querySelector(".sr-only")?.textContent
-        ).toContain("from an earlier read");
+        expect(stale.querySelector(".sr-only")?.textContent).toContain(
+          "from an earlier read"
+        );
       } finally {
         vi.useRealTimers();
       }
@@ -928,7 +929,10 @@ describe("CoordNav", () => {
       let polls = 0;
       httpGet.mockImplementation((url: unknown) => {
         const u = String(url);
-        if (u.includes("fleet/resource-samples") || u.includes("fleet/health")) {
+        if (
+          u.includes("fleet/resource-samples") ||
+          u.includes("fleet/health")
+        ) {
           if (u.includes("fleet/health")) polls += 1;
           if (polls > 1)
             return Promise.reject(new Error("GET … failed: 500 - boom"));
@@ -1011,35 +1015,36 @@ describe("CoordNav", () => {
       }
     });
 
-    it("does not restamp the sample clock for a reply it declined", async () => {
-      // The clock `summarizeFleetAdmission` ages lanes against is stamped on a
-      // samples SUCCESS. A superseded reply is a success the axis DECLINED, and
-      // stamping for it would make the stamp describe rows that were thrown
-      // away — springing lanes an even newer read had already aged into `stale`
-      // back to a fresh verdict.
-      //
-      // Reached by hanging the mount poll's samples read past the next one.
+    it("never overlaps its own reads: a tick while the mount read hangs sends nothing", async () => {
+      // Plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
+      // D5: `useVisiblePoll` is single-flight for a poll that returns its
+      // promise. This test used to hang the mount read past the next poll to
+      // reach a SUPERSEDED reply (the "declined reply must not restamp the
+      // sample clock" rule). Polls can no longer overlap, so no poll produces
+      // one; the axis's sequence check and the stamp-only-when-applied rule
+      // stay in `useFleetAlarmBadge` as defence, not as a reachable path.
       let releaseFirstSamples: (v: unknown) => void = () => {};
       const firstSamples = new Promise((resolve) => {
         releaseFirstSamples = resolve;
       });
-      // `age_secs: 100` against a 120 s threshold: current when it lands,
-      // stale 30 s later, and fresh again if the clock is wrongly restamped.
       const rows = {
         latest: [sample("d-1", "a", "breach", 100)],
         history: [],
       };
       let sampleCalls = 0;
+      let healthCalls = 0;
       httpGet.mockImplementation((url: unknown) => {
         const u = String(url);
         if (u.includes("fleet/resource-samples")) {
           sampleCalls += 1;
           return sampleCalls === 1 ? firstSamples : Promise.resolve(rows);
         }
-        if (u.includes("fleet/health"))
+        if (u.includes("fleet/health")) {
+          healthCalls += 1;
           return Promise.resolve({
             devices: [coordDevice("d-1", "msi", "healthy")],
           });
+        }
         if (u.startsWith("/api/v1/operations/notifications"))
           return Promise.resolve({ notifications: [], unread_count: 0 });
         return Promise.resolve({});
@@ -1047,36 +1052,23 @@ describe("CoordNav", () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         render(<CoordNav />);
-        // The second poll delivers the rows; the first is still hanging.
-        await vi.advanceTimersByTimeAsync(60_000);
+        // Two poll intervals pass while the mount read's samples half hangs.
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(sampleCalls).toBe(1);
+        expect(healthCalls).toBe(1);
+
+        await act(async () => {
+          releaseFirstSamples(rows);
+          await firstSamples;
+        });
         await waitFor(() =>
           expect(
             screen.getByTestId("coord-nav-devops-breach-badge")
           ).toHaveTextContent("1 refusing work")
         );
-
-        // 30 s on, the lane has aged past the threshold. Stop short of the
-        // third poll, which would deliver the rows again and reset the clock
-        // legitimately.
-        await vi.advanceTimersByTimeAsync(30_000);
-        await waitFor(() =>
-          expect(
-            screen.getByTestId("coord-nav-devops-stale-badge")
-          ).toHaveTextContent("1 stale")
-        );
-
-        // Now the superseded reply lands. It carries the same rows, so nothing
-        // about the lane changed — only the clock is at risk.
-        await act(async () => {
-          releaseFirstSamples(rows);
-          await firstSamples;
-        });
-        expect(
-          screen.getByTestId("coord-nav-devops-stale-badge")
-        ).toHaveTextContent("1 stale");
-        expect(
-          screen.queryByTestId("coord-nav-devops-breach-badge")
-        ).not.toBeInTheDocument();
+        // Released, the next tick polls again.
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() => expect(sampleCalls).toBe(2));
       } finally {
         vi.useRealTimers();
       }

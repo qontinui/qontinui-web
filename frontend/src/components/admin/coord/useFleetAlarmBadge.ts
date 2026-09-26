@@ -72,6 +72,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { createLogger } from "@/lib/logger";
 import {
   summarizeFleetAdmission,
@@ -209,9 +210,16 @@ export function useFleetAlarmBadge(): FleetAlarm {
     // list is the spine — a machine that publishes no sample still has to be
     // counted, so losing the samples read must not lose the machines too.
     const [healthRes, samplesRes] = await Promise.allSettled([
-      httpClient.get<FleetHealthPayload>(FLEET_HEALTH_API),
+      // No client retries (plan
+      // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
+      // D5): the next tick is the retry.
+      httpClient.get<FleetHealthPayload>(
+        FLEET_HEALTH_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      ),
       httpClient.get<ResourceSamplesResponse>(
-        `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${DEFAULT_WINDOW_SECS}`
+        `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${DEFAULT_WINDOW_SECS}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       ),
     ]);
     // Unmounting, so nothing renders these tickets' answers. Leaving both
@@ -229,7 +237,10 @@ export function useFleetAlarmBadge(): FleetAlarm {
       log.warn("fleet health badge fetch failed", healthRes.reason);
       settleHealth(healthSeq, null);
     }
-    if (samplesRes.status === "fulfilled" && !deliveredSamples(samplesRes.value)) {
+    if (
+      samplesRes.status === "fulfilled" &&
+      !deliveredSamples(samplesRes.value)
+    ) {
       log.warn("fleet resource-sample badge answered with no lane rows");
       settleSamples(samplesSeq, null);
     } else if (samplesRes.status === "fulfilled") {
@@ -250,16 +261,10 @@ export function useFleetAlarmBadge(): FleetAlarm {
     }
   }, [issueHealth, issueSamples, settleHealth, settleSamples]);
 
-  // `useVisiblePoll` re-arms its interval whenever `fn` changes identity, so
-  // hand it one stable reference rather than a fresh arrow per render.
-  const fetchCountsTick = useCallback(() => void fetchCounts(), [fetchCounts]);
-
-  // The MOUNT fetch, and the cancelled-flag lifecycle it owns. Always runs,
-  // including in a tab that mounts hidden, so the badge has a value the moment
-  // it is revealed.
+  // The cancelled-flag lifecycle. Declared BEFORE `useVisiblePoll` so this
+  // effect runs first and the mount read below sees `cancelled === false`.
   useEffect(() => {
     cancelled.current = false;
-    void fetchCounts();
     return () => {
       cancelled.current = true;
     };
@@ -273,7 +278,13 @@ export function useFleetAlarmBadge(): FleetAlarm {
   // samples) forever. `CoordNav.test.tsx`'s visibility test asserts across the
   // WHOLE nav rather than per badge, which is what caught it; keep it that way,
   // because a per-badge assertion would have passed while this one polled.
-  useVisiblePoll(fetchCountsTick, FLEET_ALARM_POLL_MS);
+  //
+  // `fetchCounts` is handed over as-is — it returns its promise, which is what
+  // makes the poll single-flight (D5): no tick or reveal starts a read while
+  // one is outstanding. `runOnMount` puts the MOUNT read under the same guard;
+  // it runs even in a tab that mounts hidden, so the badge has a value the
+  // moment it is revealed.
+  useVisiblePoll(fetchCounts, FLEET_ALARM_POLL_MS, { runOnMount: true });
 
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), TICK_MS);

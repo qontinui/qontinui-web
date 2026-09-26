@@ -50,6 +50,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
 /**
  * An agent's lease on one alert, as coord serves it on `/coord/alerts` rows
@@ -202,7 +203,11 @@ export function parseFixSession(raw: unknown): FixSessionState {
   }
   if (raw && typeof raw === "object") {
     const o = raw as Record<string, unknown>;
-    if (o.state === "running" || o.state === "stalled" || o.state === "failed") {
+    if (
+      o.state === "running" ||
+      o.state === "stalled" ||
+      o.state === "failed"
+    ) {
       return {
         kind: o.state,
         agentId: typeof o.agent_id === "string" ? o.agent_id : undefined,
@@ -296,9 +301,7 @@ export function parseRedMainAlerts(
       : [];
     const rawCount = detail.blocked_pr_count;
     const blockedPrCount =
-      typeof rawCount === "number" && Number.isFinite(rawCount)
-        ? rawCount
-        : 0;
+      typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : 0;
     out.push({
       alertKey: a.alert_key,
       repo,
@@ -417,17 +420,27 @@ function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
       );
     case "running":
       return (
-        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+        <span
+          className="text-xs text-red-100"
+          data-testid="red-main-remediation"
+        >
           {RUNNING_LABEL}
-          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+          {fixSession.agentId
+            ? ` · ${truncateAgentId(fixSession.agentId)}`
+            : ""}
         </span>
       );
     case "stalled":
     case "failed":
       return (
-        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+        <span
+          className="text-xs text-red-100"
+          data-testid="red-main-remediation"
+        >
           fix session {fixSession.kind}
-          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+          {fixSession.agentId
+            ? ` · ${truncateAgentId(fixSession.agentId)}`
+            : ""}
         </span>
       );
   }
@@ -471,14 +484,22 @@ export function RedMainBanner() {
       // ignores the unknown param and returns the old unfiltered rollup, which
       // `parseRedMainAlerts` already filters — so this degrades to exactly the
       // previous behaviour rather than to an empty banner.
+      // No client retries (plan
+      // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+      // this banner is mounted by the coord layout on every page, and the
+      // next tick is the retry. `inFlight` above is its single-flight.
       const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`
+        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord
       // vintages).
       const envelope = Array.isArray(body)
         ? undefined
-        : (body as { alerts?: CoordAlertRow[]; claims_scrape_up?: boolean | null });
+        : (body as {
+            alerts?: CoordAlertRow[];
+            claims_scrape_up?: boolean | null;
+          });
       const alerts = Array.isArray(body) ? body : (envelope?.alerts ?? []);
       // The answer arrived, so what the banner shows is confirmed as of NOW —
       // whether it confirmed a red main or an empty result.
@@ -585,8 +606,8 @@ export function RedMainBanner() {
               data-testid="red-main-stale"
               title="coord has not confirmed this alert since then — the read path is failing, so the banner is showing its last known state"
             >
-              (as of{" "}
-              {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
+              (as of {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)}{" "}
+              ago)
             </span>
           )}
           <RemediationNote fixSession={a.fixSession} />

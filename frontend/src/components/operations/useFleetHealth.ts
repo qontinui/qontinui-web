@@ -33,8 +33,13 @@
  * Phase 8).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import {
+  COORD_DASHBOARD_POLL_OPTIONS,
+  describeCoordPollError,
+} from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import type { DeviceCredentialDark } from "./coordCredentialStatus";
 
 /**
@@ -258,23 +263,28 @@ export function useFleetHealth(): UseFleetHealthResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // coord-proxied poll that fails is retried by its next tick, never by
+  // `httpClient`'s 5xx backoff chain, and never overlaps itself.
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<FleetHealthPayload>(FLEET_HEALTH_API);
+      const body = await httpClient.get<FleetHealthPayload>(
+        FLEET_HEALTH_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
+      if (!isCurrent()) return;
       setData(body);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (!isCurrent()) return;
+      setError(describeCoordPollError(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, FLEET_HEALTH_POLL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
+  const { refresh } = useSingleFlightPoll(poll, FLEET_HEALTH_POLL_MS);
 
   return { data, loading, error, refresh };
 }

@@ -33,35 +33,40 @@
  * of re-deriving the status from the message text.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { httpClient } from "@/services/service-factory";
-import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  COORD_DASHBOARD_POLL_OPTIONS,
+  describeCoordPollError,
+} from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { OPERATIONS_API } from "./utils";
 import { RESOURCE_POLL_INTERVAL_MS } from "./useFleetResourceSamples";
 
 export const FLEET_WORKTREE_SLOTS_API = `${OPERATIONS_API}/fleet/worktree-slots`;
 
 /**
- * Statuses that mean "this build/deployment does not serve the route yet",
- * as opposed to "the route ran and failed" — mirrors `useSessionCompliance`'s
- * `ROUTE_UNAVAILABLE_STATUSES`: a 405/501 is a router that knows the path and
- * not the verb, or knows neither, the same family as a 404 here.
- */
-const ROUTE_UNAVAILABLE_STATUSES = new Set([404, 405, 501]);
-
-/**
- * Friendly error text for the banner. `httpStatusOf` reads the status FIELD
- * of `httpClient`'s rejection (anchored to the verb, never the echoed
- * upstream body — see `httpStatus.ts`), so a coord 500 whose body happens to
- * quote "404" is never misread as route-unavailable. Anything else falls
- * through to the raw `httpClient` message, same as before.
+ * Friendly error text for the banner (`describeCoordPollError`, which reads
+ * the status FIELD of `httpClient`'s rejection through the shared anchored
+ * `httpStatusOf`, so a coord 500 whose body happens to quote "404" is never
+ * misread as route-unavailable):
+ *
+ * - `404 {"error":"route_disabled"}` — the route's kill switch or tenant dial
+ *   is engaged: "disabled by operator". Before plan
+ *   `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` Phase 4
+ *   every 404 read "not shipped yet", which is a false reason for a route an
+ *   operator switched off.
+ * - `503 {"error":"deadline","budget_ms":N}` — coord abandoned the read at its
+ *   route budget: UNKNOWN, naming the budget.
+ * - Any other 404/405/501 — the route is not deployed (a router that knows the
+ *   path and not the verb, or knows neither).
+ * - Anything else falls through to the raw `httpClient` message.
  */
 function describeError(err: unknown): string {
-  const status = httpStatusOf(err);
-  if (status !== null && ROUTE_UNAVAILABLE_STATUSES.has(status)) {
-    return "coord does not serve the fleet worktree-slots route yet (Phase 1 of this feature's plan has not shipped)";
-  }
-  return err instanceof Error ? err.message : String(err);
+  return describeCoordPollError(err, {
+    routeUnavailableText:
+      "coord does not serve the fleet worktree-slots route yet (Phase 1 of this feature's plan has not shipped)",
+  });
 }
 
 /** One occupant of an allocated worktree slot, as coord's `BudgetOccupant` serializes it. */
@@ -132,36 +137,32 @@ export function useFleetWorktreeSlots(): UseFleetWorktreeSlotsResult {
   const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
 
-  const refresh = useCallback(async () => {
+  // Single-flight, no retries (D5): on 2026-09-22 this route took 5 requests
+  // per minute while failing (1 per minute when healthy), consistent with
+  // `httpClient`'s up-to-5-request 5xx retry chain on each poll. The poll's
+  // actual cadence that day is UNKNOWN.
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const body = await httpClient.get<WorktreeSlotsResponse>(
-        FLEET_WORKTREE_SLOTS_API
+        FLEET_WORKTREE_SLOTS_API,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
-      if (cancelledRef.current) return;
+      if (!isCurrent()) return;
       setData(body);
       // Stamped ONLY on success — a failed poll must not refresh the clock
       // that ages `fetchedAtMs`.
       setFetchedAtMs(Date.now());
       setError(null);
     } catch (e) {
-      if (cancelledRef.current) return;
+      if (!isCurrent()) return;
       setError(describeError(e));
     } finally {
-      if (!cancelledRef.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    cancelledRef.current = false;
-    refresh();
-    const id = setInterval(refresh, RESOURCE_POLL_INTERVAL_MS);
-    return () => {
-      cancelledRef.current = true;
-      clearInterval(id);
-    };
-  }, [refresh]);
+  const { refresh } = useSingleFlightPoll(poll, RESOURCE_POLL_INTERVAL_MS);
 
   return { data, loading, error, fetchedAtMs, refresh };
 }
