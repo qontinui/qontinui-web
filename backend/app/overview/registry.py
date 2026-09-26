@@ -15,12 +15,14 @@ without audit or permissions.
 
 from __future__ import annotations
 
+from app.overview.files import FileRead, file_store
 from app.overview.intent_documents import (
     IntentDocumentCreate,
     IntentDocumentRead,
     IntentDocumentUpdate,
     intent_document_store,
 )
+from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
@@ -76,6 +78,45 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "cost_lines",
                 "calendar_breaks",
             ),
+        ),
+        ResourceSpec(
+            name="pages",
+            path="pages",
+            title="Documents and wiki pages",
+            description=(
+                "Markdown documents and wiki pages, with full version history "
+                "(GET /pages/{id}/versions, POST …/versions/{n}/revert) and "
+                "backlinks (GET /pages/{id}/backlinks). Filters: kind, slug, q "
+                "(full-text). A list read carries no bodies (body_md is null)."
+            ),
+            permission="editing_roles",
+            read_model=PageRead,
+            create_model=PageCreate,
+            update_model=PageUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("kind", "slug", "q"),
+            store=page_store,
+            tables=("pages", "page_versions", "page_links"),
+            audit_exclude=frozenset({"body_md"}),
+        ),
+        ResourceSpec(
+            name="files",
+            path="files",
+            title="Uploaded files",
+            description=(
+                "Uploaded files. Upload is multipart POST /files (fields: file, "
+                "optional page_id); download is GET /files/{id}/content. Types: "
+                "pdf, docx, xlsx, pptx, png, jpg, md, csv; 25 MB each, 1 GB per "
+                "project. Filters: page_id, q (filename)."
+            ),
+            permission="editing_roles",
+            read_model=FileRead,
+            # "create" is served by the multipart upload route, not the
+            # generic JSON one (no create_model, so none is mounted).
+            operations=frozenset({"list", "get", "create", "delete"}),
+            list_filters=("page_id", "q"),
+            store=file_store,
+            tables=("files",),
         ),
         ResourceSpec(
             name="settings",
