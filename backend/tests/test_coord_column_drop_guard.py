@@ -721,6 +721,165 @@ def test_missing_manifest_json_file_is_vacuous(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 6b. the null-`main` UNKNOWN names its precondition as a machine-readable
+#     marker (plan 2026-09-13-a-machine-checkable-precondition-written-as-prose-
+#     is-an-unregistered-gate, Phase 4), and no other path prints one
+# ---------------------------------------------------------------------------
+
+# Byte-for-byte the line qontinui-coord's `guard_rerun.rs` test fixture pins
+# (`const MARKER`) and its allowlist admits for this guard.
+COORD_MARKER_LINE = (
+    'UNKNOWN-PENDING-PRECONDITION: {"kind":"sql_count",'
+    '"query_id":"schema_read_surfaces_main_at_head","op":"gte","n":1}'
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_step_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a CI run of this suite from writing into its OWN step summary."""
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+
+def _markers(text: str) -> list[str]:
+    """Lines coord would take as a marker: its normalisation strips a leading
+    ``##[error]`` (the rendered ``::error::``), then anchors on the prefix."""
+    out = []
+    for line in text.splitlines():
+        cleaned = line.strip().removeprefix("##[error]").removeprefix("::error::")
+        if cleaned.startswith(guard.PRECONDITION_MARKER_PREFIX.rstrip()):
+            out.append(cleaned)
+    return out
+
+
+def _main_null_payload() -> dict:
+    return _manifest(("prompt_documents", "agent_write_tier", "sql"), main=None)
+
+
+def test_main_null_prints_exactly_one_marker_equal_to_the_constant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS  # still UNKNOWN, still not green
+    captured = capsys.readouterr()
+    markers = _markers(captured.out + captured.err)
+    assert markers == [COORD_MARKER_LINE]
+    body = markers[0].removeprefix(guard.PRECONDITION_MARKER_PREFIX)
+    assert json.loads(body) == guard.MAIN_AT_HEAD_PRECONDITION
+    # The human sentence stays beside it.
+    assert "serves `main.sha`" in captured.err
+
+
+def test_main_null_marker_survives_a_real_process_and_its_log(
+    tmp_path: Path,
+) -> None:
+    """The job log is the process's streams: run it as CI does, offline."""
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    manifest = _write_manifest(tmp_path, _main_null_payload())
+    result = _run("--files", str(fixture), "--manifest-json", str(manifest))
+    assert result.returncode == guard.EXIT_VACUOUS
+    assert _markers(result.stdout + result.stderr) == [COORD_MARKER_LINE]
+
+
+def test_main_null_on_actions_annotates_a_warning_and_writes_the_summary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert _markers(err) == [COORD_MARKER_LINE]
+    warnings = [
+        line
+        for line in err.splitlines()
+        if line.startswith("::warning title=UNKNOWN-PENDING-PRECONDITION::")
+    ]
+    assert len(warnings) == 1
+    assert "Not a violation." in warnings[0]
+    # Never an ::error:: annotation for the pending precondition itself.
+    assert not any(line.startswith("::error::UNKNOWN") for line in err.splitlines())
+    written = summary.read_text(encoding="utf-8")
+    assert written.startswith("UNKNOWN — pending precondition ")
+    assert written.rstrip().endswith(
+        "coord re-runs this check when it holds. Not a violation."
+    )
+
+
+def _deployed_null(tmp_path: Path) -> tuple[tuple[str, str], guard.Fetcher]:
+    payload = _manifest(("prompt_documents", "agent_write_tier", "sql"), deployed=None)
+    return ("prompt_documents", "agent_writable"), _fetch_of(payload)
+
+
+def _empty_deployed(tmp_path: Path) -> tuple[tuple[str, str], guard.Fetcher]:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), deployed_surfaces=[]
+    )
+    return ("prompt_documents", "agent_writable"), _fetch_of(payload)
+
+
+def _wildcard(tmp_path: Path) -> tuple[tuple[str, str], guard.Fetcher]:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        ("prompt_documents", "*", "unresolved_wildcard"),
+    )
+    return ("prompt_documents", "scratch"), _fetch_of(payload)
+
+
+def _fetch_fails(tmp_path: Path) -> tuple[tuple[str, str], guard.Fetcher]:
+    def failing(url: str) -> bytes:
+        raise guard.ManifestUnavailableError(f"{url}: HTTP Error 404: Not Found")
+
+    return ("prompt_documents", "agent_writable"), failing
+
+
+def _violation(tmp_path: Path) -> tuple[tuple[str, str], guard.Fetcher]:
+    return ("prompt_documents", "agent_writable"), _fetch_of(READS_AGENT_WRITABLE)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        (_deployed_null, guard.EXIT_VACUOUS),
+        (_empty_deployed, guard.EXIT_VACUOUS),
+        (_wildcard, guard.EXIT_VACUOUS),
+        (_fetch_fails, guard.EXIT_VACUOUS),
+        (_violation, guard.EXIT_VIOLATION),
+    ],
+    ids=["deployed-null", "empty-deployed", "wildcard", "fetch-fails", "violation"],
+)
+def test_no_other_path_prints_a_marker(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case,
+    expected: int,
+) -> None:
+    """coord's allowlist admits only the null-`main` predicate for this guard,
+    so any other UNKNOWN printing one would be refused — and any other exit is
+    no pending precondition at all."""
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    (table, column), fetch = case(tmp_path)
+    fixture = _write(tmp_path, "r.py", _drop_column_revision(table, column))
+    assert guard.main(["--files", str(fixture)], fetch=fetch) == expected
+    captured = capsys.readouterr()
+    assert _markers(captured.out + captured.err) == []
+    assert "UNKNOWN-PENDING-PRECONDITION" not in captured.out + captured.err
+    assert not summary.exists()
+
+
+# ---------------------------------------------------------------------------
 # 7. the wildcard waiver
 # ---------------------------------------------------------------------------
 
