@@ -425,3 +425,72 @@ class TestMintSelfGuardsRaceAndBoundary:
         )
         with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
             await _self_mint(async_db_session, device_id)
+
+
+class TestViolatedConstraint:
+    """``_violated_constraint`` prefers the driver's structured name."""
+
+    @staticmethod
+    def _exc(orig: BaseException):
+        from sqlalchemy.exc import IntegrityError
+
+        return IntegrityError("INSERT ...", {}, orig)
+
+    def test_structured_name_on_cause(self) -> None:
+        class _PgError(Exception):
+            constraint_name = dmk_crud._DEVICE_UNIQUE_CONSTRAINT
+
+        translated = Exception("unrelated message text")
+        translated.__cause__ = _PgError()
+        assert (
+            dmk_crud._violated_constraint(self._exc(translated))
+            == dmk_crud._DEVICE_UNIQUE_CONSTRAINT
+        )
+
+    def test_structured_name_wins_over_message_text(self) -> None:
+        class _PgError(Exception):
+            constraint_name = "some_other_constraint"
+
+        translated = Exception(f"mentions {dmk_crud._DEVICE_UNIQUE_CONSTRAINT}")
+        translated.__cause__ = _PgError()
+        assert (
+            dmk_crud._violated_constraint(self._exc(translated))
+            == "some_other_constraint"
+        )
+
+    def test_text_fallback_and_unknown(self) -> None:
+        text_only = Exception(f'duplicate key "{dmk_crud._DEVICE_UNIQUE_CONSTRAINT}"')
+        assert (
+            dmk_crud._violated_constraint(self._exc(text_only))
+            == dmk_crud._DEVICE_UNIQUE_CONSTRAINT
+        )
+        assert dmk_crud._violated_constraint(self._exc(Exception("nope"))) is None
+
+
+@pytest.mark.asyncio
+class TestSelfMintOtherIntegrityError:
+    async def test_other_integrity_error_is_reraised_not_mapped_to_409(
+        self, async_db_session: AsyncSession, monkeypatch
+    ) -> None:
+        """A violation of some OTHER constraint on the guarded insert must
+        propagate; only the device-id unique violation means "a concurrent
+        mint won" (409)."""
+        from sqlalchemy.exc import IntegrityError
+
+        real_flush = async_db_session.flush
+        raised = {"n": 0}
+
+        async def flush(*args, **kwargs):
+            # Fail only the INSERT's flush (a pending credential), not the
+            # SELECT's autoflush, so the guarded except-branch is what runs.
+            if any(
+                isinstance(o, DeviceMachineCredential) for o in async_db_session.new
+            ):
+                raised["n"] += 1
+                raise IntegrityError("INSERT ...", {}, Exception("other_constraint"))
+            return await real_flush(*args, **kwargs)
+
+        monkeypatch.setattr(async_db_session, "flush", flush)
+        with pytest.raises(IntegrityError):
+            await _self_mint(async_db_session, uuid4())
+        assert raised["n"] == 1

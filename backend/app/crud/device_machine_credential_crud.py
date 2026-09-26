@@ -96,6 +96,23 @@ class DeviceMachineKeyStillUsableError(Exception):
 _DEVICE_UNIQUE_CONSTRAINT: Final[str] = "uq_devenv_dmk_device_id"
 
 
+def _violated_constraint(exc: IntegrityError) -> str | None:
+    """Name of the constraint an ``IntegrityError`` violated, if the driver says.
+
+    asyncpg carries it structurally as ``constraint_name`` on the original
+    exception, which SQLAlchemy's adapter chains as the translated error's
+    ``__cause__``. Falls back to searching the message text so another driver
+    (or a wrapped error) still resolves, rather than reading as "unknown".
+    """
+    orig = exc.orig
+    for err in (orig, getattr(orig, "__cause__", None)):
+        name = getattr(err, "constraint_name", None)
+        if isinstance(name, str) and name:
+            return name
+    text = str(orig)
+    return _DEVICE_UNIQUE_CONSTRAINT if _DEVICE_UNIQUE_CONSTRAINT in text else None
+
+
 def _usable_beyond(cred: DeviceMachineCredential, horizon: datetime) -> bool:
     """True when ``cred`` does not expire before ``horizon`` (no expiry
     counts as never expiring). Revocation is the caller's check."""
@@ -192,7 +209,7 @@ async def mint(
                     db.add(cred)
                     await db.flush()
             except IntegrityError as exc:
-                if _DEVICE_UNIQUE_CONSTRAINT not in str(exc.orig):
+                if _violated_constraint(exc) != _DEVICE_UNIQUE_CONSTRAINT:
                     raise
                 raise DeviceMachineKeyStillUsableError(device_id) from exc
     else:
