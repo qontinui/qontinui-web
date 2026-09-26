@@ -2,14 +2,18 @@
 
 Phase 5 of ``2026-09-12-residual-work-from-the-april-2026-plan-audit``. The
 handler (``ingest_phase_completed`` in ``app/api/v1/endpoints/events.py``) was
-previously exercised only incidentally; the two test files an earlier plan
-cited for it were never committed. Its attribution branches are where
+previously exercised only incidentally: plan
+``restate-port-part-b-server-runner.md`` claimed
+``tests/test_phase_result_ingestion.py`` and
+``tests/integration/test_server_runner_flow.py``, and neither was ever
+committed. Its attribution branches are where
 misattribution would hide, so each is pinned here:
 
 * explicit ``runner_id`` owned by the caller -> 202, row attributed to it;
 * explicit ``runner_id`` that does not exist -> 404;
 * explicit ``runner_id`` owned by another user -> 403 and NOTHING written;
-* no ``runner_id`` -> the most-recently-heartbeated *paired* device wins;
+* no ``runner_id`` -> the most-recently-heartbeated *paired* device wins,
+  a never-heartbeated one loses (NULLS LAST), and ``created_at`` breaks ties;
 * no ``runner_id`` and no paired device -> 202, NULL runner, "server-device";
 * the companion ``WorkflowEvent`` row and the background push dispatch;
 * a missing device bearer -> 401.
@@ -29,7 +33,7 @@ background task against the mock after the response is sent.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -106,6 +110,7 @@ async def _make_device(
     name: str,
     paired: bool = True,
     last_heartbeat: datetime | None = None,
+    created_at: datetime | None = None,
 ) -> Device:
     device = Device(
         device_id=uuid4(),
@@ -117,6 +122,8 @@ async def _make_device(
         paired_at=datetime.now(UTC) if paired else None,
         last_heartbeat=last_heartbeat,
     )
+    if created_at is not None:
+        device.created_at = created_at
     db.add(device)
     await db.commit()
     await db.refresh(device)
@@ -161,7 +168,7 @@ async def caller(async_db_session: AsyncSession) -> User:
 
 
 @pytest.fixture()
-def dispatch_mock() -> Any:
+def dispatch_mock() -> Iterator[AsyncMock]:
     """Replace the push fan-out so no real dispatch ever runs."""
     with patch.object(
         events_module, "_dispatch_push_for_event_id", new=AsyncMock()
@@ -321,6 +328,15 @@ async def test_fallback_picks_most_recently_heartbeated_paired_device(
     await _make_device(
         async_db_session, user=stranger, name="stranger-paired", last_heartbeat=now
     )
+    # Paired but never heartbeated, and the newest row: Postgres sorts NULL
+    # first under DESC, so only ``.nullslast()`` keeps this one from winning.
+    await _make_device(
+        async_db_session,
+        user=caller,
+        name="never-heartbeated",
+        last_heartbeat=None,
+        created_at=now + timedelta(minutes=5),
+    )
     execution_id = f"exec-{uuid4().hex}"
 
     async with make_client(caller) as client:
@@ -337,6 +353,42 @@ async def test_fallback_picks_most_recently_heartbeated_paired_device(
     assert len(events) == 1
     assert events[0].device_id == str(newer.device_id)
     assert events[0].runner_name == "newer-paired"
+
+
+async def test_fallback_breaks_heartbeat_ties_by_newest_created_at(
+    async_db_session: AsyncSession,
+    caller: User,
+    make_client: ClientFactory,
+    dispatch_mock: AsyncMock,
+) -> None:
+    now = datetime.now(UTC)
+    heartbeat = now - timedelta(minutes=2)
+    # The loser is inserted FIRST: with no ``created_at`` key, Postgres hands
+    # back equal-heartbeat rows in insertion order and would pick it.
+    await _make_device(
+        async_db_session,
+        user=caller,
+        name="older-created",
+        last_heartbeat=heartbeat,
+        created_at=now - timedelta(days=1),
+    )
+    newer = await _make_device(
+        async_db_session,
+        user=caller,
+        name="newer-created",
+        last_heartbeat=heartbeat,
+        created_at=now - timedelta(hours=1),
+    )
+    execution_id = f"exec-{uuid4().hex}"
+
+    async with make_client(caller) as client:
+        resp = await client.post(ENDPOINT, json=_payload(execution_id=execution_id))
+
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["runner_id"] == str(newer.device_id)
+    rows = await _phase_results(async_db_session, execution_id)
+    assert len(rows) == 1
+    assert rows[0].runner_id == newer.device_id
 
 
 async def test_fallback_with_no_paired_device_writes_null_runner(
@@ -398,6 +450,7 @@ async def test_companion_event_and_push_dispatch(
     assert len(events) == 1
     event = events[0]
     assert event.event_type == WorkflowEventType.PHASE_COMPLETED.value
+    # The literal pins the wire string, so an enum rename cannot move it silently.
     assert event.event_type == "phase_completed"
     assert event.run_id == execution_id
     assert event.user_id == caller.id
@@ -439,6 +492,7 @@ async def test_missing_device_token_is_401(
         resp = await client.post(ENDPOINT, json=_payload(execution_id=execution_id))
 
     assert resp.status_code == 401, resp.text
+    assert resp.json()["detail"] == "Not authenticated"
     assert await _phase_results(async_db_session, execution_id) == []
     assert await _workflow_events(async_db_session, execution_id) == []
     dispatch_mock.assert_not_called()
