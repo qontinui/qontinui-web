@@ -77837,7 +77837,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID.",
+        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID. Telemetry event types (funnel events)\nare never returned.",
         "operationId": "api_v1_events_get",
         "parameters": [
           {
@@ -78113,7 +78113,7 @@
     },
     "/api/v1/events/unseen": {
       "get": {
-        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.",
+        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.\nTelemetry event types (funnel events) are never returned, so they never\nmove the unread badge.",
         "operationId": "api_v1_events_unseen_get",
         "parameters": [
           {
@@ -95266,7 +95266,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/doctor": {
       "get": {
-        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /\nprofile_present / merge_enabled / config_yaml / bootstrap_pr /\nci_workflow / ruleset_bypass`` and ``status`` in\n``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
+        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /\nrepo_archived / profile_present / merge_enabled / config_yaml /\nbootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /\nconfig_yml_current`` (ids are stable and append-only, but NOT positional\n-- key on ``id``, never on index) and ``status`` in\n``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of\nthem passing: ``tenant_mapped / repo_enrolled / profile_present /\nmerge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``\n(``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and\n``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
         "operationId": "api_v1_operations_pr_merge_onboarding_doctor_get",
         "parameters": [
           {
