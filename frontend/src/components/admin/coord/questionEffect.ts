@@ -88,8 +88,14 @@ function refString(ref: unknown, key: string): string | null {
 export function deriveQuestionEffect(
   q: Pick<AgentQuestionRow, "effect_kind" | "effect_ref">
 ): QuestionEffect | null {
-  const raw = typeof q.effect_kind === "string" ? q.effect_kind : "";
-  if (raw === "" || raw === "none") return null;
+  const kind = q.effect_kind as unknown;
+  if (kind === undefined || kind === null || kind === "" || kind === "none") {
+    return null;
+  }
+  // A non-string value is not a kind we can route; the respond proxy refuses
+  // it (503), so render it as an unknown effect (admin notice) rather than as
+  // an ordinary row with a composer that always fails.
+  const raw = typeof kind === "string" ? kind : String(kind);
   const ref = q.effect_ref;
 
   if (raw === "gate") {

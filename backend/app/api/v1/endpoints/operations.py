@@ -5688,7 +5688,8 @@ async def post_agent_question_response(
     Fail-closed: nothing is POSTed unless the row was read and positively
     identified — a JSON object whose ``question_id`` equals the requested id
     (lowercased). A coord 4xx on the read (401 expired session, 403
-    ``tenant_not_resolved``, 400 malformed id, 404) is re-raised unchanged,
+    ``tenant_not_resolved``, 404) is re-raised unchanged (a malformed id never
+    reaches coord: the ``UUID`` path parameter answers FastAPI's 422 first),
     since it is coord's own answer about the request. A coord 5xx, an
     unreachable coord, a non-JSON or non-object body, any other transport
     error, a row that does not carry the requested ``question_id`` (a wrapper
