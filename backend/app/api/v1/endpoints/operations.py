@@ -11681,10 +11681,11 @@ async def get_coord_findings(
                 "next_cursor": None,
                 "total": None,
                 "shown": 0,
-                # The page size the CALLER asked for, or null when it asked for
-                # none: coord's own default then applies and is unknown here, so
-                # it is not guessed (a copy of coord's constant would drift).
-                "limit": limit,
+                # null, not the caller's request: `limit` means the cap coord
+                # APPLIED, and no page was read here, so no cap was applied.
+                # Echoing the request (or clamping it locally) would state a cap
+                # coord never used, and a local clamp would copy coord's range.
+                "limit": None,
                 "filter_narrowed": None,
                 "enumerate_via": None,
                 "unavailable": (
