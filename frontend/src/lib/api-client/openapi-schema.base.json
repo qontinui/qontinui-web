@@ -85531,7 +85531,7 @@
     },
     "/api/v1/operations/coord/findings": {
       "get": {
-        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
+        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nEvery answer is a PAGE of the corpus, never the corpus: coord's envelope\ncarries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's\n``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next\npage (a malformed one is coord's 400, re-raised verbatim). Without that\npass-through a client following ``next_cursor`` would be served page 1\nforever.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
         "operationId": "api_v1_operations_coord_findings_get",
         "parameters": [
           {
@@ -85643,6 +85643,24 @@
               ],
               "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
               "title": "Triaged"
+            }
+          },
+          {
+            "description": "Resume a keyset walk: pass the previous response's ``next_cursor`` back verbatim, under the SAME filters. Forwarded verbatim \u2014 coord owns the codec, and a malformed or foreign cursor is coord's typed 400 ``invalid_query_parameter`` naming ``cursor``.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resume a keyset walk: pass the previous response's ``next_cursor`` back verbatim, under the SAME filters. Forwarded verbatim \u2014 coord owns the codec, and a malformed or foreign cursor is coord's typed 400 ``invalid_query_parameter`` naming ``cursor``.",
+              "title": "Cursor"
             }
           }
         ],
