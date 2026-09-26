@@ -1,0 +1,716 @@
+[
+  {
+    "file": "app/(app)/admin/coord/work-units/page.tsx",
+    "method": "GET",
+    "path": "<unresolved> url #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "app/(app)/workflow-viz/_hooks/useHistoricalData.ts",
+    "method": "GET",
+    "path": "/api/v1/historical/test-run/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "app/dev/reset/page.tsx",
+    "method": "POST",
+    "path": "/api/v1/auth/jwt/logout",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "components/admin/coord/GapRow.tsx",
+    "method": "POST",
+    "path": "/api/v1/operations/coord/prompt-documents/policy/{param}/clauses",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "GET",
+    "path": "/api/v1/overview/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "GET",
+    "path": "/api/v1/overview/{param}/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "PATCH",
+    "path": "/api/v1/overview/{param}/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "POST",
+    "path": "/api/v1/overview/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/screenshots",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/screenshots/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/stats/screenshots",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/stats/sessions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/images/{param}/url",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "DELETE",
+    "path": "/api/v1/organizations/{param}/invitations/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "GET",
+    "path": "/api/v1/organizations/invitations/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "POST",
+    "path": "/api/v1/organizations/invitations/{param}/accept",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "POST",
+    "path": "/api/v1/organizations/invitations/{param}/decline",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "POST",
+    "path": "/api/v1/organizations/{param}/invitations/{param}/resend",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/organizations.ts",
+    "method": "POST",
+    "path": "/api/v1/organizations/{param}/members/invite",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/runner_tokens.ts",
+    "method": "DELETE",
+    "path": "/api/v1/devices/tokens/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/runner_tokens.ts",
+    "method": "GET",
+    "path": "/api/v1/devices/tokens",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/runners.ts",
+    "method": "GET",
+    "path": "/api/v1/devices/sessions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api/snapshots.ts",
+    "method": "POST",
+    "path": "/api/v1/snapshots/import",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/runner/relay.ts",
+    "method": "?",
+    "path": "/api/v1/device-bridge/runner-proxy/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "DELETE",
+    "path": "/api/activities/cleanup",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "GET",
+    "path": "/api/activities",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "GET",
+    "path": "/api/activities/resource",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "GET",
+    "path": "/api/activities/summary",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "GET",
+    "path": "/api/activities/user",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "GET",
+    "path": "/api/activities/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/activity-service.ts",
+    "method": "POST",
+    "path": "/api/activities",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/analytics-service.ts",
+    "method": "GET",
+    "path": "/api/v1/analytics/activity",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/analytics-service.ts",
+    "method": "GET",
+    "path": "/api/v1/analytics/storage-breakdown",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/capture/sessions/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "GET",
+    "path": "/api/v1/capture-sessions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "GET",
+    "path": "/api/v1/capture/events/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "GET",
+    "path": "/api/v1/capture/frames/session/{param}/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "GET",
+    "path": "/api/v1/capture/sessions/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/capture-service.ts",
+    "method": "POST",
+    "path": "/api/v1/screenshots/upload",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/marketplace/packages/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/packages",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/packages/popular",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/packages/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/packages/{param}/ratings",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/projects/{param}/packages",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "GET",
+    "path": "/api/v1/marketplace/users/me/packages",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "POST",
+    "path": "/api/v1/marketplace/packages",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "POST",
+    "path": "/api/v1/marketplace/packages/{param}/install",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "POST",
+    "path": "/api/v1/marketplace/packages/{param}/ratings",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "POST",
+    "path": "/api/v1/marketplace/packages/{param}/uninstall",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "POST",
+    "path": "/api/v1/marketplace/packages/{param}/versions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/code-package-service.ts",
+    "method": "PUT",
+    "path": "/api/v1/marketplace/packages/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/activity-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/activity/stats",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/activity-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/activity/{param}/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/activity-service.ts",
+    "method": "GET",
+    "path": "<unresolved> url.toString() #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "services/collaboration/activity-service.ts",
+    "method": "POST",
+    "path": "/api/v1/projects/{param}/activity",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/comments/{param}/reactions/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "GET",
+    "path": "/api/v1/comments/mentions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "GET",
+    "path": "/api/v1/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "GET",
+    "path": "/api/v1/comments/{param}/replies",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/comments/mentions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/comments/unresolved",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "POST",
+    "path": "/api/v1/comments/{param}/mentions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "POST",
+    "path": "/api/v1/comments/{param}/reactions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "POST",
+    "path": "/api/v1/comments/{param}/resolve",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "POST",
+    "path": "/api/v1/comments/{param}/unresolve",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/comment-service.ts",
+    "method": "PUT",
+    "path": "/api/v1/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/lock-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/locks/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/lock-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/locks/{param}/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/lock-service.ts",
+    "method": "POST",
+    "path": "/api/v1/locks/{param}/refresh",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/project-collaboration-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/permissions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "DELETE",
+    "path": "/api/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "GET",
+    "path": "/api/comments",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "GET",
+    "path": "/api/comments/count",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "GET",
+    "path": "/api/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "PATCH",
+    "path": "/api/comments/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/comment-service.ts",
+    "method": "POST",
+    "path": "/api/comments",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/dataset-service.ts",
+    "method": "GET",
+    "path": "/api/v1/datasets/{param}/images/{param}",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "services/extraction-service.ts",
+    "method": "GET",
+    "path": "/api/v1/extractions/uitars/{param}/results",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/extraction-service.ts",
+    "method": "GET",
+    "path": "/api/v1/extractions/uitars/{param}/status",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/extraction-service.ts",
+    "method": "POST",
+    "path": "/api/v1/extractions/uitars/{param}/stop",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/extraction-service.ts",
+    "method": "POST",
+    "path": "/api/v1/projects/{param}/extractions/uitars",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "DELETE",
+    "path": "/api/locks/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "GET",
+    "path": "/api/locks/me",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "GET",
+    "path": "/api/locks/project/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "GET",
+    "path": "/api/locks/status",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "POST",
+    "path": "/api/locks",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "POST",
+    "path": "/api/locks/{param}/force-release",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/lock-service.ts",
+    "method": "POST",
+    "path": "/api/locks/{param}/refresh",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/project-service.ts",
+    "method": "GET",
+    "path": "/api/v1/export/{param}/configuration",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/project-service.ts",
+    "method": "POST",
+    "path": "/api/v1/export/{param}/import",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/prompt-injections-api.ts",
+    "method": "?",
+    "path": "/api/v1/admin/prompt-injections #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "services/rag-export-service.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/rag/{param}/status",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/rag-export-service.ts",
+    "method": "POST",
+    "path": "/api/v1/projects/rag/{param}/export",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/rag-export-service.ts",
+    "method": "POST",
+    "path": "/api/v1/projects/rag/{param}/export/download",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/rag-export-service.ts",
+    "method": "POST",
+    "path": "/api/v1/projects/rag/{param}/transfer",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/recording-service.ts",
+    "method": "GET",
+    "path": "/api/v1/recordings/{param}/logs",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/recording-service.ts",
+    "method": "POST",
+    "path": "/api/v1/recordings/{param}/state-structure/review",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "services/template-capture-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/template-capture/candidates/{param}",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "services/template-capture-service.ts",
+    "method": "DELETE",
+    "path": "/api/v1/template-capture/profiles/{param}",
+    "reason": "dead",
+    "kind": "verb"
+  },
+  {
+    "file": "services/template-capture-service.ts",
+    "method": "POST",
+    "path": "/api/v1/template-capture/candidates/{param}/import-to-state-machine",
+    "reason": "dead",
+    "kind": "no-path"
+  }
+]
