@@ -77,6 +77,24 @@
  * one: `coord-question-withdrawal-detail`, this page's withdrawal block —
  * named apart from the inbox row's `coord-question-withdrawal` so a test can
  * say which surface it is asserting on.
+ *
+ * ## Decision effects — answered through the effect's own core
+ *
+ * Plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3. A row whose `effect_kind` is `gate` or `proposal` MIRRORS a
+ * decision another table owns, and coord routes an answer to it through that
+ * effect's core (gate approve/reject, proposal `decide_core`). Such a row takes
+ * only the effect's canonical values — `met`/`not_met`, `approve`/`reject` —
+ * so the free-text composer and the option cards are replaced by one button
+ * per value (`coord-question-effect-decisions`, each
+ * `coord-question-effect-decision`), posting `{response: <value>,
+ * responded_by_operator}` to the SAME `/respond` door. No new endpoint.
+ * Free text there would be an answer coord's effect core cannot apply. A
+ * `clause` row (reserved, Phase 1b) or a kind this build does not recognise
+ * has no fixed vocabulary here and keeps the composer. The meta block carries
+ * a linked `<QuestionEffectChip>` to the effect's own page. A row with no
+ * effect renders exactly as before.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -108,6 +126,8 @@ import {
   type AgentQuestionRow,
 } from "@/components/admin/coord/questionStatus";
 import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
+import { QuestionEffectChip } from "@/components/admin/coord/QuestionEffectChip";
+import { deriveQuestionEffect } from "@/components/admin/coord/questionEffect";
 
 const API = "/api/v1/operations";
 
@@ -248,27 +268,37 @@ export default function CoordQuestionDetailPage() {
     fetchOne();
   }, [fetchOne]);
 
-  const onSubmit = useCallback(async () => {
-    if (!id || !response.trim()) return;
-    setSubmitting(true);
-    try {
-      await httpClient.post(
-        `${API}/agent-questions/${encodeURIComponent(id)}/respond`,
-        {
-          response: response.trim(),
-          responded_by_operator: user?.email ?? "operator",
-        }
-      );
-      toast.success("Response sent to agent");
-      router.push("/admin/coord/questions");
-    } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : "Failed to submit response"
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }, [id, response, user?.email, router]);
+  /** POST one answer to the respond door. Shared by the free-text composer
+   *  and the effect decision buttons, so both carry the same body shape. */
+  const postResponse = useCallback(
+    async (text: string) => {
+      if (!id || !text.trim()) return;
+      setSubmitting(true);
+      try {
+        await httpClient.post(
+          `${API}/agent-questions/${encodeURIComponent(id)}/respond`,
+          {
+            response: text.trim(),
+            responded_by_operator: user?.email ?? "operator",
+          }
+        );
+        toast.success("Response sent to agent");
+        router.push("/admin/coord/questions");
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Failed to submit response"
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [id, user?.email, router]
+  );
+
+  const onSubmit = useCallback(
+    () => postResponse(response),
+    [postResponse, response]
+  );
 
   // The effect below resets `question` on an `[id]` change, but an effect
   // is PASSIVE: React commits the render that ran with the new `id` and the
@@ -288,6 +318,11 @@ export default function CoordQuestionDetailPage() {
   const pending = loading || identityMismatch;
 
   const options = normalizeOptions(shown?.options ?? null);
+  // The decision this row mirrors, if any — the same derivation the inbox row
+  // renders. `decisions` non-null means coord routes the answer through the
+  // effect's own core and accepts only these values.
+  const effect = deriveQuestionEffect(shown ?? {});
+  const decisions = effect?.decisions ?? null;
   // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
@@ -380,6 +415,7 @@ export default function CoordQuestionDetailPage() {
           >
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />
+              <QuestionEffectChip effect={effect} linked />
               {shown.plan_phase && (
                 <Badge variant="outline">{shown.plan_phase}</Badge>
               )}
@@ -419,7 +455,10 @@ export default function CoordQuestionDetailPage() {
             </CollapsiblePanel>
           )}
 
-          {options.length > 0 && (
+          {/* An effect row's options ARE its decision values, rendered as the
+              decision buttons below — so the seed-the-composer cards would be
+              a second, weaker control for the same act. */}
+          {options.length > 0 && !decisions && (
             <section
               data-testid="coord-question-options"
               className="space-y-2"
@@ -506,6 +545,33 @@ export default function CoordQuestionDetailPage() {
                       : ""}
                   </p>
                 </>
+              ) : decisions ? (
+                <div className="space-y-2">
+                  <div
+                    className="flex flex-wrap items-center gap-2"
+                    data-testid="coord-question-effect-decisions"
+                  >
+                    {decisions.map((d) => (
+                      <Button
+                        key={d.value}
+                        variant={d === decisions[0] ? "default" : "outline"}
+                        disabled={submitting}
+                        onClick={() => void postResponse(d.value)}
+                        data-testid="coord-question-effect-decision"
+                        data-decision-value={d.value}
+                      >
+                        {d.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Decided through the {effect?.label}&apos;s own core
+                    {effect?.kind === "proposal"
+                      ? " — a stale proposal is still refused there"
+                      : ""}
+                    ; responding as {user?.email ?? "(unknown operator)"}
+                  </p>
+                </div>
               ) : (
                 <>
                   <Textarea

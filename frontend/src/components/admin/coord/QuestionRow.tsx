@@ -29,6 +29,14 @@
  * a retirement is legible instead of a silent disappearance. That block is
  * `QuestionWithdrawalRecord`, shared with the detail route — the two surfaces
  * must not drift about what a withdrawal looks like.
+ *
+ * **Decision effects.** Plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3: a row whose `effect_kind` is not `none` mirrors a decision
+ * another table owns (an `operator_approval` gate, a policy proposal). It
+ * carries a `<QuestionEffectChip>` in the status slot, and its expanded detail
+ * links to the effect's own page. A row with no effect — every row from a coord
+ * build that predates the columns — renders exactly as before.
  */
 
 import Link from "next/link";
@@ -51,6 +59,8 @@ import {
   type AgentQuestionRow,
 } from "@/components/admin/coord/questionStatus";
 import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
+import { QuestionEffectChip } from "@/components/admin/coord/QuestionEffectChip";
+import { deriveQuestionEffect } from "@/components/admin/coord/questionEffect";
 
 export type { AgentQuestionRow };
 
@@ -79,6 +89,7 @@ export function QuestionRow({
   // re-inferred here and in the detail route.
   const terminal = QUESTION_TERMINAL_KINDS.has(status.kind);
   const options = optionLabels(question);
+  const effect = deriveQuestionEffect(question);
 
   return (
     <RecordRow
@@ -93,6 +104,10 @@ export function QuestionRow({
       status={
         <span className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />
+          {/* Unlinked here: the collapsed row is one <button>, and a link
+              inside it would be nested interactive content. The expanded
+              detail's actions carry the link. */}
+          <QuestionEffectChip effect={effect} />
           {question.plan_phase && (
             <Badge
               variant="outline"
@@ -155,9 +170,23 @@ export function QuestionRow({
                 <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </Link>
+            {effect?.href && (
+              <Link
+                href={effect.href}
+                data-testid="coord-question-effect-link"
+                title={effect.title}
+              >
+                <Button variant="outline" size="sm">
+                  Open {effect.label}
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Button>
+              </Link>
+            )}
             {!terminal && (
               <span className="text-xs text-muted-foreground">
-                the response composer lives on the detail page
+                {effect?.decisions
+                  ? `decide it (${effect.decisions.map((d) => d.value).join(" / ")}) on the detail page`
+                  : "the response composer lives on the detail page"}
               </span>
             )}
           </div>

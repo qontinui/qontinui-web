@@ -705,3 +705,54 @@ describe("ReviewFeed — the pre-deploy sentence is per-section", () => {
     expect(cause.textContent ?? "").toMatch(/the retired status/i);
   });
 });
+
+/**
+ * `?proposal=<id>` — the drill-down the questions inbox links a proposal-mirror
+ * question to (plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phase 3). The linked row must arrive OPEN, and only that row.
+ */
+describe("ReviewFeed — ?proposal= deep link", () => {
+  it("opens the linked proposal and leaves the others collapsed", async () => {
+    window.history.replaceState({}, "", "/?proposal=p-pending-2");
+    try {
+      routes(NO_RETIREMENTS, {
+        pending: () =>
+          Promise.resolve({
+            proposals: [
+              {
+                ...RETIRED,
+                id: "p-pending-1",
+                status: "pending",
+                decided_by: null,
+                decided_at: null,
+                decision_note: null,
+              },
+              {
+                ...RETIRED,
+                id: "p-pending-2",
+                status: "pending",
+                decided_by: null,
+                decided_at: null,
+                decision_note: null,
+              },
+            ],
+            total: 2,
+          }),
+      });
+      render(<ReviewFeed />);
+
+      const linked = await screen.findByTestId("proposal-p-pending-2");
+      await waitFor(() =>
+        expect(
+          linked.querySelector('[data-testid="proposal-approve"]')
+        ).not.toBeNull()
+      );
+      const other = screen.getByTestId("proposal-p-pending-1");
+      expect(other.querySelector('[data-testid="proposal-approve"]')).toBeNull();
+      expect(screen.getAllByTestId("proposal-approve")).toHaveLength(1);
+    } finally {
+      window.history.replaceState({}, "", "/");
+    }
+  });
+});

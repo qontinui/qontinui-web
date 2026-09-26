@@ -700,3 +700,129 @@ describe("the composer's own onChange", () => {
     }
   });
 });
+
+/**
+ * Decision effects — plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3. An effect row is answered through the SAME `/respond` door, but
+ * only with the effect's canonical values — coord routes them through the
+ * gate / proposal core, which cannot apply free text. So the composer is
+ * replaced by one button per value, and the body POSTed is pinned here.
+ */
+describe("a decision-effect row is answered with the effect's own values", () => {
+  const GATE_ROW = {
+    ...QUESTION,
+    question: "Approve phase 2 of wu-42?",
+    options: ["met", "not_met"],
+    effect_kind: "gate",
+    effect_ref: {
+      id: "gate-7",
+      gate_id: "gate-7",
+      work_unit_id: "wu-42",
+      phase_name: "Phase 2",
+    },
+  };
+
+  function decisionButtons(): HTMLElement[] {
+    return screen.queryAllByTestId("coord-question-effect-decision");
+  }
+
+  it("posts `met` for a gate row, to the existing respond door", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(decisionButtons().map((b) => b.getAttribute("data-decision-value")))
+      .toEqual(["met", "not_met"]);
+    // No free-text composer and no seed-the-composer option cards.
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-options")
+    ).not.toBeInTheDocument();
+    // The linked chip names the gate's work unit and phase.
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/gates?gate=gate-7");
+    expect(screen.getByTestId("coord-question-effect-detail")).toHaveTextContent(
+      "wu-42 · Phase 2"
+    );
+
+    fireEvent.click(decisionButtons()[0]);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      "/api/v1/operations/agent-questions/q-1/respond",
+      { response: "met", responded_by_operator: "op@example.com" }
+    );
+  });
+
+  it("posts `not_met` for the gate's second button", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[1]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "not_met", responded_by_operator: "op@example.com" }
+      )
+    );
+  });
+
+  it("posts `approve` for a proposal row and links the proposal drill-down", async () => {
+    get.mockResolvedValue({
+      ...QUESTION,
+      options: ["approve", "reject"],
+      effect_kind: "proposal",
+      effect_ref: { id: "p-1", proposal_id: "p-1" },
+    });
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+    fireEvent.click(decisionButtons()[0]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "approve", responded_by_operator: "op@example.com" }
+      )
+    );
+  });
+
+  it("offers no decision on an ANSWERED effect row", async () => {
+    get.mockResolvedValue({
+      ...GATE_ROW,
+      responded_at: "2026-09-26T10:00:00Z",
+      response: "met",
+      responded_by_operator: "josh@qontinui.io",
+    });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-question-respond")).toHaveTextContent(
+        /Recorded response/i
+      )
+    );
+    expect(decisionButtons()).toHaveLength(0);
+  });
+
+  it.each([
+    ["a clause row (reserved)", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
+    ["an effect-less row", { effect_kind: "none", effect_ref: null }],
+    ["a row from an older coord", {}],
+  ])("keeps the free-text composer for %s", async (_l, extra) => {
+    get.mockResolvedValue({ ...QUESTION, options: ["pin", "bump"], ...extra });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument()
+    );
+    expect(decisionButtons()).toHaveLength(0);
+    expect(screen.getByTestId("coord-question-options")).toBeInTheDocument();
+  });
+});

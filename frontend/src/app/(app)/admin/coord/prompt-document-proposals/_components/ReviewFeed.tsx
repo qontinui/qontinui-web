@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -85,6 +85,40 @@ export function ReviewFeed() {
     revertWrite,
     withdrawWrite,
   } = usePromptDocumentProposals();
+
+  /*
+   * Deep link: `?proposal=<id>` opens that proposal and scrolls to it.
+   *
+   * The questions inbox (plan
+   * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+   * Phase 3) links a proposal-mirror question here as its drill-down, so this
+   * page is where the diff is read rather than a second list to triage. Read
+   * once on mount from `window.location`, as `GatesTable`'s `?gate=` link
+   * does, rather than `useSearchParams` (which would force a Suspense boundary
+   * for a one-shot read). Both open keys are seeded: ids are unique across the
+   * queue and the decided section, so only the list holding it opens a row.
+   */
+  const [deepLinked, setDeepLinked] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("proposal");
+    if (!id) return;
+    setDeepLinked(id);
+    setOpenProposal(id);
+    setOpenDecided(id);
+  }, []);
+  // Scroll once the row exists — the lists arrive asynchronously, so the
+  // browser's own fragment scroll would fire before there is anything to reach.
+  useEffect(() => {
+    if (!deepLinked || typeof document === "undefined") return;
+    const want = `proposal-${deepLinked}`;
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="proposal-"]')
+    ).find((el) => el.getAttribute("data-testid") === want);
+    if (!row) return;
+    row.scrollIntoView?.({ block: "center" });
+    setDeepLinked(null);
+  }, [deepLinked, proposals, decidedProposals]);
 
   // A pre-deploy 404 is expected and benign. An UNLABELLED unavailable is also
   // treated as benign here (fallback `false`): the frontend and backend deploy
