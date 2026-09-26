@@ -33,7 +33,7 @@
  *     collapses, its signal does not), and that is asserted with the panel
  *     SHUT.
  *
- *  4. **A decided row actually reaches `<ProposalCard>`.** The card's own unit
+ *  4. **A decided row actually reaches `<PolicyProposalCard>`.** The card's own unit
  *     tests construct a decided proposal and hand it to the card, which proves
  *     rendering and nothing about reachability — and for the whole life of this
  *     page nothing reached it, because the only read was `?status=pending` and
@@ -368,13 +368,13 @@ describe("ReviewFeed — the retired section, not yet read", () => {
 });
 
 /**
- * "Recently proposed & approved" — and the one assertion the `ProposalCard`
+ * "Recently proposed & approved" — and the one assertion the `PolicyProposalCard`
  * unit tests cannot make.
  *
  * Those four tests construct a decided proposal and hand it straight to the
  * card. That proves the card RENDERS the provenance line; it cannot prove
  * anything reaches the card with `decided_by` set, and for the whole life of
- * this page nothing did: `ProposalCard`'s only caller was fed by
+ * this page nothing did: `PolicyProposalCard`'s only caller was fed by
  * `?status=pending`, and coord filters the list by status, so every row the
  * card ever saw had `decided_by: null`. The self-decided line — the
  * compensating audit control for ownership no longer gating a decision — was
@@ -421,7 +421,7 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     await user.click(
       screen.getByRole("button", { name: /recently proposed & approved/i })
     );
-    // The row is a real `<ProposalCard>` — expand it for the provenance block.
+    // The row is a real `<PolicyProposalCard>` — expand it for the provenance block.
     const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
     await user.click(row.querySelector("button")!);
 

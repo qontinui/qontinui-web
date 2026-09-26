@@ -4,7 +4,7 @@
  * Locks the two halves of the predicate — record POSITION and card SHAPE —
  * and, per the plan's 2026-08-20 correction, that BOTH spellings are caught:
  * the `<Card>` component and the raw `<div>` that never mentions it. The div
- * fixture below is `ProposalCard.tsx:79`'s actual class string, the instance
+ * fixture below is `ProposalCard.tsx:79`'s (since renamed) actual class string, the instance
  * that proved a `<Card>`-keyed rule insufficient.
  *
  * Cross-link:
@@ -93,7 +93,7 @@ ruleTester.run("no-fat-record-card", rule, {
     // report the same card twice, at the use site and at its definition.
     {
       filename: IN,
-      code: "const a = items.map((i) => <ProposalCard proposal={i} />);",
+      code: "const a = items.map((i) => <PolicyProposalCard proposal={i} />);",
     },
     // `.filter()` is not `.map()`: not a per-record emission.
     {

@@ -1,11 +1,11 @@
 /**
- * proposalStatus — the derived state of one pending policy-edit proposal, and
+ * policyProposalStatus — the derived state of one pending policy-edit proposal, and
  * R3's audited severity table for it.
  *
  * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3
  * Wave 5. `/prompt-document-proposals` landed after that plan was authored and
  * was missing from its census; the §4 correction files it as a Family-B
- * VARIANT — its record wrapper (`ProposalCard`) was a hand-rolled fat card
+ * VARIANT — its record wrapper (`PolicyProposalCard`) was a hand-rolled fat card
  * (`space-y-3 rounded-lg border border-border bg-card px-4 py-3.5`), not a
  * shadcn `<Card>`, which is why a `<Card>`-keyed audit missed it.
  *
@@ -104,7 +104,7 @@ import type { PromptDocumentProposal } from "./types";
  * it adds `stale` (a state of the proposal, not of the edit) and
  * `unrecognised` (a direction token this build predates).
  */
-export type ProposalKind =
+export type PolicyProposalKind =
   | "loosening"
   | "unclassifiable"
   | "stale"
@@ -113,7 +113,7 @@ export type ProposalKind =
   | "unrecognised";
 
 /**
- * The audited kind → attention table. TOTAL over {@link ProposalKind}, one
+ * The audited kind → attention table. TOTAL over {@link PolicyProposalKind}, one
  * documented row each:
  *
  * | kind | attention | why |
@@ -125,7 +125,7 @@ export type ProposalKind =
  * | `decided` | `none` | coord closed it with an OUTCOME (`approved` / `rejected`). Nothing is asked of anyone, and in particular the derived staleness above must not reach it: approving APPLIES the edit as a new version, so `liveVersion > base_version` is true of every approved row by construction and would make the whole "Recently proposed & approved" section an act-now alarm about an act already taken. |
  * | `unrecognised` | `waiting` | A `direction` token this build has no meaning for. R3's ignorance floor — only a human extending the vocabulary clears it, and painting ignorance calm is `silent-empty-is-unknown` with a badge attached. |
  */
-export const PROPOSAL_ATTENTION_BY_KIND: Record<ProposalKind, Attention> = {
+export const POLICY_PROPOSAL_ATTENTION_BY_KIND: Record<PolicyProposalKind, Attention> = {
   loosening: "none",
   unclassifiable: "none",
   stale: "author",
@@ -134,7 +134,7 @@ export const PROPOSAL_ATTENTION_BY_KIND: Record<ProposalKind, Attention> = {
   unrecognised: "waiting",
 };
 
-export const PROPOSAL_KIND_CLASS: Record<ProposalKind, string> = {
+export const POLICY_PROPOSAL_KIND_CLASS: Record<PolicyProposalKind, string> = {
   loosening: INERT,
   // Calm, but visibly provisional — the same dashed "we could not settle this"
   // treatment `draft` uses. It is not the ignorance floor: coord DID reach a
@@ -151,15 +151,15 @@ export const PROPOSAL_KIND_CLASS: Record<ProposalKind, string> = {
 };
 
 /** Red ⇔ the colourblind-safe `✕`: exactly the `author` kinds, derived. */
-export const PROPOSAL_AUTHOR_GLYPH_KINDS: ReadonlySet<ProposalKind> = new Set(
-  (Object.keys(PROPOSAL_ATTENTION_BY_KIND) as ProposalKind[]).filter(
-    (k) => PROPOSAL_ATTENTION_BY_KIND[k] === "author"
+export const POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS: ReadonlySet<PolicyProposalKind> = new Set(
+  (Object.keys(POLICY_PROPOSAL_ATTENTION_BY_KIND) as PolicyProposalKind[]).filter(
+    (k) => POLICY_PROPOSAL_ATTENTION_BY_KIND[k] === "author"
   )
 );
 
-export const PROPOSAL_STATUS_PALETTE: StatusPalette<ProposalKind> = {
-  badgeClass: PROPOSAL_KIND_CLASS,
-  authorGlyphKinds: PROPOSAL_AUTHOR_GLYPH_KINDS,
+export const POLICY_PROPOSAL_STATUS_PALETTE: StatusPalette<PolicyProposalKind> = {
+  badgeClass: POLICY_PROPOSAL_KIND_CLASS,
+  authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS,
 };
 
 /**
@@ -174,11 +174,11 @@ export const PROPOSAL_STATUS_PALETTE: StatusPalette<ProposalKind> = {
  * could not read cannot prove a proposal is fresh, so staleness is only
  * asserted when we actually have the live number.
  */
-export function deriveProposalStatus(
+export function derivePolicyProposalStatus(
   proposal: Pick<PromptDocumentProposal, "direction" | "base_version"> &
     Partial<Pick<PromptDocumentProposal, "status">>,
   liveVersion: number | null
-): RowStatus<ProposalKind> {
+): RowStatus<PolicyProposalKind> {
   // coord's own terminal verdict outranks everything this page can derive —
   // including an UNREADABLE `liveVersion`. A retired row needs no live version
   // to be known dead, so this arm sits ABOVE the comparison rather than inside
@@ -192,7 +192,7 @@ export function deriveProposalStatus(
         liveVersion !== null
           ? `coord retired this when the document moved to v${liveVersion} — it was written against v${proposal.base_version} and can no longer be approved`
           : `coord retired this when the document moved past v${proposal.base_version} — it can no longer be approved`,
-      attention: PROPOSAL_ATTENTION_BY_KIND.retired,
+      attention: POLICY_PROPOSAL_ATTENTION_BY_KIND.retired,
     };
   }
   // The other two terminal statuses, and they sit here for the same reason the
@@ -208,7 +208,7 @@ export function deriveProposalStatus(
       kind: "decided",
       label: proposal.status,
       reason: "coord has closed this; the edit was decided",
-      attention: PROPOSAL_ATTENTION_BY_KIND.decided,
+      attention: POLICY_PROPOSAL_ATTENTION_BY_KIND.decided,
     };
   }
   if (liveVersion !== null && liveVersion > proposal.base_version) {
@@ -216,7 +216,7 @@ export function deriveProposalStatus(
       kind: "stale",
       label: "stale",
       reason: `the document moved to v${liveVersion} since this was written against v${proposal.base_version}`,
-      attention: PROPOSAL_ATTENTION_BY_KIND.stale,
+      attention: POLICY_PROPOSAL_ATTENTION_BY_KIND.stale,
     };
   }
   const meta = DIRECTION_META[proposal.direction];
@@ -226,15 +226,15 @@ export function deriveProposalStatus(
       label: proposal.direction,
       reason:
         "a direction this build does not recognise — treat it as at least as serious as a loosening edit",
-      attention: PROPOSAL_ATTENTION_BY_KIND.unrecognised,
+      attention: POLICY_PROPOSAL_ATTENTION_BY_KIND.unrecognised,
     };
   }
-  const kind: ProposalKind =
+  const kind: PolicyProposalKind =
     proposal.direction === "unclassifiable" ? "unclassifiable" : "loosening";
   return {
     kind,
     label: meta.label.toLowerCase(),
     reason: "held rather than applied — nothing is waiting on this",
-    attention: PROPOSAL_ATTENTION_BY_KIND[kind],
+    attention: POLICY_PROPOSAL_ATTENTION_BY_KIND[kind],
   };
 }
