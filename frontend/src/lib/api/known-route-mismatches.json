@@ -28,6 +28,34 @@
     "kind": "no-path"
   },
   {
+    "file": "components/overview/editing/api.ts",
+    "method": "GET",
+    "path": "/api/v1/overview/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "GET",
+    "path": "/api/v1/overview/{param}/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "PATCH",
+    "path": "/api/v1/overview/{param}/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
+    "file": "components/overview/editing/api.ts",
+    "method": "POST",
+    "path": "/api/v1/overview/{param} #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
+  },
+  {
     "file": "lib/api-client.ts",
     "method": "GET",
     "path": "/api/v1/automation/screenshots",
@@ -348,6 +376,13 @@
     "path": "/api/v1/projects/{param}/activity/{param}/{param}",
     "reason": "dead",
     "kind": "no-path"
+  },
+  {
+    "file": "services/collaboration/activity-service.ts",
+    "method": "GET",
+    "path": "<unresolved> url.toString() #1",
+    "reason": "unresolved",
+    "kind": "unresolved"
   },
   {
     "file": "services/collaboration/activity-service.ts",

@@ -113,6 +113,10 @@ const CALL_NAMES: ReadonlySet<string> = new Set(["fetch", ...VERB_HELPERS]);
 
 /** A resolved URL placeholder for a substitution the walker cannot know. */
 const PARAM = "{param}";
+/** A `{param}` while resolving: `PH_OPEN <id> PH_CLOSE`, see `Resolver.placeholder`. */
+const PH_OPEN = "\u0001";
+const PH_CLOSE = "\u0002";
+const PLACEHOLDER = /\u0001(\d+)\u0002/g;
 
 export interface CallSite {
   /** Path relative to `frontend/src`, forward slashes. */
@@ -135,6 +139,12 @@ export interface CallSite {
    * reaches the backend: a Next.js handler never serves it.
    */
   originBacked: boolean;
+  /**
+   * For each `{param}` in `path`, in order: the unbound parameter it was
+   * built from, or `null` for any other run-time value. Lets a match that
+   * needs a `{param}` to fill a literal segment be traced to its source.
+   */
+  placeholderSources?: readonly (ts.ParameterDeclaration | null)[];
   /**
    * Source text of the URL argument, whitespace-collapsed — or, for a site
    * reached through a wrapper, of the call to the wrapper.
@@ -413,6 +423,8 @@ class Resolver {
    * (`${PREFIX}${path}`): they carry path structure, not a segment value.
    */
   readonly glued = new Set<ts.ParameterDeclaration>();
+  /** Sources of the placeholders `placeholder` minted, by id. */
+  readonly sources: (ts.ParameterDeclaration | null)[] = [];
 
   /**
    * @param strict parameters of a wrapper being resolved at one of its
@@ -482,7 +494,7 @@ class Resolver {
       const left = unwrap(e.left);
       if (
         ts.isPropertyAccessExpression(left) &&
-        this.propertyOf(left) === "absent"
+        this.propertyOf(left.expression, left.name.text) === "absent"
       ) {
         return this.expr(e.right, leading);
       }
@@ -504,7 +516,9 @@ class Resolver {
       return this.expr(e.arguments[0], leading);
     }
     if (ts.isCallExpression(e)) return this.call(e, leading);
-    // Element access, `await`, arithmetic, …: computed at run time.
+    if (ts.isElementAccessExpression(e))
+      return this.member(e, unwrap(e.expression), memberKey(e), leading);
+    // `await`, arithmetic, …: computed at run time.
     return runtimeValue(`expression \`${snippet(e)}\``);
   }
 
@@ -517,6 +531,23 @@ class Resolver {
     if (!acc.ok) return acc;
     const atStart = leading && acc.texts.every((t) => t === "" || t === ORIGIN);
     const e = unwrap(raw);
+    // A nested template or `+` is appended piece by piece, so what follows
+    // `acc` is judged in its context (glued or not), not from scratch.
+    if (ts.isTemplateExpression(e)) {
+      let out = concat(acc, literal(e.head.text));
+      for (const span of e.templateSpans) {
+        out = this.append(out, span.expression, leading);
+        if (!out.ok) return out;
+        out = concat(out, literal(span.literal.text));
+      }
+      return out;
+    }
+    if (
+      ts.isBinaryExpression(e) &&
+      e.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      return this.append(this.append(acc, e.left, leading), e.right, leading);
+    }
     if (!atStart && queryName(e) !== null)
       return concat(acc, literal(QUERY_MARK));
     const part = this.expr(e, atStart);
@@ -524,14 +555,29 @@ class Resolver {
     // Only a run-time value may stand in as `{param}`; a declared constant
     // the walker could not follow is as unknown mid-URL as at its start.
     if (atStart || !part.runtime) return part;
-    // Glued to a non-`/` path prefix (not in the query string): the
-    // parameter carries path structure, not one segment's value.
+    // Glued to a non-`/` path prefix (not in the query string), the value
+    // carries path structure, not one segment's value. Only an unbound
+    // parameter may go on — it makes its function a wrapper, resolved per
+    // caller (or the site unresolved when the function cannot be named).
+    // Anything else (a loop variable, `this.x`, a call result) is unknown.
     if (
-      part.freeParam &&
       acc.texts.some((t) => t !== ORIGIN && !t.endsWith("/") && !/[?#]/.test(t))
-    )
+    ) {
+      if (!part.freeParam)
+        return unresolved(`${part.why}, glued onto a path segment`);
       this.glued.add(part.freeParam);
-    return concat(acc, literal(PARAM));
+    }
+    return concat(acc, literal(this.placeholder(part.freeParam ?? null)));
+  }
+
+  /**
+   * A `{param}` placeholder that remembers the unbound parameter it stands
+   * for (or none), so a match that needs it to fill a LITERAL template
+   * segment can be traced back to its source (`CallSite.placeholderSources`).
+   */
+  private placeholder(source: ts.ParameterDeclaration | null): string {
+    this.sources.push(source);
+    return `${PH_OPEN}${this.sources.length - 1}${PH_CLOSE}`;
   }
 
   private identifier(e: ts.Identifier, leading: boolean): Resolved {
@@ -557,8 +603,12 @@ class Resolver {
     name: string,
     leading: boolean
   ): Resolved {
-    if (!this.args.has(decl))
+    if (!this.args.has(decl)) {
+      // `action: "approve" | "reject"`: the type names every value.
+      const values = literalUnion(decl.type, decl);
+      if (values) return { ok: true, texts: values };
       return runtimeValue(`parameter \`${name}\``, decl);
+    }
     const arg = this.args.get(decl) ?? decl.initializer;
     const strict = this.strict.has(decl);
     if (!arg) {
@@ -622,61 +672,133 @@ class Resolver {
       return runtimeValue(`\`this.${name}\` has no same-class initializer`);
     }
     if (name === "href") return this.expr(target, leading);
+    return this.member(e, target, name, leading);
+  }
+
+  /**
+   * `target.name` (or `target[name]`; `name` null for a computed key).
+   * Read off an object literal the walker can see when it can; otherwise a
+   * run-time value — unless the chain's ROOT is a declared constant object
+   * (a literal, `Object.freeze(...)`, an alias of one, an unfollowable
+   * import): that is a URL part the walker cannot name, so `unresolved`.
+   */
+  private member(
+    e: ts.Expression,
+    target: ts.Expression,
+    name: string | null,
+    leading: boolean
+  ): Resolved {
     // `ENDPOINTS.list` where `const ENDPOINTS = { list: "..." }`, or
     // `opts.method` where `opts` is bound to a caller's `{ method: "PUT" }`.
-    const found = this.propertyOf(e);
+    const found = name === null ? null : this.propertyOf(target, name);
     // A key the walker can see is missing from a declared literal: not a
     // run-time value, a URL part it cannot name.
     if (found === "absent")
       return unresolved(`property \`${snippet(e)}\` is not set`);
     if (found) return this.expr(found, leading);
-    if (ts.isIdentifier(target)) {
-      const binding = this.lookup(target.text, target);
+    const root = rootOf(target);
+    if (ts.isIdentifier(root)) {
+      const binding = this.lookup(root.text, root);
       if (binding.kind === "param" && !this.args.has(binding.decl))
         return runtimeValue(`property \`${snippet(e)}\``, binding.decl);
       // A declared object the walker could not follow (a re-export, an
       // unloaded import): its property is a constant, not a run-time value.
       if (binding.kind === "none")
         return unresolved(`property \`${snippet(e)}\`: ${binding.why}`);
+      if (this.isDeclaredObject(binding, 0))
+        return unresolved(
+          `property \`${snippet(e)}\` of a declared constant the walker cannot read`
+        );
     }
     return runtimeValue(`property \`${snippet(e)}\``);
   }
 
   /**
-   * `obj.name` read off an object literal the walker can see — a `const`, or
-   * the argument bound to a parameter: its initializer, `"absent"` when the
-   * literal has no such key (and no spread), else `null` (unknown).
+   * Whether a binding is a declared constant object rather than a run-time
+   * value: a function, or a `const`/`let` initialised with an object or
+   * array literal, `Object.freeze(...)`, or an alias / property of one.
+   * `const sm = await load()` is run-time.
+   */
+  private isDeclaredObject(binding: Binding, depth: number): boolean {
+    if (depth > 8) return false;
+    if (binding.kind === "function") return true;
+    const init =
+      binding.kind === "value"
+        ? binding.expr
+        : binding.kind === "let"
+          ? binding.decl.initializer
+          : undefined;
+    if (!init) return false;
+    let e = unwrap(init);
+    while (isObjectFreeze(e)) e = unwrap(e.arguments[0] as ts.Expression);
+    if (ts.isObjectLiteralExpression(e) || ts.isArrayLiteralExpression(e))
+      return true;
+    const root = rootOf(e);
+    if (!ts.isIdentifier(root)) return false;
+    const inner = this.lookup(root.text, root);
+    return inner.kind === "none" || this.isDeclaredObject(inner, depth + 1);
+  }
+
+  /**
+   * `name` read off the object literal `target` evaluates to — a `const`, an
+   * alias of one, `Object.freeze(...)`, a nested literal, or the argument
+   * bound to a parameter: its initializer, `"absent"` when the literal has no
+   * such key (and no spread), else `null` (unknown).
    */
   private propertyOf(
-    e: ts.PropertyAccessExpression
+    target: ts.Expression,
+    name: string
   ): ts.Expression | "absent" | null {
-    const target = unwrap(e.expression);
-    if (!ts.isIdentifier(target)) return null;
-    const binding = this.lookup(target.text, target);
-    let obj: ts.Expression | undefined;
-    if (binding.kind === "value") obj = unwrap(binding.expr);
-    else if (binding.kind === "param" && this.args.has(binding.decl)) {
-      const arg = this.args.get(binding.decl) ?? binding.decl.initializer;
-      obj = arg && unwrap(arg);
-    }
-    if (!obj || !ts.isObjectLiteralExpression(obj)) return null;
+    const obj = this.objectOf(target, 0);
+    if (!obj) return null;
     for (const prop of obj.properties) {
       if (ts.isSpreadAssignment(prop)) return null;
       if (
         ts.isPropertyAssignment(prop) &&
         (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) &&
-        prop.name.text === e.name.text
+        prop.name.text === name
       ) {
         return prop.initializer;
       }
-      if (
-        ts.isShorthandPropertyAssignment(prop) &&
-        prop.name.text === e.name.text
-      ) {
+      if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === name) {
         return prop.name;
       }
     }
     return "absent";
+  }
+
+  /** The object literal an expression statically evaluates to, if any. */
+  private objectOf(
+    raw: ts.Expression,
+    depth: number
+  ): ts.ObjectLiteralExpression | null {
+    if (depth > 8) return null;
+    const e = unwrap(raw);
+    if (ts.isObjectLiteralExpression(e)) return e;
+    if (isObjectFreeze(e))
+      return this.objectOf(e.arguments[0] as ts.Expression, depth + 1);
+    if (ts.isIdentifier(e)) {
+      const binding = this.lookup(e.text, e);
+      if (binding.kind === "value")
+        return this.objectOf(binding.expr, depth + 1);
+      if (binding.kind === "param" && this.args.has(binding.decl)) {
+        const arg = this.args.get(binding.decl) ?? binding.decl.initializer;
+        return arg ? this.objectOf(arg, depth + 1) : null;
+      }
+      return null;
+    }
+    const key = memberKey(e);
+    if (key !== null) {
+      const found = this.propertyOf(
+        (e as ts.PropertyAccessExpression | ts.ElementAccessExpression)
+          .expression,
+        key
+      );
+      return found && found !== "absent"
+        ? this.objectOf(found, depth + 1)
+        : null;
+    }
+    return null;
   }
 
   /** A same-file or imported helper that builds a URL, inlined with its arguments bound. */
@@ -859,6 +981,66 @@ class Resolver {
   }
 }
 
+/**
+ * The string values a type allows when it is a string literal or a union of
+ * them — directly, or through a same-file `type X = "a" | "b"` — else null.
+ */
+function literalUnion(
+  type: ts.TypeNode | undefined,
+  from: ts.Node,
+  depth = 0
+): string[] | null {
+  if (!type || depth > 4) return null;
+  if (ts.isParenthesizedTypeNode(type))
+    return literalUnion(type.type, from, depth + 1);
+  if (ts.isLiteralTypeNode(type) && ts.isStringLiteral(type.literal))
+    return [type.literal.text];
+  if (ts.isUnionTypeNode(type)) {
+    const out: string[] = [];
+    for (const t of type.types) {
+      const vs = literalUnion(t, from, depth + 1);
+      if (!vs) return null;
+      out.push(...vs);
+    }
+    return out.length <= MAX_ALTERNATIVES ? [...new Set(out)] : null;
+  }
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    const name = type.typeName.text;
+    for (const stmt of from.getSourceFile().statements) {
+      if (ts.isTypeAliasDeclaration(stmt) && stmt.name.text === name)
+        return literalUnion(stmt.type, stmt, depth + 1);
+    }
+  }
+  return null;
+}
+
+/** `Object.freeze(x)`. */
+function isObjectFreeze(e: ts.Expression): e is ts.CallExpression {
+  return (
+    ts.isCallExpression(e) &&
+    e.arguments.length === 1 &&
+    unwrap(e.expression).getText() === "Object.freeze"
+  );
+}
+
+/** The static key of `a.b` / `a["b"]`, else `null`. */
+function memberKey(e: ts.Expression): string | null {
+  if (ts.isPropertyAccessExpression(e)) return e.name.text;
+  if (ts.isElementAccessExpression(e)) {
+    const k = unwrap(e.argumentExpression);
+    return ts.isStringLiteralLike(k) ? k.text : null;
+  }
+  return null;
+}
+
+/** The innermost object of a member chain: `a` for `a.b["c"].d`. */
+function rootOf(raw: ts.Expression): ts.Expression {
+  let e = unwrap(raw);
+  while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e))
+    e = unwrap(e.expression);
+  return e;
+}
+
 /** The expressions a function can return (its own returns, not nested functions'). */
 function returnExpressions(fn: FunctionNode): ts.Expression[] {
   if (!fn.body) return [];
@@ -1033,7 +1215,11 @@ function sitesOf(
     }
     const seen = new Set<string>();
     for (const text of resolved.texts) {
-      const { path: p, wsScheme, originBacked } = pathOf(text);
+      const { path: raw, wsScheme, originBacked } = pathOf(text);
+      const placeholderSources = [...raw.matchAll(PLACEHOLDER)].map(
+        (m) => resolver.sources[Number(m[1])] ?? null
+      );
+      const p = raw.replace(PLACEHOLDER, PARAM);
       if (seen.has(`${originBacked}${p}`)) continue;
       seen.add(`${originBacked}${p}`);
       if (!p.startsWith("/")) {
@@ -1042,7 +1228,10 @@ function sitesOf(
           path: null,
           wsScheme,
           originBacked,
-          unresolvedWhy: `resolved to a non-absolute URL \`${text.split(ORIGIN).join("")}\``,
+          unresolvedWhy: `resolved to a non-absolute URL \`${text
+            .split(ORIGIN)
+            .join("")
+            .replace(PLACEHOLDER, PARAM)}\``,
         });
       } else {
         out.push({
@@ -1050,6 +1239,7 @@ function sitesOf(
           path: p,
           wsScheme,
           originBacked,
+          placeholderSources,
           ...(methodWhy ? { unresolvedWhy: methodWhy } : {}),
         });
       }
@@ -1143,7 +1333,8 @@ function wrapperOwner(
 function collectFile(
   file: string,
   sf: ts.SourceFile,
-  load: ModuleLoader | undefined
+  load: ModuleLoader | undefined,
+  index: SnapshotIndex | undefined
 ): { sites: CallSite[]; wrappers: Wrapper[] } {
   const clients = httpClientNames(sf);
   const sites: CallSite[] = [];
@@ -1172,6 +1363,15 @@ function collectFile(
         if (verb === "fetch") {
           const m = resolver.methods(node.arguments[1]);
           if (!m.ok && m.freeParam) triggers.add(m.freeParam);
+        }
+        // A parameter whose `{param}` would have to fill a literal template
+        // segment (`/api/v1/${resource}`) names the endpoint: resolve it per
+        // caller like any other structural parameter.
+        if (index) {
+          for (const site of own) {
+            for (const source of literalFillSources(site, index) ?? [])
+              if (source) triggers.add(source);
+          }
         }
         const owner = wrapperOwner(node, triggers);
         const named = owner && callableName(owner.fn);
@@ -1286,12 +1486,22 @@ function callerSites(
     w.callers++;
     const resolver = new Resolver(load, w.strict);
     resolver.bind(w.fn, call.arguments);
+    const sites = sitesOf(resolver, w.call, w.verb, {
+      file,
+      node: call,
+      urlText: snippet(call),
+    });
+    // A parameter still unbound here (the caller's own, or an outer
+    // function's) glued onto a path segment carries path structure one
+    // level further than the walker follows.
     out.push(
-      ...sitesOf(resolver, w.call, w.verb, {
-        file,
-        node: call,
-        urlText: snippet(call),
-      })
+      ...(resolver.glued.size === 0
+        ? sites
+        : sites.map((site) => ({
+            ...site,
+            path: null,
+            unresolvedWhy: `a parameter the walker does not follow is glued onto a path segment`,
+          })))
     );
   };
   const unfollowed = (node: ts.Node, why: string): void => {
@@ -1337,19 +1547,28 @@ function callerSites(
   return out;
 }
 
+/** React's dependency-array hooks, by the index of their dependency argument. */
+const REACT_DEPENDENCY_INDEX: ReadonlyMap<string, number> = new Map([
+  ["useCallback", 1],
+  ["useEffect", 1],
+  ["useMemo", 1],
+  ["useLayoutEffect", 1],
+  ["useInsertionEffect", 1],
+  ["useImperativeHandle", 2],
+]);
+
 /**
- * `[fn, id]` passed to `useCallback`/`useEffect`/`useMemo`: React compares
- * the dependency, it never calls it.
+ * `[fn, id]` passed as the dependency array of one of React's own hooks:
+ * React compares the dependency, it never calls it. Any other hook (a custom
+ * `useParallel(opts, [fetchA])`) may call what it is given, so it is a use.
  */
 function isHookDependency(id: ts.Identifier): boolean {
   const arr = id.parent;
   if (!ts.isArrayLiteralExpression(arr)) return false;
   const call = arr.parent;
-  return (
-    ts.isCallExpression(call) &&
-    call.arguments.indexOf(arr) > 0 &&
-    /^use[A-Z]/.test(tailName(call.expression) ?? "")
-  );
+  if (!ts.isCallExpression(call)) return false;
+  const at = REACT_DEPENDENCY_INDEX.get(tailName(call.expression) ?? "");
+  return at !== undefined && call.arguments[at] === arr;
 }
 
 /** Whether an identifier is a use of a binding (not a declaration, key or import/export name). */
@@ -1420,10 +1639,11 @@ function uncalledWrapperSites(wrappers: readonly Wrapper[]): CallSite[] {
 export function extractCallSites(
   file: string,
   source: string,
-  load?: ModuleLoader
+  load?: ModuleLoader,
+  index?: SnapshotIndex
 ): CallSite[] {
   const sf = parseSource(file, source);
-  const { sites, wrappers } = collectFile(file, sf, load);
+  const { sites, wrappers } = collectFile(file, sf, load, index);
   sites.push(...callerSites(file, sf, wrappers, load));
   sites.push(...uncalledWrapperSites(wrappers));
   return sites;
@@ -1731,6 +1951,71 @@ function segmentsMatch(
   return literalOk && segmentsMatch(client, t, strict, ci + 1, ti + 1);
 }
 
+/**
+ * Client segment indices where a `{param}`-carrying segment fills a LITERAL
+ * template segment, for the first alignment of `client` to `t`; `null` when
+ * they do not align at all.
+ */
+function literalFills(
+  client: string[],
+  t: IndexedTemplate,
+  ci = 0,
+  ti = 0
+): number[] | null {
+  const seg = t.segments[ti];
+  const c = client[ci];
+  if (seg === undefined) return c === undefined ? [] : null;
+  if (c === undefined) return null;
+  const param = TEMPLATE_PARAM.exec(seg);
+  if (param) {
+    if (t.multi.has(param[1] ?? "")) {
+      for (let end = ci + 1; end <= client.length; end++) {
+        const rest = literalFills(client, t, end, ti + 1);
+        if (rest) return rest;
+      }
+      return null;
+    }
+    if (!c.includes(PARAM)) return null;
+    return literalFills(client, t, ci + 1, ti + 1);
+  }
+  if (!segmentMatchesLiteral(c, seg)) return null;
+  const rest = literalFills(client, t, ci + 1, ti + 1);
+  return rest && (c === seg ? rest : [ci, ...rest]);
+}
+
+/**
+ * When `site` is served ONLY through a `{param}` filling a literal template
+ * segment, the sources of those placeholders (`CallSite.placeholderSources`:
+ * an unbound parameter, or `null`); otherwise `null`.
+ */
+export function literalFillSources(
+  site: CallSite,
+  index: SnapshotIndex
+): (ts.ParameterDeclaration | null)[] | null {
+  if (site.path === null || site.method === null) return null;
+  const verdict = checkSite(site, index);
+  if (verdict.ok || verdict.kind !== "unresolved") return null;
+  const segments = segmentsOf(site.path);
+  const t = index.templates.find(
+    (x) =>
+      !(site.originBacked && x.servedBy === "next") &&
+      x.methods.has(site.method as string) &&
+      segmentsMatch(segments, x, false)
+  );
+  const fills = t && literalFills(segments, t);
+  if (!fills) return null;
+  const sources = site.placeholderSources ?? [];
+  const out: (ts.ParameterDeclaration | null)[] = [];
+  let seen = 0;
+  segments.forEach((seg, i) => {
+    const n = seg.split(PARAM).length - 1;
+    if (fills.includes(i))
+      for (let k = 0; k < n; k++) out.push(sources[seen + k] ?? null);
+    seen += n;
+  });
+  return out;
+}
+
 export type SiteVerdict =
   | { ok: true; template: string; servedBy: "backend" | "next" }
   | {
@@ -1774,9 +2059,23 @@ export function checkSite(site: CallSite, index: SnapshotIndex): SiteVerdict {
     (t) => !(site.originBacked && t.servedBy === "next")
   );
   const candidates = reachable.filter((t) => segmentsMatch(segments, t, false));
-  const serving = candidates.find((t) => t.methods.has(method));
-  if (serving)
-    return { ok: true, template: serving.template, servedBy: serving.servedBy };
+  const serving = candidates.filter((t) => t.methods.has(method));
+  // Served only if some template aligns parameter-to-parameter. A `{param}`
+  // standing in for a LITERAL segment (`/users/{param}/activity` against
+  // `/users/me/activity`) says nothing about whether the value is `me`.
+  const aligned = serving.find((t) => segmentsMatch(segments, t, true));
+  if (aligned)
+    return { ok: true, template: aligned.template, servedBy: aligned.servedBy };
+  if (serving.length > 0) {
+    return {
+      ok: false,
+      reason: "unresolved",
+      kind: "unresolved",
+      detail: `a {param} stands in for a literal segment of ${serving
+        .map((t) => t.template)
+        .join("; ")}`,
+    };
+  }
 
   const sameEndpoint = candidates.filter((t) =>
     segmentsMatch(segments, t, true)
@@ -1827,10 +2126,16 @@ export function mismatchEntries(
   sites: CallSite[],
   index: SnapshotIndex
 ): BaselineEntry[] {
-  const occurrence = unresolvedOccurrences(sites);
+  const verdicts = new Map(sites.map((s) => [s, checkSite(s, index)]));
+  const occurrence = unresolvedOccurrences(
+    sites.filter((s) => {
+      const v = verdicts.get(s);
+      return v !== undefined && !v.ok && v.kind === "unresolved";
+    })
+  );
   const byKey = new Map<string, BaselineEntry>();
   for (const site of sites) {
-    const verdict = checkSite(site, index);
+    const verdict = verdicts.get(site) as SiteVerdict;
     if (verdict.ok) continue;
     const entry: BaselineEntry = {
       file: site.file,
@@ -1855,13 +2160,12 @@ function unresolvedLabel(site: CallSite): string {
 }
 
 /**
- * 1-based source-order index of each unresolved site (path or method `null`)
+ * 1-based source-order index of each site whose verdict is `unresolved`
  * among its file's unresolved sites with the same method and label.
  */
 function unresolvedOccurrences(sites: CallSite[]): Map<CallSite, number> {
   const groups = new Map<string, CallSite[]>();
   for (const s of sites) {
-    if (s.path !== null && s.method !== null) continue;
     const k = `${s.file}\t${s.method ?? "?"}\t${unresolvedLabel(s)}`;
     const g = groups.get(k) ?? [];
     g.push(s);
@@ -1914,11 +2218,14 @@ export function isScannedFile(relPath: string): boolean {
 /**
  * The `HttpClient` call sites in `rels` (paths relative to the source root,
  * read through `loader`), with wrappers resolved at their callers anywhere in
- * `rels`. Files that fail `isScannedFile` are skipped.
+ * `rels`. Files that fail `isScannedFile` are skipped. With `index`, a
+ * parameter that would have to fill a literal segment of it also makes its
+ * function a wrapper (see `literalFillSources`).
  */
 export function walkSources(
   rels: readonly string[],
-  loader: TreeLoader
+  loader: TreeLoader,
+  index?: SnapshotIndex
 ): CallSite[] {
   const scanned = rels
     .filter(isScannedFile)
@@ -1933,7 +2240,7 @@ export function walkSources(
     if (!/\.(fetch|get|post|put|patch|delete)\s*(<|\()/.test(text)) continue;
     const sf = loader.parse(rel);
     if (!sf) continue;
-    const found = collectFile(rel, sf, loader);
+    const found = collectFile(rel, sf, loader, index);
     sites.push(...found.sites);
     wrappers.push(...found.wrappers);
   }
@@ -1956,7 +2263,7 @@ export function walkSources(
     [...exported].flatMap(([name, ws]) =>
       text.includes(name) &&
       new RegExp(
-        `import\\s*(type\\s*)?\\{[^}]*\\b${escapeRegex(name)}\\b[^}]*\\}\\s*from`
+        `import\\s*(?:type\\s+)?(?:[\\w$]+\\s*,\\s*)?\\{[^}]*\\b${escapeRegex(name)}\\b[^}]*\\}\\s*from`
       ).test(text)
         ? ws
         : []
@@ -1977,12 +2284,16 @@ export function walkSources(
 
 /**
  * The `HttpClient` call sites under `srcRoot` (`frontend/src`) — minus the
- * blind spots listed in `route-walker.test.ts` — plus every
- * Next.js route handler's template.
+ * blind spots listed in `route-walker.test.ts` — plus every Next.js route
+ * handler's template and the index built from them and `paths`.
  */
-export function walkSourceTree(srcRoot: string): {
+export function walkSourceTree(
+  srcRoot: string,
+  paths: SnapshotPaths
+): {
   sites: CallSite[];
   nextRoutes: NextRoute[];
+  index: SnapshotIndex;
 } {
   const rels: string[] = [];
   for (const entry of readdirSync(srcRoot, {
@@ -1998,8 +2309,7 @@ export function walkSourceTree(srcRoot: string): {
     file,
     source: loader.parse(file)?.text ?? "",
   }));
-  return {
-    sites: walkSources(rels, loader),
-    nextRoutes: nextRouteTemplates(handlers),
-  };
+  const nextRoutes = nextRouteTemplates(handlers);
+  const index = buildSnapshotIndex(paths, { nextRoutes });
+  return { sites: walkSources(rels, loader, index), nextRoutes, index };
 }
