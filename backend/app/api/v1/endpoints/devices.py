@@ -665,18 +665,29 @@ async def get_device_identity(
 
     Declared before ``GET /{device_id}`` so ``me`` is never captured as a
     device-id path parameter.
-    """
-    raw_tenant = device_ctx.claims.get("tenant_id")
-    if not raw_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device token missing tenant_id claim",
-        )
 
+    The tenant read is
+    :attr:`~app.api.deps.DeviceTokenContext.tenant_claim` — the
+    401-on-missing, VERBATIM accessor — rather than a hand-rolled
+    ``claims.get``. Two postures are in play and this route wants the looser
+    one on BOTH axes:
+
+    * **missing -> 401** is right here and only here: the tenant IS the answer
+      this route owes, so a token that asserts none leaves it nothing to
+      return. A recorder that files the tenant as one fact among others takes
+      ``tenant_id_optional`` and records ``unknown`` instead.
+    * **malformed -> returned anyway.** The claim is echoed as the token
+      spelled it, never parsed and never normalised. This route stores
+      nothing, so a tenant that is not a UUID is none of its business, and
+      ``test_device_identity_endpoint`` pins exactly that ("sourced from
+      claims ... verbatim, not derived") with non-UUID values.
+
+    Plan ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.
+    """
     return DeviceIdentityResponse(
         device_id=str(device_ctx.device_id),
         user_id=str(device_ctx.user_id),
-        tenant_id=str(raw_tenant),
+        tenant_id=device_ctx.tenant_claim,
     )
 
 

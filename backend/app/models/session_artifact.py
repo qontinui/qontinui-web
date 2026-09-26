@@ -24,10 +24,24 @@ purpose and is commented at the divergence:
   and that is this store's sharpest divergence from the plan library. It is
   the web-side ownership axis every ``agent.*`` read scopes on, and it is a
   different question both from "which coord tenant did this session run
-  against" (``tenant_id``) and from "which row is this". Plans are genuinely
-  per-organization, so ``work_artifacts`` keys on it; sessions have two
-  legitimate writers that do not agree about it, so this store must not — see
-  :class:`SessionArtifact`'s identity paragraph for the whole argument.
+  against" (``tenant_id``) and from "which row is this". Sessions have two legitimate writers that do not agree about it,
+  so this store must not key on it — see :class:`SessionArtifact`'s
+  identity paragraph for the whole argument.
+
+  .. note::
+
+     This bullet used to continue "Plans are genuinely per-organization, so
+     ``work_artifacts`` keys on it". That premise was true while one device
+     meant one tenant, and it is retired: a device bound to N coord tenants
+     and operated by one person resolves to ONE personal organization, so its
+     tenants' plans FUSE, and a shared stem under one ``source_repo``
+     overwrites across them. ``agent.work_artifacts`` now carries the same
+     ``tenant_id`` / ``tenant_source`` pair this store pioneered — plan
+     ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``.
+     What survives unchanged is the SPLIT itself: ``organization_id`` answers
+     access control, ``tenant_id`` answers which coord tenant, and neither
+     stands in for the other. Only the claim that the plan library was
+     entitled to skip the second column is gone.
 """
 
 from datetime import UTC, datetime
