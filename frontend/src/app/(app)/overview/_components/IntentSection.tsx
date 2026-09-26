@@ -305,6 +305,18 @@ export function IntentSection({
       else next.delete(id);
       return next;
     });
+  // An entry that vanishes while its editor is open (deleted or withdrawn
+  // elsewhere) unmounts that editor without its onDone, so drop its id — else
+  // the id would linger and hold the document under "Not written yet" if it
+  // ever came back written.
+  useEffect(() => {
+    setOpenIds((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(entries.map((e) => e.id));
+      const kept = [...prev].filter((id) => live.has(id));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [entries]);
   const written = entries.filter((e) => hasContent(e) && !openIds.has(e.id));
   // Every template nobody has filled in yet is offered to an editor — not just
   // while the section is empty. Coord seeds several templates for some kinds
