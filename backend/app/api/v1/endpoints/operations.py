@@ -11681,6 +11681,10 @@ async def get_coord_findings(
                 "next_cursor": None,
                 "total": None,
                 "shown": 0,
+                # The page size the CALLER asked for, or null when it asked for
+                # none: coord's own default then applies and is unknown here, so
+                # it is not guessed (a copy of coord's constant would drift).
+                "limit": limit,
                 "filter_narrowed": None,
                 "enumerate_via": None,
                 "unavailable": (
