@@ -619,7 +619,8 @@ class Resolver {
 
   /**
    * A `let` is resolved only when the sole later writes append a query
-   * string (`url += \`?${qs}\``); any other reassignment makes it unknown.
+   * string (`url += \`?${qs}\``); any other write — `=`, `||=`, `??=`,
+   * `&&=`, or a non-query `+=` — makes it unknown.
    */
   private letValue(
     decl: ts.VariableDeclaration,
@@ -635,7 +636,7 @@ class Resolver {
         n.left.text === name
       ) {
         const op = n.operatorToken.kind;
-        if (op === ts.SyntaxKind.EqualsToken) safe = false;
+        if (REASSIGNING.has(op)) safe = false;
         if (op === ts.SyntaxKind.PlusEqualsToken) {
           const rhs = unwrap(n.right);
           const head = ts.isTemplateExpression(rhs)
@@ -1003,6 +1004,14 @@ function literalUnion(
   }
   return null;
 }
+
+/** Writes that replace a `let`'s value outright (`+=` is judged separately). */
+const REASSIGNING: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+]);
 
 /** `Object.freeze(x)`. */
 function isObjectFreeze(e: ts.Expression): e is ts.CallExpression {
