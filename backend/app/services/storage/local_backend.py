@@ -93,6 +93,17 @@ class LocalBackend(StorageBackend):
                 detail=f"Failed to download file: {str(e)}",
             )
 
+    def open_stream(self, key: str) -> BinaryIO:
+        """The file, opened for reading."""
+        file_path = self._get_file_path(key)
+        if not file_path.exists():
+            logger.error("local_download_failed", key=key, error="File not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found: {key}",
+            )
+        return open(file_path, "rb")
+
     def delete_file(self, key: str) -> bool:
         """Delete file from local filesystem."""
         try:
