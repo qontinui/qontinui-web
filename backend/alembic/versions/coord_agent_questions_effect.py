@@ -8,7 +8,7 @@ Phase 1 (schema half) of plan
 ``2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy``
 (decisions D2 and D6, vet correction V6).
 
-Adds two columns, one CHECK, and two partial indices to
+Adds two columns, one CHECK, and three partial indices to
 ``coord.agent_questions``:
 
 - ``effect_kind TEXT NOT NULL DEFAULT 'none'`` with the named CHECK
@@ -142,6 +142,36 @@ still implies this predicate). Leading ``tenant_id`` for
 the reason the sibling indices give: coord's pending read filters it
 unconditionally, and it is ``NOT NULL`` on this table.
 
+The non-unique ``idx_agent_questions_effect_ref``
+=================================================
+
+``(tenant_id, effect_kind, (effect_ref->>'id')) WHERE effect_kind <> 'none'``.
+It serves coord's "has this effect been mirrored?" anti-joins — the per-insert
+``NOT EXISTS`` its mirror writer runs before asking, and the reconcile backfill
+that looks for effects with no mirror at all. Both must see ANSWERED mirrors as
+well as open ones (an effect whose mirror was answered has been mirrored), and
+the two indices above cover open rows only: each requires ``responded_at IS
+NULL``, so neither can serve a probe that may match an answered row.
+
+It does not replace the unique index. That index is a constraint — the
+``ON CONFLICT`` arbiter that keeps one OPEN mirror per effect — and its
+open-only predicate is what lets answering a mirror free the key. This one is
+only an access path over the same key with the open-row conjuncts dropped; it
+constrains nothing.
+
+The precedent is the alert-episode pair on this same table:
+``uq_agent_questions_open_alert_episode`` (the open-row dedupe arbiter) and
+``idx_agent_questions_tenant_alert`` (revision
+``agent_questions_alert_id_idx_01``), a plain partial index over the same key
+added because coord's alert reads also probe answered rows.
+
+Without it, the per-insert anti-join has no index on the effect key and falls
+back to ``idx_agent_questions_tenant_id``, reading the tenant's whole question
+history — the ~24k-row pending pile included — once per mirror insert; the
+backfill, which runs across tenants, reads the whole table. Answered questions
+only accumulate, so both costs only grow. ``effect_kind <> 'none'`` keeps every
+ordinary question out, so the index stays the size of the mirror population.
+
 Why a CHECK constraint
 ======================
 
@@ -163,12 +193,12 @@ a queued ACCESS EXCLUSIVE request blocks every reader and writer behind it, and
 the index builds, because ``env.py`` runs every revision in ONE transaction and
 an unreset ``SET LOCAL`` leaks into every revision after this one.
 
-Both indices are built ``CONCURRENTLY`` inside ``autocommit_block()``, exactly
-as ``uq_agent_questions_open_alert_episode`` is, so neither build holds the
+All three indices are built ``CONCURRENTLY`` inside ``autocommit_block()``,
+exactly as ``uq_agent_questions_open_alert_episode`` is, so no build holds the
 SHARE lock that would block the producers' INSERTs. A failed earlier
 CONCURRENTLY build leaves an INVALID index that ``IF NOT EXISTS`` would keep,
-so each build first drops an INVALID index of its own name. Both indices store
-no entries at creation (every row is ``'none'``), so each build is one scan.
+so each build first drops an INVALID index of its own name. All three indices
+store no entries at creation (every row is ``'none'``), so each build is one scan.
 Plain SQL literals, never f-strings, so the ``alembic-schema-arg-gate``
 pre-commit hook can see the schema on every ``CREATE``/``DROP``.
 
@@ -191,8 +221,8 @@ of the two lands second re-points its ``down_revision`` — the required
 ``alembic-heads-pr`` check owns the chain, and no ``coord:stacked-on`` label
 belongs on either PR.
 
-Downgrade drops both indices, the CHECK and both columns. Nothing is lost that
-was not introduced here: every non-``none`` effect is written by the coord
+Downgrade drops all three indices, the CHECK and both columns. Nothing is lost
+that was not introduced here: every non-``none`` effect is written by the coord
 phases this revision unblocks, and the questions themselves survive.
 """
 
@@ -230,7 +260,7 @@ def _index_is_invalid(index_name: str) -> bool:
 
 
 def upgrade() -> None:
-    """Add ``effect_kind`` + CHECK + ``effect_ref``, then both partial indices."""
+    """Add ``effect_kind`` + CHECK + ``effect_ref``, then the three partial indices."""
     # Bound the DDL's lock wait; see the docstring's Locking section.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
@@ -298,7 +328,7 @@ def upgrade() -> None:
             )
         # EVERY effect row, answered or not: coord's "does this effect already
         # have a mirror?" anti-joins (the per-insert NOT EXISTS and the reconcile
-        # backfill) must see answered mirrors too, and both partial indices above
+        # backfill) must see answered mirrors too, and the two indices above
         # cover open rows only.
         op.execute(
             """

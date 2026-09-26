@@ -2,19 +2,24 @@
 
 The revision adds ``coord.agent_questions.effect_kind TEXT NOT NULL DEFAULT
 'none'`` (CHECK ``IN ('none','clause','proposal','gate')``), ``effect_ref JSONB
-NULL``, the partial index ``idx_agent_questions_open_effect`` and the partial
-UNIQUE index::
+NULL``, and three partial indices: ``idx_agent_questions_open_effect``, the
+partial UNIQUE index::
 
     CREATE UNIQUE INDEX CONCURRENTLY uq_agent_questions_open_effect
     ON coord.agent_questions (tenant_id, effect_kind, (effect_ref->>'id'))
     WHERE effect_kind <> 'none' AND responded_at IS NULL AND withdrawn_at IS NULL
+
+and ``idx_agent_questions_effect_ref`` — the same key over EVERY mirror row,
+answered or not (``WHERE effect_kind <> 'none'``), for coord's "has this effect
+been mirrored?" anti-joins.
 
 The unique index IS the idempotency coord's gate/proposal mirror writers rely
 on, so the test asserts the dedupe semantics, not just shape:
 
 1. Nothing exists at the parent revision.
 2. After upgrade the column shapes are right, existing rows read ``'none'`` /
-   NULL, both indices are VALID with the intended predicates, one is UNIQUE.
+   NULL, all three indices are VALID with exactly the intended keys and
+   predicates (as Postgres renders them), and only the dedupe one is UNIQUE.
 3. The CHECK refuses an unknown ``effect_kind`` (SQLSTATE 23514).
 4. The documented write — ``INSERT ... ON CONFLICT (tenant_id, effect_kind,
    (effect_ref->>'id')) WHERE ... DO NOTHING RETURNING question_id`` — returns
@@ -25,11 +30,11 @@ on, so the test asserts the dedupe semantics, not just shape:
 6. Answering the open mirror (``responded_at`` set) frees the key.
 7. ``effect_kind = 'none'`` questions are never constrained.
 8. Idempotency: ``stamp`` back to the parent and ``upgrade`` again succeeds and
-   leaves the VALID indices untouched. Then the INVALID-index cleanup branch:
-   ``indisvalid`` is forced false on the unique index, and a re-run rebuilds it
-   VALID under a NEW oid.
+   leaves all three VALID indices untouched. Then the INVALID-index cleanup
+   branch, once per index: ``indisvalid`` is forced false on that index, and a
+   re-run rebuilds it VALID under a NEW oid while the other two keep theirs.
 9. Downgrade removes indices, CHECK and columns; questions survive. A second
-   upgrade re-applies cleanly.
+   upgrade re-applies cleanly and leaves every index VALID.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -107,6 +112,18 @@ def _index_row(engine: Engine, index_name: str) -> tuple[bool, bool, str]:
             {"idx": index_name},
         ).one()
     return bool(row[0]), bool(row[1]), str(row[2] or "")
+
+
+def _index_def(engine: Engine, index_name: str) -> str:
+    """``pg_get_indexdef`` for ``coord.<index_name>`` — the key as Postgres
+    renders it."""
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                text("SELECT pg_get_indexdef(CAST(:q AS regclass))"),
+                {"q": f"coord.{index_name}"},
+            ).scalar_one()
+        )
 
 
 def _invalidate_index(engine: Engine, index_name: str) -> None:
@@ -309,21 +326,29 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
             ).one()
         assert (old_kind, old_ref) == ("none", None)
 
+        # Predicates and keys are compared EXACTLY, as Postgres renders them
+        # (pg_get_expr / pg_get_indexdef), so a dropped or added conjunct fails.
+        effect_key = "(tenant_id, effect_kind, ((effect_ref ->> 'id'::text)))"
         valid, unique, predicate = _index_row(engine, _UNIQUE_INDEX)
         assert valid, "a killed CONCURRENTLY build leaves an INVALID index"
         assert unique, "the mirror dedupe needs a UNIQUE index"
-        assert "effect_kind <> 'none'" in predicate, predicate
-        assert "responded_at IS NULL" in predicate, predicate
-        assert "withdrawn_at IS NULL" in predicate, predicate
+        assert predicate == (
+            "((effect_kind <> 'none'::text) AND (responded_at IS NULL) "
+            "AND (withdrawn_at IS NULL))"
+        ), predicate
+        assert f"USING btree {effect_key} WHERE" in _index_def(engine, _UNIQUE_INDEX)
         valid, unique, predicate = _index_row(engine, _OPEN_INDEX)
         assert valid and not unique
-        assert "effect_kind <> 'none'" in predicate, predicate
-        assert "responded_at IS NULL" in predicate, predicate
+        assert predicate == (
+            "((responded_at IS NULL) AND (effect_kind <> 'none'::text))"
+        ), predicate
+        assert "USING btree (tenant_id) WHERE" in _index_def(engine, _OPEN_INDEX)
         # Every mirror row, answered or not: coord's anti-joins need it.
         valid, unique, predicate = _index_row(engine, _REF_INDEX)
         assert valid and not unique
-        assert "effect_kind <> 'none'" in predicate, predicate
-        assert "responded_at" not in predicate, predicate
+        assert predicate == "(effect_kind <> 'none'::text)", predicate
+        ref_def = _index_def(engine, _REF_INDEX)
+        assert f"USING btree {effect_key} WHERE" in ref_def, ref_def
 
         # 3. The CHECK refuses a kind coord cannot route.
         with pytest.raises(IntegrityError) as excinfo:
@@ -374,24 +399,21 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         assert _mirror(engine, tenant_a, "none", None) is not None
 
         # 8. Idempotency — re-running the revision over its own schema leaves
-        #    both VALID indices untouched.
-        oids_before = (
-            _index_oid(engine, _UNIQUE_INDEX),
-            _index_oid(engine, _OPEN_INDEX),
-        )
+        #    all three VALID indices untouched.
+        all_indices = (_UNIQUE_INDEX, _OPEN_INDEX, _REF_INDEX)
+        oids_before = {name: _index_oid(engine, name) for name in all_indices}
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_row(engine, _UNIQUE_INDEX)[0]
-        assert _index_row(engine, _OPEN_INDEX)[0]
-        assert (
-            _index_oid(engine, _UNIQUE_INDEX),
-            _index_oid(engine, _OPEN_INDEX),
-        ) == oids_before, "a re-run must not drop and rebuild a VALID index"
+        for name in all_indices:
+            assert _index_row(engine, name)[0], name
+        assert {name: _index_oid(engine, name) for name in all_indices} == (
+            oids_before
+        ), "a re-run must not drop and rebuild a VALID index"
 
-        # 8b. The INVALID-index cleanup branch: a killed CONCURRENTLY build
-        #     leaves an INVALID index that `IF NOT EXISTS` alone would keep.
-        #     The revision must drop and rebuild it — VALID, with a NEW oid —
-        #     and leave the still-VALID sibling untouched.
+        # 8b. The INVALID-index cleanup branch, once per index: a killed
+        #     CONCURRENTLY build leaves an INVALID index that `IF NOT EXISTS`
+        #     alone would keep. The revision must drop and rebuild it — VALID,
+        #     with a NEW oid — and leave the two still-VALID siblings untouched.
         #     Writing ``pg_index`` needs a superuser; on a role that is not one
         #     THIS SUB-STEP ONLY is skipped (loudly), and the rest runs.
         if not _is_superuser(engine):
@@ -403,20 +425,24 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
                 stacklevel=1,
             )
         else:
-            unique_oid_before = _index_oid(engine, _UNIQUE_INDEX)
-            _invalidate_index(engine, _UNIQUE_INDEX)
-            assert not _index_row(engine, _UNIQUE_INDEX)[0]
-            run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-            run_alembic(root, url, "upgrade", _REVISION_ID)
-            assert _index_row(engine, _UNIQUE_INDEX)[0], (
-                "an INVALID index must be rebuilt VALID, not kept by IF NOT EXISTS"
-            )
-            assert _index_oid(engine, _UNIQUE_INDEX) != unique_oid_before, (
-                "the INVALID index must be dropped and rebuilt, not revalidated"
-            )
-            assert _index_oid(engine, _OPEN_INDEX) == oids_before[1], (
-                "the VALID sibling must not be rebuilt"
-            )
+            for target in all_indices:
+                siblings = [name for name in all_indices if name != target]
+                oids = {name: _index_oid(engine, name) for name in all_indices}
+                _invalidate_index(engine, target)
+                assert not _index_row(engine, target)[0], target
+                run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+                run_alembic(root, url, "upgrade", _REVISION_ID)
+                assert _index_row(engine, target)[0], (
+                    f"INVALID {target} must be rebuilt VALID, not kept by IF NOT EXISTS"
+                )
+                assert _index_oid(engine, target) != oids[target], (
+                    f"INVALID {target} must be dropped and rebuilt, not revalidated"
+                )
+                for name in siblings:
+                    assert _index_row(engine, name)[0], (target, name)
+                    assert _index_oid(engine, name) == oids[name], (
+                        f"invalidating {target} must not rebuild VALID {name}"
+                    )
 
         # 9. Downgrade removes everything added; questions survive. Re-upgrade.
         rows_before = _question_count(engine)
@@ -433,4 +459,6 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
 
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _index_row(engine, _UNIQUE_INDEX)[0], "re-applied index must be VALID"
+        assert _index_row(engine, _OPEN_INDEX)[0], "re-applied index must be VALID"
+        assert _index_row(engine, _REF_INDEX)[0], "re-applied index must be VALID"
         assert _check_exists(engine)
