@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -135,6 +135,10 @@ export function usePublishAll() {
   );
   const [status, setStatus] = useState<AutoPublishStatusEntry[]>([]);
   const [servedCount, setServedCount] = useState(0);
+  const statusRequest = useRef(0);
+  const [publishingEnabled, setPublishingEnabled] = useState<
+    boolean | undefined
+  >(undefined);
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -189,10 +193,22 @@ export function usePublishAll() {
 
   /** What the auto-publisher would do next, per candidate. */
   const loadStatus = useCallback(async (): Promise<void> => {
+    // Reads now overlap (mount, a mode write, a switch write), so only the
+    // newest request may land: an older answer arriving last would put back
+    // the mode or switch the operator just changed.
+    const request = ++statusRequest.current;
     try {
       const data =
         await httpClient.get<AutoPublishStatusResponse>(AUTO_PUBLISH_STATUS);
+      if (request !== statusRequest.current) return;
       setStatus(data.candidates ?? []);
+      // The D5 switch as coord resolved it. Absent is UNKNOWN (`undefined`),
+      // never `true`: a badge must not promise a publication on a guess.
+      setPublishingEnabled(
+        typeof data.publishing_enabled === "boolean"
+          ? data.publishing_enabled
+          : undefined
+      );
       // Coord's own count for the same set. Preferred over the array's length:
       // if the two disagree, the array is the thing that got truncated.
       setServedCount(
@@ -201,6 +217,7 @@ export function usePublishAll() {
           : (data.candidates ?? []).length
       );
     } catch (err) {
+      if (request !== statusRequest.current) return;
       // Silent by the same rule as the latch above, and one step further: a
       // failed status read costs an ADVISORY badge. Every non-system tenant
       // fails it on every page load, and nothing an operator can do depends on
@@ -328,6 +345,10 @@ export function usePublishAll() {
         );
         setModeSchemaPending(null);
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
+        // The badges key on the served mode, so the status read is re-taken:
+        // without it a document just set to `manual` or `never` keeps a
+        // "Publishes <time>" badge for a publication nothing will make.
+        await loadStatus();
         return true;
       } catch (err) {
         const detail = message(err, "Failed to set the publish mode");
@@ -347,7 +368,7 @@ export function usePublishAll() {
         setSavingMode(false);
       }
     },
-    [latch]
+    [latch, loadStatus]
   );
 
   return {
@@ -363,6 +384,11 @@ export function usePublishAll() {
     previewing,
     /** What the auto-publisher would do next, per candidate (D4). */
     status,
+    /**
+     * Whether the auto-publisher will publish at all — coord's resolved D5
+     * switch from the same status read. `undefined` is UNKNOWN.
+     */
+    publishingEnabled,
     /**
      * N for the "Publish all changed (N)" button — the status read's candidate
      * count, which coord builds from the same `publication_candidates` helper

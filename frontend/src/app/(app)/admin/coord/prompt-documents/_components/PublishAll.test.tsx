@@ -126,14 +126,20 @@ function renderList(opts: {
   /** Coord's own `count`. Omitted ⇒ the candidate array's length. */
   statusCount?: number;
   statusError?: Error;
+  /** Coord's resolved D5 switch. Omitted ⇒ not served (UNKNOWN). */
+  publishingEnabled?: boolean;
 }) {
   getMock.mockImplementation(async (url: string) => {
     if (typeof url === "string" && url.includes("/auto-publish/status")) {
       if (opts.statusError) throw opts.statusError;
       const candidates = opts.status ?? [];
+      const switchState =
+        opts.publishingEnabled === undefined
+          ? {}
+          : { publishing_enabled: opts.publishingEnabled };
       return opts.statusCount === undefined
-        ? { candidates, count: candidates.length }
-        : { candidates, count: opts.statusCount };
+        ? { candidates, count: candidates.length, ...switchState }
+        : { candidates, count: opts.statusCount, ...switchState };
     }
     return { documents: opts.documents, degraded: null };
   });
@@ -533,6 +539,151 @@ describe("the auto-publish badges", () => {
       screen.queryByTestId("doc-auto-publish-held-policy-settled")
     ).not.toBeInTheDocument();
   });
+
+  it("badges nothing on a manual document, whatever coord says would settle", async () => {
+    // Coord serves `settles_at` and `held` for every candidate, because
+    // publish-all can publish a manual document by hand. The worker never
+    // will, so a "Publishes <time>" here names a publication nothing makes.
+    renderList({
+      documents: [summary("policy", "coordination")],
+      status: [
+        statusEntry("policy", "coordination", {
+          publish_mode: "manual",
+          direction: "other",
+          settles_at: "2026-09-20T15:00:00Z",
+          held: true,
+          held_tokens: [
+            {
+              category: "repo_name",
+              token: "qontinui-coord",
+              line: 2,
+              reason: "names a repository specific to this fleet",
+            },
+          ],
+        }),
+      ],
+    });
+
+    await screen.findByTestId("doc-row-policy-coordination");
+    for (const id of ["settles", "held", "paused"]) {
+      expect(
+        screen.queryByTestId(`doc-auto-publish-${id}-policy-coordination`)
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("follows undecided_default for an undecided document", async () => {
+    renderList({
+      documents: [
+        summary("policy", "testing"),
+        summary("policy", "coordination"),
+      ],
+      status: [
+        statusEntry("policy", "testing", {
+          publish_mode: null,
+          undecided_default: "auto",
+          direction: "other",
+          settles_at: "2026-09-21T09:00:00Z",
+        }),
+        statusEntry("policy", "coordination", {
+          publish_mode: null,
+          undecided_default: "manual",
+          direction: "other",
+          settles_at: "2026-09-21T09:00:00Z",
+        }),
+      ],
+    });
+
+    expect(
+      await screen.findByTestId("doc-auto-publish-settles-policy-testing")
+    ).toHaveTextContent("(6 h)");
+    expect(
+      screen.queryByTestId("doc-auto-publish-settles-policy-coordination")
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-reads the status when the page bumps its refresh key, and not on mount", async () => {
+    const { rerender } = renderList({
+      documents: [summary("policy", "testing")],
+      status: [statusEntry("policy", "testing")],
+    });
+    await screen.findByTestId("doc-row-policy-testing");
+    const statusReads = () =>
+      getMock.mock.calls.filter(([url]) =>
+        String(url).includes("/auto-publish/status")
+      ).length;
+    await waitFor(() => expect(statusReads()).toBe(1));
+
+    rerender(<PromptDocumentList autoPublishRefreshKey={1} />);
+
+    await waitFor(() => expect(statusReads()).toBe(2));
+  });
+
+  it("keeps the ordinary schedule when coord says the switch is on", async () => {
+    renderList({
+      documents: [summary("policy", "testing")],
+      publishingEnabled: true,
+      status: [
+        statusEntry("policy", "testing", {
+          direction: "other",
+          settles_at: "2026-09-21T09:00:00Z",
+        }),
+      ],
+    });
+
+    expect(
+      await screen.findByTestId("doc-auto-publish-settles-policy-testing")
+    ).toHaveTextContent(/^Publishes /);
+  });
+
+  it("turns a hold into the off badge too, naming what it would hold on", async () => {
+    renderList({
+      documents: [summary("policy", "git-operations")],
+      publishingEnabled: false,
+      status: [
+        statusEntry("policy", "git-operations", {
+          held: true,
+          held_tokens: [
+            {
+              category: "repo_name",
+              token: "qontinui-coord",
+              line: 2,
+              reason: "names a repository specific to this fleet",
+            },
+          ],
+        }),
+      ],
+    });
+
+    const badge = await screen.findByTestId(
+      "doc-auto-publish-paused-policy-git-operations"
+    );
+    expect(badge).toHaveTextContent("Auto-publish off");
+    expect(badge.getAttribute("title")).toMatch(/would be held/);
+    expect(
+      screen.queryByTestId("doc-auto-publish-held-policy-git-operations")
+    ).not.toBeInTheDocument();
+  });
+
+  it("says auto-publish is off rather than promising a time while the switch is off", async () => {
+    renderList({
+      documents: [summary("policy", "testing")],
+      publishingEnabled: false,
+      status: [
+        statusEntry("policy", "testing", {
+          direction: "loosening",
+          settles_at: "2026-09-21T09:00:00Z",
+        }),
+      ],
+    });
+
+    expect(
+      await screen.findByTestId("doc-auto-publish-paused-policy-testing")
+    ).toHaveTextContent("Auto-publish off");
+    expect(
+      screen.queryByTestId("doc-auto-publish-settles-policy-testing")
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("the per-document publish mode", () => {
@@ -585,6 +736,72 @@ describe("the per-document publish mode", () => {
     ];
     expect(url).toContain("/coord/prompt-documents/policy/testing");
     expect(body.publish_mode).toBe("never");
+  });
+
+  it("re-reads the status after a mode write, so a stale schedule does not linger", async () => {
+    const entry = statusEntry("policy", "testing", {
+      settles_at: "2026-09-21T09:00:00Z",
+      direction: "other",
+    });
+    // Coord's answer changes with the write: the next status read serves the
+    // new mode, and only a re-read can take the badge away.
+    patchMock.mockImplementation(async () => {
+      entry.publish_mode = "never";
+      return { current_version: 3 };
+    });
+    renderList({
+      documents: [summary("policy", "testing", { publish_mode: "auto" })],
+      status: [entry],
+    });
+    await screen.findByTestId("doc-auto-publish-settles-policy-testing");
+
+    await user().click(screen.getByTestId("doc-publish-mode-policy-testing"));
+    await user().click(
+      await screen.findByTestId("doc-publish-mode-never-policy-testing")
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("doc-auto-publish-settles-policy-testing")
+      ).not.toBeInTheDocument()
+    );
+  });
+
+  it("keeps only the newest status answer when two reads overlap", async () => {
+    // First read (mount) answers late with the switch OFF; the second (a
+    // refresh) answers first with it ON. The late, older answer must not win.
+    let releaseFirst: (value: unknown) => void = () => {};
+    let statusCalls = 0;
+    const entry = statusEntry("policy", "testing", {
+      settles_at: "2026-09-21T09:00:00Z",
+      direction: "other",
+    });
+    getMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("/auto-publish/status")) {
+        statusCalls += 1;
+        if (statusCalls === 1) {
+          return new Promise((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return { candidates: [entry], count: 1, publishing_enabled: true };
+      }
+      return { documents: [summary("policy", "testing")], degraded: null };
+    });
+    const { rerender } = render(<PromptDocumentList />);
+    await screen.findByTestId("doc-row-policy-testing");
+    rerender(<PromptDocumentList autoPublishRefreshKey={1} />);
+    await screen.findByTestId("doc-auto-publish-settles-policy-testing");
+
+    releaseFirst({ candidates: [entry], count: 1, publishing_enabled: false });
+    // Give the stale answer every chance to land before asserting it did not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      screen.getByTestId("doc-auto-publish-settles-policy-testing")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-auto-publish-paused-policy-testing")
+    ).not.toBeInTheDocument();
   });
 
   it("confirms auto before writing it, and writes nothing if cancelled", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
@@ -82,7 +82,17 @@ function formatWhen(iso: string): string {
  * Bands are presentational only: nothing filters by band, no route addresses
  * one, and the create dialog offers every kind regardless.
  */
-export function PromptDocumentList() {
+export function PromptDocumentList({
+  autoPublishRefreshKey = 0,
+}: {
+  /**
+   * Bumped by the page when something outside this list changes what the
+   * auto-publish status read would say — today the D5 switch. Each change
+   * re-takes that read; the initial value takes none of its own (the hook
+   * already reads on mount).
+   */
+  autoPublishRefreshKey?: number;
+} = {}) {
   const {
     documents,
     loading,
@@ -130,6 +140,7 @@ export function PromptDocumentList() {
     loadCandidates: loadPublishAllPreview,
     previewing: previewingPublishAll,
     status: autoPublishStatus,
+    publishingEnabled: autoPublishEnabled,
     changedCount,
     publishing: publishingAll,
     savingMode,
@@ -321,6 +332,15 @@ export function PromptDocumentList() {
     [editing]
   );
 
+  // Re-take the status read when the page says the switch moved. Skips the
+  // mount value: `usePublishAll` has already read once by then.
+  const seenRefreshKey = useRef(autoPublishRefreshKey);
+  useEffect(() => {
+    if (seenRefreshKey.current === autoPublishRefreshKey) return;
+    seenRefreshKey.current = autoPublishRefreshKey;
+    void reloadPublishAll();
+  }, [autoPublishRefreshKey, reloadPublishAll]);
+
   /**
    * The auto-publish status, indexed by `kind/name` so a row is an O(1) lookup
    * rather than a scan per render.
@@ -481,12 +501,11 @@ export function PromptDocumentList() {
             </p>
             <p className="mt-1">
               Its <code className="font-mono">publish_mode</code> column is most
-              likely not migrated ({" "}
-              <code className="font-mono">pdpub_03</code> ). Reading a mode
-              degrades to &quot;undecided&quot; so this page still works, but
-              the write refuses rather than degrading — a decision the schema
-              cannot hold must not look like it was saved. Nothing was changed.
-              Coord said: {modeSchemaPending}
+              likely not migrated ( <code className="font-mono">pdpub_03</code>{" "}
+              ). Reading a mode degrades to &quot;undecided&quot; so this page
+              still works, but the write refuses rather than degrading — a
+              decision the schema cannot hold must not look like it was saved.
+              Nothing was changed. Coord said: {modeSchemaPending}
             </p>
           </div>
         </div>
@@ -615,6 +634,7 @@ export function PromptDocumentList() {
                             autoPublish={statusByDocument.get(
                               `${doc.kind}/${doc.name}`
                             )}
+                            autoPublishEnabled={autoPublishEnabled}
                           />
                         ))}
                       </div>
@@ -770,6 +790,11 @@ interface DocumentRowProps {
    * as a candidate. `undefined` is UNKNOWN and renders no badge.
    */
   autoPublish?: AutoPublishStatusEntry;
+  /**
+   * Coord's resolved D5 switch. `false` turns a schedule into an
+   * "Auto-publish off" badge; `undefined` is UNKNOWN and changes nothing.
+   */
+  autoPublishEnabled?: boolean;
 }
 
 function DocumentRow({
@@ -784,6 +809,7 @@ function DocumentRow({
   onSetPublishMode,
   savingPublishMode,
   autoPublish,
+  autoPublishEnabled,
 }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
@@ -825,7 +851,7 @@ function DocumentRow({
    * direction classified against the last publication; a browser holds neither
    * input. See `../_lib/autoPublishBadge`.
    */
-  const autoPublishState = autoPublishBadge(autoPublish);
+  const autoPublishState = autoPublishBadge(autoPublish, autoPublishEnabled);
   return (
     <div
       className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
