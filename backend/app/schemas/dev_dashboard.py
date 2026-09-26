@@ -5,7 +5,9 @@ These schemas handle runner fleet monitoring across multiple machines.
 No authentication required — dev-only, LAN-accessible.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.base import IsoDatetime
 
@@ -54,8 +56,9 @@ class RunnerUiThread(BaseModel):
 
     Plan ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``.
 
-    The runner has published this block on every heartbeat since 2026-08-19
-    (``qontinui-runner`` ``src-tauri/src/heartbeat.rs``, ``HeartbeatUiThread`` —
+    The runner publishes this block on every heartbeat (``qontinui-runner``
+    ``src-tauri/src/heartbeat.rs``, ``HeartbeatUiThread``, introduced in
+    runner ``7d837703a`` —
     the single serializer for all three heartbeat sinks). Until this model the
     backend dropped it at the door: ``RunnerHeartbeat`` is a plain
     ``BaseModel``, so pydantic's default ``extra='ignore'`` discarded the key and
@@ -79,6 +82,11 @@ class RunnerUiThread(BaseModel):
     pong-receive liveness of plan
     ``2026-09-09-the-pong-receive-path-has-no-liveness-signal-so-fd-exhaustion-still-reads-as-ui-death``)
     instead of dropping them at the door the way the whole block used to be.
+    Extras arrive on an UNAUTHENTICATED route and are held in process memory,
+    so they are bounded (see ``_bound_extra_keys``): at most
+    ``MAX_EXTRA_KEYS`` scalar values, strings capped at ``MAX_EXTRA_STR``.
+    Anything else is dropped, never rejected — a newer runner's unexpected
+    key must not cost it its whole heartbeat.
 
     The wire keys are snake_case and read BY NAME. ``backend_relay.rs`` records
     the incident where camelCase keys were silently dropped and
@@ -110,6 +118,26 @@ class RunnerUiThread(BaseModel):
     last_ping_emit_fail_age_ms: int | None = None
     # Recreates NOT performed because the ping was undeliverable.
     false_death_suppressed: int | None = None
+
+    MAX_EXTRA_KEYS: ClassVar[int] = 32
+    MAX_EXTRA_STR: ClassVar[int] = 256
+
+    @model_validator(mode="after")
+    def _bound_extra_keys(self) -> "RunnerUiThread":
+        extra = self.__pydantic_extra__
+        if not extra:
+            return self
+        kept: dict[str, Any] = {}
+        for key, value in extra.items():
+            if len(kept) >= self.MAX_EXTRA_KEYS:
+                break
+            if isinstance(value, str):
+                if len(value) <= self.MAX_EXTRA_STR:
+                    kept[key] = value
+            elif value is None or isinstance(value, bool | int | float):
+                kept[key] = value
+        self.__pydantic_extra__ = kept
+        return self
 
 
 class RunnerHeartbeat(BaseModel):
