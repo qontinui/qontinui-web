@@ -148,6 +148,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -160,6 +161,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _gate_lib  # noqa: E402
 from _gate_lib import (  # noqa: E402
     EXIT_VACUOUS,
     EXIT_VIOLATION,
@@ -187,6 +189,27 @@ NO_REASON_SERVED = "no reason served"
 FETCH_TIMEOUT_S = 20.0
 FETCH_TRIES = 3
 WHOLE_TABLE = "*"
+
+#: The machine-readable form of the null-`main` UNKNOWN (plan
+#: 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate,
+#: Phase 4). coord reads this job's log on a red run, takes the FIRST line
+#: that starts with :data:`PRECONDITION_MARKER_PREFIX` followed by a JSON
+#: object, and — only if it is a ``sql_count`` whose ``query_id``, ``op`` and
+#: ``n`` match :data:`MAIN_AT_HEAD_PRECONDITION` — registers a gate that may
+#: re-run this job once the count is >= 1
+#: (qontinui-coord ``crates/coord/src/guard_rerun.rs``, ``MARKER_PREFIX`` and
+#: ``parse_precondition_markers``). The count is >= 1 exactly when
+#: ``GET {MANIFEST_ROUTE}`` serves a non-null `main` half whose sha is coord
+#: main's tip, which is the condition the human sentence beside it states.
+#: coord's allowlist admits ONLY this predicate for this guard: do not print a
+#: marker for any other UNKNOWN, it would be refused.
+PRECONDITION_MARKER_PREFIX = "UNKNOWN-PENDING-PRECONDITION: "
+MAIN_AT_HEAD_PRECONDITION: dict[str, object] = {
+    "kind": "sql_count",
+    "query_id": "schema_read_surfaces_main_at_head",
+    "op": "gte",
+    "n": 1,
+}
 
 #: Statuses that mean coord does not SERVE :data:`MANIFEST_ROUTE` at all, as
 #: opposed to serving it and refusing this caller. Measured against controls on
@@ -1093,6 +1116,8 @@ def parse_manifest(raw: bytes | str) -> Manifest:
         raise ManifestUnavailableError(
             f"manifest is not an object: {type(payload).__name__}"
         )
+    # `deployed` is read first: when BOTH halves are null it is the one reported,
+    # and no marker is printed (its condition has no coord predicate).
     deployed_sha, deployed_rows = _half(payload, "deployed", "build_sha")
     main_sha, main_rows = _half(payload, "main", "sha")
 
@@ -1129,6 +1154,10 @@ def parse_manifest(raw: bytes | str) -> Manifest:
 # The verdict
 # ---------------------------------------------------------------------------
 
+# The "wait for it to DEPLOY" step below names a condition (the serving
+# build_sha descends from a coord change) for which no coord predicate exists
+# yet, so no marker is printed for it. Plan:
+# 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
 REMEDY = """
 Why this gate is blocking: coord reads that column/table by name in SQL
 (or its readiness probe requires it). Dropping it while a build that
@@ -1245,6 +1274,49 @@ def check_drops(
     return violations, waivers
 
 
+def _workflow_command_data(text: str) -> str:
+    """Escape ``text`` for the message part of a GitHub workflow command."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_pending_precondition(predicate: dict[str, object], human: str) -> None:
+    """Name the remote condition this UNKNOWN waits on, for coord and for people.
+
+    Three outputs, none of which changes the exit code (UNKNOWN stays exit 2):
+
+    * the marker line on stderr — plain, line-anchored, compact JSON — which
+      coord parses to register a re-run gate on ``predicate``;
+    * a ``::warning`` annotation (never ``::error``) so ``gh pr checks`` and
+      the PR UI show the red is pending, not a violation;
+    * the same sentence in ``$GITHUB_STEP_SUMMARY`` when Actions provides one.
+
+    Call it at most once per run: coord registers the first marker only.
+    """
+    marker = PRECONDITION_MARKER_PREFIX + json.dumps(predicate, separators=(",", ":"))
+    print(marker, file=sys.stderr)
+    # Say only what the guard knows: coord skips the re-run on merge-candidate
+    # refs and re-runs at most once per head (guard_rerun.rs).
+    legible = (
+        f"UNKNOWN — pending precondition {human}. coord may re-run this check "
+        "once when it holds (not on merge-candidate refs; at most once per "
+        "head). Not a violation."
+    )
+    if _gate_lib.ANNOTATIONS:
+        print(
+            "::warning title=UNKNOWN-PENDING-PRECONDITION::"
+            + _workflow_command_data(legible),
+            file=sys.stderr,
+        )
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        try:
+            with open(summary, "a", encoding="utf-8") as fh:
+                fh.write(legible + "\n")
+        except OSError as exc:
+            # The summary is a courtesy; the marker above already carries it.
+            err(f"cannot append to $GITHUB_STEP_SUMMARY ({summary}): {exc}")
+
+
 def _explain_null_half(half: str, manifest_url: str) -> None:
     """The per-half remediation for a manifest whose ``half`` was served null.
 
@@ -1263,7 +1335,14 @@ def _explain_null_half(half: str, manifest_url: str) -> None:
             "reads. No edit inside this PR changes it. Re-run once "
             f"`GET {manifest_url}` serves `main.sha`."
         )
+        _emit_pending_precondition(
+            MAIN_AT_HEAD_PRECONDITION,
+            f"`GET {manifest_url}` serves a `main` half at coord main's tip",
+        )
     elif half == "deployed":
+        # No coord predicate exists for this condition yet, so no marker: coord's
+        # allowlist would refuse one. Plan:
+        # 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
         err(
             "The `deployed` half is compiled into the serving coord binary and "
             "carries its `build_sha`; coord serves it null rather than fabricate a "
@@ -1483,6 +1562,8 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
             return 0
         return EXIT_VIOLATION
     if waivers:
+        # No coord predicate for "the waiver is resolved" exists yet, so no marker.
+        # Plan: 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
         err(
             "coord-column-drop-guard: cannot decide — coord's read contract has a waiver on this table:"
         )
