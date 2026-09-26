@@ -130,6 +130,12 @@ export interface CallSite {
   /** `ws:`/`wss:` scheme on the resolved URL. */
   wsScheme: boolean;
   /**
+   * The URL starts with the backend base URL (`ApiConfig.API_BASE_URL`,
+   * `process.env.NEXT_PUBLIC_API_URL`, …). Production sets it, so the call
+   * reaches the backend: a Next.js handler never serves it.
+   */
+  originBacked: boolean;
+  /**
    * Source text of the URL argument, whitespace-collapsed — or, for a site
    * reached through a wrapper, of the call to the wrapper.
    */
@@ -189,6 +195,13 @@ const literal = (text: string): Resolved => ({ ok: true, texts: [text] });
  */
 const QUERY_NAME =
   /^(query|qs|querystring|queryparams|params|searchparams|search|suffix|filters?|urlparams)$/i;
+
+/**
+ * Marker for "the backend base URL" (`ApiConfig.API_BASE_URL`, …): resolved
+ * to nothing, but remembered, because production sets `NEXT_PUBLIC_API_URL`
+ * and such a call reaches the backend, never a Next.js handler.
+ */
+const ORIGIN = "\u0000";
 
 /** Marker for "the query string starts here"; cut at by `pathOf`. */
 const QUERY_MARK = "?";
@@ -444,7 +457,7 @@ class Resolver {
     if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) {
       return literal(e.text);
     }
-    if (isOrigin(e)) return literal("");
+    if (isOrigin(e)) return literal(ORIGIN);
     if (ts.isTemplateExpression(e)) {
       let acc: Resolved = literal(e.head.text);
       for (const span of e.templateSpans) {
@@ -502,7 +515,7 @@ class Resolver {
     leading: boolean
   ): Resolved {
     if (!acc.ok) return acc;
-    const atStart = leading && acc.texts.every((t) => t === "");
+    const atStart = leading && acc.texts.every((t) => t === "" || t === ORIGIN);
     const e = unwrap(raw);
     if (!atStart && queryName(e) !== null)
       return concat(acc, literal(QUERY_MARK));
@@ -515,7 +528,7 @@ class Resolver {
     // parameter carries path structure, not one segment's value.
     if (
       part.freeParam &&
-      acc.texts.some((t) => !t.endsWith("/") && !/[?#]/.test(t))
+      acc.texts.some((t) => t !== ORIGIN && !t.endsWith("/") && !/[?#]/.test(t))
     )
       this.glued.add(part.freeParam);
     return concat(acc, literal(PARAM));
@@ -553,7 +566,11 @@ class Resolver {
         ? unresolved(`no argument for wrapper parameter \`${name}\``)
         : runtimeValue(`parameter \`${name}\` has no argument`);
     }
-    const r = this.expr(arg, leading);
+    // A strict argument is the caller's URL: resolve it as a URL of its own,
+    // so an unknown at its start (`${q}`, `"" + q`) is fatal rather than a
+    // `{param}` glued onto the wrapper's prefix. A head such as `/${id}`
+    // still lets `id` widen as a segment.
+    const r = this.expr(arg, strict || leading);
     if (r.ok || !strict) return r;
     // A wrapper's path-building argument that does not resolve is never a
     // pass: it is the caller's URL, not a segment value.
@@ -608,13 +625,19 @@ class Resolver {
     // `ENDPOINTS.list` where `const ENDPOINTS = { list: "..." }`, or
     // `opts.method` where `opts` is bound to a caller's `{ method: "PUT" }`.
     const found = this.propertyOf(e);
+    // A key the walker can see is missing from a declared literal: not a
+    // run-time value, a URL part it cannot name.
     if (found === "absent")
-      return runtimeValue(`property \`${snippet(e)}\` is not set`);
+      return unresolved(`property \`${snippet(e)}\` is not set`);
     if (found) return this.expr(found, leading);
     if (ts.isIdentifier(target)) {
       const binding = this.lookup(target.text, target);
       if (binding.kind === "param" && !this.args.has(binding.decl))
         return runtimeValue(`property \`${snippet(e)}\``, binding.decl);
+      // A declared object the walker could not follow (a re-export, an
+      // unloaded import): its property is a constant, not a run-time value.
+      if (binding.kind === "none")
+        return unresolved(`property \`${snippet(e)}\`: ${binding.why}`);
     }
     return runtimeValue(`property \`${snippet(e)}\``);
   }
@@ -933,10 +956,20 @@ function queryName(e: ts.Expression): string | null {
 }
 
 /** Strip scheme+host and the query string/fragment. */
-function pathOf(url: string): { path: string; wsScheme: boolean } {
+function pathOf(raw: string): {
+  path: string;
+  wsScheme: boolean;
+  originBacked: boolean;
+} {
+  const originBacked = raw.startsWith(ORIGIN);
+  const url = raw.split(ORIGIN).join("");
   const wsScheme = /^wss?:\/\//i.test(url);
   const withoutOrigin = url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
-  return { path: withoutOrigin.split(/[?#]/)[0] ?? "", wsScheme };
+  return {
+    path: withoutOrigin.split(/[?#]/)[0] ?? "",
+    wsScheme,
+    originBacked,
+  };
 }
 
 function parseSource(file: string, source: string): ts.SourceFile {
@@ -993,27 +1026,30 @@ function sitesOf(
         ...base,
         path: null,
         wsScheme: false,
+        originBacked: false,
         unresolvedWhy: resolved.why,
       });
       continue;
     }
     const seen = new Set<string>();
     for (const text of resolved.texts) {
-      const { path: p, wsScheme } = pathOf(text);
-      if (seen.has(p)) continue;
-      seen.add(p);
+      const { path: p, wsScheme, originBacked } = pathOf(text);
+      if (seen.has(`${originBacked}${p}`)) continue;
+      seen.add(`${originBacked}${p}`);
       if (!p.startsWith("/")) {
         out.push({
           ...base,
           path: null,
           wsScheme,
-          unresolvedWhy: `resolved to a non-absolute URL \`${text}\``,
+          originBacked,
+          unresolvedWhy: `resolved to a non-absolute URL \`${text.split(ORIGIN).join("")}\``,
         });
       } else {
         out.push({
           ...base,
           path: p,
           wsScheme,
+          originBacked,
           ...(methodWhy ? { unresolvedWhy: methodWhy } : {}),
         });
       }
@@ -1149,6 +1185,18 @@ function collectFile(
             fallback: own,
             callers: 0,
           });
+        } else if (triggers.size > 0) {
+          // Built from a parameter of a function nothing can name (a
+          // callback): its values are never seen, so a glued `{param}` would
+          // pass anything under the prefix. Unresolved, as for a wrapper
+          // with no caller.
+          sites.push(
+            ...own.map((site) => ({
+              ...site,
+              path: null,
+              unresolvedWhy: `URL built from a parameter of an anonymous function`,
+            }))
+          );
         } else {
           sites.push(...own);
         }
@@ -1175,11 +1223,14 @@ function isInside(node: ts.Node, ancestor: ts.Node): boolean {
 }
 
 /**
- * Pass 2 over one file: every call of a wrapper, resolved with the caller's
- * arguments bound. A free function is found through the same scope and
- * import lookup the resolver uses, so `request(...)` in another file counts
- * only when it really names that function; a member only through
- * `this.name(...)` inside its own class.
+ * Pass 2 over one file: every reference to a wrapper. A call is resolved
+ * with the caller's arguments bound. A free function is found through the
+ * same scope and import lookup the resolver uses, so `request(...)` — or
+ * `r(...)` after `import { request as r }` — counts only when it really names
+ * that function; a member through `this.name(...)` inside its own class.
+ * Every other reference the walker can see — the function passed as a value,
+ * a member called on an instance (`api.fetchWithAuth(...)`) in a file that
+ * imports the wrapper's module — is reported `unresolved`, never dropped.
  */
 function callerSites(
   file: string,
@@ -1187,51 +1238,160 @@ function callerSites(
   wrappers: readonly Wrapper[],
   load: ModuleLoader | undefined
 ): CallSite[] {
-  const byName = new Map<string, Wrapper[]>();
-  for (const w of wrappers) {
-    const list = byName.get(w.name) ?? [];
-    list.push(w);
-    byName.set(w.name, list);
+  // Local name -> free-function wrappers it may name (own name or import alias).
+  const freeByName = new Map<string, Wrapper[]>();
+  const memberByName = new Map<string, Wrapper[]>();
+  const add = (m: Map<string, Wrapper[]>, k: string, w: Wrapper): void => {
+    m.set(k, [...(m.get(k) ?? []), w]);
+  };
+  for (const w of wrappers) add(w.cls ? memberByName : freeByName, w.name, w);
+  for (const stmt of sf.statements) {
+    const named = ts.isImportDeclaration(stmt)
+      ? stmt.importClause?.namedBindings
+      : undefined;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const el of named.elements) {
+      const imported = el.propertyName?.text;
+      if (imported === undefined) continue;
+      for (const w of wrappers)
+        if (!w.cls && w.name === imported) add(freeByName, el.name.text, w);
+    }
   }
+  // Modules this file imports, for members called on an instance.
+  const importedFiles = new Set<ts.SourceFile>([sf]);
+  for (const stmt of sf.statements) {
+    if (
+      ts.isImportDeclaration(stmt) &&
+      ts.isStringLiteral(stmt.moduleSpecifier)
+    ) {
+      const mod = load?.(sf.fileName, stmt.moduleSpecifier.text);
+      if (mod) importedFiles.add(mod);
+    }
+  }
+
   const out: CallSite[] = [];
   const probe = new Resolver(load);
+  const called = (node: ts.Node): ts.CallExpression | null => {
+    let n = node;
+    while (
+      ts.isParenthesizedExpression(n.parent) ||
+      ts.isNonNullExpression(n.parent)
+    )
+      n = n.parent;
+    return ts.isCallExpression(n.parent) && n.parent.expression === n
+      ? n.parent
+      : null;
+  };
+  const follow = (w: Wrapper, call: ts.CallExpression): void => {
+    w.callers++;
+    const resolver = new Resolver(load, w.strict);
+    resolver.bind(w.fn, call.arguments);
+    out.push(
+      ...sitesOf(resolver, w.call, w.verb, {
+        file,
+        node: call,
+        urlText: snippet(call),
+      })
+    );
+  };
+  const unfollowed = (node: ts.Node, why: string): void => {
+    out.push(referenceSite(file, called(node) ?? node, why));
+  };
+
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
-      const callee = unwrap(node.expression);
-      let matched: Wrapper[] = [];
-      if (ts.isIdentifier(callee) && byName.has(callee.text)) {
-        const fn = probe.calleeFunction(callee);
-        matched = (byName.get(callee.text) ?? []).filter(
-          (w) => w.cls === null && w.fn === fn
-        );
-      } else if (
-        ts.isPropertyAccessExpression(callee) &&
-        callee.expression.kind === ts.SyntaxKind.ThisKeyword &&
-        byName.has(callee.name.text)
-      ) {
-        const cls = enclosingClass(node);
-        matched = (byName.get(callee.name.text) ?? []).filter(
-          (w) => w.cls !== null && w.cls === cls
-        );
+    if (
+      ts.isIdentifier(node) &&
+      freeByName.has(node.text) &&
+      isReference(node)
+    ) {
+      const fn = probe.calleeFunction(node);
+      for (const w of freeByName.get(node.text) ?? []) {
+        if (w.fn !== fn || isInside(node, w.fn)) continue;
+        const call = called(node);
+        if (call) follow(w, call);
+        else unfollowed(node, `wrapper \`${w.name}\` is used as a value`);
       }
-      for (const w of matched) {
+    } else if (
+      ts.isPropertyAccessExpression(node) &&
+      memberByName.has(node.name.text)
+    ) {
+      const isThis = node.expression.kind === ts.SyntaxKind.ThisKeyword;
+      const cls = enclosingClass(node);
+      for (const w of memberByName.get(node.name.text) ?? []) {
         if (isInside(node, w.fn)) continue;
-        w.callers++;
-        const resolver = new Resolver(load, w.strict);
-        resolver.bind(w.fn, node.arguments);
-        out.push(
-          ...sitesOf(resolver, w.call, w.verb, {
-            file,
+        if (isThis && cls === w.cls) {
+          const call = called(node);
+          if (call) follow(w, call);
+          else unfollowed(node, `wrapper \`${w.name}\` is used as a value`);
+        } else if (importedFiles.has(w.fn.getSourceFile())) {
+          unfollowed(
             node,
-            urlText: snippet(node),
-          })
-        );
+            `member wrapper \`${w.name}\` called on an instance the walker cannot follow`
+          );
+        }
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
   return out;
+}
+
+/**
+ * `[fn, id]` passed to `useCallback`/`useEffect`/`useMemo`: React compares
+ * the dependency, it never calls it.
+ */
+function isHookDependency(id: ts.Identifier): boolean {
+  const arr = id.parent;
+  if (!ts.isArrayLiteralExpression(arr)) return false;
+  const call = arr.parent;
+  return (
+    ts.isCallExpression(call) &&
+    call.arguments.indexOf(arr) > 0 &&
+    /^use[A-Z]/.test(tailName(call.expression) ?? "")
+  );
+}
+
+/** Whether an identifier is a use of a binding (not a declaration, key or import/export name). */
+function isReference(id: ts.Identifier): boolean {
+  const p = id.parent;
+  if (
+    (ts.isFunctionDeclaration(p) ||
+      ts.isVariableDeclaration(p) ||
+      ts.isParameter(p) ||
+      ts.isPropertyAssignment(p) ||
+      ts.isPropertyDeclaration(p) ||
+      ts.isMethodDeclaration(p) ||
+      ts.isBindingElement(p)) &&
+    p.name === id
+  )
+    return false;
+  if (ts.isPropertyAccessExpression(p) && p.name === id) return false;
+  if (isHookDependency(id)) return false;
+  return !(
+    ts.isImportSpecifier(p) ||
+    ts.isExportSpecifier(p) ||
+    ts.isImportClause(p) ||
+    ts.isTypeReferenceNode(p) ||
+    ts.isTypeQueryNode(p)
+  );
+}
+
+/** An `unresolved` site for a wrapper reference the walker cannot follow. */
+function referenceSite(file: string, node: ts.Node, why: string): CallSite {
+  const sf = node.getSourceFile();
+  const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+  return {
+    file,
+    line: pos.line + 1,
+    column: pos.character + 1,
+    method: null,
+    path: null,
+    wsScheme: false,
+    originBacked: false,
+    urlText: snippet(node),
+    unresolvedWhy: why,
+  };
 }
 
 /**
@@ -1360,7 +1520,25 @@ export interface NextRoute {
   /** Parameters from `[...x]` / `[[...x]]`: one or more segments. */
   multi: Set<string>;
   file: string;
+  /**
+   * An `app/api/v1/**` handler that forwards the request, cookie turned into
+   * a bearer, to the IDENTICAL backend path. It serves nothing of its own —
+   * the backend route still has to exist — so it is not indexed.
+   * `route-walker.test.ts` checks each one really is that pass-through.
+   */
+  backendProxy: boolean;
 }
+
+/**
+ * `app/api/v1/**` handlers that do real work themselves rather than forward
+ * to the same backend path. Every other `/api/v1` handler is a
+ * `backendProxy`.
+ */
+export const NEXT_API_V1_SERVERS: ReadonlySet<string> = new Set([
+  // Reads the HttpOnly `access_token` cookie and returns it for WebSocket
+  // auth; the backend has no such route.
+  "app/api/v1/ws-token/route.ts",
+]);
 
 /** Whether `relPath` (relative to `frontend/src`) is a Next.js API route handler. */
 export function isNextRouteFile(relPath: string): boolean {
@@ -1422,13 +1600,22 @@ export function nextRouteTemplates(
         segments.push(d);
       }
     }
-    out.push({ template: `/${segments.join("/")}`, methods, multi, file });
+    const backendProxy =
+      file.startsWith("app/api/v1/") && !NEXT_API_V1_SERVERS.has(file);
+    out.push({
+      template: `/${segments.join("/")}`,
+      methods,
+      multi,
+      file,
+      backendProxy,
+    });
     if (optionalAt !== null) {
       out.push({
         template: `/${segments.slice(0, optionalAt).join("/")}`,
         methods,
         multi: new Set(),
         file,
+        backendProxy,
       });
     }
   }
@@ -1475,13 +1662,15 @@ export function buildSnapshotIndex(
         multi: multiOf(template),
         servedBy: "backend" as const,
       })),
-      ...(opts.nextRoutes ?? []).map((r) => ({
-        template: r.template,
-        segments: segmentsOf(r.template),
-        methods: r.methods,
-        multi: r.multi,
-        servedBy: "next" as const,
-      })),
+      ...(opts.nextRoutes ?? [])
+        .filter((r) => !r.backendProxy)
+        .map((r) => ({
+          template: r.template,
+          segments: segmentsOf(r.template),
+          methods: r.methods,
+          multi: r.multi,
+          servedBy: "next" as const,
+        })),
     ],
   };
 }
@@ -1561,7 +1750,9 @@ export function isWebsocketPath(p: string): boolean {
  * Classify one call site against the snapshot and the Next.js handlers.
  *
  * A path served by a Next.js handler (`app/api/**\/route.ts`, catch-alls
- * included) is served. The backend's own catch-alls
+ * included) is served — unless the URL starts with the backend base URL
+ * (`originBacked`), or the handler is a `backendProxy` (not indexed). The
+ * backend's own catch-alls
  * (`device-bridge/runner-proxy/{path}`, `screenshots/{path}`) are `{x:path}`
  * routes in the snapshot and match through `MULTI_SEGMENT_TEMPLATE_PARAMS`.
  * `/api/v1/operations/*` is NOT a catch-all: `operations.py` declares every
@@ -1578,9 +1769,11 @@ export function checkSite(site: CallSite, index: SnapshotIndex): SiteVerdict {
   }
   const segments = segmentsOf(site.path);
   const method = site.method;
-  const candidates = index.templates.filter((t) =>
-    segmentsMatch(segments, t, false)
+  // A backend-origin call never reaches a Next.js handler.
+  const reachable = index.templates.filter(
+    (t) => !(site.originBacked && t.servedBy === "next")
   );
+  const candidates = reachable.filter((t) => segmentsMatch(segments, t, false));
   const serving = candidates.find((t) => t.methods.has(method));
   if (serving)
     return { ok: true, template: serving.template, servedBy: serving.servedBy };
@@ -1609,9 +1802,10 @@ export interface BaselineEntry {
   /** Upper-case method, or `?` when it could not be read. */
   method: string;
   /**
-   * Path template, or `<unresolved> <url source text> #<n>`, where `n` is
-   * the site's occurrence among the file's unresolved sites with the same
-   * method and source text, in source order.
+   * Path template; for an unresolved site `<path> #<n>` (method unreadable)
+   * or `<unresolved> <url source text> #<n>`, where `n` is the site's
+   * occurrence among the file's unresolved sites with the same method and
+   * label, in source order.
    */
   path: string;
   reason: MismatchReason;
@@ -1624,9 +1818,10 @@ export function entryKey(e: BaselineEntry): string {
 
 /**
  * One entry per mismatching `(file, method, path)`, sorted deterministically.
- * Resolved paths carry no line, so moving code does not churn the baseline;
- * an unresolved site carries an occurrence index instead, so a second
- * `fetch(url)` in a file whose first one is baselined is still new.
+ * Resolved sites carry no line, so moving code does not churn the baseline;
+ * an unresolved one (path OR method unreadable) carries an occurrence index
+ * instead, so a second `fetch(url)` in a file whose first one is baselined
+ * is still new.
  */
 export function mismatchEntries(
   sites: CallSite[],
@@ -1641,8 +1836,9 @@ export function mismatchEntries(
       file: site.file,
       method: site.method ?? "?",
       path:
-        site.path ??
-        `<unresolved> ${site.urlText} #${occurrence.get(site) ?? 0}`,
+        verdict.kind === "unresolved"
+          ? `${unresolvedLabel(site)} #${occurrence.get(site) ?? 0}`
+          : (site.path as string),
       reason: verdict.reason,
       kind: verdict.kind,
     };
@@ -1653,12 +1849,20 @@ export function mismatchEntries(
   );
 }
 
-/** 1-based source-order index of each unresolved-path site among its file's same `(method, urlText)` sites. */
+/** What an unresolved site is keyed on: its path if that resolved, else its URL source. */
+function unresolvedLabel(site: CallSite): string {
+  return site.path ?? `<unresolved> ${site.urlText}`;
+}
+
+/**
+ * 1-based source-order index of each unresolved site (path or method `null`)
+ * among its file's unresolved sites with the same method and label.
+ */
 function unresolvedOccurrences(sites: CallSite[]): Map<CallSite, number> {
   const groups = new Map<string, CallSite[]>();
   for (const s of sites) {
-    if (s.path !== null) continue;
-    const k = `${s.file}\t${s.method ?? "?"}\t${s.urlText}`;
+    if (s.path !== null && s.method !== null) continue;
+    const k = `${s.file}\t${s.method ?? "?"}\t${unresolvedLabel(s)}`;
     const g = groups.get(k) ?? [];
     g.push(s);
     groups.set(k, g);
@@ -1734,16 +1938,19 @@ export function walkSources(
     wrappers.push(...found.wrappers);
   }
 
-  // Where callers can be: a member's own file; a free function's own file,
-  // or a file importing it by name — the only calls `callerSites` matches.
-  // Everything else is skipped unparsed.
+  // Where references can be: a wrapper's own file; for a free function, a
+  // file importing it by name (aliased or not); for a member, a file that
+  // mentions `.name` (`callerSites` then keeps only files importing its
+  // module). Everything else is skipped unparsed.
   const own = new Map<string, Wrapper[]>();
   const exported = new Map<string, Wrapper[]>();
+  const members: Wrapper[] = [];
   for (const w of wrappers) {
     const file = w.fn.getSourceFile().fileName;
     own.set(file, [...(own.get(file) ?? []), w]);
     if (w.cls === null)
       exported.set(w.name, [...(exported.get(w.name) ?? []), w]);
+    else members.push(w);
   }
   const importsOf = (text: string): Wrapper[] =>
     [...exported].flatMap(([name, ws]) =>
@@ -1755,7 +1962,11 @@ export function walkSources(
         : []
     );
   for (const { rel, text } of scanned) {
-    const candidates = new Set([...(own.get(rel) ?? []), ...importsOf(text)]);
+    const candidates = new Set([
+      ...(own.get(rel) ?? []),
+      ...importsOf(text),
+      ...members.filter((w) => text.includes(`.${w.name}`)),
+    ]);
     if (candidates.size === 0) continue;
     const sf = loader.parse(rel);
     if (sf) sites.push(...callerSites(rel, sf, [...candidates], loader));
