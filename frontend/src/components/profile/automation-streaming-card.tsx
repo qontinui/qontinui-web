@@ -99,32 +99,6 @@ export function AutomationStreamingCard({
     }
   };
 
-  // Unused function - kept for potential future use
-  /*
-  const resetLimit = async () => {
-    try {
-      setUpdating(true);
-      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/reset-limit`;
-      const response = await httpClient.fetch(url, {
-        method: "POST",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSettings(data);
-        toast.success("Session limit reset successfully");
-      } else {
-        toast.error("Failed to reset session limit");
-      }
-    } catch (error) {
-      console.error("Failed to reset limit:", error);
-      toast.error("Failed to reset session limit");
-    } finally {
-      setUpdating(false);
-    }
-  };
-  */
-
   if (loading) {
     return (
       <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
