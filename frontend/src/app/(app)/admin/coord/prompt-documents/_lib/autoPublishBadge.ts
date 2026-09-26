@@ -43,6 +43,23 @@
  * time is wrong is worse than no badge: it is a schedule the operator would
  * plan around.
  *
+ * **Only a document the worker will actually publish gets a badge.** Coord
+ * computes `settles_at` and `held` for EVERY candidate, whatever its
+ * `publish_mode` — the same candidate set feeds publish-all, which can publish a
+ * `manual` document by hand. So a served settle time is not a promise: on a
+ * `manual` document, or an undecided one whose `undecided_default` is `manual`,
+ * nothing publishes at that time, and a hold is holding nothing. Those rows get
+ * no badge. A mode this build cannot read (neither field served) falls through
+ * to the served facts rather than guessing either way.
+ *
+ * **While the D5 switch is off the worker publishes nothing and holds
+ * nothing**, but coord still reports what it WOULD do. Those rows get one muted
+ * `Auto-publish off` badge instead — the schedule is still worth seeing (it is
+ * what happens the moment the switch goes back on), but not under a label that
+ * says it is about to happen. `publishingEnabled` is coord's own resolved
+ * answer from the status read; `undefined` (a coord that does not serve it) is
+ * UNKNOWN and keeps the served badge.
+ *
  * **A direction this build predates renders as ITSELF.** The wait label is the
  * only place the 24 h / 6 h split is visible, and coord may add a class in a
  * release this console does not know. Showing the raw string beats showing
@@ -62,7 +79,7 @@ export interface AutoPublishBadge {
   title: string;
   tone: AutoPublishBadgeTone;
   /** Stable suffix for the row's `data-testid`. */
-  testId: "held" | "settles";
+  testId: "held" | "settles" | "paused";
 }
 
 /**
@@ -94,9 +111,37 @@ function formatWhen(iso: string): string | null {
  * reason, as `upstreamBadge`.
  */
 export function autoPublishBadge(
-  entry: AutoPublishStatusEntry | undefined
+  entry: AutoPublishStatusEntry | undefined,
+  publishingEnabled?: boolean
 ): AutoPublishBadge | null {
   if (!entry) return null;
+
+  // The mode the NEXT worker pass acts on: the recorded one, or for an
+  // undecided document the one that pass will record.
+  const effectiveMode = entry.publish_mode ?? entry.undecided_default ?? null;
+  if (effectiveMode !== null && effectiveMode !== "auto") return null;
+  const undecided = entry.publish_mode == null && effectiveMode === "auto";
+  const whenDecided = undecided
+    ? " It is undecided today; the next worker pass sets it to auto, which is what makes this schedule real."
+    : "";
+
+  if (publishingEnabled === false) {
+    const settle = entry.settles_at ? formatWhen(entry.settles_at) : null;
+    if (entry.held !== true && settle === null) return null;
+    return {
+      label: "Auto-publish off",
+      title:
+        "Automatic publishing is switched off for this tenant, so nothing publishes itself. " +
+        (entry.held === true
+          ? "When it is switched back on, this document would be held by a new fleet-specific token."
+          : `When it is switched back on, this document would publish at ${settle}.`) +
+        // No `whenDecided` here: with the switch off the worker decides no
+        // modes either (D5), so "the next pass sets it to auto" would be false.
+        " Publish all changed and the per-document Publish button still work.",
+      tone: "muted",
+      testId: "paused",
+    };
+  }
 
   // A hold outranks a schedule: coord holds INSTEAD of publishing, so a badge
   // showing both a hold and a settle time would name a publication that is not
@@ -111,8 +156,8 @@ export function autoPublishBadge(
               tokens.length === 1 ? "a token" : "tokens"
             } (${tokens.join(
               ", "
-            )}) that the last publication did not. Nothing is published while a hold stands. It clears when a later edit removes the token, when you publish the document by hand, or when you set it to manual or never.`
-          : "Automatic publishing is held for this document. Nothing is published while a hold stands.",
+            )}) that the last publication did not. Nothing is published while a hold stands. It clears when a later edit removes the token, when you publish the document by hand, or when you set it to manual or never.${whenDecided}`
+          : `Automatic publishing is held for this document. Nothing is published while a hold stands.${whenDecided}`,
       tone: "attention",
       testId: "held",
     };
@@ -125,8 +170,8 @@ export function autoPublishBadge(
   return {
     label: wait ? `Publishes ${when} (${wait})` : `Publishes ${when}`,
     title: wait
-      ? `This document's edits have settled into a pending publication: it publishes itself to the fleet at ${when}, ${wait} after the last body change. Editing it again restarts that wait, and setting it to manual or never stops it.`
-      : `This document publishes itself to the fleet at ${when}. Editing it again restarts the wait, and setting it to manual or never stops it.`,
+      ? `This document's edits have settled into a pending publication: it publishes itself to the fleet at ${when}, ${wait} after the last body change. Editing it again restarts that wait, and setting it to manual or never stops it.${whenDecided}`
+      : `This document publishes itself to the fleet at ${when}. Editing it again restarts the wait, and setting it to manual or never stops it.${whenDecided}`,
     tone: "muted",
     testId: "settles",
   };

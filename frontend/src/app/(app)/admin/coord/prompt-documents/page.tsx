@@ -62,6 +62,7 @@
  *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
+import { useState } from "react";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
 import { PolicyAutoPublishDialControl } from "./_components/PolicyAutoPublishDialControl";
@@ -71,11 +72,11 @@ import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
+  // Bumped when the D5 switch is written, so the list re-reads the status its
+  // auto-publish badges are drawn from.
+  const [autoPublishRefreshKey, setAutoPublishRefreshKey] = useState(0);
   return (
-    <div
-      className="p-3 sm:p-6 space-y-8"
-      data-testid="prompt-documents-page"
-    >
+    <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
           title and the nav crumb naming this route. The prose stays because it
           is not a restatement of the title — it names WHICH content this is and
@@ -101,7 +102,7 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList />
+      <PromptDocumentList autoPublishRefreshKey={autoPublishRefreshKey} />
 
       {/*
         The tenant-wide autonomy dial sits with the per-document write-access
@@ -148,7 +149,9 @@ export default function PromptDocumentsPage() {
         on one page, and this is the only one whose failure mode is outward.
       */}
       <div className="border-t border-border pt-8">
-        <PolicyAutoPublishDialControl />
+        <PolicyAutoPublishDialControl
+          onLevelChanged={() => setAutoPublishRefreshKey((k) => k + 1)}
+        />
       </div>
 
       {/*

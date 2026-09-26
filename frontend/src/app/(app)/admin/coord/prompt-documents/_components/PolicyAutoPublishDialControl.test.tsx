@@ -176,4 +176,64 @@ describe("what it refuses to do on one click", () => {
     const [, body] = putMock.mock.calls[0] as [string, { level: string }];
     expect(body.level).toBe("off");
   });
+  it("tells the page a level landed, so the list re-reads its badges", async () => {
+    getMock.mockResolvedValue(view({ effective_level: "on" }));
+    putMock.mockResolvedValue({
+      ok: true,
+      domain: "policy_auto_publish",
+      written_level: "off",
+      written_master_enabled: true,
+      versioned: true,
+      version: 2,
+      updated_by: "operator@example.com",
+      effective: view({ effective_level: "off" }),
+      readback_error: null,
+    });
+    const onLevelChanged = vi.fn();
+    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+
+    await screen.findByTestId("policy-auto-publish-in-force");
+    await user().click(screen.getByTestId("policy-auto-publish-level-off"));
+
+    await waitFor(() => expect(onLevelChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("reports a change after the confirmed path too", async () => {
+    getMock.mockResolvedValue(view({ effective_level: "off" }));
+    putMock.mockResolvedValue({
+      ok: true,
+      domain: "policy_auto_publish",
+      written_level: "on",
+      written_master_enabled: true,
+      versioned: true,
+      version: 2,
+      updated_by: "operator@example.com",
+      effective: view({ effective_level: "on" }),
+      readback_error: null,
+    });
+    const onLevelChanged = vi.fn();
+    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+
+    await screen.findByTestId("policy-auto-publish-in-force");
+    await user().click(screen.getByTestId("policy-auto-publish-level-on"));
+    expect(onLevelChanged).not.toHaveBeenCalled();
+    await user().click(
+      await screen.findByTestId("policy-auto-publish-confirm-accept")
+    );
+
+    await waitFor(() => expect(onLevelChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not report a change when the write fails", async () => {
+    getMock.mockResolvedValue(view({ effective_level: "on" }));
+    putMock.mockRejectedValue(new Error("boom"));
+    const onLevelChanged = vi.fn();
+    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+
+    await screen.findByTestId("policy-auto-publish-in-force");
+    await user().click(screen.getByTestId("policy-auto-publish-level-off"));
+
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(onLevelChanged).not.toHaveBeenCalled();
+  });
 });

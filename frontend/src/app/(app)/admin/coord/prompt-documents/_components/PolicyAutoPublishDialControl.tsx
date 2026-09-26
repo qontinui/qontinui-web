@@ -69,7 +69,17 @@ import {
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
  */
-export function PolicyAutoPublishDialControl() {
+export function PolicyAutoPublishDialControl({
+  onLevelChanged,
+}: {
+  /**
+   * Called after a write FROM THIS CONTROL lands, so the page can re-take the
+   * auto-publish status read — the list's badges key on the switch coord
+   * resolves. A change made anywhere else (another tab, a repo- or
+   * system-scope row) is not seen until the page reloads.
+   */
+  onLevelChanged?: () => void;
+} = {}) {
   const {
     policy,
     loading,
@@ -90,6 +100,10 @@ export function PolicyAutoPublishDialControl() {
   const [pendingLevel, setPendingLevel] =
     useState<PolicyAutoPublishLevel | null>(null);
 
+  const applyLevel = async (next: PolicyAutoPublishLevel) => {
+    if (await setLevel(next)) onLevelChanged?.();
+  };
+
   const canEdit = policy?.can_edit ?? false;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
@@ -106,7 +120,7 @@ export function PolicyAutoPublishDialControl() {
     }
     // `off` is the safe direction and applies on one click. A kill switch that
     // needs a confirmation to pull is a kill switch nobody pulls in time.
-    void setLevel(next);
+    void applyLevel(next);
   }
 
   return (
@@ -367,7 +381,7 @@ export function PolicyAutoPublishDialControl() {
             <AlertDialogAction
               data-testid="policy-auto-publish-confirm-accept"
               onClick={() => {
-                if (pendingLevel) void setLevel(pendingLevel);
+                if (pendingLevel) void applyLevel(pendingLevel);
                 setPendingLevel(null);
               }}
             >
