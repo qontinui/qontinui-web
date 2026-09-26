@@ -2,8 +2,8 @@
  * The proposal row, at the layer an operator actually sees.
  *
  * Phase 3 Wave 5 (qontinui-web#1036) made three consequential changes to this
- * card and pinned none of them above the derivation layer. `proposalStatus.ts`
- * has a thorough unit test, but it proves what `deriveProposalStatus` RETURNS —
+ * card and pinned none of them above the derivation layer. `policyProposalStatus.ts`
+ * has a thorough unit test, but it proves what `derivePolicyProposalStatus` RETURNS —
  * not that the row renders it, and not that the affordances the wave moved
  * behind a click still work once they are there. This file covers that gap.
  *
@@ -37,7 +37,7 @@
  *  5. **A typed decision note survives a collapse.** The PR body asserts it
  *     ("`RecordList` keeps every item mounted, so `note` survives collapse") and
  *     it is a real regression risk created by the move: before the wave the
- *     composer was always mounted. The note lives in `ProposalCard`'s own
+ *     composer was always mounted. The note lives in `PolicyProposalCard`'s own
  *     `useState`, so the claim holds only while the CARD stays mounted — which
  *     is a property of the host, not of this component. Pinned through
  *     `<RecordList>` for that reason, not against a hand-rolled harness.
@@ -62,7 +62,7 @@ beforeEach(() => {
 
 import { RecordList } from "@/components/console";
 import type { PromptDocumentProposal } from "../types";
-import { ProposalCard } from "./ProposalCard";
+import { PolicyProposalCard } from "./PolicyProposalCard";
 
 function proposal(
   over: Partial<PromptDocumentProposal> = {}
@@ -105,7 +105,7 @@ function renderCard(
         itemKey={(x) => x.id}
         empty={null}
         renderRow={(x, ctx) => (
-          <ProposalCard
+          <PolicyProposalCard
             proposal={x}
             liveVersion={opts.liveVersion ?? null}
             loading={opts.loading ?? false}
@@ -127,7 +127,7 @@ function toggleRow(id = "p-1") {
   fireEvent.click(screen.getByTestId(`proposal-${id}`).querySelector("button")!);
 }
 
-describe("ProposalCard — R3 reaches the badge", () => {
+describe("PolicyProposalCard — R3 reaches the badge", () => {
   it("paints a LOOSENING proposal calm, not amber", () => {
     // The queue's own module doc: "no agent, session, or merge waits on it".
     // Amber promises something else clears this; nothing clears an unreviewed
@@ -170,7 +170,7 @@ describe("ProposalCard — R3 reaches the badge", () => {
   });
 });
 
-describe("ProposalCard — staleness makes exactly one claim", () => {
+describe("PolicyProposalCard — staleness makes exactly one claim", () => {
   it("renders the warning panel RED, matching the badge", async () => {
     // Badge and panel come from the same predicate. An amber panel under a red
     // badge said "act now" and "it will clear itself" at once.
@@ -216,7 +216,7 @@ describe("ProposalCard — staleness makes exactly one claim", () => {
   });
 });
 
-describe("ProposalCard — the disclosed decision affordances", () => {
+describe("PolicyProposalCard — the disclosed decision affordances", () => {
   it("hides the composer until the row is expanded", () => {
     // R2/R5: a one-line row cannot carry an inline textarea. This is the cost
     // of the density, and it should be a deliberate one.
@@ -291,7 +291,7 @@ describe("ProposalCard — the disclosed decision affordances", () => {
   });
 });
 
-describe("ProposalCard — a typed note is not lost on collapse", () => {
+describe("PolicyProposalCard — a typed note is not lost on collapse", () => {
   it("keeps the note across a collapse and re-expand", async () => {
     // The claim the wave shipped on: `RecordList` keeps every item mounted, so
     // the card's `note` state outlives the detail that displays it. If the host
@@ -327,7 +327,7 @@ describe("ProposalCard — a typed note is not lost on collapse", () => {
  * author-decided row painted as a caution re-asserts an ownership rule the
  * fleet deliberately removed.
  */
-describe("ProposalCard — coord's terminal `stale`", () => {
+describe("PolicyProposalCard — coord's terminal `stale`", () => {
   it("badges a retired proposal calm, and drops the pre-approval warning", () => {
     renderCard(proposal({ status: "stale", base_version: 4 }), {
       liveVersion: 9,
@@ -362,7 +362,7 @@ describe("ProposalCard — coord's terminal `stale`", () => {
  * regression that reached production because no fixture in this file combined
  * one of them with a readable live version.
  */
-describe("ProposalCard — a row coord already decided", () => {
+describe("PolicyProposalCard — a row coord already decided", () => {
   it("badges an APPROVED row calm too, with the live version actually supplied", () => {
     /*
      * The fixture that was missing, and the reason every "Recently proposed &
@@ -407,7 +407,7 @@ describe("ProposalCard — a row coord already decided", () => {
   });
 });
 
-describe("ProposalCard — a proposal decided by its own author", () => {
+describe("PolicyProposalCard — a proposal decided by its own author", () => {
   it("says so plainly, as information rather than a caution", () => {
     renderCard(
       proposal({
@@ -486,7 +486,7 @@ describe("ProposalCard — a proposal decided by its own author", () => {
  * and quietly says something it does not know, or offers something that cannot
  * happen.
  */
-describe("ProposalCard — `data-self-decided` keeps UNKNOWN out of `false`", () => {
+describe("PolicyProposalCard — `data-self-decided` keeps UNKNOWN out of `false`", () => {
   it("reports `unknown` when the question is unanswerable", () => {
     // No `self_decided` from coord, and one of the two identities blank — so
     // there is no answer to give. `"false"` here would be an assertion ("coord
@@ -527,7 +527,7 @@ describe("ProposalCard — `data-self-decided` keeps UNKNOWN out of `false`", ()
   });
 });
 
-describe("ProposalCard — the decision composer is offered only where a decision is possible", () => {
+describe("PolicyProposalCard — the decision composer is offered only where a decision is possible", () => {
   it("replaces it with a one-line explanation on a closed row", () => {
     // Defence in depth — coord refuses a decision on a closed proposal
     // server-side and is the authority. But this card already drops the

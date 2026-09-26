@@ -11320,9 +11320,9 @@ async def list_prompt_document_proposals(
         raise
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/approve")
 async def approve_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained deliberately though its value is now unused: the dependency is
@@ -11347,15 +11347,15 @@ async def approve_prompt_document_proposal(
     which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/approve",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/reject")
 async def reject_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained for the same reason as on approve: this dependency is the
@@ -11370,7 +11370,7 @@ async def reject_prompt_document_proposal(
     operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/reject",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
