@@ -82,9 +82,34 @@ def _meta(
     filter_narrowed: FilterNarrowing | None = None,
     enumerate_via: str | None = None,
 ) -> BoundedReadMeta:
+    """The ONE place a :class:`BoundedReadMeta` is built, and the gate that
+    makes a self-contradicting envelope unconstructible.
+
+    Mirrors Rust ``Page::envelope_is_consistent`` (``qontinui-schemas``
+    ``rust/src/page.rs``), but REFUSES rather than ``debug_assert!``-ing,
+    because Python has no private-field constructor discipline to lean on:
+    any caller can reach this function. Three states are refused:
+
+    * ``next_cursor`` and ``enumerate_via`` both set — a cursor IS the walk,
+      so it never names another one;
+    * ``next_cursor`` set while ``truncated`` is not ``True`` — a cursor
+      beside ``false`` (nothing more) or ``null`` (unknown) points nowhere;
+    * ``truncated`` ``True`` with neither — "there is more" with no way to
+      reach it, which is only honest on a ranking that names its walk.
+
+    Raises :class:`ValueError`; nothing is silently dropped here.
+    """
     if next_cursor is not None and enumerate_via is not None:
-        # A cursor IS the walk, so it never names another one.
         raise ValueError("a page with a next_cursor cannot name enumerate_via")
+    if next_cursor is not None and truncated is not True:
+        raise ValueError(
+            f"a next_cursor may only sit beside truncated=True, not {truncated!r}"
+        )
+    if truncated is True and next_cursor is None and enumerate_via is None:
+        raise ValueError(
+            "a truncated page needs a next_cursor (a walk) or an enumerate_via "
+            "(a ranking naming the door that walks the corpus)"
+        )
     return BoundedReadMeta(
         count=shown,
         limit=limit,
@@ -92,9 +117,7 @@ def _meta(
         total=total,
         truncated=truncated,
         bound_kind=bound_kind,
-        # The wire never carries a cursor beside `truncated: false` — the
-        # same restatement `Page::meta` makes on the Rust side.
-        next_cursor=None if truncated is False else next_cursor,
+        next_cursor=next_cursor,
         available=available,
         filter_narrowed=filter_narrowed,
         enumerate_via=enumerate_via,
@@ -104,8 +127,9 @@ def _meta(
 def from_probe(
     fetched: int,
     limit: int,
-    next_cursor: str | None = None,
     *,
+    next_cursor: str | None,
+    enumerate_via: str | None,
     filter_narrowed: FilterNarrowing | None = None,
 ) -> BoundedReadMeta:
     """Meta for a ``LIMIT limit + 1`` fetch that returned ``fetched`` rows.
@@ -113,9 +137,17 @@ def from_probe(
     More than ``limit`` rows means the probe fired: the page shows ``limit``
     rows, the bound is ``at_least`` and ``truncated`` is true. Otherwise the
     page is ``complete`` — even when it filled exactly, because a full page
-    with nothing behind it is not truncated. ``next_cursor`` must be minted by
-    the caller from the last KEPT row (never the probe row); it is dropped
-    when the page is complete.
+    with nothing behind it is not truncated.
+
+    ``next_cursor`` and ``enumerate_via`` are keyword-only and have NO
+    default, so every caller states which way on it offers: a walk passes the
+    cursor minted from the last KEPT row (never the probe row) and
+    ``enumerate_via=None``; a ranking passes ``next_cursor=None`` and names
+    its walk (see :func:`not_pageable`). Passing neither when the probe fires
+    is refused by :func:`_meta`. When the probe did NOT fire the cursor is not
+    used — there is no next position, exactly as Rust ``Page::from_probe``
+    never calls ``cursor_of`` then — while ``enumerate_via`` is kept, because
+    it describes the READ rather than this page.
     """
     limit = max(limit, 1)
     if fetched > limit:
@@ -127,31 +159,48 @@ def from_probe(
             bound_kind=BoundKind.at_least,
             next_cursor=next_cursor,
             filter_narrowed=filter_narrowed,
+            enumerate_via=enumerate_via,
         )
-    return complete(fetched, limit, filter_narrowed=filter_narrowed)
+    return _meta(
+        shown=fetched,
+        limit=limit,
+        total=None,
+        truncated=False,
+        bound_kind=BoundKind.complete,
+        next_cursor=None,
+        filter_narrowed=filter_narrowed,
+        enumerate_via=enumerate_via,
+    )
 
 
 def from_count(
     shown: int,
     limit: int,
     total: int,
-    next_cursor: str | None = None,
     *,
+    next_cursor: str | None,
+    enumerate_via: str | None,
     filter_narrowed: FilterNarrowing | None = None,
 ) -> BoundedReadMeta:
     """Meta for a page whose statement carried an EXACT match count.
 
     ``total`` counts the rows matching from this page's start position
-    onward; ``truncated`` is ``total > shown``.
+    onward; ``truncated`` is ``total > shown``. Same keyword-only, no-default
+    ``next_cursor`` / ``enumerate_via`` contract as :func:`from_probe`: a
+    truncated page must name one of them (refused otherwise), and the cursor
+    is not used when the page is not truncated — Rust
+    ``Page::from_window_count`` mints it only then.
     """
+    truncated = total > shown
     return _meta(
         shown=shown,
         limit=limit,
         total=total,
-        truncated=total > shown,
+        truncated=truncated,
         bound_kind=BoundKind.exact,
-        next_cursor=next_cursor,
+        next_cursor=next_cursor if truncated else None,
         filter_narrowed=filter_narrowed,
+        enumerate_via=enumerate_via,
     )
 
 
@@ -219,17 +268,12 @@ def not_pageable(
     door that walks the same corpus by an immutable key, and is set on every
     page of the read, truncated or not, because it describes the READ.
     """
-    limit = max(limit, 1)
-    probe_fired = fetched > limit
-    return _meta(
-        shown=limit if probe_fired else fetched,
-        limit=limit,
-        total=None,
-        truncated=probe_fired,
-        bound_kind=BoundKind.at_least if probe_fired else BoundKind.complete,
+    return from_probe(
+        fetched,
+        limit,
         next_cursor=None,
-        filter_narrowed=filter_narrowed,
         enumerate_via=enumerate_via,
+        filter_narrowed=filter_narrowed,
     )
 
 
@@ -250,7 +294,15 @@ def from_ranked_pool(
 
     * ``pool_capped`` false — every arm returned all of its matches, so the
       pool IS the match set: ``exact``, ``total = pool_size``,
-      ``truncated = pool_size > shown``.
+      ``truncated = pool_size > limit``.
+
+    ``truncated`` is judged against ``limit`` — the CUT — never against
+    ``shown``. The two differ only when a pooled id's row was not fetched
+    (tombstoned between the arm and the fetch): that row was never going to
+    appear on any page, so it is not "more beyond this page", and comparing
+    against ``shown`` would report ``truncated: true`` on a read with nothing
+    past its cut. ``total`` still counts that id, because it counts
+    CANDIDATES the arms returned, not rows rendered.
     * ``pool_capped`` true and ``pool_size > limit`` — more matches exist than
       shown, and more may exist than the pool saw: ``at_least``,
       ``total: null``, ``truncated: true``.
@@ -265,7 +317,7 @@ def from_ranked_pool(
             shown=shown,
             limit=limit,
             total=pool_size,
-            truncated=pool_size > shown,
+            truncated=pool_size > limit,
             bound_kind=BoundKind.exact,
             next_cursor=None,
             enumerate_via=enumerate_via,
