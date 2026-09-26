@@ -307,6 +307,73 @@ describe("focus after writing a template", () => {
   });
 });
 
+describe("focus while another editor is open", () => {
+  const second: IntentDocument = {
+    ...template,
+    id: "audience_profile:partners",
+    name: "partners",
+  };
+
+  it("is not pulled out of the editor the writer moved on to", async () => {
+    render(
+      <Harness
+        outcome={(doc) => ({ ok: true, item: doc })}
+        initial={[written, template, second]}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Write: Partners" }));
+    const boxes = () => screen.getAllByRole("textbox", { name: /^Text of/ });
+    fireEvent.change(boxes()[0], { target: { value: "# One\n\nFirst." } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    // The writer has moved on to the second editor before the save lands.
+    // (Once the first editor closes, boxes()[0] is this same second editor.)
+    boxes()[1].focus();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "One" })).toBeTruthy()
+    );
+    expect(document.activeElement).toBe(boxes()[0]);
+    expect(boxes()).toHaveLength(1);
+  });
+});
+
+describe("a document that vanishes while its editor is open", () => {
+  it("does not stay under 'Not written yet' when it comes back written", () => {
+    const actions: IntentSectionActions = {
+      canEdit: true,
+      projectId: "p1",
+      viewerId: "u1",
+      saveBody: vi.fn(),
+      move: vi.fn(),
+      createDocument: vi.fn(),
+    };
+    const renderSection = (docs: IntentDocument[]) => (
+      <IntentSection
+        kind="audience_profile"
+        entries={docs.map(toIntentEntry)}
+        actions={actions}
+      />
+    );
+    const { rerender } = render(renderSection([written, template]));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    rerender(renderSection([written]));
+    rerender(
+      renderSection([
+        written,
+        { ...template, body: "# Example audience\n\nBack.", state: "authored" },
+      ])
+    );
+    expect(screen.queryByText("Not written yet")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Example audience" })
+    ).toBeTruthy();
+  });
+});
+
 describe("slugFromTitle", () => {
   it("makes a coord name from a title", () => {
     expect(slugFromTitle("Café — Q4 Launch!", "unused")).toBe("cafe-q4-launch");
