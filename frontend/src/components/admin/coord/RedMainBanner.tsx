@@ -176,6 +176,54 @@ export type AlertClaimState =
       expiresAt?: string;
     };
 
+/**
+ * An RFC 3339 instant with an explicit zone — what coord emits. `Date.parse`
+ * alone accepts bare strings like `"2026"`, which must not outrank a real
+ * `first_seen_at`.
+ */
+const RFC3339_INSTANT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** Where a {@link RedMainAlert.since} value was read from. */
+export type RedMainSinceSource = "red_since" | "first_seen_at";
+
+/** coord's provenance for `detail.red_since` (`detail.red_since_source`). */
+export type RedSinceProvenance = "run_started_at" | "observed_at";
+
+/**
+ * Resolve the episode start from an alert row. Prefers coord's
+ * `detail.red_since` (GitHub's run start when `red_since_source` is
+ * `run_started_at`, else coord's observation-time proxy) when it is a
+ * parseable timestamp;
+ * otherwise falls back to the row's `first_seen_at`. A garbage `red_since`
+ * is ignored rather than echoed, since the fallback is a real timestamp.
+ * `detail.red_since_source` is passed through only alongside the
+ * `red_since` it describes.
+ * Pure — exported for the vitest suite.
+ */
+export function resolveRedMainSince(
+  detail: Record<string, unknown>,
+  firstSeenAt: string | undefined
+): Pick<RedMainAlert, "since" | "sinceSource" | "redSinceSource"> {
+  const raw = detail.red_since;
+  const provenance = detail.red_since_source;
+  const redSinceSource: RedSinceProvenance | undefined =
+    provenance === "run_started_at" || provenance === "observed_at"
+      ? provenance
+      : undefined;
+  if (
+    typeof raw === "string" &&
+    RFC3339_INSTANT.test(raw) &&
+    !Number.isNaN(Date.parse(raw))
+  ) {
+    return { since: raw, sinceSource: "red_since", redSinceSource };
+  }
+  // The provenance describes `red_since`, so it is dropped with it: carrying
+  // it beside a `first_seen_at` would label the row's age as GitHub's record.
+  if (firstSeenAt) return { since: firstSeenAt, sinceSource: "first_seen_at" };
+  return {};
+}
+
 /** One red-main episode, parsed from its `coord.alerts` row. */
 export interface RedMainAlert {
   alertKey: string;
@@ -184,8 +232,27 @@ export interface RedMainAlert {
   workflows: string[];
   /** Open PRs blocked `main-red` behind the red main (blast radius). */
   blockedPrCount: number;
-  /** Episode start — the alert row's own `first_seen_at`. */
+  /**
+   * Episode start. coord's red-since when it supplies one
+   * (`detail.red_since`: the start of the earliest non-passing push run on
+   * the default branch since the last success — it survives a resolve and
+   * re-fire of the alert row), else the alert row's own `first_seen_at`,
+   * which resets whenever the row flaps. {@link sinceSource} says which.
+   */
   since?: string;
+  /**
+   * Which field {@link since} came from. Absent exactly when `since` is.
+   * `first_seen_at` is the row's lifetime, NOT GitHub's record — an older
+   * coord, or a detail with no parseable `red_since`.
+   */
+  sinceSource?: RedMainSinceSource;
+  /**
+   * coord's own provenance for `red_since` (`detail.red_since_source`):
+   * `run_started_at` is GitHub's run start; `observed_at` is coord's
+   * observation-time proxy for runs recorded before that column existed. Absent
+   * when coord did not say, or when `since` is not `red_since`.
+   */
+  redSinceSource?: RedSinceProvenance;
   /** Remediation state (alert `detail.fix_session`). */
   fixSession: FixSessionState;
   /** Whether an agent holds the alert's claim, and who. */
@@ -307,7 +374,7 @@ export function parseRedMainAlerts(
       repo,
       workflows,
       blockedPrCount,
-      since: a.first_seen_at,
+      ...resolveRedMainSince(detail, a.first_seen_at),
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
     });
@@ -318,8 +385,9 @@ export function parseRedMainAlerts(
 }
 
 /**
- * Compact "how long has this been red" label from the row's
- * `first_seen_at`. Pure (injectable `nowMs`) — exported for the vitest
+ * Compact "how long has this been red" label from an episode start
+ * ({@link RedMainAlert.since}: coord's `red_since` when present, else the
+ * row's `first_seen_at`). Pure (injectable `nowMs`) — exported for the vitest
  * suite. Unparseable input echoes back verbatim rather than hiding the
  * episode start entirely.
  */
@@ -332,6 +400,25 @@ export function sinceLabel(iso: string | undefined, nowMs: number): string {
   const hours = Math.floor(mins / 60);
   if (hours < 48) return `${hours}h ${mins % 60}m`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+/**
+ * Tooltip naming where the headline's "since" came from, so a reader can
+ * tell GitHub's record from coord's proxies. Pure — exported for the
+ * vitest suite.
+ */
+export function redMainSinceTitle(a: RedMainAlert): string | undefined {
+  if (!a.since) return undefined;
+  if (a.sinceSource !== "red_since") {
+    return "Since = when coord's alert row opened; it resets whenever the alert resolves and re-fires, so the real outage may be older.";
+  }
+  if (a.redSinceSource === "observed_at") {
+    return "Since = when coord recorded the earliest non-passing push run (GitHub's run start was not recorded for it), so it can be after the real start.";
+  }
+  if (a.redSinceSource === "run_started_at") {
+    return "Since = GitHub's start time of the earliest non-passing push run on the default branch since the last success.";
+  }
+  return "Since = coord's red_since for this episode; coord did not say how it was measured.";
 }
 
 /**
@@ -590,7 +677,11 @@ export function RedMainBanner() {
             className="h-4 w-4 shrink-0 text-red-300"
             aria-hidden
           />
-          <span className="text-sm font-semibold">
+          <span
+            className="text-sm font-semibold"
+            data-testid="red-main-headline"
+            title={redMainSinceTitle(a)}
+          >
             {redMainHeadline(a, nowMs)}
           </span>
           {a.workflows.length > 0 && (

@@ -17,6 +17,7 @@ import {
   parseFixSession,
   parseRedMainAlerts,
   redMainHeadline,
+  redMainSinceTitle,
   sinceLabel,
   truncateAgentId,
   type AlertClaimState,
@@ -58,6 +59,8 @@ describe("parseRedMainAlerts", () => {
         workflows: ["CI", "release"],
         blockedPrCount: 8,
         since: "2026-07-06T01:00:00Z",
+        // No `detail.red_since`: an older coord, so the row's own age.
+        sinceSource: "first_seen_at",
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
         claim: { kind: "unknown", cause: "not-reported" },
@@ -125,6 +128,86 @@ describe("parseRedMainAlerts", () => {
     expect(parseRedMainAlerts(undefined)).toEqual([]);
     expect(parseRedMainAlerts(null)).toEqual([]);
     expect(parseRedMainAlerts({ alerts: [] })).toEqual([]);
+  });
+});
+
+/**
+ * Plan `2026-09-12-red-main-alert-since-resets-mid-episode-and-a-non-required-gate-reds-main-through-the-fail-closed-arm`
+ * Phase 2: `since` prefers coord's `detail.red_since` (dated from GitHub's
+ * run start, or coord's observation time per `red_since_source`; it
+ * survives a resolve/re-fire of the row) over the row's
+ * `first_seen_at` (which resets on every flap).
+ */
+describe("parseRedMainAlerts red_since", () => {
+  const row = (detail: Record<string, unknown>) => ({
+    alert_key: "red_main:jspinak/qontinui-coord",
+    // A re-fired row: minutes old, while main has been red for a day.
+    first_seen_at: "2026-09-03T07:10:00Z",
+    detail: { repo: "jspinak/qontinui-coord", ...detail },
+  });
+
+  it("prefers detail.red_since over the row's first_seen_at", () => {
+    const [got] = parseRedMainAlerts([
+      row({
+        red_since: "2026-09-02T07:56:00Z",
+        red_since_source: "run_started_at",
+      }),
+    ]);
+    expect(got.since).toBe("2026-09-02T07:56:00Z");
+    expect(got.sinceSource).toBe("red_since");
+    expect(got.redSinceSource).toBe("run_started_at");
+  });
+
+  it("passes the observed_at provenance through", () => {
+    const [got] = parseRedMainAlerts([
+      row({
+        red_since: "2026-09-02T08:01:00Z",
+        red_since_source: "observed_at",
+      }),
+    ]);
+    expect(got.sinceSource).toBe("red_since");
+    expect(got.redSinceSource).toBe("observed_at");
+  });
+
+  it("leaves redSinceSource unset when coord sends none or an unknown value", () => {
+    const [none] = parseRedMainAlerts([
+      row({ red_since: "2026-09-02T07:56:00Z" }),
+    ]);
+    expect(none.sinceSource).toBe("red_since");
+    expect(none.redSinceSource).toBeUndefined();
+    const [bogus] = parseRedMainAlerts([
+      row({ red_since: "2026-09-02T07:56:00Z", red_since_source: "guess" }),
+    ]);
+    expect(bogus.redSinceSource).toBeUndefined();
+  });
+
+  it.each([
+    ["missing", {}],
+    ["null", { red_since: null }],
+    ["empty", { red_since: "" }],
+    ["garbage", { red_since: "not-a-date" }],
+    ["bare year", { red_since: "2026" }],
+    ["zoneless", { red_since: "2026-09-02T07:56:00" }],
+    ["non-string", { red_since: 1725263760000 }],
+  ])(
+    "falls back to first_seen_at when red_since is %s",
+    (_label, detail: Record<string, unknown>) => {
+      const [got] = parseRedMainAlerts([
+        row({ ...detail, red_since_source: "run_started_at" }),
+      ]);
+      expect(got.since).toBe("2026-09-03T07:10:00Z");
+      expect(got.sinceSource).toBe("first_seen_at");
+      // The provenance describes red_since, so it is dropped with it.
+      expect(got.redSinceSource).toBeUndefined();
+    }
+  );
+
+  it("leaves since and sinceSource unset when neither timestamp exists", () => {
+    const [got] = parseRedMainAlerts([
+      { alert_key: "red_main:a/b", detail: { red_since: "nope" } },
+    ]);
+    expect(got.since).toBeUndefined();
+    expect(got.sinceSource).toBeUndefined();
   });
 });
 
@@ -368,6 +451,22 @@ describe("<RedMainBanner> claim and remediation", () => {
     );
   });
 
+  it("titles the headline with where its since came from", async () => {
+    getMock.mockResolvedValue([
+      alertRow(
+        {},
+        {
+          red_since: "2026-07-05T20:00:00Z",
+          red_since_source: "run_started_at",
+        }
+      ),
+    ]);
+    render(<RedMainBanner />);
+
+    const headline = await screen.findByTestId("red-main-headline");
+    expect(headline.getAttribute("title")).toContain("GitHub's start time");
+  });
+
   it("says plainly when no agent has claimed it", async () => {
     getMock.mockResolvedValue([alertRow({ claimed: false, claim: null })]);
     render(<RedMainBanner />);
@@ -532,5 +631,59 @@ describe("<RedMainBanner> reachability", () => {
     }
     // An outage in the READ path is not evidence that main went green.
     expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
+  });
+});
+
+describe("redMainSinceTitle", () => {
+  const base = {
+    alertKey: "red_main:o/r",
+    repo: "o/r",
+    workflows: ["CI"],
+    blockedPrCount: 0,
+    fixSession: { kind: "none" },
+    claim: { kind: "unknown", cause: "not-reported" },
+  } satisfies Parameters<typeof redMainSinceTitle>[0];
+
+  it("is undefined when there is no since", () => {
+    expect(redMainSinceTitle(base)).toBeUndefined();
+  });
+
+  it("names GitHub's run start for red_since + run_started_at", () => {
+    const t = redMainSinceTitle({
+      ...base,
+      since: "2026-09-02T07:56:00Z",
+      sinceSource: "red_since",
+      redSinceSource: "run_started_at",
+    });
+    expect(t).toContain("GitHub's start time");
+  });
+
+  it("flags coord's observation proxy for red_since + observed_at", () => {
+    const t = redMainSinceTitle({
+      ...base,
+      since: "2026-09-02T07:56:00Z",
+      sinceSource: "red_since",
+      redSinceSource: "observed_at",
+    });
+    expect(t).toContain("when coord recorded");
+  });
+
+  it("claims no provenance coord did not send", () => {
+    const t = redMainSinceTitle({
+      ...base,
+      since: "2026-09-02T07:56:00Z",
+      sinceSource: "red_since",
+    });
+    expect(t).toContain("did not say how it was measured");
+    expect(t).not.toContain("GitHub");
+  });
+
+  it("warns that first_seen_at resets on a flap", () => {
+    const t = redMainSinceTitle({
+      ...base,
+      since: "2026-09-03T05:25:58Z",
+      sinceSource: "first_seen_at",
+    });
+    expect(t).toContain("resets");
   });
 });
