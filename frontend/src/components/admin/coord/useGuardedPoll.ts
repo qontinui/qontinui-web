@@ -77,7 +77,16 @@
  *
  * Both callbacks must be `useCallback`-stable: `read`'s dependencies ARE the
  * question, and an unstable `onQuestionChange` would blank the page on every
- * render.
+ * render. *
+ * ## Why this is not `useSingleFlight`
+ *
+ * `components/operations/useSingleFlightPoll.ts` is the other polling
+ * primitive, and both exist on purpose. This one lets a refresh CLICK run
+ * beside an outstanding tick and orders the answers by generation, so a list
+ * page answers a new question at once. That one never puts two requests on
+ * the wire (a refresh trails the flight), which is what the Dev Ops
+ * dashboard's coord polls need to keep one viewer's load on coord bounded.
+ * Each gives a capability the other would take away; see that file.
  */
 
 import { useCallback, useEffect, useRef } from "react";

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight } from "./useSingleFlightPoll";
 import {
   SYMBOL_CLAIMS_API,
   SYMBOL_CLAIMS_POLL_MS,
@@ -77,7 +79,10 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(SYMBOL_CLAIMS_API);
+      const resp = await httpClient.fetch(
+        SYMBOL_CLAIMS_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -94,6 +99,12 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
     }
   }, []);
 
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // every call of `fetchOnce` goes through this latch, so a tick that finds
+  // a read outstanding is skipped and a refetch during one runs once after it.
+  const { refresh: refreshOnce, tick: tickOnce } = useSingleFlight(fetchOnce);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -104,22 +115,22 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
   const startPolling = useCallback(() => {
     stopPolling();
     pollTimerRef.current = setInterval(() => {
-      if (!document.hidden) void fetchOnce();
+      if (!document.hidden) tickOnce();
     }, SYMBOL_CLAIMS_POLL_MS);
-  }, [fetchOnce, stopPolling]);
+  }, [tickOnce, stopPolling]);
 
   // Mount: seed + start polling. Cleanup is exhaustive — StrictMode
   // double-mount is safe because every async path checks
   // `cleanedUpRef.current` before touching state.
   useEffect(() => {
     cleanedUpRef.current = false;
-    void fetchOnce();
+    void refreshOnce();
     startPolling();
     return () => {
       cleanedUpRef.current = true;
       stopPolling();
     };
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
   // Tab-visibility — pause polling while hidden, resume on return.
   useEffect(() => {
@@ -127,17 +138,17 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
       if (document.hidden) {
         stopPolling();
       } else {
-        void fetchOnce();
+        void refreshOnce();
         startPolling();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
   return {
     byMachine,
     error,
-    refetch: fetchOnce,
+    refetch: refreshOnce,
   };
 }

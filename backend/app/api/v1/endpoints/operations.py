@@ -2911,8 +2911,23 @@ async def _proxy_coord_passthrough(
     try:
         payload: Any = resp.json()
     except ValueError:
-        # coord answered with something that isn't JSON (a proxy error page, an
-        # empty 204). Report that honestly in coord's own `error` key rather
+        if 200 <= resp.status_code < 300:
+            # A SUCCESS status over a body that is not JSON is not an answer
+            # any caller can use, and relaying it as `200 {"error": ...}` made
+            # it look like one: a dashboard poll would parse that as a payload
+            # (plan 2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-
+            # reland, Phase 4 review). It is a broken upstream answer, so it
+            # is the web's 502 to report. None of this helper's coord routes
+            # answers 204 by contract.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"coord answered HTTP {resp.status_code} with a body that "
+                    "is not JSON"
+                ),
+            )
+        # A coord ERROR whose body isn't JSON (a proxy error page). Report that
+        # honestly in coord's own `error` key, under coord's own status, rather
         # than inventing a shape the caller would mis-read as a coord code.
         payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
     return JSONResponse(status_code=resp.status_code, content=payload)
@@ -5431,8 +5446,19 @@ async def get_fleet_volumes(
 
     Devices absent from the payload have NEVER reported volume telemetry.
     That is UNKNOWN, not zero — see the section note above.
+
+    Coord's error answers pass through with their status AND JSON body
+    verbatim (:func:`_proxy_coord_passthrough`), not re-wrapped as an
+    ``HTTPException`` detail string. The dashboard branches on two of them
+    (plan ``2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland``
+    D2/D4): ``503 {"error":"deadline","budget_ms":N}`` renders UNKNOWN naming
+    the budget, and ``404 {"error":"route_disabled"}`` renders "disabled by
+    operator". Wrapped, the browser saw this module's generic error envelope
+    with coord's body flattened into a ``message`` string.
     """
-    return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/volumes", tenant_id=tenant_id
+    )
 
 
 # ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
@@ -5484,8 +5510,14 @@ async def get_fleet_worktree_slots(
     corroborated as live and the caller MUST render that row UNKNOWN — never
     an idle/empty machine and never a healthy ``0/8`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
+
+    Error answers pass through verbatim, status and JSON body, for the same
+    reason as :func:`get_fleet_volumes`: the section renders coord's
+    ``503 deadline`` and ``404 route_disabled`` bodies specifically.
     """
-    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------

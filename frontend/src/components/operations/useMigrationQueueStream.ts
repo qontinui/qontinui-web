@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight } from "./useSingleFlightPoll";
 import { MIGRATIONS_QUEUE_POLL_MS, migrationsQueueUrl } from "./utils";
 import type { MigrationQueueResponse, MigrationReservation } from "./types";
 
@@ -62,7 +64,10 @@ export function useMigrationQueueStream(
       return;
     }
     try {
-      const resp = await httpClient.fetch(migrationsQueueUrl(requested));
+      const resp = await httpClient.fetch(
+        migrationsQueueUrl(requested),
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -83,6 +88,12 @@ export function useMigrationQueueStream(
     }
   }, []);
 
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // every call of `fetchOnce` goes through this latch, so a tick that finds
+  // a read outstanding is skipped and a refetch during one runs once after it.
+  const { refresh: refreshOnce, tick: tickOnce } = useSingleFlight(fetchOnce);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -93,9 +104,9 @@ export function useMigrationQueueStream(
   const startPolling = useCallback(() => {
     stopPolling();
     pollTimerRef.current = setInterval(() => {
-      if (!document.hidden) void fetchOnce();
+      if (!document.hidden) tickOnce();
     }, MIGRATIONS_QUEUE_POLL_MS);
-  }, [fetchOnce, stopPolling]);
+  }, [tickOnce, stopPolling]);
 
   // Mount + repo change: re-seed and (re)start polling. Resetting `seeded`
   // makes the tile show its loading state while the new repo's first fetch
@@ -103,13 +114,13 @@ export function useMigrationQueueStream(
   useEffect(() => {
     cleanedUpRef.current = false;
     setSeeded(false);
-    void fetchOnce();
+    void refreshOnce();
     startPolling();
     return () => {
       cleanedUpRef.current = true;
       stopPolling();
     };
-  }, [repo, fetchOnce, startPolling, stopPolling]);
+  }, [repo, refreshOnce, startPolling, stopPolling]);
 
   // Tab-visibility — pause polling while hidden, resume on return.
   useEffect(() => {
@@ -117,13 +128,13 @@ export function useMigrationQueueStream(
       if (document.hidden) {
         stopPolling();
       } else {
-        void fetchOnce();
+        void refreshOnce();
         startPolling();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
-  return { live, seeded, error, refetch: fetchOnce };
+  return { live, seeded, error, refetch: refreshOnce };
 }
