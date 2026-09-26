@@ -20,6 +20,10 @@ Adds two columns, one CHECK, and two partial indices to
 - ``uq_agent_questions_open_effect`` — UNIQUE ``(tenant_id, effect_kind,
   (effect_ref->>'id')) WHERE effect_kind <> 'none' AND responded_at IS NULL AND
   withdrawn_at IS NULL``: at most ONE open, un-withdrawn mirror row per effect.
+- ``idx_agent_questions_effect_ref`` — ``(tenant_id, effect_kind,
+  (effect_ref->>'id')) WHERE effect_kind <> 'none'``: every mirror row,
+  answered or not, so coord's "has this effect been mirrored?" anti-joins stay
+  index-driven instead of scanning the whole table.
 
 Why the columns exist
 =====================
@@ -288,11 +292,30 @@ def upgrade() -> None:
                 AND withdrawn_at IS NULL
             """
         )
+        if _index_is_invalid("idx_agent_questions_effect_ref"):
+            op.execute(
+                "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_agent_questions_effect_ref"
+            )
+        # EVERY effect row, answered or not: coord's "does this effect already
+        # have a mirror?" anti-joins (the per-insert NOT EXISTS and the reconcile
+        # backfill) must see answered mirrors too, and both partial indices above
+        # cover open rows only.
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_agent_questions_effect_ref
+            ON coord.agent_questions (tenant_id, effect_kind, (effect_ref->>'id'))
+            WHERE effect_kind <> 'none'
+            """
+        )
 
 
 def downgrade() -> None:
-    """Drop both indices, the CHECK and both columns. The questions survive."""
+    """Drop the three indices, the CHECK and both columns. The questions survive."""
     with op.get_context().autocommit_block():
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_agent_questions_effect_ref"
+        )
         op.execute(
             "DROP INDEX CONCURRENTLY IF EXISTS coord.uq_agent_questions_open_effect"
         )

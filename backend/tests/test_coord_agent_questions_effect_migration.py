@@ -61,6 +61,7 @@ _PARENT_REVISION_ID = "coord_iops_idx_01"
 
 _UNIQUE_INDEX = "uq_agent_questions_open_effect"
 _OPEN_INDEX = "idx_agent_questions_open_effect"
+_REF_INDEX = "idx_agent_questions_effect_ref"
 _CHECK_NAME = "coord_agent_questions_effect_kind_check"
 
 # The write the revision's docstring prescribes to coord. Quoted here so the
@@ -271,6 +272,7 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         assert column_info(engine, "agent_questions", "effect_ref") is None
         assert not index_exists(engine, _UNIQUE_INDEX)
         assert not index_exists(engine, _OPEN_INDEX)
+        assert not index_exists(engine, _REF_INDEX)
         tenant_a = _tenant(engine)
         with engine.begin() as conn:
             legacy = conn.execute(
@@ -317,6 +319,11 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         assert valid and not unique
         assert "effect_kind <> 'none'" in predicate, predicate
         assert "responded_at IS NULL" in predicate, predicate
+        # Every mirror row, answered or not: coord's anti-joins need it.
+        valid, unique, predicate = _index_row(engine, _REF_INDEX)
+        assert valid and not unique
+        assert "effect_kind <> 'none'" in predicate, predicate
+        assert "responded_at" not in predicate, predicate
 
         # 3. The CHECK refuses a kind coord cannot route.
         with pytest.raises(IntegrityError) as excinfo:
@@ -416,6 +423,7 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _UNIQUE_INDEX)
         assert not index_exists(engine, _OPEN_INDEX)
+        assert not index_exists(engine, _REF_INDEX)
         assert not _check_exists(engine)
         assert column_info(engine, "agent_questions", "effect_kind") is None
         assert column_info(engine, "agent_questions", "effect_ref") is None
