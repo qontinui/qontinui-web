@@ -10,7 +10,7 @@ import { formatWhen, plural } from "../_lib/format";
 import { isUnavailableSevere } from "../types";
 import type { PromptDocumentProposal, UnavailableKind } from "../types";
 import { LandedWriteFeed } from "./LandedWriteFeed";
-import { ProposalCard } from "./ProposalCard";
+import { PolicyProposalCard } from "./PolicyProposalCard";
 
 /**
  * The two halves of the operator review surface, over one shared data layer:
@@ -40,8 +40,8 @@ import { ProposalCard } from "./ProposalCard";
  *
  * Beside it sits RECENTLY PROPOSED & APPROVED, on the same three-state
  * contract and for a sharper reason: it is the only read on this page that can
- * serve a DECIDED row, and therefore the only place `<ProposalCard>`'s
- * self-decided provenance line can appear. See `DecidedProposals`.
+ * serve a DECIDED row, and therefore the only place `<PolicyProposalCard>`'s
+ * self-decided provenance line can appear. See `DecidedPolicyProposals`.
  */
 export function ReviewFeed() {
   /**
@@ -203,7 +203,7 @@ export function ReviewFeed() {
             onExpandedKeyChange={setOpenProposal}
             empty={null}
             renderRow={(proposal, ctx) => (
-              <ProposalCard
+              <PolicyProposalCard
                 proposal={proposal}
                 liveVersion={liveVersionFor(
                   proposal.doc_kind,
@@ -220,14 +220,14 @@ export function ReviewFeed() {
         )}
       </section>
 
-      <RetiredProposals
+      <RetiredPolicyProposals
         retired={staleProposals}
         unavailable={staleUnavailable}
         unavailableKind={staleUnavailableKind}
         read={staleRead}
       />
 
-      <DecidedProposals
+      <DecidedPolicyProposals
         decided={decidedProposals}
         unavailable={decidedUnavailable}
         unavailableKind={decidedUnavailableKind}
@@ -340,7 +340,7 @@ function SectionUnknown({
   );
 }
 
-interface RetiredProposalsProps {
+interface RetiredPolicyProposalsProps {
   /** The rows coord served for `?status=stale`. Empty is only "none" when `read`. */
   retired: PromptDocumentProposal[];
   /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
@@ -385,12 +385,12 @@ interface RetiredProposalsProps {
  * unreadable arm is a routine deploy window — both are stated in muted chrome,
  * in words.
  */
-function RetiredProposals({
+function RetiredPolicyProposals({
   retired,
   unavailable,
   unavailableKind,
   read,
-}: RetiredProposalsProps) {
+}: RetiredPolicyProposalsProps) {
   const summary = unavailable
     ? "could not be read"
     : !read
@@ -508,7 +508,7 @@ function RetiredProposals({
   );
 }
 
-interface DecidedProposalsProps {
+interface DecidedPolicyProposalsProps {
   /** The rows coord served for `?status=approved`. Empty is only "none" when `read`. */
   decided: PromptDocumentProposal[];
   /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
@@ -531,7 +531,7 @@ interface DecidedProposalsProps {
 
 /**
  * "Recently proposed & approved" — the decided proposals, rendered through the
- * SAME `<ProposalCard>` the queue uses.
+ * SAME `<PolicyProposalCard>` the queue uses.
  *
  * ## Why the heading is not "Recently approved"
  *
@@ -573,7 +573,7 @@ interface DecidedProposalsProps {
  * A DECISION is the opposite: who decided, against which version, on what
  * rationale, with what note. Re-rendering a second, thinner version of that
  * would put the provenance line back out of reach in a new way, so these rows
- * go through `<ProposalCard>` and inherit every block it already renders —
+ * go through `<PolicyProposalCard>` and inherit every block it already renders —
  * including the composer's replacement, since a decided row is not decidable.
  *
  * ## Collapsed, three states, same rules as the retired section
@@ -590,7 +590,7 @@ interface DecidedProposalsProps {
  * all — a stronger claim than "none lately", and the one that is actually
  * supported.
  */
-function DecidedProposals({
+function DecidedPolicyProposals({
   decided,
   unavailable,
   unavailableKind,
@@ -601,7 +601,7 @@ function DecidedProposals({
   onOpenKeyChange,
   liveVersionFor,
   onDecide,
-}: DecidedProposalsProps) {
+}: DecidedPolicyProposalsProps) {
   const summary = unavailable
     ? "could not be read"
     : !read
@@ -677,7 +677,7 @@ function DecidedProposals({
           onExpandedKeyChange={onOpenKeyChange}
           empty={null}
           renderRow={(proposal, ctx) => (
-            <ProposalCard
+            <PolicyProposalCard
               proposal={proposal}
               liveVersion={liveVersionFor(proposal.doc_kind, proposal.doc_name)}
               loading={loading}
