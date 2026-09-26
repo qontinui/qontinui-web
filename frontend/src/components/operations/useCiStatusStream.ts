@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight } from "./useSingleFlightPoll";
 import {
   CI_STATUS_API,
   CI_STATUS_POLL_FALLBACK_MS,
@@ -87,7 +89,10 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
 
   const seedFromRest = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(CI_STATUS_API);
+      const resp = await httpClient.fetch(
+        CI_STATUS_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -108,6 +113,14 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
     }
   }, []);
 
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // every REST read goes through this latch, so a fallback-poll tick that
+  // finds a read outstanding is skipped, and a re-seed (socket open, tab
+  // show, refetch) during one runs once after it.
+  const { refresh: refreshSeed, tick: tickSeed } =
+    useSingleFlight(seedFromRest);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -118,9 +131,9 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
   const startPolling = useCallback(() => {
     stopPolling();
     pollTimerRef.current = setInterval(() => {
-      if (!document.hidden) void seedFromRest();
+      if (!document.hidden) tickSeed();
     }, CI_STATUS_POLL_FALLBACK_MS);
-  }, [seedFromRest, stopPolling]);
+  }, [tickSeed, stopPolling]);
 
   const closeWs = useCallback(() => {
     if (wsRef.current) {
@@ -185,7 +198,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       stopPolling();
       // Re-seed once on connect to absorb any updates that landed while
       // we were disconnected — the WS only pushes diffs from here on.
-      void seedFromRest();
+      void refreshSeed();
     };
 
     ws.onmessage = (event) => {
@@ -231,12 +244,12 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       // operator keeps seeing fresh data.
       startPolling();
     };
-  }, [applyRow, closeWs, seedFromRest, startPolling, stopPolling]);
+  }, [applyRow, closeWs, refreshSeed, startPolling, stopPolling]);
 
   // Mount: seed + open WS.
   useEffect(() => {
     cleanedUpRef.current = false;
-    void seedFromRest();
+    void refreshSeed();
     void connectWs();
     return () => {
       cleanedUpRef.current = true;
@@ -244,7 +257,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       stopPolling();
       clearReconnect();
     };
-  }, [seedFromRest, connectWs, closeWs, stopPolling, clearReconnect]);
+  }, [refreshSeed, connectWs, closeWs, stopPolling, clearReconnect]);
 
   // Tab visibility — drop the WS while hidden to avoid burning
   // browser-side resources, reconnect on return.
@@ -257,19 +270,19 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
         setConnected(false);
       } else {
         reconnectAttemptsRef.current = 0;
-        void seedFromRest();
+        void refreshSeed();
         void connectWs();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [clearReconnect, closeWs, stopPolling, seedFromRest, connectWs]);
+  }, [clearReconnect, closeWs, stopPolling, refreshSeed, connectWs]);
 
   return {
     byRepo,
     connected,
     seeded,
     error,
-    refetch: seedFromRest,
+    refetch: refreshSeed,
   };
 }

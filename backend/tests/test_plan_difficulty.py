@@ -4,7 +4,8 @@ Plan ``2026-09-18-plan-library-difficulty-field``. What these pin:
 
 * the rubric is TOTAL — every body, including ``""``, gets a rating;
 * a declared ``Difficulty:`` stamp overrides the computed level, but only in
-  the header, and never from inside fenced code;
+  the header — the STRUCTURAL region before the first sub-H1 heading, capped
+  only when a plan has no such heading — and never from inside fenced code;
 * the two axes fold into the routing level with conceptual difficulty
   dominating (the table in ``_fold``);
 * the repo count reads only real repository names, so a crate, container or
@@ -14,12 +15,17 @@ Plan ``2026-09-18-plan-library-difficulty-field``. What these pin:
 from __future__ import annotations
 
 import time
+from typing import get_args
 
 import pytest
 
 from app.services.plan_difficulty import (
+    _HEADER_MAX_LINES,
+    MODEL_SELECTOR_VOCABULARY,
+    MODEL_SELECTORS,
     MODEL_TIERS,
     RUBRIC_VERSION,
+    DifficultyLevel,
     _fold,
     compute_difficulty,
 )
@@ -102,6 +108,32 @@ class TestTotality:
         assert MODEL_TIERS["medium"] == "Opus 5"
 
 
+class TestModelSelectors:
+    """The machine-readable routing map (plan
+    ``2026-09-22-route-plan-sweeps-by-difficulty``). A level added without a
+    selector must fail HERE, not as a ``KeyError`` in a sweep at 03:00."""
+
+    #: The Claude Code Agent tool's ``model`` values — the vocabulary
+    #: :data:`MODEL_SELECTOR_VOCABULARY` names.
+    _AGENT_TOOL_MODELS = frozenset({"sonnet", "opus", "haiku", "fable"})
+
+    def test_every_difficulty_level_has_a_tier_and_a_selector(self) -> None:
+        levels = set(get_args(DifficultyLevel))
+        assert levels == {"low", "medium", "high"}
+        assert set(MODEL_TIERS) == levels
+        assert set(MODEL_SELECTORS) == levels
+
+    def test_every_selector_is_an_agent_tool_model(self) -> None:
+        assert set(MODEL_SELECTORS.values()) <= self._AGENT_TOOL_MODELS
+
+    def test_the_selectors_follow_the_calibrated_tiers(self) -> None:
+        # ``low`` was calibrated on Sonnet; ``haiku`` is deliberately unmapped.
+        assert MODEL_SELECTORS == {"high": "fable", "medium": "opus", "low": "sonnet"}
+
+    def test_the_vocabulary_is_named(self) -> None:
+        assert MODEL_SELECTOR_VOCABULARY == "claude_code_agent_tool_v1"
+
+
 class TestDeclaredStamp:
     @pytest.mark.parametrize(
         "line",
@@ -131,10 +163,92 @@ class TestDeclaredStamp:
         assert rating.signals["computed_level"] == "high"
 
     def test_a_stamp_below_the_header_is_ignored(self) -> None:
-        body = "# Plan\n" + "prose\n" * 80 + "Difficulty: high\n"
+        # The header ends at the first sub-H1 heading; a stamp under it is
+        # body prose that merely DISCUSSES difficulty.
+        body = "# Plan\n## Body\n" + "prose\n" * 80 + "Difficulty: high\n"
         rating = compute_difficulty(body)
         assert rating.source == "computed"
         assert rating.level == "low"
+
+    def test_a_stamp_past_line_60_of_a_heading_free_header_is_now_found(
+        self,
+    ) -> None:
+        # Rubric v1 read only the first 60 lines and ignored this stamp. The
+        # header is now structural, so with no heading above it the stamp is
+        # inside the header — recorded here so the change is not absorbed.
+        body = "# Plan\n" + "prose\n" * 80 + "Difficulty: high\n"
+        rating = compute_difficulty(body)
+        assert rating.source == "declared"
+        assert rating.level == "high"
+
+    def test_a_stamp_under_a_391_line_status_blockquote_is_found(self) -> None:
+        body = (
+            "# Plan\n"
+            + "> **Status: SHIPPED.** history line\n" * 391
+            + "**Difficulty:** high\n\n## Why\n\nOne line.\n"
+        )
+        lines = body.splitlines()
+        # 1-based line 393: past line 390, below every blockquote line.
+        assert lines[392] == "**Difficulty:** high"
+        rating = compute_difficulty(body)
+        assert rating.source == "declared"
+        assert rating.level == "high"
+
+    def test_a_stamp_after_the_first_heading_is_not_found(self) -> None:
+        body = "# Plan\n\n**Date:** 2026-09-22\n\n## Why\n\nDifficulty: high\n"
+        assert compute_difficulty(body).source == "computed"
+
+    def test_a_deeper_first_heading_also_ends_the_header(self) -> None:
+        body = "# Plan\n\n### Context\n\nDifficulty: high\n\n## Why\n"
+        assert compute_difficulty(body).source == "computed"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "# P\n##x\n**Difficulty:** high\n## Why\n",
+            "# P\n> ## x\n**Difficulty:** high\n## Why\n",
+            "# P\n```text\n## inside\n```\n**Difficulty:** high\n## Why\n",
+        ],
+        ids=["hashes-without-space", "quoted-heading", "heading-inside-fence"],
+    )
+    def test_a_line_that_only_looks_like_a_heading_does_not_end_the_header(
+        self, body: str
+    ) -> None:
+        assert compute_difficulty(body).source == "declared"
+
+    def test_a_sub_h1_title_of_a_plan_with_no_h1_is_skipped(self) -> None:
+        body = "\n## Plan title\n\n**Difficulty:** high\n\n## Why\n\nOne line.\n"
+        rating = compute_difficulty(body)
+        assert rating.source == "declared"
+        assert rating.level == "high"
+
+    def test_crlf_bodies_find_the_heading_and_the_stamp(self) -> None:
+        found = "# P\r\n**Difficulty:** high\r\n## Why\r\n"
+        assert compute_difficulty(found).source == "declared"
+        below = "# P\r\n## Why\r\n**Difficulty:** high\r\n"
+        assert compute_difficulty(below).source == "computed"
+
+    def test_seven_hashes_is_not_a_heading(self) -> None:
+        body = "# Plan\n####### not a heading\nDifficulty: high\n"
+        assert compute_difficulty(body).source == "declared"
+
+    def test_a_heading_free_body_stops_at_the_cap(self) -> None:
+        inside = "# Plan\n" + "prose\n" * (_HEADER_MAX_LINES - 2) + "Difficulty: high\n"
+        assert len(inside.splitlines()) == _HEADER_MAX_LINES
+        assert compute_difficulty(inside).source == "declared"
+        outside = (
+            "# Plan\n" + "prose\n" * (_HEADER_MAX_LINES - 1) + "Difficulty: high\n"
+        )
+        assert len(outside.splitlines()) == _HEADER_MAX_LINES + 1
+        assert compute_difficulty(outside).source == "computed"
+
+    def test_a_found_header_is_never_truncated_at_the_cap(self) -> None:
+        body = (
+            "# Plan\n"
+            + "> history\n" * (_HEADER_MAX_LINES + 100)
+            + "**Difficulty:** low\n\n## Why\n"
+        )
+        assert compute_difficulty(body).source == "declared"
 
     def test_a_stamp_inside_a_code_fence_is_ignored(self) -> None:
         body = "# Plan\n\n```text\nDifficulty: high\n```\n"
@@ -212,6 +326,13 @@ class TestPathologicalBodies:
             "**Repos" + " *" * 200_000,
             "a/" * 200_000 + "b" * 200_000,
             "```\n" * 200_000,
+            # A LATE heading: the structural header region grows to the
+            # whole body before it, so each of these walks ~200k chars.
+            "\n" * 200_000 + "## x\n",
+            "> ** \n" * 50_000 + "## x\n",
+            "* \n" * 100_000 + "## x\n",
+            "> \n" * 100_000 + "## x\n",
+            "**Difficulty" + " *" * 200_000 + "\n## x\n",
         ],
         ids=[
             "blank-lines",
@@ -227,6 +348,11 @@ class TestPathologicalBodies:
             "bold-repos-then-star-space",
             "long-path",
             "unclosed-fences",
+            "blank-lines-then-late-heading",
+            "quote-bold-lines-then-late-heading",
+            "star-space-lines-then-late-heading",
+            "quote-space-lines-then-late-heading",
+            "bold-difficulty-then-star-space-then-late-heading",
         ],
     )
     def test_rating_is_linear(self, body: str) -> None:

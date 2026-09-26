@@ -247,6 +247,7 @@ jobs:
             -f backend/Dockerfile \
             --build-arg SCHEMAS_SHA=${{ steps.schemas.outputs.sha }} \
             --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
+            --build-arg BUILD_SHA="${GITHUB_SHA}" \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging" \
             --load \
@@ -349,13 +350,20 @@ jobs:
           # 2. Probe set from .qontinui/deploy.toml ([[deploy.health_probes]]).
           #    Tolerates the file being absent (coord then derives its default
           #    GET /health probe server-side).
-          PROBES=$(python3 - <<'PY' || echo '[]'
-          import json, pathlib, tomllib
+          #    A probe marked `skip_on_rollback = true` is left out in rollback
+          #    mode: this file is read from HEAD, but a rollback serves a PRIOR
+          #    image, which may predate the route the probe checks, and the
+          #    probe would then record a correct rollback as a Failure.
+          PROBES=$(ROLLBACK="$ROLLBACK" python3 - <<'PY' || echo '[]'
+          import json, os, pathlib, tomllib
           path = pathlib.Path(".qontinui/deploy.toml")
+          rollback = os.environ.get("ROLLBACK") == "true"
           probes = []
           if path.exists():
               cfg = tomllib.loads(path.read_text())
               for p in cfg.get("deploy", {}).get("health_probes") or []:
+                  if rollback and p.get("skip_on_rollback") is True:
+                      continue
                   out = {
                       "endpoint": p["endpoint"],
                       "expected_status": int(p.get("expected_status", 200)),
@@ -964,6 +972,55 @@ jobs:
           if [ "${EXIT_CODE}" != "0" ]; then
             echo "::warning::GitHub-identity backfill exited ${EXIT_CODE} (non-fatal; deploy already healthy). Inspect /ecs/qontinui-staging/web web/web/${TASK_ID}"
           fi
+
+      # ── Served build identity: the COMMIT, not just the task-def ──────────
+      # "Assert serving revision identity" proves the task-def this run
+      # registered is serving. It cannot prove that the image behind it carries
+      # this run's commit, or that the image carries a commit at all: a dropped
+      # `--build-arg BUILD_SHA` would bake `unknown` and nothing would notice.
+      # GET /meta/served-routes reports `build_sha` (QONTINUI_BUILD_SHA, baked
+      # by the build step above), and coord's route-serving observer reads that
+      # field to tell a rollout from a removed route, so a wrong value there is
+      # a wrong input to coord (plan
+      # 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb,
+      # whose Phase 4 is gated on this route being DEPLOYED).
+      #
+      # Placed after the backfill so a failure here skips nothing, and it does
+      # NOT roll back: a mis-stamped image that passed the behavioral smoke is
+      # serving correctly, so the red job is the signal. A mismatch is retried
+      # to absorb ALB draining; a transient 5xx/000 is retried too. Rollback
+      # mode redeploys a prior image without building, so it is skipped there.
+      - name: Assert served build sha
+        if: ${{ success() && inputs.rollback != 'true' }}
+        run: |
+          set -uo pipefail
+          URL="${API_BASE}/meta/served-routes"
+          got=""
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s --max-time 20 -o /tmp/served_routes -w '%{http_code}' "$URL") || code=000
+            if [ "$code" = "200" ]; then
+              got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("build_sha",""))' /tmp/served_routes 2>/dev/null || echo "")
+            else
+              got=""
+            fi
+            echo "  attempt $i: GET $URL -> $code build_sha=${got:-<none>} (want ${GITHUB_SHA})"
+            if [ "$got" = "$GITHUB_SHA" ]; then
+              echo "Serving image carries ${GITHUB_SHA}."
+              exit 0
+            fi
+            # A settled non-200 that is not transient will not self-heal.
+            if [ "$code" != "200" ] && [ "$code" != "000" ] && [ "${code:0:1}" != "5" ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "$code" = "200" ]; then
+            echo "::error::GET $URL reports build_sha=${got:-<none>}, not ${GITHUB_SHA}. The task-def identity gate passed, so the image itself is mis-stamped: check the BUILD_SHA build-arg and backend/Dockerfile."
+          else
+            echo "::error::GET $URL answered ${code}, not 200: the served-routes route is missing (404), behind auth (401/403) or unreachable (5xx/000). coord's route-serving observer falls back to options mode without it."
+          fi
+          head -c 300 /tmp/served_routes 2>/dev/null || true; echo
+          exit 1
 
       # ── Deploy effect signature: VERIFY (best-effort, report-only) ────────
       # Fires one verification after the rollout settled (or failed + rolled

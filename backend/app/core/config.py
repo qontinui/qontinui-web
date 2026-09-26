@@ -499,6 +499,10 @@ class Settings(BaseSettings):
     )
     RENDER_LOG_RETENTION_DAYS: int = Field(
         default=7,
+        # ge=1: 0 would make the hourly retention job delete every render log
+        # up to the moment it runs, and a negative value everything plus the
+        # future; neither is a retention period.
+        ge=1,
         description="Auto-delete render logs older than this many days",
     )
     RENDER_LOG_MAX_SNAPSHOTS: int = Field(

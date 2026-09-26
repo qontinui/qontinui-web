@@ -28,7 +28,7 @@ import {
   toNumber,
 } from "@/components/overview/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/auth-context";
+import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useTenant } from "@/contexts/tenant-context";
 import { useEstimate } from "../_hooks/useEstimate";
 import type { EstimateRollup } from "../_lib/estimate-api";
@@ -265,7 +265,7 @@ function NoEstimate({ canEdit }: { canEdit: boolean }) {
         </Link>
       ) : (
         <p className="mt-5 text-sm text-muted-foreground">
-          An administrator of this project can enter one.
+          Somebody who can edit this project&rsquo;s overview can enter one.
         </p>
       )}
     </section>
@@ -273,7 +273,10 @@ function NoEstimate({ canEdit }: { canEdit: boolean }) {
 }
 
 export default function TeamPage() {
-  const { isCoordAdmin } = useAuth();
+  // The served permission for THIS project — `isCoordAdmin` is a union
+  // across every project the viewer belongs to, and promised edits here that
+  // the server then refused (plan 2026-09-20-overview-authoring-layer §4a).
+  const canEdit = useCanEdit("estimates");
   const {
     activeTenantId,
     loading: tenantsLoading,
@@ -319,7 +322,7 @@ export default function TeamPage() {
 
       {data.state === "ready" && (
         <>
-          {isCoordAdmin && data.estimate && (
+          {canEdit && data.estimate && (
             <div className="mb-8 flex justify-end">
               <Link
                 href={EDITOR_ROUTE}
@@ -331,7 +334,7 @@ export default function TeamPage() {
             </div>
           )}
           {data.rollup === null ? (
-            <NoEstimate canEdit={isCoordAdmin} />
+            <NoEstimate canEdit={canEdit} />
           ) : (
             <TeamBody
               rollup={data.rollup}
