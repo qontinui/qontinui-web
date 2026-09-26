@@ -21,11 +21,12 @@ rows). There is no server-side embed fallback.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Any, Final, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.bounded_read import BoundedReadMeta
 from app.services.memory_vectors import ACCEPTED_EMBEDDING_MODEL_TAGS, EMBEDDING_DIM
 
 # Mirror the migration's CHECK constraints.
@@ -558,8 +559,43 @@ class MemoryQueryEcho(BaseModel):
     anchored_to_count: int
 
 
-class MemoryQueryResponse(BaseModel):
+#: The door that ENUMERATES the corpus, named on every ``/query`` answer.
+MEMORY_ENUMERATION_DOOR: Final = "GET /api/v1/memory/records"
+
+
+class MemoryQueryResponse(BoundedReadMeta):
     """``POST /memory/query`` result.
+
+    **Bound disclosure** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``,
+    Phase 3). The class inherits the GENERATED shared envelope
+    (:class:`BoundedReadMeta`, ``qontinui_schemas``; never redeclared here),
+    so ``count`` / ``limit`` / ``shown`` / ``total`` / ``truncated`` /
+    ``bound_kind`` / ``next_cursor`` / ``available`` / ``filter_narrowed``
+    are always serialized, ``null`` included. They describe ``hits`` ONLY;
+    ``anchored_hits`` is a separate ranked list with its own arm and is not
+    covered by them.
+
+    * ``truncated`` — the fused candidate pool held more ids than ``limit``.
+    * ``bound_kind`` — ``exact`` (``total`` = the fused pool size) when no
+      retrieval arm filled its per-arm cap (``memory_store.ARM_LIMIT``), so
+      the pool is the whole match set; ``at_least`` (``total: null``) when an
+      arm filled it, so matches may exist that no arm returned; ``unknown``
+      when an arm filled it but the page shows the whole pool, so whether
+      more exist did not resolve.
+    * ``next_cursor`` — ALWAYS ``null``. The order is a computed relevance
+      score that moves with every write, so a ranking is not pageable; walk
+      the door named in ``enumerate_via`` to see the corpus.
+    * ``available`` — always ``true``: this route has no unprovisioned-store
+      arm (a missing substrate is an error, not an empty answer).
+
+    ``total`` counts CANDIDATES, not relevance: the vector arm has no
+    similarity floor, so on a hybrid query every embedded live row that
+    passes the filters is a candidate, and a tenant with ``ARM_LIMIT`` or
+    more of them always reads ``at_least``. Saturation is judged on each
+    arm's returned list; the link arm's per-seed fan-out cap is not probed
+    separately, so link neighbours count only as far as the expansion
+    reached them.
 
     ``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only
     results must never be indistinguishable from hybrid ones. Its three
@@ -657,6 +693,21 @@ class MemoryQueryResponse(BaseModel):
     # actually consumed, resolved server-side. See
     # :class:`MemoryQueryEcho`.
     query_echo: MemoryQueryEcho
+    # Every key is serialized on every answer (``null`` included), so the
+    # OUTPUT schema marks defaulted fields required too — otherwise a
+    # client generated from the snapshot would type ``total`` as optional.
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    enumerate_via: Literal["GET /api/v1/memory/records"] = Field(
+        default=MEMORY_ENUMERATION_DOOR,
+        description=(
+            "The door that ENUMERATES the corpus. This route relevance-ranks "
+            "a capped candidate pool and is never pageable (next_cursor is "
+            "always null), so a caller that needs every record walks this "
+            "route instead: keyset-paginated over the immutable "
+            "(created_at, seq), newest first."
+        ),
+    )
 
 
 class SupersedeRequest(BaseModel):

@@ -5409,6 +5409,17 @@
         "title": "Body_validate_file_path_api_v1_code_execution_files_validate_post",
         "type": "object"
       },
+      "BoundKind": {
+        "description": "The wire discriminant of a [`Bound`].",
+        "enum": [
+          "exact",
+          "at_least",
+          "complete",
+          "unknown"
+        ],
+        "title": "BoundKind",
+        "type": "string"
+      },
       "BoundingBox": {
         "description": "Bounding box for an element or state.",
         "properties": {
@@ -22941,6 +22952,33 @@
         "title": "FileUploadResponse",
         "type": "object"
       },
+      "FilterNarrowing": {
+        "description": "A FILTER the surface narrowed before running the read \u2014 reported, never\napplied silently, because a narrowed filter that reads as a complete answer\nis the same defect class as a silent empty.\n\nPromoted from `coord.findings`' `resource_keys_truncated`, the only\nnarrowing any surface reported when this type was written: a list-valued\nfilter truncated at a cap rather than refused (truncating a FILTER only\nnarrows a read). Minimal on purpose \u2014 which parameter, how many values\nwere actually applied, and the cap that dropped the rest. A caller seeing\nit knows a miss is meaningless for the values beyond the cap.",
+        "properties": {
+          "applied": {
+            "description": "How many values of it the read actually applied.",
+            "title": "Applied",
+            "type": "integer"
+          },
+          "cap": {
+            "description": "The cap the surface enforces; values past it were dropped.",
+            "title": "Cap",
+            "type": "integer"
+          },
+          "parameter": {
+            "description": "The query parameter that was narrowed, spelled as the caller spelled it\non the wire (e.g. `resource_keys`).",
+            "title": "Parameter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "applied",
+          "cap",
+          "parameter"
+        ],
+        "title": "FilterNarrowing",
+        "type": "object"
+      },
       "FindingCategoryConfigCreate": {
         "description": "Schema for creating a finding category configuration.",
         "properties": {
@@ -29394,7 +29432,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
-        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
+        "description": "``POST /memory/query`` result.\n\n**Bound disclosure** (plan\n``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``,\nPhase 3). The class inherits the GENERATED shared envelope\n(:class:`BoundedReadMeta`, ``qontinui_schemas``; never redeclared here),\nso ``count`` / ``limit`` / ``shown`` / ``total`` / ``truncated`` /\n``bound_kind`` / ``next_cursor`` / ``available`` / ``filter_narrowed``\nare always serialized, ``null`` included. They describe ``hits`` ONLY;\n``anchored_hits`` is a separate ranked list with its own arm and is not\ncovered by them.\n\n* ``truncated`` \u2014 the fused candidate pool held more ids than ``limit``.\n* ``bound_kind`` \u2014 ``exact`` (``total`` = the fused pool size) when no\n  retrieval arm filled its per-arm cap (``memory_store.ARM_LIMIT``), so\n  the pool is the whole match set; ``at_least`` (``total: null``) when an\n  arm filled it, so matches may exist that no arm returned; ``unknown``\n  when an arm filled it but the page shows the whole pool, so whether\n  more exist did not resolve.\n* ``next_cursor`` \u2014 ALWAYS ``null``. The order is a computed relevance\n  score that moves with every write, so a ranking is not pageable; walk\n  the door named in ``enumerate_via`` to see the corpus.\n* ``available`` \u2014 always ``true``: this route has no unprovisioned-store\n  arm (a missing substrate is an error, not an empty answer).\n\n``total`` counts CANDIDATES, not relevance: the vector arm has no\nsimilarity floor, so on a hybrid query every embedded live row that\npasses the filters is a candidate, and a tenant with ``ARM_LIMIT`` or\nmore of them always reads ``at_least``. Saturation is judged on each\narm's returned list; the link arm's per-seed fan-out cap is not probed\nseparately, so link neighbours count only as far as the expansion\nreached them.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
         "properties": {
           "anchored_arm": {
             "default": "not_requested",
@@ -29417,12 +29455,49 @@
             "title": "Anchored Hits",
             "type": "array"
           },
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
+          "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
+            "title": "Count",
+            "type": "integer"
+          },
+          "enumerate_via": {
+            "const": "GET /api/v1/memory/records",
+            "default": "GET /api/v1/memory/records",
+            "description": "The door that ENUMERATES the corpus. This route relevance-ranks a capped candidate pool and is never pageable (next_cursor is always null), so a caller that needs every record walks this route instead: keyset-paginated over the immutable (created_at, seq), newest first.",
+            "title": "Enumerate Via",
+            "type": "string"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
+          },
           "hits": {
             "items": {
               "$ref": "#/components/schemas/MemoryQueryHit"
             },
             "title": "Hits",
             "type": "array"
+          },
+          "limit": {
+            "description": "The cap actually applied to this page.",
+            "title": "Limit",
+            "type": "integer"
           },
           "link_arm": {
             "enum": [
@@ -29437,8 +29512,49 @@
             "title": "Live Row Count",
             "type": "integer"
           },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`.",
+            "title": "Next Cursor"
+          },
           "query_echo": {
             "$ref": "#/components/schemas/MemoryQueryEcho"
+          },
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
+            "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           },
           "vector_arm": {
             "enum": [
@@ -29451,12 +29567,24 @@
           }
         },
         "required": [
+          "available",
+          "bound_kind",
+          "count",
+          "filter_narrowed",
+          "limit",
+          "next_cursor",
+          "shown",
+          "total",
+          "truncated",
           "hits",
           "vector_arm",
           "link_arm",
+          "anchored_arm",
+          "anchored_hits",
           "anchored_hit_count",
           "live_row_count",
-          "query_echo"
+          "query_echo",
+          "enumerate_via"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"

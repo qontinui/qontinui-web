@@ -105,6 +105,7 @@ from app.api.deps import (
     get_async_db,
 )
 from app.api.strict_query import StrictQueryRoute
+from app.core import bounded_read
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
@@ -845,6 +846,7 @@ async def query_records(
     fused_2 = rrf_fuse({"vector": vector_ids, "fts": fts_ids})
 
     link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
+    link_ids: list[UUID] = []
     seed_ids = [h.id for h in fused_2[:LINK_SEED_COUNT]]
     if not payload.link_expansion:
         link_arm = "skipped_disabled"
@@ -862,6 +864,16 @@ async def query_records(
             {"vector": vector_ids, "fts": fts_ids, "link": link_ids},
             weights=ARM_WEIGHTS,
         )
+
+    # Bound disclosure (plan 2026-09-05-every-bounded-read-is-a-page-that-
+    # reads-as-a-corpus, Phase 3), measured BEFORE the cut below. An arm
+    # that returned a full ARM_LIMIT was capped in SQL, so the fused pool
+    # may be missing matches no arm returned; only when no arm filled its
+    # cap is the pool the whole match set. ``link_ids`` is empty when the
+    # arm did not run, so it can never read as saturated then.
+    pool_capped = any(
+        len(arm) >= store.ARM_LIMIT for arm in (vector_ids, fts_ids, link_ids)
+    )
 
     # Sliced only AFTER the re-fuse, so a link-only hit can displace a
     # weaker lexical one instead of being cut before it competes.
@@ -953,7 +965,15 @@ async def query_records(
     # ``store.live_row_count``.
     live_rows = await store.live_row_count(db, principal.tenant_id)
 
+    # The meta describes ``hits`` only; ``anchored_hits`` is its own list.
+    meta = bounded_read.from_ranked_pool(
+        shown=len(hits),
+        limit=payload.limit,
+        pool_size=len(fused),
+        pool_capped=pool_capped,
+    )
     return MemoryQueryResponse(
+        **meta.model_dump(),
         hits=hits,
         vector_arm=vector_arm,
         link_arm=link_arm,
