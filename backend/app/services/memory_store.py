@@ -2159,6 +2159,14 @@ async def link_expansion(
     rather than with the arm's size. Measured on the same fixture, the
     validity join dropped from 217 probes to 66.
 
+    Consequence for bound disclosure: because the cut runs BEFORE the
+    validity filter, a seed whose fan-out was capped can yield far fewer
+    than ``arm_limit`` ids here, so saturation is NOT observable from the
+    returned list. ``POST /memory/query`` therefore treats an expanded
+    link arm as capped unconditionally (``at_least`` / ``unknown``, never
+    ``exact``) — plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``.
+
     A neighbour reachable from several seeds or relations is emitted
     ONCE, under its BEST (lowest fan-out rank, then lowest seed_rank,
     then highest weight) pairing.

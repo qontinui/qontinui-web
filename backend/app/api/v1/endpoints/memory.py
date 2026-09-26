@@ -105,12 +105,14 @@ from app.api.deps import (
     get_async_db,
 )
 from app.api.strict_query import StrictQueryRoute
+from app.core import bounded_read
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
     MAX_ANCHORS_PER_RECORD,
     MAX_LIST_LIMIT,
+    MEMORY_ENUMERATION_DOOR,
     ClaimJobsRequest,
     ClaimJobsResponse,
     EmbeddingResultPayload,
@@ -845,6 +847,7 @@ async def query_records(
     fused_2 = rrf_fuse({"vector": vector_ids, "fts": fts_ids})
 
     link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
+    link_ids: list[UUID] = []
     seed_ids = [h.id for h in fused_2[:LINK_SEED_COUNT]]
     if not payload.link_expansion:
         link_arm = "skipped_disabled"
@@ -862,6 +865,24 @@ async def query_records(
             {"vector": vector_ids, "fts": fts_ids, "link": link_ids},
             weights=ARM_WEIGHTS,
         )
+
+    # Bound disclosure (plan 2026-09-05-every-bounded-read-is-a-page-that-
+    # reads-as-a-corpus, Phase 3), measured BEFORE the cut below. An arm
+    # that returned a full ARM_LIMIT was capped in SQL, so the fused pool
+    # may be missing matches no arm returned; only when no arm was capped
+    # is the pool the whole match set.
+    #
+    # The link arm is treated as capped WHENEVER it ran. Its per-seed
+    # LATERAL ``LIMIT :arm_limit`` (``memory_store.link_expansion``) cuts
+    # each seed's neighbours BEFORE the record filters are applied, so a
+    # seed whose fan-out was cut can return far fewer than ARM_LIMIT ids
+    # after filtering — a saturated seed is undetectable from the final
+    # list. Assuming capped is the safe direction: it can only turn an
+    # ``exact`` into ``at_least`` / ``unknown``, never claim a completeness
+    # nothing measured.
+    pool_capped = link_arm == "expanded" or any(
+        len(arm) >= store.ARM_LIMIT for arm in (vector_ids, fts_ids)
+    )
 
     # Sliced only AFTER the re-fuse, so a link-only hit can displace a
     # weaker lexical one instead of being cut before it competes.
@@ -953,7 +974,16 @@ async def query_records(
     # ``store.live_row_count``.
     live_rows = await store.live_row_count(db, principal.tenant_id)
 
+    # The meta describes ``hits`` only; ``anchored_hits`` is its own list.
+    meta = bounded_read.from_ranked_pool(
+        shown=len(hits),
+        limit=payload.limit,
+        pool_size=len(fused),
+        pool_capped=pool_capped,
+        enumerate_via=MEMORY_ENUMERATION_DOOR,
+    )
     return MemoryQueryResponse(
+        **meta.model_dump(),
         hits=hits,
         vector_arm=vector_arm,
         link_arm=link_arm,
