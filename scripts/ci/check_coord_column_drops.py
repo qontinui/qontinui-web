@@ -194,8 +194,9 @@ WHOLE_TABLE = "*"
 #: 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate,
 #: Phase 4). coord reads this job's log on a red run, takes the FIRST line
 #: that starts with :data:`PRECONDITION_MARKER_PREFIX` followed by a JSON
-#: object, and — only if the object equals :data:`MAIN_AT_HEAD_PRECONDITION`
-#: exactly — registers a gate that re-runs this job once the count is >= 1
+#: object, and — only if it is a ``sql_count`` whose ``query_id``, ``op`` and
+#: ``n`` match :data:`MAIN_AT_HEAD_PRECONDITION` — registers a gate that may
+#: re-run this job once the count is >= 1
 #: (qontinui-coord ``crates/coord/src/guard_rerun.rs``, ``MARKER_PREFIX`` and
 #: ``parse_precondition_markers``). The count is >= 1 exactly when
 #: ``GET {MANIFEST_ROUTE}`` serves a non-null `main` half whose sha is coord
@@ -1115,6 +1116,8 @@ def parse_manifest(raw: bytes | str) -> Manifest:
         raise ManifestUnavailableError(
             f"manifest is not an object: {type(payload).__name__}"
         )
+    # `deployed` is read first: when BOTH halves are null it is the one reported,
+    # and no marker is printed (its condition has no coord predicate).
     deployed_sha, deployed_rows = _half(payload, "deployed", "build_sha")
     main_sha, main_rows = _half(payload, "main", "sha")
 
@@ -1282,7 +1285,7 @@ def _emit_pending_precondition(predicate: dict[str, object], human: str) -> None
     Three outputs, none of which changes the exit code (UNKNOWN stays exit 2):
 
     * the marker line on stderr — plain, line-anchored, compact JSON — which
-      coord parses to register a re-run gate on exactly ``predicate``;
+      coord parses to register a re-run gate on ``predicate``;
     * a ``::warning`` annotation (never ``::error``) so ``gh pr checks`` and
       the PR UI show the red is pending, not a violation;
     * the same sentence in ``$GITHUB_STEP_SUMMARY`` when Actions provides one.
@@ -1291,9 +1294,12 @@ def _emit_pending_precondition(predicate: dict[str, object], human: str) -> None
     """
     marker = PRECONDITION_MARKER_PREFIX + json.dumps(predicate, separators=(",", ":"))
     print(marker, file=sys.stderr)
+    # Say only what the guard knows: coord skips the re-run on merge-candidate
+    # refs and re-runs at most once per head (guard_rerun.rs).
     legible = (
-        f"UNKNOWN — pending precondition {human}; coord re-runs this check when "
-        "it holds. Not a violation."
+        f"UNKNOWN — pending precondition {human}. coord may re-run this check "
+        "once when it holds (not on merge-candidate refs; at most once per "
+        "head). Not a violation."
     )
     if _gate_lib.ANNOTATIONS:
         print(
