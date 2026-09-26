@@ -8,19 +8,28 @@
  * `.fetch/.get/.post/.put/.patch/.delete` call, resolves its method and URL
  * (same-file and imported `const` prefixes, `ApiConfig.API_BASE_URL`,
  * same-class `this.baseUrl`-style fields and inlined URL-building helpers; the
- * origin becomes "", run-time substitutions become `{param}`, the query string
- * is dropped), and matches the `(method, path template)` against
- * `lib/api-client/openapi-schema.json` — which backend CI regenerates from
- * `app.openapi()` and fails on any difference — and against every
- * `app/api/**\/route.ts` handler's exported verbs.
+ * origin is dropped but remembered, run-time substitutions become `{param}`,
+ * the query string is dropped), and matches the `(method, path template)`
+ * against `lib/api-client/openapi-schema.json` — which backend CI regenerates
+ * from `app.openapi()` and fails on any difference — and against the
+ * `app/api/**\/route.ts` handlers' exported verbs. A URL built on the backend
+ * base URL is never served by a Next.js handler (production sets
+ * `NEXT_PUBLIC_API_URL`), and an `app/api/v1/**` handler that only forwards
+ * to the identical backend path is not indexed at all
+ * (`NEXT_API_V1_SERVERS` lists the ones that do real work).
  *
  * WRAPPERS. A call whose URL prefix, glued path suffix, or method comes from a
  * parameter of its enclosing named function (`request(path, init)`,
  * `this.fetchWithAuth(url, options)`) is not checked itself: every call of
  * that function — in the same file, or in any file importing it — is checked
- * with the caller's arguments bound. A caller whose argument does not resolve
- * is `unresolved`, never a pass. A wrapper nothing is found calling is
- * reported as its own (unresolved) site.
+ * with the caller's arguments bound, including through an aliased import
+ * (`import { request as r }`). A caller whose argument does not resolve is
+ * `unresolved`, never a pass. Every other reference the walker sees — the
+ * function passed as a value, a member wrapper called on an instance
+ * (`api.fetchWithAuth(...)`) in a file importing its module — is its own
+ * `unresolved` site, and a wrapper nothing is found calling is reported as
+ * its own `unresolved` site. So is a URL glued onto a parameter of an
+ * anonymous callback (`ids.map((p) => httpClient.get(\`${PREFIX}${p}\`))`).
  *
  * A mismatch is classed `dead` (no served path, or a served path without that
  * verb), `websocket` (WS routes are absent from OpenAPI by construction), or
@@ -31,24 +40,25 @@
  *   - wrappers of wrappers: resolution is one level deep, so a caller that
  *     passes its OWN parameter through is `unresolved`, and its callers are
  *     not followed;
- *   - a wrapper method called on an instance from another file
- *     (`client.getX()`): members are followed only through `this.name(...)`
- *     in their own class, so such a wrapper stays one `unresolved` entry;
- *   - wrappers reached by default import, re-export, or passed as a value;
+ *   - a member wrapper called on an instance is reported `unresolved`, not
+ *     resolved; one called from a file that does not import its module (the
+ *     instance handed over some other way) is not seen at all;
+ *   - wrappers reached by default import, namespace import or re-export;
  *   - calls through anything that is not an `HttpClient` (bare `fetch`,
  *     axios, the generated `lib/api-client`, `EventSource`, `WebSocket`);
- *   - the origin: `ApiConfig.API_BASE_URL` resolves to "", so a
- *     backend-prefixed URL that only a Next.js handler serves counts as
- *     served (with `NEXT_PUBLIC_API_URL` unset it really is);
+ *   - the origin is recognised only as `ApiConfig.API_BASE_URL` /
+ *     `getBaseUrl()` / `getApiUrl()` / `process.env.NEXT_PUBLIC_API_URL`
+ *     (directly or through a followed const); a backend URL built any other
+ *     way reads as same-origin and may be served by a Next.js handler;
  *   - a `{param}` standing for several segments where the template has one:
  *     only snapshot templates in `MULTI_SEGMENT_TEMPLATE_PARAMS` (and Next.js
  *     `[...x]`) absorb more than one segment, so such a site reads `dead`.
  *
  * THE BASELINE IS SHRINK-ONLY. `known-route-mismatches.json` holds today's
- * backlog: one entry per `(file, method, path)` for a resolved path, and one
- * per occurrence for an unresolved one (`<unresolved> <source> #<n>`, `n`
- * counting the file's unresolved sites with the same method and source text in
- * source order). This test fails on:
+ * backlog: one entry per `(file, method, path)` for a resolved site, and one
+ * per occurrence for an unresolved one — `<path> #<n>` when only the method
+ * is unreadable, `<unresolved> <source> #<n>` otherwise, `n` counting the
+ * file's unresolved sites with the same method and label in source order. This test fails on:
  *   - a mismatch that is not in the baseline — fix the call site (or the
  *     backend route); do not add it to the baseline;
  *   - a baseline entry that no longer occurs — the site was fixed or deleted,
@@ -87,6 +97,7 @@ import {
   MULTI_SEGMENT_TEMPLATE_PARAMS,
   memoryModuleLoader,
   mismatchEntries,
+  NEXT_API_V1_SERVERS,
   nextRouteTemplates,
   walkSources,
   walkSourceTree,
@@ -123,12 +134,6 @@ const FIXED_BY_THIS_PLAN: {
   {
     label: "/api/integration-testing/*",
     matches: (e) => e.path.includes("/api/integration-testing/"),
-  },
-  {
-    label: "reset-limit in automation-streaming-card",
-    matches: (e) =>
-      e.file.endsWith("automation-streaming-card.tsx") &&
-      e.path.includes("reset-limit"),
   },
 ];
 
@@ -177,6 +182,17 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     }
   });
 
+  it("automation-streaming-card no longer carries the dead reset-limit call", () => {
+    // Phase 4 deleted a commented-out block: commented code has no call site
+    // for the walker to see, and the route it named IS served, so only the
+    // source text can say the block is gone.
+    const card = readFileSync(
+      path.join(SRC_ROOT, "components/profile/automation-streaming-card.tsx"),
+      "utf8"
+    );
+    expect(card).not.toContain("reset-limit");
+  });
+
   it("the baseline is sorted and has one entry per (file, method, path)", () => {
     const baseline: BaselineEntry[] = JSON.parse(
       readFileSync(BASELINE_FILE, "utf8")
@@ -195,52 +211,120 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     expect(templates).toContain("/api/vga/state/{id}");
     expect(tree.nextRoutes.every((r) => r.methods.size > 0)).toBe(true);
   });
+
+  it("every unindexed /api/v1 handler forwards to its own backend path", () => {
+    const proxies = tree.nextRoutes.filter((r) => r.backendProxy);
+    expect(proxies.length).toBeGreaterThan(0);
+    for (const r of proxies) {
+      // `/api/v1/ai-tasks/{id}` must appear as `/api/v1/ai-tasks/${…}`.
+      const forwarded = new RegExp(
+        r.template
+          .split(/\{[^}]+\}/)
+          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("\\$\\{\\w+\\}") + "(?![\\w/-])"
+      );
+      const source = readFileSync(path.join(SRC_ROOT, r.file), "utf8");
+      expect(source, `${r.file} is not a pass-through`).toMatch(forwarded);
+    }
+    for (const file of NEXT_API_V1_SERVERS)
+      expect(tree.nextRoutes.map((r) => r.file)).toContain(file);
+  });
 });
 
 /**
- * `(template, param)` for every `{name:path}` route under
- * `backend/app/api/v1/endpoints`, composed from the decorator path and the
- * module's `include_router(..., prefix=...)` in `backend/app/api/v1/api.py`.
+ * `(template, param)` for every `{name:path}` route under `backend/app/api`,
+ * composed from each `@<router>.<verb>("…")` decorator and the prefixes its
+ * router is mounted under: `include_router(<module>.<router>, prefix=…)` in
+ * `api.py`, and `<router>.include_router(<sub>, prefix=…)` inside a module.
+ * Also returns how many decorators the scan read, and every quoted
+ * `…{x:path}…` string literal no decorator consumed (a route this scan would
+ * silently miss).
  */
-function backendMultiSegmentParams(): [string, string][] {
+function scanBackendPathParams(): {
+  pairs: [string, string][];
+  decorators: number;
+  unconsumed: string[];
+} {
   const api = readFileSync(path.join(BACKEND_API, "api.py"), "utf8");
-  const prefixes = new Map<string, string[]>();
+  /** `module.router` -> mount prefixes. */
+  const mounts = new Map<string, string[]>();
+  const mount = (key: string, prefix: string): void => {
+    mounts.set(key, [...(mounts.get(key) ?? []), prefix]);
+  };
+  const prefixOf = (args: string | undefined): string =>
+    /prefix\s*=\s*["']([^"']*)["']/.exec(args ?? "")?.[1] ?? "";
   for (const m of api.matchAll(
-    /include_router\(\s*(\w+)\.router\s*(?:,([^)]*))?\)/g
+    /include_router\(\s*(\w+)\.(\w+)\s*(?:,([^)]*))?\)/g
   )) {
-    const prefix = /prefix\s*=\s*"([^"]*)"/.exec(m[2] ?? "")?.[1] ?? "";
-    const mod = m[1] as string;
-    prefixes.set(mod, [...(prefixes.get(mod) ?? []), prefix]);
+    mount(`${m[1]}.${m[2]}`, prefixOf(m[3]));
   }
-  const endpoints = path.join(BACKEND_API, "endpoints");
-  const out: [string, string][] = [];
-  for (const rel of readdirSync(endpoints, { recursive: true }) as string[]) {
+  const apiRoot = path.dirname(BACKEND_API);
+  const pairs: [string, string][] = [];
+  const unconsumed: string[] = [];
+  let decorators = 0;
+  for (const rel of readdirSync(apiRoot, { recursive: true }) as string[]) {
     if (!rel.endsWith(".py")) continue;
-    const src = readFileSync(path.join(endpoints, rel), "utf8");
+    const src = readFileSync(path.join(apiRoot, rel), "utf8");
+    const mod = path.basename(rel, ".py");
+    const flat = path.dirname(rel) === path.join("v1", "endpoints");
+    // Sub-routers mounted on a module router: `router.include_router(sub)`.
+    const local = new Map<string, string[]>();
+    const prefixesOf = (router: string): string[] | undefined => {
+      const direct = flat ? mounts.get(`${mod}.${router}`) : undefined;
+      if (direct) return direct;
+      return local.get(router);
+    };
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const m of src.matchAll(
+        /(\w+)\.include_router\(\s*(\w+)\s*(?:,([^)]*))?\)/g
+      )) {
+        const parent = prefixesOf(m[1] as string);
+        const sub = m[2] as string;
+        if (!parent || local.has(sub)) continue;
+        local.set(
+          sub,
+          parent.map((p) => p + prefixOf(m[3]))
+        );
+        changed = true;
+      }
+    }
+    const consumed: [number, number][] = [];
     for (const d of src.matchAll(
-      /@router\.(?:get|post|put|patch|delete|api_route)\(\s*"([^"]*)"/g
+      /@(\w+)\.(?:get|post|put|patch|delete|api_route)\(\s*(?:path\s*=\s*)?(["'])(.*?)\2/g
     )) {
-      const route = d[1] as string;
+      decorators++;
+      const start = d.index ?? 0;
+      consumed.push([start, start + d[0].length]);
+      const route = d[3] as string;
       const names = [...route.matchAll(/\{(\w+):path\}/g)].map(
         (n) => n[1] as string
       );
       if (names.length === 0) continue;
-      const mod = path.basename(rel, ".py");
-      const mounted = prefixes.get(mod);
-      if (!mounted || rel.includes(path.sep)) {
+      const prefixes = prefixesOf(d[1] as string);
+      if (!prefixes) {
         throw new Error(
-          `${rel} declares ${route} but its include_router prefix was not found in api.py — extend backendMultiSegmentParams`
+          `${rel}: ${d[0]} — its router's mount prefix was not found; extend scanBackendPathParams`
         );
       }
-      for (const prefix of mounted) {
+      for (const prefix of prefixes) {
         const template = `/api/v1${prefix}${route.replace(/\{(\w+):\w+\}/g, "{$1}")}`;
-        for (const name of names) out.push([template, name]);
+        for (const name of names) pairs.push([template, name]);
       }
+    }
+    for (const lit of src.matchAll(/(["'])[^"'\n]*\{\w+:path\}[^"'\n]*\1/g)) {
+      const at = lit.index ?? 0;
+      if (!consumed.some(([a, b]) => at >= a && at < b))
+        unconsumed.push(`${rel}: ${lit[0]}`);
     }
   }
   // One pair per template, however many verbs declare it.
-  const unique = [...new Map(out.map((p) => [p.join(" "), p])).values()];
-  return unique.sort((a, b) => (a.join(" ") < b.join(" ") ? -1 : 1));
+  const unique = [...new Map(pairs.map((p) => [p.join(" "), p])).values()];
+  return {
+    pairs: unique.sort((a, b) => (a.join(" ") < b.join(" ") ? -1 : 1)),
+    decorators,
+    unconsumed,
+  };
 }
 
 describe("MULTI_SEGMENT_TEMPLATE_PARAMS", () => {
@@ -249,7 +333,15 @@ describe("MULTI_SEGMENT_TEMPLATE_PARAMS", () => {
       [...MULTI_SEGMENT_TEMPLATE_PARAMS]
         .map(([t, n]) => [t, n])
         .sort((a, b) => (a.join(" ") < b.join(" ") ? -1 : 1))
-    ).toEqual(backendMultiSegmentParams());
+    ).toEqual(scanBackendPathParams().pairs);
+  });
+
+  it("the backend scan read every route decorator and every `:path` literal", () => {
+    const { decorators, unconsumed } = scanBackendPathParams();
+    expect(decorators).toBeGreaterThan(1000);
+    expect(unconsumed, "`{x:path}` strings no decorator scan consumed").toEqual(
+      []
+    );
   });
 
   it("names only templates the snapshot serves", () => {
@@ -704,5 +796,217 @@ describe("S1: websocket classification", () => {
         `${PREAMBLE} export const x = () => httpClient.get("/api/v1/stream/ws");`
       )
     ).toMatchObject([{ reason: "websocket" }]);
+  });
+});
+
+describe("N1: a glued {param} never passes anything under its prefix", () => {
+  const WRAP = `${PREAMBLE}
+    const PREFIX = "/api/v1/widgets";
+    function getW(path: string) { return httpClient.get(\`\${PREFIX}\${path}\`); }
+  `;
+  const unresolvedCall = (text: string) =>
+    entry("GET", `<unresolved> ${text} #1`, "unresolved", "unresolved");
+
+  it("a caller argument that starts with a property is unresolved", () => {
+    expect(
+      fixture(
+        `${WRAP} export const a = (o: { p: string }) => getW(\`\${o.p}\`);`
+      )
+    ).toEqual([unresolvedCall("getW(`${o.p}`)")]);
+  });
+
+  it("a caller argument that is only a substitution is unresolved", () => {
+    expect(
+      fixture(`${WRAP} export const b = (q: string) => getW(\`\${q}\`);`)
+    ).toEqual([unresolvedCall("getW(`${q}`)")]);
+  });
+
+  it('a caller argument `"" + q` is unresolved', () => {
+    expect(
+      fixture(`${WRAP} export const c = (q: string) => getW("" + q);`)
+    ).toEqual([unresolvedCall('getW("" + q)')]);
+  });
+
+  it("a URL glued onto an anonymous callback's parameter is unresolved", () => {
+    expect(
+      fixture(`${PREAMBLE}
+        const PREFIX = "/api/v1/widgets";
+        export const d = (ps: string[]) => ps.map((p) => httpClient.get(\`\${PREFIX}\${p}\`));
+      `)
+    ).toEqual([
+      entry(
+        "GET",
+        "<unresolved> `${PREFIX}${p}` #1",
+        "unresolved",
+        "unresolved"
+      ),
+    ]);
+  });
+
+  it("an argument with a `/` head still widens its segments", () => {
+    expect(
+      fixture(`${WRAP} export const e = (id: string) => getW(\`/\${id}\`);`)
+    ).toEqual([]);
+  });
+});
+
+describe("N2: backend-origin calls and /api/v1 proxies are not Next-served", () => {
+  const nextRoutes = nextRouteTemplates([
+    {
+      file: "app/api/ui-bridge/[...path]/route.ts",
+      source: "export async function GET() {}",
+    },
+    {
+      file: "app/api/v1/ai-tasks/route.ts",
+      source: "export async function GET() {}",
+    },
+    {
+      file: "app/api/v1/ws-token/route.ts",
+      source: "export async function GET() {}",
+    },
+  ]);
+  const idx = buildSnapshotIndex({}, { nextRoutes });
+  const check = (source: string) =>
+    mismatchEntries(extractCallSites("fixture.ts", source), idx);
+
+  it("an origin-backed call to a Next-only path is dead", () => {
+    expect(
+      check(`${PREAMBLE}
+        export const a = () => httpClient.get(\`\${ApiConfig.API_BASE_URL}/api/ui-bridge/tabs\`);
+        export const b = () => httpClient.get("/api/ui-bridge/tabs");
+      `)
+    ).toEqual([entry("GET", "/api/ui-bridge/tabs", "dead", "no-path")]);
+  });
+
+  it("an /api/v1 proxy handler path missing from the snapshot is dead", () => {
+    expect(
+      check(`${PREAMBLE}
+        export const a = () => httpClient.get("/api/v1/ai-tasks");
+        export const b = () => httpClient.get("/api/v1/ws-token");
+      `)
+    ).toEqual([entry("GET", "/api/v1/ai-tasks", "dead", "no-path")]);
+  });
+});
+
+describe("N3: method-unresolved sites are keyed per occurrence", () => {
+  const TWO = `${PREAMBLE}
+    export const a = () => httpClient.fetch("/api/v1/widgets", opts);
+    export const b = () => httpClient.fetch("/api/v1/widgets", opts);
+  `;
+
+  it("two method-unresolved fetches to the same path are two entries", () => {
+    expect(fixture(TWO)).toEqual([
+      entry("?", "/api/v1/widgets #1", "unresolved", "unresolved"),
+      entry("?", "/api/v1/widgets #2", "unresolved", "unresolved"),
+    ]);
+  });
+
+  it("a second one added beside a baselined one is new", () => {
+    const baseline = fixture(`${PREAMBLE}
+      export const a = () => httpClient.fetch("/api/v1/widgets", opts);
+    `);
+    expect(diffAgainstBaseline(fixture(TWO), baseline).added).toEqual([
+      entry("?", "/api/v1/widgets #2", "unresolved", "unresolved"),
+    ]);
+  });
+});
+
+describe("N4: a declared constant read through a property does not widen", () => {
+  const SITE = (decl: string) => `${PREAMBLE}
+    ${decl}
+    export const x = (id: string) => httpClient.put(\`/api/v1/widgets/\${id}/\${EP.seg}\`, {});
+  `;
+
+  it("a property of a re-exported object is unresolved", () => {
+    expect(
+      fixtureTree({
+        "fixture.ts": SITE(`import { EP } from "./consts";`),
+        "consts.ts": `export { EP } from "./eps";`,
+        "eps.ts": `export const EP = { seg: "approve" };`,
+      })
+    ).toMatchObject([{ method: "PUT", reason: "unresolved" }]);
+  });
+
+  it("a key missing from a declared literal is unresolved", () => {
+    expect(fixture(SITE(`const EP = { other: "approve" };`))).toMatchObject([
+      { method: "PUT", reason: "unresolved" },
+    ]);
+  });
+
+  it("a key the literal has still resolves (and passes)", () => {
+    expect(fixture(SITE(`const EP = { seg: "approve" };`))).toEqual([]);
+  });
+});
+
+describe("N6: no reference to a wrapper is silently dropped", () => {
+  const REQ = `${PREAMBLE}
+    export async function request(path: string) {
+      return httpClient.get(\`\${ApiConfig.API_BASE_URL}/api/v1/widgets\${path}\`);
+    }`;
+
+  it("an aliased import is followed like the name", () => {
+    expect(
+      fixtureTree({
+        "services/req.ts": REQ,
+        "features/use.ts": `
+          import { request as r } from "@/services/req";
+          export const gone = () => r("/gone/too");`,
+      })
+    ).toEqual([
+      entry(
+        "GET",
+        "/api/v1/widgets/gone/too",
+        "dead",
+        "no-path",
+        "features/use.ts"
+      ),
+    ]);
+  });
+
+  it("a wrapper passed as a value is unresolved; a hook dependency is not a use", () => {
+    expect(
+      fixtureTree({
+        "services/req.ts": REQ,
+        "features/use.ts": `
+          import { request } from "@/services/req";
+          export const ok = () => request("");
+          export const handler = request;
+          export const memo = useMemo(() => 1, [request]);`,
+      })
+    ).toEqual([
+      entry(
+        "?",
+        "<unresolved> request #1",
+        "unresolved",
+        "unresolved",
+        "features/use.ts"
+      ),
+    ]);
+  });
+
+  it("a member wrapper called on an instance elsewhere is unresolved", () => {
+    expect(
+      fixtureTree({
+        "services/api.ts": `${PREAMBLE}
+          export class Api {
+            fetchWithAuth(url: string) {
+              return httpClient.get(\`\${ApiConfig.API_BASE_URL}/api/v1\${url}\`);
+            }
+            list() { return this.fetchWithAuth("/widgets"); }
+          }
+          export const api = new Api();`,
+        "features/x.ts": `
+          import { api } from "@/services/api";
+          export const gone = () => api.fetchWithAuth("/nope");`,
+      })
+    ).toEqual([
+      entry(
+        "?",
+        '<unresolved> api.fetchWithAuth("/nope") #1',
+        "unresolved",
+        "unresolved",
+        "features/x.ts"
+      ),
+    ]);
   });
 });

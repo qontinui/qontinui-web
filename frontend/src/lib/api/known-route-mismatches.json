@@ -135,7 +135,7 @@
   {
     "file": "lib/runner/relay.ts",
     "method": "?",
-    "path": "/api/v1/device-bridge/runner-proxy/{param}",
+    "path": "/api/v1/device-bridge/runner-proxy/{param} #1",
     "reason": "unresolved",
     "kind": "unresolved"
   },
@@ -611,7 +611,7 @@
   {
     "file": "services/prompt-injections-api.ts",
     "method": "?",
-    "path": "/api/v1/admin/prompt-injections",
+    "path": "/api/v1/admin/prompt-injections #1",
     "reason": "unresolved",
     "kind": "unresolved"
   },
