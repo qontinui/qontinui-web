@@ -76,6 +76,38 @@ function refString(ref: unknown, key: string): string | null {
   return null;
 }
 
+const LABEL_MAX = 40;
+
+function truncateLabel(text: string): string {
+  // Count code points, not UTF-16 units, so a cut never splits a surrogate pair.
+  const chars = Array.from(text);
+  return chars.length > LABEL_MAX
+    ? `${chars.slice(0, LABEL_MAX - 1).join("")}…`
+    : text;
+}
+
+/**
+ * A display string for a non-string `effect_kind` that NEVER throws: numbers
+ * print as themselves (JSON would render NaN as "null", the very value that
+ * means "no effect"); other values as JSON, falling back to String() when JSON
+ * throws or yields undefined (cycles, BigInt, symbols); and a value both reject
+ * (e.g. a cyclic prototype-less object) as `<type>`.
+ */
+function describeNonString(value: unknown): string {
+  if (typeof value === "number") return String(value);
+  try {
+    const json = JSON.stringify(value);
+    if (json !== undefined) return json;
+  } catch {
+    // fall through
+  }
+  try {
+    return String(value);
+  } catch {
+    return `<${typeof value}>`;
+  }
+}
+
 /**
  * The row's effect, or `null` for an ordinary question.
  *
@@ -96,17 +128,12 @@ export function deriveQuestionEffect(
   }
   const ref = q.effect_ref;
   if (typeof kind !== "string") {
-    let shown: string;
-    try {
-      shown = JSON.stringify(kind) ?? String(kind);
-    } catch {
-      shown = String(kind);
-    }
+    const shown = describeNonString(kind);
     return {
       kind: "unknown",
       rawKind: shown,
       id: refString(ref, "id"),
-      label: `effect: ${shown}`,
+      label: `effect: ${truncateLabel(shown)}`,
       detail: null,
       title: `coord sent a non-string effect_kind (${shown}); this console cannot route it.`,
       href: null,
@@ -171,7 +198,7 @@ export function deriveQuestionEffect(
     kind: "unknown",
     rawKind: raw,
     id: refString(ref, "id"),
-    label: `effect: ${raw}`,
+    label: `effect: ${truncateLabel(raw)}`,
     detail: null,
     title: `coord marked this row as mirroring a "${raw}" decision, which this console build does not recognise.`,
     href: null,

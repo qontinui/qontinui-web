@@ -29,15 +29,103 @@ describe("deriveQuestionEffect — no effect", () => {
   // The respond proxy classifies effect_kind EXACTLY and gates everything but
   // absent/null/""/"none" on tenant admin; the console must agree, or a
   // non-admin is offered a composer the server refuses.
-  it.each([[1], [true], [{}], [["gate"]], [["proposal"]], [["none"]]])(
+  it.each([
+    [1, "1"],
+    [true, "true"],
+    [{}, "{}"],
+    [["gate"], '["gate"]'],
+    [["proposal"], '["proposal"]'],
+    [["clause"], '["clause"]'],
+    [["none"], '["none"]'],
+    [Number.NaN, "NaN"],
+    // JSON.stringify returns undefined for a Symbol, not a throw.
+    [Symbol("x"), "Symbol(x)"],
+  ])(
     "treats the non-string effect_kind %j as an unknown effect with no decisions",
-    (kind) => {
+    (kind, shown) => {
       const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
-      expect(e).not.toBeNull();
       expect(e?.kind).toBe("unknown");
       expect(e?.decisions).toBeNull();
+      expect(e?.rawKind).toBe(shown);
+      expect(e?.label).toBe(`effect: ${shown}`);
     }
   );
+
+  it("renders a function (JSON yields undefined) via String()", () => {
+    function f() {}
+    const e = deriveQuestionEffect({ effect_kind: f as unknown as string });
+    expect(e?.kind).toBe("unknown");
+    expect(e?.decisions).toBeNull();
+    // The transpiler may reformat the body, so pin only the prefix.
+    expect(e?.rawKind.startsWith("function f(")).toBe(true);
+  });
+
+  it("never throws on values JSON and String() cannot render", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const bare = Object.create(null) as Record<string, unknown>;
+    bare.self = bare;
+    const cases: [unknown, string][] = [
+      [cyclic, "[object Object]"],
+      [BigInt(10), "10"],
+      [bare, "<object>"],
+    ];
+    for (const [kind, shown] of cases) {
+      const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
+      expect(e?.kind).toBe("unknown");
+      expect(e?.decisions).toBeNull();
+      expect(e?.rawKind).toBe(shown);
+      expect(e?.label).toBe(`effect: ${shown}`);
+    }
+  });
+
+  it("truncates a long label but keeps the full value in rawKind", () => {
+    const kind = { a: "x".repeat(100) };
+    const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
+    const shown = JSON.stringify(kind);
+    expect(e?.label).toBe(`effect: ${shown.slice(0, 39)}…`);
+    expect(e?.rawKind).toBe(shown);
+  });
+
+  it("truncates at 41 characters", () => {
+    const kind = { a: "x".repeat(33) };
+    const shown = JSON.stringify(kind);
+    expect(shown.length).toBe(41);
+    const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
+    expect(e?.label).toBe(`effect: ${shown.slice(0, 39)}…`);
+  });
+
+  it("truncates a long unknown STRING kind too, keeping it whole in rawKind", () => {
+    const raw = "k".repeat(60);
+    const e = deriveQuestionEffect({ effect_kind: raw });
+    expect(e?.label).toBe(`effect: ${"k".repeat(39)}…`);
+    expect(e?.rawKind).toBe(raw);
+  });
+
+  it("counts code points, not UTF-16 units, at the 40/41 boundary", () => {
+    const forty = "😀".repeat(40);
+    expect(deriveQuestionEffect({ effect_kind: forty })?.label).toBe(
+      `effect: ${forty}`
+    );
+    const fortyOne = "😀".repeat(41);
+    expect(deriveQuestionEffect({ effect_kind: fortyOne })?.label).toBe(
+      `effect: ${"😀".repeat(39)}…`
+    );
+  });
+
+  it("never splits a surrogate pair when truncating", () => {
+    const raw = "😀".repeat(50);
+    const e = deriveQuestionEffect({ effect_kind: raw });
+    expect(e?.label).toBe(`effect: ${"😀".repeat(39)}…`);
+  });
+
+  it("leaves a label of exactly 40 characters untruncated", () => {
+    const kind = { a: "x".repeat(32) };
+    const shown = JSON.stringify(kind);
+    expect(shown.length).toBe(40);
+    const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
+    expect(e?.label).toBe(`effect: ${shown}`);
+  });
 
   it.each([[" none "], ["NONE"], ["none\n"]])(
     "treats %j as an effect, not as 'none'",
