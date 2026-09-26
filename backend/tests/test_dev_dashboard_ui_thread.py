@@ -27,7 +27,7 @@ These tests pin, end to end through the HTTP routes:
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -157,6 +157,27 @@ class TestWireShape:
         )
         assert block.model_dump(mode="json")["pong_receive_age_ms"] == 1_234
 
+    def test_extras_are_bounded_not_rejected(self) -> None:
+        # The route is unauthenticated and the registry lives in memory, so
+        # extras are capped: nested values and over-long strings are dropped,
+        # the count is capped, and the block itself still validates.
+        many = {f"k{i:02d}": i for i in range(RunnerUiThread.MAX_EXTRA_KEYS + 8)}
+        block = RunnerUiThread.model_validate(
+            {
+                **RUST_UI_THREAD_BLOCK,
+                "nested": {"a": [1, 2, 3]},
+                "huge": "x" * (RunnerUiThread.MAX_EXTRA_STR + 1),
+                "short": "ok",
+                **many,
+            }
+        )
+        extra = block.model_extra or {}
+        assert "nested" not in extra
+        assert "huge" not in extra
+        assert extra["short"] == "ok"
+        assert len(extra) == RunnerUiThread.MAX_EXTRA_KEYS
+        assert block.wedged is True
+
 
 class TestHeartbeatIngest:
     def test_block_round_trips_through_the_heartbeat_route(
@@ -197,6 +218,8 @@ class TestFleetView:
         rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=1))
         beacon = next(r for r in rows if r["id"] == "spaceship:9876")
         assert beacon["uiThread"] == RUST_UI_THREAD_BLOCK
+        assert beacon["uiThreadSource"] == "beacon_unauthenticated"
+        assert beacon["uiThreadObservedAt"] is not None
 
     def test_paired_runner_row_carries_its_beacons_block(
         self, client: TestClient
@@ -212,6 +235,48 @@ class TestFleetView:
         assert [r["id"] for r in rows] == [str(device.device_id)]
         assert rows[0]["uiThread"] == RUST_UI_THREAD_BLOCK
         assert rows[0]["uiThread"]["wedged"] is True
+        # The block came off the unauthenticated beacon registry, not the
+        # device's own authenticated channel — the row must say so, and must
+        # say when the reading was taken.
+        assert rows[0]["uiThreadSource"] == "beacon_unauthenticated"
+        assert rows[0]["uiThreadObservedAt"] is not None
+
+    def test_extra_keys_ride_through_to_the_fleet_row(self, client: TestClient) -> None:
+        client.post(
+            f"{API_PREFIX}/heartbeat",
+            json=_heartbeat(
+                ui_thread={**RUST_UI_THREAD_BLOCK, "pong_receive_age_ms": 7}
+            ),
+        )
+        rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
+        assert rows[0]["uiThread"]["pong_receive_age_ms"] == 7
+
+    def test_hostname_matches_case_insensitively(self, client: TestClient) -> None:
+        client.post(
+            f"{API_PREFIX}/heartbeat",
+            json=_heartbeat(hostname="SpaceShip", ui_thread=RUST_UI_THREAD_BLOCK),
+        )
+        rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
+        paired = [r for r in rows if r.get("uiThread") is not None]
+        assert paired and paired[0]["hostname"] == "spaceship"
+
+    def test_a_stale_beacon_is_not_shown_on_a_paired_row(
+        self, client: TestClient
+    ) -> None:
+        # A reading from a beacon that stopped heartbeating must not sit beside
+        # the device's own fresh status looking current.
+        import app.services.dev_dashboard_service as svc
+
+        client.post(
+            f"{API_PREFIX}/heartbeat", json=_heartbeat(ui_thread=RUST_UI_THREAD_BLOCK)
+        )
+        registry = svc.get_fleet_registry()
+        registry._runners["spaceship:9876"].last_heartbeat = datetime.now(
+            UTC
+        ) - timedelta(seconds=600)
+        rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
+        assert rows[0]["uiThread"] is None
+        assert rows[0]["uiThreadSource"] is None
 
     def test_paired_runner_without_a_beacon_reads_unknown(
         self, client: TestClient
@@ -219,6 +284,8 @@ class TestFleetView:
         rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
         assert "uiThread" in rows[0]
         assert rows[0]["uiThread"] is None
+        assert rows[0]["uiThreadSource"] is None
+        assert rows[0]["uiThreadObservedAt"] is None
 
     def test_beacon_that_omits_the_block_reads_unknown(
         self, client: TestClient
