@@ -584,8 +584,10 @@ class MemoryQueryResponse(BoundedReadMeta):
       when an arm filled it but the page shows the whole pool, so whether
       more exist did not resolve.
     * ``next_cursor`` — ALWAYS ``null``. The order is a computed relevance
-      score that moves with every write, so a ranking is not pageable; walk
-      the door named in ``enumerate_via`` to see the corpus.
+      score that moves with every write, so a ranking is not pageable.
+    * ``enumerate_via`` — ALWAYS :data:`MEMORY_ENUMERATION_DOOR`
+      (``GET /api/v1/memory/records``, keyset over the immutable
+      ``(created_at, seq)``): the walk a caller takes to see the corpus.
     * ``available`` — always ``true``: this route has no unprovisioned-store
       arm (a missing substrate is an error, not an empty answer).
 
@@ -695,19 +697,8 @@ class MemoryQueryResponse(BoundedReadMeta):
     query_echo: MemoryQueryEcho
     # Every key is serialized on every answer (``null`` included), so the
     # OUTPUT schema marks defaulted fields required too — otherwise a
-    # client generated from the snapshot would type ``total`` as optional.
+    # client generated from the snapshot would type them as optional.
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    enumerate_via: Literal["GET /api/v1/memory/records"] = Field(
-        default=MEMORY_ENUMERATION_DOOR,
-        description=(
-            "The door that ENUMERATES the corpus. This route relevance-ranks "
-            "a capped candidate pool and is never pageable (next_cursor is "
-            "always null), so a caller that needs every record walks this "
-            "route instead: keyset-paginated over the immutable "
-            "(created_at, seq), newest first."
-        ),
-    )
 
 
 class SupersedeRequest(BaseModel):

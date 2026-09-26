@@ -112,6 +112,7 @@ from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
     MAX_ANCHORS_PER_RECORD,
     MAX_LIST_LIMIT,
+    MEMORY_ENUMERATION_DOOR,
     ClaimJobsRequest,
     ClaimJobsResponse,
     EmbeddingResultPayload,
@@ -971,6 +972,7 @@ async def query_records(
         limit=payload.limit,
         pool_size=len(fused),
         pool_capped=pool_capped,
+        enumerate_via=MEMORY_ENUMERATION_DOOR,
     )
     return MemoryQueryResponse(
         **meta.model_dump(),

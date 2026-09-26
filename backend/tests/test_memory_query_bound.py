@@ -35,6 +35,7 @@ META_KEYS = {
     "next_cursor",
     "available",
     "filter_narrowed",
+    "enumerate_via",
 }
 LEGACY_KEYS = {
     "hits",
@@ -119,6 +120,7 @@ def test_uncapped_pool_larger_than_limit_is_exact_and_truncated(
     assert body["count"] == body["shown"] == 5
     assert body["limit"] == 5
     assert body["next_cursor"] is None
+    assert body["enumerate_via"] == "GET /api/v1/memory/records"
     assert body["available"] is True
 
 
@@ -143,6 +145,8 @@ def test_saturated_arm_shown_whole_is_unknown_not_complete(
     assert body["bound_kind"] == "unknown"
     assert body["truncated"] is None
     assert body["total"] is None
+    assert body["next_cursor"] is None
+    assert body["enumerate_via"] == "GET /api/v1/memory/records"
 
 
 def test_pool_within_limit_is_not_truncated(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,7 +188,7 @@ def test_every_key_is_present_and_legacy_fields_unchanged(
     assert body["query_echo"]["limit"] == 4
     assert [h["memory_id"] for h in body["hits"]] == [str(i) for i in pool[:4]]
     assert body["enumerate_via"] == "GET /api/v1/memory/records"
-    assert body.keys() == META_KEYS | LEGACY_KEYS | {"enumerate_via"}
+    assert body.keys() == META_KEYS | LEGACY_KEYS
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +205,33 @@ def test_from_probe_mirrors_rust_page_from_probe() -> None:
     assert full.bound_kind == bounded_read.BoundKind.complete
     assert full.truncated is False
     assert full.next_cursor is None  # never beside truncated: false
+    assert fired.enumerate_via is None and full.enumerate_via is None  # a walk
+
+
+def test_not_pageable_mirrors_rust_page_not_pageable() -> None:
+    more = bounded_read.not_pageable(6, 5, "GET /memory/records")
+    assert (more.shown, more.truncated, more.total) == (5, True, None)
+    assert more.bound_kind == bounded_read.BoundKind.at_least
+    assert more.next_cursor is None
+    assert more.enumerate_via == "GET /memory/records"
+    # Set on every page of the read, truncated or not.
+    all_ = bounded_read.not_pageable(3, 5, "GET /memory/records")
+    assert (all_.shown, all_.truncated) == (3, False)
+    assert all_.bound_kind == bounded_read.BoundKind.complete
+    assert all_.enumerate_via == "GET /memory/records"
+
+
+def test_cursor_beside_enumerate_via_is_refused() -> None:
+    with pytest.raises(ValueError):
+        bounded_read._meta(
+            shown=1,
+            limit=1,
+            total=None,
+            truncated=True,
+            bound_kind=bounded_read.BoundKind.at_least,
+            next_cursor="tok",
+            enumerate_via="door",
+        )
 
 
 def test_from_count_unknown_and_unavailable() -> None:

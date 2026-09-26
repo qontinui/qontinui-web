@@ -25,8 +25,16 @@ The builders mirror the Rust ``Page`` constructors so both languages derive
 * :func:`complete`         — ``Page::complete``
 * :func:`unknown`          — a read whose bound did not resolve
 * :func:`unavailable`      — ``Page::unavailable`` (store unprovisioned)
-* :func:`from_ranked_pool` — a relevance-ranked top-N over a capped candidate
-  pool, which has no Rust counterpart yet (see its docstring)
+* :func:`not_pageable`     — ``Page::not_pageable`` (a ranked read from a
+  ``limit + 1`` probe: never a cursor, ``enumerate_via`` names the walk)
+* :func:`from_ranked_pool` — a ranked top-N cut of a fused candidate pool
+  whose arms were capped in SQL, which has no single-probe Rust counterpart
+  (see its docstring); it keeps the same envelope invariant
+
+The shared invariant every builder keeps (the Rust ``Page`` doc): a
+``next_cursor`` sits only beside ``truncated: true`` and never beside an
+``enumerate_via``; ``truncated: true`` with no cursor happens only on a
+RANKED read, and then ``enumerate_via`` names the door that walks the corpus.
 
 Every key is ALWAYS serialized: ``null`` is a value here (``total: null`` =
 "no count ran", ``truncated: null`` = "unknown"), never an absence. Callers
@@ -56,6 +64,7 @@ __all__ = [
     "from_probe",
     "from_ranked_pool",
     "merge_into",
+    "not_pageable",
     "unavailable",
     "unknown",
 ]
@@ -71,7 +80,11 @@ def _meta(
     next_cursor: str | None,
     available: bool = True,
     filter_narrowed: FilterNarrowing | None = None,
+    enumerate_via: str | None = None,
 ) -> BoundedReadMeta:
+    if next_cursor is not None and enumerate_via is not None:
+        # A cursor IS the walk, so it never names another one.
+        raise ValueError("a page with a next_cursor cannot name enumerate_via")
     return BoundedReadMeta(
         count=shown,
         limit=limit,
@@ -84,6 +97,7 @@ def _meta(
         next_cursor=None if truncated is False else next_cursor,
         available=available,
         filter_narrowed=filter_narrowed,
+        enumerate_via=enumerate_via,
     )
 
 
@@ -189,32 +203,73 @@ def unavailable(limit: int) -> BoundedReadMeta:
     )
 
 
+def not_pageable(
+    fetched: int,
+    limit: int,
+    enumerate_via: str,
+    *,
+    filter_narrowed: FilterNarrowing | None = None,
+) -> BoundedReadMeta:
+    """Meta for a RANKED read from a ``LIMIT limit + 1`` fetch — mirrors
+    Rust ``Page::not_pageable``.
+
+    A ranking has no stable position to resume from, so it never hands out a
+    cursor: when the probe fired the page is ``at_least``, ``truncated: true``,
+    ``next_cursor: null``; otherwise ``complete``. ``enumerate_via`` names the
+    door that walks the same corpus by an immutable key, and is set on every
+    page of the read, truncated or not, because it describes the READ.
+    """
+    limit = max(limit, 1)
+    probe_fired = fetched > limit
+    return _meta(
+        shown=limit if probe_fired else fetched,
+        limit=limit,
+        total=None,
+        truncated=probe_fired,
+        bound_kind=BoundKind.at_least if probe_fired else BoundKind.complete,
+        next_cursor=None,
+        filter_narrowed=filter_narrowed,
+        enumerate_via=enumerate_via,
+    )
+
+
 def from_ranked_pool(
-    *, shown: int, limit: int, pool_size: int, pool_capped: bool
+    *,
+    shown: int,
+    limit: int,
+    pool_size: int,
+    pool_capped: bool,
+    enumerate_via: str,
 ) -> BoundedReadMeta:
     """Meta for a relevance-ranked top-``limit`` cut of a fused candidate pool.
 
-    A ranking is not a table walk: its sort key is a computed score that moves
-    with every write, so it is never pageable and ``next_cursor`` is ALWAYS
-    ``null`` here, even when ``truncated`` is true. That is the one deliberate
-    departure from the Rust "cursor iff truncated" invariant, and the door
-    must name its enumeration route beside the meta instead (plan Phase 3,
-    "a keyset cursor on /memory/query is IMPOSSIBLE").
+    Like :func:`not_pageable`, a ranking is never pageable (its sort key is a
+    computed score that moves with every write): ``next_cursor`` is ALWAYS
+    ``null`` and ``enumerate_via`` is ALWAYS set. What differs is how the
+    bound is known — the pool's size is exact unless an arm was capped:
 
     * ``pool_capped`` false — every arm returned all of its matches, so the
       pool IS the match set: ``exact``, ``total = pool_size``,
-      ``truncated = pool_size > limit``.
+      ``truncated = pool_size > shown``.
     * ``pool_capped`` true and ``pool_size > limit`` — more matches exist than
       shown, and more may exist than the pool saw: ``at_least``,
       ``total: null``, ``truncated: true``.
     * ``pool_capped`` true and ``pool_size <= limit`` — the page shows the whole
       pool, but a capped arm may have left matches unseen, so whether more
-      exist did not resolve: ``unknown``, ``truncated: null``. Reporting
-      ``at_least`` with ``truncated: false`` would contradict itself, and
-      ``false`` would claim a completeness nothing measured.
+      exist did not resolve: ``unknown``, ``truncated: null``. ``at_least``
+      beside ``truncated: false`` would contradict itself, and ``false`` would
+      claim a completeness nothing measured.
     """
     if not pool_capped:
-        return from_count(shown, limit, pool_size)
+        return _meta(
+            shown=shown,
+            limit=limit,
+            total=pool_size,
+            truncated=pool_size > shown,
+            bound_kind=BoundKind.exact,
+            next_cursor=None,
+            enumerate_via=enumerate_via,
+        )
     if pool_size > limit:
         return _meta(
             shown=shown,
@@ -223,8 +278,17 @@ def from_ranked_pool(
             truncated=True,
             bound_kind=BoundKind.at_least,
             next_cursor=None,
+            enumerate_via=enumerate_via,
         )
-    return unknown(shown, limit)
+    return _meta(
+        shown=shown,
+        limit=limit,
+        total=None,
+        truncated=None,
+        bound_kind=BoundKind.unknown,
+        next_cursor=None,
+        enumerate_via=enumerate_via,
+    )
 
 
 def merge_into(target: dict[str, Any], meta: BoundedReadMeta) -> dict[str, Any]:
