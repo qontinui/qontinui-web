@@ -1,13 +1,17 @@
 """Direct tests for ``POST /api/v1/events/phase-completed``.
 
 Phase 5 of ``2026-09-12-residual-work-from-the-april-2026-plan-audit``. The
-handler (``ingest_phase_completed`` in ``app/api/v1/endpoints/events.py``) was
-previously exercised only incidentally: plan
-``restate-port-part-b-server-runner.md`` claimed
-``tests/test_phase_result_ingestion.py`` and
-``tests/integration/test_server_runner_flow.py``, and neither was ever
-committed. Its attribution branches are where
-misattribution would hide, so each is pinned here:
+handler (``ingest_phase_completed`` in ``app/api/v1/endpoints/events.py``) had
+direct tests once, and both were deleted along with the runner model they
+were written against. Plan ``restate-port-part-b-server-runner.md`` cites them:
+
+* ``tests/test_phase_result_ingestion.py`` was added by 084d8d324 (2026-04-19)
+  and deleted by the auth.runners retirement (1574bd036, #160).
+* ``tests/integration/test_server_runner_flow.py`` was added by e324bf0e9
+  (2026-04-20) and deleted by the unified-Runner refactor (e2b600f43, #3).
+
+Since then the handler has been exercised only incidentally. Its attribution
+branches are where misattribution would hide, so each is pinned here:
 
 * explicit ``runner_id`` owned by the caller -> 202, row attributed to it;
 * explicit ``runner_id`` that does not exist -> 404;
@@ -130,7 +134,9 @@ async def _make_device(
     return device
 
 
-def _payload(*, execution_id: str, runner_id: UUID | None = None) -> dict[str, Any]:
+def _payload(
+    *, execution_id: str, runner_id: UUID | None = None, **overrides: Any
+) -> dict[str, Any]:
     body: dict[str, Any] = {
         "execution_id": execution_id,
         "phase": "verification",
@@ -145,6 +151,7 @@ def _payload(*, execution_id: str, runner_id: UUID | None = None) -> dict[str, A
     }
     if runner_id is not None:
         body["runner_id"] = str(runner_id)
+    body.update(overrides)
     return body
 
 
@@ -214,7 +221,13 @@ async def test_explicit_runner_owned_by_caller_is_attributed(
     async with make_client(caller) as client:
         resp = await client.post(
             ENDPOINT,
-            json=_payload(execution_id=execution_id, runner_id=device.device_id),
+            json=_payload(
+                execution_id=execution_id,
+                runner_id=device.device_id,
+                failure_context="step 2 exited 1",
+                commit_hash="0123456789abcdef",
+                variables_set=[["BUILD_ID", "42"]],
+            ),
         )
 
     assert resp.status_code == 202, resp.text
@@ -226,6 +239,17 @@ async def test_explicit_runner_owned_by_caller_is_attributed(
     assert len(rows) == 1
     assert rows[0].runner_id == device.device_id
     assert str(rows[0].id) == body["id"]
+    # The non-attribution fields persist as sent.
+    assert rows[0].failure_context == "step 2 exited 1"
+    assert rows[0].commit_hash == "0123456789abcdef"
+    # The model types variables_set as dict | None, but the JSONB column also
+    # stores the list-of-pairs form that the ingest schema accepts.
+    assert cast(Any, rows[0].variables_set) == [["BUILD_ID", "42"]]
+    assert len(rows[0].step_results) == 1
+    step = rows[0].step_results[0]
+    assert step["step_index"] == 0
+    assert step["step_type"] == "command"
+    assert step["duration_ms"] == 12
 
     events = await _workflow_events(async_db_session, execution_id)
     assert len(events) == 1
@@ -363,8 +387,9 @@ async def test_fallback_breaks_heartbeat_ties_by_newest_created_at(
 ) -> None:
     now = datetime.now(UTC)
     heartbeat = now - timedelta(minutes=2)
-    # The loser is inserted FIRST: with no ``created_at`` key, Postgres hands
-    # back equal-heartbeat rows in insertion order and would pick it.
+    # The loser is inserted FIRST. With no ``created_at`` key, Postgres in
+    # practice typically returns equal-heartbeat rows in insertion order (this
+    # is not guaranteed), so it would usually pick the loser.
     await _make_device(
         async_db_session,
         user=caller,
@@ -465,15 +490,42 @@ async def test_companion_event_and_push_dispatch(
     assert payload["duration_ms"] == 1234
     assert event.summary == "Phase 'verification' succeeded in 1234ms"
 
-    # Exactly one background task, the shared dispatcher, keyed on the new
-    # event's id (a UUID, not the string form).
+    # Exactly one background task: the shared dispatcher, called with the new
+    # event's id.
     dispatch_mock.assert_awaited_once()
     await_args = dispatch_mock.await_args
     assert await_args is not None
     (dispatched_id,), kwargs = await_args
     assert kwargs == {}
-    assert isinstance(dispatched_id, UUID)
     assert dispatched_id == event.id
+
+
+async def test_failed_phase_summary_says_failed(
+    async_db_session: AsyncSession,
+    caller: User,
+    make_client: ClientFactory,
+    dispatch_mock: AsyncMock,
+) -> None:
+    execution_id = f"exec-{uuid4().hex}"
+
+    async with make_client(caller) as client:
+        resp = await client.post(
+            ENDPOINT,
+            json=_payload(
+                execution_id=execution_id,
+                phase="setup",
+                success=False,
+                duration_ms=77,
+            ),
+        )
+
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["success"] is False
+    events = await _workflow_events(async_db_session, execution_id)
+    assert len(events) == 1
+    assert events[0].summary == "Phase 'setup' failed in 77ms"
+    payload = cast(dict[str, Any], events[0].payload)
+    assert payload["success"] is False
 
 
 # ===========================================================================
