@@ -176,7 +176,7 @@ Downgrade drops the three indexes and the three columns (the CHECK constraint
 goes with its column). Records survive.
 
 Revision ID: memfacets_01
-Revises: coord_wu_authored_at_02
+Revises: overview_02_authoring_core
 Create Date: 2026-09-19
 
 """
@@ -187,7 +187,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "memfacets_01"
-down_revision: str | Sequence[str] | None = "coord_wu_authored_at_02"
+down_revision: str | Sequence[str] | None = "overview_02_authoring_core"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
