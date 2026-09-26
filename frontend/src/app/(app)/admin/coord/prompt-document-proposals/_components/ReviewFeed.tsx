@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -85,6 +85,57 @@ export function ReviewFeed() {
     revertWrite,
     withdrawWrite,
   } = usePromptDocumentProposals();
+
+  /*
+   * Deep link: `?proposal=<id>` opens that proposal and scrolls to it.
+   *
+   * The questions inbox (plan
+   * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+   * Phase 3) links a proposal-mirror question here as its drill-down, so this
+   * page is where the diff is read rather than a second list to triage. Read
+   * once on mount from `window.location`, as `GatesTable`'s `?gate=` link
+   * does, rather than `useSearchParams` (which would force a Suspense boundary
+   * for a one-shot read). Both open keys are seeded: ids are unique across the
+   * queue and the decided section, so only the list holding it opens a row.
+   */
+  const [deepLinked, setDeepLinked] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("proposal");
+    if (!id) return;
+    setDeepLinked(id);
+    setOpenProposal(id);
+    setOpenDecided(id);
+  }, []);
+  // A linked proposal may already have been retired as stale or approved —
+  // the question that linked here can outlive the queue row. Those two
+  // sections are collapsed by default and UNMOUNT their rows while closed, so
+  // the section holding the id is forced open for as long as the link is
+  // being resolved (it then stays open: `CollapsiblePanel` latches it).
+  const deepLinkedStale =
+    deepLinked !== null && staleProposals.some((p) => p.id === deepLinked);
+  const deepLinkedDecided =
+    deepLinked !== null && decidedProposals.some((p) => p.id === deepLinked);
+  // Scroll once the row exists — the lists arrive asynchronously, so the
+  // browser's own fragment scroll would fire before there is anything to reach.
+  // The link is resolved ONCE: cleared as soon as the row is reached, or after
+  // the first complete load (`loading` starts true, so `!loading` is that
+  // load's end) whether or not any list held the id — an unknown id must not
+  // leave a pending scroll that a later refresh fires out of nowhere.
+  useEffect(() => {
+    if (!deepLinked || typeof document === "undefined") return;
+    const wanted = new Set([
+      `proposal-${deepLinked}`,
+      `retired-proposal-${deepLinked}`,
+    ]);
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid^="proposal-"], [data-testid^="retired-proposal-"]'
+      )
+    ).find((el) => wanted.has(el.getAttribute("data-testid") ?? ""));
+    row?.scrollIntoView?.({ block: "center" });
+    if (row || !loading) setDeepLinked(null);
+  }, [deepLinked, loading, proposals, staleProposals, decidedProposals]);
 
   // A pre-deploy 404 is expected and benign. An UNLABELLED unavailable is also
   // treated as benign here (fallback `false`): the frontend and backend deploy
@@ -225,6 +276,7 @@ export function ReviewFeed() {
         unavailable={staleUnavailable}
         unavailableKind={staleUnavailableKind}
         read={staleRead}
+        forceOpen={deepLinkedStale}
       />
 
       <DecidedProposals
@@ -238,6 +290,7 @@ export function ReviewFeed() {
         onOpenKeyChange={setOpenDecided}
         liveVersionFor={liveVersionFor}
         onDecide={decide}
+        forceOpen={deepLinkedDecided}
       />
 
       <LandedWriteFeed
@@ -349,6 +402,8 @@ interface RetiredProposalsProps {
   unavailableKind: UnavailableKind | null;
   /** Has the read completed at all? Before it has, the section knows nothing. */
   read: boolean;
+  /** Open the panel — a `?proposal=` deep link names a row in this section. */
+  forceOpen?: boolean;
 }
 
 /**
@@ -390,6 +445,7 @@ function RetiredProposals({
   unavailable,
   unavailableKind,
   read,
+  forceOpen = false,
 }: RetiredProposalsProps) {
   const summary = unavailable
     ? "could not be read"
@@ -411,6 +467,7 @@ function RetiredProposals({
         </span>
       }
       defaultOpen={false}
+      forceOpen={forceOpen}
       storageKey="coord.proposals.retired-stale"
       data-testid="retired-proposals"
     >
@@ -527,6 +584,8 @@ interface DecidedProposalsProps {
     action: "approve" | "reject",
     decisionNote: string
   ) => Promise<boolean>;
+  /** Open the panel — a `?proposal=` deep link names a row in this section. */
+  forceOpen?: boolean;
 }
 
 /**
@@ -601,6 +660,7 @@ function DecidedProposals({
   onOpenKeyChange,
   liveVersionFor,
   onDecide,
+  forceOpen = false,
 }: DecidedProposalsProps) {
   const summary = unavailable
     ? "could not be read"
@@ -622,6 +682,7 @@ function DecidedProposals({
         </span>
       }
       defaultOpen={false}
+      forceOpen={forceOpen}
       storageKey="coord.proposals.recently-approved"
       data-testid="decided-proposals"
     >
