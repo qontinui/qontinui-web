@@ -4,9 +4,9 @@ Backs ``/admin/coord/findings`` — the reader the landed-write feed's
 ``finding_only`` reasoning reference links into. The frontend never calls coord
 directly, so the chain is
 ``frontend → /api/v1/operations/coord/findings → coord /coord/findings`` and
-this proxy is what decides whether coord's SIX accepted query keys
+this proxy is what decides whether coord's SEVEN accepted query keys
 (``finding_id``, ``resource_keys``, ``topic``, ``kind``, ``limit``,
-``triaged``) actually reach the store.
+``triaged``, ``cursor``) actually reach the store.
 
 Plan ``2026-09-15-the-console-names-a-finding-it-cannot-open``, Phase 2.
 
@@ -108,6 +108,25 @@ FINDINGS_PAGE = {
 }
 
 
+def _assert_unknown_envelope(body: dict) -> None:
+    """The degraded body carries every bounded-read envelope key, as UNKNOWN.
+
+    Present, not absent: a missing ``truncated`` reads as falsy — "complete" —
+    to a client that does not distinguish the two.
+    """
+    assert body["bound_kind"] == "unknown"
+    assert body["shown"] == 0
+    for key in (
+        "truncated",
+        "next_cursor",
+        "total",
+        "filter_narrowed",
+        "enumerate_via",
+    ):
+        assert key in body, key
+        assert body[key] is None, (key, body[key])
+
+
 class TestGetCoordFindings:
     """``GET /operations/coord/findings`` — the verbatim forward."""
 
@@ -131,8 +150,9 @@ class TestGetCoordFindings:
         # `{"limit": None}` would make coord clamp against a null.
         assert call.kwargs["params"] is None
 
-    def test_forwards_every_one_of_the_six_accepted_keys(self, auth_client: TestClient):
-        """All six, in one request — the property the plan is about.
+    def test_forwards_every_one_of_the_accepted_keys(self, auth_client: TestClient):
+        """Every accepted key but ``cursor`` (which coord refuses beside a
+        ``finding_id``, and which has its own test below), in one request — the property the plan is about.
 
         Dropping any single one re-creates, one layer up, the ignored-filter
         defect this proxy exists to avoid: the page would ask for a narrowed
@@ -213,11 +233,58 @@ class TestGetCoordFindings:
         assert resp.status_code == 200
         assert mock_instance.get.call_args.kwargs["params"] == {"triaged": False}
 
+    def test_cursor_is_forwarded_verbatim(self, auth_client: TestClient):
+        """``next_cursor`` from one answer must reach coord as ``cursor``.
+
+        Without the pass-through, a console following ``next_cursor`` is
+        served the FIRST page again on every request — the walk never
+        advances and never ends. Forwarded byte-for-byte: the token is opaque
+        and coord's codec, not this hop, decides whether it is valid.
+        """
+        token = "v1.AbC-_xyz0123456789"
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, FINDINGS_PAGE)
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(
+                FINDINGS_URL, params={"topic": "coord", "cursor": token}
+            )
+
+        assert resp.status_code == 200
+        assert mock_instance.get.call_args.kwargs["params"] == {
+            "topic": "coord",
+            "cursor": token,
+        }
+
+    def test_a_malformed_cursor_is_coords_400_passed_through(
+        self, auth_client: TestClient
+    ):
+        """This hop adds no cursor validator: coord's typed 400 is the answer."""
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    400,
+                    None,
+                    text=('{"error":"invalid_query_parameter","invalid":["cursor"]}'),
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(FINDINGS_URL, params={"cursor": "garbage"})
+
+        assert resp.status_code == 400
+        assert "cursor" in resp.text
+        assert mock_instance.get.call_args.kwargs["params"] == {"cursor": "garbage"}
+
     def test_drops_a_key_coord_does_not_accept(self, auth_client: TestClient):
         """An undeclared key never reaches coord.
 
         FastAPI ignores query keys the signature does not declare, so the
-        vocabulary this hop forwards is exactly the six. Coord still owns the
+        vocabulary this hop forwards is exactly the seven. Coord still owns the
         typed `unknown_query_parameter` refusal for anything that reaches it by
         another door — this proxy adds no second validator.
         """
@@ -230,7 +297,7 @@ class TestGetCoordFindings:
 
             resp = auth_client.get(
                 FINDINGS_URL,
-                params={"topic": "coord", "expired": "true", "cursor": "abc"},
+                params={"topic": "coord", "expired": "true", "offset": "40"},
             )
 
         assert resp.status_code == 200
@@ -291,6 +358,7 @@ class TestCoordFindingsDegrade:
         assert body["count"] == 0
         assert body["unavailable_kind"] == "not_deployed"
         assert "not the same as there being none" in body["unavailable"]
+        _assert_unknown_envelope(body)
 
     def test_coord_available_false_is_given_the_degrade_pair(
         self, auth_client: TestClient
@@ -345,6 +413,7 @@ class TestCoordFindingsDegrade:
         body = resp.json()
         assert body["unavailable_kind"] == "unreachable"
         assert "503" in body["unavailable"]
+        _assert_unknown_envelope(body)
 
     def test_connect_error_degrades_rather_than_502ing(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
@@ -356,6 +425,7 @@ class TestCoordFindingsDegrade:
 
         assert resp.status_code == 200
         assert resp.json()["unavailable_kind"] == "unreachable"
+        _assert_unknown_envelope(resp.json())
 
     def test_coord_400_is_passed_through_verbatim(self, auth_client: TestClient):
         """Coord's typed refusal is the SINGLE refusal — this hop re-raises it.
