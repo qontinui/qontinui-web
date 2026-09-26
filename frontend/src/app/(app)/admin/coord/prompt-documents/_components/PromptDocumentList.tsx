@@ -17,21 +17,30 @@ import {
   usePromptDocumentPublications,
   type UpstreamDecisionOutcome,
 } from "../_hooks/usePromptDocumentPublications";
+import { usePublishAll } from "../_hooks/usePublishAll";
 import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { PromptDocumentPublishDialog } from "./PromptDocumentPublishDialog";
 import { PromptDocumentUpstreamDialog } from "./PromptDocumentUpstreamDialog";
+import { PublishAllDialog } from "./PublishAllDialog";
+import { PublishModeControl } from "./PublishModeControl";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import { upstreamBadge } from "../_lib/upstreamStatus";
+import {
+  autoPublishBadge,
+  autoPublishStatusByDocument,
+} from "../_lib/autoPublishBadge";
 import type {
   AgentWriteTier,
+  AutoPublishStatusEntry,
   ClauseConflictChoice,
   Publication,
   PromptDocument,
   PromptDocumentKind,
   PromptDocumentSummary,
+  PublishMode,
 } from "../types";
 import {
   BAND_META,
@@ -102,11 +111,41 @@ export function PromptDocumentList() {
     applyMerge,
   } = usePromptDocumentPublications();
 
+  /**
+   * The publish-all surface (plan
+   * `2026-09-19-policy-publish-all-and-auto-publish` D1/D4): the changed-document
+   * preview that the button's count comes from, and the auto-publisher's pending
+   * work that the row badges come from.
+   *
+   * `publishAllUnavailable` latches coord's `not_system_tenant` — or this
+   * deployment's not-yet-proxied 404 — for the rest of the visit, and it is the
+   * gate on both the button and every badge. It is tracked separately from
+   * `publishUnavailable` above on purpose: the two doors can answer differently
+   * during a deploy (coord carrying `/publish` but not yet `/publish-all`), and
+   * folding them would hide a working control because a different one is
+   * missing.
+   */
+  const {
+    candidates: publishAllCandidates,
+    loadCandidates: loadPublishAllPreview,
+    previewing: previewingPublishAll,
+    status: autoPublishStatus,
+    changedCount,
+    publishing: publishingAll,
+    savingMode,
+    setPublishMode,
+    modeSchemaPending,
+    unavailable: publishAllUnavailable,
+    reload: reloadPublishAll,
+    publishAll,
+  } = usePublishAll();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [clausesOpen, setClausesOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [publishAllOpen, setPublishAllOpen] = useState(false);
   const [upstreamOpen, setUpstreamOpen] = useState(false);
   const [publishTarget, setPublishTarget] =
     useState<PromptDocumentSummary | null>(null);
@@ -282,6 +321,32 @@ export function PromptDocumentList() {
     [editing]
   );
 
+  /**
+   * The auto-publish status, indexed by `kind/name` so a row is an O(1) lookup
+   * rather than a scan per render.
+   *
+   * Empty when the status read failed or this is not the system tenant, and an
+   * absent entry renders NO badge — the same "absent is UNKNOWN, and UNKNOWN
+   * renders nothing" rule the upstream badge column already follows.
+   */
+  const statusByDocument = useMemo(
+    () => autoPublishStatusByDocument(autoPublishStatus),
+    [autoPublishStatus]
+  );
+
+  /**
+   * Open the publish-all dialog, taking a FRESH dry run as it opens.
+   *
+   * The preview is not held from page load: the versions the operator is about
+   * to confirm should be the ones coord returned seconds ago, and the dry run
+   * is a POST on an admin write door that a page load has no business making.
+   * The dialog renders its own loading state until this resolves.
+   */
+  const openPublishAll = async () => {
+    setPublishAllOpen(true);
+    await loadPublishAllPreview();
+  };
+
   const initialLoading = loading && documents.length === 0;
 
   /**
@@ -298,7 +363,25 @@ export function PromptDocumentList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {/*
+          D1 — visible only when N > 0. There is no disabled state and no "0
+          changed" label: a button that can never do anything is noise on every
+          page load in every tenant, and its absence already says the one thing
+          it would say. The count is coord's dry run, not a local derivation.
+        */}
+        {publishAllUnavailable === null && changedCount > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => void openPublishAll()}
+            data-testid="publish-all"
+          >
+            <Send className="size-4" />
+            Publish all changed ({changedCount})
+          </Button>
+        )}
         <Button
           size="sm"
           className="gap-1.5"
@@ -366,6 +449,46 @@ export function PromptDocumentList() {
                 ? "This deployment does not carry the publish route yet, so the Publish controls are hidden for the rest of this visit. Nothing was published."
                 : publishUnavailable.detail}
           </p>
+        </div>
+      )}
+
+      {/*
+        A publish-mode write was refused in a way that points at the `pdpub_03`
+        migration not being applied yet.
+
+        Coord's READS of `publish_mode` degrade on a missing column and answer
+        UNDECIDED, so this page works fine against a coord deployed ahead of the
+        migration — right up until someone tries to SET a mode. That write
+        deliberately does not degrade: an authority decision the schema cannot
+        hold must not look like it was saved. So the failure is real, expected,
+        and temporary, and it needs to read that way. A bare "failed to save"
+        toast sends an operator to debug a system behaving exactly as designed,
+        and it vanishes before they can act on it.
+
+        The control is NOT retired, unlike the not-system-tenant case: the
+        migration lands during this page's lifetime and the operator needs the
+        setting to still be there when it does.
+      */}
+      {modeSchemaPending && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
+          data-testid="publish-mode-schema-pending"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-medium">
+              Coord cannot record a publish mode yet.
+            </p>
+            <p className="mt-1">
+              Its <code className="font-mono">publish_mode</code> column is most
+              likely not migrated ({" "}
+              <code className="font-mono">pdpub_03</code> ). Reading a mode
+              degrades to &quot;undecided&quot; so this page still works, but
+              the write refuses rather than degrading — a decision the schema
+              cannot hold must not look like it was saved. Nothing was changed.
+              Coord said: {modeSchemaPending}
+            </p>
+          </div>
         </div>
       )}
 
@@ -459,6 +582,39 @@ export function PromptDocumentList() {
                                 ? () => openPublish(doc)
                                 : undefined
                             }
+                            // D4 — the publish-mode control sits on every
+                            // document of a publishable kind. It is withheld
+                            // once coord has said the publishing surface does
+                            // not apply here at all, for the same reason the
+                            // Publish button is: the mode is meaningful only on
+                            // system-tenant rows, and a control whose only
+                            // outcome is a refusal is a dead end.
+                            onSetPublishMode={
+                              isPublishableKind(doc.kind) &&
+                              publishAllUnavailable === null
+                                ? async (mode) => {
+                                    const ok = await setPublishMode(
+                                      doc.kind,
+                                      doc.name,
+                                      mode
+                                    );
+                                    // The mode takes coord's VERSIONING path,
+                                    // so a successful write bumps
+                                    // `current_version` and the row must be
+                                    // re-read or it shows a stale one beside
+                                    // its new mode.
+                                    if (ok) await reload();
+                                    return ok;
+                                  }
+                                : undefined
+                            }
+                            savingPublishMode={savingMode}
+                            // Absent ⇒ no badge. Coord did not name this
+                            // document as a candidate, which is UNKNOWN rather
+                            // than "nothing is scheduled".
+                            autoPublish={statusByDocument.get(
+                              `${doc.kind}/${doc.name}`
+                            )}
                           />
                         ))}
                       </div>
@@ -519,7 +675,29 @@ export function PromptDocumentList() {
           // A publication moves `latest_publication_version` for every row of
           // this `(kind, name)` — including this one — so the list is re-read
           // rather than left showing the badge state from before the publish.
-          if (res) await reload();
+          //
+          // It also retires this document from the publish-all candidate set
+          // and clears any auto-publish hold on it, so the dry run and the
+          // status read are re-taken beside it. Skipping that would leave the
+          // "Publish all changed (N)" count one too high and a settles-at badge
+          // promising an automatic publication that has already happened by
+          // hand — both stale in the direction that reads as a live schedule.
+          if (res) await Promise.all([reload(), reloadPublishAll()]);
+          return res;
+        }}
+      />
+
+      <PublishAllDialog
+        open={publishAllOpen}
+        onOpenChange={setPublishAllOpen}
+        candidates={publishAllCandidates}
+        previewing={previewingPublishAll}
+        publishing={publishingAll}
+        onPublishAll={async (selected, releaseNote) => {
+          const res = await publishAll(selected, releaseNote);
+          // Same reasoning as the single publish above, and more of it: an
+          // armed batch can move every row on the page at once.
+          if (res) await Promise.all([reload(), reloadPublishAll()]);
           return res;
         }}
       />
@@ -575,6 +753,23 @@ interface DocumentRowProps {
    * why the console offers this rather than pre-gating it.
    */
   onPublish?: () => void;
+  /**
+   * Set this document's publish mode — `auto`, `manual` or `never` (plan
+   * `2026-09-19-policy-publish-all-and-auto-publish` D2).
+   *
+   * Set for a publishable kind, until coord answers that the publishing surface
+   * does not apply here — same gate, same reason, as `onPublish`. Absent means
+   * the control is not offered; it never means the mode is undecided, which is
+   * a state the control itself renders.
+   */
+  onSetPublishMode?: (mode: PublishMode) => Promise<boolean>;
+  /** True while a publish-mode PATCH is in flight — disables that picker only. */
+  savingPublishMode?: boolean;
+  /**
+   * This document's entry in the auto-publish status read, when coord named it
+   * as a candidate. `undefined` is UNKNOWN and renders no badge.
+   */
+  autoPublish?: AutoPublishStatusEntry;
 }
 
 function DocumentRow({
@@ -586,6 +781,9 @@ function DocumentRow({
   onClauses,
   onUpstream,
   onPublish,
+  onSetPublishMode,
+  savingPublishMode,
+  autoPublish,
 }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
@@ -617,6 +815,17 @@ function DocumentRow({
    * would invert its degrade polarity and put a tenant's own edits at risk.
    */
   const upstream = upstreamBadge(doc);
+  /**
+   * The auto-publish badge — "publishes automatically at <time> (24 h | 6 h)"
+   * or "held: <token>" — read straight off coord's status entry.
+   *
+   * Nothing here computes a settle time or a hold. The clock keys on the newest
+   * version whose BODY differs from its predecessor's (so a metadata-only
+   * `publish_mode` version does not move it) and the wait depends on a
+   * direction classified against the last publication; a browser holds neither
+   * input. See `../_lib/autoPublishBadge`.
+   */
+  const autoPublishState = autoPublishBadge(autoPublish);
   return (
     <div
       className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
@@ -658,6 +867,19 @@ function DocumentRow({
               {upstream.label}
             </span>
           )}
+          {autoPublishState && (
+            <span
+              className={
+                autoPublishState.tone === "attention"
+                  ? "inline-flex shrink-0 items-center rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
+                  : "inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              }
+              title={autoPublishState.title}
+              data-testid={`doc-auto-publish-${autoPublishState.testId}-${doc.kind}-${doc.name}`}
+            >
+              {autoPublishState.label}
+            </span>
+          )}
           {doc.withdrawn === true && (
             // Muted, not amber: a withdrawn record waits on nobody (R3). Only
             // an explicit `true` — a coord predating withdrawal omits the
@@ -697,6 +919,20 @@ function DocumentRow({
         saving={saving}
         onSet={onSetAgentWriteTier}
       />
+
+      {onSetPublishMode && (
+        <PublishModeControl
+          doc={doc}
+          saving={saving || savingPublishMode === true}
+          // Coord's answer for what the worker WILL set on an undecided
+          // document, served only while the mode is null. Passed down rather
+          // than derived: deriving it needs coord's carve-out list and its five
+          // lint patterns, and the day either changes this console would name
+          // the wrong default with total confidence.
+          undecidedDefault={autoPublish?.undecided_default}
+          onSet={onSetPublishMode}
+        />
+      )}
 
       {onUpstream && (
         <Button
