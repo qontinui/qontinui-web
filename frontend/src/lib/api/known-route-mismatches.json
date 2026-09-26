@@ -1,29 +1,8 @@
 [
   {
-    "file": "app/(app)/admin/coord/gates/_components/GateActions.tsx",
-    "method": "?",
-    "path": "<unresolved> url",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
-    "file": "app/(app)/admin/coord/plan-library/_hooks/usePlanLibrary.ts",
-    "method": "GET",
-    "path": "<unresolved> url",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
-    "file": "app/(app)/admin/coord/prompt-documents/_hooks/usePromptDocumentPublications.ts",
-    "method": "POST",
-    "path": "<unresolved> url",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
     "file": "app/(app)/admin/coord/work-units/page.tsx",
     "method": "GET",
-    "path": "<unresolved> url",
+    "path": "<unresolved> url #1",
     "reason": "unresolved",
     "kind": "unresolved"
   },
@@ -49,25 +28,39 @@
     "kind": "no-path"
   },
   {
-    "file": "components/operations/useFleetDrain.ts",
-    "method": "POST",
-    "path": "<unresolved> url",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
-    "file": "components/overview/editing/api.ts",
-    "method": "?",
-    "path": "<unresolved> `${ApiConfig.getBaseUrl()}${url}`",
-    "reason": "unresolved",
-    "kind": "unresolved"
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/screenshots",
+    "reason": "dead",
+    "kind": "no-path"
   },
   {
     "file": "lib/api-client.ts",
-    "method": "?",
-    "path": "/api/v1{param}",
-    "reason": "unresolved",
-    "kind": "unresolved"
+    "method": "GET",
+    "path": "/api/v1/automation/screenshots/{param}",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/stats/screenshots",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/automation/stats/sessions",
+    "reason": "dead",
+    "kind": "no-path"
+  },
+  {
+    "file": "lib/api-client.ts",
+    "method": "GET",
+    "path": "/api/v1/projects/{param}/images/{param}/url",
+    "reason": "dead",
+    "kind": "verb"
   },
   {
     "file": "lib/api/organizations.ts",
@@ -137,27 +130,6 @@
     "method": "POST",
     "path": "/api/v1/snapshots/import",
     "reason": "dead",
-    "kind": "no-path"
-  },
-  {
-    "file": "lib/api/unified-workflows.ts",
-    "method": "?",
-    "path": "/api/v1/unified-workflows{param}",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
-    "file": "lib/co-pilot/relayExecutor.ts",
-    "method": "GET",
-    "path": "/api/ui-bridge/tabs",
-    "reason": "catch-all-proxy",
-    "kind": "no-path"
-  },
-  {
-    "file": "lib/co-pilot/relayExecutor.ts",
-    "method": "POST",
-    "path": "/api/ui-bridge{param}",
-    "reason": "catch-all-proxy",
     "kind": "no-path"
   },
   {
@@ -546,20 +518,6 @@
     "kind": "verb"
   },
   {
-    "file": "services/devenv-api.ts",
-    "method": "?",
-    "path": "/api/v1/devenv{param}",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
-    "file": "services/execution-service.ts",
-    "method": "?",
-    "path": "<unresolved> `${API_BASE}${endpoint}`",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
     "file": "services/extraction-service.ts",
     "method": "GET",
     "path": "/api/v1/extractions/uitars/{param}/results",
@@ -653,7 +611,7 @@
   {
     "file": "services/prompt-injections-api.ts",
     "method": "?",
-    "path": "/api/v1/admin/prompt-injections{param}",
+    "path": "/api/v1/admin/prompt-injections",
     "reason": "unresolved",
     "kind": "unresolved"
   },
