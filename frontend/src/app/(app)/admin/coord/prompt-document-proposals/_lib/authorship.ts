@@ -153,7 +153,7 @@ export const AUTHOR_CLASS_LABEL: Record<WriteAuthorClass, string> = {
  * `system:proposal-staleness` never matches: coord's retirement actor is not
  * the proposer, so a self-retired proposal is not a self-decided one.
  *
- * **RETAINED without a production caller.** `ProposalCard` moved to
+ * **RETAINED without a production caller.** `PolicyProposalCard` moved to
  * `selfDecidedOrUnknown` when `data-self-decided` went tri-state, so nothing in
  * the app calls this today. It stays because it is the documented SENTENCE-level
  * collapse — the boolean a renderer wants when it has one sentence that only

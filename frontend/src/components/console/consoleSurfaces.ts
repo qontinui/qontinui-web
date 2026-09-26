@@ -89,10 +89,10 @@ import {
 } from "@/components/admin/coord/onboardingClaimStatus";
 // Wave 5 surfaces.
 import {
-  PROPOSAL_ATTENTION_BY_KIND,
-  PROPOSAL_AUTHOR_GLYPH_KINDS,
-  PROPOSAL_KIND_CLASS,
-} from "@/app/(app)/admin/coord/prompt-document-proposals/proposalStatus";
+  POLICY_PROPOSAL_ATTENTION_BY_KIND,
+  POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS,
+  POLICY_PROPOSAL_KIND_CLASS,
+} from "@/app/(app)/admin/coord/prompt-document-proposals/policyProposalStatus";
 import {
   CLEARANCE_ATTENTION_BY_KIND,
   CLEARANCE_AUTHOR_GLYPH_KINDS,
@@ -330,11 +330,11 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   {
     surface: "policy-edit proposals (/admin/coord/prompt-document-proposals)",
     module:
-      "app/(app)/admin/coord/prompt-document-proposals/proposalStatus.ts",
-    attentionByKind: PROPOSAL_ATTENTION_BY_KIND,
+      "app/(app)/admin/coord/prompt-document-proposals/policyProposalStatus.ts",
+    attentionByKind: POLICY_PROPOSAL_ATTENTION_BY_KIND,
     palette: {
-      badgeClass: PROPOSAL_KIND_CLASS,
-      authorGlyphKinds: PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      badgeClass: POLICY_PROPOSAL_KIND_CLASS,
+      authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

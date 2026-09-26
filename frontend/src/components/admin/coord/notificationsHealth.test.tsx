@@ -3,7 +3,7 @@
  *
  * Phase 3 Wave 5 (qontinui-web#1036) shipped three derivation modules and gave
  * two of them a sibling unit test — `clearanceRuleStatus.test.ts` and
- * `proposalStatus.test.ts`. `notificationsHealth.tsx` is the third, and it is
+ * `policyProposalStatus.test.ts`. `notificationsHealth.tsx` is the third, and it is
  * the one whose contract is hardest to see from the page test: every claim it
  * makes is a SENTENCE, and a sentence that is confidently wrong looks exactly
  * like a sentence that is right.

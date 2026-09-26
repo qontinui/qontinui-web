@@ -7,15 +7,15 @@
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
 import {
-  PROPOSAL_ATTENTION_BY_KIND,
-  PROPOSAL_AUTHOR_GLYPH_KINDS,
-  PROPOSAL_KIND_CLASS,
-  deriveProposalStatus,
-  type ProposalKind,
-} from "./proposalStatus";
+  POLICY_PROPOSAL_ATTENTION_BY_KIND,
+  POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS,
+  POLICY_PROPOSAL_KIND_CLASS,
+  derivePolicyProposalStatus,
+  type PolicyProposalKind,
+} from "./policyProposalStatus";
 import type { PromptDocumentProposal } from "./types";
 
-const ALL: ProposalKind[] = [
+const ALL: PolicyProposalKind[] = [
   "loosening",
   "unclassifiable",
   "stale",
@@ -24,35 +24,35 @@ const ALL: ProposalKind[] = [
   "unrecognised",
 ];
 
-type DerivableProposal = Pick<
+type DerivablePolicyProposal = Pick<
   PromptDocumentProposal,
   "direction" | "base_version"
 > &
   Partial<Pick<PromptDocumentProposal, "status">>;
 
-function proposal(over: Partial<PromptDocumentProposal> = {}): DerivableProposal {
+function proposal(over: Partial<PromptDocumentProposal> = {}): DerivablePolicyProposal {
   return {
     direction: "loosening",
     base_version: 3,
     ...over,
-  } as DerivableProposal;
+  } as DerivablePolicyProposal;
 }
 
 describe("proposal palette", () => {
   it("agrees with the attention table — red iff author, amber iff waiting", () => {
     expect(
-      paletteDisagreements(PROPOSAL_ATTENTION_BY_KIND, {
-        badgeClass: PROPOSAL_KIND_CLASS,
-        authorGlyphKinds: PROPOSAL_AUTHOR_GLYPH_KINDS,
+      paletteDisagreements(POLICY_PROPOSAL_ATTENTION_BY_KIND, {
+        badgeClass: POLICY_PROPOSAL_KIND_CLASS,
+        authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS,
       })
     ).toEqual([]);
   });
 
   it("is total over the kind union in both directions", () => {
-    expect(Object.keys(PROPOSAL_ATTENTION_BY_KIND).sort()).toEqual(
+    expect(Object.keys(POLICY_PROPOSAL_ATTENTION_BY_KIND).sort()).toEqual(
       [...ALL].sort()
     );
-    for (const k of ALL) expect(PROPOSAL_KIND_CLASS[k]).toBeTruthy();
+    for (const k of ALL) expect(POLICY_PROPOSAL_KIND_CLASS[k]).toBeTruthy();
   });
 });
 
@@ -63,28 +63,28 @@ describe("the two judgements the palette audit cannot make", () => {
     // promise something else clears it; red would claim "act now". The card
     // painted `unclassifiable` red purely because the word is alarming, which
     // is the exact failure R3 exists to prevent.
-    expect(PROPOSAL_ATTENTION_BY_KIND.loosening).toBe("none");
-    expect(PROPOSAL_ATTENTION_BY_KIND.unclassifiable).toBe("none");
-    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.loosening)).toBe(false);
-    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.unclassifiable)).toBe(
+    expect(POLICY_PROPOSAL_ATTENTION_BY_KIND.loosening).toBe("none");
+    expect(POLICY_PROPOSAL_ATTENTION_BY_KIND.unclassifiable).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(POLICY_PROPOSAL_KIND_CLASS.loosening)).toBe(false);
+    expect(/\bbg-(red|amber)-/.test(POLICY_PROPOSAL_KIND_CLASS.unclassifiable)).toBe(
       false
     );
     // ...and the ask is carried in WORDS instead, which is the other half of
     // the guide's third case. A calm row that says nothing is the failure.
-    expect(deriveProposalStatus(proposal(), null).reason).toMatch(
+    expect(derivePolicyProposalStatus(proposal(), null).reason).toMatch(
       /held rather than applied/i
     );
   });
 
   it("files a STALE proposal as author-action — the premise expired", () => {
-    const s = deriveProposalStatus(proposal({ base_version: 3 }), 7);
+    const s = derivePolicyProposalStatus(proposal({ base_version: 3 }), 7);
     expect(s.kind).toBe("stale");
     expect(s.attention).toBe("author");
     expect(s.reason).toContain("v7");
     // Staleness DOMINATES the direction: what the comparator concluded about
     // wording that is no longer deployed is not the operative fact.
     expect(
-      deriveProposalStatus(
+      derivePolicyProposalStatus(
         proposal({ direction: "unclassifiable", base_version: 3 }),
         7
       ).kind
@@ -95,12 +95,12 @@ describe("the two judgements the palette audit cannot make", () => {
     // `liveVersion === null` is UNKNOWN. A document version we failed to read
     // cannot prove a proposal is current, so it must not resolve to `stale`
     // NOR silently to "still the current version".
-    const s = deriveProposalStatus(proposal({ base_version: 3 }), null);
+    const s = derivePolicyProposalStatus(proposal({ base_version: 3 }), null);
     expect(s.kind).toBe("loosening");
   });
 
   it("floors an unrecognised direction at amber, not calm", () => {
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ direction: "sideways" as PromptDocumentProposal["direction"] }),
       3
     );
@@ -111,7 +111,7 @@ describe("the two judgements the palette audit cannot make", () => {
   });
 
   it("does not let a live version EQUAL to the base read as stale", () => {
-    expect(deriveProposalStatus(proposal({ base_version: 4 }), 4).kind).toBe(
+    expect(derivePolicyProposalStatus(proposal({ base_version: 4 }), 4).kind).toBe(
       "loosening"
     );
   });
@@ -129,7 +129,7 @@ describe("the two judgements the palette audit cannot make", () => {
  */
 describe("a proposal coord already retired", () => {
   it("reads as `retired`, and asks nothing of anyone", () => {
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "stale" }),
       9
     );
@@ -137,8 +137,8 @@ describe("a proposal coord already retired", () => {
     // NOT `author`. coord closed it; there is no decision left to make, and a
     // red row would be demanding an action that no longer exists.
     expect(s.attention).toBe("none");
-    expect(PROPOSAL_ATTENTION_BY_KIND.retired).toBe("none");
-    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.retired)).toBe(false);
+    expect(POLICY_PROPOSAL_ATTENTION_BY_KIND.retired).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(POLICY_PROPOSAL_KIND_CLASS.retired)).toBe(false);
     expect(s.reason).toMatch(/retired/i);
     expect(s.reason).toContain("v9");
   });
@@ -148,7 +148,7 @@ describe("a proposal coord already retired", () => {
     // `liveVersion === null` is UNKNOWN for staleness we would have to DERIVE,
     // but coord's own verdict is not a derivation. A retired row that fell
     // through to `loosening` here would render as approvable.
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "stale" }),
       null
     );
@@ -158,7 +158,7 @@ describe("a proposal coord already retired", () => {
 
   it("outranks the direction, `unrecognised` included", () => {
     expect(
-      deriveProposalStatus(
+      derivePolicyProposalStatus(
         proposal({
           direction: "sideways" as PromptDocumentProposal["direction"],
           status: "stale",
@@ -173,7 +173,7 @@ describe("a proposal coord already retired", () => {
     // inside the document write, while this page holds a list fetched before
     // it. In that window the row is still `pending` on screen and the only
     // evidence is the version comparison — which must still go red.
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "pending" }),
       7
     );
@@ -198,7 +198,7 @@ describe("a proposal coord already decided", () => {
   it("reads as `decided` and asks nothing, even though the document HAS moved", () => {
     // The exact shape approving produces: base v3, document now at v7 because
     // the approval is what moved it.
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "approved" }),
       7
     );
@@ -209,7 +209,7 @@ describe("a proposal coord already decided", () => {
   });
 
   it("files a REJECTED row the same way", () => {
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "rejected" }),
       7
     );
@@ -219,15 +219,15 @@ describe("a proposal coord already decided", () => {
   });
 
   it("paints `decided` calm — never the act-now red the derived kind uses", () => {
-    expect(PROPOSAL_ATTENTION_BY_KIND.decided).toBe("none");
-    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.decided)).toBe(false);
+    expect(POLICY_PROPOSAL_ATTENTION_BY_KIND.decided).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(POLICY_PROPOSAL_KIND_CLASS.decided)).toBe(false);
     // ...and it carries no `✕`, which the palette derives from `author`.
-    expect(PROPOSAL_AUTHOR_GLYPH_KINDS.has("decided")).toBe(false);
+    expect(POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS.has("decided")).toBe(false);
   });
 
   it("outranks the direction, `unrecognised` included", () => {
     expect(
-      deriveProposalStatus(
+      derivePolicyProposalStatus(
         proposal({
           direction: "sideways" as PromptDocumentProposal["direction"],
           status: "approved",
@@ -241,7 +241,7 @@ describe("a proposal coord already decided", () => {
     // The guard against over-correcting: if `decided` were reached by anything
     // but the two closed statuses, the race-window warning would vanish with
     // it and this file would still be green.
-    const s = deriveProposalStatus(
+    const s = derivePolicyProposalStatus(
       proposal({ base_version: 3, status: "pending" }),
       7
     );
