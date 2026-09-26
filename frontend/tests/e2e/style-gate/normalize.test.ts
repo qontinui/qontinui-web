@@ -95,6 +95,10 @@ describe("deriveInteractable", () => {
     expect(deriveInteractable({ actions: ["click"] })).toBe(true);
   });
   it("is true for customActions", () => {
+    // SDK >= 0.27 projects each custom action as an object keyed by `id`.
+    expect(deriveInteractable({ customActions: [{ id: "toggle" }] })).toBe(true);
+    // A bare name (the pre-0.27 wire shape) still counts: the check reads
+    // only that the list is non-empty.
     expect(deriveInteractable({ customActions: ["toggle"] })).toBe(true);
   });
   it("is true for interactive tag", () => {
