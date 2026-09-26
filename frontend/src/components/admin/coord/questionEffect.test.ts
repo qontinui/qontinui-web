@@ -29,11 +29,15 @@ describe("deriveQuestionEffect — no effect", () => {
   // The respond proxy classifies effect_kind EXACTLY and gates everything but
   // absent/null/""/"none" on tenant admin; the console must agree, or a
   // non-admin is offered a composer the server refuses.
-  it("treats a non-string effect_kind as an unknown effect", () => {
-    const e = deriveQuestionEffect({ effect_kind: 1 as unknown as string });
-    expect(e).not.toBeNull();
-    expect(e?.kind).toBe("unknown");
-  });
+  it.each([[1], [true], [{}], [["gate"]], [["proposal"]], [["none"]]])(
+    "treats the non-string effect_kind %j as an unknown effect with no decisions",
+    (kind) => {
+      const e = deriveQuestionEffect({ effect_kind: kind as unknown as string });
+      expect(e).not.toBeNull();
+      expect(e?.kind).toBe("unknown");
+      expect(e?.decisions).toBeNull();
+    }
+  );
 
   it.each([[" none "], ["NONE"], ["none\n"]])(
     "treats %j as an effect, not as 'none'",

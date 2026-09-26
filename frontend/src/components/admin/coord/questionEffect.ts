@@ -83,7 +83,9 @@ function refString(ref: unknown, key: string): string | null {
  * `'none'`. Matching is exact — no trim, no case-folding — because the respond
  * proxy classifies the same value exactly and requires tenant admin for anything
  * else; a looser match here would offer a non-admin a composer the server then
- * refuses.
+ * refuses. A non-string `effect_kind` is always an `unknown` effect with no
+ * decisions — never coerced into a known kind (`String(["gate"])` is `"gate"`) —
+ * because the proxy refuses it (503) for everyone.
  */
 export function deriveQuestionEffect(
   q: Pick<AgentQuestionRow, "effect_kind" | "effect_ref">
@@ -92,11 +94,26 @@ export function deriveQuestionEffect(
   if (kind === undefined || kind === null || kind === "" || kind === "none") {
     return null;
   }
-  // A non-string value is not a kind we can route; the respond proxy refuses
-  // it (503), so render it as an unknown effect (admin notice) rather than as
-  // an ordinary row with a composer that always fails.
-  const raw = typeof kind === "string" ? kind : String(kind);
   const ref = q.effect_ref;
+  if (typeof kind !== "string") {
+    let shown: string;
+    try {
+      shown = JSON.stringify(kind) ?? String(kind);
+    } catch {
+      shown = String(kind);
+    }
+    return {
+      kind: "unknown",
+      rawKind: shown,
+      id: refString(ref, "id"),
+      label: `effect: ${shown}`,
+      detail: null,
+      title: `coord sent a non-string effect_kind (${shown}); this console cannot route it.`,
+      href: null,
+      decisions: null,
+    };
+  }
+  const raw = kind;
 
   if (raw === "gate") {
     const id = refString(ref, "id") ?? refString(ref, "gate_id");
