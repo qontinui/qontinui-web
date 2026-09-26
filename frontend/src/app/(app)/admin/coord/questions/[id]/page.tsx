@@ -96,11 +96,16 @@
  * `options` equal the known vocabulary (`effectDecisionsFor`) — any
  * disagreement falls back to the composer with a notice
  * (`coord-question-effect-mismatch`); (2) a proposal row links its diff
- * (`coord-question-effect-review-link`) and "approve" goes through a
- * `ConfirmDestructiveDialog`, since it applies a policy edit; (3) the web
- * backend gates an effect row's answer on tenant admin and stamps
- * `responded_by_operator` from the AUTHENTICATED user, so the body's value is
- * sent but not relied on. A
+ * (`coord-question-effect-review-link`), and the two DECISIVE values — proposal
+ * "approve" (applies a policy edit) and gate "met" (clears the gate, which
+ * fires its continuation) — go through a `ConfirmDestructiveDialog`, whether
+ * they come from a button or from the fallback composer's free text
+ * (`decisiveValueFor`); (3) the web backend gates an effect row's answer on
+ * tenant admin and stamps `responded_by_operator` from the AUTHENTICATED user,
+ * so the body's value is sent but not relied on — and the buttons are hidden
+ * behind `CoordAdminOnly` (a "requires tenant admin" notice,
+ * `coord-question-effect-admin-only`, in their place) so a Developer is not
+ * offered a control the server will refuse. A
  * `clause` row (reserved, Phase 1b) or a kind this build does not recognise
  * has no fixed vocabulary here and keeps the composer. The meta block carries
  * a linked `<QuestionEffectChip>` to the effect's own page. A row with no
@@ -140,8 +145,13 @@ import {
 import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
 import { QuestionEffectChip } from "@/components/admin/coord/QuestionEffectChip";
 import {
+  CoordAdminOnly,
+  ReadOnlyNotice,
+} from "@/components/admin/coord/CoordAdminOnly";
+import {
   deriveQuestionEffect,
   effectDecisionsFor,
+  type QuestionEffect,
 } from "@/components/admin/coord/questionEffect";
 
 const API = "/api/v1/operations";
@@ -173,6 +183,23 @@ function extractQuestion(body: unknown): AgentQuestionRow {
     "coord answered with something that is not a question record " +
       "(no question id or text)"
   );
+}
+
+/**
+ * The value, if `text` is one that FIRES the effect and so must be confirmed:
+ * proposal `approve` applies a policy edit, gate `met` clears the gate and
+ * fires the continuation waiting on it. Compared trimmed and case-insensitively
+ * so the fallback composer cannot route around the confirm by typing it —
+ * a confirm step that only guards the button is not a guard.
+ */
+function decisiveValueFor(
+  effect: QuestionEffect | null,
+  text: string
+): "approve" | "met" | null {
+  const t = text.trim().toLowerCase();
+  if (effect?.kind === "proposal" && t === "approve") return "approve";
+  if (effect?.kind === "gate" && t === "met") return "met";
+  return null;
 }
 
 function normalizeOptions(
@@ -210,15 +237,16 @@ export default function CoordQuestionDetailPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [response, setResponse] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  /** The proposal "approve" confirm step is open. Approving APPLIES a policy
-   *  edit, so it is never a single click. */
-  const [confirmApprove, setConfirmApprove] = useState(false);
+  /** The text awaiting the confirm step, or null when no confirm is open.
+   *  Proposal "approve" APPLIES a policy edit and gate "met" fires a
+   *  continuation, so neither is ever a single click. */
+  const [confirmText, setConfirmText] = useState<string | null>(null);
 
   // Generation guard, for the same reason #1110 put one on each of the three
   // list reads — and here it is not only a rendering concern. App Router keeps
   // this component MOUNTED across an `[id]` change, so navigating A -> B while
   // A's read is slow lands `setQuestion(A)` after B's. The page would then
-  // render question A's text under B's id, and `onSubmit` posts to `id` — B.
+  // render question A's text under B's id, and a submit posts to `id` — B.
   // The operator answers the wrong agent, having read the wrong question.
   const fetchSeq = useRef(0);
 
@@ -277,12 +305,14 @@ export default function CoordQuestionDetailPage() {
     // until now. `response` and `selectedOption` are composer state, not read
     // state, so nothing above touched them: a sentence typed for question A —
     // or an option card clicked on A — survived the route change and pre-filled
-    // B's composer, which `onSubmit` then POSTs to B. The operator sends an
+    // B's composer, which a submit then POSTs to B. The operator sends an
     // answer they wrote about a different question, and neither the generation
     // guard nor the identity check can see it, because both are about which
     // ROW is displayed. A draft belongs to the question it was written for.
     setResponse("");
     setSelectedOption(null);
+    // A confirm opened for A must not survive into B and post there.
+    setConfirmText(null);
     fetchOne();
   }, [fetchOne]);
 
@@ -313,15 +343,10 @@ export default function CoordQuestionDetailPage() {
     [id, user?.email, router]
   );
 
-  const onSubmit = useCallback(
-    () => postResponse(response),
-    [postResponse, response]
-  );
-
   // The effect below resets `question` on an `[id]` change, but an effect
   // is PASSIVE: React commits the render that ran with the new `id` and the
   // OLD `question` before it fires. That frame paints question A's text,
-  // options and LIVE composer under breadcrumb B - and `onSubmit` posts to
+  // options and LIVE composer under breadcrumb B - and a submit posts to
   // `id`, which is B. The generation guard closes the async door onto that
   // hazard; this closes the synchronous one, at render time, where effect
   // ordering cannot reach it. Coord returns a canonical lowercase uuid
@@ -347,6 +372,16 @@ export default function CoordQuestionDetailPage() {
     effect,
     shown?.options ?? null
   );
+  /** Submit `text`, through the confirm step when it is a decisive value —
+   *  shared by the decision buttons and the fallback composer. */
+  const submitAnswer = (text: string) => {
+    if (decisiveValueFor(effect, text)) {
+      setConfirmText(text.trim());
+      return;
+    }
+    void postResponse(text);
+  };
+  const confirmKind = confirmText ? decisiveValueFor(effect, confirmText) : null;
   // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
@@ -586,40 +621,41 @@ export default function CoordQuestionDetailPage() {
                       </span>
                     </p>
                   )}
-                  <div
-                    className="flex flex-wrap items-center gap-2"
-                    role="group"
-                    aria-label={
-                      effect?.kind === "proposal"
-                        ? "Decide this proposal"
-                        : "Decide this gate"
+                  {/* The server refuses a non-admin's answer to an effect row
+                      (403); do not offer a Developer a control that will fail. */}
+                  <CoordAdminOnly
+                    fallback={
+                      <div data-testid="coord-question-effect-admin-only">
+                        <ReadOnlyNotice label="Requires tenant admin — deciding this clears a gate or applies a policy edit." />
+                      </div>
                     }
-                    data-testid="coord-question-effect-decisions"
                   >
-                    {decisions.map((d) => (
-                      <Button
-                        key={d.value}
-                        variant={d === decisions[0] ? "default" : "outline"}
-                        disabled={submitting}
-                        onClick={() => {
-                          // Approving a proposal APPLIES a policy edit — it
-                          // goes through a confirm step, never one click.
-                          if (
-                            effect?.kind === "proposal" &&
-                            d.value === "approve"
-                          ) {
-                            setConfirmApprove(true);
-                            return;
-                          }
-                          void postResponse(d.value);
-                        }}
-                        data-testid="coord-question-effect-decision"
-                        data-decision-value={d.value}
-                      >
-                        {d.label}
-                      </Button>
-                    ))}
-                  </div>
+                    <div
+                      className="flex flex-wrap items-center gap-2"
+                      role="group"
+                      aria-label={
+                        effect?.kind === "proposal"
+                          ? "Decide this proposal"
+                          : "Decide this gate"
+                      }
+                      data-testid="coord-question-effect-decisions"
+                    >
+                      {decisions.map((d) => (
+                        <Button
+                          key={d.value}
+                          variant={d === decisions[0] ? "default" : "outline"}
+                          disabled={submitting}
+                          // A decisive value (approve / met) opens the confirm
+                          // step instead of posting.
+                          onClick={() => submitAnswer(d.value)}
+                          data-testid="coord-question-effect-decision"
+                          data-decision-value={d.value}
+                        >
+                          {d.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </CoordAdminOnly>
                   <p className="text-xs text-muted-foreground">
                     Decided through the {effect?.label}&apos;s own core
                     {effect?.kind === "proposal"
@@ -628,35 +664,6 @@ export default function CoordQuestionDetailPage() {
                     ; requires tenant admin, and the decision is recorded
                     against your signed-in account by the server.
                   </p>
-                  <ConfirmDestructiveDialog
-                    open={confirmApprove}
-                    onOpenChange={setConfirmApprove}
-                    title="Approve and apply this policy edit?"
-                    description={
-                      <>
-                        Approving applies the proposed edit to the live policy
-                        document through the proposal&apos;s own decision core.
-                        Review the diff first if you have not.
-                      </>
-                    }
-                    confirmLabel="Approve and apply"
-                    busy={submitting}
-                    onConfirm={() => {
-                      setConfirmApprove(false);
-                      void postResponse("approve");
-                    }}
-                    testId="coord-question-approve-confirm"
-                  >
-                    {effect?.href ? (
-                      <Link
-                        href={effect.href}
-                        className="underline underline-offset-2"
-                        data-testid="coord-question-approve-confirm-review-link"
-                      >
-                        Open proposal to review the diff
-                      </Link>
-                    ) : null}
-                  </ConfirmDestructiveDialog>
                 </div>
               ) : (
                 <>
@@ -683,7 +690,7 @@ export default function CoordQuestionDetailPage() {
                   />
                   <div className="flex items-center gap-2">
                     <Button
-                      onClick={onSubmit}
+                      onClick={() => submitAnswer(response)}
                       disabled={submitting || !response.trim()}
                       data-testid="coord-question-submit"
                     >
@@ -695,6 +702,58 @@ export default function CoordQuestionDetailPage() {
                   </div>
                 </>
               )}
+            {/* One confirm step for both entry points — the decision buttons
+                and the fallback composer — so typing the value cannot skip it. */}
+            <ConfirmDestructiveDialog
+              open={confirmKind !== null}
+              onOpenChange={(open) => {
+                if (!open) setConfirmText(null);
+              }}
+              title={
+                confirmKind === "met"
+                  ? "Mark this gate met?"
+                  : "Approve and apply this policy edit?"
+              }
+              description={
+                confirmKind === "met" ? (
+                  <>
+                    Marking it met clears the gate through its own core, which
+                    fires the continuation waiting on it — work resumes or a
+                    session is spawned.
+                  </>
+                ) : (
+                  <>
+                    Approving applies the proposed edit to the live policy
+                    document through the proposal&apos;s own decision core.
+                    Review the diff first if you have not.
+                  </>
+                )
+              }
+              confirmLabel={
+                confirmKind === "met" ? "Mark met" : "Approve and apply"
+              }
+              busy={submitting}
+              onConfirm={() => {
+                const text = confirmText;
+                setConfirmText(null);
+                if (text) void postResponse(text);
+              }}
+              testId={
+                confirmKind === "met"
+                  ? "coord-question-met-confirm"
+                  : "coord-question-approve-confirm"
+              }
+            >
+              {confirmKind === "approve" && effect?.href ? (
+                <Link
+                  href={effect.href}
+                  className="underline underline-offset-2"
+                  data-testid="coord-question-approve-confirm-review-link"
+                >
+                  Open proposal to review the diff
+                </Link>
+              ) : null}
+            </ConfirmDestructiveDialog>
           </section>
         </>
       ) : notFound ? (

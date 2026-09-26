@@ -64,6 +64,7 @@ from websockets.asyncio.client import connect as websockets_connect  # noqa: E40
 
 from app.api.admin_deps import require_admin
 from app.api.deps import (
+    current_active_user_optional,
     get_async_db,
     get_audit_actor_user_optional,
     get_current_active_user_async,
@@ -5630,20 +5631,28 @@ def _question_effect_kind(row: Any) -> str | None:
     return kind.strip()
 
 
+_UNREADABLE_DETAIL = (
+    "agent_question_unreadable: could not read the question from coord to "
+    "decide whether answering it requires tenant admin; refusing to answer"
+)
+
+
 @router.post("/agent-questions/{question_id}/respond")
 async def post_agent_question_response(
-    question_id: str,
+    question_id: UUID,
     body: dict[str, Any],
     request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
+    current_user: UserModel | None = Depends(current_active_user_optional),
 ) -> Any:
     """A tenant member (Developer or Administrator) answers an agent question.
 
     An ORDINARY question (``effect_kind`` absent, null or ``'none'``) is
     intentionally NOT admin-gated: a Developer must be able to answer their own
     running agent's questions. Coord scopes the respond route to the caller's
-    tenant, so this stays within the shared account.
+    tenant, so this stays within the shared account. Its auth is exactly what
+    it always was — ``get_tenant_id`` alone; the web user is resolved
+    OPTIONALLY and is not required for it.
 
     A DECISION-EFFECT row (plan
     ``2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy``)
@@ -5653,12 +5662,16 @@ async def post_agent_question_response(
     (:func:`approve_gate`, :func:`approve_prompt_document_proposal`) require
     :func:`require_coord_tenant_admin`, and this door must not be a way around
     them. So the row is read from coord first and, for any effect other than
-    ``none``, the same admin check runs here.
+    ``none`` (including a kind this build does not recognise), an active web
+    user is required (401 when absent) and the same admin check runs here.
 
-    Fail-closed: when the row cannot be read (coord down, non-object body, a
-    malformed ``effect_kind``) the answer is REFUSED rather than forwarded,
-    because whether admin is required is exactly what could not be decided. A
-    404 passes through as "not found".
+    Fail-closed: nothing is POSTed unless the row was read. A coord 4xx on the
+    read (401 expired session, 403 ``tenant_not_resolved``, 400 malformed id,
+    404) is re-raised unchanged, since it is coord's own answer about the
+    request. A coord 5xx, an unreachable coord, a non-JSON or non-object body,
+    any other transport error, or a malformed ``effect_kind`` is a 503
+    ``agent_question_unreadable``: whether admin is required is exactly what
+    could not be decided.
 
     Attribution: for an effect row the recorded ``responded_by_operator`` is
     the AUTHENTICATED web user (:func:`_editor_identity`), never the
@@ -5666,36 +5679,38 @@ async def post_agent_question_response(
     record, as it is on those doors (where coord stamps the decider from the
     forwarded bearer). An ordinary row keeps the body's value, as before.
     """
-    path_id = quote(question_id, safe="")
+    path_id = str(question_id)
     try:
         row = await _proxy_coord_get(
             f"/coord/agent-questions/{path_id}", tenant_id=tenant_id
         )
         effect_kind = _question_effect_kind(row)
+    except CoordTransportUnavailable as exc:
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
     except HTTPException as exc:
-        if exc.status_code == 404:
-            raise HTTPException(
-                status_code=404, detail="agent question not found"
-            ) from exc
+        if 400 <= exc.status_code < 500:
+            raise
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
+    except (TypeError, ValueError, httpx.HTTPError) as exc:
+        # ValueError: a 2xx whose body is not JSON (``resp.json()``).
+        # httpx.HTTPError: a transport failure ``_proxy_coord_get`` does not
+        # translate (it maps only connect errors and timeouts).
+        # TypeError: a non-object row or a non-string ``effect_kind``.
         raise HTTPException(
             status_code=503,
-            detail=(
-                "agent_question_unreadable: could not read the question from "
-                "coord to decide whether answering it requires tenant admin; "
-                "refusing to answer"
-            ),
-        ) from exc
-    except TypeError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"agent_question_unreadable: {exc}; refusing to answer without "
-                "knowing whether it requires tenant admin"
-            ),
+            detail=f"{_UNREADABLE_DETAIL} ({type(exc).__name__})",
         ) from exc
 
     forwarded = body
     if effect_kind not in _NO_EFFECT_KINDS:
+        if current_user is None:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "answering a decision-effect question requires an "
+                    "authenticated active user"
+                ),
+            )
         # Same dependency semantics as the gate / proposal approve routes —
         # admin in the EFFECTIVE tenant, superusers pass. Called directly
         # because whether it applies depends on the row just read.

@@ -118,6 +118,11 @@ export function CollapsiblePanel({
   }, [forceOpen]);
 
   const handleOpenChange = (next: boolean) => {
+    // While the caller forces the panel open, a close request is ignored and
+    // NOT persisted: the panel stays open regardless, so recording "closed"
+    // would silently collapse it on the next visit for a click that did
+    // nothing visible now.
+    if (forceOpen && !next) return;
     setOpen(next);
     if (!storageKey) return;
     try {

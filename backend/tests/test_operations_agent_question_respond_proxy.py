@@ -16,7 +16,14 @@ Pinned here:
   AUTHENTICATED user, not the client-supplied value;
 * an ordinary (``'none'`` / absent) row is unchanged for a non-admin — the body
   is forwarded verbatim, including its own ``responded_by_operator``;
-* an unreadable row fails CLOSED (nothing POSTed), and a 404 stays a 404.
+* an unreadable row fails CLOSED (nothing POSTed): a coord 5xx, an unreachable
+  coord, a non-JSON 2xx body or any other ``httpx`` transport error is a 503,
+  while a coord 4xx (401 / 403 / 400 / 404) is re-raised unchanged;
+* ``effect_kind`` ``clause`` and a kind this build does not recognise also
+  require admin; a superuser passes; the admin check runs in the ACTIVE tenant;
+* an ordinary row needs no web user at all (the user dependency is optional),
+  while an effect row with no active user is a 401;
+* ``question_id`` is a UUID — a malformed one is a 422 and reaches no coord.
 
 Same harness as ``test_operations_prompt_document_proposals_proxy.py``: a bare
 FastAPI app and a mocked ``httpx.AsyncClient``. ``require_coord_tenant_admin``
@@ -41,32 +48,47 @@ QID = "00000000-0000-0000-0000-00000000e001"
 RESPOND = f"/api/v1/operations/agent-questions/{QID}/respond"
 
 
-def _identity(*, admin: bool):
+OTHER_TENANT = UUID("22222222-2222-2222-2222-222222222222")
+
+_ANON = object()  # sentinel: "no active web user on this request"
+
+
+def _identity(*, admin: bool, other_tenant_roles: tuple[str, ...] | None = None):
     from app.services.coord_identity import CoordIdentity, CoordTenant
 
     roles = ("admin",) if admin else ("developer",)
+    tenants = [CoordTenant(tenant_id=TENANT, slug="t", roles=roles)]
+    if other_tenant_roles is not None:
+        tenants.append(
+            CoordTenant(tenant_id=OTHER_TENANT, slug="o", roles=other_tenant_roles)
+        )
     return CoordIdentity(
         operator_id=USER_ID,
         home_tenant_id=TENANT,
         email=USER_EMAIL,
         roles=roles,
-        tenants=(CoordTenant(tenant_id=TENANT, slug="t", roles=roles),),
+        tenants=tuple(tenants),
         is_admin=admin,
     )
 
 
-def _client() -> TestClient:
-    from app.api.deps import get_current_active_user_async
+def _client(*, superuser: bool = False, user=None) -> TestClient:
+    from app.api.deps import current_active_user_optional
     from app.api.v1.endpoints.operations import get_tenant_id
     from app.api.v1.endpoints.operations import router as operations_router
 
     app = FastAPI()
-    user = MagicMock()
-    user.id = USER_ID
-    user.email = USER_EMAIL
-    user.is_active = True
-    user.is_superuser = False
-    app.dependency_overrides[get_current_active_user_async] = lambda: user
+    if user is None:
+        user = MagicMock()
+        user.id = USER_ID
+        user.email = USER_EMAIL
+        user.is_active = True
+        user.is_superuser = superuser
+    resolved = None if user is _ANON else user
+    # The route resolves the web user OPTIONALLY. Only this dependency is
+    # overridden: if the route still depended on the strict
+    # ``get_current_active_user_async`` it would be resolved for real here.
+    app.dependency_overrides[current_active_user_optional] = lambda: resolved
     app.dependency_overrides[get_tenant_id] = lambda: TENANT
     app.include_router(operations_router, prefix="/api/v1/operations")
     return TestClient(app, raise_server_exceptions=False)
@@ -96,8 +118,19 @@ PROPOSAL_ROW = _row(
 )
 
 
-def _run(row_response: MagicMock, body: dict, *, admin: bool):
-    """POST the respond route with coord's GET answering ``row_response``."""
+def _run(
+    row_response: MagicMock | None,
+    body: dict,
+    *,
+    admin: bool,
+    get_side_effect: BaseException | None = None,
+    identity=None,
+    headers: dict[str, str] | None = None,
+    client_kwargs: dict | None = None,
+    path: str = RESPOND,
+):
+    """POST the respond route with coord's GET answering ``row_response``
+    (or raising ``get_side_effect``)."""
     from app.api.v1.endpoints import operations
 
     with (
@@ -105,16 +138,19 @@ def _run(row_response: MagicMock, body: dict, *, admin: bool):
         patch.object(
             operations,
             "get_coord_identity",
-            new=AsyncMock(return_value=_identity(admin=admin)),
+            new=AsyncMock(return_value=identity or _identity(admin=admin)),
         ),
     ):
         instance = AsyncMock()
         instance.__aenter__ = AsyncMock(return_value=instance)
         instance.__aexit__ = AsyncMock(return_value=False)
         MockClient.return_value = instance
-        instance.get.return_value = row_response
+        if get_side_effect is not None:
+            instance.get.side_effect = get_side_effect
+        else:
+            instance.get.return_value = row_response
         instance.post.return_value = _resp(json_data={"ok": True})
-        resp = _client().post(RESPOND, json=body)
+        resp = _client(**(client_kwargs or {})).post(path, json=body, headers=headers)
     return resp, instance
 
 
@@ -219,4 +255,126 @@ def test_a_missing_question_is_a_404_and_nothing_is_posted():
         admin=True,
     )
     assert resp.status_code == 404
+    instance.post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("status", "detail"),
+    [
+        (401, "session expired"),
+        (400, "malformed question id"),
+        (403, "tenant_not_resolved"),
+    ],
+    ids=["401", "400", "403"],
+)
+def test_a_coord_4xx_on_the_read_passes_through_unchanged(status, detail):
+    resp, instance = _run(
+        _resp(status=status, json_data={"error": detail}),
+        {"response": "met"},
+        admin=True,
+    )
+    assert resp.status_code == status
+    assert detail in resp.text
+    assert "agent_question_unreadable" not in resp.text
+    instance.post.assert_not_called()
+
+
+def test_a_non_json_2xx_body_fails_closed_as_503():
+    row = _resp(status=200)
+    row.json.side_effect = ValueError("Expecting value: line 1 column 1")
+    row.text = "<html>not json</html>"
+    resp, instance = _run(row, {"response": "met"}, admin=True)
+    assert resp.status_code == 503
+    assert "agent_question_unreadable" in resp.text
+    instance.post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.RemoteProtocolError("peer closed connection"),
+        httpx.ReadError("connection reset"),
+    ],
+    ids=["remote-protocol", "read-error"],
+)
+def test_an_untranslated_httpx_error_fails_closed_as_503(error):
+    resp, instance = _run(None, {"response": "met"}, admin=True, get_side_effect=error)
+    assert resp.status_code == 503
+    assert "agent_question_unreadable" in resp.text
+    instance.post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _row(effect_kind="clause", effect_ref={"id": "c-1"}, options=["approve"]),
+        _row(effect_kind="some_future_kind", effect_ref={"id": "x"}),
+    ],
+    ids=["clause", "unrecognised"],
+)
+def test_other_effect_kinds_also_require_admin(row):
+    resp, instance = _run(_resp(json_data=row), {"response": "approve"}, admin=False)
+    assert resp.status_code == 403
+    assert "not_coord_tenant_admin" in resp.text
+    instance.post.assert_not_called()
+
+
+def test_a_superuser_passes_without_tenant_admin():
+    resp, instance = _run(
+        _resp(json_data=GATE_ROW),
+        {"response": "met"},
+        admin=False,
+        client_kwargs={"superuser": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert instance.post.call_args.kwargs["json"]["responded_by_operator"] == USER_EMAIL
+
+
+def test_admin_is_checked_in_the_active_tenant_not_the_home_one():
+    # Admin of the HOME tenant, only Developer of the one the switcher selects.
+    identity = _identity(admin=True, other_tenant_roles=("developer",))
+    resp, instance = _run(
+        _resp(json_data=GATE_ROW),
+        {"response": "met"},
+        admin=True,
+        identity=identity,
+        headers={"X-Qontinui-Active-Tenant": str(OTHER_TENANT)},
+    )
+    assert resp.status_code == 403
+    assert "not_coord_tenant_admin" in resp.text
+    instance.post.assert_not_called()
+
+
+def test_an_ordinary_row_needs_no_web_user():
+    body = {"response": "pin it", "responded_by_operator": "dev@example.com"}
+    resp, instance = _run(
+        _resp(json_data=_row(effect_kind="none")),
+        body,
+        admin=False,
+        client_kwargs={"user": _ANON},
+    )
+    assert resp.status_code == 200, resp.text
+    assert instance.post.call_args.kwargs["json"] == body
+
+
+def test_an_effect_row_without_a_web_user_is_a_401():
+    resp, instance = _run(
+        _resp(json_data=GATE_ROW),
+        {"response": "met"},
+        admin=True,
+        client_kwargs={"user": _ANON},
+    )
+    assert resp.status_code == 401
+    instance.post.assert_not_called()
+
+
+def test_a_malformed_question_id_is_a_422_and_reaches_no_coord():
+    resp, instance = _run(
+        _resp(json_data=GATE_ROW),
+        {"response": "met"},
+        admin=True,
+        path="/api/v1/operations/agent-questions/not-a-uuid/respond",
+    )
+    assert resp.status_code == 422
+    instance.get.assert_not_called()
     instance.post.assert_not_called()

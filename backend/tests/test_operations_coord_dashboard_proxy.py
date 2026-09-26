@@ -523,7 +523,9 @@ class TestAgentQuestionsEndpoints:
         _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_respond(self, client: TestClient):
-        coord_payload = {"question_id": "q-1", "response": "yes"}
+        # question_id is a UUID on the route (coord's PK is UUID).
+        qid = "00000000-0000-0000-0000-0000000000a1"
+        coord_payload = {"question_id": qid, "response": "yes"}
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -531,17 +533,17 @@ class TestAgentQuestionsEndpoints:
             # needs tenant admin (a decision-effect row does); an ordinary
             # row does not.
             instance.get.return_value = _mock_response(
-                json_data={"question_id": "q-1", "effect_kind": "none"}
+                json_data={"question_id": qid, "effect_kind": "none"}
             )
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
             resp = client.post(
-                f"{API_PREFIX}/agent-questions/q-1/respond",
+                f"{API_PREFIX}/agent-questions/{qid}/respond",
                 json={"response": "yes"},
             )
         assert resp.status_code == 200
         called_url = instance.post.call_args.args[0]
-        assert called_url.endswith("/coord/agent-questions/q-1/respond")
+        assert called_url.endswith(f"/coord/agent-questions/{qid}/respond")
         _assert_tenant_header_forwarded(instance.post.call_args)
         _assert_tenant_header_forwarded(instance.get.call_args)
 

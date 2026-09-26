@@ -42,8 +42,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+let isCoordAdmin = true;
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ user: { email: "op@example.com" } }),
+  useAuth: () => ({ user: { email: "op@example.com" }, isCoordAdmin }),
 }));
 
 // Not under test, and ESM-only — the markdown renderer would drag remark's
@@ -79,6 +80,7 @@ const httpError = (status: number) =>
 
 beforeEach(() => {
   routeId = "q-1";
+  isCoordAdmin = true;
   get.mockReset();
   post.mockReset();
 });
@@ -761,12 +763,51 @@ describe("a decision-effect row is answered with the effect's own values", () =>
       "wu-42 · Phase 2"
     );
 
+    // `met` clears the gate and fires its continuation — confirm first.
     fireEvent.click(decisionButtons()[0]);
+    const dialog = await screen.findByTestId("coord-question-met-confirm");
+    expect(post).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent(/continuation/);
+    fireEvent.click(screen.getByTestId("coord-question-met-confirm-confirm"));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post).toHaveBeenCalledWith(
       "/api/v1/operations/agent-questions/q-1/respond",
       { response: "met", responded_by_operator: "op@example.com" }
     );
+  });
+
+  it("cancelling the `met` confirm posts nothing", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[0]);
+    await screen.findByTestId("coord-question-met-confirm");
+    fireEvent.click(screen.getByTestId("coord-question-met-confirm-cancel"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-question-met-confirm")
+      ).not.toBeInTheDocument()
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("hides the decision buttons from a non-admin, with a notice", async () => {
+    isCoordAdmin = false;
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-effect-admin-only")
+      ).toHaveTextContent(/requires tenant admin/i)
+    );
+    expect(decisionButtons()).toHaveLength(0);
+    expect(
+      screen.queryByTestId("coord-question-effect-decisions")
+    ).not.toBeInTheDocument();
+    // Still no free-text composer: an effect row is not answerable as text.
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
   });
 
   it("posts `not_met` for the gate's second button", async () => {
@@ -899,6 +940,70 @@ describe("a decision-effect row is answered with the effect's own values", () =>
       ).toHaveTextContent(/met \/ not_met/);
     }
   );
+
+  it.each([
+    [
+      "proposal `approve`",
+      { ...PROPOSAL_ROW, options: ["approve", "reject", "defer"] },
+      "  Approve ",
+      "coord-question-approve-confirm",
+      "Approve",
+    ],
+    [
+      "gate `met`",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+      "met",
+      "coord-question-met-confirm",
+      "met",
+    ],
+  ])(
+    "confirms a typed %s in the fallback composer before posting",
+    async (_l, row, typed, confirmId, posted) => {
+      get.mockResolvedValue(row);
+      post.mockResolvedValue({});
+      render(<CoordQuestionDetailPage />);
+      const textarea = await screen.findByTestId(
+        "coord-question-response-textarea"
+      );
+      expect(screen.getByTestId("coord-question-effect-mismatch")).toBeInTheDocument();
+      fireEvent.change(textarea, { target: { value: typed } });
+      fireEvent.click(screen.getByTestId("coord-question-submit"));
+
+      await screen.findByTestId(confirmId);
+      expect(post).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId(`${confirmId}-confirm`));
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(
+          "/api/v1/operations/agent-questions/q-1/respond",
+          { response: posted, responded_by_operator: "op@example.com" }
+        )
+      );
+      expect(post).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("posts other fallback-composer text without a confirm", async () => {
+    get.mockResolvedValue({
+      ...PROPOSAL_ROW,
+      options: ["approve", "reject", "defer"],
+    });
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    const textarea = await screen.findByTestId(
+      "coord-question-response-textarea"
+    );
+    fireEvent.change(textarea, { target: { value: "defer" } });
+    fireEvent.click(screen.getByTestId("coord-question-submit"));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "defer", responded_by_operator: "op@example.com" }
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-question-approve-confirm")
+    ).not.toBeInTheDocument();
+  });
 
   it("offers no decision on an ANSWERED effect row", async () => {
     get.mockResolvedValue({

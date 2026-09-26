@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import warnings
 
 import pytest
 from sqlalchemy import text
@@ -125,6 +126,16 @@ def _invalidate_index(engine: Engine, index_name: str) -> None:
             {"idx": index_name},
         ).rowcount
     assert updated == 1, f"expected to invalidate exactly coord.{index_name}"
+
+
+def _is_superuser(engine: Engine) -> bool:
+    """Whether the connected role may write the ``pg_index`` catalog, which
+    :func:`_invalidate_index` needs."""
+    with engine.connect() as conn:
+        return (
+            conn.execute(text("SELECT current_setting('is_superuser')")).scalar()
+            == "on"
+        )
 
 
 def _index_oid(engine: Engine, index_name: str) -> int:
@@ -374,20 +385,31 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         #     leaves an INVALID index that `IF NOT EXISTS` alone would keep.
         #     The revision must drop and rebuild it — VALID, with a NEW oid —
         #     and leave the still-VALID sibling untouched.
-        unique_oid_before = _index_oid(engine, _UNIQUE_INDEX)
-        _invalidate_index(engine, _UNIQUE_INDEX)
-        assert not _index_row(engine, _UNIQUE_INDEX)[0]
-        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_row(engine, _UNIQUE_INDEX)[0], (
-            "an INVALID index must be rebuilt VALID, not kept by IF NOT EXISTS"
-        )
-        assert _index_oid(engine, _UNIQUE_INDEX) != unique_oid_before, (
-            "the INVALID index must be dropped and rebuilt, not revalidated"
-        )
-        assert _index_oid(engine, _OPEN_INDEX) == oids_before[1], (
-            "the VALID sibling must not be rebuilt"
-        )
+        #     Writing ``pg_index`` needs a superuser; on a role that is not one
+        #     THIS SUB-STEP ONLY is skipped (loudly), and the rest runs.
+        if not _is_superuser(engine):
+            warnings.warn(
+                "SKIPPED sub-step 8b (INVALID-index cleanup branch): the test "
+                "role is not a superuser (current_setting('is_superuser') <> "
+                "'on'), so it cannot mark an index INVALID in pg_index. Run "
+                "against a superuser role to exercise it.",
+                stacklevel=1,
+            )
+        else:
+            unique_oid_before = _index_oid(engine, _UNIQUE_INDEX)
+            _invalidate_index(engine, _UNIQUE_INDEX)
+            assert not _index_row(engine, _UNIQUE_INDEX)[0]
+            run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+            run_alembic(root, url, "upgrade", _REVISION_ID)
+            assert _index_row(engine, _UNIQUE_INDEX)[0], (
+                "an INVALID index must be rebuilt VALID, not kept by IF NOT EXISTS"
+            )
+            assert _index_oid(engine, _UNIQUE_INDEX) != unique_oid_before, (
+                "the INVALID index must be dropped and rebuilt, not revalidated"
+            )
+            assert _index_oid(engine, _OPEN_INDEX) == oids_before[1], (
+                "the VALID sibling must not be rebuilt"
+            )
 
         # 9. Downgrade removes everything added; questions survive. Re-upgrade.
         rows_before = _question_count(engine)
