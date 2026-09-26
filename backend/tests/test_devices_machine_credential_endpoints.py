@@ -737,6 +737,44 @@ class TestSelfMintEndpoint:
         headers = coord.get.call_args.kwargs["headers"]
         assert headers["Authorization"] == "Bearer device-jwt"
 
+    def test_coord_429_is_transient_503(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(status_code=429, json_data={"error": "slow down"}),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_lookup_unavailable"
+        mock_mint.assert_not_called()
+
+    def test_coord_400_is_403_refused(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(status_code=400, json_data={"error": "bad"}),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "coord_refused_device_token"
+        mock_mint.assert_not_called()
+
+    @pytest.mark.parametrize("coord_status", [204, 302], ids=["204", "302"])
+    def test_non_200_success_class_is_502_malformed(self, coord_status) -> None:
+        # Even with a well-formed JSON row in the body, only 200 counts.
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(status_code=coord_status),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_state_malformed"
+        mock_mint.assert_not_called()
+
     def test_revoked_key_is_not_reminted(self) -> None:
         client = TestClient(self._app())
         with (
