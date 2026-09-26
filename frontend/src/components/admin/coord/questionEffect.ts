@@ -79,12 +79,16 @@ function refString(ref: unknown, key: string): string | null {
 /**
  * The row's effect, or `null` for an ordinary question.
  *
- * `null` for: `effect_kind` absent (older coord), `null`, empty, or `'none'`.
+ * `null` for: `effect_kind` absent (older coord), `null`, empty, or exactly
+ * `'none'`. Matching is exact — no trim, no case-folding — because the respond
+ * proxy classifies the same value exactly and requires tenant admin for anything
+ * else; a looser match here would offer a non-admin a composer the server then
+ * refuses.
  */
 export function deriveQuestionEffect(
   q: Pick<AgentQuestionRow, "effect_kind" | "effect_ref">
 ): QuestionEffect | null {
-  const raw = typeof q.effect_kind === "string" ? q.effect_kind.trim() : "";
+  const raw = typeof q.effect_kind === "string" ? q.effect_kind : "";
   if (raw === "" || raw === "none") return null;
   const ref = q.effect_ref;
 

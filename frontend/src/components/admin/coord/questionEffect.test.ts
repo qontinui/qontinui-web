@@ -25,6 +25,16 @@ describe("deriveQuestionEffect — no effect", () => {
   ])("is null when effect_kind is %s", (_label, row) => {
     expect(deriveQuestionEffect(row)).toBeNull();
   });
+
+  // The respond proxy classifies effect_kind EXACTLY and gates everything but
+  // absent/null/""/"none" on tenant admin; the console must agree, or a
+  // non-admin is offered a composer the server refuses.
+  it.each([[" none "], ["NONE"], ["none\n"]])(
+    "treats %j as an effect, not as 'none'",
+    (kind) => {
+      expect(deriveQuestionEffect({ effect_kind: kind })).not.toBeNull();
+    }
+  );
 });
 
 describe("deriveQuestionEffect — gate", () => {
