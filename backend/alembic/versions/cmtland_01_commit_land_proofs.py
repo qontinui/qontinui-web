@@ -1,7 +1,7 @@
 """coord.commit_land_proofs — coord-proven commit land verdicts
 
 Revision ID: cmtland_01
-Revises: coord_wu_authored_at_02
+Revises: overview_02_authoring_core
 Create Date: 2026-09-25
 
 Phase 3 of plan
@@ -81,7 +81,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cmtland_01"
-down_revision: str | Sequence[str] | None = "coord_wu_authored_at_02"
+down_revision: str | Sequence[str] | None = "overview_02_authoring_core"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
