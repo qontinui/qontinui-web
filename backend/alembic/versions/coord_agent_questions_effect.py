@@ -18,8 +18,8 @@ Adds two columns, one CHECK, and two partial indices to
 - ``idx_agent_questions_open_effect`` — ``(tenant_id) WHERE responded_at IS
   NULL AND effect_kind <> 'none'``: the "which open rows carry an effect" read.
 - ``uq_agent_questions_open_effect`` — UNIQUE ``(tenant_id, effect_kind,
-  (effect_ref->>'id')) WHERE effect_kind <> 'none' AND responded_at IS NULL``:
-  at most ONE open mirror row per effect.
+  (effect_ref->>'id')) WHERE effect_kind <> 'none' AND responded_at IS NULL AND
+  withdrawn_at IS NULL``: at most ONE open, un-withdrawn mirror row per effect.
 
 Why the columns exist
 =====================
@@ -89,7 +89,7 @@ How coord should write against it — the arbiter form, never catch-the-23505
     INSERT INTO coord.agent_questions (..., effect_kind, effect_ref)
     VALUES (...)
     ON CONFLICT (tenant_id, effect_kind, (effect_ref->>'id'))
-        WHERE effect_kind <> 'none' AND responded_at IS NULL
+        WHERE effect_kind <> 'none' AND responded_at IS NULL AND withdrawn_at IS NULL
     DO NOTHING
     RETURNING question_id
 
@@ -106,20 +106,18 @@ one without ``id``) indexes a NULL key, and NULLs never collide — such a row i
 unconstrained rather than refused. That is coord's contract to never write, not
 something this index can catch.
 
-⚠️ Withdrawal — recorded for the phase that owns the writer
-==========================================================
+Why ``withdrawn_at IS NULL`` is in the predicate
+===============================================
 
 ``coord_agent_questions_withdrawn`` has landed: a withdrawn question keeps
-``responded_at`` NULL, so it still satisfies this predicate and stays in the
-index. If coord ever withdraws a MIRROR row while its effect stays open (the
-gate still pending, the proposal still queued), that effect can never be
-mirrored again until something sets ``responded_at`` on the withdrawn row. The
-same consequence is spelled out for ``uq_agent_questions_open_alert_episode``
-in that revision's docstring, and the same conclusion holds: the fix is ``AND
-withdrawn_at IS NULL`` on the predicate, and it belongs with the coord code
-that decides mirror rows are withdrawable, because the writer's conflict target
-has to change in the same step. The predicate here is the one the plan and the
-coord writer were specified against.
+``responded_at`` NULL. Without the third conjunct a withdrawn MIRROR row would
+stay in this index while its effect stayed open (the gate still pending, the
+proposal still queued), and that effect could then never be mirrored again —
+a permanent, silent hole in the inbox. The same hazard is spelled out for
+``uq_agent_questions_open_alert_episode``. So the predicate excludes withdrawn
+rows, and coord's writer uses exactly this three-conjunct conflict target
+(decided by the implementing session, robustness; the coord writer ships in the
+same plan).
 
 The non-unique ``idx_agent_questions_open_effect``
 ==================================================
@@ -270,15 +268,17 @@ def upgrade() -> None:
             op.execute(
                 "DROP INDEX CONCURRENTLY IF EXISTS coord.uq_agent_questions_open_effect"
             )
-        # At most one OPEN mirror row per effect. Coord's mirror writers
-        # insert with `ON CONFLICT (tenant_id, effect_kind, (effect_ref->>'id'))
-        # WHERE effect_kind <> 'none' AND responded_at IS NULL DO NOTHING`.
+        # At most one OPEN, un-withdrawn mirror row per effect. Coord's mirror
+        # writers insert with `ON CONFLICT (tenant_id, effect_kind,
+        # (effect_ref->>'id')) WHERE effect_kind <> 'none' AND responded_at IS
+        # NULL AND withdrawn_at IS NULL DO NOTHING`.
         op.execute(
             """
             CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS
                 uq_agent_questions_open_effect
             ON coord.agent_questions (tenant_id, effect_kind, (effect_ref->>'id'))
             WHERE effect_kind <> 'none' AND responded_at IS NULL
+                AND withdrawn_at IS NULL
             """
         )
 

@@ -7,7 +7,7 @@ UNIQUE index::
 
     CREATE UNIQUE INDEX CONCURRENTLY uq_agent_questions_open_effect
     ON coord.agent_questions (tenant_id, effect_kind, (effect_ref->>'id'))
-    WHERE effect_kind <> 'none' AND responded_at IS NULL
+    WHERE effect_kind <> 'none' AND responded_at IS NULL AND withdrawn_at IS NULL
 
 The unique index IS the idempotency coord's gate/proposal mirror writers rely
 on, so the test asserts the dedupe semantics, not just shape:
@@ -71,6 +71,7 @@ _MIRROR_SQL = """
          :kind, CAST(:ref AS jsonb))
     ON CONFLICT (tenant_id, effect_kind, (effect_ref->>'id'))
         WHERE effect_kind <> 'none' AND responded_at IS NULL
+            AND withdrawn_at IS NULL
     DO NOTHING
     RETURNING question_id
 """
@@ -277,6 +278,7 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
         assert unique, "the mirror dedupe needs a UNIQUE index"
         assert "effect_kind <> 'none'" in predicate, predicate
         assert "responded_at IS NULL" in predicate, predicate
+        assert "withdrawn_at IS NULL" in predicate, predicate
         valid, unique, predicate = _index_row(engine, _OPEN_INDEX)
         assert valid and not unique
         assert "effect_kind <> 'none'" in predicate, predicate
@@ -308,7 +310,23 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
 
         # 6. Answering the open mirror frees the effect for a later decision.
         _answer(engine, first)
-        assert _mirror(engine, tenant_a, "gate", _gate_ref("g-1")) is not None
+        second = _mirror(engine, tenant_a, "gate", _gate_ref("g-1"))
+        assert second is not None
+
+        # 6b. Withdrawing the open mirror ALSO frees the effect: a withdrawn
+        #     row keeps responded_at NULL, and without `withdrawn_at IS NULL`
+        #     in the predicate it would block the effect forever.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE coord.agent_questions SET withdrawn_at = now() "
+                    "WHERE question_id = :q"
+                ),
+                {"q": second},
+            )
+        assert _mirror(engine, tenant_a, "gate", _gate_ref("g-1")) is not None, (
+            "a withdrawn mirror must not block re-mirroring its effect"
+        )
 
         # 7. Ordinary questions (`'none'`) are never constrained.
         assert _mirror(engine, tenant_a, "none", None) is not None
