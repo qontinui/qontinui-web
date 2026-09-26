@@ -201,9 +201,7 @@ describe.each(SURFACES)(
       // would pass on a page that discarded the window and re-asked the old
       // one.
       await waitFor(() =>
-        expect(get).toHaveBeenLastCalledWith(
-          expect.stringContaining(`status=${toValue}`)
-        )
+        expect(String(get.mock.lastCall?.[0])).toContain(`status=${toValue}`)
       );
       await waitFor(() => expect(screen.queryByText(TITLE_RE)).toBeNull());
       // ...and skeletons, not an empty-state claim about a query still in

@@ -84,6 +84,7 @@ import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
   derivePlansHealth,
   SHEPHERD_SLUG_PREFIX,
@@ -169,7 +170,8 @@ export default function CoordSpawnPage() {
       qs.set("limit", String(SPAWN_PAGE_LIMIT));
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
-        `${API}/plans${suffix}`
+        `${API}/plans${suffix}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);

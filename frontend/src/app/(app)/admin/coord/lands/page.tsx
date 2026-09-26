@@ -105,6 +105,8 @@ import {
   type HealthStripLevel,
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { LandRow } from "@/components/admin/coord/LandRow";
 import type { LandRow as LandRowData } from "@/components/admin/coord/landTypes";
 import {
@@ -194,27 +196,28 @@ function LandPrecisionSection({
   settled: boolean;
   onData: (data: PrecisionResponse | null, error: string | null) => void;
 }) {
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // failed tick is retried by the next one, never by `httpClient`'s 5xx backoff
+  // chain, and never overlaps itself. `isCurrent()` turns false on unmount (and
+  // if `onData` changes), so a late answer reports nothing.
+  const load = useCallback(
+    async (isCurrent: () => boolean) => {
       try {
         const body = await httpClient.get<PrecisionResponse>(
-          `${API}/lands/precision`
+          `${API}/lands/precision`,
+          COORD_DASHBOARD_POLL_OPTIONS
         );
-        if (!cancelled) onData(body, null);
+        if (isCurrent()) onData(body, null);
       } catch (e) {
-        if (!cancelled) {
+        if (isCurrent()) {
           onData(null, e instanceof Error ? e.message : String(e));
         }
       }
-    };
-    load();
-    const id = setInterval(load, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [onData]);
+    },
+    [onData]
+  );
+  useSingleFlightPoll(load, POLL_INTERVAL_MS);
 
   return (
     <>
@@ -398,37 +401,43 @@ export default function CoordLandsPage() {
   }, [repoInput, prInput]);
 
   // ---- Recent lands fetch (polled) ----
-  const fetchLands = useCallback(async () => {
-    try {
-      const qs = new URLSearchParams();
-      if (landsRepoFilter.trim()) qs.set("repo", landsRepoFilter.trim());
-      qs.set("limit", "25");
-      const body = await httpClient.get<LandsResponse>(
-        `${API}/lands?${qs.toString()}`
-      );
-      setLands(body.lands ?? []);
-      setLandsError(null);
-      setLandsLoaded(true);
-    } catch (e) {
-      setLandsError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLandsSettled(true);
-    }
-  }, [landsRepoFilter]);
+  // Single-flight, no retries — see `LandPrecisionSection`. A superseded flight
+  // (the repo filter changed under it) writes nothing.
+  const fetchLands = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const qs = new URLSearchParams();
+        if (landsRepoFilter.trim()) qs.set("repo", landsRepoFilter.trim());
+        qs.set("limit", "25");
+        const body = await httpClient.get<LandsResponse>(
+          `${API}/lands?${qs.toString()}`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setLands(body.lands ?? []);
+        setLandsError(null);
+        setLandsLoaded(true);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setLandsError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLandsSettled(true);
+      }
+    },
+    [landsRepoFilter]
+  );
 
-  useEffect(() => {
-    fetchLands();
-    const id = setInterval(fetchLands, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchLands]);
+  const { refresh: refreshLands } = useSingleFlightPoll(
+    fetchLands,
+    POLL_INTERVAL_MS,
+    { supersedeOnChange: true }
+  );
 
   // Newest-first (coord may already sort; we guard here so the contract is
   // explicit and the list is stable regardless of coord ordering).
   const sortedLands = useMemo(() => {
     return [...lands].sort((a, b) =>
-      (b.signature.created_at ?? "").localeCompare(
-        a.signature.created_at ?? ""
-      )
+      (b.signature.created_at ?? "").localeCompare(a.signature.created_at ?? "")
     );
   }, [lands]);
 
@@ -601,7 +610,7 @@ export default function CoordLandsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchLands}
+          onClick={() => void refreshLands()}
           data-testid="coord-lands-refresh"
           aria-label="Refresh recent lands"
         >
@@ -623,22 +632,22 @@ export default function CoordLandsPage() {
         )}
         empty={
           landsError ? null : (
-          <p className="text-sm text-muted-foreground italic">
-            {tab !== "all" ? (
-              <>
-                No declared lands in this window{" "}
-                {tab === "attention" ? "need a human" : "are unverified"}.
-              </>
-            ) : (
-              <>
-                No declared lands
-                {landsRepoFilter.trim()
-                  ? ` for ${landsRepoFilter.trim()}`
-                  : ""}{" "}
-                yet.
-              </>
-            )}
-          </p>
+            <p className="text-sm text-muted-foreground italic">
+              {tab !== "all" ? (
+                <>
+                  No declared lands in this window{" "}
+                  {tab === "attention" ? "need a human" : "are unverified"}.
+                </>
+              ) : (
+                <>
+                  No declared lands
+                  {landsRepoFilter.trim()
+                    ? ` for ${landsRepoFilter.trim()}`
+                    : ""}{" "}
+                  yet.
+                </>
+              )}
+            </p>
           )
         }
       />
