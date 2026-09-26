@@ -49,6 +49,15 @@ export interface UseSingleFlightResult {
    */
   refresh: () => Promise<void>;
   /**
+   * Run now EVEN IF a request is outstanding. For a changed QUESTION (a filter
+   * or window the operator just edited): the outstanding request answers the
+   * old question and is already discarded by `isCurrent()`, so making the new
+   * one wait behind it — up to the client's 60 s timeout against a slow coord —
+   * only leaves the page showing nothing. The new request takes the latch; the
+   * old one still cannot overwrite it, and a tick sees the new flight.
+   */
+  supersede: () => Promise<void>;
+  /**
    * Run now ONLY if nothing is outstanding. What an interval tick calls: an
    * outstanding request means this tick's question is already being asked,
    * so the tick is skipped, not queued.
@@ -57,6 +66,19 @@ export interface UseSingleFlightResult {
 }
 
 export type UseSingleFlightPollResult = Pick<UseSingleFlightResult, "refresh">;
+
+export interface UseSingleFlightPollOptions {
+  /**
+   * When `poll` changes (its parameters — a filter, a window — changed) while
+   * a request for the OLD `poll` is outstanding, start the new request at once
+   * instead of queueing it behind the old one. Off by default: the Dev Ops
+   * dashboard's polls take no operator-edited parameters, and their contract is
+   * one request on the wire per hook. Turn it on for list pages whose filters
+   * an operator edits, so a filter change is answered at once (`useGuardedPoll`
+   * gives its pages the same). At most one extra request per operator edit.
+   */
+  supersedeOnChange?: boolean;
+}
 
 /**
  * The single-flight latch on its own, for hooks that drive their own timers
@@ -147,6 +169,8 @@ export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
     return trailingRef.current;
   }, [start]);
 
+  const supersede = useCallback((): Promise<void> => start(), [start]);
+
   const tick = useCallback(() => {
     if (inFlightRef.current !== null) return;
     void start();
@@ -162,25 +186,34 @@ export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
     };
   }, [fn]);
 
-  return { refresh, tick };
+  return { refresh, supersede, tick };
 }
 
 /** {@link useSingleFlight} plus the interval that drives it. */
 export function useSingleFlightPoll(
   poll: SingleFlightPollFn,
-  intervalMs: number
+  intervalMs: number,
+  options: UseSingleFlightPollOptions = {}
 ): UseSingleFlightPollResult {
-  const { refresh, tick } = useSingleFlight(poll);
+  const { refresh, supersede, tick } = useSingleFlight(poll);
+  const supersedeOnChange = options.supersedeOnChange ?? false;
+  // The `poll` the previous setup ran with. A StrictMode re-mount re-runs the
+  // effect with the SAME `poll`, which is not a changed question.
+  const lastPollRef = useRef<SingleFlightPollFn | null>(null);
 
   useEffect(() => {
+    const changed =
+      lastPollRef.current !== null && lastPollRef.current !== poll;
+    lastPollRef.current = poll;
     // Through `refresh`, not `tick`: if a flight from the previous `poll` is
     // still outstanding, this setup's first read queues behind it instead of
-    // running beside it. `poll` is a dependency so new parameters are read
+    // running beside it — unless the caller opted into answering a changed
+    // question at once. `poll` is a dependency so new parameters are read
     // at once.
-    void refresh();
+    void (changed && supersedeOnChange ? supersede() : refresh());
     const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
-  }, [poll, intervalMs, refresh, tick]);
+  }, [poll, intervalMs, refresh, supersede, supersedeOnChange, tick]);
 
   return { refresh };
 }

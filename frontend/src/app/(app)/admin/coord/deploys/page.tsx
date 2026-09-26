@@ -38,7 +38,7 @@
  * - **R2/R5** — one deploy is one `<DeployRow>` line; detail expands in place.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RefreshCw } from "lucide-react";
@@ -50,6 +50,8 @@ import {
   type HealthStripLevel,
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { DeployRow } from "@/components/admin/coord/DeployRow";
 import type { DeployRow as DeployRowData } from "@/components/admin/coord/deployTypes";
 import {
@@ -164,29 +166,38 @@ export default function CoordDeploysPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
 
-  const fetchDeploys = useCallback(async () => {
-    try {
-      const qs = new URLSearchParams();
-      if (serviceFilter.trim()) qs.set("service", serviceFilter.trim());
-      qs.set("limit", "25");
-      const body = await httpClient.get<DeploysResponse>(
-        `${API}/deploys?${qs.toString()}`
-      );
-      setDeploys(body.deploys ?? []);
-      setError(null);
-      setLoaded(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSettled(true);
-    }
-  }, [serviceFilter]);
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // failed poll is retried by its next tick, never by `httpClient`'s 5xx
+  // backoff chain, and never overlaps itself. A superseded flight (the service
+  // filter changed under it) writes nothing.
+  const fetchDeploys = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const qs = new URLSearchParams();
+        if (serviceFilter.trim()) qs.set("service", serviceFilter.trim());
+        qs.set("limit", "25");
+        const body = await httpClient.get<DeploysResponse>(
+          `${API}/deploys?${qs.toString()}`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setDeploys(body.deploys ?? []);
+        setError(null);
+        setLoaded(true);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setSettled(true);
+      }
+    },
+    [serviceFilter]
+  );
 
-  useEffect(() => {
-    fetchDeploys();
-    const id = setInterval(fetchDeploys, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchDeploys]);
+  const { refresh } = useSingleFlightPoll(fetchDeploys, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   // Newest-first (coord already sorts; guarded here so the contract is
   // explicit and stable regardless of coord ordering).
@@ -257,7 +268,7 @@ export default function CoordDeploysPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchDeploys}
+          onClick={() => void refresh()}
           data-testid="coord-deploys-refresh"
           aria-label="Refresh deploys"
         >
@@ -279,21 +290,23 @@ export default function CoordDeploysPage() {
         )}
         empty={
           error ? null : (
-          <p className="text-sm text-muted-foreground italic">
-            {tab !== "all" ? (
-              <>
-                No declared deploys in this window{" "}
-                {tab === "attention" ? "need a human" : "are still settling"}.
-              </>
-            ) : (
-              <>
-                No declared deploys
-                {serviceFilter.trim() ? ` for ${serviceFilter.trim()}` : ""} yet.
-                Deploys declare themselves from the CI pipelines
-                (deploy-coord.yml / deploy-web.yml) on every rollout.
-              </>
-            )}
-          </p>
+            <p className="text-sm text-muted-foreground italic">
+              {tab !== "all" ? (
+                <>
+                  No declared deploys in this window{" "}
+                  {tab === "attention" ? "need a human" : "are still settling"}.
+                </>
+              ) : (
+                <>
+                  No declared deploys
+                  {serviceFilter.trim()
+                    ? ` for ${serviceFilter.trim()}`
+                    : ""}{" "}
+                  yet. Deploys declare themselves from the CI pipelines
+                  (deploy-coord.yml / deploy-web.yml) on every rollout.
+                </>
+              )}
+            </p>
           )
         }
       />

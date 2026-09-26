@@ -116,6 +116,7 @@ import {
   readIsUnknown,
 } from "@/components/console";
 import { cn } from "@/lib/utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -484,8 +485,7 @@ function InjectionsTable({
          * the button spinner to say anything was happening.
          */
         <Skeleton className="h-32 w-full" />
-      ) : rows.length === 0 && (unknown || error !== null) ? (
-        /*
+      ) : rows.length === 0 && (unknown || error !== null) /*
          * No empty state whenever a read failed — on EITHER arm.
          *
          * Unknown is the obvious case: "No prompt injections matching the
@@ -509,9 +509,7 @@ function InjectionsTable({
          * failure — that is the stale arm's whole point, and dropping the
          * guard blanks a list the operator can still act on the moment a poll
          * blips.
-         */
-        null
-      ) : rows.length === 0 ? (
+         */ ? null : rows.length === 0 ? (
         <p
           className="text-sm text-muted-foreground italic"
           data-testid="prompt-injections-empty"
@@ -709,11 +707,14 @@ export default function PromptInjectionsDashboard() {
     const mine = ++seq.current;
     const key = filterKeyOf(filters.source, filters.session_name);
     try {
-      const body = await listPromptInjections({
-        limit: LIST_LIMIT,
-        source: filters.source === ALL_SOURCES ? undefined : filters.source,
-        session_name: filters.session_name.trim() || undefined,
-      });
+      const body = await listPromptInjections(
+        {
+          limit: LIST_LIMIT,
+          source: filters.source === ALL_SOURCES ? undefined : filters.source,
+          session_name: filters.session_name.trim() || undefined,
+        },
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (seq.current !== mine) return;
       setAnswer({ key, rows: body.events });
       setFailure(null);
@@ -735,24 +736,48 @@ export default function PromptInjectionsDashboard() {
     }
   }, [filters.source, filters.session_name]);
 
+  // Timer ticks are single-flight and no-retry (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick that finds ANY read outstanding is skipped, and the next tick — not
+  // `httpClient`'s 5xx backoff chain — is the retry.
+  //
+  // This surface deliberately does NOT use `useSingleFlight`, whose refresh
+  // queues behind an outstanding read. A filter change is a new QUESTION and a
+  // manual refresh is an operator's demand; both must answer at once, beside a
+  // read still open (`seq` discards the overtaken answer) — the list pages'
+  // capability, the one `useGuardedPoll` documents. So those reads are issued
+  // directly and only the ticks are latched, by counting reads outstanding.
+  const readsOutstanding = useRef(0);
+  const readTracked = useCallback(async () => {
+    readsOutstanding.current += 1;
+    try {
+      await fetchInjections();
+    } finally {
+      readsOutstanding.current -= 1;
+    }
+  }, [fetchInjections]);
+
   // The read. Split from the poll below so that toggling polling does not
   // fire an extra request for filters that were already answered.
   useEffect(() => {
     setLoading(true);
-    void fetchInjections();
-  }, [fetchInjections]);
+    void readTracked();
+  }, [readTracked]);
 
   useEffect(() => {
     if (!filters.polling) return;
-    const interval = setInterval(fetchInjections, POLL_MS);
+    const interval = setInterval(() => {
+      if (readsOutstanding.current > 0) return;
+      void readTracked();
+    }, POLL_MS);
     return () => clearInterval(interval);
-  }, [fetchInjections, filters.polling]);
+  }, [readTracked, filters.polling]);
 
   /** The manual refresh: shows it is working, which the bare call did not. */
   const refresh = useCallback(() => {
     setLoading(true);
-    void fetchInjections();
-  }, [fetchInjections]);
+    void readTracked();
+  }, [readTracked]);
 
   const sourceOptions = useMemo(() => SOURCE_VALUES, []);
 

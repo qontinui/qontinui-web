@@ -138,6 +138,69 @@ describe("useSingleFlightPoll", () => {
     expect(applied).toEqual(["B"]);
   });
 
+  it("with supersedeOnChange, a changed poll reads at once and only the new answer lands", async () => {
+    const flights: ReturnType<typeof deferred>[] = [];
+    const applied: string[] = [];
+    const makePoll = (label: string) => async (isCurrent: () => boolean) => {
+      const d = deferred();
+      flights.push(d);
+      await d.promise;
+      if (isCurrent()) applied.push(label);
+    };
+    const pollA = vi.fn(makePoll("A"));
+    const pollB = vi.fn(makePoll("B"));
+    const { rerender } = renderHook(
+      ({ poll }) =>
+        useSingleFlightPoll(poll, INTERVAL, { supersedeOnChange: true }),
+      { initialProps: { poll: pollA } }
+    );
+    await flush();
+    rerender({ poll: pollB });
+    await flush();
+    // The changed question does NOT wait for A's hung read.
+    expect(pollA).toHaveBeenCalledTimes(1);
+    expect(pollB).toHaveBeenCalledTimes(1);
+
+    // A tick while B is outstanding is still skipped: B took the latch.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(INTERVAL * 2);
+    });
+    expect(pollB).toHaveBeenCalledTimes(1);
+
+    // A's late answer is discarded, and settling it does not free B's latch.
+    await act(async () => {
+      flights[0].resolve();
+    });
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(INTERVAL * 2);
+    });
+    expect(pollB).toHaveBeenCalledTimes(1);
+    expect(applied).toEqual([]);
+
+    await act(async () => {
+      flights[1].resolve();
+    });
+    await flush();
+    expect(applied).toEqual(["B"]);
+  });
+
+  it("with supersedeOnChange, a same-poll re-run (StrictMode re-mount) adds no request", async () => {
+    const d = deferred();
+    const poll = vi.fn(() => d.promise);
+    const { rerender } = renderHook(
+      ({ i }) => {
+        void i;
+        return useSingleFlightPoll(poll, INTERVAL, { supersedeOnChange: true });
+      },
+      { initialProps: { i: 0 } }
+    );
+    await flush();
+    rerender({ i: 1 });
+    await flush();
+    expect(poll).toHaveBeenCalledTimes(1);
+  });
+
   it("sends nothing after unmount", async () => {
     const d = deferred();
     const poll = vi.fn(() => d.promise);
