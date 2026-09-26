@@ -58,7 +58,7 @@ export default function CoordLayout({
         <CoordNav />
       </header>
 
-      {/* Red-main outage banner (plan 2026-07-06-coord-red-main-…, Phase 1
+      {/* Red-main banner (plan 2026-07-06-coord-red-main-…, Phase 1
           D2): one persistent, non-dismissable row per repo whose main CI is
           red, driven solely by the coord `red_main:<repo>` alert rows.
           Mounted in the layout so it shows on EVERY coord console page. */}
