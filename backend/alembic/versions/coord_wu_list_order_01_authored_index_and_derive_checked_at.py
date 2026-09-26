@@ -225,6 +225,10 @@ def upgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(_ADD_COLUMN)
     op.execute(_COMMENT_COLUMN)
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     # CONCURRENTLY cannot run inside a transaction; entering the block commits
     # the ALTER above, which is why each statement is individually idempotent.
@@ -255,6 +259,10 @@ def downgrade() -> None:
     """
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(_DROP_COLUMN)
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     with op.get_context().autocommit_block():
         for statement in _DROP_INDEXES:

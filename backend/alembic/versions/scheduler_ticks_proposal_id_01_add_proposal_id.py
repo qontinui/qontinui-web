@@ -144,8 +144,16 @@ def upgrade() -> None:
         sa.Column("proposal_id", postgresql.UUID(as_uuid=True), nullable=True),
         schema="coord",
     )
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.drop_column("scheduler_ticks", "proposal_id", schema="coord")
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
