@@ -26,10 +26,12 @@
  * expected values below: they are read from the snapshot, not written here.
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  loadSnapshot,
+  type SnapshotDocument,
+  type SnapshotFile,
+} from "@/lib/api/route-walker";
 import {
   PLAN_CENSUS_SIDE_NULLABLE,
   PLAN_CENSUS_SOURCES,
@@ -43,13 +45,11 @@ import {
   SCAN_ROOT_STATES,
 } from "./types";
 
-const API_CLIENT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../../lib/api-client"
-);
-
 /** Both snapshots backend CI regenerates: the composed one and the OSS base. */
-const SNAPSHOTS = ["openapi-schema.json", "openapi-schema.base.json"] as const;
+const SNAPSHOTS: readonly SnapshotFile[] = [
+  "openapi-schema.json",
+  "openapi-schema.base.json",
+];
 
 interface SchemaProperty {
   type?: string;
@@ -64,10 +64,7 @@ interface ObjectSchema {
 }
 
 /** Each snapshot is ~3.4 MB; parse it once, not once per component. */
-const documents = new Map<
-  string,
-  { components?: { schemas?: Record<string, unknown> } }
->();
+const documents = new Map<SnapshotFile, SnapshotDocument>();
 
 /**
  * One component schema, or a thrown error naming it.
@@ -76,13 +73,15 @@ const documents = new Map<
  * backend rename into "no fields, no states" and then fail — or, for a check
  * written the other way round, pass — for a reason nobody can read.
  */
-function component(file: string, name: string): ObjectSchema {
+function component(file: SnapshotFile, name: string): ObjectSchema {
   let doc = documents.get(file);
   if (doc === undefined) {
-    doc = JSON.parse(readFileSync(path.join(API_CLIENT, file), "utf8"));
+    doc = loadSnapshot(file);
     documents.set(file, doc);
   }
-  const found = doc?.components?.schemas?.[name];
+  const found = doc.components?.schemas?.[name] as
+    | Partial<ObjectSchema>
+    | undefined;
   if (!found?.properties) {
     throw new Error(`${name} is not in ${file} — renamed on the backend?`);
   }
