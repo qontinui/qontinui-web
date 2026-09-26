@@ -1998,6 +1998,11 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             f"{API_PREFIX}": {
                 **corpus_filter,
                 "intent_ref": "success_metric/development-speed",
+                # The tenant axis. Declared on the LIST route only — the
+                # export deliberately does not take them, so they are not in
+                # ``corpus_filter``.
+                "tenant_id": "11111111-1111-4111-8111-111111111111",
+                "tenant_source": "declared",
                 "offset": "0",
                 "limit": "5",
             },

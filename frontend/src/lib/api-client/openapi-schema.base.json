@@ -10582,6 +10582,66 @@
         "title": "ConflictSummary",
         "type": "object"
       },
+      "ContestedTenantRow": {
+        "description": "One artifact whose tenancy is CONTESTED \u2014 two tenants wrote the same row.\n\nA THIRD failure class, structurally distinct from both siblings above and\nreported under its own key.\n\n**Why a row and not a group.** ``uq_work_artifacts_identity`` is UNIQUE\nover ``(organization, kind, slug, source_repo)``, so two tenants' copies\nof one stem CANNOT coexist as two rows \u2014 they arrive as two writes to ONE\nrow, in turn, each overwriting the last. That is why the fusion was\nsilent, and why no query over the stored corpus could find it: the\nevidence is destroyed by the act. The collision is therefore detected at\nthe WRITE and recorded as ``tenant_source = \"ambiguous\"``.\n\nA :class:`DivergentGroup` is one document captured twice and is disposed\nof by picking a winner; this is two documents that were never the same\ndocument, and picking a winner IS the data loss. Never fold them.\n\n``tenant_id`` is the tenant that wrote LAST \u2014 the same writer that won the\nbody. It is reported so the row is identifiable, NOT as an answer to\n\"whose is this\": ``tenant_source: \"ambiguous\"`` is that answer, and it\nsays the question is open.\n\nPlan\n``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``\nPhase 3. This is the measurement Phase 4's identity re-key is gated on.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "source_repo",
+          "tenant_id",
+          "tenant_source",
+          "updated_at"
+        ],
+        "title": "ContestedTenantRow",
+        "type": "object"
+      },
       "ContextCreate": {
         "description": "Create a new context.",
         "properties": {
@@ -16720,6 +16780,17 @@
       "DivergentResponse": {
         "description": "All divergence groups visible to the caller.",
         "properties": {
+          "contested_tenant_total": {
+            "title": "Contested Tenant Total",
+            "type": "integer"
+          },
+          "contested_tenants": {
+            "items": {
+              "$ref": "#/components/schemas/ContestedTenantRow"
+            },
+            "title": "Contested Tenants",
+            "type": "array"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/DivergentGroup"
@@ -16739,6 +16810,10 @@
             "title": "Kind Forks",
             "type": "array"
           },
+          "tenant_unattributed_count": {
+            "title": "Tenant Unattributed Count",
+            "type": "integer"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -16746,7 +16821,9 @@
         },
         "required": [
           "groups",
-          "total"
+          "total",
+          "tenant_unattributed_count",
+          "contested_tenant_total"
         ],
         "title": "DivergentResponse",
         "type": "object"
@@ -16801,6 +16878,22 @@
             "title": "Status",
             "type": "string"
           },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -16820,7 +16913,9 @@
           "title",
           "status",
           "current_version",
-          "updated_at"
+          "updated_at",
+          "tenant_id",
+          "tenant_source"
         ],
         "title": "DivergentVariant",
         "type": "object"
@@ -56411,6 +56506,22 @@
             "title": "Status",
             "type": "string"
           },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -56455,6 +56566,8 @@
           "intent_refs",
           "authored_at",
           "captured_by",
+          "tenant_id",
+          "tenant_source",
           "current_version",
           "created_at",
           "updated_at",
@@ -56921,6 +57034,22 @@
             "title": "Status",
             "type": "string"
           },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -56958,6 +57087,8 @@
           "intent_refs",
           "authored_at",
           "captured_by",
+          "tenant_id",
+          "tenant_source",
           "current_version",
           "created_at",
           "updated_at"
@@ -72522,7 +72653,7 @@
     },
     "/api/v1/devices/me": {
       "get": {
-        "description": "Resolve the device principal for a coord-issued device-token JWT.\n\nThe relay's ``_auth.ts`` forwards the device-token JWT as a bearer to\nthis route to resolve the caller into a ``(device_id, user_id,\ntenant_id)`` principal. This is the disjoint device path: the\nCognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.\n\nDeclared before ``GET /{device_id}`` so ``me`` is never captured as a\ndevice-id path parameter.",
+        "description": "Resolve the device principal for a coord-issued device-token JWT.\n\nThe relay's ``_auth.ts`` forwards the device-token JWT as a bearer to\nthis route to resolve the caller into a ``(device_id, user_id,\ntenant_id)`` principal. This is the disjoint device path: the\nCognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.\n\nDeclared before ``GET /{device_id}`` so ``me`` is never captured as a\ndevice-id path parameter.\n\nThe tenant read is\n:attr:`~app.api.deps.DeviceTokenContext.tenant_claim` \u2014 the\n401-on-missing, VERBATIM accessor \u2014 rather than a hand-rolled\n``claims.get``. Two postures are in play and this route wants the looser\none on BOTH axes:\n\n* **missing -> 401** is right here and only here: the tenant IS the answer\n  this route owes, so a token that asserts none leaves it nothing to\n  return. A recorder that files the tenant as one fact among others takes\n  ``tenant_id_optional`` and records ``unknown`` instead.\n* **malformed -> returned anyway.** The claim is echoed as the token\n  spelled it, never parsed and never normalised. This route stores\n  nothing, so a tenant that is not a UUID is none of its business, and\n  ``test_device_identity_endpoint`` pins exactly that (\"sourced from\n  claims ... verbatim, not derived\") with non-UUID values.\n\nPlan ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.",
         "operationId": "api_v1_devices_me_get",
         "responses": {
           "200": {
@@ -97236,6 +97367,43 @@
             }
           },
           {
+            "description": "Exact match on the coord tenant this artifact belongs to. NARROWS within your organization; it never widens access. Absent = today's behaviour (every tenant), which is NOT the same as `tenant_source=unknown` \u2014 see that filter.",
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the coord tenant this artifact belongs to. NARROWS within your organization; it never widens access. Absent = today's behaviour (every tenant), which is NOT the same as `tenant_source=unknown` \u2014 see that filter.",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "description": "Exact match on HOW the tenant was established (`declared`, `derived_repo`, `derived_sole_binding`, `ambiguous`, `unknown`). The door for the UNATTRIBUTED population, which a `tenant_id` filter cannot name because those rows carry a NULL tenant.",
+            "in": "query",
+            "name": "tenant_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on HOW the tenant was established (`declared`, `derived_repo`, `derived_sole_binding`, `ambiguous`, `unknown`). The door for the UNATTRIBUTED population, which a `tenant_id` filter cannot name because those rows carry a NULL tenant.",
+              "title": "Tenant Source"
+            }
+          },
+          {
             "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
             "in": "query",
             "name": "intent_ref",
@@ -97313,7 +97481,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.\n\n**``tenant_id`` / ``tenant_source`` are NOT in that list, deliberately.**\nThey are not ordinary payload metadata: they are resolved from the\nCREDENTIAL (:func:`_resolve_tenant`), and a write that asserts no tenant\nPRESERVES what the row already holds rather than overwriting it with\n``unknown`` (:func:`~app.crud.work_artifact._settle_tenant`). Absence of\nevidence is not evidence of absence, so an unattributed re-scan cannot\nblank a recorded tenant \u2014 nor clear a contested flag.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {
@@ -97500,7 +97668,7 @@
     },
     "/api/v1/plan-library/divergent": {
       "get": {
-        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
+        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.\n\n``contested_tenants`` \u2014 ONE row that two coord tenants both wrote,\nstamped ``tenant_source = \"ambiguous\"`` at the upsert that collided. Their\nplans fused onto one identity bucket because the corpus had no tenant axis\nand every route derives its scope from the operator's PERSONAL\norganization. Reported under its own key, never folded into ``groups``: a\ndigest divergence is one document captured twice and is disposed of by\npicking a winner, while these were never the same document and picking a\nwinner IS the data loss. Plan\n``2026-09-22-the-plan-corpus-has-no-tenant-axis-...`` Phase 3; this is the\nmeasurement Phase 4's identity re-key is gated on.\n\nNote it is a ROW list and not a group list, and the reason is the whole\nshape of the defect: ``uq_work_artifacts_identity`` is unique over\n``(organization, kind, slug, source_repo)``, so two tenants' copies of one\nstem cannot coexist as two rows to be grouped. They overwrite in turn. The\ncollision is caught at the WRITE or not at all.\n\n\u26a0\ufe0f **Read ``tenant_unattributed_count`` before reading an empty\n``contested_tenants`` as clean.** A corpus not yet re-pushed under the\nPhase 2 write path is entirely ``unknown``: no write has asserted a tenant,\nso no write can have contested one, and the list is empty for want of DATA\nrather than for want of collisions \u2014 UNKNOWN, never a clean bill of health.\n``contested_tenant_total`` is the unclipped count beside the clipped list,\nfor the same reason: a truncation nobody is told about would defeat a\nreport whose entire job is \"an absence is not a verdict\".\n\n\u26a0\ufe0f **A latched row has no settling door yet.** Once ``ambiguous``, a row\nstays so: no write can clear it (a push from ONE of the contesting tenants\nis byte-indistinguishable from the push that raised the flag), and this\nchange ships no ``PATCH .../tenant``. Settling a contest is a content\njudgement and lands with Phase 4's disposition work; until then the flag\nis a durable finding, which is what a gate needs it to be.",
         "operationId": "api_v1_plan_library_divergent_get",
         "parameters": [
           {
