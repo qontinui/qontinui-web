@@ -81,6 +81,7 @@ from app.schemas.dev_dashboard import (
     RegisteredRunner,
     RunnerHeartbeat,
     RunnerTaskRun,
+    RunnerUiThread,
 )
 from app.services import cognito_admin
 from app.services.cognito_admin import (
@@ -460,6 +461,17 @@ def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
     }
 
 
+def _stored_ui_thread_wire(
+    block: dict[str, Any], observed_at: datetime | None
+) -> dict[str, Any]:
+    """The fleet-row keys for the block a device's WS heartbeat stored."""
+    return {
+        "uiThread": RunnerUiThread.model_validate(block).model_dump(mode="json"),
+        "uiThreadSource": "device",
+        "uiThreadObservedAt": observed_at.isoformat() if observed_at else None,
+    }
+
+
 @router.get("/fleet")
 async def get_fleet_status(
     *,
@@ -565,7 +577,21 @@ async def get_fleet_status(
         seen = beacon_by_key.get(key)
         if seen is None or b.last_heartbeat > seen.last_heartbeat:
             beacon_by_key[key] = b
+    #
+    # Preferred over the beacon: the device's stored ``coord.devices.ui_thread``,
+    # written by the AUTHENTICATED devices-WebSocket heartbeat — durable, the
+    # same on every replica, and attributable to the device. Labelled
+    # ``"device"``, observed at the device's own ``last_heartbeat``.
+    stored_by_id: dict[str, tuple[dict[str, Any], datetime | None]] = {
+        str(d.device_id): (d.ui_thread, d.last_heartbeat)
+        for d in runners
+        if d.ui_thread is not None
+    }
     for wire in wire_runners:
+        stored = stored_by_id.get(str(wire.get("id")))
+        if stored is not None:
+            wire.update(_stored_ui_thread_wire(*stored))
+            continue
         beacon = beacon_by_key.get(
             (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
         )

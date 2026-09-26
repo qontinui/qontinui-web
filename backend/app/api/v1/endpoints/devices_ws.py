@@ -1377,6 +1377,12 @@ async def _handle_heartbeat(
     ui_error = msg.get("ui_error")
     recent_crash = msg.get("recent_crash")
     derived_status = msg.get("derived_status")
+    # Native UI-thread liveness (plan
+    # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
+    # Read by its snake_case name like the three keys above; a non-object is
+    # dropped to None (UNKNOWN) rather than stored as a malformed verdict.
+    raw_ui_thread = msg.get("ui_thread")
+    ui_thread = raw_ui_thread if isinstance(raw_ui_thread, dict) else None
 
     # One session for every write. This is the hottest path in the file —
     # every device, every ~30s — and registration failures here have already
@@ -1402,6 +1408,7 @@ async def _handle_heartbeat(
                 derived_status=derived_status,
                 ui_error=ui_error,
                 recent_crash=recent_crash,
+                ui_thread=ui_thread,
             )
         except Exception as e:
             logger.error(

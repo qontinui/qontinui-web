@@ -149,6 +149,11 @@ class Device(Base):
     )
     ui_error: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     recent_crash: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The runner's native UI-thread liveness block from its latest WS
+    # heartbeat (``wedged`` tri-state, ``reason``, ping deliverability — the
+    # ten keys of qontinui-runner ``HeartbeatUiThread``). ``None`` = UNKNOWN,
+    # never "not wedged". Column added by alembic ``coord_devices_ui_thread_01``.
+    ui_thread: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     restate_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )

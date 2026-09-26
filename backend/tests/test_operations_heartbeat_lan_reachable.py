@@ -163,6 +163,7 @@ def _owned_device(*, hostname: str, port: int) -> Any:
         ws_session_id=None,
         ui_error=None,
         recent_crash=None,
+        ui_thread=None,
         derived_status="offline",
         last_heartbeat=None,
         created_at=now,

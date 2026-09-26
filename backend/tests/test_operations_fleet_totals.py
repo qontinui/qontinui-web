@@ -94,6 +94,7 @@ def _db_device(
         ws_session_id="ws-session" if ws_connected else None,
         ui_error=None,
         recent_crash=None,
+        ui_thread=None,
         derived_status=derived_status,
         last_heartbeat=now if ws_connected else None,
         created_at=now,

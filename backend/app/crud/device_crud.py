@@ -199,8 +199,15 @@ async def heartbeat_device(
     derived_status: str | None = None,
     ui_error: dict | None = None,
     recent_crash: dict | None = None,
+    ui_thread: dict | None = None,
 ) -> Device | None:
-    """Record a heartbeat from a device, updating liveness fields."""
+    """Record a heartbeat from a device, updating liveness fields.
+
+    ``ui_thread`` is overwritten on every heartbeat exactly like ``ui_error``
+    and ``recent_crash``: a runner that omits it (one predating the block)
+    stores ``None``, which reads UNKNOWN — never a stale verdict carried
+    forward from an earlier binary.
+    """
     query = select(Device).where(Device.device_id == device_id)
     result = await db.execute(query)
     record = result.scalar_one_or_none()
@@ -215,6 +222,7 @@ async def heartbeat_device(
         record.derived_status = status_value
     record.ui_error = ui_error
     record.recent_crash = recent_crash
+    record.ui_thread = ui_thread
     await db.commit()
     await db.refresh(record)
     return record

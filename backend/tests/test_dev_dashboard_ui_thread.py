@@ -114,6 +114,7 @@ def _owned_device(*, hostname: str, port: int) -> Any:
         ws_session_id=None,
         ui_error=None,
         recent_crash=None,
+        ui_thread=None,
         derived_status="errored",
         last_heartbeat=None,
         created_at=datetime.now(UTC),
@@ -333,3 +334,70 @@ class TestFleetView:
         client.post(f"{API_PREFIX}/heartbeat", json=_heartbeat())
         rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
         assert rows[0]["uiThread"] is None
+
+
+class TestStoredBlock:
+    """Half 2: the devices-WebSocket heartbeat stores the block on coord.devices."""
+
+    def test_stored_block_wins_over_the_in_memory_beacon(
+        self, client: TestClient
+    ) -> None:
+        # The beacon is per-replica and lost on restart; the stored column is
+        # durable and identical on every replica, so it is preferred.
+        client.post(
+            f"{API_PREFIX}/heartbeat",
+            json=_heartbeat(ui_thread={**RUST_UI_THREAD_BLOCK, "wedged": False}),
+        )
+        device = _owned_device(hostname="spaceship", port=9876)
+        device.ui_thread = RUST_UI_THREAD_BLOCK
+        rows = _fleet_rows(client, device)
+        assert rows[0]["uiThread"] == RUST_UI_THREAD_BLOCK
+        assert rows[0]["uiThreadSource"] == "device"
+
+    def test_stored_block_is_served_with_no_beacon_at_all(
+        self, client: TestClient
+    ) -> None:
+        device = _owned_device(hostname="spaceship", port=9876)
+        device.ui_thread = {**RUST_UI_THREAD_BLOCK, "wedged": None}
+        rows = _fleet_rows(client, device)
+        assert rows[0]["uiThread"]["wedged"] is None
+        assert rows[0]["uiThread"]["reason"] == "native_probe_wedged"
+
+
+def _ws_env() -> tuple[Any, Any]:
+    manager = MagicMock()
+    manager.get_websocket = MagicMock(return_value=None)
+    manager.refresh_ttl = AsyncMock()
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=MagicMock())
+    session.__aexit__ = AsyncMock(return_value=None)
+    return manager, MagicMock(return_value=session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        (RUST_UI_THREAD_BLOCK, RUST_UI_THREAD_BLOCK),
+        (None, None),
+        ("not-an-object", None),
+    ],
+)
+async def test_ws_heartbeat_stores_the_block_by_its_snake_case_name(
+    sent: Any, stored: Any
+) -> None:
+    from app.api.v1.endpoints import devices_ws
+
+    manager, session_local = _ws_env()
+    msg: dict[str, Any] = {"type": "heartbeat", "derived_status": "errored"}
+    if sent is not None:
+        msg["ui_thread"] = sent
+    heartbeat = AsyncMock()
+    with (
+        patch.object(devices_ws, "AsyncSessionLocal", session_local),
+        patch.object(devices_ws.device_crud, "heartbeat_device", heartbeat),
+    ):
+        await devices_ws._handle_heartbeat(msg, uuid4(), manager, None, object())
+    heartbeat.assert_awaited_once()
+    assert heartbeat.await_args is not None
+    assert heartbeat.await_args.kwargs["ui_thread"] == stored
