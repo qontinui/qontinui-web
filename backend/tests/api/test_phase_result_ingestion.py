@@ -19,7 +19,10 @@ branches are where misattribution would hide, so each is pinned here:
 * no ``runner_id`` -> the most-recently-heartbeated *paired* device wins,
   a never-heartbeated one loses (NULLS LAST), and ``created_at`` breaks ties;
 * no ``runner_id`` and no paired device -> 202, NULL runner, "server-device";
-* the companion ``WorkflowEvent`` row and the background push dispatch;
+* the companion ``WorkflowEvent`` row, its success/failure summary, and the
+  background push dispatch;
+* the non-attribution fields (``failure_context``, ``commit_hash``,
+  ``variables_set``, ``step_results``) persisted on the ``PhaseResult`` row;
 * a missing device bearer -> 401.
 
 Layering mirrors ``tests/test_plan_library_followups.py``: the events router is
@@ -389,7 +392,9 @@ async def test_fallback_breaks_heartbeat_ties_by_newest_created_at(
     heartbeat = now - timedelta(minutes=2)
     # The loser is inserted FIRST. With no ``created_at`` key, Postgres in
     # practice typically returns equal-heartbeat rows in insertion order (this
-    # is not guaranteed), so it would usually pick the loser.
+    # is not guaranteed), so it would usually pick the loser. Measured
+    # 2026-09-26: with ``Device.created_at.desc()`` removed from the handler
+    # this test failed in 2 of 2 runs.
     await _make_device(
         async_db_session,
         user=caller,
