@@ -122,8 +122,10 @@ def _index_state(engine: Engine) -> tuple[bool, str]:
 
 def _plan_for(engine: Engine, sql: str, params: dict[str, object]) -> str:
     """EXPLAIN ``sql`` with sequential scans penalised (see module docstring)."""
-    with engine.connect() as conn:
-        conn.execute(text("SET enable_seqscan = off"))
+    # SET LOCAL inside a transaction: the setting dies with the transaction
+    # instead of riding the pooled connection into later queries.
+    with engine.begin() as conn:
+        conn.execute(text("SET LOCAL enable_seqscan = off"))
         rows = conn.execute(text(f"EXPLAIN {sql}"), params).all()
     return "\n".join(str(r[0]) for r in rows)
 
