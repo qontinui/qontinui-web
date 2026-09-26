@@ -180,6 +180,43 @@ class WorkArtifactEdgeClaim(BaseModel):
     to_id: UUID
 
 
+class WorkArtifactEdgeRetract(BaseModel):
+    """Soft-delete a wrongly-recorded edge. ``DELETE /plan-library/edges/{id}``.
+
+    The row is never removed — ``retracted_at`` / ``retracted_by`` /
+    ``retracted_reason`` are stamped and the edge stops asserting its
+    relation (it drops out of ``GET /{id}`` and ``GET /{id}/edges`` unless
+    ``include_retracted=true`` is passed). ``reason`` is required and
+    non-blank: an unexplained retraction is exactly the kind of silent
+    correction this door exists to prevent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class WorkArtifactEdgeCorrect(BaseModel):
+    """Replace a recorded edge's ``relation`` / ``to_id`` / ``note`` in place.
+
+    ``PUT /plan-library/edges/{id}``. The edge's identity (``id``, ``from_id``,
+    ``created_at``, ``created_by``) never moves — only the claim itself is
+    replaced, and ``source``/``corrected_by``/``corrected_at`` record that it
+    was. Validation mirrors ``WorkArtifactEdgeCreate`` (open target only for
+    ``spawned_followup``, note required and non-blank there, no self-edge).
+
+    ``reason`` is required for the same audit-trail reason
+    :class:`WorkArtifactEdgeRetract` requires one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    relation: WorkArtifactRelation
+    to_id: UUID | None = None
+    note: str | None = None
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
 # ─────────────── coord-owned link block (shared) ───────────────
 #
 # Used by BOTH the single-artifact detail read and the candidates read. It
@@ -368,6 +405,33 @@ class WorkArtifactEdgeRead(BaseORMSchema):
     peer_kind: str | None = None
     peer_slug: str | None = None
     peer_title: str | None = None
+
+    # ── Correction / retraction (Phase 5 of
+    # ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``) ──
+    #: Set together by ``DELETE /plan-library/edges/{id}``. ``None`` on a
+    #: live edge. Excluded from ``GET /{id}`` and ``GET /{id}/edges`` by
+    #: default — present here only when ``include_retracted=true`` was asked.
+    retracted_at: IsoDatetime | None = None
+    retracted_by: str | None = None
+    retracted_reason: str | None = None
+    #: Set together by ``PUT /plan-library/edges/{id}``. ``None`` on an edge
+    #: exactly as first recorded.
+    corrected_at: IsoDatetime | None = None
+    corrected_by: str | None = None
+    corrected_reason: str | None = None
+    #: ``None`` (recorded, untouched) or ``"corrected"``.
+    source: str | None = None
+
+
+class WorkArtifactEdgesResponse(BaseModel):
+    """``GET /plan-library/{id}/edges`` — the artifact's edges, both directions.
+
+    A dedicated, lighter-weight sibling of ``GET /{id}`` for a caller who
+    wants only the provenance graph, not the body and version log too.
+    """
+
+    items: list[WorkArtifactEdgeRead]
+    count: int
 
 
 class WorkArtifactDetail(WorkArtifactSummary):
