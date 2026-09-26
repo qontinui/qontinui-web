@@ -200,8 +200,8 @@ CONCURRENTLY build leaves an INVALID index that ``IF NOT EXISTS`` would keep,
 so each build first drops an INVALID index of its own name. On first
 application every row is ``'none'``, so each build indexes nothing; a
 CONCURRENTLY build still makes two passes over the table (build, then
-validate), both cheap here. A rebuild after an INVALID leftover runs once
-mirror rows exist and indexes them.
+validate), both cheap here. A rebuild after an INVALID leftover indexes
+whatever mirror rows exist by then, if any.
 Plain SQL literals, never f-strings, so the ``alembic-schema-arg-gate``
 pre-commit hook can see the schema on every ``CREATE``/``DROP``.
 
