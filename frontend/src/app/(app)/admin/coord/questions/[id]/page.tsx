@@ -375,8 +375,11 @@ export default function CoordQuestionDetailPage() {
   /** Submit `text`, through the confirm step when it is a decisive value —
    *  shared by the decision buttons and the fallback composer. */
   const submitAnswer = (text: string) => {
-    if (decisiveValueFor(effect, text)) {
-      setConfirmText(text.trim());
+    const decisive = decisiveValueFor(effect, text);
+    if (decisive) {
+      // Stage the CANONICAL value (`approve` / `met`), not the operator's
+      // casing or padding — it is what coord's effect core matches on.
+      setConfirmText(decisive);
       return;
     }
     void postResponse(text);
@@ -431,6 +434,41 @@ export default function CoordQuestionDetailPage() {
   const answered = status.kind === "answered";
   /** Either terminal state: nobody is waiting, and nothing may be composed. */
   const terminal = QUESTION_TERMINAL_KINDS.has(status.kind);
+
+  /** The fallback free-text composer. */
+  const composer = (
+    <>
+      <Textarea
+        rows={5}
+        placeholder="Type a response, or click an option above to seed it."
+        value={response}
+        onChange={(e) => {
+          setResponse(e.target.value);
+          setSelectedOption(null);
+        }}
+        data-testid="coord-question-response-textarea"
+      />
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={() => submitAnswer(response)}
+          disabled={submitting || !response.trim()}
+          data-testid="coord-question-submit"
+        >
+          {submitting ? "Sending..." : "Send response"}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          responding as {user?.email ?? "(unknown operator)"}
+        </span>
+      </div>
+    </>
+  );
+  /** Shown to a non-admin in place of any control that answers an effect row
+   *  — the server refuses a non-admin's answer to one (403). */
+  const effectAdminNotice = (
+    <div data-testid="coord-question-effect-admin-only">
+      <ReadOnlyNotice label="Requires tenant admin — deciding this clears a gate or applies a policy edit." />
+    </div>
+  );
 
   return (
     <div
@@ -623,13 +661,7 @@ export default function CoordQuestionDetailPage() {
                   )}
                   {/* The server refuses a non-admin's answer to an effect row
                       (403); do not offer a Developer a control that will fail. */}
-                  <CoordAdminOnly
-                    fallback={
-                      <div data-testid="coord-question-effect-admin-only">
-                        <ReadOnlyNotice label="Requires tenant admin — deciding this clears a gate or applies a policy edit." />
-                      </div>
-                    }
-                  >
+                  <CoordAdminOnly fallback={effectAdminNotice}>
                     <div
                       className="flex flex-wrap items-center gap-2"
                       role="group"
@@ -678,28 +710,17 @@ export default function CoordQuestionDetailPage() {
                       answer in free text; coord decides whether it applies.
                     </p>
                   )}
-                  <Textarea
-                    rows={5}
-                    placeholder="Type a response, or click an option above to seed it."
-                    value={response}
-                    onChange={(e) => {
-                      setResponse(e.target.value);
-                      setSelectedOption(null);
-                    }}
-                    data-testid="coord-question-response-textarea"
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={() => submitAnswer(response)}
-                      disabled={submitting || !response.trim()}
-                      data-testid="coord-question-submit"
-                    >
-                      {submitting ? "Sending..." : "Send response"}
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      responding as {user?.email ?? "(unknown operator)"}
-                    </span>
-                  </div>
+                  {/* An effect row the console cannot route to buttons
+                      (clause, unknown kind, option mismatch) is still gated
+                      server-side; a Developer gets the same notice, not a
+                      composer whose answer will 403. */}
+                  {effect ? (
+                    <CoordAdminOnly fallback={effectAdminNotice}>
+                      {composer}
+                    </CoordAdminOnly>
+                  ) : (
+                    composer
+                  )}
                 </>
               )}
             {/* One confirm step for both entry points — the decision buttons

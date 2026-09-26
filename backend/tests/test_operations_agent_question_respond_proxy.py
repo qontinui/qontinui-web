@@ -22,7 +22,13 @@ Pinned here:
 * ``effect_kind`` ``clause`` and a kind this build does not recognise also
   require admin; a superuser passes; the admin check runs in the ACTIVE tenant;
 * an ordinary row needs no web user at all (the user dependency is optional),
-  while an effect row with no active user is a 401;
+  while an effect row with no active user is a 403 ``inactive_or_unknown_user``
+  (never 401 — the frontend reads that as session expiry);
+* the row must POSITIVELY identify itself — a JSON object whose
+  ``question_id`` equals the requested id; a wrapper body, ``{}`` or a
+  different id is a 503 and nothing is POSTed;
+* ``effect_kind`` matching is exact: ``""`` and ``"none"`` are ordinary,
+  ``"NONE"`` and ``" none "`` require admin;
 * ``question_id`` is a UUID — a malformed one is a 422 and reaches no coord.
 
 Same harness as ``test_operations_prompt_document_proposals_proxy.py``: a bare
@@ -213,10 +219,31 @@ def test_an_ordinary_row_is_unchanged_for_a_non_admin(row):
     "row_response",
     [
         _resp(status=500, json_data={"error": "PG unavailable"}),
+        _resp(status=502, json_data={"error": "bad gateway"}),
+        _resp(status=503, json_data={"error": "draining"}),
         _resp(json_data=["not", "an", "object"]),
         _resp(json_data=_row(effect_kind=7)),
+        _resp(json_data={"question": _row(effect_kind="gate")}),
+        _resp(json_data={}),
+        _resp(
+            json_data={
+                **_row(effect_kind="none"),
+                "question_id": "00000000-0000-0000-0000-00000000e002",
+            }
+        ),
+        _resp(json_data={**_row(effect_kind="none"), "question_id": None}),
     ],
-    ids=["coord-500", "non-object", "non-string-kind"],
+    ids=[
+        "coord-500",
+        "coord-502",
+        "coord-503",
+        "non-object",
+        "non-string-kind",
+        "wrapper-body",
+        "empty-object",
+        "mismatched-id",
+        "null-id",
+    ],
 )
 def test_an_unreadable_row_fails_closed(row_response):
     resp, instance = _run(
@@ -246,6 +273,48 @@ def test_coord_unreachable_fails_closed():
         resp = _client().post(RESPOND, json={"response": "met"})
     assert resp.status_code == 503
     instance.post.assert_not_called()
+
+
+def test_the_row_id_is_compared_case_insensitively():
+    row = {**_row(effect_kind="none"), "question_id": QID.upper()}
+    resp, instance = _run(_resp(json_data=row), {"response": "ok"}, admin=False)
+    assert resp.status_code == 200, resp.text
+    instance.post.assert_called_once()
+
+
+def test_a_coord_timeout_on_the_read_fails_closed_as_503():
+    # _proxy_coord_get turns a timeout into CoordTransportUnavailable(504).
+    resp, instance = _run(
+        None,
+        {"response": "met"},
+        admin=True,
+        get_side_effect=httpx.ReadTimeout("slow"),
+    )
+    assert resp.status_code == 503
+    assert "agent_question_unreadable" in resp.text
+    instance.post.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["", "none"], ids=["empty", "none"])
+def test_empty_and_none_effect_kinds_are_ordinary(kind):
+    body = {"response": "ok", "responded_by_operator": "dev@example.com"}
+    resp, instance = _run(_resp(json_data=_row(effect_kind=kind)), body, admin=False)
+    assert resp.status_code == 200, resp.text
+    assert instance.post.call_args.kwargs["json"] == body
+
+
+@pytest.mark.parametrize("kind", ["NONE", " none "], ids=["upper", "padded"])
+def test_effect_kind_matching_is_exact_so_variants_require_admin(kind):
+    row = _row(effect_kind=kind)
+    resp, instance = _run(_resp(json_data=row), {"response": "ok"}, admin=False)
+    assert resp.status_code == 403
+    assert "not_coord_tenant_admin" in resp.text
+    instance.post.assert_not_called()
+
+    # ...and an admin passes, with the authenticated identity stamped.
+    resp, instance = _run(_resp(json_data=row), {"response": "ok"}, admin=True)
+    assert resp.status_code == 200, resp.text
+    assert instance.post.call_args.kwargs["json"]["responded_by_operator"] == USER_EMAIL
 
 
 def test_a_missing_question_is_a_404_and_nothing_is_posted():
@@ -357,14 +426,16 @@ def test_an_ordinary_row_needs_no_web_user():
     assert instance.post.call_args.kwargs["json"] == body
 
 
-def test_an_effect_row_without_a_web_user_is_a_401():
+def test_an_effect_row_without_a_web_user_is_a_403_not_a_401():
+    # 401 would read as session expiry to the frontend httpClient.
     resp, instance = _run(
         _resp(json_data=GATE_ROW),
         {"response": "met"},
         admin=True,
         client_kwargs={"user": _ANON},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
+    assert "inactive_or_unknown_user" in resp.text
     instance.post.assert_not_called()
 
 

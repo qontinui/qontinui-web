@@ -5611,24 +5611,36 @@ async def get_agent_question(
 
 #: ``effect_kind`` values that mean "an ordinary question". A row from a coord
 #: build that predates the column omits it entirely, which reads as ``None``.
+#: Matching is EXACT and case-sensitive: ``"NONE"`` or ``" none "`` is not in
+#: this set, so it is treated as an effect and requires tenant admin.
 _NO_EFFECT_KINDS: frozenset[str | None] = frozenset({None, "", "none"})
 
 
-def _question_effect_kind(row: Any) -> str | None:
-    """The row's ``effect_kind``, trimmed; ``None`` when absent or null.
+def _question_effect_kind(row: Any, question_id: UUID) -> str | None:
+    """The row's ``effect_kind`` verbatim; ``None`` when absent or null.
 
-    Raises ``TypeError`` for a row that is not a JSON object, or an
-    ``effect_kind`` that is not a string — the caller treats either as an
+    The row must POSITIVELY identify itself as the requested question: a JSON
+    object whose ``question_id`` equals ``question_id`` (compared as lowercased
+    strings). A wrapper body (``{"question": {...}}``), an empty object or a
+    different id would otherwise read as "no ``effect_kind``" — i.e. an
+    ordinary row — and skip the admin gate.
+
+    Raises ``TypeError`` for a row that is not a JSON object or an
+    ``effect_kind`` that is not a string, and ``ValueError`` for a row whose
+    ``question_id`` is missing or does not match — the caller treats each as an
     unreadable row and fails closed.
     """
     if not isinstance(row, dict):
         raise TypeError("agent question row is not a JSON object")
+    row_id = row.get("question_id")
+    if not isinstance(row_id, str) or row_id.lower() != str(question_id).lower():
+        raise ValueError("agent question row does not identify the requested id")
     kind = row.get("effect_kind")
     if kind is None:
         return None
     if not isinstance(kind, str):
         raise TypeError("effect_kind is not a string")
-    return kind.strip()
+    return kind
 
 
 _UNREADABLE_DETAIL = (
@@ -5663,13 +5675,24 @@ async def post_agent_question_response(
     :func:`require_coord_tenant_admin`, and this door must not be a way around
     them. So the row is read from coord first and, for any effect other than
     ``none`` (including a kind this build does not recognise), an active web
-    user is required (401 when absent) and the same admin check runs here.
+    user is required (403 ``inactive_or_unknown_user`` when absent — not 401,
+    which the frontend reads as session expiry) and the same admin check runs
+    here. ``effect_kind`` matching is exact: only absent, null, ``''`` and
+    ``'none'`` are ordinary.
 
-    Fail-closed: nothing is POSTed unless the row was read. A coord 4xx on the
-    read (401 expired session, 403 ``tenant_not_resolved``, 400 malformed id,
-    404) is re-raised unchanged, since it is coord's own answer about the
-    request. A coord 5xx, an unreachable coord, a non-JSON or non-object body,
-    any other transport error, or a malformed ``effect_kind`` is a 503
+    The optional current-user dependency runs on EVERY request, so this route
+    now touches the web DB (the user lookup) even for an ordinary row whose
+    answer does not need it. That is the price of deciding the gate from the
+    row rather than the path; it is deliberate, not an oversight.
+
+    Fail-closed: nothing is POSTed unless the row was read and positively
+    identified — a JSON object whose ``question_id`` equals the requested id
+    (lowercased). A coord 4xx on the read (401 expired session, 403
+    ``tenant_not_resolved``, 400 malformed id, 404) is re-raised unchanged,
+    since it is coord's own answer about the request. A coord 5xx, an
+    unreachable coord, a non-JSON or non-object body, any other transport
+    error, a row that does not carry the requested ``question_id`` (a wrapper
+    body, ``{}``, a different id), or a malformed ``effect_kind`` is a 503
     ``agent_question_unreadable``: whether admin is required is exactly what
     could not be decided.
 
@@ -5684,7 +5707,7 @@ async def post_agent_question_response(
         row = await _proxy_coord_get(
             f"/coord/agent-questions/{path_id}", tenant_id=tenant_id
         )
-        effect_kind = _question_effect_kind(row)
+        effect_kind = _question_effect_kind(row, question_id)
     except CoordTransportUnavailable as exc:
         raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
     except HTTPException as exc:
@@ -5692,7 +5715,8 @@ async def post_agent_question_response(
             raise
         raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
     except (TypeError, ValueError, httpx.HTTPError) as exc:
-        # ValueError: a 2xx whose body is not JSON (``resp.json()``).
+        # ValueError: a 2xx whose body is not JSON (``resp.json()``), or a
+        # row that does not carry the requested ``question_id``.
         # httpx.HTTPError: a transport failure ``_proxy_coord_get`` does not
         # translate (it maps only connect errors and timeouts).
         # TypeError: a non-object row or a non-string ``effect_kind``.
@@ -5704,13 +5728,10 @@ async def post_agent_question_response(
     forwarded = body
     if effect_kind not in _NO_EFFECT_KINDS:
         if current_user is None:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "answering a decision-effect question requires an "
-                    "authenticated active user"
-                ),
-            )
+            # 403, not 401: the frontend httpClient reads any 401 as session
+            # expiry and signs the operator out, and the request DID carry a
+            # tenant credential — it just resolved to no active web user.
+            raise HTTPException(status_code=403, detail="inactive_or_unknown_user")
         # Same dependency semantics as the gate / proposal approve routes —
         # admin in the EFFECTIVE tenant, superusers pass. Called directly
         # because whether it applies depends on the row just read.

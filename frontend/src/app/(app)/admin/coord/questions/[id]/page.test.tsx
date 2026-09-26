@@ -947,7 +947,15 @@ describe("a decision-effect row is answered with the effect's own values", () =>
       { ...PROPOSAL_ROW, options: ["approve", "reject", "defer"] },
       "  Approve ",
       "coord-question-approve-confirm",
-      "Approve",
+      // The CANONICAL value, not the operator's casing or padding.
+      "approve",
+    ],
+    [
+      "gate `MET` (typed in capitals)",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+      " MET",
+      "coord-question-met-confirm",
+      "met",
     ],
     [
       "gate `met`",
@@ -1035,5 +1043,46 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     );
     expect(decisionButtons()).toHaveLength(0);
     expect(screen.getByTestId("coord-question-options")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a clause row", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
+    ["an unknown effect kind", { effect_kind: "future_kind", effect_ref: { id: "x" } }],
+    [
+      "a gate row whose options mismatch",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+    ],
+  ])(
+    "shows a non-admin the tenant-admin notice, not the composer, for %s",
+    async (_l, extra) => {
+      isCoordAdmin = false;
+      get.mockResolvedValue({ ...QUESTION, options: ["pin", "bump"], ...extra });
+      render(<CoordQuestionDetailPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-question-effect-admin-only")
+        ).toHaveTextContent(/Requires tenant admin/)
+      );
+      expect(
+        screen.queryByTestId("coord-question-response-textarea")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("coord-question-submit")
+      ).not.toBeInTheDocument();
+    }
+  );
+
+  it("[over-correction] still gives a non-admin the composer on an ordinary row", async () => {
+    isCoordAdmin = false;
+    get.mockResolvedValue({ ...QUESTION, effect_kind: "none", effect_ref: null });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument()
+    );
+    expect(
+      screen.queryByTestId("coord-question-effect-admin-only")
+    ).not.toBeInTheDocument();
   });
 });
