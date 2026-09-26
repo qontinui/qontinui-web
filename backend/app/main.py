@@ -57,6 +57,9 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.overview.router import (
+    CONTRACT_RESPONSE_HEADERS as OVERVIEW_CONTRACT_HEADERS,
+)
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -251,6 +254,9 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # nothing — a rule CORS silently breaks when the header is unpublished.
             *ARTIFACT_EXPORT_HEADERS,
             *CORPUS_EXPORT_HEADERS,
+            # The overview authoring contract: a record's version as its ETag,
+            # and the marker on a create answered from an Idempotency-Key.
+            *OVERVIEW_CONTRACT_HEADERS,
         ]
     )
 )

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight } from "./useSingleFlightPoll";
 import {
   DEVICE_STATUS_API,
   DEVICE_STATUS_POLL_FALLBACK_MS,
@@ -180,7 +182,6 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // `appliedSeqRef` is the newest read whose result LANDED and was applied.
   const readSeqRef = useRef(0);
   const appliedSeqRef = useRef(0);
-  const readsInFlightRef = useRef(0);
   // Every fleet read still in flight — a Set, because a Refresh can overlap a
   // poll or the on-open read. Unmount clears their body deadlines and aborts
   // their requests.
@@ -229,7 +230,6 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
    */
   const seedFromRest = useCallback(async (): Promise<FleetReadOutcome> => {
     const seq = ++readSeqRef.current;
-    readsInFlightRef.current += 1;
     const request: InFlightRequest = {
       controller: new AbortController(),
       cancelled: false,
@@ -247,7 +247,12 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       return true;
     };
     try {
+      // No client retries (plan
+      // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+      // a failed read is re-read by the next poll or the seed retry, never
+      // by `httpClient`'s 5xx backoff chain.
       const resp = await httpClient.fetch(DEVICE_STATUS_API, {
+        ...COORD_DASHBOARD_POLL_OPTIONS,
         signal: request.controller.signal,
       });
       if (!resp.ok) {
@@ -284,10 +289,22 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       scheduleSeedRetryRef.current();
       return "failed";
     } finally {
-      readsInFlightRef.current -= 1;
       inFlightRequestsRef.current.delete(request);
     }
   }, [clearSeedRetry]);
+
+  /**
+   * The one door to `seedFromRest` (plan
+   * `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+   * mount, socket open, tab reveal, Refresh and the seed retry all go through
+   * `refreshSeed`, which trails ONE read behind an outstanding one instead of
+   * starting a second beside it; a polling tick goes through `tickSeed`, which
+   * skips. So at most one fleet read is ever on the wire. The landing-order
+   * rule inside `seedFromRest` still holds, and now only ever orders reads
+   * that ran one after the other.
+   */
+  const { refresh: refreshSeed, tick: tickSeed } =
+    useSingleFlight(seedFromRest);
 
   /** Unmount: no body deadline outlives the hook, and no request it started
    *  keeps its connection open. */
@@ -344,9 +361,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       seedRetryTimerRef.current = null;
       // If this read fails it re-arms through `seedFromRest`'s own rule; if a
       // newer read lands first, it is discarded and arms nothing.
-      void seedFromRest();
+      void refreshSeed();
     }, delay);
-  }, [clearSeedRetry, seedFromRest]);
+  }, [clearSeedRetry, refreshSeed]);
 
   useEffect(() => {
     scheduleSeedRetryRef.current = scheduleSeedRetry;
@@ -367,10 +384,10 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     pollTimerRef.current = setInterval(() => {
       // One fleet read at a time from polling: against a route slower than
       // the interval, ticks would otherwise stack reads on top of each other.
-      if (document.hidden || readsInFlightRef.current > 0) return;
-      void seedFromRest();
+      if (document.hidden) return;
+      tickSeed();
     }, DEVICE_STATUS_POLL_FALLBACK_MS);
-  }, [clearSeedRetry, seedFromRest, stopPolling]);
+  }, [clearSeedRetry, tickSeed, stopPolling]);
 
   const closeWs = useCallback(() => {
     // Retires any connect attempt still awaiting its token, too.
@@ -453,7 +470,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       // while we were disconnected — the WS only pushes diffs from
       // here forward. If it fails, `seedFromRest` arms the retry: this
       // socket is now the live feed.
-      void seedFromRest();
+      void refreshSeed();
     };
 
     ws.onmessage = (event) => {
@@ -515,7 +532,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     applyRow,
     clearSeedRetry,
     closeWs,
-    seedFromRest,
+    refreshSeed,
     startPolling,
     stopPolling,
   ]);
@@ -523,7 +540,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // Mount: seed + open WS.
   useEffect(() => {
     cleanedUpRef.current = false;
-    void seedFromRest();
+    void refreshSeed();
     void connectWs();
     return () => {
       cleanedUpRef.current = true;
@@ -534,7 +551,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       cancelInFlightReads();
     };
   }, [
-    seedFromRest,
+    refreshSeed,
     connectWs,
     closeWs,
     stopPolling,
@@ -555,7 +572,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
         setConnected(false);
       } else {
         reconnectAttemptsRef.current = 0;
-        void seedFromRest();
+        void refreshSeed();
         void connectWs();
       }
     };
@@ -566,13 +583,13 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     clearSeedRetry,
     closeWs,
     stopPolling,
-    seedFromRest,
+    refreshSeed,
     connectWs,
   ]);
 
   const refetch = useCallback(async (): Promise<void> => {
-    await seedFromRest();
-  }, [seedFromRest]);
+    await refreshSeed();
+  }, [refreshSeed]);
 
   return {
     byHostname,

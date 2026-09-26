@@ -42,7 +42,11 @@ DifficultySource = Literal["declared", "computed"]
 
 #: Bump whenever a threshold, weight or signal changes, then backfill. Stored
 #: beside every rating so a row rated under an older rubric is identifiable.
-RUBRIC_VERSION = 1
+#:
+#: Version 2 (2026-09-22): the declared stamp is searched in a STRUCTURAL
+#: header region (everything before the first sub-H1 heading) instead of the
+#: first 60 lines, so a stamp below a long status blockquote is read.
+RUBRIC_VERSION = 2
 
 #: The model tier each level routes to — display copy, served so every
 #: consumer (the console, /candidates and list-route readers) says the same thing.
@@ -81,7 +85,7 @@ MODEL_SELECTOR_VOCABULARY = "claude_code_agent_tool_v1"
 
 #: ``Difficulty: high`` at line start, tolerating a blockquote marker, bold
 #: markup around the key and/or the value, and a bullet. Only the header region
-#: is searched (see :data:`_HEADER_LINES`) so a plan that merely DISCUSSES
+#: is searched (see :func:`_header_region`) so a plan that merely DISCUSSES
 #: difficulty in its body does not stamp itself.
 #:
 #: ⚠️ Horizontal whitespace only — ``[ \t]``, never ``\s``. Under MULTILINE a
@@ -97,7 +101,10 @@ _DECLARED_RE = re.compile(
     r"[ \t]*(?:\*+[ \t]*)?:[ \t]*(?:\*+[ \t]*)?(high|medium|low)\b",
     re.IGNORECASE | re.MULTILINE,
 )
-_HEADER_LINES = 60
+#: The header region's length when a plan has NO sub-H1 heading at all — a
+#: FALLBACK for that shape only, never a truncation of a region that was found
+#: (a header ending past line 400 is real: measured 13 plans on 2026-09-22).
+_HEADER_MAX_LINES = 400
 
 # ───────────────────────────── signals ─────────────────────────────
 
@@ -220,11 +227,48 @@ def _strip_fences(body: str) -> str:
     return _FENCE_RE.sub("", body)
 
 
+def _is_sub_h1_heading(line: str) -> bool:
+    """``^#{2,6} `` — an ATX heading below the H1, checked without a regex.
+
+    ``#{2,6}`` rather than ``##`` alone: some plans open with a ``###`` before
+    their first ``##``, and ``##`` only would widen their header past a real
+    heading. Seven or more ``#`` is not a heading, so it does not match.
+    """
+    hashes = len(line) - len(line.lstrip("#"))
+    return 2 <= hashes <= 6 and line[hashes : hashes + 1] == " "
+
+
+def _header_region(prose: str) -> list[str]:
+    """The plan's header: every line before the first sub-H1 heading.
+
+    Structural, not a line count — a status blockquote grows with every vet,
+    ship and correction pass, and a fixed window silently stops reading a
+    stamp once the blockquote grows past it. Only a plan with NO sub-H1
+    heading falls back to the first :data:`_HEADER_MAX_LINES` lines; a found
+    region is never truncated. A plain line walk: linear in the body.
+
+    A plan with no H1 whose FIRST non-blank line is a sub-H1 heading is titled
+    by that heading, so it is skipped rather than ending an empty header.
+
+    Lines are split on ``\n`` only — the line boundaries ``^`` in
+    :data:`_DECLARED_RE` sees — with a trailing ``\r`` dropped so CRLF bodies
+    read the same.
+    """
+    lines = [ln.removesuffix("\r") for ln in prose.split("\n")]
+    start = next((i for i, ln in enumerate(lines) if ln.strip()), len(lines))
+    if start < len(lines) and _is_sub_h1_heading(lines[start]):
+        start += 1
+    for i in range(start, len(lines)):
+        if _is_sub_h1_heading(lines[i]):
+            return lines[:i]
+    return lines[:_HEADER_MAX_LINES]
+
+
 def _declared(prose: str) -> DifficultyLevel | None:
-    """The header stamp, from the first :data:`_HEADER_LINES` lines of
-    ``prose`` — the body with fences ALREADY stripped, so a fence that opens
-    in the header and closes below it cannot leak a stamp."""
-    header = "\n".join(prose.splitlines()[:_HEADER_LINES])
+    """The header stamp, from :func:`_header_region` of ``prose`` — the body
+    with fences ALREADY stripped, so a fence that opens in the header and
+    closes below it cannot leak a stamp."""
+    header = "\n".join(_header_region(prose))
     m = _DECLARED_RE.search(header)
     return m.group(1).lower() if m else None  # type: ignore[return-value]
 

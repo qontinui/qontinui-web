@@ -141,6 +141,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import testing as testing_pkg
 from app.extensions import register_cloud_extensions
+from app.overview.router import router as overview_authoring_router
 
 api_router = APIRouter()
 
@@ -276,6 +277,12 @@ api_router.include_router(
 # ``X-Qontinui-Active-Tenant`` to this prefix (``ACTIVE_TENANT_URL_PREFIXES``
 # in ``frontend/src/services/http-client.ts``).
 api_router.include_router(overview.router, prefix="/overview", tags=["overview"])
+# The overview authoring contract (plan 2026-09-20-overview-authoring-layer):
+# the resource catalog, the change log, and the generic CRUD routes the
+# registry builds. Same prefix, disjoint paths.
+api_router.include_router(
+    overview_authoring_router, prefix="/overview", tags=["overview"]
+)
 # Environments digital-twin — user-scoped management API + machine-key agent API.
 api_router.include_router(devenv.router, prefix="/devenv", tags=["environments"])
 api_router.include_router(
