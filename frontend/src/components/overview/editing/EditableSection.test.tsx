@@ -96,6 +96,64 @@ describe("EditableSection", () => {
     expect(readDraft(KEY)).toBeNull();
   });
 
+  it("follows a version move that left the text alone, rather than calling it a conflict", async () => {
+    // The page's own rename (or a details save) moves the version the body
+    // shares while the body is being edited.
+    const onSave = vi.fn().mockResolvedValue({ ok: true, item: record });
+    const view = renderSection(onSave);
+    fireEvent.click(screen.getByRole("button", { name: "Edit: Vision" }));
+    fireEvent.change(textbox(), {
+      target: { value: "# Vision\n\nNew words." },
+    });
+    view.rerender(
+      <EditableSection
+        projectId="project-a"
+        resource="intent_documents"
+        recordId="product_intent:vision"
+        viewerId="u1"
+        record={{ ...record, version: 4 }}
+        canEdit
+        label="Vision"
+        onSave={onSave}
+        uiBridgeId="test.vision"
+      >
+        <p>The old words.</p>
+      </EditableSection>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith("# Vision\n\nNew words.", 4)
+    );
+  });
+
+  it("still saves against the old version when the text moved too", async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: false, conflict: theirs });
+    const view = renderSection(onSave);
+    fireEvent.click(screen.getByRole("button", { name: "Edit: Vision" }));
+    fireEvent.change(textbox(), {
+      target: { value: "# Vision\n\nNew words." },
+    });
+    view.rerender(
+      <EditableSection
+        projectId="project-a"
+        resource="intent_documents"
+        recordId="product_intent:vision"
+        viewerId="u1"
+        record={theirs}
+        canEdit
+        label="Vision"
+        onSave={onSave}
+        uiBridgeId="test.vision"
+      >
+        <p>The old words.</p>
+      </EditableSection>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith("# Vision\n\nNew words.", 3)
+    );
+  });
+
   it("keeps a draft while typing and restores it, with its original version", async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, item: record });
     const { unmount } = renderSection(onSave);
