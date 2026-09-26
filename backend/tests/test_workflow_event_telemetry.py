@@ -29,7 +29,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import (
@@ -234,7 +234,7 @@ def _types(resp_json: list[dict[str, Any]]) -> list[str]:
 
 class TestIngestAndFeed:
     @pytest.mark.parametrize("event_type", FUNNEL_TYPES)
-    def test_funnel_type_ingests_200_and_queues_no_push(
+    def test_funnel_type_ingests_201_and_queues_no_push(
         self, client: TestClient, send_push: AsyncMock, event_type: str
     ) -> None:
         resp = client.post(f"{API_PREFIX}/workflow", json=_event_body(event_type))
@@ -243,6 +243,46 @@ class TestIngestAndFeed:
         # TestClient runs background tasks before returning, so the real
         # dispatcher has already had its chance to push.
         send_push.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("event_type", FUNNEL_TYPES)
+    async def test_funnel_type_is_stored(
+        self,
+        client: TestClient,
+        send_push: AsyncMock,
+        maker: async_sessionmaker[AsyncSession],
+        user: User,
+        event_type: str,
+    ) -> None:
+        """Suppression is from push and feed ONLY: the row must be persisted.
+
+        Without this, a future "drop telemetry at ingest" change would pass
+        every other test here while silently losing the funnel data.
+        """
+        run_id = f"flow-{uuid4()}"
+        resp = client.post(
+            f"{API_PREFIX}/workflow", json=_event_body(event_type, run_id=run_id)
+        )
+        assert resp.status_code == 201, resp.text
+
+        async with maker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(WorkflowEvent).where(
+                            WorkflowEvent.user_id == user.id,
+                            WorkflowEvent.run_id == run_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        assert rows[0].event_type == event_type
+        assert rows[0].run_id == run_id
+        assert str(rows[0].id) == resp.json()["id"]
+        assert rows[0].payload == {"ok": True}
 
     def test_control_type_does_push_through_the_same_harness(
         self, client: TestClient, send_push: AsyncMock
