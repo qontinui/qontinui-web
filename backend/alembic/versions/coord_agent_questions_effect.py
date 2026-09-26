@@ -115,9 +115,11 @@ stay in this index while its effect stayed open (the gate still pending, the
 proposal still queued), and that effect could then never be mirrored again —
 a permanent, silent hole in the inbox. The same hazard is spelled out for
 ``uq_agent_questions_open_alert_episode``. So the predicate excludes withdrawn
-rows, and coord's writer uses exactly this three-conjunct conflict target
-(decided by the implementing session, robustness; the coord writer ships in the
-same plan).
+rows, and coord's mirror writer WILL use exactly this three-conjunct conflict
+target (decided by the implementing session, robustness). That writer ships in
+the same plan but is not yet on coord's ``main`` at authoring time — it is an
+open, unmerged coord PR — so this is the contract it is written against, not a
+description of code that already runs.
 
 The non-unique ``idx_agent_questions_open_effect``
 ==================================================
@@ -125,10 +127,14 @@ The non-unique ``idx_agent_questions_open_effect``
 ``(tenant_id) WHERE responded_at IS NULL AND effect_kind <> 'none'``. It serves
 "the open decisions that carry an effect, for this tenant" — the console's chip
 counts and coord's reconcile of mirrors against their effects — without walking
-the whole pending pile. Its predicate is ``responded_at IS NULL`` rather than
-the post-``withdrawn`` pending predicate so that it serves both coord's
-pre-``withdrawn_at`` pending read and the newer one (a query adding ``AND
-withdrawn_at IS NULL`` still implies this predicate). Leading ``tenant_id`` for
+the whole pending pile. The concrete query it is shaped for is coord's
+operator pending read, ``agent_questions::get_pending`` (``GET
+/coord/agent-questions/pending``), in the read tier that PREDATES
+``withdrawn_at``: its ``WHERE responded_at IS NULL … AND tenant_id = $4``
+narrowed by ``AND effect_kind <> 'none'``. The predicate is ``responded_at IS
+NULL`` rather than the post-``withdrawn`` pending predicate so that it serves
+that older tier AND the newer one (a query adding ``AND withdrawn_at IS NULL``
+still implies this predicate). Leading ``tenant_id`` for
 the reason the sibling indices give: coord's pending read filters it
 unconditionally, and it is ``NOT NULL`` on this table.
 
@@ -269,9 +275,10 @@ def upgrade() -> None:
                 "DROP INDEX CONCURRENTLY IF EXISTS coord.uq_agent_questions_open_effect"
             )
         # At most one OPEN, un-withdrawn mirror row per effect. Coord's mirror
-        # writers insert with `ON CONFLICT (tenant_id, effect_kind,
-        # (effect_ref->>'id')) WHERE effect_kind <> 'none' AND responded_at IS
-        # NULL AND withdrawn_at IS NULL DO NOTHING`.
+        # writers (an unmerged coord PR at authoring time) will insert with
+        # `ON CONFLICT (tenant_id, effect_kind, (effect_ref->>'id')) WHERE
+        # effect_kind <> 'none' AND responded_at IS NULL AND withdrawn_at IS
+        # NULL DO NOTHING`.
         op.execute(
             """
             CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS

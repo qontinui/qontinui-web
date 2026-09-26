@@ -151,3 +151,49 @@ export function deriveQuestionEffect(
     decisions: null,
   };
 }
+
+/** The option VALUES a row carries — plain strings or `{value}` objects. */
+function optionValues(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry === "string") out.push(entry);
+    else if (
+      entry &&
+      typeof entry === "object" &&
+      typeof (entry as { value?: unknown }).value === "string"
+    ) {
+      out.push((entry as { value: string }).value);
+    }
+  }
+  return out;
+}
+
+/**
+ * What the detail page can offer as one-click decisions for this row.
+ *
+ * The decision VOCABULARY above is this build's belief about coord's contract;
+ * the row's own `options` are what coord actually wrote on it. A button is
+ * therefore rendered only for a value the row itself lists, and when the two
+ * sets DISAGREE at all — a renamed value, an extra option, a row with no
+ * options — nothing is offered as a button: the page falls back to the
+ * free-text composer and says why (`mismatch: true`). Posting a hard-coded
+ * value coord does not accept would be refused at best and misrouted at worst.
+ *
+ * `decisions` is null for a row with no effect or no fixed vocabulary
+ * (`mismatch` false: the composer is simply the normal control there).
+ */
+export function effectDecisionsFor(
+  effect: QuestionEffect | null,
+  rawOptions: unknown
+): { decisions: readonly QuestionEffectDecision[] | null; mismatch: boolean } {
+  if (!effect?.decisions) return { decisions: null, mismatch: false };
+  const offered = new Set(optionValues(rawOptions));
+  const known = effect.decisions.filter((d) => offered.has(d.value));
+  const agree =
+    known.length === effect.decisions.length &&
+    offered.size === effect.decisions.length;
+  return agree
+    ? { decisions: known, mismatch: false }
+    : { decisions: null, mismatch: true };
+}

@@ -527,6 +527,12 @@ class TestAgentQuestionsEndpoints:
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
+            # The proxy reads the row first to decide whether answering it
+            # needs tenant admin (a decision-effect row does); an ordinary
+            # row does not.
+            instance.get.return_value = _mock_response(
+                json_data={"question_id": "q-1", "effect_kind": "none"}
+            )
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
             resp = client.post(
@@ -537,6 +543,7 @@ class TestAgentQuestionsEndpoints:
         called_url = instance.post.call_args.args[0]
         assert called_url.endswith("/coord/agent-questions/q-1/respond")
         _assert_tenant_header_forwarded(instance.post.call_args)
+        _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_pending_tenant_not_resolved(self, unresolved_client: TestClient):
         resp = unresolved_client.get(f"{API_PREFIX}/agent-questions/pending")

@@ -65,6 +65,14 @@ interface CollapsiblePanelProps {
   /** Right-side controls (refresh, inputs). Rendered outside the toggle. */
   headerActions?: ReactNode;
   defaultOpen?: boolean;
+  /**
+   * Open the panel from code — e.g. a deep link naming a row inside it. While
+   * true the panel renders open in the SAME commit (so a caller's effect can
+   * reach the row), and the open state is latched: turning it back to false
+   * does not collapse the panel. Not persisted to `storageKey` — that records
+   * the operator's own choice, and this is not one.
+   */
+  forceOpen?: boolean;
   /** localStorage key persisting the open/closed choice across reloads. */
   storageKey?: string;
   className?: string;
@@ -81,6 +89,7 @@ export function CollapsiblePanel({
   summary,
   headerActions,
   defaultOpen = true,
+  forceOpen = false,
   storageKey,
   className,
   contentClassName,
@@ -102,6 +111,12 @@ export function CollapsiblePanel({
     }
   }, [storageKey]);
 
+  // Latch a forced open. The render below already ORs `forceOpen` in, so the
+  // row exists in this commit; this keeps it open once the caller lets go.
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!storageKey) return;
@@ -114,7 +129,7 @@ export function CollapsiblePanel({
 
   return (
     <Collapsible
-      open={open}
+      open={open || forceOpen}
       onOpenChange={handleOpenChange}
       className={cn(
         "rounded-lg border border-border bg-card/30 p-4",
@@ -127,7 +142,7 @@ export function CollapsiblePanel({
           <ChevronDown
             className={cn(
               "w-4 h-4 text-muted-foreground shrink-0 transition-transform",
-              !open && "-rotate-90"
+              !(open || forceOpen) && "-rotate-90"
             )}
             aria-hidden
           />

@@ -53,6 +53,17 @@ vi.mock("react-markdown", () => ({
 }));
 vi.mock("remark-gfm", () => ({ default: () => undefined }));
 
+// `DestructiveButton` refuses synthetic clicks (`isTrusted === false`), which
+// every jsdom `fireEvent.click` is. Swapped for a plain button so the proposal
+// approve CONFIRM step can be driven; the confirm step itself is what is
+// under test here, not the synthetic-click gate.
+vi.mock("@/components/ui/destructive-button", () => ({
+  isSyntheticClick: () => false,
+  DestructiveButton: (props: Record<string, unknown>) => (
+    <button type="button" {...props} />
+  ),
+}));
+
 import CoordQuestionDetailPage from "./page";
 
 const QUESTION = {
@@ -772,27 +783,122 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     );
   });
 
-  it("posts `approve` for a proposal row and links the proposal drill-down", async () => {
-    get.mockResolvedValue({
-      ...QUESTION,
-      options: ["approve", "reject"],
-      effect_kind: "proposal",
-      effect_ref: { id: "p-1", proposal_id: "p-1" },
-    });
+  const PROPOSAL_ROW = {
+    ...QUESTION,
+    options: ["approve", "reject"],
+    effect_kind: "proposal",
+    effect_ref: { id: "p-1", proposal_id: "p-1" },
+  };
+
+  it("posts `approve` for a proposal row only after the confirm step", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
     post.mockResolvedValue({});
     render(<CoordQuestionDetailPage />);
     await waitFor(() => expect(decisionButtons()).toHaveLength(2));
     expect(
       screen.getByTestId("coord-question-effect-link").getAttribute("href")
     ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+
+    // One click opens the confirm dialog; it does NOT apply the edit.
     fireEvent.click(decisionButtons()[0]);
+    const dialog = await screen.findByTestId("coord-question-approve-confirm");
+    expect(post).not.toHaveBeenCalled();
+    // The dialog carries the way to the diff at the moment of decision.
+    expect(
+      screen
+        .getByTestId("coord-question-approve-confirm-review-link")
+        .getAttribute("href")
+    ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+    expect(dialog).toHaveTextContent(/Approve and apply/);
+
+    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-confirm"));
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith(
         "/api/v1/operations/agent-questions/q-1/respond",
         { response: "approve", responded_by_operator: "op@example.com" }
       )
     );
+    expect(post).toHaveBeenCalledTimes(1);
   });
+
+  it("cancelling the approve confirm posts nothing", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[0]);
+    await screen.findByTestId("coord-question-approve-confirm");
+    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-cancel"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-question-approve-confirm")
+      ).not.toBeInTheDocument()
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("puts a review-the-diff link inside the proposal decision block", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    const link = screen.getByTestId("coord-question-effect-review-link");
+    expect(link).toHaveTextContent("Open proposal to review the diff");
+    expect(link.getAttribute("href")).toBe(
+      "/admin/coord/prompt-document-proposals?proposal=p-1"
+    );
+    expect(
+      screen.getByRole("group", { name: "Decide this proposal" })
+    ).toBeInTheDocument();
+  });
+
+  it("rejects a proposal in one click (no confirm — nothing is applied)", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[1]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "reject", responded_by_operator: "op@example.com" }
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-question-approve-confirm")
+    ).not.toBeInTheDocument();
+  });
+
+  it("labels the gate decision group for assistive tech", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(
+      screen.getByRole("group", { name: "Decide this gate" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-effect-review-link")
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a renamed value", ["met", "blocked"]],
+    ["an extra option", ["met", "not_met", "defer"]],
+    ["no options", null],
+  ])(
+    "falls back to the composer with a notice when options disagree (%s)",
+    async (_l, options) => {
+      get.mockResolvedValue({ ...GATE_ROW, options });
+      render(<CoordQuestionDetailPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-question-response-textarea")
+        ).toBeInTheDocument()
+      );
+      expect(decisionButtons()).toHaveLength(0);
+      expect(
+        screen.getByTestId("coord-question-effect-mismatch")
+      ).toHaveTextContent(/met \/ not_met/);
+    }
+  );
 
   it("offers no decision on an ANSWERED effect row", async () => {
     get.mockResolvedValue({

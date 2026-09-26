@@ -13,6 +13,7 @@ import {
   GATE_DECISIONS,
   PROPOSAL_DECISIONS,
   deriveQuestionEffect,
+  effectDecisionsFor,
 } from "./questionEffect";
 
 describe("deriveQuestionEffect — no effect", () => {
@@ -111,5 +112,57 @@ describe("deriveQuestionEffect — clause (reserved) and unknown", () => {
     expect(e?.rawKind).toBe("merge");
     expect(e?.label).toBe("effect: merge");
     expect(e?.decisions).toBeNull();
+  });
+});
+
+describe("effectDecisionsFor — buttons only for values the row itself lists", () => {
+  const gate = deriveQuestionEffect({
+    effect_kind: "gate",
+    effect_ref: { id: "gate-7" },
+  });
+  const proposal = deriveQuestionEffect({
+    effect_kind: "proposal",
+    effect_ref: { id: "p-1" },
+  });
+
+  it("offers the decisions when the row's options match exactly", () => {
+    const out = effectDecisionsFor(gate, ["not_met", "met"]);
+    expect(out.mismatch).toBe(false);
+    expect(out.decisions?.map((d) => d.value)).toEqual(["met", "not_met"]);
+  });
+
+  it("accepts {value, label} option objects", () => {
+    const out = effectDecisionsFor(proposal, [
+      { value: "approve", label: "Approve" },
+      { value: "reject", label: "Reject" },
+    ]);
+    expect(out.mismatch).toBe(false);
+    expect(out.decisions?.map((d) => d.value)).toEqual(["approve", "reject"]);
+  });
+
+  it.each([
+    ["a renamed value", ["approve", "decline"]],
+    ["an extra option", ["met", "not_met", "defer"]],
+    ["a missing option", ["met"]],
+    ["no options at all", null],
+    ["a non-array", "met"],
+  ])("falls back (mismatch) on %s", (_l, options) => {
+    const eff =
+      Array.isArray(options) && options.includes("approve") ? proposal : gate;
+    const out = effectDecisionsFor(eff, options);
+    expect(out.decisions).toBeNull();
+    expect(out.mismatch).toBe(true);
+  });
+
+  it("is a plain no-decision (not a mismatch) for rows without a vocabulary", () => {
+    expect(effectDecisionsFor(null, ["met"])).toEqual({
+      decisions: null,
+      mismatch: false,
+    });
+    const clause = deriveQuestionEffect({ effect_kind: "clause" });
+    expect(effectDecisionsFor(clause, ["a"])).toEqual({
+      decisions: null,
+      mismatch: false,
+    });
   });
 });

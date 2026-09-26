@@ -756,3 +756,124 @@ describe("ReviewFeed — ?proposal= deep link", () => {
     }
   });
 });
+
+/**
+ * `?proposal=<id>` naming a proposal that has already LEFT the queue — the
+ * question that linked here can outlive the pending row. The two collapsed
+ * sections unmount their rows while shut, so the section holding the id must
+ * open itself; and the link is resolved once, after the first complete load,
+ * found or not.
+ */
+describe("ReviewFeed — ?proposal= deep link beyond the queue", () => {
+  function withScrollSpy() {
+    const spy = vi.fn();
+    const proto = Element.prototype as unknown as {
+      scrollIntoView?: (arg?: unknown) => void;
+    };
+    const original = proto.scrollIntoView;
+    proto.scrollIntoView = function (this: Element, arg?: unknown) {
+      spy(this.getAttribute("data-testid"), arg);
+    };
+    return {
+      spy,
+      restore: () => {
+        proto.scrollIntoView = original;
+      },
+    };
+  }
+
+  it("opens the retired section and scrolls to a retired proposal", async () => {
+    window.history.replaceState({}, "", `/?proposal=${RETIRED_2.id}`);
+    const scroll = withScrollSpy();
+    try {
+      routes(() =>
+        Promise.resolve({ proposals: [RETIRED, RETIRED_2], total: 2 })
+      );
+      render(<ReviewFeed />);
+      // No click: the section opened itself for the link.
+      await screen.findByTestId(`retired-proposal-${RETIRED_2.id}`);
+      await waitFor(() =>
+        expect(scroll.spy).toHaveBeenCalledWith(
+          `retired-proposal-${RETIRED_2.id}`,
+          { block: "center" }
+        )
+      );
+      expect(scroll.spy).toHaveBeenCalledTimes(1);
+    } finally {
+      scroll.restore();
+      window.history.replaceState({}, "", "/");
+    }
+  });
+
+  it("opens the decided section for an approved proposal", async () => {
+    window.history.replaceState({}, "", "/?proposal=p-approved-1");
+    const scroll = withScrollSpy();
+    try {
+      routes(NO_RETIREMENTS, {
+        approved: () =>
+          Promise.resolve({
+            proposals: [
+              {
+                ...RETIRED,
+                id: "p-approved-1",
+                doc_name: "security-and-autonomy",
+                base_version: 6,
+                status: "approved",
+                decided_by: "operator:josh",
+                decision_note: null,
+              },
+            ],
+            total: 1,
+          }),
+      });
+      render(<ReviewFeed />);
+      await screen.findByTestId("proposal-p-approved-1");
+      await waitFor(() =>
+        expect(scroll.spy).toHaveBeenCalledWith("proposal-p-approved-1", {
+          block: "center",
+        })
+      );
+    } finally {
+      scroll.restore();
+      window.history.replaceState({}, "", "/");
+    }
+  });
+
+  it("clears an unmatched link after the first load, so a later refresh does not jump", async () => {
+    window.history.replaceState({}, "", "/?proposal=p-late");
+    const scroll = withScrollSpy();
+    const user = userEvent.setup();
+    try {
+      let pending: PromptDocumentProposal[] = [];
+      routes(NO_RETIREMENTS, {
+        pending: () => Promise.resolve({ proposals: pending, total: pending.length }),
+      });
+      render(<ReviewFeed />);
+      await waitFor(async () =>
+        expect(await summary()).toMatch(/none retired recently/)
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("review-feed-refresh")).not.toBeDisabled()
+      );
+
+      // The id appears only on a LATER read. The link was already resolved
+      // (as not-found) at the end of the first load, so nothing scrolls.
+      pending = [
+        {
+          ...RETIRED,
+          id: "p-late",
+          status: "pending",
+          decided_by: null,
+          decided_at: null,
+          decision_note: null,
+        },
+      ];
+      await user.click(screen.getByTestId("review-feed-refresh"));
+      await screen.findByTestId("proposal-p-late");
+      expect(scroll.spy).not.toHaveBeenCalled();
+    } finally {
+      scroll.restore();
+      window.history.replaceState({}, "", "/");
+    }
+  });
+});

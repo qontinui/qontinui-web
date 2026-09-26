@@ -138,6 +138,7 @@ describe("QuestionRow — decision effects", () => {
 
   it("renders a gate chip with its work unit and phase, and links the gate", () => {
     renderRow({
+      options: ["met", "not_met"],
       effect_kind: "gate",
       effect_ref: {
         id: "gate-7",
@@ -179,6 +180,18 @@ describe("QuestionRow — decision effects", () => {
     });
     expect(chips()[0].getAttribute("data-effect-kind")).toBe("clause");
     expect(screen.queryByTestId("coord-question-effect-link")).toBeNull();
+    expect(
+      screen.getByText(/the response composer lives on the detail page/)
+    ).toBeTruthy();
+  });
+
+  it("does not promise one-click decisions when the row's options disagree", () => {
+    renderRow({
+      options: ["met", "not_met", "defer"],
+      effect_kind: "gate",
+      effect_ref: { id: "gate-7" },
+    });
+    expect(chips()).toHaveLength(1);
     expect(
       screen.getByText(/the response composer lives on the detail page/)
     ).toBeTruthy();

@@ -25,7 +25,9 @@ on, so the test asserts the dedupe semantics, not just shape:
 6. Answering the open mirror (``responded_at`` set) frees the key.
 7. ``effect_kind = 'none'`` questions are never constrained.
 8. Idempotency: ``stamp`` back to the parent and ``upgrade`` again succeeds and
-   leaves the VALID indices untouched.
+   leaves the VALID indices untouched. Then the INVALID-index cleanup branch:
+   ``indisvalid`` is forced false on the unique index, and a re-run rebuilds it
+   VALID under a NEW oid.
 9. Downgrade removes indices, CHECK and columns; questions survive. A second
    upgrade re-applies cleanly.
 
@@ -96,12 +98,33 @@ def _index_row(engine: Engine, index_name: str) -> tuple[bool, bool, str]:
                        pg_get_expr(i.indpred, i.indrelid)
                   FROM pg_index i
                   JOIN pg_class c ON c.oid = i.indexrelid
-                 WHERE c.relname = :idx
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = :idx
                 """
             ),
             {"idx": index_name},
         ).one()
     return bool(row[0]), bool(row[1]), str(row[2] or "")
+
+
+def _invalidate_index(engine: Engine, index_name: str) -> None:
+    """Mark ``coord.<index_name>`` INVALID — the state a killed CONCURRENTLY
+    build leaves behind — so the revision's cleanup branch is exercised."""
+    with engine.begin() as conn:
+        updated = conn.execute(
+            text(
+                """
+                UPDATE pg_index i
+                   SET indisvalid = false
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE c.oid = i.indexrelid
+                   AND n.nspname = 'coord' AND c.relname = :idx
+                """
+            ),
+            {"idx": index_name},
+        ).rowcount
+    assert updated == 1, f"expected to invalidate exactly coord.{index_name}"
 
 
 def _index_oid(engine: Engine, index_name: str) -> int:
@@ -346,6 +369,25 @@ def test_coord_agent_questions_effect_one_open_mirror_per_effect() -> None:
             _index_oid(engine, _UNIQUE_INDEX),
             _index_oid(engine, _OPEN_INDEX),
         ) == oids_before, "a re-run must not drop and rebuild a VALID index"
+
+        # 8b. The INVALID-index cleanup branch: a killed CONCURRENTLY build
+        #     leaves an INVALID index that `IF NOT EXISTS` alone would keep.
+        #     The revision must drop and rebuild it — VALID, with a NEW oid —
+        #     and leave the still-VALID sibling untouched.
+        unique_oid_before = _index_oid(engine, _UNIQUE_INDEX)
+        _invalidate_index(engine, _UNIQUE_INDEX)
+        assert not _index_row(engine, _UNIQUE_INDEX)[0]
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _index_row(engine, _UNIQUE_INDEX)[0], (
+            "an INVALID index must be rebuilt VALID, not kept by IF NOT EXISTS"
+        )
+        assert _index_oid(engine, _UNIQUE_INDEX) != unique_oid_before, (
+            "the INVALID index must be dropped and rebuilt, not revalidated"
+        )
+        assert _index_oid(engine, _OPEN_INDEX) == oids_before[1], (
+            "the VALID sibling must not be rebuilt"
+        )
 
         # 9. Downgrade removes everything added; questions survive. Re-upgrade.
         rows_before = _question_count(engine)

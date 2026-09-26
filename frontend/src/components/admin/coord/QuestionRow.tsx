@@ -60,7 +60,10 @@ import {
 } from "@/components/admin/coord/questionStatus";
 import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
 import { QuestionEffectChip } from "@/components/admin/coord/QuestionEffectChip";
-import { deriveQuestionEffect } from "@/components/admin/coord/questionEffect";
+import {
+  deriveQuestionEffect,
+  effectDecisionsFor,
+} from "@/components/admin/coord/questionEffect";
 
 export type { AgentQuestionRow };
 
@@ -90,6 +93,9 @@ export function QuestionRow({
   const terminal = QUESTION_TERMINAL_KINDS.has(status.kind);
   const options = optionLabels(question);
   const effect = deriveQuestionEffect(question);
+  // The same decision gate the detail page applies: only a row whose own
+  // options match the known vocabulary is described as button-decidable.
+  const { decisions } = effectDecisionsFor(effect, question.options ?? null);
 
   return (
     <RecordRow
@@ -184,8 +190,8 @@ export function QuestionRow({
             )}
             {!terminal && (
               <span className="text-xs text-muted-foreground">
-                {effect?.decisions
-                  ? `decide it (${effect.decisions.map((d) => d.value).join(" / ")}) on the detail page`
+                {decisions
+                  ? `decide it (${decisions.map((d) => d.value).join(" / ")}) on the detail page`
                   : "the response composer lives on the detail page"}
               </span>
             )}

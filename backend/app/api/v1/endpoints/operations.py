@@ -5608,21 +5608,103 @@ async def get_agent_question(
     )
 
 
+#: ``effect_kind`` values that mean "an ordinary question". A row from a coord
+#: build that predates the column omits it entirely, which reads as ``None``.
+_NO_EFFECT_KINDS: frozenset[str | None] = frozenset({None, "", "none"})
+
+
+def _question_effect_kind(row: Any) -> str | None:
+    """The row's ``effect_kind``, trimmed; ``None`` when absent or null.
+
+    Raises ``TypeError`` for a row that is not a JSON object, or an
+    ``effect_kind`` that is not a string — the caller treats either as an
+    unreadable row and fails closed.
+    """
+    if not isinstance(row, dict):
+        raise TypeError("agent question row is not a JSON object")
+    kind = row.get("effect_kind")
+    if kind is None:
+        return None
+    if not isinstance(kind, str):
+        raise TypeError("effect_kind is not a string")
+    return kind.strip()
+
+
 @router.post("/agent-questions/{question_id}/respond")
 async def post_agent_question_response(
     question_id: str,
     body: dict[str, Any],
+    request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """A tenant member (Developer or Administrator) answers an agent question.
 
-    Intentionally NOT admin-gated: a Developer must be able to answer their
-    own running agent's questions. Coord scopes the respond route to the
-    caller's tenant, so this stays within the shared account.
+    An ORDINARY question (``effect_kind`` absent, null or ``'none'``) is
+    intentionally NOT admin-gated: a Developer must be able to answer their own
+    running agent's questions. Coord scopes the respond route to the caller's
+    tenant, so this stays within the shared account.
+
+    A DECISION-EFFECT row (plan
+    ``2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy``)
+    is different: coord routes its answer through the effect's own core —
+    ``operator_approval`` gate approve/reject, proposal ``decide_core`` — so
+    answering it IS clearing a gate or applying a policy edit. Those doors
+    (:func:`approve_gate`, :func:`approve_prompt_document_proposal`) require
+    :func:`require_coord_tenant_admin`, and this door must not be a way around
+    them. So the row is read from coord first and, for any effect other than
+    ``none``, the same admin check runs here.
+
+    Fail-closed: when the row cannot be read (coord down, non-object body, a
+    malformed ``effect_kind``) the answer is REFUSED rather than forwarded,
+    because whether admin is required is exactly what could not be decided. A
+    404 passes through as "not found".
+
+    Attribution: for an effect row the recorded ``responded_by_operator`` is
+    the AUTHENTICATED web user (:func:`_editor_identity`), never the
+    client-supplied value — the gate / proposal decision it drives is an audit
+    record, as it is on those doors (where coord stamps the decider from the
+    forwarded bearer). An ordinary row keeps the body's value, as before.
     """
+    path_id = quote(question_id, safe="")
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/agent-questions/{path_id}", tenant_id=tenant_id
+        )
+        effect_kind = _question_effect_kind(row)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=404, detail="agent question not found"
+            ) from exc
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "agent_question_unreadable: could not read the question from "
+                "coord to decide whether answering it requires tenant admin; "
+                "refusing to answer"
+            ),
+        ) from exc
+    except TypeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"agent_question_unreadable: {exc}; refusing to answer without "
+                "knowing whether it requires tenant admin"
+            ),
+        ) from exc
+
+    forwarded = body
+    if effect_kind not in _NO_EFFECT_KINDS:
+        # Same dependency semantics as the gate / proposal approve routes —
+        # admin in the EFFECTIVE tenant, superusers pass. Called directly
+        # because whether it applies depends on the row just read.
+        await require_coord_tenant_admin(request, current_user)
+        forwarded = {**body, "responded_by_operator": _editor_identity(current_user)}
+
     return await _proxy_coord_post(
-        f"/coord/agent-questions/{question_id}/respond",
-        body,
+        f"/coord/agent-questions/{path_id}/respond",
+        forwarded,
         tenant_id=tenant_id,
     )
 

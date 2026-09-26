@@ -90,7 +90,17 @@
  * per value (`coord-question-effect-decisions`, each
  * `coord-question-effect-decision`), posting `{response: <value>,
  * responded_by_operator}` to the SAME `/respond` door. No new endpoint.
- * Free text there would be an answer coord's effect core cannot apply. A
+ * Free text there would be an answer coord's effect core cannot apply.
+ *
+ * Three guards on that: (1) a button is offered only when the row's OWN
+ * `options` equal the known vocabulary (`effectDecisionsFor`) — any
+ * disagreement falls back to the composer with a notice
+ * (`coord-question-effect-mismatch`); (2) a proposal row links its diff
+ * (`coord-question-effect-review-link`) and "approve" goes through a
+ * `ConfirmDestructiveDialog`, since it applies a policy edit; (3) the web
+ * backend gates an effect row's answer on tenant admin and stamps
+ * `responded_by_operator` from the AUTHENTICATED user, so the body's value is
+ * sent but not relied on. A
  * `clause` row (reserved, Phase 1b) or a kind this build does not recognise
  * has no fixed vocabulary here and keeps the composer. The meta block carries
  * a linked `<QuestionEffectChip>` to the effect's own page. A row with no
@@ -98,12 +108,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileText, Inbox } from "lucide-react";
@@ -127,7 +139,10 @@ import {
 } from "@/components/admin/coord/questionStatus";
 import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
 import { QuestionEffectChip } from "@/components/admin/coord/QuestionEffectChip";
-import { deriveQuestionEffect } from "@/components/admin/coord/questionEffect";
+import {
+  deriveQuestionEffect,
+  effectDecisionsFor,
+} from "@/components/admin/coord/questionEffect";
 
 const API = "/api/v1/operations";
 
@@ -195,6 +210,9 @@ export default function CoordQuestionDetailPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [response, setResponse] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  /** The proposal "approve" confirm step is open. Approving APPLIES a policy
+   *  edit, so it is never a single click. */
+  const [confirmApprove, setConfirmApprove] = useState(false);
 
   // Generation guard, for the same reason #1110 put one on each of the three
   // list reads — and here it is not only a rendering concern. App Router keeps
@@ -322,7 +340,13 @@ export default function CoordQuestionDetailPage() {
   // renders. `decisions` non-null means coord routes the answer through the
   // effect's own core and accepts only these values.
   const effect = deriveQuestionEffect(shown ?? {});
-  const decisions = effect?.decisions ?? null;
+  // Buttons only for values the row's OWN options list; any disagreement
+  // between this build's vocabulary and the row falls back to the composer
+  // (`decisionMismatch`) rather than POSTing a value coord may not accept.
+  const { decisions, mismatch: decisionMismatch } = effectDecisionsFor(
+    effect,
+    shown?.options ?? null
+  );
   // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
@@ -547,8 +571,29 @@ export default function CoordQuestionDetailPage() {
                 </>
               ) : decisions ? (
                 <div className="space-y-2">
+                  {effect?.kind === "proposal" && effect.href && (
+                    <p className="text-sm">
+                      <Link
+                        href={effect.href}
+                        className="underline underline-offset-2"
+                        data-testid="coord-question-effect-review-link"
+                      >
+                        Open proposal to review the diff
+                      </Link>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — approving applies it as written.
+                      </span>
+                    </p>
+                  )}
                   <div
                     className="flex flex-wrap items-center gap-2"
+                    role="group"
+                    aria-label={
+                      effect?.kind === "proposal"
+                        ? "Decide this proposal"
+                        : "Decide this gate"
+                    }
                     data-testid="coord-question-effect-decisions"
                   >
                     {decisions.map((d) => (
@@ -556,7 +601,18 @@ export default function CoordQuestionDetailPage() {
                         key={d.value}
                         variant={d === decisions[0] ? "default" : "outline"}
                         disabled={submitting}
-                        onClick={() => void postResponse(d.value)}
+                        onClick={() => {
+                          // Approving a proposal APPLIES a policy edit — it
+                          // goes through a confirm step, never one click.
+                          if (
+                            effect?.kind === "proposal" &&
+                            d.value === "approve"
+                          ) {
+                            setConfirmApprove(true);
+                            return;
+                          }
+                          void postResponse(d.value);
+                        }}
                         data-testid="coord-question-effect-decision"
                         data-decision-value={d.value}
                       >
@@ -569,11 +625,52 @@ export default function CoordQuestionDetailPage() {
                     {effect?.kind === "proposal"
                       ? " — a stale proposal is still refused there"
                       : ""}
-                    ; responding as {user?.email ?? "(unknown operator)"}
+                    ; requires tenant admin, and the decision is recorded
+                    against your signed-in account by the server.
                   </p>
+                  <ConfirmDestructiveDialog
+                    open={confirmApprove}
+                    onOpenChange={setConfirmApprove}
+                    title="Approve and apply this policy edit?"
+                    description={
+                      <>
+                        Approving applies the proposed edit to the live policy
+                        document through the proposal&apos;s own decision core.
+                        Review the diff first if you have not.
+                      </>
+                    }
+                    confirmLabel="Approve and apply"
+                    busy={submitting}
+                    onConfirm={() => {
+                      setConfirmApprove(false);
+                      void postResponse("approve");
+                    }}
+                    testId="coord-question-approve-confirm"
+                  >
+                    {effect?.href ? (
+                      <Link
+                        href={effect.href}
+                        className="underline underline-offset-2"
+                        data-testid="coord-question-approve-confirm-review-link"
+                      >
+                        Open proposal to review the diff
+                      </Link>
+                    ) : null}
+                  </ConfirmDestructiveDialog>
                 </div>
               ) : (
                 <>
+                  {decisionMismatch && (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid="coord-question-effect-mismatch"
+                    >
+                      This row mirrors a {effect?.label}, but its options do
+                      not match the decisions this console knows (
+                      {effect?.decisions?.map((d) => d.value).join(" / ")}) —
+                      answer in free text; coord decides whether it applies.
+                    </p>
+                  )}
                   <Textarea
                     rows={5}
                     placeholder="Type a response, or click an option above to seed it."
