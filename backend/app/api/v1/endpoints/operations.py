@@ -438,6 +438,28 @@ async def report_claude_sessions(report: ClaudeSessionReport) -> dict:
 # ---- Operations dashboard endpoints (auth, user-scoped) ------------------
 
 
+#: The fleet-row keys for a runner whose UI-thread liveness is not known.
+_UI_THREAD_UNKNOWN: dict[str, Any] = {
+    "uiThread": None,
+    "uiThreadSource": None,
+    "uiThreadObservedAt": None,
+}
+
+
+def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
+    """The fleet-row keys for the UI-thread block an in-memory beacon carries.
+
+    A beacon with no block (a runner predating it) yields the UNKNOWN keys.
+    """
+    if beacon.ui_thread is None:
+        return dict(_UI_THREAD_UNKNOWN)
+    return {
+        "uiThread": beacon.ui_thread.model_dump(mode="json"),
+        "uiThreadSource": "beacon_unauthenticated",
+        "uiThreadObservedAt": beacon.last_heartbeat.isoformat(),
+    }
+
+
 @router.get("/fleet")
 async def get_fleet_status(
     *,
@@ -508,10 +530,51 @@ async def get_fleet_status(
     # categorisation above decides how a device is *presented*, never whether
     # the caller owns the host. Narrowing this to workstations would stop a
     # beacon on a CI-runner host from resolving as the caller's own.
-    db_keys = {(r.hostname, r.port) for r in all_devices}
+    db_keys = {((r.hostname or "").lower(), r.port) for r in all_devices}
     owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
+
+    # Native UI-thread liveness (plan
+    # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
+    # The block rides the beacon heartbeat, but a PAIRED runner's row above is
+    # built from its ``coord.devices`` row and the beacon for it is skipped by
+    # the ``db_keys`` check below — so without this overlay the fleet view
+    # would carry ``ui_thread`` only for unpaired beacons, i.e. almost never.
+    #
+    # Every row carries three keys:
+    #   * ``uiThread`` — the block, or ``None`` = UNKNOWN, never "not wedged";
+    #   * ``uiThreadSource`` — where it came from. ``"beacon_unauthenticated"``
+    #     is the in-memory registry fed by the UNAUTHENTICATED
+    #     ``POST /heartbeat``, keyed only by ``(hostname, port)``: any host that
+    #     can reach that route can write it, and two tenants whose runners share
+    #     a hostname and port overwrite each other. A consumer must weigh it
+    #     accordingly — it is a diagnostic hint, not a device-attested fact;
+    #   * ``uiThreadObservedAt`` — when that reading was taken, because a paired
+    #     row's own ``lastHeartbeat`` describes the device, not the beacon.
+    #
+    # A paired row takes the beacon's block only while that beacon is healthy
+    # (heartbeated within 90 s): an aged reading beside a fresh device
+    # heartbeat would read as current. Beacon-only rows keep their last-known
+    # block, because there the row's own ``derivedStatus: "stale"`` and
+    # ``lastHeartbeat`` already describe its age. Hostnames match
+    # case-insensitively, like ``owned_hostnames`` below.
+    # Registry keys are case-sensitive, so two case variants of one host can
+    # both be present; the most recently heard one wins.
+    beacon_by_key: dict[tuple[str, int], RegisteredRunner] = {}
+    for b in fleet_status.runners:
+        key = ((b.hostname or "").lower(), b.port)
+        seen = beacon_by_key.get(key)
+        if seen is None or b.last_heartbeat > seen.last_heartbeat:
+            beacon_by_key[key] = b
+    for wire in wire_runners:
+        beacon = beacon_by_key.get(
+            (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
+        )
+        if beacon is not None and beacon.is_healthy:
+            wire.update(_ui_thread_wire(beacon))
+        else:
+            wire.update(_UI_THREAD_UNKNOWN)
     for beacon in fleet_status.runners:
-        if (beacon.hostname, beacon.port) in db_keys:
+        if ((beacon.hostname or "").lower(), beacon.port) in db_keys:
             continue
         if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
             # Beacon from a host this caller owns no device on → not theirs.
@@ -535,6 +598,8 @@ async def get_fleet_status(
                 "wsConnected": False,
                 "uiError": None,
                 "recentCrash": None,
+                # Last-reported native UI-thread liveness; None = UNKNOWN.
+                **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
                 # A heartbeat-only beacon has no device WebSocket, so no
                 # instance is connected through this backend — an honest
