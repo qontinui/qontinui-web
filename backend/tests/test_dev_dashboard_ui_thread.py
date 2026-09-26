@@ -168,14 +168,24 @@ class TestWireShape:
                 "nested": {"a": [1, 2, 3]},
                 "huge": "x" * (RunnerUiThread.MAX_EXTRA_STR + 1),
                 "short": "ok",
+                "k" * (RunnerUiThread.MAX_KEY_LEN + 1): 1,
                 **many,
             }
         )
         extra = block.model_extra or {}
+        assert "k" * (RunnerUiThread.MAX_KEY_LEN + 1) not in extra
         assert "nested" not in extra
         assert "huge" not in extra
         assert extra["short"] == "ok"
         assert len(extra) == RunnerUiThread.MAX_EXTRA_KEYS
+        assert block.wedged is True
+
+    def test_over_long_labels_are_dropped_not_rejected(self) -> None:
+        block = RunnerUiThread.model_validate(
+            {**RUST_UI_THREAD_BLOCK, "reason": "r" * 1000, "ping_delivery": "p" * 1000}
+        )
+        assert block.reason is None
+        assert block.ping_delivery is None
         assert block.wedged is True
 
 
@@ -256,9 +266,39 @@ class TestFleetView:
             f"{API_PREFIX}/heartbeat",
             json=_heartbeat(hostname="SpaceShip", ui_thread=RUST_UI_THREAD_BLOCK),
         )
+        device = _owned_device(hostname="spaceship", port=9876)
+        rows = _fleet_rows(client, device)
+        # One row: the case-variant beacon is deduped against the paired device
+        # AND its block reaches that device's row.
+        assert [r["id"] for r in rows] == [str(device.device_id)]
+        assert rows[0]["uiThread"] == RUST_UI_THREAD_BLOCK
+
+    def test_a_beacon_predating_the_block_reads_unknown_on_a_paired_row(
+        self, client: TestClient
+    ) -> None:
+        client.post(f"{API_PREFIX}/heartbeat", json=_heartbeat())
         rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=9876))
-        paired = [r for r in rows if r.get("uiThread") is not None]
-        assert paired and paired[0]["hostname"] == "spaceship"
+        assert rows[0]["uiThread"] is None
+        assert rows[0]["uiThreadSource"] is None
+
+    def test_a_stale_beacon_only_row_keeps_its_last_known_block(
+        self, client: TestClient
+    ) -> None:
+        # On a beacon-only row the row's own derivedStatus and lastHeartbeat
+        # describe the reading's age, so the last-known block is kept.
+        import app.services.dev_dashboard_service as svc
+
+        client.post(
+            f"{API_PREFIX}/heartbeat", json=_heartbeat(ui_thread=RUST_UI_THREAD_BLOCK)
+        )
+        svc.get_fleet_registry()._runners["spaceship:9876"].last_heartbeat = (
+            datetime.now(UTC) - timedelta(seconds=600)
+        )
+        rows = _fleet_rows(client, _owned_device(hostname="spaceship", port=1))
+        beacon = next(r for r in rows if r["id"] == "spaceship:9876")
+        assert beacon["derivedStatus"] == "stale"
+        assert beacon["uiThread"] == RUST_UI_THREAD_BLOCK
+        assert beacon["uiThreadObservedAt"] is not None
 
     def test_a_stale_beacon_is_not_shown_on_a_paired_row(
         self, client: TestClient

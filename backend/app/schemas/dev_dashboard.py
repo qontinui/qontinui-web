@@ -83,7 +83,7 @@ class RunnerUiThread(BaseModel):
     ``2026-09-09-the-pong-receive-path-has-no-liveness-signal-so-fd-exhaustion-still-reads-as-ui-death``)
     instead of dropping them at the door the way the whole block used to be.
     Extras arrive on an UNAUTHENTICATED route and are held in process memory,
-    so they are bounded (see ``_bound_extra_keys``): at most
+    so they are bounded (see ``_bound_untrusted_input``): at most
     ``MAX_EXTRA_KEYS`` scalar values, strings capped at ``MAX_EXTRA_STR``.
     Anything else is dropped, never rejected — a newer runner's unexpected
     key must not cost it its whole heartbeat.
@@ -121,9 +121,19 @@ class RunnerUiThread(BaseModel):
 
     MAX_EXTRA_KEYS: ClassVar[int] = 32
     MAX_EXTRA_STR: ClassVar[int] = 256
+    MAX_KEY_LEN: ClassVar[int] = 64
+    MAX_LABEL_LEN: ClassVar[int] = 64
 
     @model_validator(mode="after")
-    def _bound_extra_keys(self) -> "RunnerUiThread":
+    def _bound_untrusted_input(self) -> "RunnerUiThread":
+        # This block arrives on an UNAUTHENTICATED route and is held in memory,
+        # so every free-form part is bounded. Out-of-bound input is DROPPED
+        # (to None, or out of the extras), never rejected: a 422 would cost a
+        # newer runner its whole heartbeat over one unexpected value.
+        for label in ("reason", "ping_delivery"):
+            value = getattr(self, label)
+            if value is not None and len(value) > self.MAX_LABEL_LEN:
+                setattr(self, label, None)
         extra = self.__pydantic_extra__
         if not extra:
             return self
@@ -131,6 +141,8 @@ class RunnerUiThread(BaseModel):
         for key, value in extra.items():
             if len(kept) >= self.MAX_EXTRA_KEYS:
                 break
+            if len(key) > self.MAX_KEY_LEN:
+                continue
             if isinstance(value, str):
                 if len(value) <= self.MAX_EXTRA_STR:
                     kept[key] = value
