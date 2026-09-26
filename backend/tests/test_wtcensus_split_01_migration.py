@@ -80,7 +80,7 @@ _REVISION_FILENAME = "wtcensus_split_01_latest_and_history.py"
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change. Whoever re-points the revision
 # onto a moved head updates this line, the assignment, and the Revises header.
-_PARENT_REVISION_ID = "coord_wu_authored_at_02"
+_PARENT_REVISION_ID = "overview_02_authoring_core"
 
 _SCHEMA = "coord"
 _LATEST = "worktree_census_latest"
