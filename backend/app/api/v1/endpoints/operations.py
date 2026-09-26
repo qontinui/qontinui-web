@@ -530,7 +530,7 @@ async def get_fleet_status(
     # categorisation above decides how a device is *presented*, never whether
     # the caller owns the host. Narrowing this to workstations would stop a
     # beacon on a CI-runner host from resolving as the caller's own.
-    db_keys = {(r.hostname, r.port) for r in all_devices}
+    db_keys = {((r.hostname or "").lower(), r.port) for r in all_devices}
     owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
 
     # Native UI-thread liveness (plan
@@ -557,9 +557,14 @@ async def get_fleet_status(
     # block, because there the row's own ``derivedStatus: "stale"`` and
     # ``lastHeartbeat`` already describe its age. Hostnames match
     # case-insensitively, like ``owned_hostnames`` below.
-    beacon_by_key: dict[tuple[str, int], RegisteredRunner] = {
-        ((b.hostname or "").lower(), b.port): b for b in fleet_status.runners
-    }
+    # Registry keys are case-sensitive, so two case variants of one host can
+    # both be present; the most recently heard one wins.
+    beacon_by_key: dict[tuple[str, int], RegisteredRunner] = {}
+    for b in fleet_status.runners:
+        key = ((b.hostname or "").lower(), b.port)
+        seen = beacon_by_key.get(key)
+        if seen is None or b.last_heartbeat > seen.last_heartbeat:
+            beacon_by_key[key] = b
     for wire in wire_runners:
         beacon = beacon_by_key.get(
             (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
@@ -569,7 +574,7 @@ async def get_fleet_status(
         else:
             wire.update(_UI_THREAD_UNKNOWN)
     for beacon in fleet_status.runners:
-        if (beacon.hostname, beacon.port) in db_keys:
+        if ((beacon.hostname or "").lower(), beacon.port) in db_keys:
             continue
         if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
             # Beacon from a host this caller owns no device on → not theirs.
