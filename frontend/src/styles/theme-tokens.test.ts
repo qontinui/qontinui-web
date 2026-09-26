@@ -7,7 +7,7 @@
  * until someone reads a banner and finds the text the same color as its
  * fill.
  *
- * That is exactly how the red-main outage banner shipped unreadable: it used
+ * That is exactly how the red-main banner shipped unreadable: it used
  * `text-destructive-foreground`, but `globals.css` (the stylesheet every app
  * route loads) defines `--destructive` and NOT `--destructive-foreground`.
  * The app's design system deliberately dropped that token — shadcn's own

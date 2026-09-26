@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * RedMainBanner — persistent, repo-scoped "main is RED" outage banner.
+ * RedMainBanner — persistent, repo-scoped "main is RED" banner.
  *
  * Plan `2026-07-06-coord-red-main-auto-remediation-and-dashboard-alert.md`
- * Phase 1 (D2). A red main is a tenant-wide merge outage: coord refuses to
- * land ANY PR onto a red main (`block_reason_code: main-red`), so every
- * green PR in the repo is frozen until main is fixed. This banner is the
- * loud surface for that state on every coord console page.
+ * Phase 1 (D2). A red main is a whole-repo condition: PRs evaluated while it
+ * holds read `block_reason_code: main-red`, and candidates rebased onto the
+ * red base generally fail CI until the fix lands. It is NOT a land freeze —
+ * coord still enqueues a main-red PR, and a candidate whose own CI is green
+ * still lands (plan
+ * 2026-09-12-red-main-fix-pr-opened-after-the-red-never-gets-a-probe-candidate
+ * D4). This banner is the loud surface for that state on every coord console
+ * page.
  *
  * Driven SOLELY by the coord `red_main:<repo>` alert rows (single source
  * of truth): coord's `stuck_pr_watcher` detector 6 upserts one live
@@ -182,8 +186,14 @@ export interface RedMainAlert {
   repo: string;
   /** Failing workflow names (alert `detail.workflows`). */
   workflows: string[];
-  /** Open PRs blocked `main-red` behind the red main (blast radius). */
+  /** Open PRs whose latest predicate evaluation read `main-red`. */
   blockedPrCount: number;
+  /**
+   * The repo's in-flight merge proposals (alert `detail.queued_proposal_count`).
+   * `null` = UNREAD: coord could not count them, or it predates the field.
+   * Never defaulted to 0 — an unread queue must not render as an empty one.
+   */
+  queuedProposalCount: number | null;
   /** Episode start — the alert row's own `first_seen_at`. */
   since?: string;
   /** Remediation state (alert `detail.fix_session`). */
@@ -302,11 +312,18 @@ export function parseRedMainAlerts(
     const rawCount = detail.blocked_pr_count;
     const blockedPrCount =
       typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : 0;
+    // Deliberately NOT the `0` default above: absent or malformed means UNREAD.
+    const rawQueued = detail.queued_proposal_count;
+    const queuedProposalCount =
+      typeof rawQueued === "number" && Number.isInteger(rawQueued) && rawQueued >= 0
+        ? rawQueued
+        : null;
     out.push({
       alertKey: a.alert_key,
       repo,
       workflows,
       blockedPrCount,
+      queuedProposalCount,
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
@@ -342,9 +359,14 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
   const prs = a.blockedPrCount === 1 ? "PR" : "PRs";
   const label = sinceLabel(a.since, nowMs);
   const since = a.since && label !== a.since ? ` since ${label} ago` : "";
+  const queue =
+    a.queuedProposalCount === null
+      ? "merge-queue depth unknown"
+      : `${a.queuedProposalCount} ${a.queuedProposalCount === 1 ? "proposal" : "proposals"} queued`;
   return (
     `🔴 ${a.repo} main is RED${since} — ` +
-    `${a.blockedPrCount} ${prs} blocked, no merges will land until fixed`
+    `${a.blockedPrCount} ${prs} read main-red, ${queue}; ` +
+    `a candidate lands only if its own rebased CI is green`
   );
 }
 
@@ -514,7 +536,7 @@ export function RedMainBanner() {
       }
       // KEEP-LAST-KNOWN. An empty answer is ambiguous: main went green, OR the
       // row was evicted / the filter was dropped by an older coord. Clearing a
-      // tenant-wide merge-outage banner on that ambiguity is the M2 defect —
+      // red-main banner on that ambiguity is the M2 defect —
       // require the emptiness to persist before believing it.
       emptyPolls.current += 1;
       if (emptyPolls.current >= EMPTY_POLLS_BEFORE_CLEAR) setReds([]);

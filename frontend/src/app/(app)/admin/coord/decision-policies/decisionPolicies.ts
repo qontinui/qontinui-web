@@ -96,7 +96,7 @@ export const DECISION_POLICY_DOMAINS: readonly DecisionDomainSpec[] = [
     domain: "red_main_fix",
     label: "Automatic fixer for code-class red main",
     description:
-      "Coordination may dispatch (auto_decide) or frame (guidance_only) a fixer agent when a repo's main goes red for a code reason — a tenant-wide merge outage with no owning PR-author session.",
+      "Coordination may dispatch (auto_decide) or frame (guidance_only) a fixer agent when a repo's main goes red for a code reason (not an infra-cancel) — a whole-repo condition with no owning PR-author session.",
     canonicalMode: "guidance",
     requiresMaster: true,
   },
