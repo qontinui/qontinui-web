@@ -46,6 +46,7 @@ import {
   RecordList,
   RefreshButton,
   ShareList,
+  readIsUnknown,
   type FilterTab,
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
@@ -98,11 +99,24 @@ export default function CoordOperatorTouchesPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
 
-  /** Only the newest read may land — a filter change supersedes the rest. */
+  /** A page-1 read is out; "Load older" waits for it rather than racing it. */
+  const [firstLoading, setFirstLoading] = useState(true);
+
+  /** Only the newest page-1 read may land — a filter change supersedes the rest. */
   const reqRef = useRef(0);
+  /**
+   * Only the newest OLDER-page read may land. A page-1 read bumps this too:
+   * an older page fetched against the previous page 1's cursor must never be
+   * spliced onto the new one (a gap, a stale cursor and duplicate keys).
+   */
+  const olderReqRef = useRef(0);
 
   const fetchFirstPage = useCallback(async () => {
     const req = ++reqRef.current;
+    olderReqRef.current += 1;
+    // The superseded older read will not clear its own spinner; clear it here.
+    setLoadingOlder(false);
+    setFirstLoading(true);
     try {
       const body = readTouchesBody(
         await httpClient.get<unknown>(
@@ -121,6 +135,8 @@ export default function CoordOperatorTouchesPage() {
       if (reqRef.current !== req) return;
       setFailed(true);
       setFailure(parseTouchReadFailure(e));
+    } finally {
+      if (reqRef.current === req) setFirstLoading(false);
     }
   }, [windowDays, disposition]);
 
@@ -140,7 +156,8 @@ export default function CoordOperatorTouchesPage() {
 
   const fetchOlder = useCallback(async () => {
     if (!cursor) return;
-    const req = reqRef.current;
+    const older = ++olderReqRef.current;
+    const current = () => olderReqRef.current === older;
     setLoadingOlder(true);
     try {
       const body = readTouchesBody(
@@ -148,15 +165,18 @@ export default function CoordOperatorTouchesPage() {
           `${API}/coord/operator-touches?${buildQuery({ windowDays, disposition, before: cursor })}`
         )
       );
-      if (reqRef.current !== req) return;
-      setTouches((prev) => [...prev, ...touchesOf(body)]);
+      if (!current()) return;
+      setTouches((prev) => {
+        const seen = new Set(prev.map((t) => t.touch_id));
+        return [...prev, ...touchesOf(body).filter((t) => !seen.has(t.touch_id))];
+      });
       setCursor(body.next_cursor ?? null);
       setOlderFailure(null);
     } catch (e) {
-      if (reqRef.current !== req) return;
+      if (!current()) return;
       setOlderFailure(failureSentence(parseTouchReadFailure(e)));
     } finally {
-      if (reqRef.current === req) setLoadingOlder(false);
+      if (current()) setLoadingOlder(false);
     }
   }, [cursor, windowDays, disposition]);
 
@@ -278,7 +298,8 @@ export default function CoordOperatorTouchesPage() {
               items={reasonClasses.map((c) => ({
                 key: c.reason_code,
                 label: reasonLabel(c.reason_code),
-                title: reasonLabel(c.reason_code),
+                // R8: the wire token lives in the hover, never the label.
+                title: c.reason_code,
                 count: c.count,
                 detail: `${c.operator_reaching} reached you · ${c.agent_dispatchable} agent · ${c.unknown} unknown`,
               }))}
@@ -307,7 +328,7 @@ export default function CoordOperatorTouchesPage() {
             />
           )}
           empty={
-            failed && !loaded ? (
+            readIsUnknown(loaded, failed) ? (
               <p
                 className="text-sm text-muted-foreground italic"
                 data-testid="operator-touches-unknown"
@@ -322,6 +343,16 @@ export default function CoordOperatorTouchesPage() {
                 data-testid="operator-touches-empty-not-measured"
               >
                 Not yet measured — the touch emitter has not run.
+              </p>
+            ) : cursor ? (
+              // coord bounds a filtered scan and hands back its POSITION with
+              // possibly zero rows. That is "not found yet", not "none".
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="operator-touches-empty-scan-bounded"
+              >
+                None found in the newest touches coord scanned — load older to
+                keep looking. This is not a claim that none exist.
               </p>
             ) : (
               <p
@@ -339,7 +370,7 @@ export default function CoordOperatorTouchesPage() {
               variant="outline"
               size="sm"
               onClick={() => void fetchOlder()}
-              disabled={loadingOlder}
+              disabled={loadingOlder || firstLoading}
               data-testid="operator-touches-older"
             >
               {loadingOlder ? "Loading…" : "Load older touches"}
