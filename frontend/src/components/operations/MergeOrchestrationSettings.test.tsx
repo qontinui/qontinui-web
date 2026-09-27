@@ -45,6 +45,7 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 import { MergeOrchestrationSettings } from "./MergeOrchestrationSettings";
+import { UNKNOWN_AMBER } from "@/components/console";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -1860,6 +1861,11 @@ describe("<MergeOrchestrationSettings> SLO operator-touch strip", () => {
       "data-touch-state",
       "unknown"
     );
+    // The unknown window wears the console's own UNKNOWN_AMBER token.
+    const unknownText = screen
+      .getByTestId("slo-operator-touch-30d")
+      .querySelector("span:last-child");
+    expect(unknownText?.className).toContain(UNKNOWN_AMBER);
   });
 
   it("labels nothing dead, and shows the touch line as unknown, on an older coord", async () => {

@@ -109,6 +109,18 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
     expect(badgeText(h).join(" ")).not.toMatch(/\b0%/);
   });
 
+  it("routes an unrecognised or missing measurement word to unknown, not 'Not yet measured'", () => {
+    for (const measurement of ["estimated", null, undefined]) {
+      const h = health({ ...NOT_YET_MEASURED, measurement });
+      expect(h.level).toBe("amber");
+      expect(h.headline).toBe(
+        "Unknown — coord reported a measurement this page does not know"
+      );
+      expect(h.measured).toBe(false);
+      expect(badgeText(h)).toContain("touches –");
+    }
+  });
+
   it("renders an UNKNOWN verdict as unknown — amber, never the likeliest verdict", () => {
     const h = health(measured(UNKNOWN_VERDICT));
     expect(h.level).toBe("amber");
