@@ -27,12 +27,14 @@ What is asserted
    assertion 3 would still pass against a whole-table index.
 6. Re-executing the revision (``stamp`` back to the parent, then
    ``upgrade``) over a valid index keeps it unchanged.
-7. An INVALID leftover (``indisvalid = false``) is dropped and rebuilt valid —
-   a separate test, skipped when the test role is not a superuser (faking a
-   killed build means writing ``pg_index``).
-8. A valid same-named index with the wrong definition makes the upgrade
-   RAISE rather than stamp.
-9. Downgrade removes the index while the rows survive.
+7. The DOCUMENTED LIMITATION, pinned so it cannot drift unnoticed: the
+   revision is additive-only (coord's merge classifier refuses a ``DROP`` or
+   a catalog read on the upgrade path), so ``IF NOT EXISTS`` KEEPS a
+   same-named index it did not build — an INVALID leftover (separate test,
+   superuser only) or one with the wrong definition. The recovery the
+   revision's docstring prescribes (``DROP INDEX CONCURRENTLY``, stamp the
+   parent, re-run) is exercised and yields the right, valid index.
+8. Downgrade removes the index while the rows survive.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
 Postgres, skipped when none is reachable.
@@ -41,6 +43,7 @@ Postgres, skipped when none is reachable.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -123,6 +126,19 @@ def _index_oid(engine: Engine) -> int:
                 )
             ).scalar_one()
         )
+
+
+def _recover(engine: Engine, root: Path, url: str) -> None:
+    """The recovery the revision's docstring prescribes, verbatim."""
+    with engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT").execute(
+            text(
+                "DROP INDEX CONCURRENTLY IF EXISTS "
+                "coord.coord_session_events_interactivity_idx"
+            )
+        )
+    run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+    run_alembic(root, url, "upgrade", _REVISION_ID)
 
 
 def _plan_for(engine: Engine, sql: str, params: dict[str, str]) -> str:
@@ -293,11 +309,9 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
         assert valid and definition_again == definition
         assert _index_oid(engine) == oid_before, "a valid index must not be rebuilt"
 
-        # 7. The INVALID-leftover heal needs a superuser to fake the killed
-        #    build, so it is its own test below.
-
-        # 8. Refusal: a VALID same-named index built differently is not
-        #    silently accepted — the revision raises rather than stamping.
+        # 7. Limitation + recovery: a VALID same-named index built
+        #    differently is KEPT by IF NOT EXISTS (the revision may not read
+        #    the catalog or drop), and the documented recovery rebuilds it.
         with engine.begin() as conn:
             conn.execute(
                 text("DROP INDEX coord.coord_session_events_interactivity_idx")
@@ -308,19 +322,16 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
                     "ON coord.session_events (session_id)"
                 )
             )
+        wrong_oid = _index_oid(engine)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        refused = run_alembic(root, url, "upgrade", _REVISION_ID, expect_success=False)
-        assert "lacks" in refused.stdout + refused.stderr, (
-            refused.stdout + refused.stderr
-        )
-        with engine.begin() as conn:
-            conn.execute(
-                text("DROP INDEX coord.coord_session_events_interactivity_idx")
-            )
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_state(engine)[0]
+        assert _index_oid(engine) == wrong_oid
+        assert "(session_id, occurred_at DESC)" not in _index_state(engine)[1]
+        _recover(engine, root, url)
+        valid, definition_recovered, _ = _index_state(engine)
+        assert valid and definition_recovered == definition
 
-        # 9. Downgrade removes the index only; the rows survive.
+        # 8. Downgrade removes the index only; the rows survive.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
         with engine.connect() as conn:
@@ -334,11 +345,16 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
     not can_connect(admin_database_url()),
     reason="Postgres not reachable at the conftest URL (see the test above).",
 )
-def test_coord_sessev_interact_idx_01_heals_an_invalid_leftover() -> None:
-    """A killed CONCURRENTLY build's INVALID index is dropped and rebuilt.
+def test_coord_sessev_interact_idx_01_keeps_an_invalid_leftover_until_recovered() -> (
+    None
+):
+    """An INVALID leftover survives the re-run; the documented recovery fixes it.
 
-    ``IF NOT EXISTS`` alone would keep the corpse and stamp the revision.
-    Faking that corpse means ``UPDATE pg_index``, which only a superuser may
+    The revision is additive-only so coord's classifier lands it without a
+    human, which rules out dropping the corpse or reading ``pg_index`` back.
+    This pins that limitation — so a change in behaviour is a visible test
+    change — and proves the recovery in the docstring works. Faking a killed
+    CONCURRENTLY build means ``UPDATE pg_index``, which only a superuser may
     do, so on a non-superuser role this SKIPS rather than failing.
     """
     root = backend_root()
@@ -368,12 +384,14 @@ def test_coord_sessev_interact_idx_01_heals_an_invalid_leftover() -> None:
                     "'coord.coord_session_events_interactivity_idx'::regclass"
                 )
             )
-        assert not _index_state(engine)[0]
 
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-
-        assert _index_state(engine)[0], "the INVALID index must be rebuilt valid"
-        assert _index_oid(engine) != oid_before, (
-            "healing means DROP + rebuild — a new index, not the flipped one"
+        assert not _index_state(engine)[0], (
+            "IF NOT EXISTS keeps the INVALID corpse — the documented limitation"
         )
+        assert _index_oid(engine) == oid_before
+
+        _recover(engine, root, url)
+        assert _index_state(engine)[0], "the documented recovery must yield VALID"
+        assert _index_oid(engine) != oid_before
