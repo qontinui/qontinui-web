@@ -309,7 +309,13 @@ def test_the_check_refuses_a_malformed_value() -> None:
     ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert_repo(engine, "qontinui/qontinui-web")
-        for bad in ('{"os": "windows"}', '"os:windows"', '["os:windows", 1]', "[[]]", '[["os:windows"]]'):
+        for bad in (
+            '{"os": "windows"}',
+            '"os:windows"',
+            '["os:windows", 1]',
+            "[[]]",
+            '[["os:windows"]]',
+        ):
             with pytest.raises(IntegrityError):
                 _set_caps(engine, "qontinui/qontinui-web", bad)
         _set_caps(engine, "qontinui/qontinui-web", '["os:linux", "runtime:docker"]')
