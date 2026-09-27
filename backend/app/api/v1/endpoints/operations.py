@@ -4258,11 +4258,21 @@ async def get_pull_decisions(
 # "unknown", never as an empty-but-healthy store, so the browser needs coord's
 # ``error`` key intact rather than folded into this module's generic envelope.
 #
-# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set:
-# coord validates ``window_days`` (7|30), ``disposition``, the booleans and the
-# ``before`` cursor itself, clamps ``limit``, and answers a typed 400 — the
-# contract the page reads. This edge adds no validation of its own, because a
-# FastAPI 422 here would be a different shape blamed on coord.
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
 
 
 @router.get("/coord/operator-touches")
@@ -4285,11 +4295,13 @@ async def get_operator_touches(
     ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
     ``touches``, ``next_cursor`` and ``constraint_verdict``.
 
-    Every parameter is declared as a STRING and forwarded unchanged: coord
-    clamps ``limit`` to ``1..200`` and answers any malformed value with its own
-    typed ``400 bad_request``. Typing them here would turn those into a
-    FastAPI ``422 {detail: [...]}`` of a different shape, which the page would
-    then misattribute to coord. A ``not_yet_measured`` store is coord's
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
     answer, not a failure; coord's 400/503 bodies pass through verbatim.
     """
     candidates = {
