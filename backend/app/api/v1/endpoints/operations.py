@@ -2898,6 +2898,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -2941,8 +2949,14 @@ async def _proxy_coord_passthrough(
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -2966,7 +2980,7 @@ async def _proxy_coord_passthrough(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             if method == "GET":
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
@@ -4199,6 +4213,100 @@ async def get_pull_decisions(
         params["since"] = since
     return await _proxy_coord_get(
         "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY and only when set: coord
+# validates ``window_days`` (7|30), ``disposition`` and the ``before`` cursor
+# itself and answers a typed 400, which is the contract the page reads — so
+# this edge bounds only ``limit`` (coord's own ``1..200``) and adds no
+# vocabulary of its own.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: int | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: bool | None = Query(default=None),
+    actionable_only: bool | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=200),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    A ``not_yet_measured`` store (no touch ever recorded) is coord's answer,
+    not a failure, and reaches the page as-is; coord's 400/503 bodies pass
+    through verbatim (see the section note).
+    """
+    params: dict[str, Any] = {}
+    if window_days is not None:
+        params["window_days"] = window_days
+    if disposition:
+        params["disposition"] = disposition
+    if open_only is not None:
+        # httpx would encode a Python bool as ``True``/``False``; coord's serde
+        # query parser reads ``true``/``false``.
+        params["open_only"] = "true" if open_only else "false"
+    if actionable_only is not None:
+        params["actionable_only"] = "true" if actionable_only else "false"
+    if limit is not None:
+        params["limit"] = limit
+    if before:
+        params["before"] = before
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: int | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days is not None else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 
