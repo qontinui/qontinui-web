@@ -296,4 +296,28 @@ describe("/admin/coord/operator-touches", () => {
     expect(screen.getAllByTestId("operator-touch-row")).toHaveLength(2);
     expect(screen.getByTestId("operator-touches-older")).toBeEnabled();
   });
+
+  it("keeps a valid older page when the refresh racing it fails", async () => {
+    let releaseOlder: (v: unknown) => void = () => {};
+    httpGet
+      .mockResolvedValueOnce(MEASURED)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseOlder = resolve))
+      )
+      .mockRejectedValueOnce(new Error("GET /x failed: 503 - {\"error\":\"db_unavailable\"}"));
+    const user = userEvent.setup();
+    render(<CoordOperatorTouchesPage />);
+
+    await user.click(await screen.findByTestId("operator-touches-older"));
+    await user.click(screen.getByTestId("operator-touches-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-operator-touches-health")).toHaveTextContent(
+        "These numbers stopped updating"
+      )
+    );
+    releaseOlder({ aggregate_included: false, touches: [touch("t3")], next_cursor: null });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("operator-touch-row")).toHaveLength(3)
+    );
+  });
 });

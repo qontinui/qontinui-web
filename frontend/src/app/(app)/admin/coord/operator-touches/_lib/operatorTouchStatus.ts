@@ -542,8 +542,10 @@ export function deriveTouchesHealth(input: {
     label: `unknown inputs ${unknownInputs ? unknownInputs.length : "–"}`,
     tone: "muted",
     title:
-      unknownInputs === null
+      verdict === null
         ? "no verdict was served, so what it could not see is unknown"
+        : unknownInputs === null
+          ? "the verdict did not list what it could not see, so that is unknown"
         : unknownInputs.length > 0
           ? `What the verdict could not see:\n${unknownInputs.join("\n")}`
           : "every input to the verdict was read",
