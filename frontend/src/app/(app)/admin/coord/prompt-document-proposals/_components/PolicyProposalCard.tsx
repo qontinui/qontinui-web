@@ -17,13 +17,13 @@ import {
 import { selfDecidedOrUnknown } from "../_lib/authorship";
 import { formatWhen } from "../_lib/format";
 import { DIRECTION_META, TIER_DESCRIPTIONS } from "../types";
-import type { PromptDocumentProposal, ProposalTier } from "../types";
+import type { PromptDocumentProposal, PolicyProposalTier } from "../types";
 import {
-  PROPOSAL_STATUS_PALETTE,
-  deriveProposalStatus,
-} from "../proposalStatus";
+  POLICY_PROPOSAL_STATUS_PALETTE,
+  derivePolicyProposalStatus,
+} from "../policyProposalStatus";
 
-interface ProposalCardProps {
+interface PolicyProposalCardProps {
   proposal: PromptDocumentProposal;
   /**
    * The target document's live `current_version`, or `null` when it could not
@@ -43,7 +43,7 @@ interface ProposalCardProps {
 }
 
 /** Tier token + its plain-language gloss, or an em dash when unset. */
-function TierChip({ tier }: { tier: ProposalTier | null }) {
+function TierChip({ tier }: { tier: PolicyProposalTier | null }) {
   if (!tier) return <span className="text-muted-foreground">—</span>;
   return (
     <code
@@ -78,7 +78,7 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
  *
  * All seven blocks survive; they moved into the detail's slots, which the
  * click earns. The R3 palette correction this carries is documented in
- * `../proposalStatus.ts` — in short, `unclassifiable` was RED and `loosening`
+ * `../policyProposalStatus.ts` — in short, `unclassifiable` was RED and `loosening`
  * was AMBER on a queue whose own module doc says nothing waits on it, while
  * the one thing that genuinely does decay (staleness) was a note inside the
  * card rather than the row's state.
@@ -104,7 +104,7 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
  * control for ownership no longer gating a decision — a surface it can actually
  * appear on.
  */
-export function ProposalCard({
+export function PolicyProposalCard({
   proposal,
   liveVersion,
   loading,
@@ -112,7 +112,7 @@ export function ProposalCard({
   expanded,
   onToggle,
   onDecide,
-}: ProposalCardProps) {
+}: PolicyProposalCardProps) {
   const [note, setNote] = useState("");
   const meta = DIRECTION_META[proposal.direction] ?? {
     // An unknown direction is coord vocabulary this build predates. Show the
@@ -122,7 +122,7 @@ export function ProposalCard({
     explanation:
       "This build does not recognise the direction coord assigned. Treat it as at least as serious as a loosening edit.",
   };
-  const status = deriveProposalStatus(proposal, liveVersion);
+  const status = derivePolicyProposalStatus(proposal, liveVersion);
 
   /*
    * The composer is offered only on a row that can still be decided.
@@ -150,7 +150,7 @@ export function ProposalCard({
    * `liveVersion > base_version` is true of every approved row by construction,
    * and every "Recently proposed & approved" row rendered the red panel telling
    * its reader to read the current wording before doing the thing they had
-   * already done. `../proposalStatus.ts` makes the matching correction to the
+   * already done. `../policyProposalStatus.ts` makes the matching correction to the
    * badge, so the row still says exactly one thing.
    */
   const stale =
@@ -204,7 +204,7 @@ export function ProposalCard({
           data-testid="proposal-direction"
           data-direction={proposal.direction}
         >
-          <StatusBadge status={status} palette={PROPOSAL_STATUS_PALETTE} />
+          <StatusBadge status={status} palette={POLICY_PROPOSAL_STATUS_PALETTE} />
         </span>
       }
       reason={status.reason}
@@ -245,7 +245,7 @@ export function ProposalCard({
                * base_version`), so an amber box under a red badge had the row
                * saying two things at once: "someone must act now" and "waiting
                * on something else, it will clear itself". That is the exact
-               * failure `../proposalStatus.ts` argues against one level down,
+               * failure `../policyProposalStatus.ts` argues against one level down,
                * where staleness is a KIND rather than an escalation for
                * precisely this reason — one badge, one claim. The amber was
                * pre-existing and correct while the badge was calm; the red
