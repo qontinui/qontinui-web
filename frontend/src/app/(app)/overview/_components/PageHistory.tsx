@@ -14,8 +14,9 @@ import { useFocusAfterRender } from "@/components/overview/editing/focus";
 import {
   VersionConflictError,
   describeWriteFailure,
-  postWithVersion,
-  readOverview,
+  fetchPageVersion,
+  fetchPageVersions,
+  revertPage,
 } from "@/components/overview/editing/api";
 import { formatRelativeTime } from "@/lib/time-utils";
 import type {
@@ -76,9 +77,7 @@ export function PageHistory({
     if (!open) return;
     let live = true;
     setVersions({ state: "loading" });
-    readOverview<PageVersionList>(
-      `pages/${encodeURIComponent(page.id)}/versions`
-    ).then(
+    fetchPageVersions<PageVersionList>(page.id).then(
       (value) => live && setVersions({ state: "ready", value }),
       (err: unknown) =>
         live && setVersions({ state: "error", message: errorText(err) })
@@ -92,9 +91,7 @@ export function PageHistory({
     const request = (viewing.current += 1);
     setNotice(null);
     setShown({ state: "loading" });
-    readOverview<PageVersionRecord>(
-      `pages/${encodeURIComponent(page.id)}/versions/${version}`
-    ).then(
+    fetchPageVersion<PageVersionRecord>(page.id, version).then(
       (value) =>
         request === viewing.current && setShown({ state: "ready", value }),
       (err: unknown) =>
@@ -107,8 +104,9 @@ export function PageHistory({
     setRestoring(true);
     setNotice(null);
     try {
-      const saved = await postWithVersion<PageRecord>(
-        `pages/${encodeURIComponent(page.id)}/versions/${version}/revert`,
+      const saved = await revertPage<PageRecord>(
+        page.id,
+        version,
         page.version
       );
       onRestored(saved);

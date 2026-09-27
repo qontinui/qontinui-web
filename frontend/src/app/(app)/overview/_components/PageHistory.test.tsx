@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageRecord } from "../_lib/pages";
 
 const api = vi.hoisted(() => ({
-  readOverview: vi.fn(),
-  postWithVersion: vi.fn(),
+  // One fake for both reads, keyed by the path each would request.
+  read: vi.fn(),
+  fetchPageVersions: vi.fn(),
+  fetchPageVersion: vi.fn(),
+  revertPage: vi.fn(),
 }));
 vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -33,7 +36,7 @@ const page: PageRecord = {
 };
 
 async function openVersionOne(canEdit: boolean, onRestored = vi.fn()) {
-  api.readOverview.mockImplementation(async (path: string) =>
+  api.read.mockImplementation(async (path: string) =>
     path.endsWith("/versions")
       ? {
           current_version: 2,
@@ -80,7 +83,15 @@ async function openVersionOne(canEdit: boolean, onRestored = vi.fn()) {
 }
 
 describe("PageHistory", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.fetchPageVersions.mockImplementation((id: string) =>
+      api.read(`pages/${id}/versions`)
+    );
+    api.fetchPageVersion.mockImplementation((id: string, v: number) =>
+      api.read(`pages/${id}/versions/${v}`)
+    );
+  });
 
   it("lets a reader read an old version but not restore it", async () => {
     await openVersionOne(false);
@@ -90,7 +101,7 @@ describe("PageHistory", () => {
   });
 
   it("restores by writing a new version on the one on screen", async () => {
-    api.postWithVersion.mockResolvedValue({
+    api.revertPage.mockResolvedValue({
       ...page,
       version: 3,
       body_md: "before",
@@ -102,17 +113,15 @@ describe("PageHistory", () => {
     expect(
       await screen.findByText("Version 1 is restored, as version 3.")
     ).toBeTruthy();
-    expect(api.postWithVersion).toHaveBeenCalledWith(
-      "pages/p1/versions/1/revert",
-      2
-    );
+    // Version 1, written on version 2 (the one on screen).
+    expect(api.revertPage).toHaveBeenCalledWith("p1", 1, 2);
     expect(onRestored).toHaveBeenCalledWith(
       expect.objectContaining({ version: 3 })
     );
   });
 
   it("says so when the version restored already matches the page", async () => {
-    api.postWithVersion.mockResolvedValue({ ...page, version: 2 });
+    api.revertPage.mockResolvedValue({ ...page, version: 2 });
     await openVersionOne(true);
     fireEvent.click(
       screen.getByRole("button", { name: "Restore this version" })
@@ -136,7 +145,7 @@ describe("PageHistory", () => {
       owner: null,
     });
     let answerOne: (v: unknown) => void = () => {};
-    api.readOverview.mockImplementation(async (path: string) => {
+    api.read.mockImplementation(async (path: string) => {
       if (path.endsWith("/versions")) {
         return {
           current_version: 3,
@@ -177,7 +186,7 @@ describe("PageHistory", () => {
 
   it("restores nothing over a newer save, and shows theirs", async () => {
     const theirs = { ...page, version: 3, body_md: "theirs" };
-    api.postWithVersion.mockRejectedValue(new VersionConflictError(theirs));
+    api.revertPage.mockRejectedValue(new VersionConflictError(theirs));
     const onRestored = await openVersionOne(true);
     fireEvent.click(
       screen.getByRole("button", { name: "Restore this version" })

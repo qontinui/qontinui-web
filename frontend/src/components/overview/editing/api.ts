@@ -287,46 +287,79 @@ export async function updateResource<T>(
   return ((await response.json()) as ResourceItem<T>).item;
 }
 
-export async function deleteResource<T>(
-  path: string,
+// Resource-specific calls. Each spells its own path, so the route walker
+// (`lib/api/route-walker.test.ts`) can check it against the OpenAPI snapshot;
+// a generic `path` parameter would leave it unresolved.
+
+/** Delete an uploaded file; `version` is the one on screen (always 1). */
+export async function deleteFile<T>(
   id: string,
-  version: number,
-  source: WriteSource = "ui"
+  version: number
 ): Promise<void> {
   const response = await send(
     "DELETE",
-    `${OVERVIEW_API}/${path}/${encodeURIComponent(id)}`,
-    { ifMatch: version, source }
+    `${OVERVIEW_API}/files/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
   );
   if (!response.ok) throw await refusal<T>(response);
 }
 
-/** A read beyond the generic list/get: `pages/{id}/versions` and the like. */
-export async function readOverview<T>(subpath: string): Promise<T> {
-  const response = await send("GET", `${OVERVIEW_API}/${subpath}`);
+/** A page's versions, newest first. */
+export async function fetchPageVersions<T>(pageId: string): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions`
+  );
   if (!response.ok) throw await readError(response);
   return (await response.json()) as T;
 }
 
-/** A write beyond the generic ones that names the version it was built on
- *  (a revert). Answers the written record. */
-export async function postWithVersion<T>(
-  subpath: string,
-  version: number,
-  source: WriteSource = "ui"
+/** One version of a page, with its text. */
+export async function fetchPageVersion<T>(
+  pageId: string,
+  version: number
 ): Promise<T> {
-  const response = await send("POST", `${OVERVIEW_API}/${subpath}`, {
-    ifMatch: version,
-    source,
-  });
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions/${version}`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/** The pages that link to this one. */
+export async function fetchPageBacklinks<T>(pageId: string): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/backlinks`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/** Restore `version` of a page, written on `current` (the version on
+ *  screen). Answers the page as the restore left it. */
+export async function revertPage<T>(
+  pageId: string,
+  version: number,
+  current: number
+): Promise<T> {
+  const response = await send(
+    "POST",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions/${version}/revert`,
+    { ifMatch: current, source: "ui" }
+  );
   if (!response.ok) throw await refusal<T>(response);
   return ((await response.json()) as ResourceItem<T>).item;
 }
 
 /** A stored file's bytes, from its authenticated download route (a plain link
  *  would carry no credentials). */
-export async function fetchFileBlob(downloadPath: string): Promise<Blob> {
-  const response = await send("GET", downloadPath);
+export async function fetchFileBlob(fileId: string): Promise<Blob> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/files/${encodeURIComponent(fileId)}/content`
+  );
   if (!response.ok) throw await readError(response);
   return response.blob();
 }

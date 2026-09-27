@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { readOverview } from "@/components/overview/editing/api";
+import { fetchPageBacklinks } from "@/components/overview/editing/api";
 import { pageHref, type PageRef } from "../_lib/pages";
 
 type State =
@@ -28,9 +28,7 @@ export function Backlinks({
   useEffect(() => {
     let live = true;
     setLinks({ state: "loading" });
-    readOverview<PageRef[]>(
-      `pages/${encodeURIComponent(pageId)}/backlinks`
-    ).then(
+    fetchPageBacklinks<PageRef[]>(pageId).then(
       (refs) => live && setLinks({ state: "ready", refs }),
       (err: unknown) =>
         live &&
