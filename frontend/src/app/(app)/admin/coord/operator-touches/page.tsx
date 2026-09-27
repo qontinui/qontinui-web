@@ -154,6 +154,11 @@ export default function CoordOperatorTouchesPage() {
     setFailed(false);
     setFailure(null);
     setOlderFailure(null);
+    // An older read in flight belongs to the OLD query: it must never land in
+    // this one's list — including when this query's page 1 then fails, which
+    // is why this cannot wait for the landing-time bump Refresh relies on.
+    olderReqRef.current += 1;
+    setLoadingOlder(false);
     void fetchFirstPage();
   }, [fetchFirstPage]);
 
@@ -190,6 +195,9 @@ export default function CoordOperatorTouchesPage() {
   );
 
   const measured = loaded && head?.measurement === "measured";
+  /** Only coord's exact word means "empty store"; any other is unknown. */
+  const notYetMeasured =
+    loaded && head?.measurement === "not_yet_measured";
   const totals = measured ? (head?.totals ?? null) : null;
 
   const tabs: FilterTab<DispositionTab>[] = [
@@ -274,7 +282,7 @@ export default function CoordOperatorTouchesPage() {
               ? "Unknown — the touch store could not be read, so no class can be ranked."
               : "Reading…"}
           </p>
-        ) : !measured ? (
+        ) : notYetMeasured ? (
           <p
             className="text-xs text-muted-foreground italic m-0"
             data-testid="operator-touches-not-measured"
@@ -282,6 +290,14 @@ export default function CoordOperatorTouchesPage() {
             Not yet measured — the touch emitter has not run. No class can be
             ranked until a touch is recorded; an empty list here would claim
             there were none.
+          </p>
+        ) : !measured ? (
+          <p
+            className="text-xs text-muted-foreground italic m-0"
+            data-testid="operator-touches-measurement-unknown"
+          >
+            Unknown — coord reported a measurement this page does not know, so
+            no class can be ranked.
           </p>
         ) : (
           <>
@@ -340,12 +356,20 @@ export default function CoordOperatorTouchesPage() {
                 {failure ? failureSentence(failure) : "the read did not land"}.
                 This is not an empty store.
               </p>
-            ) : !measured ? (
+            ) : notYetMeasured ? (
               <p
                 className="text-sm text-muted-foreground italic"
                 data-testid="operator-touches-empty-not-measured"
               >
                 Not yet measured — the touch emitter has not run.
+              </p>
+            ) : !measured ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="operator-touches-empty-measurement-unknown"
+              >
+                Unknown — coord reported a measurement this page does not know.
+                This is not an empty store.
               </p>
             ) : cursor ? (
               // coord bounds a filtered scan and hands back its POSITION with

@@ -552,7 +552,22 @@ export function deriveTouchesHealth(input: {
   };
   const stale = failed ? staleDetail("") + " " : "";
 
-  if (head.measurement !== "measured") {
+  if (head.measurement !== "measured" && head.measurement !== "not_yet_measured") {
+    // Only coord's two words are understood. Anything else — a newer word or
+    // none at all — is unknown, never "empty" and never "measured".
+    return {
+      level: "amber",
+      headline: "Unknown — coord reported a measurement this page does not know",
+      detail:
+        stale +
+        "no count can be stated, so each is a dash rather than a zero",
+      badges: [...dashBadges(), verdictBadge],
+      headlineTitle: verdict?.reason ?? null,
+      measured: false,
+    };
+  }
+
+  if (head.measurement === "not_yet_measured") {
     // A capacity verdict does not depend on the touch store, so an empty
     // store must not hide it — it rides in the detail line.
     const capacity = verdictKind(verdict);

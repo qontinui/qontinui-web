@@ -320,4 +320,43 @@ describe("/admin/coord/operator-touches", () => {
       expect(screen.getAllByTestId("operator-touch-row")).toHaveLength(3)
     );
   });
+
+  it("drops an older read from the previous tab when the new tab's page 1 fails", async () => {
+    let releaseOlder: (v: unknown) => void = () => {};
+    httpGet
+      .mockResolvedValueOnce(MEASURED)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseOlder = resolve))
+      )
+      .mockRejectedValueOnce(
+        new Error('GET /x failed: 503 - {"error":"db_unavailable","detail":"p"}')
+      );
+    const user = userEvent.setup();
+    render(<CoordOperatorTouchesPage />);
+
+    await user.click(await screen.findByTestId("operator-touches-older"));
+    await user.click(screen.getByTestId("operator-touches-filter-agent_dispatchable"));
+    await screen.findByTestId("operator-touches-unknown");
+    releaseOlder({ aggregate_included: false, touches: [touch("old-tab")], next_cursor: "x" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryAllByTestId("operator-touch-row")).toHaveLength(0);
+    expect(screen.queryByTestId("operator-touches-older")).toBeNull();
+    expect(screen.getByTestId("operator-touches-unknown")).toBeInTheDocument();
+  });
+
+  it("an unrecognised measurement word is unknown — not 'Not yet measured', not empty", async () => {
+    httpGet.mockResolvedValue({ ...MEASURED, measurement: "estimated", touches: [], next_cursor: null });
+    render(<CoordOperatorTouchesPage />);
+    expect(
+      await screen.findByTestId("operator-touches-measurement-unknown")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("operator-touches-empty-measurement-unknown")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("operator-touches-not-measured")).toBeNull();
+    expect(screen.queryByTestId("operator-touches-empty")).toBeNull();
+    expect(screen.getByTestId("coord-operator-touches-health")).toHaveTextContent(
+      "coord reported a measurement this page does not know"
+    );
+  });
 });

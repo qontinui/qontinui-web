@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Activity } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { UNKNOWN_AMBER } from "@/components/console";
 import { MergeEnabledControl } from "./MergeEnabledControl";
 import { MergeEnabledBadge, pinChoice } from "./pinChoice";
 import { fmtRate, fmtSecs, ratingColor, ratingColorInverse } from "./format";
@@ -157,7 +158,7 @@ function TouchWindowText({
           view.state === "measured"
             ? "text-foreground"
             : view.state === "unknown"
-              ? "text-amber-200"
+              ? `rounded border px-1 ${UNKNOWN_AMBER}`
               : "text-muted-foreground italic"
         }
       >
