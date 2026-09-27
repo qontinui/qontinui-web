@@ -18,7 +18,7 @@ import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useFocusAfterRender } from "@/components/overview/editing/focus";
 import {
   describeWriteFailure,
-  deleteResource,
+  deleteFile,
   fetchFileBlob,
   isRefusal,
   uploadFile,
@@ -172,7 +172,7 @@ export function FilesPanel({
     setRowError(null);
     setDownloading(file.id);
     try {
-      saveBlob(await fetchFileBlob(file.download_path), file.filename);
+      saveBlob(await fetchFileBlob(file.id), file.filename);
     } catch (err) {
       setRowError({
         id: file.id,
@@ -186,7 +186,7 @@ export function FilesPanel({
   const remove = async (file: FileRecord) => {
     setRowError(null);
     try {
-      await deleteResource<FileRecord>("files", file.id, file.version);
+      await deleteFile<FileRecord>(file.id, file.version);
       setConfirming(null);
       focusAfterRender(panel);
       onChanged();

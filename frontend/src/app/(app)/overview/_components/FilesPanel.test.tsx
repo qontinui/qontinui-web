@@ -5,7 +5,7 @@ import type { FileRecord } from "../_lib/pages";
 const api = vi.hoisted(() => ({
   uploadFile: vi.fn(),
   fetchFileBlob: vi.fn(),
-  deleteResource: vi.fn(),
+  deleteFile: vi.fn(),
 }));
 vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -142,6 +142,6 @@ describe("FilesPanel", () => {
     panel(false);
     fireEvent.click(screen.getByRole("button", { name: "Contract.pdf" }));
     await waitFor(() => expect(created).toHaveBeenCalled());
-    expect(api.fetchFileBlob).toHaveBeenCalledWith(file.download_path);
+    expect(api.fetchFileBlob).toHaveBeenCalledWith(file.id);
   });
 });
