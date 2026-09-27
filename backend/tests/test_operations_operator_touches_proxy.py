@@ -227,21 +227,45 @@ class TestOperatorTouchesProxy:
         headers = mock_instance.get.call_args.kwargs["headers"]
         assert headers["Authorization"] == f"Bearer {TEST_BEARER}"
 
-    @pytest.mark.parametrize("query", ["limit=500", "window_days=abc", "open_only=yes"])
-    def test_values_coord_validates_reach_coord_unchanged(
-        self, auth_client: TestClient, query: str
+    def test_an_out_of_range_limit_reaches_coord_unchanged(
+        self, auth_client: TestClient
     ):
-        """No edge 422: coord clamps ``limit`` and answers anything malformed
-        with its own typed 400, which is the shape the page reads. A FastAPI
-        422 here would be a different body blamed on coord."""
-        key, value = query.split("=")
+        """No edge 422: coord clamps ``limit``, so ``500`` is forwarded as-is
+        and coord's answer comes back."""
         resp, mock_instance = _get(
             auth_client,
-            f"{TOUCHES_ROUTE}?{query}",
-            _mock_response(400, {"error": "bad_request", "detail": "x"}),
+            f"{TOUCHES_ROUTE}?limit=500",
+            _mock_response(200, NOT_YET_MEASURED),
         )
+        assert resp.status_code == 200
+        assert mock_instance.get.call_args.kwargs["params"] == {"limit": "500"}
+
+    @pytest.mark.parametrize(
+        "query",
+        ["window_days=abc", "open_only=yes", "limit=99999999999999999999"],
+    )
+    def test_a_type_error_is_axums_plain_text_400_wrapped(
+        self, auth_client: TestClient, query: str
+    ):
+        """A TYPE error never reaches coord's handler: axum's ``Query``
+        extractor answers a PLAIN-TEXT 400, and the passthrough wraps that
+        text as ``{"error": "<text>"}`` under coord's status. The value still
+        reaches coord unchanged — there is no edge 422."""
+        key, value = query.split("=")
+        axum_text = f"Failed to deserialize query string: {key}: invalid value"
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            mock_instance = MagicMock()
+            resp_mock = MagicMock(spec=httpx.Response)
+            resp_mock.status_code = 400
+            resp_mock.json.side_effect = ValueError("not json")
+            resp_mock.text = axum_text
+            mock_instance.get = AsyncMock(return_value=resp_mock)
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_instance
+            resp = auth_client.get(f"{TOUCHES_ROUTE}?{query}")
         assert resp.status_code == 400
-        assert resp.json() == {"error": "bad_request", "detail": "x"}
+        assert resp.json() == {"error": axum_text}
         assert mock_instance.get.call_args.kwargs["params"] == {key: value}
 
     @pytest.mark.parametrize(
