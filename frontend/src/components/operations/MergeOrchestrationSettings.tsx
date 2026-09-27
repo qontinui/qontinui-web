@@ -28,6 +28,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,14 @@ import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { OPERATIONS_API } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
+import {
+  STRUCTURALLY_ZERO_LABEL,
+  STRUCTURALLY_ZERO_TITLE,
+  describeOperatorTouchSlo,
+  structurallyZeroSet,
+  type OperatorTouchSlo,
+  type TouchWindowView,
+} from "./operatorTouchSlo";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -256,6 +265,13 @@ interface TenantReposResponse {
 // Phase 9 D9.6 — SLO dashboard wire types
 // ----------------------------------------------------------------------------
 
+/**
+ * One repo's 7d/30d window. Two of these fields are STRUCTURALLY ZERO on
+ * current coord (`operator_override_rate`, `escalation_rate` — no live writer
+ * produces them); coord names them in {@link SloResponse.structurally_zero}
+ * and `SloRepoCard` labels them so. The live interruption rate is tenant-level
+ * ({@link SloResponse.operator_touch}), because touches carry no repo.
+ */
 interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
@@ -289,6 +305,14 @@ interface SloResponse {
   repos: RepoSlo[];
   kill_switch_history_last_30d: KillSwitchHistoryRow[];
   generated_at: string;
+  /**
+   * Plan `2026-08-27-operator-touch-read-and-surface` C3: the tenant-level
+   * operator-touch rate over the same 7d/30d windows. Optional because a coord
+   * predating it omits it — which renders as unknown, never as zero.
+   */
+  operator_touch?: OperatorTouchSlo | null;
+  /** `SloWindowMetrics` field names with no live writer (always 0). */
+  structurally_zero?: string[] | null;
 }
 
 // `MergeEnabledResponse` (mergeTypes.ts) is the shared body of both
@@ -1579,14 +1603,42 @@ function MergeEnabledControl({
   );
 }
 
+/**
+ * A per-repo metric coord says has no live writer — its value is 0 by
+ * construction, so it is rendered muted, labelled, and never threshold-coloured
+ * (a green "0.0%" override rate reads as a measured success).
+ */
+function StructurallyZeroValue({
+  metric,
+  value,
+}: {
+  metric: string;
+  value: number | null;
+}) {
+  return (
+    <p
+      className="text-muted-foreground"
+      title={STRUCTURALLY_ZERO_TITLE}
+      data-testid={`slo-structurally-zero-${metric}`}
+    >
+      {fmtRate(value)} (7d){" "}
+      <Badge variant="outline" className="ml-1 text-[10px] font-normal border-dashed">
+        {STRUCTURALLY_ZERO_LABEL}
+      </Badge>
+    </p>
+  );
+}
+
 function SloRepoCard({
   slo,
   tenantPaused,
   onChanged,
+  structurallyZero,
 }: {
   slo: RepoSlo;
   tenantPaused: boolean;
   onChanged: () => void;
+  structurallyZero: ReadonlySet<string>;
 }) {
   const w = slo.windows.last_7d;
   const w30 = slo.windows.last_30d;
@@ -1613,21 +1665,35 @@ function SloRepoCard({
           </div>
           <div>
             <p className="text-muted-foreground">Operator override</p>
-            <p
-              className={ratingColorInverse(
-                w.operator_override_rate,
-                0.05,
-                0.1
-              )}
-            >
-              {fmtRate(w.operator_override_rate)} (7d)
-            </p>
+            {structurallyZero.has("operator_override_rate") ? (
+              <StructurallyZeroValue
+                metric="operator_override_rate"
+                value={w.operator_override_rate}
+              />
+            ) : (
+              <p
+                className={ratingColorInverse(
+                  w.operator_override_rate,
+                  0.05,
+                  0.1
+                )}
+              >
+                {fmtRate(w.operator_override_rate)} (7d)
+              </p>
+            )}
           </div>
           <div>
             <p className="text-muted-foreground">Escalation</p>
-            <p className={ratingColorInverse(w.escalation_rate, 0.1, 0.25)}>
-              {fmtRate(w.escalation_rate)} (7d)
-            </p>
+            {structurallyZero.has("escalation_rate") ? (
+              <StructurallyZeroValue
+                metric="escalation_rate"
+                value={w.escalation_rate}
+              />
+            ) : (
+              <p className={ratingColorInverse(w.escalation_rate, 0.1, 0.25)}>
+                {fmtRate(w.escalation_rate)} (7d)
+              </p>
+            )}
           </div>
           <div>
             <p className="text-muted-foreground">Verify lag p95</p>
@@ -1653,6 +1719,79 @@ function SloRepoCard({
   );
 }
 
+/** One window's phrase, styled by whether it is a measurement at all. */
+function TouchWindowText({
+  label,
+  view,
+  testId,
+}: {
+  label: string;
+  view: TouchWindowView;
+  testId: string;
+}) {
+  return (
+    <span
+      className="min-w-0 truncate"
+      title={view.title}
+      data-testid={testId}
+      data-touch-state={view.state}
+    >
+      <span className="text-muted-foreground">{label} </span>
+      <span
+        className={
+          view.state === "measured"
+            ? "text-foreground"
+            : view.state === "unknown"
+              ? "text-amber-200"
+              : "text-muted-foreground italic"
+        }
+      >
+        {view.text}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * The tenant-level operator-touch line — the SLO Dashboard's one LIVE measure
+ * of interruptions. Touches carry no repo, so it is one line above the repo
+ * cards, never a tile duplicated into each of them. Not-yet-measured and
+ * unknown are said in words; neither is ever a zero.
+ */
+function OperatorTouchSloStrip({ data }: { data: SloResponse }) {
+  const view = describeOperatorTouchSlo(data.operator_touch);
+  return (
+    <div
+      className="mb-3 flex items-center gap-3 flex-wrap rounded-md border border-border bg-card/30 px-3 py-2 text-xs"
+      data-testid="slo-operator-touch-strip"
+    >
+      <span className="font-medium shrink-0">
+        Operator touches{" "}
+        <span className="font-normal text-muted-foreground">
+          (tenant-wide, live)
+        </span>
+      </span>
+      <TouchWindowText
+        label="7d"
+        view={view.last7d}
+        testId="slo-operator-touch-7d"
+      />
+      <TouchWindowText
+        label="30d"
+        view={view.last30d}
+        testId="slo-operator-touch-30d"
+      />
+      <Link
+        href="/admin/coord/operator-touches"
+        className="ml-auto shrink-0 text-primary hover:underline"
+        data-testid="slo-operator-touch-link"
+      >
+        Where they come from →
+      </Link>
+    </div>
+  );
+}
+
 function SloDashboardCard({
   data,
   tenantPaused,
@@ -1662,6 +1801,7 @@ function SloDashboardCard({
   tenantPaused: boolean;
   onChanged: () => void;
 }) {
+  const structurallyZero = structurallyZeroSet(data?.structurally_zero);
   if (data === null) {
     return (
       <Card>
@@ -1693,10 +1833,13 @@ function SloDashboardCard({
           Per-(tenant, repo) merge metrics, 7-day windows. Thresholds from plan
           §8: ≥95% auto-merge success / ≤5% operator override. Each card&apos;s
           badge is the repo&apos;s resolved merge posture, marked{" "}
-          <em>pinned</em> or <em>inherited</em>.
+          <em>pinned</em> or <em>inherited</em>. A tile marked{" "}
+          <em>{STRUCTURALLY_ZERO_LABEL}</em> has no live source and reads 0 by
+          construction; the operator-touch line is the live interruption rate.
         </p>
       </CardHeader>
       <CardContent>
+        <OperatorTouchSloStrip data={data} />
         {data.repos.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No repos onboarded yet. Connect a repo via the Onboarding wizard.
@@ -1709,6 +1852,7 @@ function SloDashboardCard({
                 slo={r}
                 tenantPaused={tenantPaused}
                 onChanged={onChanged}
+                structurallyZero={structurallyZero}
               />
             ))}
           </div>
