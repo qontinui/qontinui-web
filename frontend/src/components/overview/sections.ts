@@ -95,7 +95,7 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     route: "/overview/documents",
     icon: FileText,
     description: "Briefs, plans, contracts and reports",
-    available: false,
+    available: true,
   },
   {
     id: "overview-wiki",
@@ -103,7 +103,7 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     route: "/overview/wiki",
     icon: BookOpen,
     description: "The project's terms and topics, explained in plain language",
-    available: false,
+    available: true,
   },
   {
     id: "overview-slides",

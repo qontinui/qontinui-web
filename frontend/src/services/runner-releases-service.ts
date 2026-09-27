@@ -11,6 +11,7 @@
  * on-the-wire shape (Phase 1). Keep them in sync with coord's emitter.
  */
 
+import type { HttpOptions } from "./http-client";
 import { httpClient } from "./service-factory";
 
 const API = "/api/v1/operations";
@@ -86,17 +87,23 @@ class RunnerReleasesService {
    *
    * `opts.repo` selects the observed surface (default coord's
    * `qontinui/qontinui-runner`); `opts.limit` caps the history window (1–500).
+   * `httpOptions` is the per-request `httpClient` options; a polling caller
+   * passes `COORD_DASHBOARD_POLL_OPTIONS` so a 5xx costs one request.
    */
-  async list(opts?: {
-    repo?: string;
-    limit?: number;
-  }): Promise<ReleaseHistoryResponse> {
+  async list(
+    opts?: {
+      repo?: string;
+      limit?: number;
+    },
+    httpOptions?: HttpOptions
+  ): Promise<ReleaseHistoryResponse> {
     const p = new URLSearchParams();
     if (opts?.repo) p.set("repo", opts.repo);
     if (opts?.limit) p.set("limit", String(opts.limit));
     const qs = p.toString();
     return httpClient.get<ReleaseHistoryResponse>(
       `${API}/releases${qs ? `?${qs}` : ""}`,
+      httpOptions
     );
   }
 
@@ -107,13 +114,13 @@ class RunnerReleasesService {
    */
   async get(
     tag: string,
-    opts?: { repo?: string },
+    opts?: { repo?: string }
   ): Promise<ReleaseHistoryEntry> {
     const p = new URLSearchParams();
     if (opts?.repo) p.set("repo", opts.repo);
     const qs = p.toString();
     return httpClient.get<ReleaseHistoryEntry>(
-      `${API}/releases/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`,
+      `${API}/releases/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`
     );
   }
 }
