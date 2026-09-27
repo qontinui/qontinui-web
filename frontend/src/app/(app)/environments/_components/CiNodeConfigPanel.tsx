@@ -225,11 +225,41 @@ export function dispatchRefusalCopy(
   };
 }
 
+/** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
+export const MAX_CONCURRENT_BUILDS_MIN = 1;
+export const MAX_CONCURRENT_BUILDS_MAX = 64;
+
+/**
+ * Commit a typed concurrency draft to a value.
+ *
+ * An empty or non-numeric draft keeps `previous` — it never becomes `0`, `1`
+ * or `null`. Typing a number and then clearing the box is not an instruction,
+ * and returning to "use the host's suggestion" is: that is the explicit
+ * control's job alone, so clearing can never silently write either a number
+ * or `null`. A number outside the server's band is clamped into it rather
+ * than saved into a refusal. Same shape as the runner's own panel.
+ */
+export function parseConcurrencyInput(
+  raw: string,
+  previous: number | null
+): number | null {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return previous;
+  return Math.min(
+    MAX_CONCURRENT_BUILDS_MAX,
+    Math.max(MAX_CONCURRENT_BUILDS_MIN, n)
+  );
+}
+
 /** Whether two configs differ (drives the Apply button's enabled state). */
 export function configsEqual(a: CiNodeConfig, b: CiNodeConfig): boolean {
   return (
     a.enabled === b.enabled &&
-    a.max_concurrent_builds === b.max_concurrent_builds &&
+    // `null` ("use the host's suggestion") equals only `null`; strict
+    // equality already says so, and a stored config predating the nullable
+    // field (so `undefined`) is normalised to `null` rather than read as a
+    // change nobody made.
+    (a.max_concurrent_builds ?? null) === (b.max_concurrent_builds ?? null) &&
     a.min_free_disk_gb === b.min_free_disk_gb &&
     a.repo_allowlist.length === b.repo_allowlist.length &&
     a.repo_allowlist.every((r, i) => r === b.repo_allowlist[i])
@@ -254,6 +284,11 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
   const [saving, setSaving] = useState(false);
   const [repoInput, setRepoInput] = useState("");
   const [repoError, setRepoError] = useState<string | null>(null);
+  // The concurrency box's raw text while it is being edited, or `null` when it
+  // is showing the committed value. Committed on blur AND on Save (see
+  // `effectiveDraft`), so a synthetic click that never moves focus still saves
+  // what is on screen.
+  const [buildsDraft, setBuildsDraft] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -261,6 +296,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
       const next = await getCiNodeConfig(machine.id);
       setState(next);
       setDraft(next.requested);
+      setBuildsDraft(null);
       setLoadError(null);
     } catch (err) {
       // A failed load must not masquerade as "CI is off here" — that reads as
@@ -295,12 +331,27 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
     }));
   };
 
+  // The draft with any pending concurrency text committed. Save sends THIS,
+  // not `draft`: relying on the input's blur alone would let a typed value
+  // show on the page while the old one saved.
+  const effectiveDraft: CiNodeConfig =
+    buildsDraft === null
+      ? draft
+      : {
+          ...draft,
+          max_concurrent_builds: parseConcurrencyInput(
+            buildsDraft,
+            draft.max_concurrent_builds
+          ),
+        };
+
   const handleApply = async () => {
     setSaving(true);
     try {
-      const next = await setCiNodeConfig(machine.id, draft);
+      const next = await setCiNodeConfig(machine.id, effectiveDraft);
       setState(next);
       setDraft(next.requested);
+      setBuildsDraft(null);
       if (next.dispatched) {
         toast.success(`CI settings sent to ${machine.name}`);
       } else {
@@ -310,9 +361,12 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         // not, and collapsing those two is the lie this panel exists to avoid.
         // The reason rides along as the description so the user does not have
         // to go hunting in the delivery box for it.
-        toast.warning(`CI settings saved, but not delivered to ${machine.name}`, {
-          description: dispatchRefusalCopy(next)?.detail ?? undefined,
-        });
+        toast.warning(
+          `CI settings saved, but not delivered to ${machine.name}`,
+          {
+            description: dispatchRefusalCopy(next)?.detail ?? undefined,
+          }
+        );
       }
     } catch (err) {
       toast.error(errMessage(err, "Failed to save CI settings"));
@@ -352,7 +406,8 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
 
   const reach = reachabilityCopy(state.reachability);
   const refusal = dispatchRefusalCopy(state);
-  const dirty = !configsEqual(draft, state.requested);
+  const dirty = !configsEqual(effectiveDraft, state.requested);
+  const usingSuggestion = effectiveDraft.max_concurrent_builds === null;
 
   return (
     <div className="space-y-4 px-4 py-4" data-testid="ci-node-panel">
@@ -491,24 +546,64 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
       </div>
 
       <div className="flex flex-wrap gap-4">
-        <label className="space-y-1" htmlFor={`ci-node-builds-${machine.id}`}>
-          <span className="block text-sm font-medium">Concurrent builds</span>
-          <Input
-            id={`ci-node-builds-${machine.id}`}
-            type="number"
-            min={1}
-            max={64}
-            data-testid="ci-node-max-builds"
-            value={draft.max_concurrent_builds}
-            onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                max_concurrent_builds: Number(e.target.value),
-              }))
-            }
-            className="bg-background border-border w-28 text-sm"
-          />
-        </label>
+        <div className="space-y-1" data-testid="ci-node-max-builds-field">
+          <label
+            className="block text-sm font-medium"
+            htmlFor={`ci-node-builds-${machine.id}`}
+          >
+            Concurrent builds
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id={`ci-node-builds-${machine.id}`}
+              type="number"
+              min={MAX_CONCURRENT_BUILDS_MIN}
+              max={MAX_CONCURRENT_BUILDS_MAX}
+              step={1}
+              data-testid="ci-node-max-builds"
+              // Empty while following the host's suggestion: the runner
+              // computes that number and qontinui.io does not know it.
+              value={buildsDraft ?? draft.max_concurrent_builds ?? ""}
+              placeholder="Suggested"
+              onChange={(e) => setBuildsDraft(e.target.value)}
+              onBlur={() => {
+                if (buildsDraft === null) return;
+                const typed = buildsDraft;
+                setBuildsDraft(null);
+                setDraft((d) => ({
+                  ...d,
+                  max_concurrent_builds: parseConcurrencyInput(
+                    typed,
+                    d.max_concurrent_builds
+                  ),
+                }));
+              }}
+              className="bg-background border-border w-28 text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="ci-node-max-builds-use-suggested"
+              disabled={usingSuggestion}
+              onClick={() => {
+                setBuildsDraft(null);
+                setDraft((d) => ({ ...d, max_concurrent_builds: null }));
+              }}
+            >
+              Use suggested
+            </Button>
+          </div>
+          <span
+            className="block text-xs text-muted-foreground max-w-xs"
+            data-testid="ci-node-max-builds-mode"
+            data-mode={usingSuggestion ? "suggested" : "explicit"}
+          >
+            {usingSuggestion
+              ? "Using the host's suggested capacity — the runner derives it from this machine's cores and memory."
+              : `Set explicitly to ${effectiveDraft.max_concurrent_builds}. "Use suggested" hands the choice back to the runner.`}
+          </span>
+        </div>
         <label className="space-y-1" htmlFor={`ci-node-disk-${machine.id}`}>
           <span className="block text-sm font-medium">
             Free disk required (GiB)
@@ -600,6 +695,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             data-testid="ci-node-discard"
             onClick={() => {
               setDraft(state.requested);
+              setBuildsDraft(null);
               setRepoInput("");
               setRepoError(null);
             }}

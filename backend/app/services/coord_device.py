@@ -23,6 +23,9 @@ Endpoints (all GET, bearer-authed, + ``x-qontinui-user-id`` header):
 * ``GET /coord/devices/by-user`` → ``{"devices": [<row>...], "count": N}``
   — the user's paired devices (each a full ``coord.devices`` row as JSON).
 * ``GET /coord/devices/:id/owned`` → ``<row>``, 404 if not owned.
+* ``GET /coord/devices/:id/state`` → the device's liveness row, including
+  its ``tenant_id``; the one read here authorized by a forwarded **device**
+  JWT rather than an operator bearer (the dmk ``/self-mint`` route).
 
 Transport failures map to 502 (ConnectError) / 504 (TimeoutException),
 the same posture as ``operations.py::_proxy_coord_get`` and
@@ -226,3 +229,81 @@ async def get_owned_device(
         status_code=502,
         detail="coord /coord/devices/:id/owned returned a non-object payload",
     )
+
+
+class CoordDeviceStateUnavailableError(Exception):
+    """Coord did not answer ``/state``: any transport failure (connect,
+    timeout, read/write, protocol), a coord 5xx, or a 429 rate limit.
+    Transient and UNKNOWN, not "no"."""
+
+
+class CoordDeviceStateRefusedError(Exception):
+    """Coord refused the forwarded credential (401/403) or rejected the
+    request with another 4xx that is neither a 404 nor a 429."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"coord /state refused: {status_code}")
+        self.status_code = status_code
+
+
+class CoordDeviceStateMalformedError(Exception):
+    """Coord answered, but not with a usable row: a status other than 200
+    that is below 400 (1xx / 204 and other 2xx / 3xx), or a 200 whose body is
+    not a JSON object. The self-mint route reports a row whose ``tenant_id``
+    is missing, null or unparseable under the same
+    ``coord_device_state_malformed`` code."""
+
+
+async def get_device_state(
+    device_id: str | UUID,
+    *,
+    device_bearer: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    """Return coord's ``GET /coord/devices/:id/state`` row, or ``None`` on 404.
+
+    Unlike the reads above this is authorized by a **device** JWT, forwarded
+    verbatim: coord gates the route on ``FleetPrincipal``, which accepts an
+    operator bearer or a device JWT carrying a ``tenant_id`` claim. The row's
+    ``tenant_id`` is the same ``coord.devices.tenant_id`` column
+    ``GET /coord/devices/:id/owned`` returns to an operator. ``user_id`` only
+    fills the header the other reads send; this route ignores it.
+
+    Same base URL, headers and 5 s budget as :func:`_get`, but with TYPED
+    outcomes instead of ``_get``'s HTTP mapping, because its caller (the dmk
+    ``/self-mint``) must tell "coord did not answer" (never mint) from "coord
+    answered garbage" and "coord said no":
+
+    * any ``httpx.TransportError``, a 5xx, or a 429 →
+      :class:`CoordDeviceStateUnavailableError`
+    * 404 → ``None``
+    * any other 4xx → :class:`CoordDeviceStateRefusedError`
+    * any status below 400 other than 200, or a 200 whose body is not a JSON
+      object → :class:`CoordDeviceStateMalformedError`. Only 200 is success.
+    """
+    path = f"/coord/devices/{device_id}/state"
+    url = f"{coord_device_base()}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+            resp = await client.get(url, headers=_headers(device_bearer, user_id))
+    except httpx.TransportError as exc:
+        # TimeoutException, ConnectError, ReadError, WriteError,
+        # RemoteProtocolError, UnsupportedProtocol, ... all subclass it.
+        raise CoordDeviceStateUnavailableError(f"{type(exc).__name__}: {exc}") from exc
+    if resp.status_code >= 500 or resp.status_code == 429:
+        raise CoordDeviceStateUnavailableError(f"coord {path} -> {resp.status_code}")
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise CoordDeviceStateRefusedError(resp.status_code)
+    if resp.status_code != 200:
+        raise CoordDeviceStateMalformedError(
+            f"coord {path} answered {resp.status_code}, not 200"
+        )
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise CoordDeviceStateMalformedError(f"coord {path} returned non-JSON") from exc
+    if not isinstance(payload, dict):
+        raise CoordDeviceStateMalformedError(f"coord {path} returned a non-object")
+    return payload

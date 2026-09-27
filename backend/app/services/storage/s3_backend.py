@@ -160,6 +160,19 @@ class S3Backend(StorageBackend):
                 detail=f"File not found: {key}",
             )
 
+    def open_stream(self, key: str) -> BinaryIO:
+        """The object's body as a stream (boto3's ``StreamingBody``)."""
+        try:
+            response = self.client.get_object(Bucket=self.bucket_name, Key=key)
+        except ClientError as e:
+            logger.error("download_failed", key=key, error=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found: {key}",
+            )
+        body: BinaryIO = response["Body"]
+        return body
+
     def delete_file(self, key: str) -> bool:
         """Delete file from S3."""
         try:

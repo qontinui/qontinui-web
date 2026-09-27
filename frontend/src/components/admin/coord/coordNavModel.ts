@@ -553,6 +553,15 @@ export const GROUPS: NavGroup[] = [
         icon: Bot,
         testId: "coord-nav-agent-registry",
       },
+      {
+        // Per-tenant switches coord ENFORCES (today: transcript sync, the
+        // session-output ingest consent gate). Plan
+        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`.
+        href: "/admin/coord/tenant-policy",
+        label: "Tenant Policy",
+        icon: ShieldCheck,
+        testId: "coord-nav-tenant-policy",
+      },
     ],
   },
 ];
@@ -574,4 +583,3 @@ export function findActiveLeaf(
   }
   return null;
 }
-

@@ -610,7 +610,12 @@ export class HttpClient {
     timeoutMs: number
   ): Promise<Response> {
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      // A FormData body gets no Content-Type here: the browser writes
+      // `multipart/form-data` with the boundary the body needs, and a JSON
+      // default would make every multipart upload unparseable.
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(options.headers as Record<string, string>),
     };
 

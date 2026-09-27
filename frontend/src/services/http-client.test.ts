@@ -1413,3 +1413,52 @@ describe("HttpClient honours a caller AbortSignal", () => {
     expect(caller.signal.aborted).toBe(false);
   });
 });
+
+describe("HttpClient request bodies", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function capturedHeaders(): { headers: () => Headers } {
+    let seen: HeadersInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        seen = init.headers;
+        return new Response("{}", { status: 200 });
+      })
+    );
+    return { headers: () => new Headers(seen) };
+  }
+
+  it("leaves a FormData body's Content-Type to the browser", async () => {
+    // A JSON default would replace the multipart boundary and the server
+    // could not parse the upload at all.
+    const stub = capturedHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const form = new FormData();
+    form.append("file", new Blob(["x"]), "a.txt");
+    await client.fetch("https://api.test/api/v1/x", {
+      method: "POST",
+      body: form,
+      maxRetries: 0,
+    });
+    expect(stub.headers().has("content-type")).toBe(false);
+    expect(stub.headers().get("authorization")).toBe("Bearer tok");
+  });
+
+  it("still defaults a JSON body to application/json", async () => {
+    const stub = capturedHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    await client.fetch("https://api.test/api/v1/x", {
+      method: "POST",
+      body: "{}",
+      maxRetries: 0,
+    });
+    expect(stub.headers().get("content-type")).toBe("application/json");
+  });
+});

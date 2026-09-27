@@ -22,7 +22,8 @@
  * ui-bridge/packages/ui-bridge/src/server/handlers.ts `materializeElements`):
  *   {
  *     id, type, tagName, label, role, ariaLabel, accessibleName, text, title,
- *     identifier, state, actions?: string[], customActions?: string[],
+ *     identifier, state, actions?: string[],
+ *     customActions?: Array<{ id, label?, description?, effect? }>,  // SDK >= 0.27
  *     category?: 'interactive'|'content'|'media',
  *     bbox?: { x, y, width, height },   // floats, CSS px
  *     visible?

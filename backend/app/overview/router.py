@@ -34,14 +34,17 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, create_model
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
 from app.overview import change_log
+from app.overview import http as contract_http
+from app.overview.files import router as files_routes
+from app.overview.pages import router as pages_routes
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
 from app.overview.registry import REGISTRY
 from app.overview.resource import (
@@ -51,6 +54,8 @@ from app.overview.resource import (
     StoreContext,
     StoreRefused,
 )
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -63,73 +68,14 @@ CONTRACT_RESPONSE_HEADERS: tuple[str, ...] = ("ETag", "Idempotent-Replayed")
 _MAX_IDEMPOTENCY_KEY = 200
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
-def parse_if_match(value: str | None) -> int:
-    """``If-Match: "3"`` (or ``W/"3"``, or a bare ``3``) → ``3``.
-
-    Absent is 428 Precondition Required: this contract never accepts a write
-    that did not say which version it was built on.
-    """
-    if value is None or not value.strip():
-        raise HTTPException(
-            status_code=428,
-            detail={
-                "error": "if_match_required",
-                "message": "Send If-Match with the version you read.",
-            },
-        )
-    token = value.strip()
-    if token.startswith("W/"):
-        token = token[2:]
-    token = token.strip('"')
-    if not token.isdigit():
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "bad_if_match",
-                "message": 'If-Match is the record\'s version, e.g. "3".',
-            },
-        )
-    return int(token)
-
-
-def _etag(version: int) -> str:
-    return f'"{version}"'
-
-
-def _stale(exc: StaleVersion) -> JSONResponse:
-    current = exc.current.model_dump(mode="json")
-    return JSONResponse(
-        status_code=409,
-        content={
-            "error": "version_conflict",
-            "message": (
-                "Somebody else saved this since you loaded it. Their version is "
-                "attached, so you can compare it with yours before saving again."
-            ),
-            "current_version": current.get("version"),
-            "current": current,
-        },
-        headers={"ETag": _etag(int(current.get("version") or 0))},
-    )
-
-
-def _refused(exc: StoreRefused) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.error, "message": exc.message},
-    )
-
-
-def _not_found() -> HTTPException:
-    return HTTPException(
-        status_code=404,
-        detail={"error": "not_found", "message": "There is no such record here."},
-    )
+# The contract's HTTP pieces (If-Match parsing, ETag, the 409 body) live in
+# ``app.overview.http`` so routes outside this module — page versions, file
+# upload — speak exactly the same contract.
+parse_if_match = contract_http.parse_if_match
+_etag = contract_http.etag
+_stale = contract_http.stale
+_refused = contract_http.refused
+_not_found = contract_http.not_found
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +216,25 @@ def _envelopes(spec: ResourceSpec) -> tuple[type[BaseModel], type[BaseModel]]:
     return list_model, item_model
 
 
+async def _run_after_commit(context: StoreContext) -> None:
+    """Run a write's after-commit work. Each step is independent: one failing
+    (a storage delete, say) is logged and never undoes the committed write."""
+    for step in context.after_commit:
+        try:
+            await step()
+        except Exception:  # noqa: BLE001 — the write is committed; report, don't raise
+            logger.exception("overview_after_commit_failed")
+    context.after_commit.clear()
+
+
+def _audit(spec: ResourceSpec, record: BaseModel | None) -> dict[str, Any] | None:
+    """A record as the change log keeps it on create/update: without the
+    fields another table already holds in full (``ResourceSpec.audit_exclude``)."""
+    if record is None:
+        return None
+    return record.model_dump(mode="json", exclude=set(spec.audit_exclude))
+
+
 def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
     assert spec.store is not None
     store_dep = spec.store
@@ -393,11 +358,12 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                     actor=access.actor,
                     actor_user_id=access.user_id,
                     before=None,
-                    after=created,
+                    after=_audit(spec, created),
                     version_after=created.version,
                     idempotency_key=key,
                 )
                 await db.commit()
+                await _run_after_commit(context)
             except IntegrityError:
                 # A concurrent retry with the same key won the race; answer
                 # with the record the winner logged.
@@ -461,9 +427,10 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             store: Any = Depends(store_dep),
         ) -> Any:
             expected = parse_if_match(if_match)
+            context = ctx(access, db, request)
             try:
                 before, after = await store.update(
-                    ctx(access, db, request), record_id, payload, expected
+                    context, record_id, payload, expected
                 )
             except RecordNotFound as exc:
                 raise _not_found() from exc
@@ -481,12 +448,13 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                     source=change_log.change_source(request),
                     actor=access.actor,
                     actor_user_id=access.user_id,
-                    before=before,
-                    after=after,
+                    before=_audit(spec, before),
+                    after=_audit(spec, after),
                     version_before=before.version,
                     version_after=after.version,
                 )
                 await db.commit()
+                await _run_after_commit(context)
             response.headers["ETag"] = _etag(after.version)
             return item_model(item=after, can_edit=True)
 
@@ -510,10 +478,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             store: Any = Depends(store_dep),
         ) -> Any:
             expected = parse_if_match(if_match)
+            context = ctx(access, db, request)
             try:
-                before = await store.delete(
-                    ctx(access, db, request), record_id, expected
-                )
+                before = await store.delete(context, record_id, expected)
             except RecordNotFound as exc:
                 raise _not_found() from exc
             except StaleVersion as exc:
@@ -534,6 +501,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 version_before=before.version,
             )
             await db.commit()
+            await _run_after_commit(context)
             return Response(status_code=204)
 
         router.add_api_route(
@@ -541,6 +509,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             delete_record,
             methods=["DELETE"],
             status_code=204,
+            # ``-> Any`` would otherwise be read as a response model, which a
+            # 204 cannot carry.
+            response_model=None,
             name=f"delete_{spec.name}",
             tags=[tag],
         )
@@ -549,3 +520,8 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
 for _spec in REGISTRY.values():
     if _spec.store is not None:
         _mount(_spec)
+
+# The routes beyond the generic contract, on the same prefix: page versions,
+# revert and backlinks; file upload and download.
+router.include_router(pages_routes)
+router.include_router(files_routes)

@@ -24,6 +24,11 @@
  *   manufacture the exact fabricated zero this feature exists to remove.
  */
 
+import {
+  classifyCoordError,
+  deadlineText,
+  ROUTE_DISABLED_TEXT,
+} from "./coordPollError";
 import type {
   DeviceStatus,
   DeviceVolumes,
@@ -315,6 +320,71 @@ export function indexDeviceVolumes(
     if (entry.hostname) byHostname.set(entry.hostname, entry);
   }
   return { state: "ok", byDevice, byHostname, skippedRows };
+}
+
+/**
+ * The {@link VolumesFetch} for a successful (2xx) fleet-volumes answer whose
+ * body parsed as JSON. Every path that is not a readable payload lands on
+ * `unavailable` WITH the reason — never an empty map (plan D10).
+ */
+export function volumesFetchFromPayload(payload: unknown): VolumesFetch {
+  const parsed = parseFleetVolumes(payload);
+  if (parsed.state === "unparseable") {
+    return {
+      state: "unavailable",
+      reason:
+        "The fleet-volumes response could not be parsed: it either " +
+        "matched no known shape (expected `{devices: [...]}` or " +
+        "`{volumes: [...]}`) or carried rows that named no device, so " +
+        "no device could be matched to a reading. This says nothing " +
+        "about any machine's disk -- an EMPTY response parses fine " +
+        "and reports itself as such.",
+    };
+  }
+  // A PARTLY readable response keeps its readable half (the parse's
+  // `skippedRows` rides along), and the render withdraws the never-reported
+  // claims instead of throwing the data away.
+  return indexDeviceVolumes(parsed.devices, parsed.skippedRows);
+}
+
+/**
+ * The {@link VolumesFetch} for a non-2xx fleet-volumes answer.
+ *
+ * Two coord answers get their own wording (plan
+ * `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`, D2/D4):
+ * a `503 {"error":"deadline","budget_ms":N}` is coord abandoning its own read
+ * at its route budget — UNKNOWN, naming the budget — and a
+ * `404 {"error":"route_disabled"}` is an operator having switched the read
+ * off. Both are still `unavailable`: neither measured any disk.
+ */
+export function volumesFetchFromFailure(
+  status: number,
+  bodyText: string | null
+): VolumesFetch {
+  const verdict = classifyCoordError(status, bodyText);
+  if (verdict.kind === "deadline") {
+    return {
+      state: "unavailable",
+      reason:
+        `The fleet-volumes read failed: ${deadlineText(verdict.budgetMs)}. ` +
+        "No disk was measured by it, so every machine's disk is UNKNOWN.",
+    };
+  }
+  if (verdict.kind === "route_disabled") {
+    return {
+      state: "unavailable",
+      reason:
+        `The fleet-volumes read is ${ROUTE_DISABLED_TEXT} (coord answered ` +
+        "404 route_disabled), so no machine's disk is being read.",
+    };
+  }
+  return {
+    state: "unavailable",
+    reason:
+      `The fleet-volumes read returned HTTP ${status}. ` +
+      `Coord may be unreachable (502/504) or the volumes route may not ` +
+      `be deployed yet.`,
+  };
 }
 
 /**
