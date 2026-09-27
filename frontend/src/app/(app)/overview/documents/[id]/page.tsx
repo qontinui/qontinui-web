@@ -19,6 +19,7 @@ import {
   DocumentMetaLine,
   RelatedDocuments,
 } from "../../_components/DocumentDetails";
+import { EstimateSource } from "../../_components/EstimateSource";
 import { FilesPanel } from "../../_components/FilesPanel";
 import { PageBody, useWikiLinkOptions } from "../../_components/PageBody";
 import { useOverviewProject } from "../../_hooks/useOverviewProject";
@@ -164,26 +165,34 @@ export default function DocumentView() {
             onReplaced={replace}
             emptyText="This document has no text yet."
             afterBody={
-              <section
-                aria-labelledby="document-files-heading"
-                className="space-y-3"
-                data-ui-bridge-id="overview.document.files-section"
-              >
-                <h2
-                  id="document-files-heading"
-                  className="font-[family-name:var(--font-overview-serif)] text-lg text-foreground"
+              <>
+                <section
+                  aria-labelledby="document-files-heading"
+                  className="space-y-3"
+                  data-ui-bridge-id="overview.document.files-section"
                 >
-                  Attached files
-                </h2>
-                <FilesPanel
-                  files={attachments.list}
-                  canEdit={canEditFiles}
-                  pageId={state.page.id}
-                  onChanged={attachments.reload}
-                  emptyText="No file is attached to this document."
-                  uiBridgeId="overview.document.files"
+                  <h2
+                    id="document-files-heading"
+                    className="font-[family-name:var(--font-overview-serif)] text-lg text-foreground"
+                  >
+                    Attached files
+                  </h2>
+                  <FilesPanel
+                    files={attachments.list}
+                    canEdit={canEditFiles}
+                    pageId={state.page.id}
+                    onChanged={attachments.reload}
+                    emptyText="No file is attached to this document."
+                    uiBridgeId="overview.document.files"
+                  />
+                </section>
+                <EstimateSource
+                  page={state.page}
+                  hold={hold}
+                  reloadKey={projectId}
+                  uiBridgeId="overview.document.estimate"
                 />
-              </section>
+              </>
             }
             uiBridgeId="overview.document"
           />
