@@ -87,7 +87,7 @@ def upgrade() -> None:
                         jsonb_typeof(ci_node_required_capabilities) = 'array'
                         AND NOT jsonb_path_exists(
                             ci_node_required_capabilities,
-                            '$[*] ? (@.type() != "string")'
+                            'strict $[*] ? (@.type() != "string")'
                         )
                     );
             END IF;
