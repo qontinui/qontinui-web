@@ -3730,6 +3730,13 @@ class TestCallerTokenForwarding:
         assert captured["/devenv/ci-node-dispatch"]["headers"] == {
             "Authorization": f"Bearer {_CALLER_TOKEN}"
         }
+        # An explicit capacity is forwarded as the number it is.
+        assert (
+            captured["/devenv/ci-node-dispatch"]["body"]["ci_node"][
+                "max_concurrent_builds"
+            ]
+            == 2
+        )
 
     @pytest.mark.asyncio
     async def test_ci_node_put_forwards_a_bearer_header_caller(
@@ -3756,6 +3763,15 @@ class TestCallerTokenForwarding:
         assert captured["/devenv/ci-node-dispatch"]["headers"] == {
             "Authorization": f"Bearer {_CALLER_TOKEN}"
         }
+        # An unset capacity ("use the host's suggestion") is OMITTED from what
+        # coord receives, never sent as ``null``: a coord predating the
+        # Option-typed relay deserializes it as ``u32`` and would refuse null.
+        ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+        assert "max_concurrent_builds" not in ci_node
+        assert ci_node["enabled"] is False
+        # ...while the stored desired config keeps it as an explicit None, and
+        # reads back as such rather than as a number.
+        assert r.json()["requested"]["max_concurrent_builds"] is None
 
 
 async def _new_user(db: AsyncSession, label: str):

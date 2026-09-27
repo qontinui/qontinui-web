@@ -51,6 +51,8 @@ import {
 } from "@/components/ui/table";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { DesignPoliciesSection } from "./_components/DesignPoliciesSection";
 import {
   HealthStrip,
@@ -109,7 +111,11 @@ function autonomyChip(level: AutonomyLevel) {
           ? "autonomy-always-escalate"
           : undefined;
   return (
-    <Badge variant="outline" className="font-mono text-[11px]" data-testid={testId}>
+    <Badge
+      variant="outline"
+      className="font-mono text-[11px]"
+      data-testid={testId}
+    >
       {level}
     </Badge>
   );
@@ -123,26 +129,28 @@ export default function CoordPoliciesPage() {
   const [error, setError] = useState<string | null>(null);
   const [openTenant, setOpenTenant] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const body = await httpClient.get<FleetResponse>(
-        `${API}/coord/next-step-settings/fleet`
+        `${API}/coord/next-step-settings/fleet`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
+      if (!isCurrent()) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, [poll]);
+
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
 
   const tenants = useMemo(() => data?.tenants ?? [], [data]);
 
@@ -198,7 +206,7 @@ export default function CoordPoliciesPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-policies-refresh"
         >
           <RefreshCw className="h-3 w-3" />
@@ -206,7 +214,10 @@ export default function CoordPoliciesPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-destructive" data-testid="coord-policies-error">
+        <p
+          className="text-sm text-destructive"
+          data-testid="coord-policies-error"
+        >
           Failed to load: {error}
         </p>
       )}

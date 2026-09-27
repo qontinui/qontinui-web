@@ -9,7 +9,7 @@ import type {
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 
-const API = `${ApiConfig.API_BASE_URL}/api`;
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 /**
  * Execute a mock workflow using historical data.

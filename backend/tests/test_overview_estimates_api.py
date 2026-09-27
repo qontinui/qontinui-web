@@ -1118,6 +1118,55 @@ class TestEstimateCrud:
         # And the baseline is listed first, which is how the Team page picks it.
         assert listed[0]["id"] == second["id"]
 
+    async def test_the_source_is_a_document_of_this_project_or_nothing(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        # Phase 2c of 2026-09-20-overview-authoring-layer: "Use as the project
+        # estimate" records the delivery-plan document an estimate was built
+        # from. The column has no FK, so the endpoints check it.
+        from app.models.overview import Page
+
+        def page(tenant: UUID, kind: str, slug: str) -> Page:
+            return Page(tenant_id=tenant, kind=kind, slug=slug, title=slug)
+
+        plan = page(TENANT_A, "document", "delivery-plan")
+        wiki = page(TENANT_A, "wiki", "glossary")
+        foreign = page(TENANT_B, "document", "their-plan")
+        async_db_session.add_all([plan, wiki, foreign])
+        await async_db_session.flush()
+
+        created = await _create_estimate(admin_a, source_page_id=str(plan.id))
+        assert created["source_page_id"] == str(plan.id)
+
+        for bad in (wiki.id, foreign.id, uuid4()):
+            refused = await admin_a.patch(
+                f"{API}/estimates/{created['id']}",
+                json={"source_page_id": str(bad)},
+            )
+            assert refused.status_code == 422, refused.text
+            assert refused.json()["detail"]["error"] == "source_page_not_found"
+            made = await admin_a.post(
+                f"{API}/estimates",
+                json={"name": "x", "purpose": "budget", "source_page_id": str(bad)},
+            )
+            assert made.status_code == 422, made.text
+
+        other = page(TENANT_A, "document", "delivery-plan-v2")
+        async_db_session.add(other)
+        await async_db_session.flush()
+        relinked = await admin_a.patch(
+            f"{API}/estimates/{created['id']}",
+            json={"source_page_id": str(other.id)},
+        )
+        assert relinked.status_code == 200, relinked.text
+        assert relinked.json()["source_page_id"] == str(other.id)
+
+        cleared = await admin_a.patch(
+            f"{API}/estimates/{created['id']}", json={"source_page_id": None}
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["source_page_id"] is None
+
     async def test_patch_leaves_absent_fields_alone(
         self, admin_a: httpx.AsyncClient
     ) -> None:
