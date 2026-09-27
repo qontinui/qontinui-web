@@ -36,6 +36,8 @@ import {
 } from "@/components/admin/coord/CoordAdminOnly";
 import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
 import { OPERATIONS_API } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight, useSingleFlightPoll } from "./useSingleFlightPoll";
 
 const log = createLogger("MergeOrchestrationOnboarding");
 
@@ -668,26 +670,30 @@ export function AuditStep({ ready }: AuditStepProps) {
   // has landed. Mirrors the top-level precondition pollStatus pattern, with a
   // client-side cap so a never-completing audit degrades to a soft message
   // instead of spinning forever.
-  useEffect(() => {
-    if (!auditAgentId || auditResult) return;
-    let cancelled = false;
-    const startedAt = Date.now();
-
-    const poll = async () => {
+  //
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick that finds the previous status read outstanding is skipped, and a
+  // failing read is retried by the next tick, not by `httpClient`'s 5xx backoff
+  // chain. The cap and the cadence are unchanged.
+  const pollAudit = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (!auditAgentId) return;
       try {
         const res = await httpClient.fetch(
           `${OPERATIONS_API}/pr-merge/onboarding/audit-status?agent_id=${encodeURIComponent(
             auditAgentId
-          )}`
+          )}`,
+          COORD_DASHBOARD_POLL_OPTIONS
         );
-        if (cancelled) return;
+        if (!isCurrent()) return;
         if (!res.ok) {
           // Transient proxy/coord hiccup — keep polling rather than fail.
           log.warn("audit-status poll non-ok", res.status);
           return;
         }
         const data = (await res.json()) as AuditStatusResponse;
-        if (cancelled) return;
+        if (!isCurrent()) return;
         if (data.status === "ready" && data.starter_profile) {
           setAuditResult({
             agent_id: data.agent_id,
@@ -708,17 +714,24 @@ export function AuditStep({ ready }: AuditStepProps) {
         }
         // status === "running" → keep polling.
       } catch (err) {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         // Network blip — keep polling; the cap will eventually stop us.
         log.warn("audit-status poll error", err);
       }
-    };
+    },
+    [auditAgentId, repo]
+  );
+  const { refresh: pollAuditNow, tick: pollAuditTick } =
+    useSingleFlight(pollAudit);
 
-    poll();
+  useEffect(() => {
+    if (!auditAgentId || auditResult) return;
+    const startedAt = Date.now();
+
+    void pollAuditNow();
     const id = setInterval(() => {
       if (Date.now() - startedAt > AUDIT_POLL_CAP_MS) {
         clearInterval(id);
-        if (cancelled) return;
         setError(
           "Audit is taking longer than usual; it may still finish — retry or check the device."
         );
@@ -726,14 +739,13 @@ export function AuditStep({ ready }: AuditStepProps) {
         setBusy(false);
         return;
       }
-      poll();
+      pollAuditTick();
     }, AUDIT_POLL_MS);
 
     return () => {
-      cancelled = true;
       clearInterval(id);
     };
-  }, [auditAgentId, auditResult, repo]);
+  }, [auditAgentId, auditResult, pollAudit, pollAuditNow, pollAuditTick]);
 
   // NOTE: the remote used to be pre-filled by a separate `useEffect` keyed on
   // `auditResult`. That effect ran a full render-commit AFTER the one that
@@ -1227,11 +1239,13 @@ export function MergeOrchestrationOnboarding() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [pollErr, setPollErr] = useState<string | null>(null);
 
-  const pollStatus = useCallback(async () => {
+  const pollStatus = useCallback(async (isCurrent: () => boolean) => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`
+        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
+      if (!isCurrent()) return;
       if (!res.ok) {
         if (res.status === 404) {
           // Coord doesn't have the Phase 8 endpoint yet — degrade
@@ -1248,21 +1262,24 @@ export function MergeOrchestrationOnboarding() {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = (await res.json()) as PreconditionStatus;
+      if (!isCurrent()) return;
       // Older coord omits paired_elsewhere entirely — normalize missing to
       // [] here so every consumer can treat the field as always-present.
       setStatus({ ...data, paired_elsewhere: data.paired_elsewhere ?? [] });
       setPollErr(null);
     } catch (err) {
+      if (!isCurrent()) return;
       log.warn("precondition poll failed", err);
       setPollErr(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
-  useEffect(() => {
-    pollStatus();
-    const id = setInterval(pollStatus, PRECONDITION_POLL_MS);
-    return () => clearInterval(id);
-  }, [pollStatus]);
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5).
+  const { refresh: refreshStatus } = useSingleFlightPoll(
+    pollStatus,
+    PRECONDITION_POLL_MS
+  );
 
   // Auto-advance the step indicator. Operators can navigate back via
   // the step badges below.
@@ -1311,7 +1328,7 @@ export function MergeOrchestrationOnboarding() {
             tenant-config action, so it is admin-gated. */}
         {step === 1 && (
           <PairDeviceStep
-            onPaired={() => pollStatus()}
+            onPaired={() => void refreshStatus()}
             pairedElsewhere={status?.paired_elsewhere}
           />
         )}

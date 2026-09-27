@@ -438,6 +438,28 @@ async def report_claude_sessions(report: ClaudeSessionReport) -> dict:
 # ---- Operations dashboard endpoints (auth, user-scoped) ------------------
 
 
+#: The fleet-row keys for a runner whose UI-thread liveness is not known.
+_UI_THREAD_UNKNOWN: dict[str, Any] = {
+    "uiThread": None,
+    "uiThreadSource": None,
+    "uiThreadObservedAt": None,
+}
+
+
+def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
+    """The fleet-row keys for the UI-thread block an in-memory beacon carries.
+
+    A beacon with no block (a runner predating it) yields the UNKNOWN keys.
+    """
+    if beacon.ui_thread is None:
+        return dict(_UI_THREAD_UNKNOWN)
+    return {
+        "uiThread": beacon.ui_thread.model_dump(mode="json"),
+        "uiThreadSource": "beacon_unauthenticated",
+        "uiThreadObservedAt": beacon.last_heartbeat.isoformat(),
+    }
+
+
 @router.get("/fleet")
 async def get_fleet_status(
     *,
@@ -508,10 +530,51 @@ async def get_fleet_status(
     # categorisation above decides how a device is *presented*, never whether
     # the caller owns the host. Narrowing this to workstations would stop a
     # beacon on a CI-runner host from resolving as the caller's own.
-    db_keys = {(r.hostname, r.port) for r in all_devices}
+    db_keys = {((r.hostname or "").lower(), r.port) for r in all_devices}
     owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
+
+    # Native UI-thread liveness (plan
+    # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
+    # The block rides the beacon heartbeat, but a PAIRED runner's row above is
+    # built from its ``coord.devices`` row and the beacon for it is skipped by
+    # the ``db_keys`` check below — so without this overlay the fleet view
+    # would carry ``ui_thread`` only for unpaired beacons, i.e. almost never.
+    #
+    # Every row carries three keys:
+    #   * ``uiThread`` — the block, or ``None`` = UNKNOWN, never "not wedged";
+    #   * ``uiThreadSource`` — where it came from. ``"beacon_unauthenticated"``
+    #     is the in-memory registry fed by the UNAUTHENTICATED
+    #     ``POST /heartbeat``, keyed only by ``(hostname, port)``: any host that
+    #     can reach that route can write it, and two tenants whose runners share
+    #     a hostname and port overwrite each other. A consumer must weigh it
+    #     accordingly — it is a diagnostic hint, not a device-attested fact;
+    #   * ``uiThreadObservedAt`` — when that reading was taken, because a paired
+    #     row's own ``lastHeartbeat`` describes the device, not the beacon.
+    #
+    # A paired row takes the beacon's block only while that beacon is healthy
+    # (heartbeated within 90 s): an aged reading beside a fresh device
+    # heartbeat would read as current. Beacon-only rows keep their last-known
+    # block, because there the row's own ``derivedStatus: "stale"`` and
+    # ``lastHeartbeat`` already describe its age. Hostnames match
+    # case-insensitively, like ``owned_hostnames`` below.
+    # Registry keys are case-sensitive, so two case variants of one host can
+    # both be present; the most recently heard one wins.
+    beacon_by_key: dict[tuple[str, int], RegisteredRunner] = {}
+    for b in fleet_status.runners:
+        key = ((b.hostname or "").lower(), b.port)
+        seen = beacon_by_key.get(key)
+        if seen is None or b.last_heartbeat > seen.last_heartbeat:
+            beacon_by_key[key] = b
+    for wire in wire_runners:
+        beacon = beacon_by_key.get(
+            (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
+        )
+        if beacon is not None and beacon.is_healthy:
+            wire.update(_ui_thread_wire(beacon))
+        else:
+            wire.update(_UI_THREAD_UNKNOWN)
     for beacon in fleet_status.runners:
-        if (beacon.hostname, beacon.port) in db_keys:
+        if ((beacon.hostname or "").lower(), beacon.port) in db_keys:
             continue
         if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
             # Beacon from a host this caller owns no device on → not theirs.
@@ -535,6 +598,8 @@ async def get_fleet_status(
                 "wsConnected": False,
                 "uiError": None,
                 "recentCrash": None,
+                # Last-reported native UI-thread liveness; None = UNKNOWN.
+                **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
                 # A heartbeat-only beacon has no device WebSocket, so no
                 # instance is connected through this backend — an honest
@@ -2911,8 +2976,23 @@ async def _proxy_coord_passthrough(
     try:
         payload: Any = resp.json()
     except ValueError:
-        # coord answered with something that isn't JSON (a proxy error page, an
-        # empty 204). Report that honestly in coord's own `error` key rather
+        if 200 <= resp.status_code < 300:
+            # A SUCCESS status over a body that is not JSON is not an answer
+            # any caller can use, and relaying it as `200 {"error": ...}` made
+            # it look like one: a dashboard poll would parse that as a payload
+            # (plan 2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-
+            # reland, Phase 4 review). It is a broken upstream answer, so it
+            # is the web's 502 to report. None of this helper's coord routes
+            # answers 204 by contract.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"coord answered HTTP {resp.status_code} with a body that "
+                    "is not JSON"
+                ),
+            )
+        # A coord ERROR whose body isn't JSON (a proxy error page). Report that
+        # honestly in coord's own `error` key, under coord's own status, rather
         # than inventing a shape the caller would mis-read as a coord code.
         payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
     return JSONResponse(status_code=resp.status_code, content=payload)
@@ -5431,8 +5511,19 @@ async def get_fleet_volumes(
 
     Devices absent from the payload have NEVER reported volume telemetry.
     That is UNKNOWN, not zero — see the section note above.
+
+    Coord's error answers pass through with their status AND JSON body
+    verbatim (:func:`_proxy_coord_passthrough`), not re-wrapped as an
+    ``HTTPException`` detail string. The dashboard branches on two of them
+    (plan ``2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland``
+    D2/D4): ``503 {"error":"deadline","budget_ms":N}`` renders UNKNOWN naming
+    the budget, and ``404 {"error":"route_disabled"}`` renders "disabled by
+    operator". Wrapped, the browser saw this module's generic error envelope
+    with coord's body flattened into a ``message`` string.
     """
-    return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/volumes", tenant_id=tenant_id
+    )
 
 
 # ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
@@ -5484,8 +5575,14 @@ async def get_fleet_worktree_slots(
     corroborated as live and the caller MUST render that row UNKNOWN — never
     an idle/empty machine and never a healthy ``0/8`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
+
+    Error answers pass through verbatim, status and JSON body, for the same
+    reason as :func:`get_fleet_volumes`: the section renders coord's
+    ``503 deadline`` and ``404 route_disabled`` bodies specifically.
     """
-    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
@@ -9261,6 +9358,143 @@ async def put_fleet_policy(
     )
 
 
+# ---- Tenant transcript-sync consent proxy -------------------------------
+#
+# Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
+# Phase 3 (§3.6). Coord gates session-output ingest on
+# ``coord.tenant_policies.transcript_sync_enabled`` (qontinui-coord#2480): while
+# it is ``false`` coord refuses every chunk, on both the ``pty`` and the
+# ``transcript`` stream. This is the console's door onto that one flag.
+#
+# It proxies coord's ``GET``/``PATCH /tenant-policy`` — but deliberately exposes
+# only the transcript-sync SLICE of the policy, under a path that says so.
+# ``session_coordination_enabled`` (the Phase 10 cutover flag) rides the same
+# GET, and coord keeps it off the HTTP write surface on purpose; showing it on a
+# page with a toggle beside it would invite reading it as editable.
+#
+# Two coord wire facts this encodes once:
+#
+# 1. Coord's GET requires ``?tenant_id=`` and 403s unless it EQUALS the
+#    principal's tenant — which coord resolves AFTER applying the forwarded
+#    ``X-Qontinui-Active-Tenant`` override. ``get_tenant_id`` returns the HOME
+#    tenant, so passing it here would 403 every operator who has switched
+#    project. The query param is therefore the EFFECTIVE tenant.
+# 2. Coord's PATCH body is ``#[serde(deny_unknown_fields)]`` and carries no
+#    ``tenant_id`` at all: the write lands in the operator's own (effective)
+#    tenant by construction. The body is assembled here from a closed model.
+
+
+class TenantTranscriptSyncView(BaseModel):
+    """The tenant's transcript-sync consent, as coord resolves it."""
+
+    #: ``None`` when coord's answer carried no such field (a coord that predates
+    #: qontinui-coord#2480). That is UNKNOWN — it is NOT "on", even though the
+    #: column defaults to ``true``, because a coord that cannot report the flag
+    #: also does not enforce it.
+    transcript_sync_enabled: bool | None
+    #: ``True`` when coord read the flag as ``false`` only because its column is
+    #: not provisioned yet (the fail-closed deploy-ordering stand-in) — so an
+    #: "off" here was not an admin's decision.
+    column_missing: bool = False
+    #: Whether the caller may write — the SAME effective-tenant rule
+    #: ``require_coord_tenant_admin`` applies to the PATCH. UI gating only;
+    #: coord re-checks with ``rbac::is_tenant_admin``.
+    can_edit: bool
+
+
+class TenantTranscriptSyncPatch(BaseModel):
+    """Closed body for the transcript-sync write — see wire fact 2 above."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transcript_sync_enabled: bool
+
+
+class TenantTranscriptSyncWriteResult(BaseModel):
+    """What was written, and — separately — what coord now reads back.
+
+    ``effective`` is ``None`` with ``readback_error`` set when coord accepted
+    the write but did not return the policy it re-read (its own post-upsert
+    SELECT failed). That is UNKNOWN, not "applied".
+    """
+
+    written: bool
+    effective: TenantTranscriptSyncView | None = None
+    readback_error: str | None = None
+
+
+def _transcript_sync_view(payload: Any, *, can_edit: bool) -> TenantTranscriptSyncView:
+    """Project coord's ``TenantPolicy`` body onto the transcript-sync slice."""
+    body = payload if isinstance(payload, dict) else {}
+    enabled = body.get("transcript_sync_enabled")
+    return TenantTranscriptSyncView(
+        transcript_sync_enabled=enabled if isinstance(enabled, bool) else None,
+        # Coord serves the marker only while it is true.
+        column_missing=body.get("transcript_sync_column_missing") is True,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/tenant-policy/transcript-sync", response_model=TenantTranscriptSyncView)
+async def get_tenant_transcript_sync(
+    request: Request,
+    home_tenant_id: UUID = Depends(get_tenant_id),
+) -> TenantTranscriptSyncView:
+    """Read whether coord accepts session output for the caller's tenant.
+
+    ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
+    ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
+    that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
+    authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
+    is not an admin of this tenant is refused ``admin_required`` — an enabled
+    button would promise a write coord will not take.
+    """
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    effective = _effective_tenant_id(identity, active) or home_tenant_id
+    payload = await _proxy_coord_get(
+        "/tenant-policy",
+        params={"tenant_id": str(effective)},
+        tenant_id=effective,
+    )
+    can_edit = "admin" in _effective_tenant_roles(identity, active)
+    return _transcript_sync_view(payload, can_edit=can_edit)
+
+
+@router.patch(
+    "/tenant-policy/transcript-sync",
+    response_model=TenantTranscriptSyncWriteResult,
+)
+async def patch_tenant_transcript_sync(
+    body: TenantTranscriptSyncPatch,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> TenantTranscriptSyncWriteResult:
+    """Turn transcript sync on or off for the caller's effective tenant.
+
+    Tenant-admin gated web-side; coord re-checks and answers 403
+    ``admin_required`` otherwise, and 503 ``column_not_present`` while the
+    column's migration has not reached its database — both pass through
+    verbatim. Coord re-reads the policy after its upsert and returns it, so no
+    second round trip is needed for the read-back.
+    """
+    answer = await _proxy_coord_patch(
+        "/tenant-policy",
+        body.model_dump(),
+        tenant_id=tenant_id,
+    )
+    if isinstance(answer, dict) and isinstance(
+        answer.get("transcript_sync_enabled"), bool
+    ):
+        # The caller passed `require_coord_tenant_admin`, so `can_edit` is
+        # settled without another `/admin/coord/me` read.
+        return TenantTranscriptSyncWriteResult(
+            written=True, effective=_transcript_sync_view(answer, can_edit=True)
+        )
+    readback_error = "coord accepted the write but did not return the policy it re-read"
+    logger.warning("tenant_policy.readback_failed", detail=readback_error)
+    return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
+
+
 # ---- Priority-sets + composition-rules CRUD proxy -----------------------
 #
 # Plan ``2026-05-15-priority-sets-write-path-and-implementation-set.md``
@@ -9562,6 +9796,124 @@ async def list_prompt_documents(
     )
 
 
+# ---------------------------------------------------------------------------
+# Publish-all and the auto-publish status read
+# ---------------------------------------------------------------------------
+#
+# Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D1/D4.
+#
+# **These two are registered HERE, ahead of the ``{kind}/{name}`` routes, and
+# that placement is load-bearing.** FastAPI matches in registration order, and
+# both of these are literal paths that the parameterised siblings below would
+# otherwise swallow whole:
+#
+# * ``POST /coord/prompt-documents/publish-all`` is one segment, so
+#   :func:`create_prompt_document` (``POST /coord/prompt-documents/{kind}``)
+#   would match it first with ``kind="publish-all"`` and try to create a
+#   document;
+# * ``GET /coord/prompt-documents/auto-publish/status`` is two segments, so
+#   :func:`get_prompt_document` (``GET /coord/prompt-documents/{kind}/{name}``)
+#   would match it first with ``kind="auto-publish"``, ``name="status"``.
+#
+# Either shadowing fails as a coord 400/404 rather than as a routing error, so
+# it would read as "coord does not carry the route yet" — the one refusal this
+# console's publish surface latches and hides the controls for. Registering
+# them first is the only thing that prevents it.
+#
+# Neither route carries a dynamic path segment, so there is nothing to
+# re-encode with ``quote(x, safe='')``: the ``(kind, name)`` pairs publish-all
+# addresses travel in the JSON body, where escaping is the encoder's job.
+
+
+@router.post("/coord/prompt-documents/publish-all")
+async def publish_all_prompt_documents(
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Publish every changed document into the fleet channel in one call.
+    Tenant-admin only.
+
+    Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D1. Only the SYSTEM
+    tenant may publish; coord is the authority on that and answers
+    ``not_system_tenant`` otherwise, which passes through — exactly as the
+    single-document :func:`publish_prompt_document` proxy does, and for the same
+    reason: nothing on the prompt-documents wire tells a browser whether the
+    tenant it is looking at carries the system marker.
+
+    Body: ``{release_note?, items?, dry_run?}``.
+
+    * ``dry_run`` defaults to ``true`` SERVER-SIDE, which is the OPPOSITE of
+      the single-document ``/publish`` default. It is forwarded only when the
+      caller names it, so the safe default stays coord's rather than a second
+      copy here that could drift the other way — and note that an explicit
+      ``false`` IS forwarded: the guard below is ``is not None``, not a
+      truthiness test, because ``dry_run: false`` is the whole armed run and a
+      falsy-drop would turn every publication into a silent preview.
+    * ``items`` is the armed run's list, ``[{kind, name, expected_version}]``.
+      Each ``expected_version`` is the optimistic-lock guard, and it must be the
+      version the DRY RUN returned: a document edited between the preview and
+      the click then fails ``version_conflict`` instead of publishing a body
+      nobody has seen. That is the same guarantee single-document publishing
+      gives, applied per item.
+
+    The allowlist is deliberate, and it is two levels deep — the same posture
+    the ``/publish`` proxy takes with ``release_note``/``expected_version``.
+    ``published_by`` is NOT forwarded and is never taken from the browser: coord
+    stamps the publisher from its own authenticated ``OperatorContext``. A
+    per-item allowlist is what stops a browser smuggling one in under an item,
+    where a wholesale ``{**body}`` forward would carry it through unseen.
+    """
+    payload: dict[str, Any] = {}
+    for field in ("release_note", "dry_run"):
+        value = (body or {}).get(field)
+        if value is not None:
+            payload[field] = value
+
+    raw_items = (body or {}).get("items")
+    if isinstance(raw_items, list):
+        items: list[dict[str, Any]] = []
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                continue
+            item = {
+                key: raw[key]
+                for key in ("kind", "name", "expected_version")
+                if raw.get(key) is not None
+            }
+            if item:
+                items.append(item)
+        payload["items"] = items
+
+    return await _proxy_coord_post(
+        "/coord/prompt-documents/publish-all",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-documents/auto-publish/status")
+async def get_prompt_document_auto_publish_status(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """What the auto-publisher would do next, per candidate document.
+
+    Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D4. A READ, so it
+    gates on tenant MEMBERSHIP like every sibling document read — the point of
+    the route is that a pending publication is *visible before it happens*
+    (``decision_record/notification-not-permission``), and a view only an admin
+    can open is a view most of the fleet never sees.
+
+    Each candidate reports ``publish_mode``, ``direction`` (``loosening`` or
+    ``other``), ``settles_at``, ``held`` plus the held lint tokens, and the
+    document versions the pending publication would include. Coord computes all
+    of it — including what it WOULD do while the D5 kill switch is off — so
+    nothing here re-derives a settle time or a hold from the document list.
+    """
+    return await _proxy_coord_get(
+        "/coord/prompt-documents/auto-publish/status", tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/prompt-documents/{kind}/{name}")
 async def get_prompt_document(
     kind: str,
@@ -9583,11 +9935,12 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs/authorship tier.
-    Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/authorship tier/publish
+    mode. Tenant-admin only.
 
     The body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,
-    agent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated
+    agent_writable?, publish_mode?,
+    change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
     creates a new immutable version on every successful description/body edit;
@@ -9616,6 +9969,23 @@ async def update_prompt_document(
     Omitting them leaves the current setting alone. There is no wire
     representation for clearing it back to "no operator opinion" — coord has
     none either.
+
+    ``publish_mode`` is the per-document distribution judgement (plan
+    ``2026-09-19-policy-publish-all-and-auto-publish`` D2) — one of ``auto``
+    (the auto-publisher publishes a settled version on its own), ``manual``
+    (only a click publishes it; it still appears in publish-all) or ``never``
+    (publish-all leaves it out). Absent/``null`` is UNDECIDED, which coord's
+    first worker pass rules on rather than a state this console can write.
+    Meaningful only on system-tenant rows, and refused by coord on a
+    non-publishable kind.
+
+    It takes the **versioning** path for the same reason ``agent_write_tier``
+    does, stated the same way: whether a document distributes itself to every
+    tenant with no human in the loop is authority, not configuration, and an
+    authority flip with no immutable record is what the version table exists to
+    prevent. This proxy needs no code for it — the forward below is wholesale —
+    but the field list above is the only place a reader of this module learns
+    the key exists, so it is named here rather than left to coord's schema.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",
@@ -11015,9 +11385,9 @@ async def list_prompt_document_proposals(
         raise
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/approve")
 async def approve_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained deliberately though its value is now unused: the dependency is
@@ -11042,15 +11412,15 @@ async def approve_prompt_document_proposal(
     which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/approve",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/reject")
 async def reject_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained for the same reason as on approve: this dependency is the
@@ -11065,7 +11435,7 @@ async def reject_prompt_document_proposal(
     operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/reject",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )

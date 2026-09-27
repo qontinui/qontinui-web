@@ -412,6 +412,28 @@ export interface PromptDocumentSummary {
    */
   agent_write_source?: "operator" | "operator_kind" | "default";
   /**
+   * The per-document distribution judgement (plan
+   * `2026-09-19-policy-publish-all-and-auto-publish` D2) — `auto`, `manual` or
+   * `never`. See `PublishMode`.
+   *
+   * **Four states, not three.** `null` — and ABSENT, which is a coord that
+   * predates the column, or one serving across the `pdpub_03` deploy window —
+   * both mean UNDECIDED: nobody has ruled on whether this document may
+   * distribute itself, and coord's first worker pass will. Neither may be
+   * rendered as one of the three decided modes. Showing undecided as `manual`
+   * claims a decision nobody took; showing it as `auto` claims a document is
+   * distributing itself when coord may be about to rule otherwise.
+   *
+   * Meaningful only on SYSTEM-tenant rows. Every other tenant ignores it, so a
+   * downstream console shows the control for completeness and coord refuses the
+   * write — the same posture the publish button takes, and for the same reason:
+   * nothing on this wire tells a browser whether it is the system tenant.
+   *
+   * Typed `string`, not `PublishMode`, for the same cast-not-check reason as
+   * `agent_write_tier`. Narrow with `isPublishMode`.
+   */
+  publish_mode?: string | null;
+  /**
    * The TIER coord's built-in rule gives this exact `(kind, name)`, IGNORING
    * any operator override at either level — the same vocabulary as
    * `agent_write_effective_tier`.
@@ -707,6 +729,27 @@ export interface PromptDocumentUpdate {
    * `agent_write_tier` instead.
    */
   agent_writable?: boolean;
+  /**
+   * Set this document's distribution judgement — `auto`, `manual` or `never`
+   * (plan `2026-09-19-policy-publish-all-and-auto-publish` D2).
+   *
+   * Typed as the union rather than `string` because this is a body this console
+   * CONSTRUCTS, unlike the read field on `PromptDocumentSummary`.
+   *
+   * Like `agent_write_tier`, and unlike `attrs`, supplying this takes coord's
+   * **versioning** path even when nothing else changes. Whether a document
+   * distributes itself to every tenant with no human in the loop is authority,
+   * not configuration, and an authority flip with no immutable record is the
+   * thing the version table exists to prevent. The auto-publisher knows this
+   * and does not treat the version it cuts as an edit: a mode change does not
+   * restart a document's settle clock.
+   *
+   * There is deliberately no way to clear it back to UNDECIDED over the wire —
+   * coord has no encoding for it, and the undecided state is coord's to resolve
+   * once, not an operator's to return to. That is why the control renders
+   * "(undecided)" without offering it.
+   */
+  publish_mode?: PublishMode;
 }
 
 /* ------------------------------------------------------------------------- *
@@ -1344,4 +1387,356 @@ export const POLICY_UPSTREAM_LEVEL_HELP: Record<PolicyUpstreamLevel, string> = {
   notify:
     "Nothing is ever applied for you. Every publication shows as an update available, including for a document you have never edited.",
   auto: "A document you have never edited takes the new publication automatically, as an ordinary version you can restore away from. A document you HAVE edited is never overwritten at any level - it is badged for you to decide.",
+};
+
+// ------------- publish-all, publish_mode, and the auto-publisher -------------
+//
+// Plan `2026-09-19-policy-publish-all-and-auto-publish`. The 2026-09-04 channel
+// shipped and then nothing was published through it for eight days, because the
+// only way in was a person remembering to click. This block is the console half
+// of the fix: one button that publishes everything changed, a per-document
+// judgement about whether a document may distribute itself, and a read that
+// makes every pending automatic publication visible BEFORE it happens.
+
+/**
+ * The per-document distribution judgement (D2) — `coord.prompt_documents.publish_mode`.
+ *
+ * | Mode | Means |
+ * |---|---|
+ * | `auto` | the auto-publisher publishes a settled version on its own |
+ * | `manual` | only a click publishes it; it still appears in publish-all |
+ * | `never` | never published; publish-all leaves it out |
+ *
+ * **`null`/absent is a FOURTH state and it is not one of these three.** It means
+ * UNDECIDED — nobody has ruled on this document — and coord's first worker pass
+ * rules on it (`manual` if the body has lint hits or the document is an upstream
+ * carve-out, `auto` otherwise), emitting a notification when it lands on
+ * `manual`. Rendering undecided as `manual` would tell an operator a decision
+ * had been taken that has not, and rendering it as `auto` would tell them a
+ * document is distributing itself when coord may be about to decide otherwise.
+ */
+export const PUBLISH_MODES = ["auto", "manual", "never"] as const;
+export type PublishMode = (typeof PUBLISH_MODES)[number];
+
+/** Whether a string coord returned is a mode this console can interpret. */
+export function isPublishMode(value: string): value is PublishMode {
+  return (PUBLISH_MODES as readonly string[]).includes(value);
+}
+
+/** Short label per mode, for the per-document control's trigger. */
+export const PUBLISH_MODE_LABEL: Record<PublishMode, string> = {
+  auto: "Auto",
+  manual: "Manual",
+  never: "Never",
+};
+
+/** One-line description per mode, for the control's menu. */
+export const PUBLISH_MODE_HELP: Record<PublishMode, string> = {
+  auto: "A settled edit publishes itself to the fleet with no click — after 24 hours for a loosening, 6 hours for anything else, and never while a new fleet-specific token is held.",
+  manual:
+    "Only a click publishes it. It still appears in Publish all changed, so one click still covers it.",
+  never:
+    "Never published, by anyone, from anywhere. Publish all changed leaves it out entirely — the right answer for a document that names this fleet's own repos or paths.",
+};
+
+/**
+ * Modes whose selection is confirmed before it is written.
+ *
+ * `auto` is the only one at which a body leaves this tenant without anyone
+ * clicking, so it takes the confirmation this page already gives `full` on the
+ * policy-write dial and `auto` on the upstream dial. The property being
+ * confirmed is the same one in all three places — "changes without a click" —
+ * and the direction here is the outbound one, which is the larger of the two.
+ */
+export const PUBLISH_MODE_CONFIRMED: readonly PublishMode[] = ["auto"];
+
+/**
+ * One document version between the last publication and now.
+ *
+ * **Objects, not strings.** The plan called this "the change notes of every
+ * version since the last publication", which reads as a `string[]`; coord
+ * serves the whole version row. The note is `change_note`, and it is NULLABLE —
+ * a version saved without one is normal, and rendering `null` as the string
+ * "null" beside a real note is how a version with no note comes to look like a
+ * version whose note says "null".
+ *
+ * `edited_by` per version is what makes "an agent wrote this one" visible in a
+ * batch the operator is about to send to every tenant. `loosening` is coord's
+ * per-version direction flag — `Option<bool>`, where **`null` means UNKNOWN,
+ * never `false`** — so a `null` must not render as "not a loosening".
+ */
+export interface VersionSincePublication {
+  version_number: number;
+  change_note?: string | null;
+  edited_by?: string | null;
+  created_at?: string | null;
+  /** `true`/`false`/`null`. `null` is UNKNOWN — the classifier did not rule. */
+  loosening?: boolean | null;
+}
+
+/**
+ * One candidate from the publish-all DRY RUN (D1).
+ *
+ * A candidate is a system-tenant document whose kind is publishable, whose
+ * `publish_mode` is not `never`, and whose current body's digest differs from
+ * its latest publication's (or which has never been published). "Changed" means
+ * a different BODY, not a higher version number — a document restored to
+ * exactly its published body is not a candidate.
+ *
+ * Every field is a cast over `JSON.parse` output rather than a check, so
+ * `direction` and `publish_mode` are typed as `string`: a coord that adds a
+ * direction class this build predates must render as itself, not as blank.
+ */
+export interface PublishAllCandidate {
+  kind: PromptDocumentKind;
+  name: string;
+  /** The document version this publication would be cut from. */
+  current_version: number;
+  /** The publication number it would land as. */
+  next_publication_version: number;
+  /** Advisory — the same `publish_lint` hits the single-document publish returns. */
+  lint: PublicationLintHit[];
+  /** `"loosening"` or `"other"` (D3), as coord classified the total change. */
+  direction: string;
+  /** The publication this document currently tracks; `null` if never published. */
+  latest_publication_version?: number | null;
+  /** The document's stored mode; `null`/absent is UNDECIDED. */
+  publish_mode?: string | null;
+  /**
+   * What the auto-publisher WILL set on its first pass over this document —
+   * served only while `publish_mode` is null.
+   *
+   * Coord's answer, never derived here. Deriving it would mean shipping a
+   * second copy of coord's carve-out list and its five lint patterns into the
+   * browser, and the day either changes this console would name the wrong
+   * default with total confidence.
+   */
+  undecided_default?: string | null;
+  edited_by?: string | null;
+  /** Every version since the last publication, oldest first. Objects, not notes. */
+  versions_since_publication?: VersionSincePublication[];
+}
+
+/** `POST .../publish-all` with `dry_run: true` — the preview. */
+export interface PublishAllDryRunResponse {
+  dry_run: true;
+  /** Always `false` on a preview — coord says so rather than leaving it implied. */
+  published?: false;
+  /** `candidates.length`, from coord. Preferred over counting the array here. */
+  count?: number;
+  candidates: PublishAllCandidate[];
+  lint_is_advisory?: boolean;
+  /** Coord's own sentence about immutability, carried verbatim. */
+  immutable?: string;
+}
+
+/**
+ * One item of the ARMED run.
+ *
+ * `expected_version` must be the `current_version` the DRY RUN returned, not a
+ * version re-read from the document list. That is the whole guarantee: a
+ * document edited between the preview and the click fails `version_conflict`
+ * instead of publishing a body the operator never saw.
+ */
+export interface PublishAllItem {
+  kind: PromptDocumentKind;
+  name: string;
+  expected_version: number;
+}
+
+/**
+ * Per-item outcome of an armed run — coord's `PublishOutcome`, one per item.
+ *
+ * Typed as a union with a `string` escape for the same cast-not-check reason as
+ * everything else on this wire. Each item is published INDEPENDENTLY: one
+ * failure neither rolls back nor blocks the others, which is why this is a list
+ * of outcomes rather than one status for the batch.
+ */
+export type PublishAllOutcome =
+  | "published"
+  | "version_conflict"
+  | "kind_not_publishable"
+  | "document_missing"
+  | "error";
+
+export interface PublishAllResult {
+  kind: PromptDocumentKind;
+  name: string;
+  outcome: string;
+  /** Set on `published`. */
+  publication_version?: number | null;
+  /** Set on `version_conflict` — what the operator sent, and what coord holds. */
+  expected?: number | null;
+  actual?: number | null;
+  /** Set on `error`, and on any outcome coord wants to explain. */
+  detail?: string | null;
+}
+
+/** `POST .../publish-all` with `dry_run: false` — what actually shipped. */
+export interface PublishAllArmedResponse {
+  dry_run: false;
+  /** How many items actually published — a COUNT here, not the boolean the preview carries. */
+  published?: number;
+  /** How many items were sent. `published < requested` is the designed partial success. */
+  requested?: number;
+  results: PublishAllResult[];
+  /**
+   * Whether the fleet fan-out was started.
+   *
+   * `"spawned"` — a detached task is distributing the publications now.
+   * `"skipped_nothing_published"` — every item failed, so there was nothing to
+   * distribute. Worth showing: a batch that published nothing and a batch whose
+   * fan-out was lost look identical from the outside, and only one of them is
+   * a reason to worry.
+   */
+  fan_out?: "spawned" | "skipped_nothing_published" | string;
+  immutable?: string;
+}
+
+/** How long a settled change waits before the auto-publisher takes it (D3). */
+export type AutoPublishDirection = "loosening" | "other";
+
+/**
+ * One candidate as the auto-publish STATUS route reports it (D4).
+ *
+ * `notification-not-permission` requires visibility before the grant, and this
+ * is where it comes from: every pending automatic publication is readable
+ * before it happens. Coord computes all of it — including what the worker WOULD
+ * do while the `policy_auto_publish` kill switch is off — so nothing in this
+ * console re-derives a settle time or a hold.
+ *
+ * **This is the SAME wire shape as `PublishAllCandidate`** — coord builds both
+ * from one `publication_candidates` helper, so the status route covers the full
+ * candidate set rather than only the `auto` ones. It is declared separately
+ * because the two are read for different purposes and one field's optionality
+ * differs where it matters: `current_version` is REQUIRED on the candidate,
+ * because it is the `expected_version` the armed run is locked to and an
+ * `undefined` there would arm a publication with no concurrency guard at all.
+ * Here it is only ever displayed.
+ */
+export interface AutoPublishStatusEntry {
+  kind: PromptDocumentKind;
+  name: string;
+  current_version?: number;
+  next_publication_version?: number;
+  latest_publication_version?: number | null;
+  /** The stored mode; `null`/absent is UNDECIDED. */
+  publish_mode?: string | null;
+  /**
+   * What the worker WILL set on its first pass — served only while
+   * `publish_mode` is null. Coord's answer; see `PublishAllCandidate`.
+   */
+  undecided_default?: string | null;
+  /** `"loosening"` (24 h) or `"other"` (6 h). A value this build predates renders as itself. */
+  direction?: string | null;
+  /** ISO timestamp at which the wait expires, or `null` when nothing is pending. */
+  settles_at?: string | null;
+  /** True when a new fleet-specific lint token is holding the publication. */
+  held?: boolean;
+  /** The tokens holding it — present only when `held`. */
+  held_tokens?: PublicationLintHit[];
+  /** The document versions the pending publication would carry. */
+  versions?: number[];
+  /** Every version since the last publication, oldest first. Objects, not notes. */
+  versions_since_publication?: VersionSincePublication[];
+}
+
+/** `GET /coord/prompt-documents/auto-publish/status` response. */
+export interface AutoPublishStatusResponse {
+  candidates: AutoPublishStatusEntry[];
+  /**
+   * `candidates.length`, from coord — **the "Publish all changed (N)" count**.
+   *
+   * Preferred over counting the array here: it is coord's own number for the
+   * same set, and if the two ever disagree the array is the thing that got
+   * truncated in transit.
+   */
+  count?: number;
+  /**
+   * The subset that is `auto`, settled and not held — what the NEXT worker pass
+   * would actually publish, as opposed to what is merely changed.
+   */
+  would_publish_now?: number;
+  /** The resolved `policy_auto_publish` level for this tenant. */
+  policy_auto_publish?: string;
+  /** Whether the worker will publish at all — the D5 switch, resolved. */
+  publishing_enabled?: boolean;
+  /** The two waits, in seconds, as coord has them compiled. */
+  quiet_period_loosening_seconds?: number;
+  quiet_period_other_seconds?: number;
+}
+
+// ------------------- the kill switch (`policy_auto_publish`) -------------------
+
+/**
+ * The `fleet_runtime_policy` domain that switches automatic publishing off
+ * (D5). Mirrors coord's `POLICY_AUTO_PUBLISH_DOMAIN`.
+ *
+ * Resolved for the SYSTEM tenant only — it governs the publishing side, not the
+ * receiving side, so a downstream tenant's row means nothing. It is a sibling of
+ * `policy_upstream` in shape and its exact opposite in direction: that dial
+ * decides what the fleet may do TO this tenant, this one decides whether this
+ * tenant publishes to the fleet on its own.
+ */
+export const POLICY_AUTO_PUBLISH_DOMAIN = "policy_auto_publish";
+
+/** The levels. Mirrors coord's `PolicyAutoPublishLevel::ALL`, most restrictive first. */
+export const POLICY_AUTO_PUBLISH_LEVELS = ["off", "on"] as const;
+export type PolicyAutoPublishLevel = (typeof POLICY_AUTO_PUBLISH_LEVELS)[number];
+
+/**
+ * What coord applies when NO row matches — `on`, deliberately NOT the
+ * resolver's bare `"off"`.
+ *
+ * The same trap `POLICY_UPSTREAM_DEFAULT_LEVEL` documents, and here it is the
+ * whole feature: `resolve_effective` answers `off` both for "nobody wrote a row"
+ * and for "an operator turned it off", so reading the first literally would ship
+ * automatic publishing dark — the worker would decide nothing, hold nothing and
+ * publish nothing, with no error anywhere, which is indistinguishable from the
+ * eight silent days this plan exists to end. Mirrors coord's
+ * `POLICY_AUTO_PUBLISH_DEFAULT`.
+ */
+export const POLICY_AUTO_PUBLISH_DEFAULT_LEVEL: PolicyAutoPublishLevel = "on";
+
+/**
+ * The most restrictive reading of an UNPARSEABLE row — `off`, never the typed
+ * default.
+ *
+ * "Nobody ruled" and "somebody ruled unreadably" are different facts, and the
+ * second one is about this tenant's documents reaching every other tenant with
+ * no human in the loop. An authority setting coord cannot read is not
+ * permission to do that.
+ */
+export const POLICY_AUTO_PUBLISH_FAIL_CLOSED_LEVEL: PolicyAutoPublishLevel =
+  "off";
+
+/** Whether a string coord returned is a level this console can interpret. */
+export function isPolicyAutoPublishLevel(
+  value: string
+): value is PolicyAutoPublishLevel {
+  return (POLICY_AUTO_PUBLISH_LEVELS as readonly string[]).includes(value);
+}
+
+/** Levels an operator may select — both of them. */
+export const POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS: readonly PolicyAutoPublishLevel[] =
+  ["off", "on"];
+
+/**
+ * Levels whose selection is confirmed before it is written.
+ *
+ * `on` is the level at which a document leaves this tenant with no click, so it
+ * is confirmed for the same reason `auto` is on the upstream dial. `off` is the
+ * safe direction and is applied immediately — a kill switch that needs a
+ * confirmation to pull is a kill switch nobody pulls in time.
+ */
+export const POLICY_AUTO_PUBLISH_CONFIRMED_LEVELS: readonly PolicyAutoPublishLevel[] =
+  ["on"];
+
+/** One-line description per level, for the control's help text. */
+export const POLICY_AUTO_PUBLISH_LEVEL_HELP: Record<
+  PolicyAutoPublishLevel,
+  string
+> = {
+  off: "The auto-publisher publishes nothing, holds nothing and decides no publish modes. Publish all changed and the single-document Publish button keep working — this switches off the automatic path, not the manual one.",
+  on: "A document set to auto publishes itself once its edits have settled: 24 hours after a loosening, 6 hours after any other change, and never while a new fleet-specific token is held. Every publication is announced afterwards.",
 };

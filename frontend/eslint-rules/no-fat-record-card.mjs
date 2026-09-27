@@ -15,7 +15,7 @@
  *
  * The step was originally specified as a `<Card>`-only rule. That was corrected
  * on 2026-08-20 by a defect found in the plan's own census:
- * `prompt-document-proposals/_components/ProposalCard.tsx:79` was a genuine fat
+ * `prompt-document-proposals/_components/ProposalCard.tsx:79` (since renamed `PolicyProposalCard.tsx`) was a genuine fat
  * record card built from a raw `<div>` —
  * `"space-y-3 rounded-lg border border-border bg-card px-4 py-3.5"` — and never
  * mentioned `<Card>`. A `<Card>`-keyed rule would not have caught the one

@@ -6,7 +6,7 @@ import { httpClient } from "@/services/service-factory";
 import { canWithdraw, writeKey } from "../_lib/writes";
 import { isUnavailableSevere } from "../types";
 import type {
-  ListProposalsResponse,
+  ListPolicyProposalsResponse,
   ListWritesResponse,
   PromptDocumentProposal,
   PromptDocumentWrite,
@@ -14,7 +14,7 @@ import type {
 } from "../types";
 
 const API = "/api/v1/operations";
-const PROPOSALS = `${API}/coord/prompt-document-proposals`;
+const POLICY_PROPOSALS = `${API}/coord/prompt-document-proposals`;
 const WRITES = `${API}/coord/prompt-document-writes`;
 const DOCUMENTS = `${API}/coord/prompt-documents`;
 
@@ -42,7 +42,7 @@ const STALE_LIMIT = 20;
  * the newest AUTHORING dates — not the 20 most recently decided. A proposal
  * written long ago and approved a minute ago ranks by the old date and can sit
  * outside the page. Honouring the bound therefore narrowed a window that is
- * already ordered by the wrong column, which is why `<DecidedProposals>` states
+ * already ordered by the wrong column, which is why `<DecidedPolicyProposals>` states
  * the ordering in its heading and intro rather than implying a recency it
  * cannot deliver.
  */
@@ -108,14 +108,14 @@ interface SectionOutcome {
  * dropped rather than left under an UNKNOWN heading: a list we can no longer
  * confirm is not a list we should keep asserting.
  */
-async function readProposalSection(
+async function readPolicyProposalSection(
   status: string,
   limit: number,
   fallbackNote: string
 ): Promise<SectionOutcome> {
   try {
-    const data = await httpClient.get<ListProposalsResponse>(
-      `${PROPOSALS}?status=${encodeURIComponent(status)}&limit=${limit}`
+    const data = await httpClient.get<ListPolicyProposalsResponse>(
+      `${POLICY_PROPOSALS}?status=${encodeURIComponent(status)}&limit=${limit}`
     );
     return {
       proposals: data.proposals ?? [],
@@ -183,7 +183,7 @@ export type WriteDiffState =
  * The retired read asks for a status coord may not have shipped yet, so its
  * failure is routine and local; folding it into `error` would let a section
  * that does not exist yet report the working queue above it as broken. See
- * `readProposalSection`.
+ * `readPolicyProposalSection`.
  *
  * The `*UnavailableKind` half is what keeps the UNKNOWN boxes honest about
  * CAUSE. `null` there means the cause was not diagnosed, and the section then
@@ -289,10 +289,10 @@ export function usePromptDocumentProposals() {
    */
   const requestedDiffs = useRef<Set<string>>(new Set());
 
-  const loadProposals = useCallback(async () => {
+  const loadPolicyProposals = useCallback(async () => {
     try {
-      const data = await httpClient.get<ListProposalsResponse>(
-        `${PROPOSALS}?status=pending`
+      const data = await httpClient.get<ListPolicyProposalsResponse>(
+        `${POLICY_PROPOSALS}?status=pending`
       );
       setProposals(data.proposals ?? []);
       setUnavailable(data.unavailable ?? null);
@@ -335,13 +335,13 @@ export function usePromptDocumentProposals() {
    * all: against an older coord the section reads "cannot be read"; against a
    * newer one it fills.
    *
-   * The tolerance itself now lives in `readProposalSection`, shared with the
+   * The tolerance itself now lives in `readPolicyProposalSection`, shared with the
    * decided read — this function distributes the outcome and nothing else.
    */
-  const loadStaleProposals = useCallback(async () => {
-    // `readProposalSection` absorbs every failure — including the pre-deploy
+  const loadStalePolicyProposals = useCallback(async () => {
+    // `readPolicyProposalSection` absorbs every failure — including the pre-deploy
     // `400 invalid status` — and hands back the cause, so this only distributes.
-    const out = await readProposalSection(
+    const out = await readPolicyProposalSection(
       "stale",
       STALE_LIMIT,
       "Retired proposals could not be read from coord"
@@ -355,7 +355,7 @@ export function usePromptDocumentProposals() {
   /**
    * The recently DECIDED queue — `?status=approved`.
    *
-   * Same shape and same tolerance as `loadStaleProposals`, for the same reason
+   * Same shape and same tolerance as `loadStalePolicyProposals`, for the same reason
    * stated there, with one addition worth naming: `approved` is in coord's
    * ORIGINAL status vocabulary, so unlike `stale` this read is not expected to
    * fail against an older coord at all. Its failures are therefore more likely
@@ -363,8 +363,8 @@ export function usePromptDocumentProposals() {
    * is carried through instead of every failure inheriting the retired
    * section's pre-deploy explanation.
    */
-  const loadDecidedProposals = useCallback(async () => {
-    const out = await readProposalSection(
+  const loadDecidedPolicyProposals = useCallback(async () => {
+    const out = await readPolicyProposalSection(
       "approved",
       DECIDED_LIMIT,
       "Recently approved proposals could not be read from coord"
@@ -451,9 +451,9 @@ export function usePromptDocumentProposals() {
       // review feed…" forever. The loaders report their own faults; this layer
       // only guarantees the spinner ends.
       await Promise.allSettled([
-        loadProposals(),
-        loadStaleProposals(),
-        loadDecidedProposals(),
+        loadPolicyProposals(),
+        loadStalePolicyProposals(),
+        loadDecidedPolicyProposals(),
         loadWrites(),
         loadLiveVersions(),
       ]);
@@ -461,9 +461,9 @@ export function usePromptDocumentProposals() {
       setLoading(false);
     }
   }, [
-    loadProposals,
-    loadStaleProposals,
-    loadDecidedProposals,
+    loadPolicyProposals,
+    loadStalePolicyProposals,
+    loadDecidedPolicyProposals,
     loadWrites,
     loadLiveVersions,
   ]);
@@ -555,7 +555,7 @@ export function usePromptDocumentProposals() {
         setActing(true);
         const note = decisionNote.trim();
         await httpClient.post(
-          `${PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
+          `${POLICY_PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
           note ? { decision_note: note } : {}
         );
         toast.success(

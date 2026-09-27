@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * RedMainBanner — persistent, repo-scoped "main is RED" outage banner.
+ * RedMainBanner — persistent, repo-scoped "main is RED" banner.
  *
  * Plan `2026-07-06-coord-red-main-auto-remediation-and-dashboard-alert.md`
- * Phase 1 (D2). A red main is a tenant-wide merge outage: coord refuses to
- * land ANY PR onto a red main (`block_reason_code: main-red`), so every
- * green PR in the repo is frozen until main is fixed. This banner is the
- * loud surface for that state on every coord console page.
+ * Phase 1 (D2). A red main is a whole-repo condition: PRs evaluated while it
+ * holds read `block_reason_code: main-red`, and candidates rebased onto the
+ * red base generally fail CI until the fix lands. It is NOT a land freeze —
+ * coord still enqueues a main-red PR, and a candidate whose own CI is green
+ * still lands (plan
+ * 2026-09-12-red-main-fix-pr-opened-after-the-red-never-gets-a-probe-candidate
+ * D4). This banner is the loud surface for that state on every coord console
+ * page.
  *
  * Driven SOLELY by the coord `red_main:<repo>` alert rows (single source
  * of truth): coord's `stuck_pr_watcher` detector 6 upserts one live
@@ -50,6 +54,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
 /**
  * An agent's lease on one alert, as coord serves it on `/coord/alerts` rows
@@ -181,8 +186,14 @@ export interface RedMainAlert {
   repo: string;
   /** Failing workflow names (alert `detail.workflows`). */
   workflows: string[];
-  /** Open PRs blocked `main-red` behind the red main (blast radius). */
+  /** Open PRs whose latest predicate evaluation read `main-red`. */
   blockedPrCount: number;
+  /**
+   * The repo's in-flight merge proposals (alert `detail.queued_proposal_count`).
+   * `null` = UNREAD: coord could not count them, or it predates the field.
+   * Never defaulted to 0 — an unread queue must not render as an empty one.
+   */
+  queuedProposalCount: number | null;
   /** Episode start — the alert row's own `first_seen_at`. */
   since?: string;
   /** Remediation state (alert `detail.fix_session`). */
@@ -202,7 +213,11 @@ export function parseFixSession(raw: unknown): FixSessionState {
   }
   if (raw && typeof raw === "object") {
     const o = raw as Record<string, unknown>;
-    if (o.state === "running" || o.state === "stalled" || o.state === "failed") {
+    if (
+      o.state === "running" ||
+      o.state === "stalled" ||
+      o.state === "failed"
+    ) {
       return {
         kind: o.state,
         agentId: typeof o.agent_id === "string" ? o.agent_id : undefined,
@@ -296,14 +311,19 @@ export function parseRedMainAlerts(
       : [];
     const rawCount = detail.blocked_pr_count;
     const blockedPrCount =
-      typeof rawCount === "number" && Number.isFinite(rawCount)
-        ? rawCount
-        : 0;
+      typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : 0;
+    // Deliberately NOT the `0` default above: absent or malformed means UNREAD.
+    const rawQueued = detail.queued_proposal_count;
+    const queuedProposalCount =
+      typeof rawQueued === "number" && Number.isInteger(rawQueued) && rawQueued >= 0
+        ? rawQueued
+        : null;
     out.push({
       alertKey: a.alert_key,
       repo,
       workflows,
       blockedPrCount,
+      queuedProposalCount,
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
@@ -339,9 +359,14 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
   const prs = a.blockedPrCount === 1 ? "PR" : "PRs";
   const label = sinceLabel(a.since, nowMs);
   const since = a.since && label !== a.since ? ` since ${label} ago` : "";
+  const queue =
+    a.queuedProposalCount === null
+      ? "merge-queue depth unknown"
+      : `${a.queuedProposalCount} ${a.queuedProposalCount === 1 ? "proposal" : "proposals"} queued`;
   return (
     `🔴 ${a.repo} main is RED${since} — ` +
-    `${a.blockedPrCount} ${prs} blocked, no merges will land until fixed`
+    `${a.blockedPrCount} ${prs} read main-red, ${queue}; ` +
+    `a candidate lands only if its own rebased CI is green`
   );
 }
 
@@ -417,17 +442,27 @@ function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
       );
     case "running":
       return (
-        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+        <span
+          className="text-xs text-red-100"
+          data-testid="red-main-remediation"
+        >
           {RUNNING_LABEL}
-          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+          {fixSession.agentId
+            ? ` · ${truncateAgentId(fixSession.agentId)}`
+            : ""}
         </span>
       );
     case "stalled":
     case "failed":
       return (
-        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+        <span
+          className="text-xs text-red-100"
+          data-testid="red-main-remediation"
+        >
           fix session {fixSession.kind}
-          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+          {fixSession.agentId
+            ? ` · ${truncateAgentId(fixSession.agentId)}`
+            : ""}
         </span>
       );
   }
@@ -471,14 +506,22 @@ export function RedMainBanner() {
       // ignores the unknown param and returns the old unfiltered rollup, which
       // `parseRedMainAlerts` already filters — so this degrades to exactly the
       // previous behaviour rather than to an empty banner.
+      // No client retries (plan
+      // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+      // this banner is mounted by the coord layout on every page, and the
+      // next tick is the retry. `inFlight` above is its single-flight.
       const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`
+        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord
       // vintages).
       const envelope = Array.isArray(body)
         ? undefined
-        : (body as { alerts?: CoordAlertRow[]; claims_scrape_up?: boolean | null });
+        : (body as {
+            alerts?: CoordAlertRow[];
+            claims_scrape_up?: boolean | null;
+          });
       const alerts = Array.isArray(body) ? body : (envelope?.alerts ?? []);
       // The answer arrived, so what the banner shows is confirmed as of NOW —
       // whether it confirmed a red main or an empty result.
@@ -493,7 +536,7 @@ export function RedMainBanner() {
       }
       // KEEP-LAST-KNOWN. An empty answer is ambiguous: main went green, OR the
       // row was evicted / the filter was dropped by an older coord. Clearing a
-      // tenant-wide merge-outage banner on that ambiguity is the M2 defect —
+      // red-main banner on that ambiguity is the M2 defect —
       // require the emptiness to persist before believing it.
       emptyPolls.current += 1;
       if (emptyPolls.current >= EMPTY_POLLS_BEFORE_CLEAR) setReds([]);
@@ -585,8 +628,8 @@ export function RedMainBanner() {
               data-testid="red-main-stale"
               title="coord has not confirmed this alert since then — the read path is failing, so the banner is showing its last known state"
             >
-              (as of{" "}
-              {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
+              (as of {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)}{" "}
+              ago)
             </span>
           )}
           <RemediationNote fixSession={a.fixSession} />
