@@ -206,7 +206,9 @@ def test_the_check_pins_an_array_of_strings() -> None:
     upgrade_sql = "\n".join(_sql_literals("upgrade"))
     assert _CONSTRAINT in upgrade_sql
     assert f"jsonb_typeof({_COLUMN}) = 'array'" in upgrade_sql
-    assert '@.type() != "string"' in upgrade_sql
+    # STRICT mode: a lax filter unwraps a nested array item before testing
+    # it, so '[["os:windows"]]' would pass a lax check.
+    assert 'strict $[*] ? (@.type() != "string")' in upgrade_sql
 
 
 def test_downgrade_removes_exactly_the_constraint_and_the_column() -> None:
@@ -307,7 +309,7 @@ def test_the_check_refuses_a_malformed_value() -> None:
     ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert_repo(engine, "qontinui/qontinui-web")
-        for bad in ('{"os": "windows"}', '"os:windows"', '["os:windows", 1]', "[[]]"):
+        for bad in ('{"os": "windows"}', '"os:windows"', '["os:windows", 1]', "[[]]", '[["os:windows"]]'):
             with pytest.raises(IntegrityError):
                 _set_caps(engine, "qontinui/qontinui-web", bad)
         _set_caps(engine, "qontinui/qontinui-web", '["os:linux", "runtime:docker"]')
