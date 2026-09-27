@@ -89511,7 +89511,7 @@
     },
     "/api/v1/operations/coord/operator-touches": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched \u2014\n``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,\n``aggregate_included`` (``false`` on a ``before`` page, where every\naggregate field and ``constraint_verdict`` are ``null``),\n``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,\n``unknown_share``, ``policy_authorized_split``, ``reason_classes``,\n``touches``, ``next_cursor`` and ``constraint_verdict``.\n\nA ``not_yet_measured`` store (no touch ever recorded) is coord's answer,\nnot a failure, and reaches the page as-is; coord's 400/503 bodies pass\nthrough verbatim (see the section note).",
+        "description": "Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched \u2014\n``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,\n``aggregate_included`` (``false`` on a ``before`` page, where every\naggregate field and ``constraint_verdict`` are ``null``),\n``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,\n``unknown_share``, ``policy_authorized_split``, ``reason_classes``,\n``touches``, ``next_cursor`` and ``constraint_verdict``.\n\nEvery parameter is declared as a STRING and forwarded unchanged: coord\nclamps ``limit`` to ``1..200`` and answers any malformed value with its own\ntyped ``400 bad_request``. Typing them here would turn those into a\nFastAPI ``422 {detail: [...]}`` of a different shape, which the page would\nthen misattribute to coord. A ``not_yet_measured`` store is coord's\nanswer, not a failure; coord's 400/503 bodies pass through verbatim.",
         "operationId": "api_v1_operations_coord_operator_touches_get",
         "parameters": [
           {
@@ -89521,7 +89521,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -89553,7 +89553,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "boolean"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -89569,7 +89569,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "boolean"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -89585,9 +89585,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "maximum": 200,
-                  "minimum": 1,
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -89651,7 +89649,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"

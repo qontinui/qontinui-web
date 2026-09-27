@@ -4258,20 +4258,20 @@ async def get_pull_decisions(
 # "unknown", never as an empty-but-healthy store, so the browser needs coord's
 # ``error`` key intact rather than folded into this module's generic envelope.
 #
-# Every query parameter is forwarded EXPLICITLY and only when set: coord
-# validates ``window_days`` (7|30), ``disposition`` and the ``before`` cursor
-# itself and answers a typed 400, which is the contract the page reads — so
-# this edge bounds only ``limit`` (coord's own ``1..200``) and adds no
-# vocabulary of its own.
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set:
+# coord validates ``window_days`` (7|30), ``disposition``, the booleans and the
+# ``before`` cursor itself, clamps ``limit``, and answers a typed 400 — the
+# contract the page reads. This edge adds no validation of its own, because a
+# FastAPI 422 here would be a different shape blamed on coord.
 
 
 @router.get("/coord/operator-touches")
 async def get_operator_touches(
-    window_days: int | None = Query(default=None),
+    window_days: str | None = Query(default=None),
     disposition: str | None = Query(default=None),
-    open_only: bool | None = Query(default=None),
-    actionable_only: bool | None = Query(default=None),
-    limit: int | None = Query(default=None, ge=1, le=200),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
     before: str | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> JSONResponse:
@@ -4285,25 +4285,22 @@ async def get_operator_touches(
     ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
     ``touches``, ``next_cursor`` and ``constraint_verdict``.
 
-    A ``not_yet_measured`` store (no touch ever recorded) is coord's answer,
-    not a failure, and reaches the page as-is; coord's 400/503 bodies pass
-    through verbatim (see the section note).
+    Every parameter is declared as a STRING and forwarded unchanged: coord
+    clamps ``limit`` to ``1..200`` and answers any malformed value with its own
+    typed ``400 bad_request``. Typing them here would turn those into a
+    FastAPI ``422 {detail: [...]}`` of a different shape, which the page would
+    then misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
     """
-    params: dict[str, Any] = {}
-    if window_days is not None:
-        params["window_days"] = window_days
-    if disposition:
-        params["disposition"] = disposition
-    if open_only is not None:
-        # httpx would encode a Python bool as ``True``/``False``; coord's serde
-        # query parser reads ``true``/``false``.
-        params["open_only"] = "true" if open_only else "false"
-    if actionable_only is not None:
-        params["actionable_only"] = "true" if actionable_only else "false"
-    if limit is not None:
-        params["limit"] = limit
-    if before:
-        params["before"] = before
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
     return await _proxy_coord_passthrough(
         "GET",
         "/coord/operator-touches",
@@ -4314,7 +4311,7 @@ async def get_operator_touches(
 
 @router.get("/coord/operator-touches/constraint-verdict")
 async def get_operator_touch_constraint_verdict(
-    window_days: int | None = Query(default=None),
+    window_days: str | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> JSONResponse:
     """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
@@ -4325,7 +4322,7 @@ async def get_operator_touch_constraint_verdict(
     verdict, never a default. Error bodies pass through verbatim.
     """
     params: dict[str, Any] | None = (
-        {"window_days": window_days} if window_days is not None else None
+        {"window_days": window_days} if window_days else None
     )
     return await _proxy_coord_passthrough(
         "GET",

@@ -39,11 +39,12 @@ import type {
 } from "@/components/console/HealthStrip";
 import {
   UNKNOWN_COUNTS_DETAIL,
+  readIsUnknown,
   staleDetail,
 } from "@/components/console/readFailure";
 import { shareOfFraction } from "@/components/console/share";
 import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
-import { UNKNOWN_AMBER } from "@/components/console/statusRow";
+import { INERT, UNKNOWN_AMBER } from "@/components/console/statusRow";
 import { relativeTime } from "@/components/console/time";
 
 // ---------------------------------------------------------------------------
@@ -337,9 +338,15 @@ export const TOUCH_ATTENTION_BY_KIND: Record<TouchRowKind, Attention> = {
   unrecognised: "waiting",
 };
 
+/**
+ * Both calm kinds are INERT, deliberately. R3 already gives the calm hues
+ * meanings (purple = testing, blue = landing); borrowing them here would mint
+ * two surface-local meanings the guide does not record. The label carries
+ * the difference, which is where R3 says a calm row's content belongs.
+ */
 export const TOUCH_KIND_CLASS: Record<TouchRowKind, string> = {
-  reached_you: "bg-purple-500/10 text-purple-200 border-purple-500/30",
-  agent_can_handle: "bg-blue-500/10 text-blue-200 border-blue-500/30",
+  reached_you: INERT,
+  agent_can_handle: INERT,
   routing_unknown: UNKNOWN_AMBER,
   unrecognised: UNKNOWN_AMBER,
 };
@@ -491,7 +498,7 @@ export function deriveTouchesHealth(input: {
   const window = windowWords(windowDays);
 
   if (!loaded) {
-    if (failed) {
+    if (readIsUnknown(loaded, failed)) {
       return {
         level: "amber",
         headline: "Operator touches could not be read",
@@ -526,24 +533,37 @@ export function deriveTouchesHealth(input: {
   }
 
   const verdict = head.constraint_verdict ?? null;
-  const unknownInputs = verdict?.unknown_inputs ?? [];
+  // No verdict served is NOT "every input was read": the count is a dash.
+  const unknownInputs = Array.isArray(verdict?.unknown_inputs)
+    ? verdict.unknown_inputs
+    : null;
   const verdictBadge: HealthBadge = {
     key: "unknown-inputs",
-    label: `unknown inputs ${unknownInputs.length}`,
+    label: `unknown inputs ${unknownInputs ? unknownInputs.length : "–"}`,
     tone: "muted",
     title:
-      unknownInputs.length > 0
-        ? `What the verdict could not see:\n${unknownInputs.join("\n")}`
-        : "every input to the verdict was read",
+      unknownInputs === null
+        ? "no verdict was served, so what it could not see is unknown"
+        : unknownInputs.length > 0
+          ? `What the verdict could not see:\n${unknownInputs.join("\n")}`
+          : "every input to the verdict was read",
   };
   const stale = failed ? staleDetail("") + " " : "";
 
   if (head.measurement !== "measured") {
+    // A capacity verdict does not depend on the touch store, so an empty
+    // store must not hide it — it rides in the detail line.
+    const capacity = verdictKind(verdict);
+    const capacityNote =
+      capacity === "machines" || capacity === "tokens"
+        ? `${VERDICT_HEADLINE[capacity]} (the touch input is not yet measured). `
+        : "";
     return {
       level: "amber",
       headline: "Not yet measured — the touch emitter has not run",
       detail:
         stale +
+        capacityNote +
         "no operator touch has ever been recorded for this tenant, so every count is absent evidence, not a zero",
       badges: [...dashBadges(), verdictBadge],
       headlineTitle: verdict?.reason ?? null,
@@ -563,12 +583,14 @@ export function deriveTouchesHealth(input: {
 
   let level: HealthStripLevel;
   let headline: string;
+  let ask = "";
   if (failed) {
     level = "amber";
     headline = "These numbers stopped updating";
   } else if (vKind === "operator") {
     level = "green";
-    headline = `${VERDICT_HEADLINE.operator} — ${totals?.operator_reaching ?? "–"} touches reached you in ${window}; the classes below are where a policy would absorb them`;
+    headline = `${VERDICT_HEADLINE.operator} — ${totals?.operator_reaching ?? "–"} reached you in ${window}`;
+    ask = "The classes below are where a policy would absorb them. ";
   } else {
     level = "amber";
     headline = verdictHeadline(verdict);
@@ -577,7 +599,7 @@ export function deriveTouchesHealth(input: {
   return {
     level,
     headline,
-    detail: `${stale}${since}${coverage}`,
+    detail: `${stale}${ask}${since}${coverage}`,
     badges: [
       {
         key: "touches",
