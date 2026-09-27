@@ -45,6 +45,7 @@ import {
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { UNKNOWN_AMBER } from "@/components/console";
 import { OPERATIONS_API } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
@@ -1743,7 +1744,7 @@ function TouchWindowText({
           view.state === "measured"
             ? "text-foreground"
             : view.state === "unknown"
-              ? "text-amber-200"
+              ? `rounded border px-1 ${UNKNOWN_AMBER}`
               : "text-muted-foreground italic"
         }
       >
