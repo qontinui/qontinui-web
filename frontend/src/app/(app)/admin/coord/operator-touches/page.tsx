@@ -113,9 +113,6 @@ export default function CoordOperatorTouchesPage() {
 
   const fetchFirstPage = useCallback(async () => {
     const req = ++reqRef.current;
-    olderReqRef.current += 1;
-    // The superseded older read will not clear its own spinner; clear it here.
-    setLoadingOlder(false);
     setFirstLoading(true);
     try {
       const body = readTouchesBody(
@@ -124,6 +121,12 @@ export default function CoordOperatorTouchesPage() {
         )
       );
       if (reqRef.current !== req) return;
+      // Only a page 1 that LANDS replaces the list, so only then is an older
+      // read against the previous cursor stale. Superseding it here (not at
+      // request time) keeps a valid older page when the refresh fails. Its own
+      // spinner will not clear once superseded, so clear it here.
+      olderReqRef.current += 1;
+      setLoadingOlder(false);
       setHead(body);
       setTouches(touchesOf(body));
       setCursor(body.next_cursor ?? null);

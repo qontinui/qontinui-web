@@ -127,6 +127,15 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
     expect(h.headline).toBe("The constraint is unknown");
   });
 
+  it("a verdict with no unknown_inputs list is unknown, not 'no verdict'", () => {
+    const h = health(
+      measured({ ...UNKNOWN_VERDICT, unknown_inputs: null })
+    );
+    const badge = h.badges.find((b) => b.key === "unknown-inputs");
+    expect(badge?.label).toBe("unknown inputs –");
+    expect(badge?.title).toMatch(/did not list what it could not see/);
+  });
+
   it("an empty touch store does not hide a capacity verdict", () => {
     const h = health({
       ...NOT_YET_MEASURED,
