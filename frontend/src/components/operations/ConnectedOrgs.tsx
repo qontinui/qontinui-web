@@ -53,6 +53,7 @@ import { Building2, CheckCircle2 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { absoluteTime } from "@/components/console/time";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 
 // Same relative base the OnboardingDoctor uses (Next.js proxies /api to the
 // web backend, which forwards to coord with the operator's bearer).
@@ -222,7 +223,11 @@ function AccountRow({
   refetch,
 }: {
   account: ConnectedAccount;
-  refetch: () => Promise<void>;
+  /**
+   * `polled` marks a read the post-enroll poll issues: one request, no 5xx
+   * retry chain (the next tick is the retry).
+   */
+  refetch: (polled?: boolean) => Promise<void>;
 }) {
   const repos = account.repos ?? [];
   const enrolledRepos = repos.filter((r) => !isUnenrolled(r));
@@ -248,6 +253,11 @@ function AccountRow({
   // otherwise see the click-time value).
   const unenrolledCountRef = useRef<number>(unenrolledRepos.length);
   unenrolledCountRef.current = unenrolledRepos.length;
+
+  // True while a poll read is outstanding: a tick that finds it set does not
+  // send a second request (single-flight, plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5).
+  const pollReadInFlightRef = useRef(false);
 
   const clearPoll = useCallback(() => {
     if (pollRef.current !== null) {
@@ -284,10 +294,15 @@ function AccountRow({
       let attempts = 0;
       pollRef.current = setInterval(async () => {
         attempts += 1;
-        try {
-          await refetch();
-        } catch {
-          // transient — keep polling until the cap
+        if (!pollReadInFlightRef.current) {
+          pollReadInFlightRef.current = true;
+          try {
+            await refetch(true);
+          } catch {
+            // transient — keep polling until the cap
+          } finally {
+            pollReadInFlightRef.current = false;
+          }
         }
         if (attempts >= ENROLL_POLL_MAX_ATTEMPTS) {
           clearPoll();
@@ -508,7 +523,8 @@ function AccountRow({
                 data-testid={`unenrolled-detail-${r.repo}`}
               >
                 removed {absoluteTime(r.unenrolled_at)} by{" "}
-                {r.unenrolled_by || "unknown"}: {r.unenroll_reason || "no reason recorded"}
+                {r.unenrolled_by || "unknown"}:{" "}
+                {r.unenroll_reason || "no reason recorded"}
               </span>
               {/* Admin-gated like every other mutation on this surface: the
                   restore re-opens enrollment (profile writes, a possible
@@ -539,10 +555,11 @@ export function ConnectedOrgs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async (polled = false) => {
     try {
       const body = await httpClient.get<AccountsResponse>(
-        `${API}/pr-merge/onboarding/accounts`
+        `${API}/pr-merge/onboarding/accounts`,
+        polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       setAccounts(body.accounts ?? []);
       setError(null);

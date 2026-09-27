@@ -45,6 +45,7 @@ describe("parseRedMainAlerts", () => {
       repo: "jspinak/qontinui-runner",
       workflows: ["CI", "release"],
       blocked_pr_count: 8,
+      queued_proposal_count: 3,
       fix_session: "none",
     },
   };
@@ -57,6 +58,7 @@ describe("parseRedMainAlerts", () => {
         repo: "jspinak/qontinui-runner",
         workflows: ["CI", "release"],
         blockedPrCount: 8,
+        queuedProposalCount: 3,
         since: "2026-07-06T01:00:00Z",
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
@@ -106,11 +108,28 @@ describe("parseRedMainAlerts", () => {
     for (const a of got) {
       expect(a.workflows).toEqual([]);
       expect(a.blockedPrCount).toBe(0);
+      // An absent queue depth is UNREAD, never 0.
+      expect(a.queuedProposalCount).toBeNull();
       // Missing / malformed remediation state degrades to "none", and a row
       // with no claim fields has an UNKNOWN claim.
       expect(a.fixSession).toEqual({ kind: "none" });
       expect(a.claim).toEqual({ kind: "unknown", cause: "not-reported" });
     }
+  });
+
+  it("reads coord's explicit null, and any malformed count, as UNREAD — never 0", () => {
+    // coord (qontinui-coord#2545) writes JSON null when it could not count.
+    for (const raw of [null, "3", -1, 2.5, Number.NaN]) {
+      const [a] = parseRedMainAlerts([
+        { ...redRow, detail: { ...redRow.detail, queued_proposal_count: raw } },
+      ]);
+      expect(a.queuedProposalCount).toBeNull();
+    }
+    const [zero] = parseRedMainAlerts([
+      { ...redRow, detail: { ...redRow.detail, queued_proposal_count: 0 } },
+    ]);
+    // A measured zero stays zero.
+    expect(zero.queuedProposalCount).toBe(0);
   });
 
   it("sorts per-repo so the banner stack is stable across polls", () => {
@@ -266,13 +285,14 @@ describe("sinceLabel", () => {
 describe("redMainHeadline", () => {
   const now = Date.parse("2026-07-06T12:00:00Z");
 
-  it("carries the D2 wording: repo, since, blast radius, no-merges warning", () => {
+  it("carries repo, since, main-red count and queue depth — never a no-merges claim", () => {
     const headline = redMainHeadline(
       {
         alertKey: "red_main:jspinak/qontinui-runner",
         repo: "jspinak/qontinui-runner",
         workflows: ["CI"],
         blockedPrCount: 8,
+        queuedProposalCount: 3,
         since: "2026-07-06T09:00:00Z",
         fixSession: { kind: "none" },
         claim: { kind: "unknown", cause: "not-reported" },
@@ -281,8 +301,11 @@ describe("redMainHeadline", () => {
     );
     expect(headline).toBe(
       "🔴 jspinak/qontinui-runner main is RED since 3h 0m ago — " +
-        "8 PRs blocked, no merges will land until fixed"
+        "8 PRs read main-red, 3 proposals queued; " +
+        "a candidate lands only if its own rebased CI is green"
     );
+    // The falsified claim (coord FALSIFIED_RED_MAIN_PHRASES) must never return.
+    expect(headline.toLowerCase()).not.toContain("no merges will land");
   });
 
   it("uses singular PR for a blast radius of one", () => {
@@ -292,16 +315,38 @@ describe("redMainHeadline", () => {
         repo: "a/b",
         workflows: [],
         blockedPrCount: 1,
+        queuedProposalCount: 1,
         since: undefined,
         fixSession: { kind: "none" },
         claim: { kind: "unknown", cause: "not-reported" },
       },
       now
     );
-    expect(headline).toContain("1 PR blocked");
+    expect(headline).toContain("1 PR read main-red");
+    expect(headline).toContain("1 proposal queued");
     // No first_seen_at → no dangling "since … ago" clause.
     expect(headline).not.toContain("since");
     expect(headline).toContain("a/b main is RED — ");
+  });
+});
+
+describe("redMainHeadline — unread queue depth", () => {
+  it("says the depth is unknown instead of rendering 0", () => {
+    const headline = redMainHeadline(
+      {
+        alertKey: "red_main:a/b",
+        repo: "a/b",
+        workflows: [],
+        blockedPrCount: 2,
+        queuedProposalCount: null,
+        since: undefined,
+        fixSession: { kind: "none" },
+        claim: { kind: "unknown", cause: "not-reported" },
+      },
+      Date.parse("2026-07-06T12:00:00Z")
+    );
+    expect(headline).toContain("merge-queue depth unknown");
+    expect(headline).not.toMatch(/\b0 proposals?\b/);
   });
 });
 
@@ -497,7 +542,7 @@ describe("<RedMainBanner> reachability", () => {
     expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
 
     // Polls 2 and 3 come back empty. Under the old code the first of these
-    // blanked a tenant-wide merge-outage banner.
+    // blanked a live red-main banner.
     for (let i = 0; i < 2; i++) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000);

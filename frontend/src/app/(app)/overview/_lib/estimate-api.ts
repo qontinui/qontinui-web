@@ -380,6 +380,8 @@ export function createEstimate(body: {
   is_baseline: boolean;
   contingency_pct?: string | null;
   accuracy_note?: string | null;
+  /** The delivery-plan document it is built from (Documents). */
+  source_page_id?: string | null;
 }): Promise<EstimateSummary> {
   return httpClient.post<EstimateSummary>(
     `${OVERVIEW_API}/estimates`,

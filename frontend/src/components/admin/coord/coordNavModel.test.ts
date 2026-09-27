@@ -121,6 +121,7 @@ describe("coordNavModel", () => {
     expect(group("access").items.map((i) => i.href)).toEqual([
       "/admin/coord/members",
       "/admin/coord/agent-registry",
+      "/admin/coord/tenant-policy",
     ]);
   });
 
