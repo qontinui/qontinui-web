@@ -16,9 +16,10 @@
 //     is a pause reason, not a footnote.
 //
 //  2. **Duplicated its own headline.** `main_verdict === "red"` is a
-//     tenant-wide merge outage: coord refuses to land ANY PR onto a red main.
+//     whole-repo condition: candidates rebased onto a red main generally
+//     fail CI until the fix lands.
 //     `RedMainBanner` is mounted in the coord LAYOUT (`layout.tsx:60`) and
-//     says exactly that, loudly, on every console route, with the remediation
+//     says so, loudly, on every console route, with the remediation
 //     button attached. Re-stating it as a muted chip below the fold is
 //     strictly worse than not re-stating it.
 //

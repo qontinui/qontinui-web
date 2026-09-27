@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -718,6 +719,287 @@ def test_missing_manifest_json_file_is_vacuous(tmp_path: Path) -> None:
         fetch=_forbid_fetch,
     )
     assert code == guard.EXIT_VACUOUS
+
+
+# ---------------------------------------------------------------------------
+# 6b. the null-`main` UNKNOWN names its precondition as a machine-readable
+#     marker (plan 2026-09-13-a-machine-checkable-precondition-written-as-prose-
+#     is-an-unregistered-gate, Phase 4), and no other path prints one
+# ---------------------------------------------------------------------------
+
+# Byte-for-byte the line qontinui-coord's `guard_rerun.rs` test fixture pins
+# (`const MARKER`) and its allowlist admits for this guard.
+COORD_MARKER_LINE = (
+    'UNKNOWN-PENDING-PRECONDITION: {"kind":"sql_count",'
+    '"query_id":"schema_read_surfaces_main_at_head","op":"gte","n":1}'
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_step_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a CI run of this suite from writing into its OWN step summary."""
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+
+_WORKFLOW_COMMAND = re.compile(r"^::(error|warning|notice)(?: [^:]*)?::")
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\S*Z ")
+
+
+def _as_job_log(text: str) -> list[str]:
+    """The process's raw streams as the Actions job log shows them: the runner
+    RENDERS a ``::error::msg`` workflow command as ``##[error]msg`` (and
+    ``::warning …::`` as ``##[warning]``). Plain lines pass through."""
+    return [
+        _WORKFLOW_COMMAND.sub(lambda m: f"##[{m.group(1)}]", line)
+        for line in text.splitlines()
+    ]
+
+
+def _coord_clean(line: str) -> str:
+    """A model of coord's ``ci_baseline::clean_log_line``: strip ANSI escapes,
+    GitHub's per-line timestamp and ONE leading ``##[error]``, then trim."""
+    line = _TIMESTAMP.sub("", _ANSI.sub("", line), count=1)
+    return line.removeprefix("##[error]").strip()
+
+
+def _markers(text: str) -> list[str]:
+    """Lines coord's ``parse_precondition_markers`` would take as a marker."""
+    prefix = guard.PRECONDITION_MARKER_PREFIX.rstrip()
+    cleaned = (_coord_clean(line) for line in _as_job_log(text))
+    return [line for line in cleaned if line.startswith(prefix)]
+
+
+def test_the_marker_model_matches_coords_normalisation() -> None:
+    """Pin the helper against the shapes coord's own tests use."""
+    decorated = f"2026-09-13T10:00:01.0Z \x1b[31m##[error]{COORD_MARKER_LINE}\x1b[0m"
+    assert _markers(decorated) == [COORD_MARKER_LINE]
+    assert _markers(f"::error::{COORD_MARKER_LINE}") == [COORD_MARKER_LINE]
+    # A warning is not stripped, and a mid-sentence mention is not a marker.
+    assert _markers(f"::warning title=x::{COORD_MARKER_LINE}") == []
+    assert _markers(f"see {COORD_MARKER_LINE}") == []
+
+
+def _main_null_payload() -> dict:
+    return _manifest(("prompt_documents", "agent_write_tier", "sql"), main=None)
+
+
+def test_main_null_prints_exactly_one_marker_equal_to_the_constant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS  # still UNKNOWN, still not green
+    captured = capsys.readouterr()
+    markers = _markers(captured.out + captured.err)
+    assert markers == [COORD_MARKER_LINE]
+    body = markers[0].removeprefix(guard.PRECONDITION_MARKER_PREFIX)
+    assert json.loads(body) == guard.MAIN_AT_HEAD_PRECONDITION
+    # The human sentence stays beside it.
+    assert "serves `main.sha`" in captured.err
+
+
+def test_main_null_marker_survives_a_real_process_and_its_log(
+    tmp_path: Path,
+) -> None:
+    """The job log is the process's streams: run it as CI does, offline."""
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    manifest = _write_manifest(tmp_path, _main_null_payload())
+    result = _run("--files", str(fixture), "--manifest-json", str(manifest))
+    assert result.returncode == guard.EXIT_VACUOUS
+    assert _markers(result.stdout + result.stderr) == [COORD_MARKER_LINE]
+
+
+def test_main_null_on_actions_annotates_a_warning_and_writes_the_summary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert _markers(err) == [COORD_MARKER_LINE]
+    warnings = [
+        line
+        for line in err.splitlines()
+        if line.startswith("::warning title=UNKNOWN-PENDING-PRECONDITION::")
+    ]
+    assert len(warnings) == 1
+    assert "Not a violation." in warnings[0]
+    # Never an ::error:: annotation for the pending precondition itself.
+    assert not any(line.startswith("::error::UNKNOWN") for line in err.splitlines())
+    written = summary.read_text(encoding="utf-8")
+    assert written.startswith("UNKNOWN — pending precondition ")
+    # Only what the guard knows: coord MAY re-run, once, not on candidates.
+    assert written.rstrip().endswith(
+        "coord may re-run this check once when it holds (not on merge-candidate "
+        "refs; at most once per head). Not a violation."
+    )
+    assert "coord re-runs this check when it holds" not in written + err
+
+
+def test_an_unwritable_step_summary_is_reported_and_is_not_a_second_marker(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A directory cannot be opened for append: the OSError fallback fires.
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    fallback = [line for line in err.splitlines() if "cannot append to" in line]
+    assert len(fallback) == 1
+    assert _markers(fallback[0]) == []
+    assert _markers(err) == [COORD_MARKER_LINE]
+
+
+def test_both_halves_null_reports_deployed_and_prints_no_marker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`deployed` is read first, so it is the half named — and its condition
+    has no coord predicate, so no marker (see the comment in parse_manifest)."""
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), main=None, deployed=None
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "`deployed` half of the manifest is null" in err
+    assert "`main` half of the manifest is null" not in err
+    assert _markers(err) == []
+
+
+Case = tuple[list[str], guard.Fetcher]
+
+
+def _drop_args(
+    tmp_path: Path, table: str, column: str, schema: str = "coord"
+) -> list[str]:
+    fixture = _write(tmp_path, "r.py", _drop_column_revision(table, column, schema))
+    return ["--files", str(fixture)]
+
+
+def _deployed_null(tmp_path: Path) -> Case:
+    payload = _manifest(("prompt_documents", "agent_write_tier", "sql"), deployed=None)
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        payload
+    )
+
+
+def _empty_deployed(tmp_path: Path) -> Case:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), deployed_surfaces=[]
+    )
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        payload
+    )
+
+
+def _wildcard(tmp_path: Path) -> Case:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        ("prompt_documents", "*", "unresolved_wildcard"),
+    )
+    return _drop_args(tmp_path, "prompt_documents", "scratch"), _fetch_of(payload)
+
+
+def _fetch_fails(tmp_path: Path) -> Case:
+    def failing(url: str) -> bytes:
+        raise guard.ManifestUnavailableError(f"{url}: connection reset")
+
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), failing
+
+
+def _route_absent(tmp_path: Path) -> Case:
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _http_error(404)
+
+
+def _violation(tmp_path: Path) -> Case:
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        READS_AGENT_WRITABLE
+    )
+
+
+def _report_only(tmp_path: Path) -> Case:
+    args, fetch = _violation(tmp_path)
+    return [*args, "--report-only"], fetch
+
+
+def _static_violation(tmp_path: Path) -> Case:
+    fixture = _write(tmp_path, "p.py", PDTIER_01.read_text(encoding="utf-8"))
+    return ["--files", str(fixture)], _forbid_fetch
+
+
+def _no_coord_drop(tmp_path: Path) -> Case:
+    return _drop_args(
+        tmp_path, "prompt_documents", "agent_writable", schema="project"
+    ), _forbid_fetch
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        (_deployed_null, guard.EXIT_VACUOUS),
+        (_empty_deployed, guard.EXIT_VACUOUS),
+        (_wildcard, guard.EXIT_VACUOUS),
+        (_fetch_fails, guard.EXIT_VACUOUS),
+        (_route_absent, guard.EXIT_VACUOUS),
+        (_violation, guard.EXIT_VIOLATION),
+        (_report_only, 0),
+        (_static_violation, guard.EXIT_VIOLATION),
+        (_no_coord_drop, 0),
+    ],
+    ids=[
+        "deployed-null",
+        "empty-deployed",
+        "wildcard",
+        "fetch-fails",
+        "route-absent-404",
+        "violation",
+        "report-only",
+        "static-violation",
+        "no-coord-drop",
+    ],
+)
+def test_no_other_path_prints_a_marker(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case,
+    expected: int,
+) -> None:
+    """coord's allowlist admits only the null-`main` predicate for this guard,
+    so any other UNKNOWN printing one would be refused — and any other exit is
+    no pending precondition at all. Annotations ON, so a stray ``::warning``
+    or summary line is caught too."""
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    args, fetch = case(tmp_path)
+    assert guard.main(args, fetch=fetch) == expected
+    captured = capsys.readouterr()
+    assert _markers(captured.out + captured.err) == []
+    assert "UNKNOWN-PENDING-PRECONDITION" not in captured.out + captured.err
+    assert "::warning" not in captured.out + captured.err
+    assert not summary.exists()
 
 
 # ---------------------------------------------------------------------------

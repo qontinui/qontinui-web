@@ -35,6 +35,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Rocket } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlight } from "@/components/operations/useSingleFlightPoll";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -119,7 +121,11 @@ function shortTarget(target: string | null | undefined): string {
 
 /** `lag_seconds` → "Nm behind" / "Nh Nm behind". null → "". */
 function lagLabel(lagSeconds: number | null | undefined): string {
-  if (typeof lagSeconds !== "number" || !Number.isFinite(lagSeconds) || lagSeconds <= 0) {
+  if (
+    typeof lagSeconds !== "number" ||
+    !Number.isFinite(lagSeconds) ||
+    lagSeconds <= 0
+  ) {
     return "";
   }
   const total = Math.floor(lagSeconds);
@@ -182,7 +188,7 @@ function SurfaceChip({ c }: { c: ReleaseSurfaceComponents }) {
 
 export function DeployStatusStrip() {
   const [surfaces, setSurfaces] = useState<ReleaseSurfaceComponents[] | null>(
-    null,
+    null
   );
   const [loading, setLoading] = useState(true);
   // Why the data on screen may be stale — the coord_error from a degraded 200,
@@ -190,34 +196,25 @@ export function DeployStatusStrip() {
   // the reconnecting marker and the fast poll. Replaces the old `failed`
   // boolean, which conflated "coord is down" with "we have nothing to show".
   const [degraded, setDegraded] = useState<string | null>(null);
-  const inFlight = useRef(false);
 
   // Synchronous mirror of the last APPLIED surfaces. `load` is memoized with no
   // deps, so reading the `surfaces` STATE inside it would always see the initial
-  // `null` (a stale closure) and never retain. The `inFlight` guard means
+  // `null` (a stale closure) and never retain. The single-flight latch means
   // fetches never overlap, so this ref always reads fresh.
   const surfacesRef = useRef<ReleaseSurfaceComponents[] | null>(null);
 
-  // Unmount safety for the async setState calls (replaces the old per-effect
-  // `cancelled` flag, which can't span the split load/poll effects).
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  const load = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // failed read is retried by the next tick, never by `httpClient`'s 5xx backoff
+  // chain, and never overlaps itself. `isCurrent()` turns false on unmount, which
+  // replaces the old `mounted` ref for the async setState calls.
+  const load = useCallback(async (isCurrent: () => boolean) => {
     // Apply one fetch's outcome under the retention rule. `degradedReason` is
     // the coord_error (success path) or the thrown error's message (catch
     // path) — both mean the same thing to the strip.
     const applyResult = (
       list: ReleaseSurfaceComponents[],
-      degradedReason: string | null,
+      degradedReason: string | null
     ) => {
       // Retain the last-good chips when this fetch degraded and we actually
       // have something to keep; otherwise apply the response as-is.
@@ -236,44 +233,46 @@ export function DeployStatusStrip() {
     try {
       const resp = await httpClient.get<ReleaseVerdictResponse>(
         RELEASE_RAW_URL,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       const list = (resp?.verdict?.surfaces ?? [])
         .map((s) => s?.components)
         .filter(
           (c): c is ReleaseSurfaceComponents =>
-            c != null && typeof c === "object",
+            c != null && typeof c === "object"
         );
       applyResult(list, resp?.coord_error ?? null);
     } catch (e) {
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       // A thrown fetch error degrades on exactly the same rule as a coord_error
       // envelope: retain the chips if we have any, otherwise fall through to
       // the cold-start one-liner.
       applyResult([], e instanceof Error ? e.message : String(e));
     } finally {
-      if (mounted.current) setLoading(false);
-      inFlight.current = false;
+      if (isCurrent()) setLoading(false);
     }
   }, []);
+
+  // Not `useSingleFlightPoll`: the cadence changes with `degraded`, so this
+  // owns its timer and routes every call through the latch. Called before the
+  // effects below so its `activeRef` is set first.
+  const { refresh, tick } = useSingleFlight(load);
 
   // Initial fetch. `surfaces`/`surfacesRef` are deliberately never cleared —
   // retention across an outage depends on them surviving.
   useEffect(() => {
-    load();
-  }, [load]);
+    void refresh();
+  }, [refresh]);
 
   // Poll. While degraded, poll faster so retained chips are corrected soon
   // after coord recovers; a healthy response clears `degraded` and this effect
   // re-runs at the normal cadence.
   useEffect(() => {
-    const intervalMs =
-      degraded !== null ? RECONNECT_REFRESH_MS : REFRESH_MS;
-    const id = setInterval(() => {
-      load();
-    }, intervalMs);
+    const intervalMs = degraded !== null ? RECONNECT_REFRESH_MS : REFRESH_MS;
+    const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
-  }, [degraded, load]);
+  }, [degraded, tick]);
 
   // Loading (first paint) → a thin skeleton.
   if (loading && surfaces === null && degraded === null) {

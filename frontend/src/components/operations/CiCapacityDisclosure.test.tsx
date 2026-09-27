@@ -270,10 +270,11 @@ describe("consent UX at the Dev Ops mount", () => {
     await openDisclosure();
 
     // The defaults themselves, restated so a friendlier edit to the constant
-    // fails here too: off, empty allowlist, one build, 20 GiB floor.
+    // fails here too: off, empty allowlist, capacity left to the host's
+    // suggestion (never a number this surface invented), 20 GiB floor.
     expect(CI_NODE_DEFAULTS).toEqual({
       enabled: false,
-      max_concurrent_builds: 1,
+      max_concurrent_builds: null,
       repo_allowlist: [],
       min_free_disk_gb: 20,
     });
@@ -281,8 +282,11 @@ describe("consent UX at the Dev Ops mount", () => {
       "data-state",
       "unchecked"
     );
-    expect(screen.getByTestId("ci-node-max-builds")).toHaveValue(
-      CI_NODE_DEFAULTS.max_concurrent_builds
+    // An empty number box (jest-dom reads it as `null`), not a pre-filled 1.
+    expect(screen.getByTestId("ci-node-max-builds")).toHaveValue(null);
+    expect(screen.getByTestId("ci-node-max-builds-mode")).toHaveAttribute(
+      "data-mode",
+      "suggested"
     );
     expect(screen.getByTestId("ci-node-min-disk")).toHaveValue(
       CI_NODE_DEFAULTS.min_free_disk_gb

@@ -1,10 +1,10 @@
 /**
  * useRunnerWindDown — the device-keyed polls behind `/admin/coord/runners`.
  *
- * Pinned here: **an answer older than the last one applied is dropped.** The
- * poll and an operator's refresh race; when the earlier request lands last,
- * applying it would put an older readiness verdict back on screen after a
- * newer one had already replaced it.
+ * Pinned here: **the poll and an operator's refresh never overlap.** A refresh
+ * issued while a read is outstanding runs once, after it, and its answer is
+ * the one on screen — so an older readiness verdict can never land after a
+ * newer one.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -56,7 +56,12 @@ beforeEach(() => {
 });
 
 describe("useDeviceReadiness", () => {
-  it("drops an older response that lands after a newer one", async () => {
+  it("never overlaps: a refresh during a flight runs once, after it, and its answer wins", async () => {
+    // Plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
+    // D5: one request per (route, tab). Before it, the poll and an operator's
+    // refresh raced and a sequence number dropped the older answer; now they
+    // cannot overlap, so the refresh queues ONE trailing request and the
+    // answer it produces is the one on screen.
     const first = deferred<ReturnType<typeof sampleResponse>>();
     const second = deferred<ReturnType<typeof sampleResponse>>();
     httpFetch
@@ -64,32 +69,33 @@ describe("useDeviceReadiness", () => {
       .mockImplementationOnce(() => second.promise);
 
     const { result } = renderHook(() => useDeviceReadiness(DEVICE));
-    // The mount issued request 1; a manual refresh issues request 2.
     let refreshing!: Promise<void>;
-    act(() => {
+    await act(async () => {
       refreshing = result.current.refresh();
+      // The poll is invoked from a microtask; let it reach the wire.
+      await Promise.resolve();
+      await Promise.resolve();
     });
-    expect(httpFetch).toHaveBeenCalledTimes(2);
+    // The mount's request is outstanding, so the refresh sent nothing yet.
+    expect(httpFetch).toHaveBeenCalledTimes(1);
 
-    // Request 2 answers first…
+    await act(async () => {
+      first.resolve(sampleResponse("older verdict"));
+      await first.promise;
+    });
+    await waitFor(() => expect(httpFetch).toHaveBeenCalledTimes(2));
+
     await act(async () => {
       second.resolve(sampleResponse("newer verdict"));
       await refreshing;
     });
     await waitFor(() =>
       expect(
-        result.current.read.kind === "fresh" && result.current.read.sample.reason
+        result.current.read.kind === "fresh" &&
+          result.current.read.sample.reason
       ).toBe("newer verdict")
     );
-
-    // …then the stalled request 1 lands. It must not replace the newer answer.
-    await act(async () => {
-      first.resolve(sampleResponse("older verdict"));
-      await first.promise;
-    });
-    expect(
-      result.current.read.kind === "fresh" && result.current.read.sample.reason
-    ).toBe("newer verdict");
+    expect(httpFetch).toHaveBeenCalledTimes(2);
   });
 
   it("issues no request until a device is chosen", () => {
