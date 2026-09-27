@@ -118,6 +118,24 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
     expect(h.headlineTitle).toBe(UNKNOWN_VERDICT.reason);
   });
 
+  it("a page-1 payload with no verdict shows the dash, not 'unknown inputs 0'", () => {
+    const h = health(measured(UNKNOWN_VERDICT, { constraint_verdict: null }));
+    const badge = h.badges.find((b) => b.key === "unknown-inputs");
+    expect(badge?.label).toBe("unknown inputs –");
+    expect(badge?.title).toMatch(/no verdict was served/);
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("The constraint is unknown");
+  });
+
+  it("an empty touch store does not hide a capacity verdict", () => {
+    const h = health({
+      ...NOT_YET_MEASURED,
+      constraint_verdict: { ...UNKNOWN_VERDICT, verdict: "machines" },
+    });
+    expect(h.headline).toBe("Not yet measured — the touch emitter has not run");
+    expect(h.detail).toContain("Machines are the constraint");
+  });
+
   it("names every unknown input in the verdict badge", () => {
     const h = health(measured(UNKNOWN_VERDICT));
     const badge = h.badges.find((b) => b.key === "unknown-inputs");
@@ -149,7 +167,8 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
       measured({ ...UNKNOWN_VERDICT, verdict: "operator", reason: "4 touches" })
     );
     expect(h.level).toBe("green");
-    expect(h.headline).toMatch(/^You are the constraint — 4 touches reached you/);
+    expect(h.headline).toBe("You are the constraint — 4 reached you in the last 7 days");
+    expect(h.detail).toMatch(/where a policy would absorb them/);
     expect(h.measured).toBe(true);
     expect(badgeText(h)).toEqual(
       expect.arrayContaining([

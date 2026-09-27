@@ -157,7 +157,7 @@ describe("/admin/coord/operator-touches", () => {
     // The strip states the verdict calmly with the ask in words.
     const strip = screen.getByTestId("coord-operator-touches-health");
     expect(strip).toHaveAttribute("data-health-level", "green");
-    expect(strip).toHaveTextContent(/You are the constraint — 4 touches/);
+    expect(strip).toHaveTextContent(/You are the constraint — 4 reached you/);
     expect(screen.getByTestId("operator-touches-filter-operator_reaching"))
       .toHaveTextContent("4");
   });
@@ -222,5 +222,78 @@ describe("/admin/coord/operator-touches", () => {
     expect(strip).toHaveTextContent("Operator touches could not be read");
     expect(strip).toHaveTextContent("touches –");
     expect(screen.queryByTestId("operator-touches-empty")).toBeNull();
+  });
+
+  it("sends the disposition filter and keeps the tab counts from the aggregate", async () => {
+    httpGet.mockResolvedValue(MEASURED);
+    const user = userEvent.setup();
+    render(<CoordOperatorTouchesPage />);
+    await screen.findAllByTestId("operator-touch-row");
+
+    await user.click(screen.getByTestId("operator-touches-filter-agent_dispatchable"));
+    await waitFor(() => expect(httpGet).toHaveBeenCalledTimes(2));
+    expect(String(httpGet.mock.calls[1]?.[0])).toContain(
+      "disposition=agent_dispatchable"
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("operator-touches-filter-operator_reaching")
+      ).toHaveTextContent("4")
+    );
+  });
+
+  it("does not claim 'no match' for a scan-bounded empty page with a cursor", async () => {
+    httpGet.mockResolvedValue({
+      ...MEASURED,
+      touches: [],
+      next_cursor: "2026-09-20T00:00:00.000000Z_scan",
+    });
+    render(<CoordOperatorTouchesPage />);
+    expect(
+      await screen.findByTestId("operator-touches-empty-scan-bounded")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("operator-touches-empty")).toBeNull();
+    expect(screen.getByTestId("operator-touches-older")).toBeEnabled();
+  });
+
+  it("never splices an older page fetched before a refresh onto the new page 1", async () => {
+    let releaseOlder: (v: unknown) => void = () => {};
+    httpGet
+      .mockResolvedValueOnce(MEASURED)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseOlder = resolve))
+      )
+      .mockResolvedValueOnce({ ...MEASURED, touches: [touch("fresh")], next_cursor: null });
+    const user = userEvent.setup();
+    render(<CoordOperatorTouchesPage />);
+
+    await user.click(await screen.findByTestId("operator-touches-older"));
+    await user.click(screen.getByTestId("operator-touches-refresh"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("operator-touch-row")).toHaveLength(1)
+    );
+    // The stale older page lands AFTER the refresh; it must be discarded.
+    releaseOlder({ aggregate_included: false, touches: [touch("stale")], next_cursor: "x" });
+    await new Promise((r) => setTimeout(r, 20));
+    const rows = screen.getAllByTestId("operator-touch-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.getAttribute("data-row-key")).toBe("fresh");
+    expect(screen.queryByTestId("operator-touches-older")).toBeNull();
+  });
+
+  it("names a failed older-page read without dropping the rows already shown", async () => {
+    httpGet
+      .mockResolvedValueOnce(MEASURED)
+      .mockRejectedValueOnce(
+        new Error('GET /x failed: 503 - {"error":"db_unavailable","detail":"p"}')
+      );
+    const user = userEvent.setup();
+    render(<CoordOperatorTouchesPage />);
+    await user.click(await screen.findByTestId("operator-touches-older"));
+    expect(
+      await screen.findByText(/Older touches could not be read — .*database did not answer/)
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId("operator-touch-row")).toHaveLength(2);
+    expect(screen.getByTestId("operator-touches-older")).toBeEnabled();
   });
 });

@@ -205,11 +205,11 @@ class TestOperatorTouchesProxy:
         _, mock_instance = _get(auth_client, url, _mock_response(200, LATER_PAGE))
         params = mock_instance.get.call_args.kwargs["params"]
         assert params == {
-            "window_days": 30,
+            "window_days": "30",
             "disposition": "agent_dispatchable",
             "open_only": "true",
             "actionable_only": "false",
-            "limit": 25,
+            "limit": "25",
             "before": cursor,
         }
 
@@ -227,14 +227,22 @@ class TestOperatorTouchesProxy:
         headers = mock_instance.get.call_args.kwargs["headers"]
         assert headers["Authorization"] == f"Bearer {TEST_BEARER}"
 
-    def test_limit_outside_coords_bounds_is_refused_at_the_edge(
-        self, auth_client: TestClient
+    @pytest.mark.parametrize("query", ["limit=500", "window_days=abc", "open_only=yes"])
+    def test_values_coord_validates_reach_coord_unchanged(
+        self, auth_client: TestClient, query: str
     ):
+        """No edge 422: coord clamps ``limit`` and answers anything malformed
+        with its own typed 400, which is the shape the page reads. A FastAPI
+        422 here would be a different body blamed on coord."""
+        key, value = query.split("=")
         resp, mock_instance = _get(
-            auth_client, f"{TOUCHES_ROUTE}?limit=201", _mock_response(200, {})
+            auth_client,
+            f"{TOUCHES_ROUTE}?{query}",
+            _mock_response(400, {"error": "bad_request", "detail": "x"}),
         )
-        assert resp.status_code == 422
-        mock_instance.get.assert_not_called()
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "bad_request", "detail": "x"}
+        assert mock_instance.get.call_args.kwargs["params"] == {key: value}
 
     @pytest.mark.parametrize(
         "status,body",
@@ -284,7 +292,7 @@ class TestConstraintVerdictProxy:
         assert mock_instance.get.call_args[0][0].endswith(
             "/coord/operator-touches/constraint-verdict"
         )
-        assert mock_instance.get.call_args.kwargs["params"] == {"window_days": 30}
+        assert mock_instance.get.call_args.kwargs["params"] == {"window_days": "30"}
 
     def test_no_window_sends_no_params(self, auth_client: TestClient):
         _, mock_instance = _get(
