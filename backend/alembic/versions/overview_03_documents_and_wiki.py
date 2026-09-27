@@ -1,7 +1,7 @@
 """overview.* — documents and wiki: pages, page_versions, page_links, files
 
 Revision ID: overview_03_documents_and_wiki
-Revises: coord_iops_idx_01
+Revises: coord_proposal_family_comments_01
 Create Date: 2026-09-26
 
 Phase 2 of ``2026-09-20-overview-authoring-layer`` (the overview plan's Phase 7
@@ -46,7 +46,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "overview_03_documents_and_wiki"
-down_revision: str | Sequence[str] | None = "coord_iops_idx_01"
+down_revision: str | Sequence[str] | None = "coord_proposal_family_comments_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
