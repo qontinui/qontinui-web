@@ -25,8 +25,12 @@ What is asserted
    rows of the same half and many rows of other kinds.
 5. **Sensitivity: another event kind does NOT get the index.** Without this,
    assertion 3 would still pass against a whole-table index.
-6. Re-running the upgrade is a no-op, and downgrade removes the index while
-   the rows survive.
+6. Re-executing the revision (``stamp`` back to the parent, then
+   ``upgrade``) over a valid index keeps it unchanged.
+7. An INVALID leftover (``indisvalid = false``) is dropped and rebuilt valid.
+8. A valid same-named index with the wrong definition makes the upgrade
+   RAISE rather than stamp.
+9. Downgrade removes the index while the rows survive.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
 Postgres, skipped when none is reachable.
@@ -263,7 +267,53 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
             "a non-interactivity read must NOT match this partial index:\n" + other_plan
         )
 
-        # 6. Idempotent re-run, then downgrade removes the index only.
+        # 6. Re-running the revision body over an EXISTING valid index keeps
+        #    it. `stamp` rewinds the version table without touching the
+        #    catalog, so the next `upgrade` really executes the revision again.
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        valid, definition_again, _ = _index_state(engine)
+        assert valid and definition_again == definition
+
+        # 7. Heal: an INVALID leftover (a killed CONCURRENTLY build) is
+        #    dropped and rebuilt, where IF NOT EXISTS alone would keep it.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
+                    "'coord.coord_session_events_interactivity_idx'::regclass"
+                )
+            )
+        assert not _index_state(engine)[0]
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _index_state(engine)[0], "the INVALID index must be rebuilt valid"
+
+        # 8. Refusal: a VALID same-named index built differently is not
+        #    silently accepted — the revision raises rather than stamping.
+        with engine.begin() as conn:
+            conn.execute(
+                text("DROP INDEX coord.coord_session_events_interactivity_idx")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX coord_session_events_interactivity_idx "
+                    "ON coord.session_events (session_id)"
+                )
+            )
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        refused = run_alembic(root, url, "upgrade", _REVISION_ID, expect_success=False)
+        assert "lacks" in refused.stdout + refused.stderr, (
+            refused.stdout + refused.stderr
+        )
+        with engine.begin() as conn:
+            conn.execute(
+                text("DROP INDEX coord.coord_session_events_interactivity_idx")
+            )
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _index_state(engine)[0]
+
+        # 9. Downgrade removes the index only; the rows survive.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
         with engine.connect() as conn:
@@ -271,7 +321,3 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
                 conn.execute(text("SELECT count(*) FROM coord.session_events")).scalar()
                 == total
             ), "downgrade drops the index only — rows are untouched"
-        run_alembic(root, url, "upgrade", _REVISION_ID)
-        run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert index_exists(engine, _INDEX_NAME)
-        assert _index_state(engine)[0]

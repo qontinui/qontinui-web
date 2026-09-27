@@ -5124,19 +5124,155 @@ async def test_input_ack_for_an_unknown_or_unbound_grant_is_dropped(
     await relay.release_source(ws)
 
 
-async def test_input_ack_under_an_expired_grant_is_dropped(
+async def test_input_ack_under_an_expired_grant_is_reaped_not_delivered(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Expiry is the dispatch's reap, not the ack arm's: the grant is evicted
+    (the source hears the expiry) and the ack finds nothing to route to."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    assert await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims)) is False
+    assert ws.of_type("remote_terminal_input_ack") == []
+    assert claims["jti"] not in session.grants
+    await relay.release_source(ws)
+
+
+async def test_input_ack_routes_by_the_remote_block_over_a_foreign_top_level_jti(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``remote.grant_jti`` is the routing mark; a top-level ``grant_jti``
+    naming another source's grant neither misroutes nor leaks through."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    frame = _ack(claims, grant_jti="another-sources-grant")
+    assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+    (delivered,) = ws.of_type("remote_terminal_input_ack")
+    assert delivered["grant_jti"] == claims["jti"]
+    await relay.release_source(ws)
+
+
+async def test_input_ack_cannot_speak_in_the_relays_voice(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``code`` / ``request_id`` are stripped and ``error`` is capped."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    long_error = "input_write_failed: " + "x" * 5000
+    frames = (
+        _ack(
+            claims,
+            accepted=False,
+            error=long_error,
+            code="listener_lost",
+            request_id="history:1",
+        ),
+        _ack(claims, seq=8, accepted=False, error={"not": "a string"}),
+    )
+    for frame in frames:
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+
+    capped, non_string = ws.of_type("remote_terminal_input_ack")
+    assert "code" not in capped and "request_id" not in capped
+    assert capped["error"] == long_error[: rtr.TARGET_MESSAGE_MAX]
+    assert capped["error"].startswith("input_write_failed: ")
+    assert "error" not in non_string and non_string["accepted"] is False
+    await relay.release_source(ws)
+
+
+async def test_input_ack_terminal_mismatch_warns_once_per_grant(
     relay: RemoteTerminalRelay,
 ) -> None:
     ws = _FakeWS()
     manager = _manager()
     claims = await _attached(relay, ws, manager, terminal_id="t1")
     session = relay._sessions[id(ws)]
-    session.grants[claims["jti"]].exp = int(time.time()) - 1
-    before_acks = len(ws.of_type("remote_terminal_input_ack"))
 
-    assert await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims)) is False
-    assert len(ws.of_type("remote_terminal_input_ack")) == before_acks
-    assert claims["jti"] not in session.grants
+    with (
+        patch.object(rtr.logger, "warning") as warning,
+        patch.object(rtr.logger, "debug") as debug,
+    ):
+        for _ in range(3):
+            assert (
+                await relay.route_target_frame(
+                    session, TARGET_DEVICE, _ack(claims, terminal_id="t-other")
+                )
+                is False
+            )
+    mismatch = "remote_terminal_input_ack_terminal_mismatch"
+    assert [c.args[0] for c in warning.call_args_list].count(mismatch) == 1
+    assert [c.args[0] for c in debug.call_args_list].count(mismatch) == 2
+    await relay.release_source(ws)
+
+
+async def test_forward_keeps_relay_owned_keys_whatever_extra_carries(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Relay-owned keys win in ``_forward`` even if ``extra`` names them."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    manager.send_terminal.reset_mock()
+
+    sent = await relay._forward(
+        session,
+        {},
+        att,
+        "terminal_input",
+        {
+            "type": "terminal_create",
+            "terminal_id": "t-forged",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "remote": {"grant_jti": "forged"},
+            "data": "eA==",
+        },
+    )
+    assert sent is True
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["terminal_id"] == "t1"
+    assert frame["remote"] == att.remote_block()
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+    assert frame["data"] == "eA=="
+    await relay.release_source(ws)
+
+
+async def test_source_input_cannot_override_type_terminal_or_timestamp(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "data": "eA==",
+            "seq": 1,
+        },
+    )
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["terminal_id"] == "t1"
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
     await relay.release_source(ws)
 
 
