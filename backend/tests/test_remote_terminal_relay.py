@@ -5248,9 +5248,17 @@ async def test_forward_keeps_relay_owned_keys_whatever_extra_carries(
     await relay.release_source(ws)
 
 
-async def test_source_input_cannot_override_type_terminal_or_timestamp(
+async def test_source_input_cannot_override_type_or_timestamp(
     relay: RemoteTerminalRelay,
 ) -> None:
+    """Through the source path the relay's ``type`` and ``timestamp`` win.
+
+    ``terminal_id`` cannot be exercised here: a source naming a terminal other
+    than the bound one is refused by ``_authorize`` before any forward, which
+    the second half pins. The ``_forward`` ordering for ``terminal_id`` is
+    covered directly by
+    ``test_forward_keeps_relay_owned_keys_whatever_extra_carries``.
+    """
     ws = _FakeWS()
     manager = _manager()
     claims = await _attached(relay, ws, manager, terminal_id="t1")
@@ -5271,8 +5279,23 @@ async def test_source_input_cannot_override_type_terminal_or_timestamp(
     )
     frame = manager.send_terminal.await_args.args[1]
     assert frame["type"] == "terminal_input"
-    assert frame["terminal_id"] == "t1"
     assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+
+    manager.send_terminal.reset_mock()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t-other",
+            "data": "eA==",
+            "seq": 2,
+        },
+    )
+    manager.send_terminal.assert_not_called()
+    assert ws.of_type("error")[-1]["code"] == "attach_not_registered"
     await relay.release_source(ws)
 
 

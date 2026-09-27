@@ -27,7 +27,9 @@ What is asserted
    assertion 3 would still pass against a whole-table index.
 6. Re-executing the revision (``stamp`` back to the parent, then
    ``upgrade``) over a valid index keeps it unchanged.
-7. An INVALID leftover (``indisvalid = false``) is dropped and rebuilt valid.
+7. An INVALID leftover (``indisvalid = false``) is dropped and rebuilt valid —
+   a separate test, skipped when the test role is not a superuser (faking a
+   killed build means writing ``pg_index``).
 8. A valid same-named index with the wrong definition makes the upgrade
    RAISE rather than stamp.
 9. Downgrade removes the index while the rows survive.
@@ -109,6 +111,18 @@ def _index_state(engine: Engine) -> tuple[bool, str, str]:
             {"idx": _INDEX_NAME},
         ).one()
     return bool(row[0]), str(row[1]), str(row[2] or "")
+
+
+def _index_oid(engine: Engine) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT 'coord.coord_session_events_interactivity_idx'"
+                    "::regclass::oid"
+                )
+            ).scalar_one()
+        )
 
 
 def _plan_for(engine: Engine, sql: str, params: dict[str, str]) -> str:
@@ -270,24 +284,17 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
         # 6. Re-running the revision body over an EXISTING valid index keeps
         #    it. `stamp` rewinds the version table without touching the
         #    catalog, so the next `upgrade` really executes the revision again.
+        #    The OID pins "kept": a drop-and-rebuild would produce the same
+        #    definition under a new OID.
+        oid_before = _index_oid(engine)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
         valid, definition_again, _ = _index_state(engine)
         assert valid and definition_again == definition
+        assert _index_oid(engine) == oid_before, "a valid index must not be rebuilt"
 
-        # 7. Heal: an INVALID leftover (a killed CONCURRENTLY build) is
-        #    dropped and rebuilt, where IF NOT EXISTS alone would keep it.
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
-                    "'coord.coord_session_events_interactivity_idx'::regclass"
-                )
-            )
-        assert not _index_state(engine)[0]
-        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_state(engine)[0], "the INVALID index must be rebuilt valid"
+        # 7. The INVALID-leftover heal needs a superuser to fake the killed
+        #    build, so it is its own test below.
 
         # 8. Refusal: a VALID same-named index built differently is not
         #    silently accepted — the revision raises rather than stamping.
@@ -321,3 +328,52 @@ def test_coord_sessev_interact_idx_01_serves_the_interactivity_lateral() -> None
                 conn.execute(text("SELECT count(*) FROM coord.session_events")).scalar()
                 == total
             ), "downgrade drops the index only — rows are untouched"
+
+
+@pytest.mark.skipif(
+    not can_connect(admin_database_url()),
+    reason="Postgres not reachable at the conftest URL (see the test above).",
+)
+def test_coord_sessev_interact_idx_01_heals_an_invalid_leftover() -> None:
+    """A killed CONCURRENTLY build's INVALID index is dropped and rebuilt.
+
+    ``IF NOT EXISTS`` alone would keep the corpse and stamp the revision.
+    Faking that corpse means ``UPDATE pg_index``, which only a superuser may
+    do, so on a non-superuser role this SKIPS rather than failing.
+    """
+    root = backend_root()
+
+    with ephemeral_database(admin_database_url(), "coord_sessev_interact_heal") as (
+        engine,
+        url,
+    ):
+        with engine.connect() as conn:
+            superuser = bool(
+                conn.execute(
+                    text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+                ).scalar()
+            )
+        if not superuser:
+            pytest.skip(
+                "the test role is not a superuser, so it cannot set "
+                "pg_index.indisvalid to fake a killed CONCURRENTLY build"
+            )
+
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        oid_before = _index_oid(engine)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
+                    "'coord.coord_session_events_interactivity_idx'::regclass"
+                )
+            )
+        assert not _index_state(engine)[0]
+
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+
+        assert _index_state(engine)[0], "the INVALID index must be rebuilt valid"
+        assert _index_oid(engine) != oid_before, (
+            "healing means DROP + rebuild — a new index, not the flipped one"
+        )
