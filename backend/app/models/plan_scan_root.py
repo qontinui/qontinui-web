@@ -266,3 +266,95 @@ class PlanScanRootObservation(Base):
         default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
+
+
+#: The longest ``last_refused_reason`` stored. Enforced by the CHECK below and
+#: by :func:`app.crud.plan_scan_root.refusal_reason`, which builds the reason.
+REFUSAL_REASON_MAX = 512
+
+
+class PlanScanRootRefusal(Base):
+    """The refused reports one device sent for one organization.
+
+    Plan ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``,
+    Phase 1. Mirrors alembic revision ``plan_library_09_scan_root_refusals``.
+
+    A report the write route refuses (a 422) writes NO reading, so before this
+    table a device whose every report was refused aged to
+    ``observation_stale`` and looked exactly like one that was switched off.
+    This row records that the device is alive and being refused.
+
+    It is a SEPARATE table from :class:`PlanScanRootObservation` on purpose.
+    A device refused on its first-ever report has no reading, and the
+    observation row's NOT NULL reading columns would force a fabricated
+    placeholder — whose server-clock ``observed_at`` would then decline the
+    device's first genuine report as out of order. Keeping refusals here makes
+    "a refusal never overwrites a good reading" true by construction.
+
+    One row per ``(organization, device)``, keyed by the same NULL-collapsing
+    identity expression as the observations. Nothing deletes a row: a device
+    that stops being refused simply stops moving ``last_refused_at``.
+    """
+
+    __tablename__ = "plan_scan_root_refusals"
+    __table_args__ = (
+        Index(
+            "uq_plan_scan_root_refusals_identity",
+            text(IDENTITY_ORG_SQL),
+            text("device_id"),
+            unique=True,
+        ),
+        CheckConstraint(
+            f"char_length(last_refused_reason) <= {REFUSAL_REASON_MAX}",
+            name="ck_plan_scan_root_refusals_reason_length",
+        ),
+        CheckConstraint(
+            "refused_count >= 1",
+            name="ck_plan_scan_root_refusals_count_positive",
+        ),
+        {"schema": "agent"},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    #: The reporting principal's organization, exactly as a reading's — never
+    #: from the (refused) body.
+    organization_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+
+    #: The verified device token's ``device_id`` claim.
+    device_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+
+    #: This server's clock at the device's first refused report.
+    first_refused_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    #: This server's clock at the device's latest refused report. A liveness
+    #: stamp in its own right: the device demonstrably reported.
+    last_refused_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    #: ``"<loc>: <type>"`` of the latest refusal's first error, plus
+    #: ``(+N more)``. Never an input value — a refused body is untrusted, and
+    #: this string is served to every corpus reader.
+    last_refused_reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    #: How many refused reports since ``first_refused_at``.
+    refused_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=1, server_default=text("1")
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=text("now()"),
+    )

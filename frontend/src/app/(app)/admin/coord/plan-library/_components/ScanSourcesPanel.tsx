@@ -241,13 +241,47 @@ const SKEW_WORTH_REPORTING_SECS = 60;
  */
 function skewSummary(row: ScanRootRow): string | null {
   const skew = row.observed_skew_secs;
-  if (Math.abs(skew) < SKEW_WORTH_REPORTING_SECS) return null;
+  // `null` on a refusal-only row: there is no stored reading to be skewed.
+  if (skew == null || Math.abs(skew) < SKEW_WORTH_REPORTING_SECS) return null;
   if (skew < 0) {
     return `The runner's clock was ${shortDuration(-skew)} ahead of this server's when it reported.`;
   }
   return row.last_report_applied
     ? `This reading reached the server ${shortDuration(skew)} after the runner took it — a runner clock behind this one, or a late delivery.`
     : `This reading is ${shortDuration(skew)} older than the device's last contact, which a superseded reading produces on its own — with or without a clock problem on top.`;
+}
+
+/**
+ * The refused-report sentence, or `null` when the device was never refused.
+ *
+ * A refused report (a 422) stores no reading, so before the server recorded
+ * refusals a device refused on every report aged into `observation_stale` and
+ * read exactly like one switched off. This line is what says it is alive and
+ * being refused. Shown whether or not the refusal decided the verdict: beside
+ * a fresh reading it is history an operator may still want, and the verdict's
+ * own `refused:` detail is what says when it is the current story.
+ *
+ * `refused_count: null` is "never refused", which is not 0 — so the line is
+ * omitted rather than rendered as "0 refused".
+ */
+export function refusalSummary(row: ScanRootRow): string | null {
+  if (row.refused_count == null || row.refused_age_secs == null) return null;
+  const reason = row.last_refused_reason ?? "reason not served";
+  return `Last report refused ${shortDuration(row.refused_age_secs)} ago (${reason}); ${row.refused_count} refused in all.`;
+}
+
+/**
+ * The liveness label: when the server last STORED a reading from the device.
+ *
+ * A refusal-only device has no reading at all (`observation_age_secs: null`),
+ * which must not render as "silent 0s" — the device may have tried seconds ago,
+ * and the refusal line says when.
+ */
+function ageLabel(row: ScanRootRow): string {
+  if (row.observation_age_secs == null) return "no reading stored";
+  return row.observation_fresh
+    ? `heard ${shortDuration(row.observation_age_secs)} ago`
+    : `silent ${shortDuration(row.observation_age_secs)}`;
 }
 
 /**
@@ -268,6 +302,7 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
     row.state !== row.reported_state || row.detail !== row.reported_detail;
   const refAge = refAgeSummary(row);
   const skew = skewSummary(row);
+  const refused = refusalSummary(row);
 
   return (
     <div
@@ -288,6 +323,15 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
         >
           {scanRootStateLabel(row.state)}
         </Badge>
+        {row.retired && (
+          <Badge
+            variant="secondary"
+            className="shrink-0"
+            data-testid={`scan-root-retired-${row.device_id}`}
+          >
+            Retired
+          </Badge>
+        )}
         {/* Truncated to fit the row; the full id is on the title so an
             operator can identify the device without hitting the API. */}
         <code
@@ -303,9 +347,7 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
           className="ml-auto shrink-0 text-muted-foreground"
           data-testid={`scan-root-age-${row.device_id}`}
         >
-          {row.observation_fresh
-            ? `heard ${shortDuration(row.observation_age_secs)} ago`
-            : `silent ${shortDuration(row.observation_age_secs)}`}
+          {ageLabel(row)}
         </span>
       </div>
 
@@ -327,6 +369,15 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
         </p>
       )}
 
+      {refused && (
+        <p
+          className="mt-1 text-[11px] text-muted-foreground"
+          data-testid={`scan-root-refused-${row.device_id}`}
+        >
+          {refused}
+        </p>
+      )}
+
       {skew && (
         <p
           className="mt-1 text-[11px] text-muted-foreground"
@@ -341,11 +392,17 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
           className="mt-1 text-[11px] text-muted-foreground"
           data-testid={`scan-root-reported-${row.device_id}`}
         >
-          The device reported{" "}
-          <code className="rounded bg-muted px-1 py-0.5">
-            {scanRootStateLabel(row.reported_state)}
-          </code>
-          {row.reported_detail ? `: ${row.reported_detail}` : ""}
+          {row.reported_state == null ? (
+            "No reading has been stored for this device — every report it sent was refused."
+          ) : (
+            <>
+              The device reported{" "}
+              <code className="rounded bg-muted px-1 py-0.5">
+                {scanRootStateLabel(row.reported_state)}
+              </code>
+              {row.reported_detail ? `: ${row.reported_detail}` : ""}
+            </>
+          )}
         </p>
       )}
     </div>
@@ -636,6 +693,31 @@ function ReadAt({ at }: { at: Date | null }) {
 }
 
 /**
+ * How many devices the server left out as RETIRED, or nothing when none were.
+ *
+ * Retirement is a read-side filter — a device silent (no reading, no refused
+ * report) for longer than `retire_after_secs` is left out of the rows and the
+ * roll-ups — and an exclusion nobody is told about is how "no drift" gets
+ * read off a list that is merely short. So the count is always said when it is
+ * non-zero. Nothing was deleted, and the device's next report brings it back.
+ */
+function RetiredNote({
+  data,
+}: {
+  data: { retired_count: number; retire_after_secs: number };
+}) {
+  if (!data.retired_count) return null;
+  const n = data.retired_count;
+  return (
+    <span data-testid="scan-sources-retired">
+      {" "}
+      {n} retired device{n === 1 ? "" : "s"} (silent for more than{" "}
+      {exactDuration(data.retire_after_secs)}) not shown.
+    </span>
+  );
+}
+
+/**
  * How current is the tree each device scans to feed this corpus.
  *
  * The sibling of Capture health, and the other half of one question. Capture
@@ -758,6 +840,7 @@ export function ScanSourcesPanel() {
             {allQuiet
               ? " Every feeder has gone quiet — none of these readings says anything about now."
               : ""}
+            <RetiredNote data={data} />
             <ReadAt at={fetchedAt} />
           </p>
         </>

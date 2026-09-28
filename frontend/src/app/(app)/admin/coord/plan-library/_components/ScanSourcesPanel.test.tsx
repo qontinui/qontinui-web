@@ -38,6 +38,7 @@ import {
   driftSummary,
   exactDuration,
   refAgeSummary,
+  refusalSummary,
   rollupDistanceSummary,
   shortDuration,
 } from "./ScanSourcesPanel";
@@ -73,8 +74,51 @@ function row(overrides: Partial<ScanRootRow> = {}): ScanRootRow {
     observed_skew_secs: 1,
     observation_age_secs: 30,
     observation_fresh: true,
+    last_refused_at: null,
+    last_refused_reason: null,
+    refused_count: null,
+    refused_age_secs: null,
+    retired: false,
     ...overrides,
   };
+}
+
+/**
+ * The route's refusal-only row: a device refused on EVERY report it sent, so
+ * no reading was ever stored. `render_row` serves it with every reading field
+ * `null` — never a fabricated reading — and the `refused:` verdict.
+ */
+function refusedOnlyRow(overrides: Partial<ScanRootRow> = {}): ScanRootRow {
+  return row({
+    state: "unknown",
+    detail:
+      "refused: body.observed_at: value_error, last attempt 40 s ago " +
+      "(12 refused since 2026-09-12T04:10:00+00:00)",
+    reported_state: null,
+    reported_detail: null,
+    plans_dir: null,
+    repo_root: null,
+    source_repo: null,
+    default_ref: null,
+    ref_sha: null,
+    head_sha: null,
+    behind: null,
+    ahead: null,
+    ref_age_secs: null,
+    counts_are_floors: null,
+    observed_at: null,
+    received_at: null,
+    last_report_applied: null,
+    last_report_observed_at: null,
+    observed_skew_secs: null,
+    observation_age_secs: null,
+    observation_fresh: false,
+    last_refused_at: "2026-09-12T04:59:20Z",
+    last_refused_reason: "body.observed_at: value_error",
+    refused_count: 12,
+    refused_age_secs: 40,
+    ...overrides,
+  });
 }
 
 /**
@@ -126,6 +170,8 @@ function listed(
     state: "reported",
     detail: null,
     fresh_within_secs: 2700,
+    retire_after_secs: 2_592_000,
+    retired_count: 0,
     count: rows.length,
     fresh_count: rows.filter((r) => r.observation_fresh).length,
     rows,
@@ -1502,6 +1548,108 @@ describe("ReadAt — the overnight case it exists for", () => {
 
     expect(screen.getByTestId("scan-sources-read-at").textContent).toContain(
       `Read at ${earlier.toLocaleTimeString()};`
+    );
+  });
+});
+
+describe("ScanSourcesPanel — a refused device is alive, not silent", () => {
+  it("renders a refusal-only device without inventing a reading", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([refusedOnlyRow()])));
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId(`scan-root-state-${DEVICE}`).textContent).toBe(
+      "Unknown"
+    );
+    expect(
+      screen.getByTestId(`scan-root-detail-${DEVICE}`).textContent
+    ).toMatch(/^refused: body\.observed_at: value_error/);
+    // No reading: never "silent 0s", never "0 behind".
+    expect(screen.getByTestId(`scan-root-age-${DEVICE}`).textContent).toBe(
+      "no reading stored"
+    );
+    expect(
+      screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent
+    ).toContain("Distance not measured.");
+    expect(
+      screen.getByTestId(`scan-root-reported-${DEVICE}`).textContent
+    ).toContain("every report it sent was refused");
+    expect(screen.getByTestId(`scan-root-refused-${DEVICE}`).textContent).toBe(
+      "Last report refused 40s ago (body.observed_at: value_error); 12 refused in all."
+    );
+    expect(screen.queryByTestId(`scan-root-skew-${DEVICE}`)).toBeNull();
+  });
+
+  it("shows a refusal beside a fresh reading that kept its own verdict", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([
+          row({
+            last_refused_at: "2026-09-12T04:55:00Z",
+            last_refused_reason: "body.device_id: extra_forbidden",
+            refused_count: 1,
+            refused_age_secs: 300,
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId(`scan-root-state-${DEVICE}`).textContent).toBe(
+      "Measured"
+    );
+    expect(screen.getByTestId(`scan-root-refused-${DEVICE}`).textContent).toBe(
+      "Last report refused 5m ago (body.device_id: extra_forbidden); 1 refused in all."
+    );
+  });
+
+  it("MUTATION: a device never refused shows no refusal line — null is not 0", () => {
+    expect(refusalSummary(row())).toBeNull();
+    useScanRootsMock.mockReturnValue(hookState(listed([row()])));
+    render(<ScanSourcesPanel />);
+    expect(screen.queryByTestId(`scan-root-refused-${DEVICE}`)).toBeNull();
+  });
+});
+
+describe("ScanSourcesPanel — a retired device is left out, and SAID to be", () => {
+  it("names how many retired devices the read left out", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row()], { retired_count: 3 }))
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-retired").textContent).toBe(
+      " 3 retired devices (silent for more than 30d) not shown."
+    );
+  });
+
+  it("MUTATION: no retired device, no note", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([row()])));
+    render(<ScanSourcesPanel />);
+    expect(screen.queryByTestId("scan-sources-retired")).toBeNull();
+  });
+
+  it("every device retired reads the backend's all_retired sentence, not 'none reported'", () => {
+    const detail =
+      "all_retired: every one of the 2 device(s) that reported a " +
+      "plan-scan-source reading for this organization has been silent";
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([], { state: "unknown", detail, retired_count: 2, count: 0 })
+      )
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.getByTestId("scan-sources-none").textContent).toContain(
+      "all_retired: every one of the 2 device(s)"
+    );
+  });
+
+  it("marks a retired row when one is served", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([silentRow({ retired: true })], { retired_count: 1 }))
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.getByTestId(`scan-root-retired-${DEVICE}`).textContent).toBe(
+      "Retired"
     );
   });
 });

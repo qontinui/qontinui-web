@@ -41843,6 +41843,14 @@
             "title": "Fresh Within Secs",
             "type": "integer"
           },
+          "retire_after_secs": {
+            "title": "Retire After Secs",
+            "type": "integer"
+          },
+          "retired_count": {
+            "title": "Retired Count",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/ScanRootRow"
@@ -41863,6 +41871,8 @@
           "state",
           "detail",
           "fresh_within_secs",
+          "retire_after_secs",
+          "retired_count",
           "count",
           "fresh_count",
           "rows",
@@ -42067,7 +42077,7 @@
         "type": "object"
       },
       "ScanRootRow": {
-        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* a ``refused:`` detail when the device's latest contact within\n  ``fresh_within_secs`` was a REFUSED report (a 422) and no fresh reading\n  stands \u2014 including a device refused on its first-ever report, which has\n  no reading at all. The device is alive and being refused, which is not\n  what a silent one looks like;\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``), naming its last refusal when\n  it has one;\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``refused`` > ``observation_stale`` > ``reading_superseded``\n> ``ref_stale``. A FRESH reading keeps its own verdict even when a refusal\nfollowed it; the refusal fields are served beside it either way.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.\n\n**A refusal-only row** (a device whose every report was refused, so no\nreading was ever stored) carries ``null`` in every READING field \u2014\n``reported_state``, ``counts_are_floors``, ``observed_at``,\n``received_at``, ``last_report_applied``, ``last_report_observed_at``,\n``observed_skew_secs``, ``observation_age_secs`` and the reported values \u2014\nand ``observation_fresh: false``. ``null`` there is \"no reading exists\",\nnever a default.",
         "properties": {
           "ahead": {
             "anyOf": [
@@ -42092,8 +42102,15 @@
             "title": "Behind"
           },
           "counts_are_floors": {
-            "title": "Counts Are Floors",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Are Floors"
           },
           "default_ref": {
             "anyOf": [
@@ -42133,29 +42150,86 @@
             ],
             "title": "Head Sha"
           },
+          "last_refused_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused At"
+          },
+          "last_refused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused Reason"
+          },
           "last_report_applied": {
-            "title": "Last Report Applied",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Applied"
           },
           "last_report_observed_at": {
-            "title": "Last Report Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Observed At"
           },
           "observation_age_secs": {
-            "title": "Observation Age Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Secs"
           },
           "observation_fresh": {
             "title": "Observation Fresh",
             "type": "boolean"
           },
           "observed_at": {
-            "title": "Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
           },
           "observed_skew_secs": {
-            "title": "Observed Skew Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Skew Secs"
           },
           "plans_dir": {
             "anyOf": [
@@ -42169,8 +42243,15 @@
             "title": "Plans Dir"
           },
           "received_at": {
-            "title": "Received At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
           },
           "ref_age_secs": {
             "anyOf": [
@@ -42193,6 +42274,28 @@
               }
             ],
             "title": "Ref Sha"
+          },
+          "refused_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Age Secs"
+          },
+          "refused_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Count"
           },
           "repo_root": {
             "anyOf": [
@@ -42217,14 +42320,25 @@
             "title": "Reported Detail"
           },
           "reported_state": {
-            "enum": [
-              "measured",
-              "not_scanning",
-              "not_a_git_work_tree",
-              "unknown"
+            "anyOf": [
+              {
+                "enum": [
+                  "measured",
+                  "not_scanning",
+                  "not_a_git_work_tree",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Reported State",
-            "type": "string"
+            "title": "Reported State"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
           },
           "source_repo": {
             "anyOf": [
@@ -42270,7 +42384,12 @@
           "last_report_observed_at",
           "observed_skew_secs",
           "observation_age_secs",
-          "observation_fresh"
+          "observation_fresh",
+          "last_refused_at",
+          "last_refused_reason",
+          "refused_count",
+          "refused_age_secs",
+          "retired"
         ],
         "title": "ScanRootRow",
         "type": "object"
@@ -99550,7 +99669,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``; a device whose latest contact within the window was a\nREFUSED report reads ``refused:`` first of all. The device's own values\nstay in ``reported_state`` / ``reported_detail``. An organization with no\nrows answers ``state: \"unknown\"``, never an empty \"all current\".\n\nA device silent \u2014 no reading and no refused report \u2014 for more than\n``retire_after_secs`` (30 days) is RETIRED: left out of ``rows``,\n``by_source_repo`` and ``coverage``, and counted in ``retired_count``.\n``include_retired=true`` serves those rows too, marked ``retired: true``.\nNothing is deleted; a retired device's next report brings it back.\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "parameters": [
           {
@@ -99562,6 +99681,18 @@
               "default": true,
               "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
               "title": "Coverage",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+              "title": "Include Retired",
               "type": "boolean"
             }
           }
@@ -99602,7 +99733,7 @@
         ]
       },
       "post": {
-        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.\n\nA REFUSED report (any 422 on the body) is recorded before it is answered:\nthe device's refusal row in ``agent.plan_scan_root_refusals`` is upserted\nand committed \u2014 its stored reading, if any, is not touched \u2014 and the 422\nbody is the same as FastAPI's own validation would produce. An operator\nsession is still a 403 first, from the dependency.",
         "operationId": "api_v1_plan_library_scan_roots_post",
         "requestBody": {
           "content": {
