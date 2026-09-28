@@ -50,6 +50,7 @@ import {
 } from "@/components/operations/maintenanceWindow";
 import { setMaintenanceLever } from "@/components/operations/useMaintenanceWindow";
 import { postUndrain } from "@/components/operations/useFleetDrain";
+import { unknownDrainLanes } from "@/components/operations/fleetDrain";
 import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -91,11 +92,22 @@ function LeverRow({
     status.kind !== "unknown" &&
     status.kind !== "window_expired" &&
     status.kind !== "drained_outside_window";
+  const leverLane =
+    lever === "agent_work" ? ("agent" as const) : ("ci" as const);
+  // A lane coord records as drained but whose per-lane entry could not be read
+  // is UNKNOWN — and releasing it is still the safe recovery, so it is
+  // offered there too (plan review round 6).
+  const laneUnreadable =
+    window === null &&
+    ctx.drain?.state === "drained" &&
+    unknownDrainLanes(ctx.drain.entry).includes(leverLane);
   const drainRelease =
-    status.kind === "drained_outside_window" && entry.kind === "machine"
+    (status.kind === "drained_outside_window" || laneUnreadable) &&
+    entry.kind === "machine"
       ? {
           deviceId: entry.deviceId,
-          lane: lever === "agent_work" ? ("agent" as const) : ("ci" as const),
+          lane: leverLane,
+          unreadable: laneUnreadable,
         }
       : null;
 
@@ -287,6 +299,17 @@ function LeverRow({
               {drainRelease.lane === "agent" ? "agent work" : "CI work"} again
               as soon as this lands. The drain was set outside any maintenance
               window, so nothing else will release it early.
+              {drainRelease.unreadable && (
+                <span
+                  className="mt-2 block"
+                  data-testid="coord-maintenance-release-drain-unreadable"
+                >
+                  This lane&apos;s hold could not be read — coord records a
+                  drain on it but its per-lane entry was unreadable, so its
+                  deadline and reason are unknown. Releasing it is the safe way
+                  back to a known state.
+                </span>
+              )}
             </p>
           }
           confirmLabel="Release drain"

@@ -228,8 +228,9 @@ export function parseDrainEntry(value: unknown): DrainEntry | null {
 
 /**
  * Read coord's `by_lane`. A lane whose entry has no parseable `until` is
- * dropped from the map (that lane then reads the headline, when `lanes`
- * names it); a missing or non-object `by_lane` is `null` — an older coord.
+ * dropped from the map but kept in `named`, so it stays claimed and reads
+ * UNKNOWN (`unknownDrainLanes`) — never the headline, which is some other
+ * lane's hold. A missing or non-object `by_lane` is `null` — an older coord.
  */
 function parseByLane(value: unknown): {
   lanes: Partial<Record<DrainLane, DrainLaneHold>>;
