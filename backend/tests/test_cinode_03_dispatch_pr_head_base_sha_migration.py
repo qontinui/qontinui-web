@@ -28,6 +28,11 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 6. The index is valid, and the planner serves the throttle probe from it —
    while a ``cancelled`` row with another reason is not in it.
 7. ``upgrade()`` is idempotent; up, down, up leaves no residue.
+
+Not covered: the idempotency test re-runs the upgrade over a VALID index only.
+The INVALID-index re-run path (a killed ``CONCURRENTLY`` build that
+``IF NOT EXISTS`` then keeps, as the revision's docstring documents) is not
+exercised here; producing an INVALID index needs a superuser-only fixture.
 """
 
 from __future__ import annotations
@@ -501,6 +506,7 @@ def test_the_index_is_valid_and_serves_the_no_subscriber_probe() -> None:
 
 @_needs_pg
 def test_upgrade_is_idempotent_and_round_trips() -> None:
+    """Re-run over a VALID index only; the INVALID-index path is not covered."""
     with ephemeral_database(admin_database_url(), "cinode03_rt") as (
         engine,
         db_url,

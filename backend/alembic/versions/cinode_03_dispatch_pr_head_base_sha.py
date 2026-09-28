@@ -14,9 +14,13 @@ coord's ci_node shadow dispatch keys its supersede logic ("cancel the live
 dispatch for this proposal when a newer head arrives") and its
 ``no_subscriber`` throttle on ``coord.ci_dispatches.head_sha``. That column
 holds the DRY-REBASED tip — the candidate commit coord builds by rebasing the
-PR head onto ``origin/<base>``. The rebase stamps a new committer date, so for
-every PR that is not a fast-forward the tip gets a NEW sha on EVERY merge
-tick, even when neither the PR nor its base moved. From ``head_sha`` alone
+PR head onto ``origin/<base>``. qontinui-coord ``merge_scheduler.rs``
+``dry_rebase_in_worktree_with_fallback`` runs
+``git rebase --onto origin/<base> origin/<base> HEAD`` with no pinned
+``GIT_COMMITTER_DATE``, so every replayed commit takes the wall-clock
+committer date. For a PR that is not already a fast-forward of its base the
+tip therefore gets a NEW sha on every merge tick, even when neither the PR
+nor its base moved. From ``head_sha`` alone
 coord therefore cannot tell "a newer PR head" from "the same PR re-rebased",
 and it supersedes (and re-dispatches) a build that should have been left
 alone.
@@ -30,7 +34,10 @@ The two inputs of the rebase are stable where its output is not:
 
 ``(pr_head_sha, base_sha)`` equal ⇒ the same candidate, whatever ``head_sha``
 says. Both are NULL for every pre-existing row (the ledger never recorded
-them), so both are nullable; coord treats NULL as "unknown", never as a match.
+them), so both are nullable. Requirement on the coord consumer (not yet
+written when this revision was authored): it MUST treat NULL as "unknown",
+never as a match, so a pre-existing row is never judged the same candidate
+as a new dispatch.
 
 Each carries a CHECK that the value is NULL or a lowercase 40-hex git sha
 (``^[0-9a-f]{40}$``). An abbreviated or upper-case sha would never compare
@@ -86,7 +93,9 @@ auto-lands, following ``coord_sessev_interact_idx_01`` /
   skipped. Its one gap — a column that already exists WITHOUT the constraint
   (someone hand-added it) keeps lacking it — cannot arise from this ledger's
   history, since Rust authors zero coord DDL. The validation scan is over a
-  column that is NULL on every existing row of a small ledger.
+  column that is NULL on every existing row; measured read-only on prod
+  2026-09-28, the ledger held 1984 rows and 2.1 MB in total
+  (``pg_total_relation_size``), newest row 2026-08-27.
 * the index is ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside an
   ``autocommit_block``. Nothing on the upgrade path drops or reads the
   catalog, so a killed CONCURRENTLY build leaves an INVALID index that a
