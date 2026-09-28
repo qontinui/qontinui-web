@@ -1,7 +1,7 @@
 """strategy schema — drop it with the retired Strategy collaboration feature
 
 Revision ID: strategy_p4_01_drop_schema
-Revises: coord_wu_authored_at_02
+Revises: cinode_03_dispatch_pr_head_base_sha
 Create Date: 2026-09-24
 
 Phase 4 of plan ``2026-09-20-remove-the-strategy-collaboration-feature``.
@@ -75,7 +75,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "strategy_p4_01_drop_schema"
-down_revision: str = "coord_wu_authored_at_02"
+down_revision: str = "cinode_03_dispatch_pr_head_base_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
