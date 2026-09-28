@@ -74,12 +74,17 @@ export interface PrepareForRestartDialogProps {
   /** Called when a refusal says the page's view is stale; re-reads it. */
   onStale?: () => void;
   /**
-   * Set when the page's selection has moved off the entry this form was
-   * opened on — the new selection's identity. The form keeps its pinned
-   * target, says so, and refuses to submit; its refusal or outcome stays up.
+   * Set when the page's selection no longer names the entry this form was
+   * opened on: it MOVED to another entry (its identity), or the pinned entry
+   * VANISHED from coord's list. Either way the form keeps its pinned target,
+   * says so, and refuses to submit; its refusal or outcome stays up.
    */
-  movedTo?: string | null;
+  selectionShift?: SelectionShift | null;
 }
+
+export type SelectionShift =
+  | { kind: "moved"; to: string }
+  | { kind: "vanished" };
 
 export function PrepareForRestartDialog({
   entry,
@@ -88,8 +93,9 @@ export function PrepareForRestartDialog({
   initialLevers,
   onOpened,
   onStale,
-  movedTo = null,
+  selectionShift = null,
 }: PrepareForRestartDialogProps) {
+  const shifted = selectionShift !== null;
   const [untilLocal, setUntilLocal] = useState("");
   const [reason, setReason] = useState("");
   const [levers, setLevers] = useState(initialLevers);
@@ -134,7 +140,7 @@ export function PrepareForRestartDialog({
 
   const submit = useCallback(
     async (acceptCiQueueing: boolean) => {
-      if (!check.ok || busy || movedTo !== null) return;
+      if (!check.ok || busy || shifted) return;
       setBusy(true);
       setRefusal(null);
       const res = await openMaintenanceWindow({
@@ -163,7 +169,7 @@ export function PrepareForRestartDialog({
       // ci_host_linked_to_machine: the list is stale — re-read it.
       if (errorWantsReread(res)) onStale?.();
     },
-    [check, busy, entry, reason, onOpened, onStale, movedTo]
+    [check, busy, entry, reason, onOpened, onStale, shifted]
   );
 
   const untilLabel = check.ok
@@ -198,19 +204,32 @@ export function PrepareForRestartDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {movedTo !== null && (
+          {selectionShift?.kind === "moved" && (
             <p
               role="alert"
               className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs break-words"
               data-testid="coord-maintenance-prepare-moved"
             >
               Selection moved to{" "}
-              <span className="font-mono break-all">{movedTo}</span>; this form
-              still targets{" "}
+              <span className="font-mono break-all">{selectionShift.to}</span>;
+              this form still targets{" "}
               <span className="font-mono break-all">
                 {identity.primary} ({identity.secondary})
               </span>
               . Close and reopen to act on the new one.
+            </p>
+          )}
+          {selectionShift?.kind === "vanished" && (
+            <p
+              role="alert"
+              className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs break-words"
+              data-testid="coord-maintenance-prepare-vanished"
+            >
+              <span className="font-mono break-all">
+                {identity.primary} ({identity.secondary})
+              </span>{" "}
+              is no longer in coord&apos;s machine list; this form cannot be
+              sent.
             </p>
           )}
           {!openedAny && (
@@ -362,7 +381,7 @@ export function PrepareForRestartDialog({
             <LastHostNotice
               refusal={lastHost}
               until={untilLabel}
-              busy={busy || movedTo !== null}
+              busy={busy || shifted}
               onAccept={() => void submit(true)}
               testIdPrefix="coord-maintenance-prepare"
             />
@@ -434,9 +453,7 @@ export function PrepareForRestartDialog({
               </Button>
               <Button
                 type="button"
-                disabled={
-                  busy || !check.ok || lastHost !== null || movedTo !== null
-                }
+                disabled={busy || !check.ok || lastHost !== null || shifted}
                 onClick={() => void submit(false)}
                 data-testid="coord-maintenance-prepare-submit"
               >
