@@ -16,6 +16,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,10 @@ export function CiHostLink({
   const [host, setHost] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MaintenanceError | null>(null);
+  // The host whose unlink is waiting on a confirm — only asked while the
+  // window holds CI, because unlinking then drops that host from what the
+  // window restores and reports on.
+  const [confirmUnlink, setConfirmUnlink] = useState<string | null>(null);
 
   if (entry.kind === "ci_host") {
     return (
@@ -112,7 +117,10 @@ export function CiHostLink({
                   variant="ghost"
                   className="h-6 px-1.5 text-[11px]"
                   disabled={busy}
-                  onClick={() => void unlink(h)}
+                  onClick={() => {
+                    if (entry.openWindow?.levers.ci.held) setConfirmUnlink(h);
+                    else void unlink(h);
+                  }}
                   data-testid="coord-maintenance-ci-host-unlink"
                 >
                   Unlink
@@ -122,45 +130,46 @@ export function CiHostLink({
           ))}
         </ul>
       )}
-      {entry.ciHosts.length === 0 && (
-        <CoordAdminOnly fallback={<ReadOnlyNotice />}>
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void link();
-            }}
-            data-testid="coord-maintenance-ci-host-link-form"
-          >
-            <div className="space-y-1">
-              <Label
-                htmlFor="coord-maintenance-ci-host-input"
-                className="text-xs"
-              >
-                Link a CI host to this machine
-              </Label>
-              <Input
-                id="coord-maintenance-ci-host-input"
-                value={host}
-                disabled={busy}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="GitHub runner name, e.g. merytshost"
-                className="h-8 w-64 text-xs"
-                data-testid="coord-maintenance-ci-host-input"
-              />
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              variant="outline"
-              disabled={busy || host.trim() === ""}
-              data-testid="coord-maintenance-ci-host-link"
+      {/* Always offered: a machine may host several GitHub runners. */}
+      <CoordAdminOnly fallback={<ReadOnlyNotice />}>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void link();
+          }}
+          data-testid="coord-maintenance-ci-host-link-form"
+        >
+          <div className="space-y-1">
+            <Label
+              htmlFor="coord-maintenance-ci-host-input"
+              className="text-xs"
             >
-              Link
-            </Button>
-          </form>
-        </CoordAdminOnly>
-      )}
+              {entry.ciHosts.length === 0
+                ? "Link a CI host to this machine"
+                : "Link another CI host to this machine"}
+            </Label>
+            <Input
+              id="coord-maintenance-ci-host-input"
+              value={host}
+              disabled={busy}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="GitHub runner name, e.g. merytshost"
+              className="h-8 w-64 text-xs"
+              data-testid="coord-maintenance-ci-host-input"
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={busy || host.trim() === ""}
+            data-testid="coord-maintenance-ci-host-link"
+          >
+            Link
+          </Button>
+        </form>
+      </CoordAdminOnly>
       {error && (
         <p
           role="alert"
@@ -171,6 +180,31 @@ export function CiHostLink({
           {error.code ? ` (${error.code})` : ""}
         </p>
       )}
+      <ConfirmDestructiveDialog
+        open={confirmUnlink !== null}
+        onOpenChange={(o) => {
+          if (!o) setConfirmUnlink(null);
+        }}
+        title={`Unlink CI host ${confirmUnlink ?? ""} while CI is paused?`}
+        description={
+          <p className="break-words">
+            The open maintenance window holds CI on this machine. Unlinking{" "}
+            <span className="font-mono break-all">{confirmUnlink}</span> makes
+            this page stop showing it as part of the machine; whether coord
+            still restores its labels when the window ends is coord&apos;s call,
+            recorded on the window. Return the machine to service first if you
+            are unsure.
+          </p>
+        }
+        confirmLabel="Unlink"
+        busy={busy}
+        onConfirm={() => {
+          const h = confirmUnlink;
+          setConfirmUnlink(null);
+          if (h) void unlink(h);
+        }}
+        testId="coord-maintenance-ci-host-unlink-confirm"
+      />
     </div>
   );
 }

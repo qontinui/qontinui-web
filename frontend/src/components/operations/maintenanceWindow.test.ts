@@ -49,7 +49,11 @@ import {
   type MaintenanceWindow,
   type WindowReadinessRead,
 } from "./maintenanceWindow";
-import { toLocalInputValue } from "./fleetDrain";
+import { toLocalInputValue, type DeviceDrainState } from "./fleetDrain";
+import {
+  stillRoutingCount,
+  type MaintenanceContext,
+} from "./maintenanceWindow";
 
 const DEVICE = "3f4c1a52-9a1e-4b6f-9f0f-8c2f0f0a11bd";
 const WINDOW = "7d7d7d7d-0000-4000-8000-000000000001";
@@ -111,6 +115,7 @@ function machine(overrides: Partial<MachineRow> = {}): MachineRow {
     ciHosts: ["merytshost"],
     openWindow: null,
     openWindowUnreadable: false,
+    openWindowRawId: null,
     ...overrides,
   };
 }
@@ -310,9 +315,10 @@ describe("deriveVerdictHealth", () => {
 describe("deriveLeverStatus", () => {
   it("renders 'No CI host linked — link one', never 'not paused'", () => {
     const s = deriveLeverStatus("ci", machine({ ciHosts: [] }), NOW);
-    expect(s.kind).toBe("no_ci_host");
+    expect(s.kind).toBe("no_ci_host_unpaused");
     expect(s.label).toBe("No CI host linked — link one");
-    expect(s.attention).toBe("author");
+    // Nothing is paused yet — a note, not a red alarm.
+    expect(s.attention).toBe("waiting");
   });
 
   it("says a partial CI pause is partial, with how many repos still route here", () => {
@@ -376,6 +382,7 @@ describe("deriveLeverStatus", () => {
       ciHost: "msi-wsl",
       openWindow: null,
       openWindowUnreadable: false,
+      openWindowRawId: null,
     };
     expect(deriveLeverStatus("agent_work", e, NOW).label).toBe(
       "No workstation device"
@@ -389,6 +396,10 @@ describe("deriveLeverStatus", () => {
         "held",
         "left_paused_quarantined",
         "no_ci_host",
+        "no_ci_host_unpaused",
+        "drained_outside_window",
+        "window_expired",
+        "not_in_window",
         "not_held",
         "nothing_to_delabel",
         "overridden_externally",
@@ -563,6 +574,7 @@ describe("validateMaintenanceForm", () => {
       ciHost: "h",
       openWindow: null,
       openWindowUnreadable: false,
+      openWindowRawId: null,
     };
     expect(
       validateMaintenanceForm(
@@ -735,5 +747,243 @@ describe("the Overview join", () => {
     expect(summarizeLinkedCiHosts(["nobody"], {})).toEqual([
       { host: "nobody", registrations: 0, busy: 0 },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round: raw drains, refresh errors, expiry, partial badges
+// ---------------------------------------------------------------------------
+
+const DRAINED: DeviceDrainState = {
+  state: "drained",
+  entry: {
+    until: "2026-09-28T18:00:00Z",
+    reason: "agent drained it",
+    drainedBy: "agent",
+    drainedAt: "2026-09-28T11:00:00Z",
+    lanes: ["agent"],
+  },
+};
+const ctx = (o: Partial<MaintenanceContext> = {}): MaintenanceContext => ({
+  drain: { state: "not_drained" },
+  refreshError: null,
+  ...o,
+});
+
+describe("a raw drain outside any window", () => {
+  it("renders the drained lane as author-tone 'Drained outside a maintenance window', never not_held", () => {
+    const agent = deriveLeverStatus(
+      "agent_work",
+      machine(),
+      NOW,
+      ctx({ drain: DRAINED })
+    );
+    expect(agent.kind).toBe("drained_outside_window");
+    expect(agent.label).toBe("Drained outside a maintenance window");
+    expect(agent.reason).toContain("lanes agent work");
+    expect(agent.attention).toBe("author");
+    // The CI lane is not in this drain.
+    expect(
+      deriveLeverStatus("ci", machine(), NOW, ctx({ drain: DRAINED })).kind
+    ).toBe("not_held");
+  });
+
+  it("a legacy lane-less drain holds both lanes", () => {
+    const both: DeviceDrainState = {
+      state: "drained",
+      entry: {
+        ...(DRAINED.state === "drained" ? DRAINED.entry : ({} as never)),
+        lanes: null,
+      },
+    };
+    expect(
+      deriveLeverStatus("ci", machine(), NOW, ctx({ drain: both })).kind
+    ).toBe("drained_outside_window");
+  });
+
+  it("an unreadable drain is UNKNOWN, not 'running'", () => {
+    const s = deriveLeverStatus(
+      "agent_work",
+      machine(),
+      NOW,
+      ctx({ drain: { state: "unknown", reason: "HTTP 404" } })
+    );
+    expect(s.kind).toBe("unknown");
+  });
+
+  it("the badge says 'Drained (outside a window)', and the verdict names it", () => {
+    expect(maintenanceBadge(null, false, NOW, DRAINED)).toMatchObject({
+      state: "drained_outside",
+      label: "Drained (outside a window)",
+    });
+    expect(
+      maintenanceBadge(null, false, NOW, { state: "unknown", reason: "x" })
+        .state
+    ).toBe("unknown");
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      NOW,
+      ctx({ drain: DRAINED })
+    );
+    expect(h.level).toBe("red");
+    expect(h.detail).toContain("a drain outside any window holds agent work");
+  });
+});
+
+describe("a failed machines refresh", () => {
+  it("makes 'no window' UNKNOWN in the verdict and the levers", () => {
+    const c = ctx({ refreshError: "HTTP 502" });
+    const h = deriveVerdictHealth(null, { state: "no_window" }, NOW, c);
+    expect(h.headline).toBe("Restart readiness UNKNOWN");
+    expect(h.detail).toContain("HTTP 502");
+    expect(deriveLeverStatus("ci", machine(), NOW, c).kind).toBe("unknown");
+  });
+});
+
+describe("an ended window", () => {
+  const expired = () => win({ state: "expired" });
+
+  it("renders 'expired — restoring' in the verdict, the levers and the badge", () => {
+    expect(deriveVerdictHealth(expired(), readiness(), NOW).headline).toBe(
+      "Maintenance window expired — restoring"
+    );
+    expect(
+      deriveLeverStatus("ci", machine({ openWindow: expired() }), NOW).kind
+    ).toBe("window_expired");
+    expect(maintenanceBadge(expired(), false, NOW).state).toBe("expired");
+  });
+});
+
+describe("a lever the window does not name", () => {
+  it("reads 'Not part of this window'", () => {
+    const w = win({
+      levers: { ci: { held: true, state: "held", labels: [] } },
+    });
+    const s = deriveLeverStatus("agent_work", machine({ openWindow: w }), NOW);
+    expect(s.kind).toBe("not_in_window");
+    expect(s.label).toBe("Not part of this window");
+  });
+});
+
+describe("a stale verdict", () => {
+  it("forces every plane badge to UNKNOWN", () => {
+    const stale = readiness({
+      computed_at: new Date(
+        NOW - (VERDICT_STALE_SECS + 30) * 1000
+      ).toISOString(),
+    });
+    const h = deriveVerdictHealth(win(), stale, NOW);
+    expect(h.badges.map((b) => b.label)).toEqual([
+      "agent UNKNOWN",
+      "GitHub CI UNKNOWN",
+      "CI-node UNKNOWN",
+    ]);
+  });
+});
+
+describe("the badge branches on the CI state", () => {
+  const withCi = (ci: Record<string, unknown>) =>
+    win({
+      levers: {
+        agent_work: { held: true, state: "held" },
+        ci: { labels: [], ...ci },
+      },
+    });
+
+  it("partial, restored by hand, and an unknown state are not the calm line", () => {
+    expect(
+      maintenanceBadge(withCi({ held: true, state: "partial" }), false, NOW)
+    ).toMatchObject({
+      state: "attention",
+    });
+    const partial = maintenanceBadge(
+      withCi({ held: true, state: "partial" }),
+      false,
+      NOW
+    );
+    if (partial.state === "attention")
+      expect(partial.label).toMatch(/^CI partly paused until /);
+    const byHand = maintenanceBadge(
+      withCi({ held: false, state: "overridden_externally" }),
+      false,
+      NOW
+    );
+    if (byHand.state === "attention")
+      expect(byHand.label).toMatch(/^CI label restored by hand/);
+    expect(byHand.state).toBe("attention");
+    expect(
+      maintenanceBadge(withCi({ held: true, state: "mystery" }), false, NOW)
+        .state
+    ).toBe("unknown");
+  });
+});
+
+describe("stillRoutingCount", () => {
+  it("counts distinct repos that failed or whose outcome is UNKNOWN", () => {
+    expect(
+      stillRoutingCount([
+        {
+          label: "a",
+          repo: "r/one",
+          outcome: "failed",
+          rawOutcome: "failed",
+          detail: null,
+        },
+        {
+          label: "b",
+          repo: "r/one",
+          outcome: "failed",
+          rawOutcome: "failed",
+          detail: null,
+        },
+        {
+          label: "a",
+          repo: "r/two",
+          outcome: null,
+          rawOutcome: "weird",
+          detail: null,
+        },
+        {
+          label: "a",
+          repo: "r/three",
+          outcome: "removed",
+          rawOutcome: "removed",
+          detail: null,
+        },
+      ])
+    ).toBe(2);
+  });
+});
+
+describe("an unreadable window", () => {
+  it("keeps coord's raw id so it can still be returned to service", () => {
+    const read = parseMachines({
+      machines: [
+        { device_id: DEVICE, ci_hosts: [], open_window: { id: WINDOW } },
+      ],
+    });
+    if (read.state !== "ok") throw new Error("expected ok");
+    expect(read.entries[0].openWindowRawId).toBe(WINDOW);
+  });
+});
+
+describe("a CI card coord's list does not name", () => {
+  it("is UNKNOWN, not in service", () => {
+    const read: MachinesRead = {
+      state: "ok",
+      refreshError: null,
+      entries: [machine()],
+    };
+    const v = resolveMachineMaintenance(
+      read,
+      { deviceId: "x", hostname: "gh-runner-stranger@a/b" },
+      {},
+      NOW
+    );
+    expect(v?.badge).toMatchObject({
+      state: "unknown",
+      title: "coord's machine list does not name this CI host",
+    });
   });
 });

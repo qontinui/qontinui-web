@@ -45,7 +45,12 @@ import type {
   HealthBadge,
   HealthStripLevel,
 } from "@/components/console/HealthStrip";
-import { MAX_DRAIN_DAYS, parseTimestamp } from "./fleetDrain";
+import {
+  MAX_DRAIN_DAYS,
+  parseTimestamp,
+  type DeviceDrainState,
+  type DrainLane,
+} from "./fleetDrain";
 import { UNKNOWN_LABEL, formatAgeSecs } from "./runnerStatus";
 import type { CoordCiRunnerRow } from "./ciRunnerMirror";
 
@@ -87,6 +92,12 @@ export interface LabelOutcome {
 }
 
 export interface AgentLever {
+  /**
+   * Whether the window names this lever at all. Coord serves a lever key only
+   * for the levers the window was opened with, so an absent key is "not part
+   * of this window" — a different fact from "released".
+   */
+  inWindow: boolean;
   held: boolean;
   /** `null` = a state this build does not recognise, rendered UNKNOWN. */
   state: AgentLeverState | null;
@@ -94,6 +105,8 @@ export interface AgentLever {
 }
 
 export interface CiLever {
+  /** See {@link AgentLever.inWindow}. */
+  inWindow: boolean;
   held: boolean;
   state: CiLeverState | null;
   detail: string | null;
@@ -135,6 +148,11 @@ export interface MachineRow {
   openWindow: MaintenanceWindow | null;
   /** Coord sent an `open_window` this build could not read. */
   openWindowUnreadable: boolean;
+  /**
+   * The window's `id` as coord sent it, kept even when the rest of the window
+   * did not parse — so an unreadable window can still be returned to service.
+   */
+  openWindowRawId: string | null;
 }
 
 /** A GitHub runner name no machine claims, listed as a machine of its own. */
@@ -145,6 +163,7 @@ export interface CiHostRow {
   ciHost: string;
   openWindow: MaintenanceWindow | null;
   openWindowUnreadable: boolean;
+  openWindowRawId: string | null;
 }
 
 export type MachineEntry = MachineRow | CiHostRow;
@@ -245,11 +264,13 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
       : null,
     levers: {
       agentWork: {
+        inWindow: isRecord(levers.agent_work),
         held: agent.held === true,
         state: oneOf(agent.state, AGENT_STATES),
         detail: str(agent.detail),
       },
       ci: {
+        inWindow: isRecord(levers.ci),
         held: ci.held === true,
         state: oneOf(ci.state, CI_STATES),
         detail: str(ci.detail),
@@ -262,13 +283,31 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
 function readOpenWindow(v: unknown): {
   openWindow: MaintenanceWindow | null;
   openWindowUnreadable: boolean;
+  openWindowRawId: string | null;
 } {
   if (v === null || v === undefined)
-    return { openWindow: null, openWindowUnreadable: false };
+    return {
+      openWindow: null,
+      openWindowUnreadable: false,
+      openWindowRawId: null,
+    };
   const parsed = parseMaintenanceWindow(v);
   return parsed
-    ? { openWindow: parsed, openWindowUnreadable: false }
-    : { openWindow: null, openWindowUnreadable: true };
+    ? {
+        openWindow: parsed,
+        openWindowUnreadable: false,
+        openWindowRawId: parsed.id,
+      }
+    : {
+        openWindow: null,
+        openWindowUnreadable: true,
+        openWindowRawId: isRecord(v) ? str(v.id) : null,
+      };
+}
+
+/** The id to act on for an entry's window — parsed or raw — or `null`. */
+export function entryWindowId(e: MachineEntry): string | null {
+  return e.openWindow?.id ?? e.openWindowRawId;
 }
 
 /** The `?machine=` value for a CI host listed on its own. */
@@ -584,10 +623,40 @@ function planeBadge(
  * - **Amber when the machine is paused and the blockers clear themselves**
  *   (a CI job finishing, a session winding down), and for every UNKNOWN.
  */
+/**
+ * What the verdict and the lever rows need beyond the window: the device's
+ * raw drain (a drain set outside any window — an agent's `coord_fleet_drain`,
+ * a legacy row — is a real hold the window does not describe), and whether
+ * the last machines refresh failed (then "no window" is not known).
+ */
+export interface MaintenanceContext {
+  /** `null` for an entry with no workstation device (a bare CI host). */
+  drain: DeviceDrainState | null;
+  /** The machines read's last refresh error, if its list is being kept. */
+  refreshError: string | null;
+}
+
+export const NO_MAINTENANCE_CONTEXT: MaintenanceContext = {
+  drain: null,
+  refreshError: null,
+};
+
+/** The drain lanes an ACTIVE drain holds; `null` lanes are both. */
+export function drainedLanes(drain: DeviceDrainState | null): DrainLane[] {
+  if (drain?.state !== "drained") return [];
+  return drain.entry.lanes ?? ["agent", "ci"];
+}
+
+/** Plain words for a set of drain lanes. */
+export function lanesLabel(lanes: readonly DrainLane[]): string {
+  return lanes.map((l) => (l === "agent" ? "agent work" : "CI")).join(" + ");
+}
+
 export function deriveVerdictHealth(
   window: MaintenanceWindow | null,
   read: WindowReadinessRead,
-  now: number
+  now: number,
+  ctx: MaintenanceContext = NO_MAINTENANCE_CONTEXT
 ): VerdictHealth {
   const unknown = (
     detail: string,
@@ -598,13 +667,36 @@ export function deriveVerdictHealth(
     detail,
     badges,
   });
+  if (window === null && ctx.refreshError !== null) {
+    // The list we hold says "no window", but the read that would confirm it
+    // failed — a window may have opened since.
+    return unknown(
+      `the last machines refresh failed (${ctx.refreshError}), so whether a ` +
+        "maintenance window is open is not known"
+    );
+  }
+  if (window !== null && window.state !== "open") {
+    return {
+      level: "amber",
+      headline: "Maintenance window expired — restoring",
+      detail:
+        `the window ended (${window.state}); coord is releasing what it held. ` +
+        "Nothing is paused once that finishes.",
+      badges: [],
+    };
+  }
   if (window === null || read.state === "no_window") {
+    const lanes = drainedLanes(ctx.drain);
     return {
       level: "red",
       headline: "Not yet safe to restart",
       detail:
-        "nothing is paused — agent sessions and CI jobs may start here at any " +
-        "moment. Prepare for restart pauses both.",
+        lanes.length > 0
+          ? `no maintenance window is open; a drain outside any window holds ` +
+            `${lanesLabel(lanes)}, but GitHub may still route CI jobs here. ` +
+            "Prepare for restart pauses both."
+          : "nothing is paused — agent sessions and CI jobs may start here at " +
+            "any moment. Prepare for restart pauses both.",
       badges: [],
     };
   }
@@ -642,10 +734,15 @@ export function deriveVerdictHealth(
   ];
   const age = `computed ${formatAgeSecs(ageSecs)} ago`;
   if (ageSecs > VERDICT_STALE_SECS) {
+    // A stale verdict's per-plane answers are exactly as stale as its headline.
     return unknown(
       `the last verdict was computed ${formatAgeSecs(ageSecs)} ago, older than ` +
         `${VERDICT_STALE_SECS / 60} min, so it is not shown as a verdict`,
-      badges
+      [
+        planeBadge("agent", "agent", "unknown", null),
+        planeBadge("github-ci", "GitHub CI", "unknown", null),
+        planeBadge("ci-node", "CI-node", "unknown", null),
+      ]
     );
   }
   const reasons = r.reasons.length > 0 ? r.reasons.join(" · ") : null;
@@ -694,7 +791,13 @@ export function formatUntil(untilIso: string, now: number): string {
 
 /** How many `(label, repo)` pairs still route here after a delabel attempt. */
 export function stillRoutingCount(labels: readonly LabelOutcome[]): number {
-  return labels.filter((l) => l.outcome === "failed").length;
+  // A repo whose outcome coord did not send in a form this build reads is
+  // UNKNOWN — it may still route here, so it counts, never as delabelled.
+  return new Set(
+    labels
+      .filter((l) => l.outcome === "failed" || l.outcome === null)
+      .map((l) => l.repo)
+  ).size;
 }
 
 /** The distinct repos a label outcome list names, in order. */
@@ -937,44 +1040,116 @@ export function describeMaintenanceError(
 
 export type MaintenanceBadge =
   | { state: "in_maintenance"; label: string; title: string }
+  /** A window whose levers did not all land as asked — someone must look. */
+  | { state: "attention"; label: string; title: string }
+  /** The window ended and coord is putting things back. */
+  | { state: "expired"; label: string; title: string }
+  /** No window, but a raw drain holds the device. */
+  | { state: "drained_outside"; label: string; title: string }
   | { state: "in_service" }
   | { state: "unknown"; label: string; title: string };
 
 /**
- * The one line a machine card shows about maintenance (plan §D7): "In
- * maintenance until 18:00 · CI + agents", "Agent work paused until 18:00", or
- * "CI paused until 18:00". A window with neither lever held is in service.
+ * The one line a machine card (and the picker) shows about maintenance (plan
+ * §D7): "In maintenance until 18:00 · CI + agents", "Agent work paused until
+ * 18:00", "CI paused until 18:00" — and, where a lever did not land as asked,
+ * which way it did not ("CI partly paused", "CI label restored by hand"),
+ * rather than the calm line. A lever state this build cannot read makes the
+ * whole badge UNKNOWN. With no window, an active raw drain reads "Drained
+ * (outside a window)"; a drain read that failed reads UNKNOWN, never "in
+ * service".
  */
 export function maintenanceBadge(
   window: MaintenanceWindow | null,
   unreadable: boolean,
-  now: number
+  now: number,
+  drain: DeviceDrainState | null = null
 ): MaintenanceBadge {
+  const unknown = (title: string): MaintenanceBadge => ({
+    state: "unknown",
+    label: `maintenance ${UNKNOWN_LABEL}`,
+    title,
+  });
   if (unreadable) {
+    return unknown(
+      "coord reported a maintenance window this build could not read"
+    );
+  }
+  if (window === null) {
+    const lanes = drainedLanes(drain);
+    if (lanes.length > 0 && drain?.state === "drained") {
+      return {
+        state: "drained_outside",
+        label: "Drained (outside a window)",
+        title:
+          `a drain outside any maintenance window holds ${lanesLabel(lanes)} ` +
+          `until ${formatUntil(drain.entry.until, now)} — ${drain.entry.reason ?? "no reason recorded"}`,
+      };
+    }
+    if (drain?.state === "unknown") return unknown(drain.reason);
+    return { state: "in_service" };
+  }
+  const title = `${window.reason ?? "no reason recorded"} — opened by ${window.openedBy ?? "an unrecorded operator"}`;
+  if (window.state !== "open") {
     return {
-      state: "unknown",
-      label: `maintenance ${UNKNOWN_LABEL}`,
-      title: "coord reported a maintenance window this build could not read",
+      state: "expired",
+      label: "Maintenance window expired — restoring",
+      title,
     };
   }
-  if (window === null) return { state: "in_service" };
+  const a = window.levers.agentWork;
+  const c = window.levers.ci;
+  if ((a.inWindow && a.state === null) || (c.inWindow && c.state === null)) {
+    return unknown("coord sent a lever state this build does not recognise");
+  }
   const until = formatUntil(window.until, now);
-  const agent = window.levers.agentWork.held;
-  const ci = window.levers.ci.held;
-  const title = `${window.reason ?? "no reason recorded"} — opened by ${window.openedBy ?? "an unrecorded operator"}`;
-  if (agent && ci)
+  const agentSuffix = a.held ? " · agents paused" : "";
+  if (c.inWindow) {
+    switch (c.state) {
+      case "partial":
+        return {
+          state: "attention",
+          label: `CI partly paused until ${until}${agentSuffix}`,
+          title,
+        };
+      case "overridden_externally":
+        return {
+          state: "attention",
+          label: `CI label restored by hand${agentSuffix}`,
+          title,
+        };
+      case "failed":
+        return {
+          state: "attention",
+          label: `CI pause failed${agentSuffix}`,
+          title,
+        };
+      case "left_paused_quarantined":
+        return {
+          state: "attention",
+          label: `CI left paused — quarantined${agentSuffix}`,
+          title,
+        };
+      default:
+        break;
+    }
+  }
+  if (a.inWindow && a.state === "failed") {
+    return { state: "attention", label: "Agent work pause failed", title };
+  }
+  if (a.held && c.held)
     return {
       state: "in_maintenance",
       label: `In maintenance until ${until} · CI + agents`,
       title,
     };
-  if (agent)
+  if (a.held)
     return {
       state: "in_maintenance",
       label: `Agent work paused until ${until}`,
       title,
     };
-  if (ci)
+  if (c.held)
     return {
       state: "in_maintenance",
       label: `CI paused until ${until}`,
@@ -1088,7 +1263,8 @@ export function resolveMachineMaintenance(
   read: MachinesRead,
   card: { deviceId: string | undefined; hostname: string },
   ciRunners: Record<string, { status: string }>,
-  now: number
+  now: number,
+  drain: DeviceDrainState | null = null
 ): MachineMaintenanceView | null {
   const synthetic = parseSyntheticCiHostname(card.hostname);
   if (!card.deviceId && !synthetic) return null;
@@ -1118,11 +1294,22 @@ export function resolveMachineMaintenance(
         (e): e is CiHostRow =>
           e.kind === "ci_host" && e.ciHost === synthetic.runnerName
       );
+    if (!own) {
+      // In neither a machine's `ci_hosts` nor `unlinked_ci_hosts`: coord's
+      // list says nothing about this host, which is not "in service".
+      return {
+        badge: {
+          state: "unknown",
+          label: `maintenance ${UNKNOWN_LABEL}`,
+          title: "coord's machine list does not name this CI host",
+        },
+        href: maintenancePageHref(ciHostKey(synthetic.runnerName)),
+        linkedCiHosts: null,
+      };
+    }
     return {
-      badge: own
-        ? maintenanceBadge(own.openWindow, own.openWindowUnreadable, now)
-        : { state: "in_service" },
-      href: maintenancePageHref(own?.key ?? ciHostKey(synthetic.runnerName)),
+      badge: maintenanceBadge(own.openWindow, own.openWindowUnreadable, now),
+      href: maintenancePageHref(own.key),
       linkedCiHosts: null,
     };
   }
@@ -1146,7 +1333,8 @@ export function resolveMachineMaintenance(
     badge: maintenanceBadge(
       machine.openWindow,
       machine.openWindowUnreadable,
-      now
+      now,
+      drain
     ),
     href: maintenancePageHref(machine.key),
     linkedCiHosts: summarizeLinkedCiHosts(machine.ciHosts, ciRunners),

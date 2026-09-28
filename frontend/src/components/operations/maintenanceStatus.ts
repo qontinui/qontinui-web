@@ -21,9 +21,13 @@ import {
 } from "@/components/console/statusRow";
 import { UNKNOWN_LABEL } from "./runnerStatus";
 import {
+  NO_MAINTENANCE_CONTEXT,
+  drainedLanes,
   formatUntil,
   labelRepos,
+  lanesLabel,
   stillRoutingCount,
+  type MaintenanceContext,
   type CiRegistration,
   type MachineEntry,
   type MaintenanceLever,
@@ -43,6 +47,10 @@ export type MaintenanceLeverKind =
   | "overridden_externally"
   | "left_paused_quarantined"
   | "no_ci_host"
+  | "no_ci_host_unpaused"
+  | "drained_outside_window"
+  | "window_expired"
+  | "not_in_window"
   | "unknown";
 
 /**
@@ -52,10 +60,16 @@ export type MaintenanceLeverKind =
  *   and `no_ci_host` are `author`: each stays as it is until an operator acts
  *   (retry, decide whether the hand-restored label stands, clear the
  *   quarantine, link the host).
+ * - `drained_outside_window` is `author`: a raw drain (an agent's
+ *   `coord_fleet_drain`, a legacy row) holds the lane and nothing about a
+ *   window will release it — the operator releases it here or opens a window.
+ * - `no_ci_host_unpaused` (no host linked, nothing paused yet) and
+ *   `window_expired` (coord is restoring what it held) are `waiting`.
  * - `unknown` is `waiting` under the palette's documented exception — amber on
  *   an unknown row is a statement about our knowledge.
- * - `held`, `released`, `not_held` and `nothing_to_delabel` are calm: the
- *   lever is in the state someone chose, or there is nothing for it to do.
+ * - `held`, `released`, `not_held`, `nothing_to_delabel` and `not_in_window`
+ *   are calm: the lever is in the state someone chose, or there is nothing
+ *   for it to do.
  */
 export const MAINTENANCE_LEVER_ATTENTION_BY_KIND: Record<
   MaintenanceLeverKind,
@@ -70,6 +84,10 @@ export const MAINTENANCE_LEVER_ATTENTION_BY_KIND: Record<
   overridden_externally: "author",
   left_paused_quarantined: "author",
   no_ci_host: "author",
+  no_ci_host_unpaused: "waiting",
+  drained_outside_window: "author",
+  window_expired: "waiting",
+  not_in_window: "none",
   unknown: "waiting",
 };
 
@@ -86,6 +104,10 @@ export const MAINTENANCE_LEVER_BADGE_CLASS: Record<
   overridden_externally: AUTHOR_RED,
   left_paused_quarantined: AUTHOR_RED,
   no_ci_host: AUTHOR_RED,
+  no_ci_host_unpaused: WAITING_AMBER,
+  drained_outside_window: AUTHOR_RED,
+  window_expired: WAITING_AMBER,
+  not_in_window: INERT,
   unknown: UNKNOWN_AMBER,
 };
 
@@ -96,6 +118,7 @@ export const MAINTENANCE_LEVER_AUTHOR_GLYPH_KINDS: ReadonlySet<MaintenanceLeverK
     "overridden_externally",
     "left_paused_quarantined",
     "no_ci_host",
+    "drained_outside_window",
   ]);
 
 export const MAINTENANCE_LEVER_PALETTE: StatusPalette<MaintenanceLeverKind> = {
@@ -128,7 +151,8 @@ function withDetail(base: string, detail: string | null): string {
 export function deriveLeverStatus(
   lever: MaintenanceLever,
   entry: MachineEntry,
-  now: number
+  now: number,
+  ctx: MaintenanceContext = NO_MAINTENANCE_CONTEXT
 ): RowStatus<MaintenanceLeverKind> {
   const window = entry.openWindow;
   if (entry.openWindowUnreadable) {
@@ -147,9 +171,35 @@ export function deriveLeverStatus(
     );
   }
   if (window === null) {
+    if (ctx.refreshError !== null) {
+      return leverStatus(
+        "unknown",
+        UNKNOWN_LABEL,
+        `the last machines refresh failed (${ctx.refreshError}), so whether this lever is paused is not known`
+      );
+    }
+    const lane = lever === "agent_work" ? "agent" : "ci";
+    const drain = ctx.drain;
+    if (drain?.state === "drained" && drainedLanes(drain).includes(lane)) {
+      return leverStatus(
+        "drained_outside_window",
+        "Drained outside a maintenance window",
+        `lanes ${lanesLabel(drainedLanes(drain))}, until ${formatUntil(drain.entry.until, now)}` +
+          ` — ${drain.entry.reason ?? "no reason recorded"}` +
+          (lane === "ci" ? "; GitHub may still route CI jobs here" : "") +
+          ". Release it here, or open a window"
+      );
+    }
+    if (drain?.state === "unknown") {
+      return leverStatus(
+        "unknown",
+        UNKNOWN_LABEL,
+        `whether a drain holds this machine is not known — ${drain.reason}`
+      );
+    }
     if (lever === "ci" && noHost) {
       return leverStatus(
-        "no_ci_host",
+        "no_ci_host_unpaused",
         "No CI host linked — link one",
         "GitHub may still route CI jobs to this machine; link its runner name to pause them"
       );
@@ -162,7 +212,27 @@ export function deriveLeverStatus(
         : "not paused — coord and GitHub may send CI jobs here"
     );
   }
+  if (window.state !== "open") {
+    return leverStatus(
+      "window_expired",
+      "Window expired — restoring",
+      `the window ended (${window.state}); coord is releasing what it held`
+    );
+  }
   const until = formatUntil(window.until, now);
+  const inWindow =
+    lever === "agent_work"
+      ? window.levers.agentWork.inWindow
+      : window.levers.ci.inWindow;
+  if (!inWindow) {
+    return leverStatus(
+      "not_in_window",
+      "Not part of this window",
+      lever === "agent_work"
+        ? "the open window does not pause agent work — coord may start sessions here"
+        : "the open window does not pause CI — coord and GitHub may send jobs here"
+    );
+  }
   if (lever === "agent_work") {
     const a = window.levers.agentWork;
     switch (a.state) {
@@ -219,11 +289,16 @@ export function deriveLeverStatus(
       );
     case "partial": {
       const n = stillRoutingCount(c.labels);
+      const unknownN = new Set(
+        c.labels.filter((l) => l.outcome === null).map((l) => l.repo)
+      ).size;
       return leverStatus(
         "partial",
         "CI partly paused",
         withDetail(
-          `${n} repo${n === 1 ? "" : "s"} still route${n === 1 ? "s" : ""} here — retry`,
+          `${n} repo${n === 1 ? "" : "s"} still route${n === 1 ? "s" : ""} here` +
+            (unknownN > 0 ? ` (${unknownN} ${UNKNOWN_LABEL})` : "") +
+            " — retry",
           c.detail
         )
       );
