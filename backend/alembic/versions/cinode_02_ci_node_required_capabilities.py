@@ -1,7 +1,7 @@
 """runner-as-CI-node — coord.canonical_repos.ci_node_required_capabilities
 
 Revision ID: cinode_02_required_capabilities
-Revises: overview_03_documents_and_wiki
+Revises: cinode_03_dispatch_pr_head_base_sha
 Create Date: 2026-09-27
 
 Phase 4b of plan
@@ -54,7 +54,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cinode_02_required_capabilities"
-down_revision: str | None = "overview_03_documents_and_wiki"
+down_revision: str | None = "cinode_03_dispatch_pr_head_base_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
