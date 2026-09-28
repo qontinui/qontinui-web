@@ -290,7 +290,7 @@ export function deriveLeverStatus(
           "failed",
           "Release failed",
           withDetail(
-            "coord could not release the agent lane — it is still held; retry the resume",
+            "coord reports the release failed; the window's drain still holds — retry the resume",
             a.detail
           )
         );

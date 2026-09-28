@@ -33,6 +33,7 @@ import {
   formatUntil,
   leverActionPauses,
   machineEntryBadge,
+  agentLeverStateWords,
   errorWantsReread,
   labelsSpanHosts,
   maintenanceBadge,
@@ -1451,5 +1452,45 @@ describe("coord Phase 3-5 contract details", () => {
     expect(
       preview.filter((l) => l.key.startsWith("label-")).map((l) => l.target)
     ).toEqual(["a/one on merytshost", "a/one on msi-wsl"]);
+  });
+});
+
+describe("coord contract — round 9", () => {
+  it("reads the linked machine from linked_device_id first, the others as fallbacks", () => {
+    const both = describeMaintenanceError(
+      409,
+      JSON.stringify({
+        error: "ci_host_linked_to_machine",
+        message: "m",
+        linked_device_id: DEVICE,
+        device_id: "other",
+      })
+    );
+    expect(both.machineDeviceId).toBe(DEVICE);
+    const fallback = describeMaintenanceError(
+      409,
+      JSON.stringify({
+        error: "ci_host_linked_to_machine",
+        message: "m",
+        device_id: "other",
+      })
+    );
+    expect(fallback.machineDeviceId).toBe("other");
+  });
+
+  it("words the agent states plainly, and window_changed as a re-read in progress", () => {
+    expect(agentLeverStateWords("release_failed")).toBe(
+      "coord reports the release failed; the window's drain still holds — retry the resume"
+    );
+    expect(agentLeverStateWords("hold_failed")).toBe("the pause failed");
+    expect(agentLeverStateWords(null)).toBe("UNKNOWN");
+    expect(
+      maintenanceErrorGuidance({
+        code: "window_changed",
+        message: "",
+        poolKey: null,
+        machineDeviceId: null,
+      })
+    ).toContain("the page is re-reading it");
   });
 });
