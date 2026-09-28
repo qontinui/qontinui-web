@@ -36,7 +36,7 @@
  * (and, for the sessions, `runnerStatus.ts`); this file only lays it out.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -275,13 +275,21 @@ export default function MachineMaintenancePage() {
     void readiness.refresh();
   }, [machines, drain, readiness]);
 
-  // A re-read can move the selection to a different entry (a CI host that
-  // turned out to be linked now resolves to its machine). An open Prepare
-  // form must not silently retarget, so it closes; reopening starts clean.
-  const entryKey = entry?.key ?? null;
-  useEffect(() => {
-    setPrepareOpen(false);
-  }, [entryKey]);
+  // The Prepare form is PINNED to the entry it was opened on. A re-read can
+  // move the selection (a CI host that turned out to be linked now resolves
+  // to its machine, or a poll lands mid-submit); the form must neither
+  // silently retarget nor vanish with its refusal or outcome, so it keeps its
+  // target and says the selection moved (`movedTo`). While the key is
+  // unchanged, the pinned entry follows the fresh read.
+  const [pinnedEntry, setPinnedEntry] = useState<MachineEntry | null>(null);
+  const dialogEntry =
+    pinnedEntry && entry && entry.key === pinnedEntry.key ? entry : pinnedEntry;
+  const movedTo =
+    pinnedEntry === null || (entry && entry.key === pinnedEntry.key)
+      ? null
+      : entry
+        ? `${machineEntryLabel(entry).primary} (${machineEntryLabel(entry).secondary})`
+        : "a machine coord's list does not name";
 
   const openPrepare = useCallback(
     (only?: MaintenanceLever) => {
@@ -293,6 +301,7 @@ export default function MachineMaintenancePage() {
           : { agent_work: agentPossible, ci: true }
       );
       setCloseResult(null);
+      setPinnedEntry(entry);
       setPrepareOpen(true);
     },
     [entry]
@@ -570,9 +579,10 @@ export default function MachineMaintenancePage() {
         </>
       )}
 
-      {entry !== undefined && (
+      {dialogEntry !== null && (
         <PrepareForRestartDialog
-          entry={entry}
+          entry={dialogEntry}
+          movedTo={movedTo}
           open={prepareOpen}
           onOpenChange={setPrepareOpen}
           initialLevers={prepareLevers}

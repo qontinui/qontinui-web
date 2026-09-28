@@ -208,6 +208,22 @@ function machinesBody(opts: { hosts?: string[]; window?: unknown } = {}) {
   };
 }
 
+/** coord's list once msi-wsl is known to be linked to DEVICE. */
+function linkedMachines() {
+  return {
+    machines: [
+      {
+        device_id: DEVICE,
+        hostname: "merytshost",
+        state: "healthy",
+        ci_hosts: ["merytshost", "msi-wsl"],
+        open_window: null,
+      },
+    ],
+    unlinked_ci_hosts: [],
+  };
+}
+
 function readinessBody(overrides: Record<string, unknown> = {}) {
   return {
     window_id: WINDOW,
@@ -274,7 +290,7 @@ let samplesResponse: Res;
 let sessionsResponse: Res;
 let machinesResponse: Res;
 let readinessResponse: Res;
-let windowPostResponses: Res[];
+let windowPostResponses: (Res | Promise<Res>)[];
 let patchResponse: Res;
 let closeResponse: Res;
 let linkResponse: Res;
@@ -1124,7 +1140,7 @@ describe("/admin/coord/machine-maintenance — coord Phase 3-5 details", () => {
 });
 
 describe("/admin/coord/machine-maintenance — round 9", () => {
-  it("closes the Prepare form when a re-read moves the selection to another entry", async () => {
+  it("keeps the pinned form up when a re-read moves the selection — refusal, guidance and link stay visible", async () => {
     search = "machine=ci:msi-wsl";
     windowPostResponses = [
       res(409, {
@@ -1151,31 +1167,84 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     );
     // coord's truth, served on the re-read the refusal triggers: msi-wsl is
     // linked to DEVICE, so `ci:msi-wsl` now resolves to that machine.
-    machinesResponse = res(200, {
-      machines: [
-        {
-          device_id: DEVICE,
-          hostname: "merytshost",
-          state: "healthy",
-          ci_hosts: ["merytshost", "msi-wsl"],
-          open_window: null,
-        },
-      ],
-      unlinked_ci_hosts: [],
-    });
+    machinesResponse = res(200, linkedMachines());
     await userEvent.click(
       within(dialog).getByTestId("coord-maintenance-prepare-submit")
     );
-    // The form does not silently retarget to the machine: it closes.
-    await waitFor(() =>
-      expect(
-        screen.queryByTestId("coord-maintenance-prepare-dialog")
-      ).not.toBeInTheDocument()
+    const moved = await within(dialog).findByTestId(
+      "coord-maintenance-prepare-moved"
     );
-    expect(screen.getByTestId("coord-maintenance-identity")).toHaveTextContent(
-      `merytshost · ${DEVICE}`
+    expect(moved).toHaveTextContent(
+      `Selection moved to merytshost (${DEVICE})`
     );
+    expect(moved).toHaveTextContent("this form still targets msi-wsl");
+    // The refusal, its next step and the Select-machine link are still up.
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-error")
+    ).toHaveTextContent("msi-wsl is linked to a machine");
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-error-guidance")
+    ).toHaveTextContent("open the window on that machine");
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-select-machine")
+    ).toHaveAttribute(
+      "href",
+      `/admin/coord/machine-maintenance?machine=${DEVICE}`
+    );
+    // …and the form cannot be sent at its old target by accident.
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-submit")
+    ).toBeDisabled();
     expect(calls("/fleet/maintenance-window", "POST")).toHaveLength(1);
+  });
+
+  it("a selection change while a submit is in flight keeps the outcome and the pinned target", async () => {
+    search = "machine=ci:msi-wsl";
+    let release!: (r: Res) => void;
+    windowPostResponses = [
+      new Promise<Res>((r) => {
+        release = r;
+      }),
+    ];
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-prepare")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-prepare-dialog"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-preset-1h")
+    );
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "wsl restart"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-submit")
+    );
+    // A poll lands mid-submit and moves the selection to the machine.
+    machinesResponse = res(200, linkedMachines());
+    fireEvent.click(screen.getByTestId("coord-maintenance-refresh"));
+    await within(dialog).findByTestId("coord-maintenance-prepare-moved");
+    await act(async () => {
+      release(
+        res(201, wireWindow({ machine_device_id: null, ci_host: "msi-wsl" }))
+      );
+    });
+    // The outcome is shown in the still-open dialog…
+    expect(
+      await within(dialog).findByText("Maintenance window opened")
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-preview")
+    ).toHaveTextContent("What coord did");
+    // …and the request went to the entry the form was opened on.
+    const sent = JSON.parse(
+      (calls("/fleet/maintenance-window", "POST")[0][1] as { body: string })
+        .body
+    );
+    expect(sent).toMatchObject({ machine_device_id: null, ci_host: "msi-wsl" });
   });
 
   it("a refused Return to service shows the next step and re-reads", async () => {
@@ -1198,8 +1267,10 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     expect(
       await screen.findByTestId("coord-maintenance-close-error-guidance")
     ).toHaveTextContent("the page is re-reading it");
+    // The polls run every 15 s, so inside this test the ONLY machines read
+    // after the click is the one the refusal triggers — exactly one.
     await waitFor(() =>
-      expect(calls("/fleet/machines").length).toBeGreaterThan(before)
+      expect(calls("/fleet/machines")).toHaveLength(before + 1)
     );
   });
 
@@ -1218,8 +1289,10 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     expect(
       await screen.findByTestId("coord-maintenance-lever-error")
     ).toHaveTextContent("the page is re-reading it");
+    // The polls run every 15 s, so inside this test the ONLY machines read
+    // after the click is the one the refusal triggers — exactly one.
     await waitFor(() =>
-      expect(calls("/fleet/machines").length).toBeGreaterThan(before)
+      expect(calls("/fleet/machines")).toHaveLength(before + 1)
     );
   });
 });

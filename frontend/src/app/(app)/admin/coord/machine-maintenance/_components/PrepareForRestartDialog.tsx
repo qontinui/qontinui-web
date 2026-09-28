@@ -73,6 +73,12 @@ export interface PrepareForRestartDialogProps {
   onOpened: (window: MaintenanceWindow | null) => void;
   /** Called when a refusal says the page's view is stale; re-reads it. */
   onStale?: () => void;
+  /**
+   * Set when the page's selection has moved off the entry this form was
+   * opened on — the new selection's identity. The form keeps its pinned
+   * target, says so, and refuses to submit; its refusal or outcome stays up.
+   */
+  movedTo?: string | null;
 }
 
 export function PrepareForRestartDialog({
@@ -82,6 +88,7 @@ export function PrepareForRestartDialog({
   initialLevers,
   onOpened,
   onStale,
+  movedTo = null,
 }: PrepareForRestartDialogProps) {
   const [untilLocal, setUntilLocal] = useState("");
   const [reason, setReason] = useState("");
@@ -127,7 +134,7 @@ export function PrepareForRestartDialog({
 
   const submit = useCallback(
     async (acceptCiQueueing: boolean) => {
-      if (!check.ok || busy) return;
+      if (!check.ok || busy || movedTo !== null) return;
       setBusy(true);
       setRefusal(null);
       const res = await openMaintenanceWindow({
@@ -156,7 +163,7 @@ export function PrepareForRestartDialog({
       // ci_host_linked_to_machine: the list is stale — re-read it.
       if (errorWantsReread(res)) onStale?.();
     },
-    [check, busy, entry, reason, onOpened, onStale]
+    [check, busy, entry, reason, onOpened, onStale, movedTo]
   );
 
   const untilLabel = check.ok
@@ -191,6 +198,21 @@ export function PrepareForRestartDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          {movedTo !== null && (
+            <p
+              role="alert"
+              className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs break-words"
+              data-testid="coord-maintenance-prepare-moved"
+            >
+              Selection moved to{" "}
+              <span className="font-mono break-all">{movedTo}</span>; this form
+              still targets{" "}
+              <span className="font-mono break-all">
+                {identity.primary} ({identity.secondary})
+              </span>
+              . Close and reopen to act on the new one.
+            </p>
+          )}
           {!openedAny && (
             <>
               <fieldset className="space-y-1.5">
@@ -340,7 +362,7 @@ export function PrepareForRestartDialog({
             <LastHostNotice
               refusal={lastHost}
               until={untilLabel}
-              busy={busy}
+              busy={busy || movedTo !== null}
               onAccept={() => void submit(true)}
               testIdPrefix="coord-maintenance-prepare"
             />
@@ -412,7 +434,9 @@ export function PrepareForRestartDialog({
               </Button>
               <Button
                 type="button"
-                disabled={busy || !check.ok || lastHost !== null}
+                disabled={
+                  busy || !check.ok || lastHost !== null || movedTo !== null
+                }
                 onClick={() => void submit(false)}
                 data-testid="coord-maintenance-prepare-submit"
               >
