@@ -103,9 +103,10 @@ export interface FindingsResponse {
    * The bounded-read envelope (plan
    * `2026-09-05-findings-recent-is-a-window-that-reads-as-a-corpus`). All
    * OPTIONAL and nullable: a coord that predates it sends none of them, and the
-   * proxy's degraded body sends them as explicit nulls. An absent key is
-   * UNKNOWN, never "false" or "complete" — {@link deriveFindingsBound} is the
-   * one reader of them.
+   * proxy's degraded body omits them today — it sends them as explicit nulls
+   * only once qontinui-web#1523 lands. Absent and null both read as UNKNOWN,
+   * never "false" or "complete" — {@link deriveFindingsBound} is the one
+   * reader of them.
    */
   /** coord cut the read short: rows past this page exist. */
   truncated?: boolean | null;
@@ -477,8 +478,11 @@ export function findingLinkNotice(state: {
     if (state.beyondLoadedPage) {
       return (
         base +
-        " It is not in the list below, so it is shown first and not counted " +
-        "in the list total."
+        // Not "not counted in the list total": once coord sends a `total`, a
+        // row past the loaded ones may well be counted in it. What is true is
+        // narrower — it is not among the rows LOADED.
+        " It is not among the rows loaded below, which may not be the whole " +
+        "list, so it is shown first."
       );
     }
     return base;

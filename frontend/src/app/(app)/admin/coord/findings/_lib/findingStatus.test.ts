@@ -399,7 +399,7 @@ describe("findingLinkNotice", () => {
       loading: false,
       beyondLoadedPage: true,
     });
-    expect(beyond).toMatch(/not in the list below/i);
+    expect(beyond).toMatch(/not among the rows loaded/i);
     expect(beyond).not.toMatch(/outside the current filters/i);
   });
 

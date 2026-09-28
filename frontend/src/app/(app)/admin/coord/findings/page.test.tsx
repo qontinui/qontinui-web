@@ -20,7 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
@@ -622,7 +622,7 @@ describe("CoordFindingsPage", () => {
 
       await waitFor(() =>
         expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
-          /not in the list below/i
+          /not among the rows loaded/i
         )
       );
       expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
@@ -711,7 +711,7 @@ describe("CoordFindingsPage", () => {
 
       await waitFor(() =>
         expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
-          /not in the list below/i
+          /not among the rows loaded/i
         )
       );
       expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
@@ -1161,6 +1161,159 @@ describe("CoordFindingsPage", () => {
         expect(screen.queryByTestId("coord-findings-load-older")).toBeNull()
       );
       expect(screen.getAllByTestId("coord-finding-row")).toHaveLength(2);
+      // coord still says more exist; the page must not leave that a dead end.
+      expect(
+        screen.getByTestId("coord-findings-walk-stalled")
+      ).toHaveTextContent(/added nothing new.*refresh/i);
+    });
+
+    it("shows no stall note when the walk ends on coord's own 'complete'", async () => {
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("cursor=")
+            ? page([], done)
+            : page(rowsFrom(0, 2), more("c1"))
+        )
+      );
+      render(<CoordFindingsPage />);
+      await userEvent.click(
+        await screen.findByTestId("coord-findings-load-older")
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-count")).toHaveTextContent(
+          "all 2 shown"
+        )
+      );
+      expect(screen.queryByTestId("coord-findings-walk-stalled")).toBeNull();
+    });
+
+    it("never appends an OLD walk's page onto a Refresh's new head", async () => {
+      // The race: page 2 of walk 1 is in flight, a Refresh starts walk 2, walk
+      // 2's head lands with its own cursor, THEN walk 1's page 2 lands.
+      const oldPage = deferred<unknown>();
+      const newHead = deferred<unknown>();
+      let heads = 0;
+      httpGet.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes("cursor=c1")) return oldPage.promise;
+        if (u.includes("cursor=")) return Promise.resolve(page([], done));
+        heads += 1;
+        return heads === 1
+          ? Promise.resolve(page(rowsFrom(0, 2), more("c1")))
+          : newHead.promise;
+      });
+      render(<CoordFindingsPage />);
+      await userEvent.click(
+        await screen.findByTestId("coord-findings-load-older")
+      );
+      await waitFor(() => expect(cursorUrls()).toHaveLength(1));
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /refresh findings/i })
+      );
+      // The head read in flight retires walk 1's cursor at once.
+      expect(screen.queryByTestId("coord-findings-load-older")).toBeNull();
+
+      await act(async () => {
+        newHead.resolve(page(rowsFrom(10, 2), more("c-new")));
+      });
+      await act(async () => {
+        oldPage.resolve(page(rowsFrom(2, 2), done));
+      });
+
+      // Walk 1's page did not land: only the new head's rows…
+      expect(
+        screen
+          .getAllByTestId("coord-finding-row")
+          .map((r) => r.textContent?.match(/Finding \d+/)?.[0])
+      ).toEqual(["Finding 10", "Finding 11"]);
+      // …its cursor did not overwrite walk 2's, and the spinner reset.
+      const button = screen.getByTestId("coord-findings-load-older");
+      expect(button).toHaveTextContent("Load older");
+      expect(button).not.toBeDisabled();
+      expect(screen.getByTestId("coord-findings-count")).toHaveTextContent(
+        "2+ shown — more exist"
+      );
+      await userEvent.click(button);
+      await waitFor(() =>
+        expect(cursorUrls().some((u) => u.includes("cursor=c-new"))).toBe(true)
+      );
+    });
+
+    it("a failed Refresh leaves no old cursor to append onto stale rows", async () => {
+      let heads = 0;
+      httpGet.mockImplementation((url: string) => {
+        if (String(url).includes("cursor=")) {
+          return Promise.resolve(page(rowsFrom(2, 2), done));
+        }
+        heads += 1;
+        return heads === 1
+          ? Promise.resolve(page(rowsFrom(0, 2), more("c1")))
+          : Promise.reject(new Error("GET … failed: 503 - down"));
+      });
+      render(<CoordFindingsPage />);
+      await screen.findByTestId("coord-findings-load-older");
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /refresh findings/i })
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+          /stopped updating/i
+        )
+      );
+      // The last read that landed stays on screen, and nothing pages from it.
+      expect(screen.getAllByTestId("coord-finding-row")).toHaveLength(2);
+      expect(screen.queryByTestId("coord-findings-load-older")).toBeNull();
+      expect(cursorUrls()).toHaveLength(0);
+    });
+
+    it("shows coord's total only when it sends a number", async () => {
+      httpGet.mockResolvedValue(
+        page(rowsFrom(0, 2), { ...more("c1"), total: 240 })
+      );
+      const { unmount } = render(<CoordFindingsPage />);
+      expect(
+        await screen.findByTestId("coord-findings-total")
+      ).toHaveTextContent("240 in total");
+      unmount();
+
+      httpGet.mockResolvedValue(
+        page(rowsFrom(0, 2), { ...more("c1"), total: null })
+      );
+      render(<CoordFindingsPage />);
+      await screen.findAllByTestId("coord-finding-row");
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-count")).toHaveTextContent(
+          "2+ shown"
+        )
+      );
+      expect(screen.queryByTestId("coord-findings-total")).toBeNull();
+    });
+
+    it("turns the strip amber on an UNKNOWN bound, and green on a complete one", async () => {
+      httpGet.mockResolvedValue(page(rowsFrom(0, 50)));
+      const { unmount } = render(<CoordFindingsPage />);
+      await screen.findAllByTestId("coord-finding-row");
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-health")).toHaveAttribute(
+          "data-health-level",
+          "amber"
+        )
+      );
+      expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+        /whether more exist is unknown/i
+      );
+      unmount();
+
+      httpGet.mockResolvedValue(page(rowsFrom(0, 3)));
+      render(<CoordFindingsPage />);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-health")).toHaveAttribute(
+          "data-health-level",
+          "green"
+        )
+      );
     });
 
     it("resets the walk on a filter change and discards the OLD filter's page in flight", async () => {
@@ -1187,8 +1340,9 @@ describe("CoordFindingsPage", () => {
       expect(screen.queryByTestId("coord-findings-load-older")).toBeNull();
 
       // Filter A's page lands late. It must not append into filter B's list.
-      stale.resolve(page(rowsFrom(2, 2), done));
-      await new Promise((r) => setTimeout(r, 0));
+      await act(async () => {
+        stale.resolve(page(rowsFrom(2, 2), done));
+      });
       expect(screen.getAllByTestId("coord-finding-row")).toHaveLength(1);
       expect(screen.queryByText("Finding 2")).toBeNull();
       expect(screen.getByTestId("coord-findings-count")).toHaveTextContent(
@@ -1321,7 +1475,7 @@ describe("CoordFindingsPage", () => {
         // at_least: the row may sit past what is loaded.
         await waitFor(() =>
           expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
-            /not in the list below/i
+            /not among the rows loaded/i
           )
         );
         expect(
@@ -1357,7 +1511,7 @@ describe("CoordFindingsPage", () => {
 
         await waitFor(() =>
           expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
-            /not in the list below/i
+            /not among the rows loaded/i
           )
         );
         expect(

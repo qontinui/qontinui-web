@@ -158,6 +158,23 @@ function cursorOf(body: FindingsResponse): string | null {
     : null;
 }
 
+/**
+ * A cursor, bound to the head read that started its walk.
+ *
+ * The cursor alone is not enough: "Load older" used to capture the CURRENT
+ * request counter at click time, so a click landing while a Refresh was in
+ * flight stamped the OLD walk's cursor with the NEW read's number, and its page
+ * appended onto the new head — a silent gap. Carrying the minting read's
+ * `gen`/`req` with the cursor makes a page from an older walk unlandable.
+ */
+interface WalkCursor {
+  cursor: string;
+  /** `queryGenRef` when the walk's head read was issued. */
+  gen: number;
+  /** `listReqRef` of that head read. */
+  req: number;
+}
+
 /** The last page's envelope, kept verbatim for `deriveFindingsBound`. */
 interface LastPage {
   boundKind: string | null | undefined;
@@ -199,8 +216,14 @@ export default function CoordFindingsPage() {
    */
   const [lastPage, setLastPage] = useState<LastPage | null>(null);
   /** The cursor "Load older" follows; `null` hides the control. */
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<WalkCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * The walk ended because a page added no new rows while coord's envelope
+   * still said more exist. Without a sentence that is a dead end: a "more
+   * exist" badge and no control to reach them.
+   */
+  const [walkStalled, setWalkStalled] = useState(false);
   /**
    * A failed "Load older", kept apart from `readFailed`/`error` exactly as the
    * notifications page keeps `pagingFailed`: the rows already loaded are still
@@ -269,9 +292,14 @@ export default function CoordFindingsPage() {
       queryGenRef.current === gen && listReqRef.current === req;
     setLoading(true);
     // A head read restarts the walk: bumping `listReqRef` above has already
-    // retired any "Load older" still in flight (it checks the same counter),
-    // so its spinner must not outlive it.
+    // retired any "Load older" still in flight (its cursor carries the older
+    // number), so its spinner must not outlive it. The cursor goes NOW, not
+    // when the read lands: if this read fails, the rows on screen are the last
+    // read that landed, and the old cursor must not append a fresh page onto
+    // them — a failed Refresh leaves no walk to continue, only a retry.
     setLoadingMore(false);
+    setNextCursor(null);
+    setWalkStalled(false);
     try {
       const body = readBody(
         await httpClient.get<unknown>(
@@ -310,7 +338,8 @@ export default function CoordFindingsPage() {
       const head = rowsOf(body);
       setRows(head);
       setLastPage(lastPageOf(body, head.length));
-      setNextCursor(cursorOf(body));
+      const minted = cursorOf(body);
+      setNextCursor(minted === null ? null : { cursor: minted, gen, req });
       setPagingError(null);
       setTruncatedKeys(body.resource_keys_truncated === true);
       setLoaded(true);
@@ -343,6 +372,7 @@ export default function CoordFindingsPage() {
     setLastPage(null);
     setNextCursor(null);
     setLoadingMore(false);
+    setWalkStalled(false);
     setPagingError(null);
     // Everything the list read derives belongs to the query that produced it.
     // A new filter must not show the OLD query's count, its "loaded" verdict
@@ -366,19 +396,21 @@ export default function CoordFindingsPage() {
   /**
    * "Load older" — append the next keyset page of the SAME query.
    *
-   * The cursor is opaque and bound to the query that minted it, so both guards
-   * `fetchList` sets are checked: a filter change (`queryGenRef`) or a Refresh
-   * (`listReqRef`) while this page is in flight discards it, and a cursor from
-   * filter A never appends into filter B's list. coord would refuse a stale
-   * cursor anyway; the page does not lean on that refusal.
+   * The cursor is opaque and bound to the query AND the head read that minted
+   * it ({@link WalkCursor}): a filter change (`queryGenRef`) or a Refresh
+   * (`listReqRef`) since that head read discards the page, so a cursor from
+   * filter A — or from the walk before a Refresh — never appends into another
+   * list. coord would refuse a stale cursor anyway; the page does not lean on
+   * that refusal.
    */
   const loadOlder = useCallback(async () => {
-    const cursor = nextCursor;
-    if (!cursor) return;
-    const gen = queryGenRef.current;
-    const req = listReqRef.current;
+    if (!nextCursor) return;
+    const { cursor, gen, req } = nextCursor;
     const current = () =>
       queryGenRef.current === gen && listReqRef.current === req;
+    // Already stale (a head read started since this cursor was minted): send
+    // nothing rather than a request whose answer would be discarded.
+    if (!current()) return;
     setLoadingMore(true);
     setPagingError(null);
     try {
@@ -413,7 +445,13 @@ export default function CoordFindingsPage() {
       setLastPage(lastPageOf(body, page.length));
       // A page that adds nothing ends the walk even if coord still hands back a
       // cursor — otherwise a repeated or empty page leaves a button that loops.
-      setNextCursor(fresh.length === 0 ? null : cursorOf(body));
+      const minted = cursorOf(body);
+      setNextCursor(
+        fresh.length === 0 || minted === null
+          ? null
+          : { cursor: minted, gen, req }
+      );
+      setWalkStalled(fresh.length === 0);
     } catch (e) {
       if (!current()) return;
       // coord's own words (a 400 on a malformed or stale cursor arrives here
@@ -757,7 +795,9 @@ export default function CoordFindingsPage() {
             variant="outline"
             size="sm"
             onClick={() => void loadOlder()}
-            disabled={loadingMore}
+            // A head read in flight is about to replace the list this page
+            // would append to.
+            disabled={loadingMore || loading}
             data-testid="coord-findings-load-older"
           >
             {loadingMore ? "Loading…" : "Load older"}
@@ -773,6 +813,16 @@ export default function CoordFindingsPage() {
             restarts from the newest.
           </span>
         </div>
+      )}
+
+      {walkStalled && bound?.kind === "at_least" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-findings-walk-stalled"
+        >
+          coord offered more, but the next page added nothing new — Refresh to
+          restart from the newest.
+        </p>
       )}
 
       {pagingError !== null && (
