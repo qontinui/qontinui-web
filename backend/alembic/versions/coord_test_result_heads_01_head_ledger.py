@@ -151,15 +151,16 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "cinode_03_dispatch_pr_head_base_sha"`` -- ``main``'s single
-alembic head, measured 2026-09-28 with ``scripts/ci/count_alembic_heads.py``
-(``HEAD_COUNT=1``, ``HEAD=cinode_03_dispatch_pr_head_base_sha``) after
-rebasing onto ``origin/main`` ``3dd398ce1``. A re-point is three coupled edits:
+``down_revision = "coordprio_01_queued_at_priority_tier"`` -- ``main``'s single
+alembic head, measured 2026-09-29 with ``scripts/ci/count_alembic_heads.py``
+(``HEAD_COUNT=1``, ``HEAD=coordprio_01_queued_at_priority_tier``) after
+rebasing onto ``origin/main`` ``abf669755`` (first authored against
+``cinode_03_dispatch_pr_head_base_sha``; re-pointed when ``coordprio_01`` landed). A re-point is three coupled edits:
 ``down_revision``, the ``Revises:`` line below, and ``_PARENT_REVISION_ID`` in
 ``tests/test_coord_test_results_heads_01_migration.py``.
 
 Revision ID: coord_test_result_heads_01
-Revises: cinode_03_dispatch_pr_head_base_sha
+Revises: coordprio_01_queued_at_priority_tier
 Create Date: 2026-09-28
 
 """
@@ -170,7 +171,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_test_result_heads_01"
-down_revision: str | None = "cinode_03_dispatch_pr_head_base_sha"
+down_revision: str | None = "coordprio_01_queued_at_priority_tier"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

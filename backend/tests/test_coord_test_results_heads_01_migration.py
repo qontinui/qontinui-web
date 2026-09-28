@@ -73,7 +73,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 import check_coord_column_drops as guard  # noqa: E402
 
 _REVISION_ID = "coord_test_result_heads_01"
-_PARENT_REVISION_ID = "cinode_03_dispatch_pr_head_base_sha"
+_PARENT_REVISION_ID = "coordprio_01_queued_at_priority_tier"
 _REVISION_FILENAME = "coord_test_result_heads_01_head_ledger.py"
 
 _SCHEMA = "coord"
