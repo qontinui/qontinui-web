@@ -870,8 +870,8 @@ export function ScanSourcesPanel() {
                 {" "}
                 No feeder has a fresh reading, but {refusedRecently} device
                 {refusedRecently === 1 ? " was" : "s were"} refused within the
-                window — alive and reporting, its latest report rejected, not
-                quiet.
+                window — alive and reporting, the latest report from each
+                rejected, not quiet.
               </span>
             ) : null}
             <RetiredNote data={data} />
