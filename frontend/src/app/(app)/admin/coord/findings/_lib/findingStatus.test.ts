@@ -26,6 +26,7 @@ import {
   FINDING_ATTENTION_BY_RETENTION,
   FINDING_STATUS_PALETTE,
   deriveFindingStatus,
+  deriveFindingsBound,
   deriveFindingsHealth,
   dossierSlug,
   findingHref,
@@ -457,21 +458,194 @@ describe("linkedRowFrom", () => {
   });
 });
 
+describe("deriveFindingsBound", () => {
+  /** Today's coord: `limit` served, no envelope keys at all. */
+  const bare = {
+    boundKind: undefined,
+    truncated: undefined,
+    limit: 50,
+    lastPageRows: 50,
+    rowsLoaded: 50,
+    total: undefined,
+  };
+
+  it("takes coord's explicit verdict for each bound_kind", () => {
+    expect(deriveFindingsBound({ ...bare, boundKind: "complete" }).kind).toBe(
+      "complete"
+    );
+    expect(deriveFindingsBound({ ...bare, boundKind: "at_least" }).kind).toBe(
+      "at_least"
+    );
+    expect(deriveFindingsBound({ ...bare, boundKind: "unknown" }).kind).toBe(
+      "unknown"
+    );
+  });
+
+  it("never upgrades an explicit 'unknown', even on a SHORT page", () => {
+    const b = deriveFindingsBound({
+      ...bare,
+      boundKind: "unknown",
+      truncated: false,
+      lastPageRows: 3,
+      rowsLoaded: 3,
+    });
+    expect(b.kind).toBe("unknown");
+    expect(b.label).not.toMatch(/\ball\b/);
+  });
+
+  it("reads a verdict newer than this frontend as UNKNOWN, not by inference", () => {
+    expect(
+      deriveFindingsBound({
+        ...bare,
+        boundKind: "approximately",
+        lastPageRows: 3,
+        rowsLoaded: 3,
+      }).kind
+    ).toBe("unknown");
+  });
+
+  it("lets an explicit verdict outrank truncated and the short-page inference", () => {
+    // coord said complete while the page is FULL — coord knows, the page does not.
+    expect(deriveFindingsBound({ ...bare, boundKind: "complete" }).kind).toBe(
+      "complete"
+    );
+    // coord said at_least while the page is SHORT.
+    expect(
+      deriveFindingsBound({
+        ...bare,
+        boundKind: "at_least",
+        lastPageRows: 2,
+        rowsLoaded: 2,
+      }).kind
+    ).toBe("at_least");
+  });
+
+  it("reads truncated: true without a bound_kind as at_least", () => {
+    expect(deriveFindingsBound({ ...bare, truncated: true }).kind).toBe(
+      "at_least"
+    );
+  });
+
+  it("reads an absent key on a FULL page as UNKNOWN — a full page proves nothing", () => {
+    const b = deriveFindingsBound(bare);
+    expect(b.kind).toBe("unknown");
+    expect(b.label).toMatch(/UNKNOWN/);
+    expect(b.label).not.toMatch(/\ball\b/);
+  });
+
+  it("reads explicit truncated: false on a FULL page as UNKNOWN too", () => {
+    expect(deriveFindingsBound({ ...bare, truncated: false }).kind).toBe(
+      "unknown"
+    );
+  });
+
+  it("reads an absent key on a SHORT page with a numeric limit as complete", () => {
+    const b = deriveFindingsBound({ ...bare, lastPageRows: 7, rowsLoaded: 7 });
+    expect(b.kind).toBe("complete");
+    expect(b.label).toBe("all 7 shown");
+  });
+
+  it("reads an absent limit as UNKNOWN, however short the page", () => {
+    for (const limit of [undefined, null]) {
+      expect(
+        deriveFindingsBound({ ...bare, limit, lastPageRows: 1, rowsLoaded: 1 })
+          .kind
+      ).toBe("unknown");
+    }
+  });
+
+  it("judges shortness by the LAST page but counts every row loaded", () => {
+    // Three pages walked: 50 + 50 + 12. The last page is short, so the walk
+    // reached the end — and the label quotes 112, not the last page's 12.
+    const b = deriveFindingsBound({
+      ...bare,
+      lastPageRows: 12,
+      rowsLoaded: 112,
+    });
+    expect(b.kind).toBe("complete");
+    expect(b.label).toBe("all 112 shown");
+  });
+
+  it("labels at_least with the rows loaded and a plus", () => {
+    expect(
+      deriveFindingsBound({ ...bare, truncated: true, rowsLoaded: 100 }).label
+    ).toBe("100+ shown — more exist");
+  });
+
+  it("carries total only when coord sent a number", () => {
+    expect(deriveFindingsBound(bare).total).toBeNull();
+    expect(deriveFindingsBound({ ...bare, total: null }).total).toBeNull();
+    expect(deriveFindingsBound({ ...bare, total: 240 }).total).toBe(240);
+  });
+});
+
 describe("deriveFindingsHealth", () => {
+  const complete4 = deriveFindingsBound({
+    boundKind: "complete",
+    truncated: false,
+    limit: 50,
+    lastPageRows: 4,
+    rowsLoaded: 4,
+    total: null,
+  });
   const base = {
-    count: 4,
+    bound: complete4,
     loaded: true,
     failed: false,
     unavailable: null,
     triaged: null,
   };
 
-  it("is green and quotes the count once a read has landed", () => {
+  it("is green and quotes the count once a COMPLETE read has landed", () => {
     const h = deriveFindingsHealth(base);
     expect(h.level).toBe("green");
     expect(h.headline).toMatch(/4 findings/);
-    expect(h.badges[0].label).toBe("4 shown");
+    expect(h.badges[0].label).toBe("all 4 shown");
     expect(h.readIsCurrent).toBe(true);
+  });
+
+  it("says 'more exist' on an at_least bound, and stays green", () => {
+    const h = deriveFindingsHealth({
+      ...base,
+      bound: deriveFindingsBound({
+        boundKind: "at_least",
+        truncated: true,
+        limit: 50,
+        lastPageRows: 50,
+        rowsLoaded: 50,
+        total: null,
+      }),
+    });
+    expect(h.level).toBe("green");
+    expect(h.headline).toMatch(/50\+ findings/);
+    expect(h.badges[0].label).toBe("50+ shown — more exist");
+  });
+
+  it("is amber on an UNKNOWN bound — a full page is not the corpus", () => {
+    const h = deriveFindingsHealth({
+      ...base,
+      bound: deriveFindingsBound({
+        boundKind: undefined,
+        truncated: undefined,
+        limit: 50,
+        lastPageRows: 50,
+        rowsLoaded: 50,
+        total: undefined,
+      }),
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toMatch(/unknown/i);
+    expect(h.headline).not.toMatch(/in this window/);
+    expect(h.badges[0].label).toMatch(/UNKNOWN/);
+  });
+
+  it("adds a total badge only when coord sent a number", () => {
+    expect(deriveFindingsHealth(base).badges).toHaveLength(1);
+    const h = deriveFindingsHealth({
+      ...base,
+      bound: { ...complete4, total: 9 },
+    });
+    expect(h.badges.map((b) => b.label)).toContain("9 in total");
   });
 
   it("is never red — nothing on a reader is a demand", () => {
@@ -487,12 +661,13 @@ describe("deriveFindingsHealth", () => {
 
   it("dashes the count rather than zeroing it in every not-known state", () => {
     for (const input of [
-      { ...base, count: null, loaded: false },
+      { ...base, bound: null, loaded: false },
       { ...base, failed: true },
       { ...base, unavailable: "coord did not answer" },
     ]) {
       const h = deriveFindingsHealth(input);
       expect(h.badges[0].label).toBe("– shown");
+      expect(h.badges).toHaveLength(1);
       expect(h.readIsCurrent).toBe(false);
       expect(h.level).toBe("amber");
     }

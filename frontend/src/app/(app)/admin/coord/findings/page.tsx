@@ -49,9 +49,23 @@
  * `<RecordDetail>`, one open at a time, with the fixed section order and raw
  * ids LAST (R5); and every derivation — retention, triage, the banner, the
  * health strip — lives in `_lib/findingStatus.ts` with a test beside it (R8).
+ *
+ * ## One page is not the corpus
+ *
+ * Plan `2026-09-26-findings-console-reads-one-page-as-the-corpus`. coord's
+ * list is a keyset page of `PAGE_SIZE`, and its envelope says when it is one
+ * (`truncated`, `bound_kind`, `next_cursor`, `total`). The page used to discard
+ * that and render page 1 as the whole store. Now "Load older" follows
+ * `next_cursor` on click (nothing auto-loads), and the count badge says what
+ * the loaded rows are known to cover — `deriveFindingsBound`, the ONE reader of
+ * the envelope, which the linked-row banner reads too. The walk's shape is
+ * `/admin/coord/notifications`' `loadMore`: generation-guarded, deduped by id,
+ * ended by a page that adds nothing, reset by a filter change or a Refresh, and
+ * a failed page is not a failed list.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -79,6 +93,7 @@ import {
   type FindingsUnavailableKind,
   FINDING_STATUS_PALETTE,
   deriveFindingStatus,
+  deriveFindingsBound,
   deriveFindingsHealth,
   dossierSlug,
   findingLinkNotice,
@@ -109,6 +124,8 @@ function buildQuery(params: {
   kind: string;
   resourceKey: string;
   triaged: boolean | null;
+  /** Only ever a `next_cursor` coord minted for THIS query — never invented. */
+  cursor?: string | null;
 }): string {
   const qs = new URLSearchParams();
   qs.set("limit", String(PAGE_SIZE));
@@ -117,12 +134,47 @@ function buildQuery(params: {
   if (params.resourceKey.trim())
     qs.set("resource_keys", params.resourceKey.trim());
   if (params.triaged !== null) qs.set("triaged", String(params.triaged));
+  if (params.cursor) qs.set("cursor", params.cursor);
   return qs.toString();
 }
 
 /** The envelope, defensively: coord's shape, and nothing assumed present. */
 function readBody(body: unknown): FindingsResponse {
   return body && typeof body === "object" ? (body as FindingsResponse) : {};
+}
+
+/**
+ * The cursor to offer "Load older" with, or `null` for no control.
+ *
+ * BOTH keys are required: a cursor with no `truncated: true` is not coord
+ * saying more exist, and `truncated` with no cursor gives nothing to follow.
+ * Today's coord sends neither, so the control stays hidden against it.
+ */
+function cursorOf(body: FindingsResponse): string | null {
+  return body.truncated === true &&
+    typeof body.next_cursor === "string" &&
+    body.next_cursor !== ""
+    ? body.next_cursor
+    : null;
+}
+
+/** The last page's envelope, kept verbatim for `deriveFindingsBound`. */
+interface LastPage {
+  boundKind: string | null | undefined;
+  truncated: boolean | null | undefined;
+  limit: number | null | undefined;
+  lastPageRows: number;
+  total: number | null | undefined;
+}
+
+function lastPageOf(body: FindingsResponse, pageRows: number): LastPage {
+  return {
+    boundKind: body.bound_kind,
+    truncated: body.truncated,
+    limit: body.limit,
+    lastPageRows: pageRows,
+    total: body.total,
+  };
 }
 
 function rowsOf(body: FindingsResponse): CoordFindingRow[] {
@@ -140,7 +192,22 @@ export default function CoordFindingsPage() {
   const triaged = TRIAGED_BY_FILTER[triageFilter];
 
   const [rows, setRows] = useState<CoordFindingRow[]>([]);
-  const [count, setCount] = useState<number | null>(null);
+  /**
+   * The envelope of the LAST page that landed (the head read, or the newest
+   * "Load older" page) — the page whose bound speaks for the rows past the
+   * loaded ones. `null` = nothing landed for the current query.
+   */
+  const [lastPage, setLastPage] = useState<LastPage | null>(null);
+  /** The cursor "Load older" follows; `null` hides the control. */
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * A failed "Load older", kept apart from `readFailed`/`error` exactly as the
+   * notifications page keeps `pagingFailed`: the rows already loaded are still
+   * what coord returned, so a failed APPEND must not stale the strip or read
+   * the list as UNKNOWN. It invalidates only "we can page further".
+   */
+  const [pagingError, setPagingError] = useState<string | null>(null);
   const [truncatedKeys, setTruncatedKeys] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
@@ -201,6 +268,10 @@ export default function CoordFindingsPage() {
     const current = () =>
       queryGenRef.current === gen && listReqRef.current === req;
     setLoading(true);
+    // A head read restarts the walk: bumping `listReqRef` above has already
+    // retired any "Load older" still in flight (it checks the same counter),
+    // so its spinner must not outlive it.
+    setLoadingMore(false);
     try {
       const body = readBody(
         await httpClient.get<unknown>(
@@ -220,7 +291,9 @@ export default function CoordFindingsPage() {
         setUnavailable(body.unavailable);
         setUnavailableKind(body.unavailable_kind ?? null);
         setRows([]);
-        setCount(null);
+        setLastPage(null);
+        setNextCursor(null);
+        setPagingError(null);
         // The rows an earlier success produced are gone, so nothing on screen
         // is a successful read any more — see `loaded`.
         setLoaded(false);
@@ -231,8 +304,14 @@ export default function CoordFindingsPage() {
       }
       setUnavailable(null);
       setUnavailableKind(null);
-      setRows(rowsOf(body));
-      setCount(typeof body.count === "number" ? body.count : null);
+      // Page 1 REPLACES the list, so a Refresh drops every appended page: older
+      // pages kept under a fresh head would mix two reads into one list and
+      // hide the rows that dropped out between them.
+      const head = rowsOf(body);
+      setRows(head);
+      setLastPage(lastPageOf(body, head.length));
+      setNextCursor(cursorOf(body));
+      setPagingError(null);
       setTruncatedKeys(body.resource_keys_truncated === true);
       setLoaded(true);
       setReadFailed(false);
@@ -259,12 +338,17 @@ export default function CoordFindingsPage() {
   useEffect(() => {
     queryGenRef.current += 1;
     setRows([]);
+    // A cursor is only meaningful for the query that minted it, so a filter
+    // change is the walk's reset — back to page 1, no appended pages.
+    setLastPage(null);
+    setNextCursor(null);
+    setLoadingMore(false);
+    setPagingError(null);
     // Everything the list read derives belongs to the query that produced it.
     // A new filter must not show the OLD query's count, its "loaded" verdict
     // or its truncation notice under the new window's name: if the new read
     // then FAILS, the honest state is "could not read" (UNKNOWN), never "no
     // findings match" or "stopped updating" about rows that were just cleared.
-    setCount(null);
     setLoaded(false);
     setReadFailed(false);
     setError(null);
@@ -278,6 +362,68 @@ export default function CoordFindingsPage() {
     );
     void fetchList();
   }, [fetchList]);
+
+  /**
+   * "Load older" — append the next keyset page of the SAME query.
+   *
+   * The cursor is opaque and bound to the query that minted it, so both guards
+   * `fetchList` sets are checked: a filter change (`queryGenRef`) or a Refresh
+   * (`listReqRef`) while this page is in flight discards it, and a cursor from
+   * filter A never appends into filter B's list. coord would refuse a stale
+   * cursor anyway; the page does not lean on that refusal.
+   */
+  const loadOlder = useCallback(async () => {
+    const cursor = nextCursor;
+    if (!cursor) return;
+    const gen = queryGenRef.current;
+    const req = listReqRef.current;
+    const current = () =>
+      queryGenRef.current === gen && listReqRef.current === req;
+    setLoadingMore(true);
+    setPagingError(null);
+    try {
+      const body = readBody(
+        await httpClient.get<unknown>(
+          `${API}/coord/findings?${buildQuery({
+            topic,
+            kind,
+            resourceKey,
+            triaged,
+            cursor,
+          })}`
+        )
+      );
+      if (!current()) return;
+      if (body.unavailable) {
+        // A degraded PAGE is a failed append, not a degraded list: the rows
+        // loaded so far are still what coord returned.
+        setPagingError(body.unavailable);
+        return;
+      }
+      const page = rowsOf(body);
+      // Keyset pages cannot overlap, so dedupe is a guard, not a merge — but it
+      // is the guard that matters against a proxy that drops `cursor` and
+      // serves page 1 again.
+      const seen = new Set(rows.map((r) => r.finding_id));
+      const fresh = page.filter((r) => !seen.has(r.finding_id));
+      setRows((prev) => {
+        const have = new Set(prev.map((r) => r.finding_id));
+        return [...prev, ...fresh.filter((r) => !have.has(r.finding_id))];
+      });
+      setLastPage(lastPageOf(body, page.length));
+      // A page that adds nothing ends the walk even if coord still hands back a
+      // cursor — otherwise a repeated or empty page leaves a button that loops.
+      setNextCursor(fresh.length === 0 ? null : cursorOf(body));
+    } catch (e) {
+      if (!current()) return;
+      // coord's own words (a 400 on a malformed or stale cursor arrives here
+      // through the proxy), and no silent retry: the operator chooses between
+      // trying again and restarting from the newest page.
+      setPagingError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (current()) setLoadingMore(false);
+    }
+  }, [topic, kind, resourceKey, triaged, nextCursor, rows]);
 
   const linkedInvalid = linkedId !== null && !isFindingId(linkedId);
   /** Generation counter for the by-id read, so a stale answer never lands. */
@@ -377,8 +523,15 @@ export default function CoordFindingsPage() {
     setExpanded(linkedRow.finding_id);
   }, [linkedRow]);
 
+  // The ONE bound derivation; the count badge and the linked-row banner below
+  // both read it. The count is rows LOADED across the walk, never coord's
+  // per-page `count`.
+  const bound =
+    loaded && lastPage !== null
+      ? deriveFindingsBound({ ...lastPage, rowsLoaded: rows.length })
+      : null;
   const health = deriveFindingsHealth({
-    count,
+    bound,
     loaded,
     failed: readFailed,
     unavailable,
@@ -416,22 +569,20 @@ export default function CoordFindingsPage() {
   // Why the linked row is missing from the list decides what the banner may
   // claim. coord's LIST leaves out expired rows (the by-id read does not), so
   // an expired linked row is missing whatever the filters say. "Outside the
-  // current filters" is licensed only when a filter IS set and the page is
-  // SHORT — a full page (one page of PAGE_SIZE, no paging) proves nothing
-  // about the rows past it. Everything else is "not in the list", no cause.
+  // current filters" is licensed only when a filter IS set and the loaded list
+  // is known COMPLETE (`deriveFindingsBound`) — a list that may go on proves
+  // nothing about the rows past it. Everything else is "not in the list", no
+  // cause.
   const filtersActive =
     topic.trim() !== "" ||
     kind.trim() !== "" ||
     resourceKey.trim() !== "" ||
     triaged !== null;
-  const listPageFull = rows.length >= PAGE_SIZE;
+  const listComplete = bound?.kind === "complete";
   const linkedExpiredNotListed =
     linkedNotInList && linkedRow !== null && isExpired(linkedRow);
   const linkedOutsideFilters =
-    linkedNotInList &&
-    !linkedExpiredNotListed &&
-    filtersActive &&
-    !listPageFull;
+    linkedNotInList && !linkedExpiredNotListed && filtersActive && listComplete;
   const linkedBeyondLoadedPage =
     linkedNotInList && !linkedExpiredNotListed && !linkedOutsideFilters;
   const listUnknown = readIsUnknown(loaded, readFailed);
@@ -599,6 +750,50 @@ export default function CoordFindingsPage() {
         }
         renderRow={(f, ctx) => <FindingRow finding={f} ctx={ctx} />}
       />
+
+      {nextCursor !== null && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadOlder()}
+            disabled={loadingMore}
+            data-testid="coord-findings-load-older"
+          >
+            {loadingMore ? "Loading…" : "Load older"}
+          </Button>
+          {/* The planWalk.ts bound, said where the walk happens: a keyset walk
+              is only exact over rows that hold still while it runs. */}
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="coord-findings-walk-hint"
+          >
+            Paging is not a snapshot: findings superseded or expired while you
+            page drop out, and newer ones land ahead of the top. Refresh
+            restarts from the newest.
+          </span>
+        </div>
+      )}
+
+      {pagingError !== null && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="coord-findings-paging-error"
+        >
+          <p className="text-sm text-destructive">
+            Could not load older findings: {pagingError}. The findings above are
+            still what coord returned.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void fetchList()}
+            data-testid="coord-findings-restart"
+          >
+            Restart from newest
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

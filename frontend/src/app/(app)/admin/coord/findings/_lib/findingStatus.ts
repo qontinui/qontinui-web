@@ -99,6 +99,28 @@ export interface FindingsResponse {
   triaged_applied?: string | null;
   unavailable?: string | null;
   unavailable_kind?: FindingsUnavailableKind | null;
+  /*
+   * The bounded-read envelope (plan
+   * `2026-09-05-findings-recent-is-a-window-that-reads-as-a-corpus`). All
+   * OPTIONAL and nullable: a coord that predates it sends none of them, and the
+   * proxy's degraded body sends them as explicit nulls. An absent key is
+   * UNKNOWN, never "false" or "complete" — {@link deriveFindingsBound} is the
+   * one reader of them.
+   */
+  /** coord cut the read short: rows past this page exist. */
+  truncated?: boolean | null;
+  /**
+   * coord's own verdict on this page's bound. Typed `string` rather than the
+   * three known values because coord may grow a fourth, and an unrecognised
+   * verdict must read as UNKNOWN rather than fail a type narrowing.
+   */
+  bound_kind?: FindingsBoundKind | string | null;
+  /** Opaque keyset cursor for the NEXT (older) page, bound to this query. */
+  next_cursor?: string | null;
+  /** coord's count of every row the query matches — only when it computed one. */
+  total?: number | null;
+  /** coord's count of the rows on THIS page. */
+  shown?: number | null;
 }
 
 /**
@@ -412,9 +434,10 @@ export function findingLinkNotice(state: {
   /** The linked row is on screen but outside the current filters. */
   outsideFilters?: boolean;
   /**
-   * The linked row is on screen but not in the loaded page, and that page came
-   * back FULL — so the row may match the filters and simply sit beyond it.
-   * Never claim "outside the filters" off a truncated page.
+   * The linked row is on screen but not in the loaded rows, and the list is not
+   * known to be complete ({@link deriveFindingsBound} did not read `complete`)
+   * — so the row may match the filters and simply sit beyond what is loaded.
+   * Never claim "outside the filters" off a list that may go on.
    */
   beyondLoadedPage?: boolean;
   /**
@@ -485,21 +508,128 @@ export function findingLinkNotice(state: {
   );
 }
 
+/** coord's three bound verdicts — the vocabulary of `bound_kind`. */
+export type FindingsBoundKind = "complete" | "at_least" | "unknown";
+
+/** What the loaded list is known to cover, and the words that say so. */
+export interface FindingsBound {
+  kind: FindingsBoundKind;
+  /** Rows loaded across every page of the walk — the number the label quotes. */
+  shown: number;
+  /** `all N shown` / `N+ shown — more exist` / `N shown — …UNKNOWN`. */
+  label: string;
+  /** coord's whole-query count, only when coord sent a number. */
+  total: number | null;
+}
+
+/**
+ * Is the loaded findings list the WHOLE answer to its query? The one derivation
+ * of that question: the count badge's label and the linked-row banner's
+ * "outside the current filters" licence both read it, and neither re-spells it.
+ *
+ * Plan `2026-09-26-findings-console-reads-one-page-as-the-corpus` §Design 2.
+ * The inputs describe the LAST page read (the head read, or the newest
+ * "Load older" page), because that is the page whose envelope speaks for
+ * whether anything lies past the rows loaded.
+ *
+ * The rules, in rank order:
+ *
+ * 1. **An explicit `bound_kind` wins.** `complete` and `at_least` are coord's
+ *    own verdicts. An explicit `unknown` — or a verdict this frontend does not
+ *    recognise — is UNKNOWN and is NEVER upgraded by the inference below:
+ *    coord saying "I cannot tell" outranks any arithmetic done here.
+ * 2. **`truncated: true` with no `bound_kind`** is `at_least`: coord said rows
+ *    past this page exist.
+ * 3. **A SHORT page is complete even without the envelope.** When `limit`
+ *    (coord's APPLIED cap, served long before the envelope) is a number and the
+ *    last page came back with fewer rows than it, coord has provably returned
+ *    everything. This is the evidence the page's old `!listPageFull` arm used,
+ *    and without it every filtered read against a pre-envelope coord would
+ *    regress from "all shown" to UNKNOWN.
+ * 4. **Anything else is UNKNOWN** — a FULL page with no envelope, or no
+ *    `limit` to measure against. A full page proves nothing about the rows
+ *    past it, and a missing key is the store declining to say.
+ *
+ * The count is ROWS LOADED, never coord's per-page `count`/`shown`: after
+ * "Load older" those describe the last page only, and quoting them would shrink
+ * the list on screen to its newest append.
+ */
+export function deriveFindingsBound(input: {
+  /** The last page's `bound_kind`, verbatim (absent → `null`/`undefined`). */
+  boundKind: string | null | undefined;
+  /** The last page's `truncated`, verbatim. */
+  truncated: boolean | null | undefined;
+  /** The last page's `limit` — coord's applied cap. */
+  limit: number | null | undefined;
+  /** How many rows the LAST page returned. */
+  lastPageRows: number;
+  /** How many distinct rows are loaded across the whole walk. */
+  rowsLoaded: number;
+  /** coord's `total`, verbatim. */
+  total: number | null | undefined;
+}): FindingsBound {
+  const kind = boundKindOf(input);
+  const n = input.rowsLoaded;
+  const label =
+    kind === "complete"
+      ? `all ${n} shown`
+      : kind === "at_least"
+        ? `${n}+ shown — more exist`
+        : `${n} shown — whether more exist is UNKNOWN`;
+  return {
+    kind,
+    shown: n,
+    label,
+    total:
+      typeof input.total === "number" && Number.isFinite(input.total)
+        ? input.total
+        : null,
+  };
+}
+
+function boundKindOf(input: {
+  boundKind: string | null | undefined;
+  truncated: boolean | null | undefined;
+  limit: number | null | undefined;
+  lastPageRows: number;
+}): FindingsBoundKind {
+  if (input.boundKind !== null && input.boundKind !== undefined) {
+    if (input.boundKind === "complete") return "complete";
+    if (input.boundKind === "at_least") return "at_least";
+    // Explicit "unknown", or a verdict newer than this frontend: UNKNOWN, and
+    // deliberately not handed to the inference below.
+    return "unknown";
+  }
+  if (input.truncated === true) return "at_least";
+  if (typeof input.limit === "number" && input.lastPageRows < input.limit) {
+    return "complete";
+  }
+  return "unknown";
+}
+
 /**
  * The page's health strip, derived.
  *
  * R1 — every number here is one the page ALREADY holds; this function cannot
  * fetch. R6 — a count nobody managed to read renders `–`, never `0`, and the
  * strip is amber for every shape of not-knowing rather than green with a
- * caveat underneath.
+ * caveat underneath. That includes not knowing whether the list is WHOLE: a
+ * read that landed but whose bound is UNKNOWN (a full page, no envelope) is
+ * amber, because "50 findings" over a list that may go on is the page reading
+ * one page as the corpus — the defect plan
+ * `2026-09-26-findings-console-reads-one-page-as-the-corpus` closes.
  *
  * It is never red. Nothing on a reader is a demand, and a red strip over a
  * list of recorded observations would spend the loudest signal the console has
  * on a surface that asks for nothing.
  */
 export function deriveFindingsHealth(input: {
-  /** coord's server-computed row count for the current query. `null` = unread. */
-  count: number | null;
+  /**
+   * What the loaded rows are known to cover ({@link deriveFindingsBound}).
+   * `null` = nothing read for the current query. Its `shown` is ROWS LOADED,
+   * never coord's per-page `count`.
+   */
+  bound: FindingsBound | null;
   /** True once a read has SUCCEEDED — never merely "a read finished". */
   loaded: boolean;
   /** The most recent read failed. */
@@ -523,25 +653,37 @@ export function deriveFindingsHealth(input: {
         : "findings";
   const readIsCurrent =
     input.loaded && !input.failed && input.unavailable === null;
+  const bound = input.bound;
   const countBadge: HealthBadge = {
     key: "shown",
     // R6: a count nobody managed to read is a DASH, never a zero. `0 shown`
     // and "we could not read the store" are different claims, and only one of
     // them is true here.
-    label:
-      readIsCurrent && input.count !== null
-        ? `${input.count} shown`
-        : "– shown",
+    label: readIsCurrent && bound !== null ? bound.label : "– shown",
     tone: readIsCurrent ? "default" : "muted",
     "data-testid": "coord-findings-count",
   };
+  // coord's whole-query count, only when it sent one — never inferred from
+  // the rows, which is exactly the claim a page cannot make about itself.
+  const badges: HealthBadge[] =
+    readIsCurrent && bound !== null && bound.total !== null
+      ? [
+          countBadge,
+          {
+            key: "total",
+            label: `${bound.total} in total`,
+            tone: "default",
+            "data-testid": "coord-findings-total",
+          },
+        ]
+      : [countBadge];
 
   if (input.unavailable !== null) {
     return {
       level: "amber",
       headline: "Findings could not be read",
       detail: input.unavailable,
-      badges: [countBadge],
+      badges,
       readIsCurrent: false,
     };
   }
@@ -550,7 +692,7 @@ export function deriveFindingsHealth(input: {
       level: "amber",
       headline: "Could not read the findings store",
       detail: UNKNOWN_COUNTS_DETAIL,
-      badges: [countBadge],
+      badges,
       readIsCurrent: false,
     };
   }
@@ -559,26 +701,48 @@ export function deriveFindingsHealth(input: {
       level: "amber",
       headline: "These results stopped updating",
       detail: staleDetail(`Showing ${window} from the last read that landed.`),
-      badges: [countBadge],
+      badges,
       readIsCurrent: false,
     };
   }
-  if (!input.loaded) {
+  if (!input.loaded || bound === null) {
     return {
       level: "amber",
       headline: "Reading the findings store…",
       detail:
         "Nothing has answered yet, so the count is a dash rather than a zero.",
-      badges: [countBadge],
+      badges,
       readIsCurrent: false,
     };
   }
+  const calm =
+    "Findings are what agents recorded and why. Nothing here is waiting on you.";
+  if (bound.kind === "complete") {
+    return {
+      level: "green",
+      headline: `${bound.shown} ${window} in this window`,
+      detail: calm,
+      badges,
+      readIsCurrent: true,
+    };
+  }
+  if (bound.kind === "at_least") {
+    return {
+      level: "green",
+      headline: `${bound.shown}+ ${window} — more exist than are loaded`,
+      detail: `${calm} Only the newest ${bound.shown} are loaded.`,
+      badges,
+      readIsCurrent: true,
+    };
+  }
   return {
-    level: "green",
-    headline: `${input.count ?? 0} ${window} in this window`,
+    level: "amber",
+    headline: `${bound.shown} ${window} loaded — whether more exist is unknown`,
     detail:
-      "Findings are what agents recorded and why. Nothing here is waiting on you.",
-    badges: [countBadge],
+      "coord did not say whether this list is complete, and a full page " +
+      "proves nothing about the rows past it — so do not read it as the " +
+      "whole store.",
+    badges,
     readIsCurrent: true,
   };
 }
