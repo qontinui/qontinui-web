@@ -29,7 +29,7 @@
  * 10. One click, one request.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   fireEvent,
@@ -297,6 +297,10 @@ let linkResponse: Res;
 let controlResponse: Res | Promise<Res>;
 let drainResponse: Res;
 let undrainResponse: Res;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   authState.isCoordAdmin = true;
@@ -1198,6 +1202,49 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     expect(calls("/fleet/maintenance-window", "POST")).toHaveLength(1);
   });
 
+  it("says the pinned entry VANISHED, blocks Submit, and re-enables it when it returns", async () => {
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-prepare")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-prepare-dialog"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-preset-1h")
+    );
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "kernel"
+    );
+    const submit = within(dialog).getByTestId(
+      "coord-maintenance-prepare-submit"
+    );
+    expect(submit).not.toBeDisabled();
+    // A re-read in which coord no longer lists the machine.
+    machinesResponse = res(200, { machines: [], unlinked_ci_hosts: [] });
+    fireEvent.click(screen.getByTestId("coord-maintenance-refresh"));
+    const vanished = await within(dialog).findByTestId(
+      "coord-maintenance-prepare-vanished"
+    );
+    expect(vanished).toHaveTextContent(
+      `merytshost (${DEVICE}) is no longer in coord's machine list; this form cannot be sent.`
+    );
+    expect(
+      within(dialog).queryByTestId("coord-maintenance-prepare-moved")
+    ).not.toBeInTheDocument();
+    expect(submit).toBeDisabled();
+    // The machine is back under the pinned key: Submit is enabled again.
+    machinesResponse = res(200, machinesBody());
+    fireEvent.click(screen.getByTestId("coord-maintenance-refresh"));
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByTestId("coord-maintenance-prepare-vanished")
+      ).not.toBeInTheDocument()
+    );
+    expect(submit).not.toBeDisabled();
+  });
+
   it("a selection change while a submit is in flight keeps the outcome and the pinned target", async () => {
     search = "machine=ci:msi-wsl";
     let release!: (r: Res) => void;
@@ -1248,6 +1295,10 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
   });
 
   it("a refused Return to service shows the next step and re-reads", async () => {
+    // Only the interval is faked: the polls cannot fire, so the exact
+    // machines-read count below holds by construction (the pattern of
+    // useDeviceStatusStream.test.ts). userEvent's setTimeout stays real.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     machinesResponse = res(200, machinesBody({ window: wireWindow() }));
     closeResponse = res(409, {
       detail: { error: "window_changed", message: "window changed" },
@@ -1267,14 +1318,17 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     expect(
       await screen.findByTestId("coord-maintenance-close-error-guidance")
     ).toHaveTextContent("the page is re-reading it");
-    // The polls run every 15 s, so inside this test the ONLY machines read
-    // after the click is the one the refusal triggers — exactly one.
+    // The ONLY machines read after the click is the refusal's re-read.
     await waitFor(() =>
       expect(calls("/fleet/machines")).toHaveLength(before + 1)
     );
   });
 
   it("a lever toggle refused with window_changed re-reads the machines", async () => {
+    // Only the interval is faked: the polls cannot fire, so the exact
+    // machines-read count below holds by construction (the pattern of
+    // useDeviceStatusStream.test.ts). userEvent's setTimeout stays real.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     machinesResponse = res(200, machinesBody({ window: wireWindow() }));
     patchResponse = res(409, {
       detail: { error: "window_changed", message: "window changed" },
@@ -1289,8 +1343,7 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
     expect(
       await screen.findByTestId("coord-maintenance-lever-error")
     ).toHaveTextContent("the page is re-reading it");
-    // The polls run every 15 s, so inside this test the ONLY machines read
-    // after the click is the one the refusal triggers — exactly one.
+    // The ONLY machines read after the click is the refusal's re-read.
     await waitFor(() =>
       expect(calls("/fleet/machines")).toHaveLength(before + 1)
     );

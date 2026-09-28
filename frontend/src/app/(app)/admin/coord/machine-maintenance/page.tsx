@@ -89,7 +89,10 @@ import {
   type WindowWriteResult,
 } from "@/components/operations/useMaintenanceWindow";
 import { SessionWindDown } from "./_components/SessionWindDown";
-import { PrepareForRestartDialog } from "./_components/PrepareForRestartDialog";
+import {
+  PrepareForRestartDialog,
+  type SelectionShift,
+} from "./_components/PrepareForRestartDialog";
 import { MaintenanceLevers } from "./_components/MaintenanceLevers";
 import { CiHostLink } from "./_components/CiHostLink";
 import { StillRunningCi } from "./_components/StillRunningCi";
@@ -279,17 +282,19 @@ export default function MachineMaintenancePage() {
   // move the selection (a CI host that turned out to be linked now resolves
   // to its machine, or a poll lands mid-submit); the form must neither
   // silently retarget nor vanish with its refusal or outcome, so it keeps its
-  // target and says the selection moved (`movedTo`). While the key is
-  // unchanged, the pinned entry follows the fresh read.
+  // target and says what happened (`selectionShift`): the selection MOVED to
+  // another entry, or the pinned entry VANISHED from coord's list. While the
+  // key is unchanged, the pinned entry follows the fresh read.
   const [pinnedEntry, setPinnedEntry] = useState<MachineEntry | null>(null);
   const dialogEntry =
     pinnedEntry && entry && entry.key === pinnedEntry.key ? entry : pinnedEntry;
-  const movedTo =
-    pinnedEntry === null || (entry && entry.key === pinnedEntry.key)
-      ? null
-      : entry
-        ? `${machineEntryLabel(entry).primary} (${machineEntryLabel(entry).secondary})`
-        : "a machine coord's list does not name";
+  const selectionShift: SelectionShift | null = (() => {
+    if (pinnedEntry === null) return null;
+    if (entry === undefined) return { kind: "vanished" };
+    if (entry.key === pinnedEntry.key) return null;
+    const label = machineEntryLabel(entry);
+    return { kind: "moved", to: `${label.primary} (${label.secondary})` };
+  })();
 
   const openPrepare = useCallback(
     (only?: MaintenanceLever) => {
@@ -582,7 +587,7 @@ export default function MachineMaintenancePage() {
       {dialogEntry !== null && (
         <PrepareForRestartDialog
           entry={dialogEntry}
-          movedTo={movedTo}
+          selectionShift={selectionShift}
           open={prepareOpen}
           onOpenChange={setPrepareOpen}
           initialLevers={prepareLevers}
