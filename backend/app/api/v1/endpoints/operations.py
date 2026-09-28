@@ -5059,6 +5059,10 @@ async def get_coord_audit_recent(
 # nothing here should ever surface a path.
 
 COORD_CLAUDE_ACCOUNTS_PATH = "/coord/claude-accounts/usage"
+# The USER-scoped twin of the feed above: every account on every device the
+# logged-in user owns, independent of tenant. Plan
+# `2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector` Phase 2.
+COORD_CLAUDE_ACCOUNTS_MINE_PATH = "/coord/claude-accounts/usage/mine"
 
 
 @router.get("/claude-accounts")
@@ -5206,6 +5210,84 @@ async def get_claude_accounts(
         # prepaid provider is configured" reading. Consumers must not render
         # `None` as `False`.
         "prepaid_table_provisioned": payload.get("prepaid_table_provisioned"),
+    }
+
+
+@router.get("/claude-accounts/mine")
+async def get_my_claude_accounts(
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Return the Claude account roster for the CALLER's own devices (user-scoped).
+
+    Proxies coord ``GET /coord/claude-accounts/usage/mine`` — plan
+    ``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``
+    Phase 2. "My accounts" is a fact about the PERSON, not about a tenant: the
+    roster is every account reported by every device the logged-in user owns
+    (``coord.devices.user_id`` with ``capability_user_paired = true``),
+    whichever tenant — if any — each device is currently paired to. So this
+    route deliberately resolves NO tenant: ``get_tenant_id`` is not a
+    dependency, and a caller whose tenant cannot be resolved still gets their
+    own roster. The tenant-scoped :func:`get_claude_accounts` is untouched and
+    remains the tenant-admin view of the whole tenant's devices.
+
+    **Web never tells coord who is asking.** Coord derives the caller's
+    ``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``
+    over the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded —
+    a client-supplied user id would be a new, weaker trust boundary. Web's only
+    job is to capture and forward the bearer (``forward_bearer=True``, since
+    there is no ``tenant_id`` to trigger it); ``current_user`` exists solely to
+    require a logged-in session before anything reaches coord.
+
+    Response envelope — :func:`get_claude_accounts`'s ``accounts`` rows, with
+    the same two provisioning flags::
+
+        {
+          "accounts": [ { "device_id": "<uuid>", "account_label": ".claude-gmail", ... } ],
+          "table_provisioned": true,
+          "columns_provisioned": true
+        }
+
+    **No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,
+    provider)`` — a tenant fact, not a per-person account fact — so they stay
+    on the tenant feed, and coord's ``/mine`` emits none.
+
+    The flags follow the same absence-is-not-zero contract as the tenant route:
+    bare ``.get()`` with no default, so a flag coord omits surfaces as ``None``
+    (unknown) and is never defaulted to ``true``. ``accounts: []`` with both
+    flags ``true`` means genuinely no paired device of this user has reported.
+
+    Coord's refusals propagate VERBATIM through :func:`_proxy_coord_get`
+    (``HTTPException(status, detail=resp.text)``) so a client can tell them
+    apart rather than reading a generic 500:
+
+    - ``403 user_not_resolved`` — the bearer maps to no ``auth.users`` row;
+    - ``403 user_email_ambiguous`` — more than one ``auth.users`` row matches,
+      so nothing can pick the right one;
+    - ``500 user_lookup_failed`` — the identity bridge itself errored;
+    - ``500 usage_read_failed`` — the roster read errored.
+    """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
+    # — see the same comment in ``create_user_tenant``: a sync dependency runs
+    # in a threadpool with a COPIED context, the ContextVar never reaches this
+    # coroutine, and coord would answer 403 ``user_not_resolved`` for everyone.
+    capture_caller_bearer(request)
+    payload = await _proxy_coord_get(
+        COORD_CLAUDE_ACCOUNTS_MINE_PATH, forward_bearer=True
+    )
+    if not isinstance(payload, dict):
+        # A non-object body is a coord contract break, not an empty roster.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned an unexpected claude-accounts payload",
+        )
+
+    accounts = payload.get("accounts")
+    return {
+        "accounts": list(accounts) if isinstance(accounts, list) else [],
+        # `.get` with no default: absent stays None (unknown), never True.
+        "table_provisioned": payload.get("table_provisioned"),
+        "columns_provisioned": payload.get("columns_provisioned"),
     }
 
 
