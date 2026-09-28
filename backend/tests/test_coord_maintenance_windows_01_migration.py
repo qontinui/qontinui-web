@@ -76,12 +76,12 @@ _HOSTS = "machine_ci_hosts"
 _WINDOWS = "maintenance_windows"
 _OPEN_MACHINE_INDEX = "ux_maintenance_windows_open_machine"
 _OPEN_HOST_INDEX = "ux_maintenance_windows_open_ci_host"
-_STATE_UNTIL_INDEX = "idx_maintenance_windows_state_until"
+_OPEN_UNTIL_INDEX = "idx_maintenance_windows_open_until"
 _TENANT_OPENED_INDEX = "idx_maintenance_windows_tenant_opened"
 _INDEXES = (
     _OPEN_MACHINE_INDEX,
     _OPEN_HOST_INDEX,
-    _STATE_UNTIL_INDEX,
+    _OPEN_UNTIL_INDEX,
     _TENANT_OPENED_INDEX,
 )
 
@@ -452,14 +452,14 @@ def _open_window(engine: Engine, **overrides: object) -> uuid.UUID:
         "opened_by": "operator:test",
     }
     params.update(overrides)
-    cols = ", ".join([*params, "until"])
     json_cols = {"levers", "ci_label_outcomes", "pool_health"}
-    binds = ", ".join(
-        [
-            *(f"CAST(:{k} AS jsonb)" if k in json_cols else f":{k}" for k in params),
-            "now() + interval '1 hour'",
-        ]
-    )
+    columns = list(params)
+    values = [f"CAST(:{k} AS jsonb)" if k in json_cols else f":{k}" for k in params]
+    if "until" not in params:
+        columns.append("until")
+        values.append("now() + interval '1 hour'")
+    cols = ", ".join(columns)
+    binds = ", ".join(values)
     with engine.begin() as conn:
         row = conn.execute(
             text(
@@ -511,7 +511,10 @@ def test_both_tables_shape_and_keys() -> None:
             assert definition.endswith(
                 f"WHERE (({column} IS NOT NULL) AND (state = 'open'::text))"
             ), definition
-        assert "(state, until)" in _index_definition(engine, _STATE_UNTIL_INDEX)
+        open_until = _index_definition(engine, _OPEN_UNTIL_INDEX)
+        assert not open_until.startswith("CREATE UNIQUE"), open_until
+        assert "(until)" in open_until, open_until
+        assert open_until.endswith("WHERE (state = 'open'::text)"), open_until
         assert "(tenant_id, opened_at DESC)" in _index_definition(
             engine, _TENANT_OPENED_INDEX
         )
@@ -557,6 +560,18 @@ def test_a_host_belongs_to_one_bound_machine_per_tenant() -> None:
                     "WHERE tenant_id = :t AND device_id = :d"
                 ),
                 {"t": _TENANT, "d": _MACHINE},
+            )
+        assert _count(engine, _HOSTS) == 0
+
+        # Deleting the device itself drops its links too (through the
+        # tenant_devices cascade). Reaping is an UPDATE of reaped_at and is
+        # not exercised here: it deliberately drops nothing.
+        _link(engine, "msi-wsl", device_id=_OTHER_MACHINE)
+        assert _count(engine, _HOSTS) == 1
+        with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM coord.devices WHERE device_id = :d"),
+                {"d": _OTHER_MACHINE},
             )
         assert _count(engine, _HOSTS) == 0
 
@@ -638,9 +653,20 @@ def test_window_checks_refuse_malformed_rows() -> None:
                 "maintenance_windows_ci_label_outcomes_array",
             ),
             ({"closed_by": "operator:test"}, "maintenance_windows_open_has_no_close"),
+            (
+                {"closed_at": "2026-09-28T12:00:00Z"},
+                "maintenance_windows_open_has_no_close",
+            ),
             ({"state": "closed"}, "maintenance_windows_closed_has_closed_at"),
             (
                 {"opened_at": "2999-01-01T00:00:00Z"},
+                "maintenance_windows_until_after_open",
+            ),
+            (
+                {
+                    "opened_at": "2026-09-28T12:00:00Z",
+                    "until": "2026-09-28T12:00:00Z",
+                },
                 "maintenance_windows_until_after_open",
             ),
         )
