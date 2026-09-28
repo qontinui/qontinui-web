@@ -38,10 +38,9 @@ import {
 } from "@/components/operations/maintenanceStatus";
 import {
   describeMaintenanceError,
-  drainedLanes,
+  drainLanesDetail,
   formatUntil,
   labelOutcomeLabel,
-  lanesLabel,
   leverActionPauses,
   type MachineEntry,
   type MaintenanceContext,
@@ -283,8 +282,8 @@ function LeverRow({
               <span className="font-mono break-all">
                 {drainRelease.deviceId}
               </span>{" "}
-              (held lanes: {lanesLabel(drainedLanes(ctx.drain))}). Coord may
-              send this machine{" "}
+              (held lanes: {drainLanesDetail(ctx.drain, now)}). Coord may send
+              this machine{" "}
               {drainRelease.lane === "agent" ? "agent work" : "CI work"} again
               as soon as this lands. The drain was set outside any maintenance
               window, so nothing else will release it early.

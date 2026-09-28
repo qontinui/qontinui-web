@@ -62,10 +62,61 @@ export interface DrainEntry {
    * row, which coord reads as BOTH lanes, so it is rendered as both.
    */
   lanes: DrainLane[] | null;
+  /**
+   * Each lane's OWN hold — coord's drain is per-lane, and the headline fields
+   * above come from whichever lane ends LAST. `null` from an older coord that
+   * serves no `by_lane`; then every held lane reads the headline.
+   */
+  byLane: Partial<Record<DrainLane, DrainLaneHold>> | null;
 }
 
 /** One drain lane. */
 export type DrainLane = "agent" | "ci";
+
+/** One lane's own hold, from coord's `by_lane`. */
+export interface DrainLaneHold {
+  until: string;
+  reason: string | null;
+  /** The operator, or coord's `[redacted]` placeholder — a value. */
+  drainedBy: string | null;
+  drainedAt: string | null;
+}
+
+/**
+ * The hold on ONE lane at `now`, or `null` when that lane is not held.
+ *
+ * With `by_lane`, the lane's own entry decides — its own `until` and reason,
+ * and it may have lapsed while another lane holds on. Without it (an older
+ * coord), a lane named in `lanes` (or every lane, for a lane-less legacy row)
+ * reads the headline.
+ */
+export function laneHold(
+  entry: DrainEntry,
+  lane: DrainLane,
+  now: number
+): DrainLaneHold | null {
+  const own = entry.byLane?.[lane];
+  const hold: DrainLaneHold | null = own
+    ? own
+    : entry.lanes === null || entry.lanes.includes(lane)
+      ? {
+          until: entry.until,
+          reason: entry.reason,
+          drainedBy: entry.drainedBy,
+          drainedAt: entry.drainedAt,
+        }
+      : null;
+  if (hold === null) return null;
+  const untilMs = parseTimestamp(hold.until);
+  return untilMs !== null && untilMs > now ? hold : null;
+}
+
+/** The lanes an entry actually holds at `now`, each by its own deadline. */
+export function activeDrainLanes(entry: DrainEntry, now: number): DrainLane[] {
+  return (["agent", "ci"] as const).filter(
+    (l) => laneHold(entry, l, now) !== null
+  );
+}
 
 /**
  * The fleet-wide drain read, as far as this page got.
@@ -140,13 +191,42 @@ export function parseDrainEntry(value: unknown): DrainEntry | null {
   if (!isRecord(value)) return null;
   const until = optionalString(value.until);
   if (until === null || parseTimestamp(until) === null) return null;
+  const byLane = parseByLane(value.by_lane);
+  const byLaneKeys = byLane ? (Object.keys(byLane) as DrainLane[]) : [];
   return {
     until,
     reason: optionalString(value.reason),
     drainedBy: optionalString(value.drained_by),
     drainedAt: optionalString(value.drained_at),
-    lanes: parseLanes(value.lanes),
+    lanes:
+      parseLanes(value.lanes) ?? (byLaneKeys.length > 0 ? byLaneKeys : null),
+    byLane,
   };
+}
+
+/**
+ * Read coord's `by_lane`. A lane whose entry has no parseable `until` is
+ * dropped from the map (that lane then reads the headline, when `lanes`
+ * names it); a missing or non-object `by_lane` is `null` — an older coord.
+ */
+function parseByLane(
+  value: unknown
+): Partial<Record<DrainLane, DrainLaneHold>> | null {
+  if (!isRecord(value)) return null;
+  const out: Partial<Record<DrainLane, DrainLaneHold>> = {};
+  for (const lane of ["agent", "ci"] as const) {
+    const v = value[lane];
+    if (!isRecord(v)) continue;
+    const until = optionalString(v.until);
+    if (until === null || parseTimestamp(until) === null) continue;
+    out[lane] = {
+      until,
+      reason: optionalString(v.reason),
+      drainedBy: optionalString(v.drained_by),
+      drainedAt: optionalString(v.drained_at),
+    };
+  }
+  return out;
 }
 
 /**

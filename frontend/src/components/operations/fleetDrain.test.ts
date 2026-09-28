@@ -16,6 +16,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  activeDrainLanes,
+  laneHold,
   parseDrainEntry,
   parseFleetDrain,
   resolveDeviceDrain,
@@ -51,6 +53,7 @@ describe("parseDrainEntry", () => {
       drainedBy: "jspinak@gmail.com",
       drainedAt: "2026-09-01T11:00:00Z",
       lanes: null,
+      byLane: null,
     });
   });
 
@@ -78,6 +81,7 @@ describe("parseDrainEntry", () => {
       drainedBy: null,
       drainedAt: null,
       lanes: null,
+      byLane: null,
     });
   });
 });
@@ -116,10 +120,10 @@ describe("parseFleetDrain — the shapes it accepts", () => {
   });
 
   it("matches a device id case-insensitively", () => {
-    const read = parseFleetDrain({ drained: { [DEVICE.toUpperCase()]: wireEntry() } });
-    expect(
-      resolveDeviceDrain(read, DEVICE, NOW).state
-    ).toBe("drained");
+    const read = parseFleetDrain({
+      drained: { [DEVICE.toUpperCase()]: wireEntry() },
+    });
+    expect(resolveDeviceDrain(read, DEVICE, NOW).state).toBe("drained");
   });
 });
 
@@ -129,7 +133,10 @@ describe("parseFleetDrain — nothing unreadable becomes 'none drained'", () => 
     ["an undefined body", undefined],
     ["a number", 7],
     ["an unrecognised envelope", { status: "fine", machines: 3 }],
-    ["an explicit state: unknown", { state: "unknown", reason: "pool timeout" }],
+    [
+      "an explicit state: unknown",
+      { state: "unknown", reason: "pool timeout" },
+    ],
     ["coord's bare Unknown variant", "Unknown"],
     ["a serde-tagged Unknown", { Unknown: null }],
     ["known: false", { known: false, drained: { [DEVICE]: wireEntry() } }],
@@ -228,7 +235,9 @@ describe("resolveDeviceDrain", () => {
 
 describe("parseDrainEntry — lanes", () => {
   it("reads an explicit lane set, de-duplicated", () => {
-    expect(parseDrainEntry(wireEntry({ lanes: ["ci", "ci"] }))?.lanes).toEqual(["ci"]);
+    expect(parseDrainEntry(wireEntry({ lanes: ["ci", "ci"] }))?.lanes).toEqual([
+      "ci",
+    ]);
   });
 
   it("reads a legacy lane-less entry as null — both lanes, coord's reading", () => {
@@ -244,6 +253,84 @@ describe("parseDrainEntry — lanes", () => {
 describe("toLocalInputValue", () => {
   it("renders the datetime-local form a preset writes", () => {
     expect(toLocalInputValue(NOW)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-    expect(Date.parse(toLocalInputValue(NOW + 3_600_000))).toBe(NOW + 3_600_000);
+    expect(Date.parse(toLocalInputValue(NOW + 3_600_000))).toBe(
+      NOW + 3_600_000
+    );
+  });
+});
+
+describe("per-lane drains (coord's by_lane)", () => {
+  const perLane = {
+    until: "2026-09-01T20:00:00Z",
+    reason: "ci box rebuild",
+    drained_by: "[redacted]",
+    drained_at: "2026-09-01T11:00:00Z",
+    lanes: ["agent", "ci"],
+    by_lane: {
+      agent: {
+        until: "2026-09-01T14:00:00Z",
+        reason: "agent pause",
+        drained_by: "jan@example.com",
+        drained_at: "2026-09-01T10:00:00Z",
+      },
+      ci: {
+        until: "2026-09-01T20:00:00Z",
+        reason: "ci box rebuild",
+        drained_by: "[redacted]",
+        drained_at: "2026-09-01T11:00:00Z",
+      },
+    },
+  };
+
+  it("reads each lane's OWN until and reason, keeping a redacted actor as a value", () => {
+    const e = parseDrainEntry(perLane)!;
+    expect(laneHold(e, "agent", NOW)?.until).toBe("2026-09-01T14:00:00Z");
+    expect(laneHold(e, "agent", NOW)?.reason).toBe("agent pause");
+    expect(laneHold(e, "ci", NOW)?.drainedBy).toBe("[redacted]");
+  });
+
+  it("lets one lane lapse by its own deadline while the other holds", () => {
+    const e = parseDrainEntry(perLane)!;
+    const later = Date.parse("2026-09-01T15:00:00Z");
+    expect(activeDrainLanes(e, later)).toEqual(["ci"]);
+    expect(activeDrainLanes(e, NOW)).toEqual(["agent", "ci"]);
+  });
+
+  it("derives lanes from by_lane when coord sends no lanes list", () => {
+    const { lanes: _lanes, ...rest } = perLane;
+    void _lanes;
+    const e = parseDrainEntry({
+      ...rest,
+      by_lane: { ci: perLane.by_lane.ci },
+    })!;
+    expect(e.lanes).toEqual(["ci"]);
+    expect(activeDrainLanes(e, NOW)).toEqual(["ci"]);
+  });
+
+  it("falls back to the headline without by_lane (older coord)", () => {
+    const e = parseDrainEntry(wireEntry({ lanes: ["agent"] }))!;
+    expect(e.byLane).toBeNull();
+    expect(laneHold(e, "agent", NOW)?.until).toBe("2026-09-01T18:00:00Z");
+    expect(laneHold(e, "ci", NOW)).toBeNull();
+    // A legacy lane-less row holds both.
+    expect(activeDrainLanes(parseDrainEntry(wireEntry())!, NOW)).toEqual([
+      "agent",
+      "ci",
+    ]);
+  });
+
+  it("reads the per-lane row list coord serves, and `drained: null` as UNKNOWN", () => {
+    const read = parseFleetDrain({
+      drained: [{ device_id: DEVICE, ...perLane }],
+      count: 1,
+    });
+    expect(read.state).toBe("ok");
+    const d = resolveDeviceDrain(read, DEVICE, NOW);
+    expect(d.state === "drained" && d.entry.byLane?.agent?.reason).toBe(
+      "agent pause"
+    );
+    expect(parseFleetDrain({ drained: null, count: null }).state).toBe(
+      "unknown"
+    );
   });
 });

@@ -30,6 +30,7 @@ import {
   deriveVerdictHealth,
   describeMaintenanceError,
   findMachineEntry,
+  formatUntil,
   leverActionPauses,
   machineEntryBadge,
   maintenanceBadge,
@@ -768,6 +769,7 @@ const DRAINED: DeviceDrainState = {
     drainedBy: "agent",
     drainedAt: "2026-09-28T11:00:00Z",
     lanes: ["agent"],
+    byLane: null,
   },
 };
 const ctx = (o: Partial<MaintenanceContext> = {}): MaintenanceContext => ({
@@ -1133,5 +1135,81 @@ describe("round 2", () => {
       `not known — ${drain.reason.slice(0, -1)}. Prepare for restart`
     );
     expect(h.detail).not.toContain("..");
+  });
+});
+
+describe("per-lane drain rendering", () => {
+  const PER_LANE: DeviceDrainState = {
+    state: "drained",
+    entry: {
+      // Headline = the lane that ends LAST (ci).
+      until: "2026-09-28T20:00:00Z",
+      reason: "ci box rebuild",
+      drainedBy: "[redacted]",
+      drainedAt: "2026-09-28T11:00:00Z",
+      lanes: ["agent", "ci"],
+      byLane: {
+        agent: {
+          until: "2026-09-28T14:00:00Z",
+          reason: "agent pause",
+          drainedBy: "jan@example.com",
+          drainedAt: "2026-09-28T10:00:00Z",
+        },
+        ci: {
+          until: "2026-09-28T20:00:00Z",
+          reason: "ci box rebuild",
+          drainedBy: "[redacted]",
+          drainedAt: "2026-09-28T11:00:00Z",
+        },
+      },
+    },
+  };
+
+  it("each lever shows its OWN lane's until and reason, not the headline's", () => {
+    const agent = deriveLeverStatus(
+      "agent_work",
+      machine(),
+      NOW,
+      ctx({ drain: PER_LANE })
+    );
+    expect(agent.kind).toBe("drained_outside_window");
+    expect(agent.reason).toContain(
+      `until ${formatUntil("2026-09-28T14:00:00Z", NOW)} — agent pause`
+    );
+    const ci = deriveLeverStatus(
+      "ci",
+      machine(),
+      NOW,
+      ctx({ drain: PER_LANE })
+    );
+    expect(ci.reason).toContain(
+      `until ${formatUntil("2026-09-28T20:00:00Z", NOW)} — ci box rebuild`
+    );
+  });
+
+  it("a lane whose own deadline passed is no longer drained, while the other holds", () => {
+    const later = Date.parse("2026-09-28T15:00:00Z");
+    expect(
+      deriveLeverStatus(
+        "agent_work",
+        machine(),
+        later,
+        ctx({ drain: PER_LANE })
+      ).kind
+    ).toBe("not_held");
+    expect(
+      deriveLeverStatus("ci", machine(), later, ctx({ drain: PER_LANE })).kind
+    ).toBe("drained_outside_window");
+  });
+
+  it("the badge title lists each lane's own hold", () => {
+    const b = maintenanceBadge(null, false, NOW, PER_LANE);
+    expect(b.state).toBe("drained_outside");
+    if (b.state === "drained_outside") {
+      expect(b.title).toContain("agent work until");
+      expect(b.title).toContain("agent pause");
+      expect(b.title).toContain("CI until");
+      expect(b.title).toContain("ci box rebuild");
+    }
   });
 });
