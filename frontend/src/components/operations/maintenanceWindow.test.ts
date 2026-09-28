@@ -33,7 +33,10 @@ import {
   formatUntil,
   leverActionPauses,
   machineEntryBadge,
+  errorWantsReread,
+  labelsSpanHosts,
   maintenanceBadge,
+  maintenanceErrorGuidance,
   maintenanceKeyForCiHostname,
   parseMachineParam,
   parseMachines,
@@ -643,6 +646,7 @@ describe("describeMaintenanceError", () => {
       code: "last_matching_host",
       message: "last host",
       poolKey: "self-hosted,qontinui",
+      machineDeviceId: null,
     });
   });
 
@@ -1302,5 +1306,150 @@ describe("per-lane drains — round 6", () => {
       ctx({ drain: mixed })
     );
     expect(h.detail).toContain("a drain outside any window is recorded:");
+  });
+});
+
+describe("coord Phase 3-5 contract details", () => {
+  const withAgent = (state: string, held: boolean) =>
+    win({
+      levers: {
+        agent_work: { held, state },
+        ci: { held: true, state: "held", labels: [] },
+      },
+    });
+
+  it("renders hold_failed and release_failed each with its own label; plain 'failed' is now UNKNOWN", () => {
+    const hold = deriveLeverStatus(
+      "agent_work",
+      machine({ openWindow: withAgent("hold_failed", false) }),
+      NOW
+    );
+    expect(hold.kind).toBe("failed");
+    expect(hold.label).toBe("Pause failed");
+    const rel = deriveLeverStatus(
+      "agent_work",
+      machine({ openWindow: withAgent("release_failed", true) }),
+      NOW
+    );
+    expect(rel.kind).toBe("failed");
+    expect(rel.label).toBe("Release failed");
+    expect(
+      deriveLeverStatus(
+        "agent_work",
+        machine({ openWindow: withAgent("failed", false) }),
+        NOW
+      ).kind
+    ).toBe("unknown");
+  });
+
+  it("retries a failed hold as a pause and a failed release as a resume", () => {
+    expect(
+      leverActionPauses(
+        machine({ openWindow: withAgent("hold_failed", false) }),
+        "agent_work"
+      )
+    ).toBe(true);
+    expect(
+      leverActionPauses(
+        machine({ openWindow: withAgent("release_failed", true) }),
+        "agent_work"
+      )
+    ).toBe(false);
+  });
+
+  it("badges each agent failure by name", () => {
+    const b = maintenanceBadge(withAgent("release_failed", true), false, NOW);
+    expect(b.state).toBe("attention");
+    if (b.state === "attention")
+      expect(b.label).toBe("Agent work release failed");
+  });
+
+  it("reads the new refusal codes with a next step, and names the machine for a linked host", () => {
+    const linked = describeMaintenanceError(
+      409,
+      JSON.stringify({
+        detail: {
+          error: "ci_host_linked_to_machine",
+          message: "merytshost is linked to a machine",
+          machine_device_id: DEVICE,
+        },
+      })
+    );
+    expect(linked.machineDeviceId).toBe(DEVICE);
+    expect(maintenanceErrorGuidance(linked)).toContain(
+      "open the window on that machine"
+    );
+    expect(errorWantsReread(linked)).toBe(true);
+    for (const code of ["window_busy", "window_changed", "invalid_request"]) {
+      const e = describeMaintenanceError(
+        409,
+        JSON.stringify({ error: code, message: "m" })
+      );
+      expect(maintenanceErrorGuidance(e)).not.toBeNull();
+    }
+    expect(
+      errorWantsReread({
+        code: "window_busy",
+        message: "",
+        poolKey: null,
+        machineDeviceId: null,
+      })
+    ).toBe(true);
+    expect(
+      errorWantsReread({
+        code: "invalid_request",
+        message: "",
+        poolKey: null,
+        machineDeviceId: null,
+      })
+    ).toBe(false);
+  });
+
+  it("ignores extra lever fields, and reads each label row's host", () => {
+    const w = parseMaintenanceWindow({
+      id: WINDOW,
+      state: "open",
+      until: "2026-09-28T18:00:00Z",
+      requested_levers: ["ci"],
+      levers: {
+        agent_work: { held: false, state: "released", rev: 3, placements: [] },
+        ci: {
+          held: true,
+          state: "held",
+          rev: 7,
+          override_seen_at: null,
+          placements: [{ repo: "a/one" }],
+          labels: [
+            {
+              label: "qontinui",
+              repo: "a/one",
+              host: "merytshost",
+              outcome: "removed",
+            },
+            {
+              label: "qontinui",
+              repo: "a/one",
+              host: "msi-wsl",
+              outcome: "removed",
+            },
+          ],
+        },
+      },
+    });
+    expect(w).not.toBeNull();
+    expect(w!.levers.ci.labels.map((l) => l.host)).toEqual([
+      "merytshost",
+      "msi-wsl",
+    ]);
+    expect(labelsSpanHosts(w!.levers.ci.labels)).toBe(true);
+    expect(labelsSpanHosts([w!.levers.ci.labels[0]])).toBe(false);
+    const preview = buildMaintenancePreview(
+      machine({ ciHosts: ["merytshost", "msi-wsl"] }),
+      ["ci"],
+      w
+    );
+    expect(
+      preview.filter((l) => l.key.startsWith("label-")).map((l) => l.target)
+    ).toEqual(["a/one on merytshost", "a/one on msi-wsl"]);
   });
 });

@@ -28,6 +28,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,9 @@ import {
 } from "@/components/operations/fleetDrain";
 import {
   buildMaintenancePreview,
+  errorWantsReread,
+  maintenanceErrorGuidance,
+  maintenancePageHref,
   formatUntil,
   machineEntryLabel,
   validateMaintenanceForm,
@@ -67,6 +71,8 @@ export interface PrepareForRestartDialogProps {
   initialLevers: { agent_work: boolean; ci: boolean };
   /** Called once coord answered with an opened window. */
   onOpened: (window: MaintenanceWindow | null) => void;
+  /** Called when a refusal says the page's view is stale; re-reads it. */
+  onStale?: () => void;
 }
 
 export function PrepareForRestartDialog({
@@ -75,6 +81,7 @@ export function PrepareForRestartDialog({
   onOpenChange,
   initialLevers,
   onOpened,
+  onStale,
 }: PrepareForRestartDialogProps) {
   const [untilLocal, setUntilLocal] = useState("");
   const [reason, setReason] = useState("");
@@ -145,8 +152,11 @@ export function PrepareForRestartDialog({
       }
       setLastHost(null);
       setRefusal(res);
+      // window_changed / window_busy / window_already_open /
+      // ci_host_linked_to_machine: the list is stale — re-read it.
+      if (errorWantsReread(res)) onStale?.();
     },
-    [check, busy, entry, reason, onOpened]
+    [check, busy, entry, reason, onOpened, onStale]
   );
 
   const untilLabel = check.ok
@@ -344,6 +354,28 @@ export function PrepareForRestartDialog({
             >
               {refusal.message}
               {refusal.code ? ` (${refusal.code})` : ""}
+              {maintenanceErrorGuidance(refusal) && (
+                <span
+                  className="block text-muted-foreground"
+                  data-testid="coord-maintenance-prepare-error-guidance"
+                >
+                  {maintenanceErrorGuidance(refusal)}
+                </span>
+              )}
+              {refusal.code === "ci_host_linked_to_machine" &&
+                refusal.machineDeviceId && (
+                  <Link
+                    href={maintenancePageHref(refusal.machineDeviceId)}
+                    onClick={() => onOpenChange(false)}
+                    className="block underline underline-offset-2"
+                    data-testid="coord-maintenance-prepare-select-machine"
+                  >
+                    Select machine{" "}
+                    <span className="font-mono break-all">
+                      {refusal.machineDeviceId}
+                    </span>
+                  </Link>
+                )}
             </p>
           )}
 

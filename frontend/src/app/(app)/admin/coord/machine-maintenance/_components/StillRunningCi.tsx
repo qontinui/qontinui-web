@@ -43,6 +43,8 @@ type RegistrationsView =
   | {
       kind: "ok";
       rows: CiRegistration[];
+      /** Coord's GitHub-plane detail (it names repos still routing), as-is. */
+      githubDetail: string | null;
       missingRepos: string[];
       paused: boolean;
       source: "readiness" | "mirror";
@@ -63,6 +65,7 @@ function view(
       return {
         kind: "ok",
         rows: r.githubCi.registrations,
+        githubDetail: r.githubCi.detail,
         missingRepos: r.githubCi.missingRepos,
         paused: r.leversHeld.ci,
         source: "readiness",
@@ -82,6 +85,7 @@ function view(
     return {
       kind: "ok",
       rows: registrationsFromMirror(mirror.byHostname.values(), hosts),
+      githubDetail: null,
       missingRepos: [],
       paused: false,
       source: "mirror",
@@ -188,6 +192,14 @@ export function StillRunningCi({
             </span>
             {v.dispatchDetail ? ` — ${v.dispatchDetail}` : ""}
           </p>
+          {v.githubDetail && (
+            <p
+              className="text-xs text-muted-foreground break-words"
+              data-testid="coord-maintenance-ci-detail"
+            >
+              GitHub CI: {v.githubDetail}
+            </p>
+          )}
           {v.source === "mirror" && (
             <p className="text-xs text-muted-foreground">
               From coord&apos;s registrar mirror. CI is not paused, so an idle
