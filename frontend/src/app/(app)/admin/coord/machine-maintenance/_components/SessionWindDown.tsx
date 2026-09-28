@@ -42,6 +42,7 @@ import {
   unknownDrainLanes,
   type DeviceDrainState,
 } from "@/components/operations/fleetDrain";
+import { lanesLabel } from "@/components/operations/maintenanceWindow";
 import {
   CONTROL_REASON_MAX_LENGTH,
   RUNNER_SESSION_PALETTE,
@@ -416,9 +417,9 @@ export function SessionWindDown({
         drainState.state === "unknown"
           ? drainState.reason
           : unreadableLanes.length > 0
-            ? `coord records a drain on ${unreadableLanes
-                .map((l) => (l === "agent" ? "agent work" : "CI"))
-                .join(" + ")} but that lane's per-lane entry could not be read`
+            ? `coord records a drain on ${lanesLabel(unreadableLanes)} but ` +
+              `${unreadableLanes.length === 1 ? "that lane's" : "those lanes'"} ` +
+              "per-lane entry could not be read"
             : undefined,
       "data-testid": "coord-maintenance-drain-badge",
     },

@@ -97,8 +97,14 @@ function LeverRow({
   // A lane coord records as drained but whose per-lane entry could not be read
   // is UNKNOWN — and releasing it is still the safe recovery, so it is
   // offered there too (plan review round 6).
+  // Same preconditions as `deriveLeverStatus`'s drain arm: with an unreadable
+  // window, or a machines list kept after a failed refresh, "no window" is
+  // itself unknown — so nothing here may be offered as a drain "set outside
+  // any maintenance window".
   const laneUnreadable =
     window === null &&
+    !entry.openWindowUnreadable &&
+    ctx.refreshError === null &&
     ctx.drain?.state === "drained" &&
     unknownDrainLanes(ctx.drain.entry).includes(leverLane);
   const drainRelease =
