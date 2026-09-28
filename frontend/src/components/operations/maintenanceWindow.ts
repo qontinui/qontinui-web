@@ -93,11 +93,13 @@ export interface LabelOutcome {
 
 export interface AgentLever {
   /**
-   * Whether the window names this lever at all. Coord serves a lever key only
-   * for the levers the window was opened with, so an absent key is "not part
-   * of this window" — a different fact from "released".
+   * Whether the window was opened with (or later PATCHed to hold) this lever —
+   * coord's `requested_levers`. `false` is "not part of this window", a
+   * different fact from "released". `null` is UNKNOWN: an older coord that
+   * sends no `requested_levers`, where guessing from the lever's state would
+   * invent the answer.
    */
-  inWindow: boolean;
+  inWindow: boolean | null;
   held: boolean;
   /** `null` = a state this build does not recognise, rendered UNKNOWN. */
   state: AgentLeverState | null;
@@ -106,7 +108,7 @@ export interface AgentLever {
 
 export interface CiLever {
   /** See {@link AgentLever.inWindow}. */
-  inWindow: boolean;
+  inWindow: boolean | null;
   held: boolean;
   state: CiLeverState | null;
   detail: string | null;
@@ -240,6 +242,14 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
       }))
     : [];
   const pool = isRecord(v.pool_health) ? v.pool_health : null;
+  // `requested_levers` is read like the other enums: entries this build does
+  // not know are dropped, and a missing or non-list value is UNKNOWN (`null`),
+  // never "no lever requested".
+  const requested: MaintenanceLever[] | null = Array.isArray(v.requested_levers)
+    ? v.requested_levers.filter(
+        (l): l is MaintenanceLever => l === "agent_work" || l === "ci"
+      )
+    : null;
   return {
     id,
     machineDeviceId: str(v.machine_device_id),
@@ -264,13 +274,13 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
       : null,
     levers: {
       agentWork: {
-        inWindow: isRecord(levers.agent_work),
+        inWindow: requested === null ? null : requested.includes("agent_work"),
         held: agent.held === true,
         state: oneOf(agent.state, AGENT_STATES),
         detail: str(agent.detail),
       },
       ci: {
-        inWindow: isRecord(levers.ci),
+        inWindow: requested === null ? null : requested.includes("ci"),
         held: ci.held === true,
         state: oneOf(ci.state, CI_STATES),
         detail: str(ci.detail),
@@ -1099,12 +1109,15 @@ export function maintenanceBadge(
   }
   const a = window.levers.agentWork;
   const c = window.levers.ci;
-  if ((a.inWindow && a.state === null) || (c.inWindow && c.state === null)) {
+  if (
+    (a.inWindow !== false && a.state === null) ||
+    (c.inWindow !== false && c.state === null)
+  ) {
     return unknown("coord sent a lever state this build does not recognise");
   }
   const until = formatUntil(window.until, now);
   const agentSuffix = a.held ? " · agents paused" : "";
-  if (c.inWindow) {
+  if (c.inWindow !== false) {
     switch (c.state) {
       case "partial":
         return {
@@ -1134,7 +1147,7 @@ export function maintenanceBadge(
         break;
     }
   }
-  if (a.inWindow && a.state === "failed") {
+  if (a.inWindow !== false && a.state === "failed") {
     return { state: "attention", label: "Agent work pause failed", title };
   }
   if (a.held && c.held)

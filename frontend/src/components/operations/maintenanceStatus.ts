@@ -224,7 +224,20 @@ export function deriveLeverStatus(
     lever === "agent_work"
       ? window.levers.agentWork.inWindow
       : window.levers.ci.inWindow;
-  if (!inWindow) {
+  const leverHeld =
+    lever === "agent_work"
+      ? window.levers.agentWork.held
+      : window.levers.ci.held;
+  if (inWindow === null && !leverHeld) {
+    // An older coord sends no `requested_levers`: a lever that is not held may
+    // be released OR never requested, and the two must not be guessed apart.
+    return leverStatus(
+      "unknown",
+      UNKNOWN_LABEL,
+      "coord does not say whether this window pauses this lever (it sends no requested_levers)"
+    );
+  }
+  if (inWindow === false) {
     return leverStatus(
       "not_in_window",
       "Not part of this window",

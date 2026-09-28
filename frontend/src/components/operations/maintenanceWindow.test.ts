@@ -73,6 +73,7 @@ function wireWindow(overrides: Record<string, unknown> = {}) {
     closed_at: null,
     ci_paused_at: "2026-09-28T11:00:05Z",
     pool_health: null,
+    requested_levers: ["agent_work", "ci"],
     levers: {
       agent_work: { held: true, state: "held", detail: null },
       ci: {
@@ -856,13 +857,50 @@ describe("an ended window", () => {
 });
 
 describe("a lever the window does not name", () => {
-  it("reads 'Not part of this window'", () => {
+  it("reads 'Not part of this window' from requested_levers — not from a missing key", () => {
+    // Coord always sends both keys under `levers`; only `requested_levers`
+    // says which the window pauses.
     const w = win({
-      levers: { ci: { held: true, state: "held", labels: [] } },
+      requested_levers: ["ci"],
+      levers: {
+        agent_work: { held: false, state: "released" },
+        ci: { held: true, state: "held", labels: [] },
+      },
     });
     const s = deriveLeverStatus("agent_work", machine({ openWindow: w }), NOW);
     expect(s.kind).toBe("not_in_window");
     expect(s.label).toBe("Not part of this window");
+    expect(deriveLeverStatus("ci", machine({ openWindow: w }), NOW).kind).toBe(
+      "held"
+    );
+  });
+
+  it("is UNKNOWN for an unheld lever when an older coord sends no requested_levers", () => {
+    const w = win({
+      requested_levers: undefined,
+      levers: {
+        agent_work: { held: false, state: "released" },
+        ci: { held: true, state: "held", labels: [] },
+      },
+    });
+    expect(w.levers.agentWork.inWindow).toBeNull();
+    expect(
+      deriveLeverStatus("agent_work", machine({ openWindow: w }), NOW).kind
+    ).toBe("unknown");
+    // A HELD lever is plainly part of the window — no guess needed.
+    expect(deriveLeverStatus("ci", machine({ openWindow: w }), NOW).kind).toBe(
+      "held"
+    );
+  });
+
+  it("drops entries it does not know, and reads a non-list as UNKNOWN", () => {
+    expect(
+      win({ requested_levers: ["ci", "builds", 7] }).levers.agentWork.inWindow
+    ).toBe(false);
+    expect(win({ requested_levers: ["ci", "builds"] }).levers.ci.inWindow).toBe(
+      true
+    );
+    expect(win({ requested_levers: "ci" }).levers.ci.inWindow).toBeNull();
   });
 });
 

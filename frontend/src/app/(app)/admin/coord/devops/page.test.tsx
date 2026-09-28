@@ -1679,6 +1679,7 @@ describe("/admin/coord/devops — machine maintenance badge", () => {
       closed_at: null,
       ci_paused_at: "2026-09-28T10:00:05Z",
       pool_health: null,
+      requested_levers: ["agent_work", "ci"],
       levers: {
         agent_work: { held: true, state: "held", detail: null },
         ci: { held: true, state: "held", detail: null, labels: [] },
