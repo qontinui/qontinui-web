@@ -1311,6 +1311,7 @@ async def _proxy_coord_write(
     body: Any,
     *,
     headers: dict[str, str] | None,
+    structured_errors: bool = False,
 ) -> Any:
     """Send one PATCH/PUT to coord and say honestly what came back.
 
@@ -1326,7 +1327,9 @@ async def _proxy_coord_write(
       the response), or a 2xx whose body is PRESENT but not JSON → **504**:
       coord may well have committed, and only a re-read can tell. Each is
       logged, because a 504 the operator retries is otherwise invisible.
-    * a coord ≥400 → coord's own status with ``detail=resp.text``.
+    * a coord ≥400 → coord's own status with ``detail=resp.text``, or — with
+      ``structured_errors`` — coord's JSON object verbatim, exactly as on
+      :func:`_proxy_coord_post` (see :func:`_coord_error_detail`).
     * a 204, or any 2xx with an empty body → ``None``: a success that carries
       nothing to return is still a success.
     """
@@ -1357,7 +1360,10 @@ async def _proxy_coord_write(
                 ),
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     if resp.status_code == 204 or not resp.content:
         return None
     try:
@@ -1386,6 +1392,7 @@ async def _proxy_coord_patch(
     *,
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a PATCH request to coord. Returns the JSON body (``None`` for an
     empty 2xx).
@@ -1402,11 +1409,17 @@ async def _proxy_coord_patch(
     own identity coord-side and resolves no home tenant web-side, so it
     needs the bearer without the resolution. Default False preserves the
     prior behavior exactly.
+
+    ``structured_errors`` — hand coord's typed ≥400 JSON object through as the
+    ``detail`` rather than its text, with the same opt-in reasoning as on
+    ``_proxy_coord_post``.
     """
     headers = (
         _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
     )
-    return await _proxy_coord_write("patch", path, body, headers=headers)
+    return await _proxy_coord_write(
+        "patch", path, body, headers=headers, structured_errors=structured_errors
+    )
 
 
 async def _proxy_coord_put(
@@ -3777,6 +3790,9 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
+# - GET    /operations/fleet/machines                    — machines + CI-host joins
+# - *      /operations/fleet/machines/{id}/ci-hosts      — link/unlink a CI host
+# - *      /operations/fleet/maintenance-window[/{id}…]  — maintenance windows
 # - GET    /operations/claude-accounts                   — per-device Claude
 #                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
@@ -4661,8 +4677,56 @@ async def get_fleet_health(
 
 #: Coord's ceiling on a drain deadline (``fleet_drain::MAX_DRAIN_DAYS``).
 #: Pinned here so a too-far-out deadline is a local 422 rather than a round
-#: trip that comes back as a Rust string.
+#: trip that comes back as a Rust string. A maintenance window reuses it —
+#: coord caps ``until`` on both with the same constant.
 _MAX_DRAIN_DAYS = 30
+
+#: A drain LANE (``fleet_drain::DrainLane``, plan
+#: ``2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`` §D3).
+#: ``agent`` holds agent-session spawns and gate continuations; ``ci`` holds
+#: coord's CI-node dispatch, build dispatch and the merge-capacity count.
+DrainLane = Literal["agent", "ci"]
+
+
+def _validate_future_deadline(v: datetime, *, what: str) -> datetime:
+    """The two bounds coord's ``validate_drain`` puts on every fleet hold.
+
+    Shared by the drain and the maintenance window because coord applies the
+    same check to both: a deadline in the past would be a no-op reported as a
+    success, and one further out than ``_MAX_DRAIN_DAYS`` is a permanent
+    removal wearing an expiry's clothes. A naive datetime is read as UTC — the
+    browser sends an offset-bearing RFC 3339 string, and a client that does
+    not is far likelier to mean UTC than the server's local zone.
+    """
+    if v.tzinfo is None:
+        v = v.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    if v <= now:
+        raise ValueError(
+            f"until must be in the future (a {what} that has already "
+            "expired would be a no-op reported as a success)"
+        )
+    if v > now + timedelta(days=_MAX_DRAIN_DAYS):
+        raise ValueError(
+            f"until must be within {_MAX_DRAIN_DAYS} days — a longer "
+            "deadline is a permanent removal wearing an expiry's clothes; "
+            f"re-open the {what} instead"
+        )
+    return v
+
+
+def _validate_lanes(v: list[DrainLane] | None) -> list[DrainLane] | None:
+    """An explicit lane set is non-empty and de-duplicated, order kept.
+
+    ``None`` (absent) means BOTH lanes on coord's side, so an empty list is
+    not a spelling of "both" — it would be a drain that holds nothing, which
+    coord refuses. Naming it here keeps that refusal local and legible.
+    """
+    if v is None:
+        return None
+    if not v:
+        raise ValueError("lanes must name at least one lane; omit it to hold both")
+    return list(dict.fromkeys(v))
 
 
 class DrainRequestBody(BaseModel):
@@ -4686,6 +4750,15 @@ class DrainRequestBody(BaseModel):
     #: need a round trip to be named.
     until: datetime
     reason: str = Field(..., min_length=1, max_length=2000)
+    #: Which lanes to hold (§D3). Absent means both — every existing caller
+    #: keeps its meaning — and is left OFF the wire rather than sent as a
+    #: default, so a coord that predates lanes still accepts the body.
+    lanes: list[DrainLane] | None = None
+
+    @field_validator("lanes")
+    @classmethod
+    def _lanes_non_empty(cls, v: list[DrainLane] | None) -> list[DrainLane] | None:
+        return _validate_lanes(v)
 
     @field_validator("reason")
     @classmethod
@@ -4716,21 +4789,7 @@ class DrainRequestBody(BaseModel):
         sends an offset-bearing RFC 3339 string, and a client that does not is
         far likelier to mean UTC than to mean the server's local zone.
         """
-        if v.tzinfo is None:
-            v = v.replace(tzinfo=UTC)
-        now = datetime.now(UTC)
-        if v <= now:
-            raise ValueError(
-                "until must be in the future (a drain that has already "
-                "expired would be a no-op reported as a success)"
-            )
-        if v > now + timedelta(days=_MAX_DRAIN_DAYS):
-            raise ValueError(
-                f"until must be within {_MAX_DRAIN_DAYS} days — a longer "
-                "deadline is a permanent removal wearing an expiry's clothes; "
-                "re-drain instead"
-            )
-        return v
+        return _validate_future_deadline(v, what="drain")
 
 
 class UndrainRequestBody(BaseModel):
@@ -4745,6 +4804,14 @@ class UndrainRequestBody(BaseModel):
 
     device_id: UUID
     reason: str = Field(..., min_length=1, max_length=2000)
+    #: Release only these lanes (§D3); absent releases the whole drain. Left
+    #: off the wire when absent, for the same reason as on the drain body.
+    lanes: list[DrainLane] | None = None
+
+    @field_validator("lanes")
+    @classmethod
+    def _lanes_non_empty(cls, v: list[DrainLane] | None) -> list[DrainLane] | None:
+        return _validate_lanes(v)
 
     @field_validator("reason")
     @classmethod
@@ -4810,13 +4877,16 @@ async def post_fleet_drain(
     This does NOT stop work already running on the machine, and nothing on
     this path may imply that it does.
     """
+    wire: dict[str, Any] = {
+        "device_id": str(body.device_id),
+        "until": body.until.isoformat(),
+        "reason": body.reason,
+    }
+    if body.lanes is not None:
+        wire["lanes"] = body.lanes
     return await _proxy_coord_post(
         "/coord/fleet/drain",
-        {
-            "device_id": str(body.device_id),
-            "until": body.until.isoformat(),
-            "reason": body.reason,
-        },
+        wire,
         tenant_id=tenant_id,
         structured_errors=True,
     )
@@ -4835,11 +4905,423 @@ async def post_fleet_undrain(
     held" are different outcomes and the operator is entitled to tell them
     apart.
     """
+    wire: dict[str, Any] = {"device_id": str(body.device_id), "reason": body.reason}
+    if body.lanes is not None:
+        wire["lanes"] = body.lanes
     return await _proxy_coord_post(
         "/coord/fleet/undrain",
-        {"device_id": str(body.device_id), "reason": body.reason},
+        wire,
         tenant_id=tenant_id,
         structured_errors=True,
+    )
+
+
+# ---- Machines, CI-host joins and maintenance windows ---------------------
+#
+# Plan ``2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place``
+# Phase 6. Proxies for coord's machine / maintenance-window surface (§D1-§D6),
+# which backs ``/admin/coord/machine-maintenance``:
+#
+# - GET    /operations/fleet/machines                          — machines + un-linked CI hosts
+# - GET    /operations/fleet/machines/{device_id}/ci-hosts     — one machine's declared hosts
+# - POST   /operations/fleet/machines/{device_id}/ci-hosts     — link a host (admin)
+# - DELETE /operations/fleet/machines/{device_id}/ci-hosts/{h} — unlink it (admin)
+# - GET    /operations/fleet/maintenance-window                — list windows
+# - POST   /operations/fleet/maintenance-window                — open one (admin)
+# - PATCH  /operations/fleet/maintenance-window/{id}           — hold/release one lever (admin)
+# - POST   /operations/fleet/maintenance-window/{id}/close     — return to service (admin)
+# - GET    /operations/fleet/maintenance-window/{id}/readiness — the restart verdict
+#
+# ## What a maintenance window is, in one paragraph
+#
+# One expiring record on a MACHINE (a workstation runner device and the
+# GitHub runner names declared to be the same box) saying which of two levers
+# are held: ``agent_work`` (a drain on the workstation device's ``agent``
+# lane) and ``ci`` (the device's ``ci`` lane, a ``drain-host`` on the host's
+# registrations, AND the host's routing labels removed at GitHub). Coord owns
+# the composite, so the page and agents get identical semantics; this module
+# only carries it.
+#
+# ## Auth — admin on every route, because that is what coord enforces
+#
+# Coord authorizes every one of these exactly like
+# ``POST /coord/fleet/ci-runner/label``: ``OperatorContext`` plus
+# ``require_tenant_admin``, reads included. Gating here with
+# ``require_coord_tenant_admin`` keeps each door's posture equal to the route
+# it fronts (the same reasoning as ``/fleet/ci-runners``). A non-admin
+# console viewer therefore reads the machines list as UNAVAILABLE, and the
+# page renders that as UNKNOWN — never as "no machine is in maintenance".
+#
+# ## Wire facts encoded once here
+#
+# 1. Every coord request body is ``deny_unknown_fields``, so each write is
+#    assembled from a CLOSED model, never forwarded from the browser.
+#    ``opened_by`` / ``closed_by`` do not exist on any request: coord stamps
+#    the author from its authenticated operator, and an audit trail with a
+#    client-asserted author is not one.
+# 2. Coord's refusals are typed ``{"error": "<code>", "message": "<prose>"}``
+#    objects (``window_already_open``, ``last_matching_host``,
+#    ``ci_host_linked_elsewhere``, ``device_not_in_tenant`` …). Every write
+#    passes them through STRUCTURED with coord's own status, because the page
+#    branches on the code: a ``last_matching_host`` 409 is not a failure, it
+#    is the question "pause anyway, and let CI queue at GitHub?".
+# 3. ``ci_host`` is the BARE GitHub self-hosted runner name — what
+#    ``drain-host`` and the label route take — never a synthetic
+#    ``gh-runner-*@repo`` hostname. The validator below refuses the two
+#    characters that give the synthetic form away.
+# 4. Every read is passed through untouched (no ``response_model``), so a
+#    coord that grows a field serves it without a change here — and a 404
+#    from a coord that predates the surface arrives as a 404, which the page
+#    renders as UNKNOWN rather than as an empty fleet.
+
+#: A maintenance-window lever (§D3).
+MaintenanceLever = Literal["agent_work", "ci"]
+
+#: The longest GitHub runner name coord will be asked about. GitHub's own
+#: limit is well under this; the bound exists so an absurd value is a local
+#: 422 rather than a round trip.
+_CI_HOST_MAX_LENGTH = 255
+
+
+def _validate_ci_host(v: str) -> str:
+    """A bare GitHub runner name: non-blank, one token, not the synthetic form.
+
+    ``@`` and ``/`` are refused because they appear only in coord's synthetic
+    ``gh-runner-<name>@<owner>/<repo>`` hostnames — the one mistake that would
+    silently name a registration rather than a host. Coord checks ownership
+    and existence itself; this only keeps an obviously wrong key off the wire.
+    """
+    v = v.strip()
+    if not v:
+        raise ValueError("ci_host must not be blank")
+    if any(ch.isspace() for ch in v):
+        raise ValueError("ci_host is one GitHub runner name and has no whitespace")
+    if "@" in v or "/" in v:
+        raise ValueError(
+            "ci_host is the bare GitHub runner name (e.g. `merytshost`), not a "
+            "synthetic `gh-runner-*@owner/repo` hostname"
+        )
+    return v
+
+
+def _reason_required(v: str) -> str:
+    """A reason is what the audit row and the other operators' alert say."""
+    if not v.strip():
+        raise ValueError("reason must not be blank")
+    return v.strip()
+
+
+class MachineCiHostLinkBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/machines/{device_id}/ci-hosts``.
+
+    The link is a DECLARATION that a GitHub runner name is this machine
+    (§D2) — never inferred from names, because a wrong guess pauses the wrong
+    box.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ci_host: str = Field(..., min_length=1, max_length=_CI_HOST_MAX_LENGTH)
+
+    @field_validator("ci_host")
+    @classmethod
+    def _ci_host_is_bare(cls, v: str) -> str:
+        return _validate_ci_host(v)
+
+
+class MaintenanceWindowOpenBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/maintenance-window``.
+
+    ``until`` and ``reason`` are REQUIRED for the same reason a drain's are: a
+    window is a fleet hold, and a hold with no deadline is how a machine — or,
+    here, a GitHub label — silently leaves the fleet forever (§D5).
+
+    ``accept_ci_queueing`` is always sent. It is the operator's explicit
+    answer to coord's ``last_matching_host`` refusal (§D4): pausing CI on the
+    last host that matches ``[self-hosted, qontinui]`` makes CI jobs queue at
+    GitHub until the window ends. It defaults to ``False`` so that question is
+    only ever answered by a deliberate second request.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    machine_device_id: UUID | None = None
+    #: Omitted with a machine given → coord uses the machine's linked host(s).
+    ci_host: str | None = Field(default=None, max_length=_CI_HOST_MAX_LENGTH)
+    levers: list[MaintenanceLever] = Field(..., min_length=1)
+    until: datetime
+    reason: str = Field(..., min_length=1, max_length=2000)
+    accept_ci_queueing: bool = False
+
+    @field_validator("ci_host")
+    @classmethod
+    def _ci_host_is_bare(cls, v: str | None) -> str | None:
+        return None if v is None else _validate_ci_host(v)
+
+    @field_validator("levers")
+    @classmethod
+    def _levers_deduplicated(cls, v: list[MaintenanceLever]) -> list[MaintenanceLever]:
+        return list(dict.fromkeys(v))
+
+    @field_validator("until")
+    @classmethod
+    def _until_is_a_near_future_deadline(cls, v: datetime) -> datetime:
+        return _validate_future_deadline(v, what="maintenance window")
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        return _reason_required(v)
+
+    @model_validator(mode="after")
+    def _names_a_target(self) -> "MaintenanceWindowOpenBody":
+        """At least one of the machine and the host — coord's CHECK says so too."""
+        if self.machine_device_id is None and self.ci_host is None:
+            raise ValueError(
+                "a maintenance window needs a machine_device_id, a ci_host, or both"
+            )
+        return self
+
+
+class MaintenanceWindowLeverBody(BaseModel):
+    """Closed body for ``PATCH /operations/fleet/maintenance-window/{id}``.
+
+    One lever, held or released. ``accept_ci_queueing`` is sent only when the
+    caller set it: it answers a ``last_matching_host`` refusal on re-holding
+    the ``ci`` lever, and an absent answer must stay absent rather than become
+    an explicit "no".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    lever: MaintenanceLever
+    held: bool
+    accept_ci_queueing: bool | None = None
+
+
+class MaintenanceWindowCloseBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/maintenance-window/{id}/close``.
+
+    Returning a machine to service early is as much an operator decision as
+    taking it out, and coord records both.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        return _reason_required(v)
+
+
+@router.get("/fleet/machines")
+async def get_fleet_machines(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return coord's machines and the CI hosts no machine has claimed.
+
+    Coord answers ``{"machines": [...], "unlinked_ci_hosts": [...]}``: each
+    machine is a workstation runner device (``device_id``, coord's own
+    ``hostname`` — never the display alias — ``state``, its declared
+    ``ci_hosts`` and its ``open_window``), and each un-linked host is a GitHub
+    runner name with ``ci_runner`` rows in this tenant and no declared join,
+    listed as a machine of its own so it can still be paused (§D2).
+
+    Passed through untouched. An empty ``ci_hosts`` means "no CI host linked",
+    which the page renders as exactly that and never as "CI not paused".
+    """
+    return await _proxy_coord_get("/coord/fleet/machines", tenant_id=tenant_id)
+
+
+@router.get("/fleet/machines/{device_id}/ci-hosts")
+async def get_machine_ci_hosts(
+    device_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return the GitHub runner names declared to be this machine."""
+    return await _proxy_coord_get(
+        f"/coord/fleet/machines/{device_id}/ci-hosts", tenant_id=tenant_id
+    )
+
+
+@router.post("/fleet/machines/{device_id}/ci-hosts")
+async def post_machine_ci_host(
+    device_id: UUID,
+    body: MachineCiHostLinkBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Declare that a GitHub runner name is this machine.
+
+    Coord's status is echoed: ``201`` for a new link, ``200`` when it was
+    already linked (the write is idempotent), and a structured ``409
+    ci_host_linked_elsewhere`` when another machine holds the host — which the
+    page must show by name, because the fix is to unlink it THERE.
+    """
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/fleet/machines/{device_id}/ci-hosts",
+        {"ci_host": body.ci_host},
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
+@router.delete("/fleet/machines/{device_id}/ci-hosts/{ci_host}")
+async def delete_machine_ci_host(
+    device_id: UUID,
+    ci_host: str = Path(..., min_length=1, max_length=_CI_HOST_MAX_LENGTH),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Remove one declared machine ↔ host join.
+
+    ``ci_host`` is validated like the link body and percent-encoded onto
+    coord's path, so a runner name can never be read as a second path segment.
+    """
+    try:
+        host = _validate_ci_host(ci_host)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _proxy_coord_delete(
+        f"/coord/fleet/machines/{device_id}/ci-hosts/{quote(host, safe='')}",
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.get("/fleet/maintenance-window")
+async def get_maintenance_windows(
+    machine: UUID | None = Query(
+        default=None, description="Only windows on this workstation device."
+    ),
+    ci_host: str | None = Query(
+        default=None,
+        max_length=_CI_HOST_MAX_LENGTH,
+        description="Only windows on this bare GitHub runner name.",
+    ),
+    include_closed: bool = Query(
+        default=False,
+        description="Include closed and expired windows (newest first).",
+    ),
+    limit: int = Query(default=20, ge=1, le=200),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List maintenance windows, open ones only unless ``include_closed``.
+
+    Coord answers ``{"windows": [MaintenanceWindow]}``, passed through. Only
+    the filters the caller set go on the wire, so coord's defaults stay
+    coord's.
+    """
+    params: dict[str, Any] = {
+        "include_closed": "true" if include_closed else "false",
+        "limit": limit,
+    }
+    if machine is not None:
+        params["machine"] = str(machine)
+    if ci_host is not None:
+        try:
+            params["ci_host"] = _validate_ci_host(ci_host)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _proxy_coord_get(
+        "/coord/fleet/maintenance-window", params=params, tenant_id=tenant_id
+    )
+
+
+@router.post("/fleet/maintenance-window")
+async def post_maintenance_window(
+    body: MaintenanceWindowOpenBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Open a maintenance window: hold the named levers until ``until``.
+
+    Coord's ``201`` is echoed with the created ``MaintenanceWindow``, whose
+    per-lever and per-``(label, repo)`` outcomes are the truth about what was
+    held — a window can open with the CI lever ``partial`` or ``failed``, and
+    the page renders each outcome rather than one "opened".
+
+    Two refusals the page branches on, passed through structured:
+    ``window_already_open`` (409 — the machine already has one; act on that
+    window), and ``last_matching_host`` (409 — resend with
+    ``accept_ci_queueing: true`` only after the operator confirms CI will queue
+    at GitHub until ``until``).
+    """
+    wire: dict[str, Any] = {
+        "machine_device_id": (
+            str(body.machine_device_id) if body.machine_device_id is not None else None
+        ),
+        "ci_host": body.ci_host,
+        "levers": body.levers,
+        "until": body.until.isoformat(),
+        "reason": body.reason,
+        "accept_ci_queueing": body.accept_ci_queueing,
+    }
+    coord_body, status_code = await _proxy_coord_post(
+        "/coord/fleet/maintenance-window",
+        wire,
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
+@router.patch("/fleet/maintenance-window/{window_id}")
+async def patch_maintenance_window(
+    window_id: UUID,
+    body: MaintenanceWindowLeverBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Hold or release ONE lever of an open window; returns the window."""
+    wire: dict[str, Any] = {"lever": body.lever, "held": body.held}
+    if body.accept_ci_queueing is not None:
+        wire["accept_ci_queueing"] = body.accept_ci_queueing
+    return await _proxy_coord_patch(
+        f"/coord/fleet/maintenance-window/{window_id}",
+        wire,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/fleet/maintenance-window/{window_id}/close")
+async def post_maintenance_window_close(
+    window_id: UUID,
+    body: MaintenanceWindowCloseBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return the machine to service: release every held lever of the window.
+
+    The returned window carries the per-lever release outcome. A release that
+    could not restore a label reads ``restore_failed`` on that ``(label,
+    repo)`` and coord's reconciler keeps retrying — the page shows it rather
+    than reporting the machine back in service.
+    """
+    return await _proxy_coord_post(
+        f"/coord/fleet/maintenance-window/{window_id}/close",
+        {"reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.get("/fleet/maintenance-window/{window_id}/readiness")
+async def get_maintenance_window_readiness(
+    window_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return the window's restart verdict: ``safe | not_yet | unknown``.
+
+    Built by coord from three planes (agent, GitHub CI, coord CI-node), each
+    with its own age (§D6). Passed through untouched — the verdict is coord's,
+    and a 404 or transport failure here is UNKNOWN for the caller, never a
+    verdict of its own.
+    """
+    return await _proxy_coord_get(
+        f"/coord/fleet/maintenance-window/{window_id}/readiness",
+        tenant_id=tenant_id,
     )
 
 
@@ -5540,8 +6022,8 @@ async def get_fleet_resource_samples(
       ``readiness_state`` (``fresh | stale | absent``). This is the device's
       restart-readiness verdict, pushed by the runner on the same 30 s sample
       rather than read through a relay into the runner. There is deliberately
-      no separate readiness route: ``/admin/coord/runners`` reads it here with
-      ``device_id`` and ``history=false``. Passed through untouched, with the
+      no separate readiness route: ``/admin/coord/machine-maintenance`` reads
+      it here with ``device_id`` and ``history=false``. Passed through untouched, with the
       NULL rule once more doing real work — ``readiness_safe: null`` is "the
       runner could not decide", and ``readiness_state`` is coord's freshness
       verdict so no browser subtracts its own clock from ``sampled_at``. A
@@ -6105,6 +6587,7 @@ async def _proxy_coord_delete(
     params: dict[str, Any] | None = None,
     body: Any | None = None,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
 
@@ -6121,6 +6604,9 @@ async def _proxy_coord_delete(
     ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
     not accept ``json=``, so this branches. The bearer header is attached
     on both paths.
+
+    ``structured_errors`` — coord's typed ≥400 JSON object becomes the
+    ``detail`` verbatim, opt-in per route exactly as on ``_proxy_coord_post``.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -6143,7 +6629,10 @@ async def _proxy_coord_delete(
                 detail="timeout waiting for coord",
             )
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
     if resp.status_code == 204 or not resp.content:
         return {"status": "ok"}
@@ -8183,8 +8672,9 @@ async def list_coord_sessions(
 # ---- Per-device session census + operator session control ----------------
 #
 # Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8 (D9, D10). Both
-# routes back `/admin/coord/runners`, the device-maintenance surface: drain a
-# runner, watch its readiness, and wind down the sessions that keep it from
+# routes back the session wind-down on `/admin/coord/machine-maintenance` (plan
+# `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`): pause a
+# machine, watch its readiness, and wind down the sessions that keep it from
 # being restartable.
 #
 # **Declared ABOVE ``/sessions/{session_id}`` on purpose.** FastAPI matches in
