@@ -48,7 +48,10 @@ import {
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
 import type { CiCapacityJoin } from "./ciCapacity";
-import type { MachineMaintenanceView } from "./maintenanceWindow";
+import type {
+  MachineMaintenanceView,
+  MaintenanceBadge,
+} from "./maintenanceWindow";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 /**
@@ -62,6 +65,22 @@ export const CI_RUNNER_DRAIN_SCOPE =
   "CI on the Maintenance page drains every registration of the host AND " +
   "removes its routing labels at GitHub, and puts both back when the window " +
   "ends.";
+
+/**
+ * One tone per maintenance badge state. Amber for a pause that did not land as
+ * asked, an expiring window, a raw drain and UNKNOWN — each is something to
+ * look at, never the calm sky of a clean pause.
+ */
+const MAINTENANCE_BADGE_TONE: Record<
+  Exclude<MaintenanceBadge["state"], "in_service">,
+  string
+> = {
+  in_maintenance: "border-sky-500/40 text-sky-300",
+  attention: "border-amber-500/40 text-amber-400",
+  expired: "border-amber-500/40 text-amber-400",
+  drained_outside: "border-amber-500/40 text-amber-400",
+  unknown: "border-amber-500/40 text-amber-400",
+};
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -910,24 +929,13 @@ export function MachineCard({
         {maintenance && (
           <div className="space-y-1" data-testid="machine-maintenance">
             <div className="flex flex-wrap items-center gap-2">
-              {maintenance.badge.state === "in_maintenance" && (
+              {maintenance.badge.state !== "in_service" && (
                 <Badge
                   variant="outline"
-                  className="text-[11px] whitespace-normal break-words border-sky-500/40 text-sky-300"
+                  className={`text-[11px] whitespace-normal break-words ${MAINTENANCE_BADGE_TONE[maintenance.badge.state]}`}
                   title={maintenance.badge.title}
                   data-testid="machine-maintenance-badge"
-                  data-maintenance-state="in_maintenance"
-                >
-                  {maintenance.badge.label}
-                </Badge>
-              )}
-              {maintenance.badge.state === "unknown" && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] whitespace-normal break-words border-amber-500/40 text-amber-400"
-                  title={maintenance.badge.title}
-                  data-testid="machine-maintenance-badge"
-                  data-maintenance-state="unknown"
+                  data-maintenance-state={maintenance.badge.state}
                 >
                   {maintenance.badge.label}
                 </Badge>
@@ -938,9 +946,9 @@ export function MachineCard({
                   className="text-[11px] underline underline-offset-2 text-muted-foreground hover:text-foreground"
                   data-testid="machine-maintenance-link"
                 >
-                  {maintenance.badge.state === "in_maintenance"
-                    ? "Maintenance →"
-                    : "Prepare for restart →"}
+                  {maintenance.badge.state === "in_service"
+                    ? "Prepare for restart →"
+                    : "Maintenance →"}
                 </Link>
               )}
             </div>

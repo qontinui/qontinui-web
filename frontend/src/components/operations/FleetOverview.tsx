@@ -45,6 +45,7 @@ import {
   resolveMachineMaintenance,
   type MachinesRead,
 } from "./maintenanceWindow";
+import { resolveDeviceDrain, type FleetDrainRead } from "./fleetDrain";
 import {
   describeMirrorFreshness,
   mergeCiRunners,
@@ -423,6 +424,15 @@ export interface FleetOverviewProps {
    */
   machines: MachinesRead;
   /**
+   * Coord's raw drain read (`useFleetDrain`). A drain set OUTSIDE any
+   * maintenance window — an agent's `coord_fleet_drain`, a legacy row — is a
+   * real hold the machines read does not describe, so a card with no window
+   * but an active drain reads "Drained (outside a window)", and a card whose
+   * drain read failed reads UNKNOWN rather than in service. Read-only here;
+   * the Machine Maintenance page is where it is released.
+   */
+  drain: FleetDrainRead;
+  /**
    * The live `coord.device_status` stream (`useDeviceStatusStream`) — each
    * machine's current activity and the runner's own `details` bag, including
    * its `coord_credential` report.
@@ -464,6 +474,7 @@ export function FleetOverview({
   health,
   ciMachines,
   machines,
+  drain,
   deviceStatus,
   nowMs,
   ciRunnerMirror,
@@ -801,7 +812,14 @@ export function FleetOverview({
                           hostname: group.hostname,
                         },
                         mergedCiRunners,
-                        nowMs
+                        nowMs,
+                        group.coordHealth?.matched
+                          ? resolveDeviceDrain(
+                              drain,
+                              group.coordHealth.device_id,
+                              nowMs
+                            )
+                          : null
                       ) ?? undefined
                     }
                     // The join is resolved here, per row, from the page's one

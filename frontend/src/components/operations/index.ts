@@ -99,7 +99,12 @@ export type {
   DrainLane,
   FleetDrainRead,
 } from "./fleetDrain";
-export { FLEET_DRAIN_API, useFleetDrain } from "./useFleetDrain";
+export {
+  FLEET_DRAIN_API,
+  FLEET_UNDRAIN_API,
+  postUndrain,
+  useFleetDrain,
+} from "./useFleetDrain";
 export { MachinePicker } from "./MachinePicker";
 export type { MachinePickerProps } from "./MachinePicker";
 export {

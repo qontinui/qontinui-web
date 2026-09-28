@@ -79,7 +79,8 @@
  * It opens SIX POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/machines` here at
- * 15 s, `/fleet/ci-runners` here at coord's own registrar cadence,
+ * 15 s, `/fleet/drain` here at 30 s (the raw drain beside the windows),
+ * `/fleet/ci-runners` here at coord's own registrar cadence,
  * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
  * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
  * `/alerts/fault-to-visibility` here at 60 s (plan
@@ -139,6 +140,7 @@ import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetMachines } from "@/components/operations/useMaintenanceWindow";
+import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
@@ -177,6 +179,9 @@ export default function CoordDevOpsPage() {
   // about what is paused. The levers themselves live on the Machine
   // Maintenance page; each row only shows the badge and links there.
   const machines = useFleetMachines();
+  // The raw drain read, beside it: a drain set outside any window is still a
+  // hold, and a card must not read "in service" over it.
+  const drain = useFleetDrain();
   // The live device-status stream. The hook opens a REST seed and a WebSocket
   // PER CALL, so it is subscribed exactly once, here, and shared: the machine
   // list and its tile read it through `FleetOverview`, and the strip's
@@ -549,6 +554,7 @@ export default function CoordDevOpsPage() {
         ciMachines={ciMachines}
         ciRunnerMirror={ciRunnerMirror}
         machines={machines.read}
+        drain={drain.read}
         deviceStatus={deviceStatus}
         nowMs={nowMs}
       />

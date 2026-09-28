@@ -271,6 +271,7 @@ let patchResponse: Res;
 let closeResponse: Res;
 let linkResponse: Res;
 let controlResponse: Res | Promise<Res>;
+let drainResponse: Res;
 
 beforeEach(() => {
   search = `machine=${DEVICE}`;
@@ -287,6 +288,7 @@ beforeEach(() => {
   patchResponse = res(200, wireWindow());
   closeResponse = res(200, wireWindow({ state: "closed" }));
   linkResponse = res(201, { device_id: DEVICE, ci_hosts: ["merytshost"] });
+  drainResponse = res(200, { drained: {} });
   controlResponse = res(202, {
     event_id: "e0e0e0e0-0000-4000-8000-000000000000",
     session_id: IDLE.sessionId,
@@ -309,7 +311,9 @@ beforeEach(() => {
           return windowPostResponses.shift() ?? res(500, "no more");
       }
       if (url.includes("/fleet/machines")) return machinesResponse;
-      if (url.includes("/fleet/drain")) return res(200, { drained: {} });
+      if (url.includes("/fleet/undrain"))
+        return res(200, { device_id: DEVICE, drained: false, changed: true });
+      if (url.includes("/fleet/drain")) return drainResponse;
       if (url.includes("/fleet/ci-runners")) return res(200, { runners: [] });
       if (url.includes("/fleet/resource-samples")) return samplesResponse;
       if (url.includes("/sessions/fleet")) return sessionsResponse;
@@ -601,6 +605,186 @@ describe("/admin/coord/machine-maintenance — verdict and levers", () => {
           String(url).includes("/readiness")
       )
     ).toBe(false);
+  });
+});
+
+describe("/admin/coord/machine-maintenance — review round", () => {
+  it("shows a raw drain outside any window and releases only that lever's lane", async () => {
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: new Date(Date.now() + 3_600_000).toISOString(),
+          reason: "agent drained it",
+          drained_by: "agent",
+          drained_at: new Date().toISOString(),
+          lanes: ["agent"],
+        },
+      },
+    });
+    render(<MachineMaintenancePage />);
+    const lever = await screen.findByTestId("coord-maintenance-lever-agent");
+    await waitFor(() =>
+      expect(lever).toHaveTextContent("Drained outside a maintenance window")
+    );
+    expect(lever).toHaveAttribute("data-attention", "author");
+    // The drained lane has no Pause/Resume of its own — only the release.
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-agent-toggle")
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-lever-agent-release-drain")
+    );
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-release-drain-agent-reason"),
+      "restart done"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-release-drain-agent-confirm")
+    );
+    await waitFor(() =>
+      expect(calls("/fleet/undrain", "POST")).toHaveLength(1)
+    );
+    const [, init] = calls("/fleet/undrain", "POST")[0] as [
+      string,
+      { body: string },
+    ];
+    expect(JSON.parse(init.body)).toEqual({
+      device_id: DEVICE,
+      reason: "restart done",
+      lanes: ["agent"],
+    });
+  });
+
+  it("returns an UNREADABLE window to service by coord's raw id", async () => {
+    machinesResponse = res(
+      200,
+      machinesBody({ window: { id: WINDOW, state: "??" } })
+    );
+    render(<MachineMaintenancePage />);
+    const ret = await screen.findByTestId("coord-maintenance-return");
+    await waitFor(() => expect(ret).not.toBeDisabled());
+    expect(screen.getByTestId("coord-maintenance-verdict")).toHaveTextContent(
+      "Restart readiness UNKNOWN"
+    );
+    await userEvent.click(ret);
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-return-reason"),
+      "done"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-return-submit")
+    );
+    await waitFor(() => expect(calls("/close", "POST")).toHaveLength(1));
+    expect(String(calls("/close", "POST")[0][0])).toContain(
+      `/fleet/maintenance-window/${WINDOW}/close`
+    );
+  });
+
+  it("says loudly when a closed window did not fully restore CI", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    closeResponse = res(
+      200,
+      wireWindow({
+        state: "closed",
+        levers: {
+          agent_work: { held: false, state: "released" },
+          ci: {
+            held: false,
+            state: "released",
+            labels: [
+              {
+                label: "qontinui",
+                repo: "qontinui/qontinui-web",
+                outcome: "restore_failed",
+                detail: "HTTP 403",
+              },
+            ],
+          },
+        },
+      })
+    );
+    render(<MachineMaintenancePage />);
+    const ret = await screen.findByTestId("coord-maintenance-return");
+    await waitFor(() => expect(ret).not.toBeDisabled());
+    await userEvent.click(ret);
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-return-reason"),
+      "done"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-return-submit")
+    );
+    const result = await screen.findByTestId("coord-maintenance-close-result");
+    expect(result).toHaveAttribute("role", "alert");
+    expect(
+      screen.getByTestId("coord-maintenance-close-headline")
+    ).toHaveTextContent("Returned to service — CI not fully restored");
+  });
+
+  it("states the last-host consequence locally, and a form change withdraws the offer", async () => {
+    windowPostResponses = [
+      res(409, {
+        detail: {
+          error: "last_matching_host",
+          message: "refused",
+          pool_key: "self-hosted,qontinui",
+        },
+      }),
+    ];
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-prepare")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-prepare-dialog"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-preset-4h")
+    );
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "kernel"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-submit")
+    );
+    const consequence = await within(dialog).findByTestId(
+      "coord-maintenance-prepare-last-host-consequence"
+    );
+    expect(consequence).toHaveTextContent(
+      "This is the last host that runs [self-hosted,qontinui]. CI jobs will queue at GitHub until"
+    );
+    expect(consequence).toHaveTextContent(
+      "or until you return the machine to service."
+    );
+    // Editing the request withdraws "Pause anyway": it may only resend the
+    // exact request coord refused.
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "!"
+    );
+    expect(
+      within(dialog).queryByTestId("coord-maintenance-prepare-last-host")
+    ).not.toBeInTheDocument();
+  });
+
+  it("always offers the link form, and confirms an unlink while CI is held", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    linkResponse = res(200, { device_id: DEVICE, ci_hosts: [] });
+    render(<MachineMaintenancePage />);
+    expect(
+      await screen.findByTestId("coord-maintenance-ci-host-link-form")
+    ).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-ci-host-unlink")
+    );
+    expect(calls("/ci-hosts", "DELETE")).toHaveLength(0);
+    await userEvent.click(
+      await screen.findByTestId(
+        "coord-maintenance-ci-host-unlink-confirm-confirm"
+      )
+    );
+    await waitFor(() => expect(calls("/ci-hosts", "DELETE")).toHaveLength(1));
   });
 });
 

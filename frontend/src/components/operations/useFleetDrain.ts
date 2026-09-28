@@ -2,10 +2,11 @@
 
 /**
  * `GET /api/v1/operations/fleet/drain` — which machines coord is currently
- * holding out of the fleet. Read-only: the console pauses a machine through a
- * maintenance window (`useMaintenanceWindow.ts`), which coord composes from a
- * drain, so the direct drain/undrain writes were deleted with the Runner
- * Drain page.
+ * holding out of the fleet, and `postUndrain` to release a RAW drain. The
+ * console pauses a machine through a maintenance window
+ * (`useMaintenanceWindow.ts`), which coord composes from a drain; a drain set
+ * outside any window is still real, and the Machine Maintenance page shows it
+ * and can release it.
  *
  * Plan `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
  * 4b. The parse and every rule about what a body means live in
@@ -45,7 +46,11 @@ import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { OPERATIONS_API } from "./utils";
-import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
+import {
+  parseFleetDrain,
+  type DrainLane,
+  type FleetDrainRead,
+} from "./fleetDrain";
 
 export const FLEET_DRAIN_API = `${OPERATIONS_API}/fleet/drain`;
 
@@ -123,4 +128,63 @@ export function useFleetDrain(): UseFleetDrainResult {
   const { refresh } = useSingleFlightPoll(poll, FLEET_DRAIN_POLL_MS);
 
   return { read, refresh };
+}
+
+export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
+
+/**
+ * `POST /api/v1/operations/fleet/undrain` — release a RAW drain, one set
+ * outside any maintenance window (an agent's `coord_fleet_drain`, a legacy
+ * row). A window's own holds are released through the window, never here.
+ *
+ * `lanes` releases only those lanes; absent releases the whole drain. The body
+ * is closed (`device_id`, `reason`, `lanes?`) because coord's `UndrainRequest`
+ * is `deny_unknown_fields`, and carries no author — coord stamps it. Returns
+ * a typed outcome rather than throwing; `describeMaintenanceError` reads a
+ * refusal.
+ */
+export async function postUndrain(input: {
+  deviceId: string;
+  reason: string;
+  lanes?: DrainLane[];
+}): Promise<
+  | { ok: true; changed: boolean }
+  | { ok: false; status: number | null; body: string }
+> {
+  const body: Record<string, unknown> = {
+    device_id: input.deviceId,
+    reason: input.reason.trim(),
+  };
+  if (input.lanes && input.lanes.length > 0) body.lanes = input.lanes;
+  try {
+    const res = await httpClient.fetch(FLEET_UNDRAIN_API, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, body: await res.text() };
+    }
+    // `changed: false` is "it was not held" — passed through, not dressed up
+    // as a release.
+    let changed = true;
+    try {
+      const payload: unknown = await res.json();
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        typeof (payload as { changed?: unknown }).changed === "boolean"
+      ) {
+        changed = (payload as { changed: boolean }).changed;
+      }
+    } catch {
+      // A success with an unreadable body still succeeded.
+    }
+    return { ok: true, changed };
+  } catch (err) {
+    return {
+      ok: false,
+      status: null,
+      body: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

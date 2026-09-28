@@ -31,7 +31,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { machineEntryLabel, type MachineEntry } from "./maintenanceWindow";
+import {
+  machineEntryLabel,
+  maintenanceBadge,
+  type MachineEntry,
+} from "./maintenanceWindow";
 
 export interface MachinePickerProps {
   entries: ReadonlyArray<MachineEntry>;
@@ -56,6 +60,7 @@ export function MachinePicker({
   "data-testid": testId,
 }: MachinePickerProps) {
   const unlisted = value !== "" && !entries.some((e) => e.key === value);
+  const now = Date.now();
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger
@@ -91,11 +96,23 @@ export function MachinePicker({
                   ({e.state})
                 </span>
               )}
-              {e.openWindow !== null && (
-                <span className="ml-2 text-xs text-muted-foreground">
-                  · in maintenance
-                </span>
-              )}
+              {(() => {
+                // The same badge the Dev Ops card shows: an unreadable window
+                // is "maintenance UNKNOWN", a partial pause says so.
+                const badge = maintenanceBadge(
+                  e.openWindow,
+                  e.openWindowUnreadable,
+                  now
+                );
+                return badge.state === "in_service" ? null : (
+                  <span
+                    className="ml-2 text-xs text-muted-foreground"
+                    data-maintenance-state={badge.state}
+                  >
+                    · {badge.label}
+                  </span>
+                );
+              })()}
             </SelectItem>
           );
         })}

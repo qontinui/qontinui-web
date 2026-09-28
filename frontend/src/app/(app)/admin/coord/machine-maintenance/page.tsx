@@ -68,11 +68,13 @@ import {
 } from "@/components/operations/useRunnerWindDown";
 import {
   deriveVerdictHealth,
+  entryWindowId,
   findMachineEntry,
   labelOutcomeLabel,
   machineEntryLabel,
   parseMachineParam,
   type MachineEntry,
+  type MaintenanceContext,
   type MaintenanceLever,
   type MaintenanceWindow,
 } from "@/components/operations/maintenanceWindow";
@@ -91,6 +93,22 @@ import { StillRunningCi } from "./_components/StillRunningCi";
 const PAGE_PATH = "/admin/coord/machine-maintenance";
 
 /** What the last Return to service did, per lever — shown until the next action. */
+/**
+ * Whether a closed window put CI back. A label whose restore failed, a host
+ * left paused by quarantine, or any CI state other than released / nothing to
+ * delabel means GitHub may still not route to this machine — which the
+ * operator must hear loudly, not read as "back in service".
+ */
+function ciFullyRestored(w: MaintenanceWindow): boolean {
+  const c = w.levers.ci;
+  if (!c.inWindow) return true;
+  if (
+    c.labels.some((l) => l.outcome === "restore_failed" || l.outcome === null)
+  )
+    return false;
+  return c.state === "released" || c.state === "nothing_to_delabel";
+}
+
 function CloseResult({ result }: { result: WindowWriteResult }) {
   if (!result.ok) {
     return (
@@ -117,14 +135,28 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
       </p>
     );
   }
+  const restored = ciFullyRestored(w);
   return (
     <div
-      role="status"
-      className="space-y-1 text-xs"
+      role={restored ? "status" : "alert"}
+      className={
+        restored
+          ? "space-y-1 text-xs"
+          : "space-y-1 text-xs rounded-md border border-red-500/40 bg-red-500/5 p-2"
+      }
       data-testid="coord-maintenance-close-result"
+      data-ci-restored={restored ? "true" : "false"}
     >
+      <p
+        className="font-semibold"
+        data-testid="coord-maintenance-close-headline"
+      >
+        {restored
+          ? "Returned to service."
+          : "Returned to service — CI not fully restored"}
+      </p>
       <p>
-        Returned to service. Agent work:{" "}
+        Agent work:{" "}
         <span data-testid="coord-maintenance-close-agent">
           {w.levers.agentWork.state ?? "UNKNOWN"}
         </span>
@@ -163,7 +195,10 @@ export default function MachineMaintenancePage() {
   const entries = machines.read.state === "ok" ? machines.read.entries : [];
   const entry: MachineEntry | undefined = findMachineEntry(entries, selection);
   const openWindow: MaintenanceWindow | null = entry?.openWindow ?? null;
-  const readiness = useWindowReadiness(openWindow?.id ?? null);
+  // The id to act on — kept even when the window itself did not parse, so an
+  // unreadable window can still be returned to service.
+  const windowId = entry ? entryWindowId(entry) : null;
+  const readiness = useWindowReadiness(windowId);
 
   // The workstation device every agent-plane read is keyed on. A deep link to
   // a device coord's machine list does not name still reads its sessions: the
@@ -192,6 +227,9 @@ export default function MachineMaintenancePage() {
   const selectMachine = useCallback(
     (next: string) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
+      // A leftover `?device=` from the old Runner Drain redirect is dropped:
+      // it would otherwise ride along on every selection.
+      params.delete("device");
       if (next) params.set("machine", next);
       else params.delete("machine");
       const qs = params.toString();
@@ -235,10 +273,10 @@ export default function MachineMaintenancePage() {
   );
 
   const submitClose = useCallback(async () => {
-    if (openWindow === null || closeReason.trim() === "" || closing) return;
+    if (windowId === null || closeReason.trim() === "" || closing) return;
     setClosing(true);
     const res = await closeMaintenanceWindow({
-      windowId: openWindow.id,
+      windowId,
       reason: closeReason,
     });
     setClosing(false);
@@ -249,11 +287,16 @@ export default function MachineMaintenancePage() {
       toast.success("Returned to service");
       afterWrite();
     }
-  }, [openWindow, closeReason, closing, afterWrite]);
+  }, [windowId, closeReason, closing, afterWrite]);
 
   const now = Date.now();
   const identity = entry ? machineEntryLabel(entry) : null;
   const drainState = resolveDeviceDrain(drain.read, deviceId || undefined, now);
+  const ctx: MaintenanceContext = {
+    drain: deviceId ? drainState : null,
+    refreshError:
+      machines.read.state === "ok" ? machines.read.refreshError : null,
+  };
 
   const machinesNotice =
     machines.read.state === "unknown"
@@ -272,7 +315,7 @@ export default function MachineMaintenancePage() {
         : [entry.ciHost]
       : []
     ).map((h) => ({ label: "CI host", key: h })),
-    ...(openWindow ? [{ label: "Window", key: openWindow.id }] : []),
+    ...(windowId ? [{ label: "Window", key: windowId }] : []),
   ];
 
   return (
@@ -373,7 +416,8 @@ export default function MachineMaintenancePage() {
               const verdict = deriveVerdictHealth(
                 openWindow,
                 readiness.read,
-                now
+                now,
+                ctx
               );
               return (
                 <HealthStrip
@@ -401,7 +445,7 @@ export default function MachineMaintenancePage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     onClick={() => openPrepare()}
-                    disabled={openWindow !== null || entry.openWindowUnreadable}
+                    disabled={windowId !== null || entry.openWindowUnreadable}
                     data-testid="coord-maintenance-prepare"
                   >
                     Prepare for restart…
@@ -412,12 +456,12 @@ export default function MachineMaintenancePage() {
                       setCloseReason("");
                       setCloseOpen(true);
                     }}
-                    disabled={openWindow === null}
+                    disabled={windowId === null}
                     data-testid="coord-maintenance-return"
                   >
                     Return to service
                   </Button>
-                  {openWindow !== null && (
+                  {windowId !== null && (
                     <span
                       className="text-[11px] text-muted-foreground"
                       data-testid="coord-maintenance-prepare-disabled-reason"
@@ -434,6 +478,7 @@ export default function MachineMaintenancePage() {
               <MaintenanceLevers
                 entry={entry}
                 now={now}
+                ctx={ctx}
                 onRequestOpen={(lever) => openPrepare(lever)}
                 onChanged={afterWrite}
               />

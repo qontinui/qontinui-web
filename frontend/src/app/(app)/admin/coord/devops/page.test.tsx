@@ -282,6 +282,8 @@ interface Fixture {
    * console — which every row must render as UNKNOWN rather than calm.
    */
   maintenance?: unknown;
+  /** What `GET /operations/fleet/drain` answers with; defaults to none drained. */
+  drain?: unknown;
   /**
    * What `GET /operations/fleet/worktree-slots` answers with (Phase 3).
    * `undefined` defaults to a zero-device payload — benign for every test
@@ -330,6 +332,13 @@ function mockRoutes(fixture: Fixture) {
   });
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
+    if (u.includes("/fleet/drain")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fixture.drain ?? { drained: {} }),
+      });
+    }
     if (u.includes("/fleet/machines")) {
       if (fixture.maintenance === undefined) {
         // A coord that serves no machines read. NOT an empty fleet — the
@@ -1801,6 +1810,36 @@ describe("/admin/coord/devops — machine maintenance badge", () => {
     expect(
       within(block("spaceship")).queryByTestId("machine-maintenance-badge")
     ).not.toBeInTheDocument();
+  });
+
+  it("badges a raw drain outside any window, rather than calling the machine in service", async () => {
+    mockRoutes({
+      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      maintenance: machinesRead(null),
+      drain: {
+        drained: {
+          [DEVICE]: {
+            until: "2099-01-01T00:00:00Z",
+            reason: "agent drained it",
+            drained_by: "agent",
+            drained_at: "2026-09-28T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        within(block("spaceship")).getByTestId("machine-maintenance-badge")
+      ).toHaveTextContent("Drained (outside a window)")
+    );
+    expect(
+      within(block("spaceship")).getByTestId("machine-maintenance-link")
+    ).toHaveTextContent("Maintenance");
   });
 
   it("reads the machines ONCE for the whole list, never once per row", async () => {

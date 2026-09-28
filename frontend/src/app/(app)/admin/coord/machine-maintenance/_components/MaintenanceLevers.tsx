@@ -37,15 +37,24 @@ import {
   deriveLeverStatus,
 } from "@/components/operations/maintenanceStatus";
 import {
+  describeMaintenanceError,
+  drainedLanes,
   formatUntil,
   labelOutcomeLabel,
+  lanesLabel,
   leverActionPauses,
   type MachineEntry,
+  type MaintenanceContext,
   type MaintenanceError,
   type MaintenanceLever,
   type MaintenanceWindow,
 } from "@/components/operations/maintenanceWindow";
 import { setMaintenanceLever } from "@/components/operations/useMaintenanceWindow";
+import { postUndrain } from "@/components/operations/useFleetDrain";
+import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { LastHostNotice } from "./LastHostNotice";
 
 const LEVER_NAME: Record<MaintenanceLever, string> = {
   agent_work: "Agent work",
@@ -56,24 +65,68 @@ function LeverRow({
   lever,
   entry,
   now,
+  ctx,
   onRequestOpen,
   onChanged,
 }: {
   lever: MaintenanceLever;
   entry: MachineEntry;
   now: number;
+  ctx: MaintenanceContext;
   onRequestOpen: (lever: MaintenanceLever) => void;
   onChanged: (window: MaintenanceWindow | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MaintenanceError | null>(null);
   const [lastHost, setLastHost] = useState<MaintenanceError | null>(null);
-  const status = deriveLeverStatus(lever, entry, now);
+  const [releasing, setReleasing] = useState(false);
+  const [releaseReason, setReleaseReason] = useState("");
+  const status = deriveLeverStatus(lever, entry, now, ctx);
   const window = entry.openWindow;
   const pauses = leverActionPauses(entry, lever);
+  // No lever action on a state this page cannot read, on a window coord is
+  // already winding down, or on a raw drain (which has its own release).
   const actionable =
     !entry.openWindowUnreadable &&
-    !(lever === "agent_work" && entry.kind === "ci_host");
+    !(lever === "agent_work" && entry.kind === "ci_host") &&
+    status.kind !== "unknown" &&
+    status.kind !== "window_expired" &&
+    status.kind !== "drained_outside_window";
+  const drainRelease =
+    status.kind === "drained_outside_window" && entry.kind === "machine"
+      ? {
+          deviceId: entry.deviceId,
+          lane: lever === "agent_work" ? ("agent" as const) : ("ci" as const),
+        }
+      : null;
+
+  const release = async () => {
+    if (drainRelease === null || busy || releaseReason.trim() === "") return;
+    setBusy(true);
+    setError(null);
+    const res = await postUndrain({
+      deviceId: drainRelease.deviceId,
+      reason: releaseReason,
+      lanes: [drainRelease.lane],
+    });
+    setBusy(false);
+    setReleasing(false);
+    setReleaseReason("");
+    if (res.ok) {
+      toast.success(
+        res.changed
+          ? `Released the ${LEVER_NAME[lever]} drain`
+          : `The ${LEVER_NAME[lever]} lane was not drained — nothing changed`
+      );
+      onChanged(null);
+      return;
+    }
+    setError(
+      res.status === null
+        ? { code: null, message: res.body, poolKey: null }
+        : describeMaintenanceError(res.status, res.body)
+    );
+  };
   const labels = lever === "ci" && window ? window.levers.ci.labels : [];
 
   const act = async (acceptCiQueueing?: boolean) => {
@@ -136,6 +189,22 @@ function LeverRow({
             </Button>
           </CoordAdminOnly>
         )}
+        {drainRelease && (
+          <CoordAdminOnly fallback={<ReadOnlyNotice />}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setReleaseReason("");
+                setReleasing(true);
+              }}
+              data-testid={`coord-maintenance-lever-${lever === "ci" ? "ci" : "agent"}-release-drain`}
+            >
+              Release drain
+            </Button>
+          </CoordAdminOnly>
+        )}
       </div>
 
       {window && lever === "agent_work" && entry.kind === "machine" && (
@@ -177,23 +246,13 @@ function LeverRow({
       )}
 
       {lastHost && window && (
-        <div
-          role="alert"
-          className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
-          data-testid="coord-maintenance-lever-last-host"
-        >
-          <p className="text-xs break-words">{lastHost.message}</p>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void act(true)}
-            data-testid="coord-maintenance-lever-accept-queueing"
-          >
-            Pause anyway — CI will queue at GitHub until{" "}
-            {formatUntil(window.until, now)}
-          </Button>
-        </div>
+        <LastHostNotice
+          refusal={lastHost}
+          until={formatUntil(window.until, now)}
+          busy={busy}
+          onAccept={() => void act(true)}
+          testIdPrefix="coord-maintenance-lever"
+        />
       )}
 
       {error && (
@@ -206,6 +265,48 @@ function LeverRow({
           {error.code ? ` (${error.code})` : ""}
         </p>
       )}
+      {drainRelease && (
+        <ConfirmDestructiveDialog
+          open={releasing}
+          onOpenChange={(o) => {
+            if (!o) setReleasing(false);
+          }}
+          title={`Release the ${LEVER_NAME[lever].toLowerCase()} drain?`}
+          description={
+            <p className="break-words">
+              Releases the <strong>{drainRelease.lane}</strong> lane of the
+              drain on device{" "}
+              <span className="font-mono break-all">
+                {drainRelease.deviceId}
+              </span>{" "}
+              (held lanes: {lanesLabel(drainedLanes(ctx.drain))}). Coord may
+              send this machine{" "}
+              {drainRelease.lane === "agent" ? "agent work" : "CI work"} again
+              as soon as this lands. The drain was set outside any maintenance
+              window, so nothing else will release it early.
+            </p>
+          }
+          confirmLabel="Release drain"
+          busy={busy}
+          confirmDisabled={releaseReason.trim() === ""}
+          onConfirm={() => void release()}
+          testId={`coord-maintenance-release-drain-${drainRelease.lane}`}
+          extra={
+            <div className="space-y-1.5">
+              <Label htmlFor={`coord-maintenance-release-reason-${lever}`}>
+                Reason (required)
+              </Label>
+              <Textarea
+                id={`coord-maintenance-release-reason-${lever}`}
+                rows={2}
+                value={releaseReason}
+                onChange={(e) => setReleaseReason(e.target.value)}
+                data-testid={`coord-maintenance-release-drain-${drainRelease.lane}-reason`}
+              />
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }
@@ -213,11 +314,13 @@ function LeverRow({
 export function MaintenanceLevers({
   entry,
   now,
+  ctx,
   onRequestOpen,
   onChanged,
 }: {
   entry: MachineEntry;
   now: number;
+  ctx: MaintenanceContext;
   onRequestOpen: (lever: MaintenanceLever) => void;
   onChanged: (window: MaintenanceWindow | null) => void;
 }) {
@@ -228,6 +331,7 @@ export function MaintenanceLevers({
         lever="agent_work"
         entry={entry}
         now={now}
+        ctx={ctx}
         onRequestOpen={onRequestOpen}
         onChanged={onChanged}
       />
@@ -235,6 +339,7 @@ export function MaintenanceLevers({
         lever="ci"
         entry={entry}
         now={now}
+        ctx={ctx}
         onRequestOpen={onRequestOpen}
         onChanged={onChanged}
       />

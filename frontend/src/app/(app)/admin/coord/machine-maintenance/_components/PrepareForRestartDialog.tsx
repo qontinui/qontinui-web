@@ -57,6 +57,7 @@ import {
   type MaintenanceWindow,
 } from "@/components/operations/maintenanceWindow";
 import { openMaintenanceWindow } from "@/components/operations/useMaintenanceWindow";
+import { LastHostNotice } from "./LastHostNotice";
 
 export interface PrepareForRestartDialogProps {
   entry: MachineEntry;
@@ -188,9 +189,10 @@ export function PrepareForRestartDialog({
                   <Checkbox
                     checked={levers.agent_work}
                     disabled={busy || entry.kind === "ci_host"}
-                    onCheckedChange={(v) =>
-                      setLevers((p) => ({ ...p, agent_work: v === true }))
-                    }
+                    onCheckedChange={(v) => {
+                      setLastHost(null);
+                      setLevers((p) => ({ ...p, agent_work: v === true }));
+                    }}
                     data-testid="coord-maintenance-prepare-agent"
                   />
                   <span>
@@ -205,9 +207,10 @@ export function PrepareForRestartDialog({
                   <Checkbox
                     checked={levers.ci}
                     disabled={busy}
-                    onCheckedChange={(v) =>
-                      setLevers((p) => ({ ...p, ci: v === true }))
-                    }
+                    onCheckedChange={(v) => {
+                      setLastHost(null);
+                      setLevers((p) => ({ ...p, ci: v === true }));
+                    }}
                     data-testid="coord-maintenance-prepare-ci"
                   />
                   <span>
@@ -232,13 +235,14 @@ export function PrepareForRestartDialog({
                       size="sm"
                       variant="secondary"
                       disabled={busy}
-                      onClick={() =>
+                      onClick={() => {
+                        setLastHost(null);
                         setUntilLocal(
                           toLocalInputValue(
                             Date.now() + preset.hours * 3_600_000
                           )
-                        )
-                      }
+                        );
+                      }}
                       data-testid={`coord-maintenance-prepare-preset-${preset.key}`}
                     >
                       {preset.label}
@@ -250,7 +254,10 @@ export function PrepareForRestartDialog({
                   type="datetime-local"
                   value={untilLocal}
                   disabled={busy}
-                  onChange={(e) => setUntilLocal(e.target.value)}
+                  onChange={(e) => {
+                    setLastHost(null);
+                    setUntilLocal(e.target.value);
+                  }}
                   data-testid="coord-maintenance-prepare-until"
                 />
                 <p className="text-[11px] text-muted-foreground break-words">
@@ -270,7 +277,10 @@ export function PrepareForRestartDialog({
                   value={reason}
                   disabled={busy}
                   placeholder="e.g. kernel update"
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setLastHost(null);
+                    setReason(e.target.value);
+                  }}
                   data-testid="coord-maintenance-prepare-reason"
                 />
               </div>
@@ -317,28 +327,13 @@ export function PrepareForRestartDialog({
           )}
 
           {lastHost && (
-            <div
-              role="alert"
-              className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
-              data-testid="coord-maintenance-prepare-last-host"
-            >
-              <p className="text-xs break-words">{lastHost.message}</p>
-              {lastHost.poolKey && (
-                <p className="text-[11px] text-muted-foreground break-words">
-                  Routing: <span className="font-mono">{lastHost.poolKey}</span>
-                </p>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void submit(true)}
-                data-testid="coord-maintenance-prepare-accept-queueing"
-              >
-                Pause anyway — CI will queue at GitHub until {untilLabel}
-              </Button>
-            </div>
+            <LastHostNotice
+              refusal={lastHost}
+              until={untilLabel}
+              busy={busy}
+              onAccept={() => void submit(true)}
+              testIdPrefix="coord-maintenance-prepare"
+            />
           )}
 
           {refusal && (
