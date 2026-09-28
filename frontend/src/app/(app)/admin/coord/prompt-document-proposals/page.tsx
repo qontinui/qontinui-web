@@ -42,8 +42,8 @@
  *   second title; the paragraph survives beside it because it says the thing
  *   an operator needs to know before deciding anything — that nothing is
  *   waiting on them.
- * - **R2/R5/R3** — in `_components/ProposalCard.tsx` and
- *   `proposalStatus.ts`; see those files for the fat-card removal and the
+ * - **R2/R5/R3** — in `_components/PolicyProposalCard.tsx` and
+ *   `policyProposalStatus.ts`; see those files for the fat-card removal and the
  *   palette correction.
  */
 

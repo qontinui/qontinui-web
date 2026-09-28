@@ -439,7 +439,64 @@ TARGET_CODE_FALLBACK = f"{TARGET_CODE_PREFIX}unknown"
 # terminal the target has — so it is the one type that must not be an info
 # line. Everything else on these channels is a lifecycle or RPC frame, rare
 # enough that an info line per frame is what makes the route auditable.
-_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output"})
+#
+# ``terminal_input_ack`` is the firehose's twin in the other direction: one
+# per keystroke frame the source sends, so it is logged at debug too.
+_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output", "terminal_input_ack"})
+
+# ---------------------------------------------------------------------------
+# Input acknowledgement (plan
+# ``2026-09-20-remote-session-interactivity-is-a-query-and-both-halves-hold``,
+# Phase A1).
+# ---------------------------------------------------------------------------
+# The target answers every ``terminal_input`` that carried a ``remote`` block,
+# once the grant gate passed, with a ``terminal_input_ack`` — accepted or not.
+# The relay publishes it (``is_remote_only_target_frame``), retypes it and
+# hands it to the source that holds the grant. Until that frame existed the
+# write half of a remote session was blind: an accepted keystroke, a dropped
+# one and an undecodable one all looked identical to the source.
+TARGET_INPUT_ACK_FRAME_TYPE = "terminal_input_ack"
+SOURCE_INPUT_ACK_FRAME_TYPE = "remote_terminal_input_ack"
+
+# Keys of a source ``remote_terminal_input`` the relay OWNS on the forward.
+# Everything else is copied to the target verbatim — ``data``, ``seq``,
+# ``probe`` and whatever a newer source adds — because rebuilding the forward
+# frame from a known field set is how fields die in transit: the 08-31 attach
+# work lost ``have_offset`` and three more fields that way (web#1301), and an
+# input forward that dropped ``probe`` would turn every liveness probe into a
+# real zero-byte keystroke on the target.
+#
+# Why each key is the relay's:
+# - ``type`` — the outbound type is ``terminal_input``, the relay's literal.
+# - ``remote`` — the relay's authority block, rebuilt from the attachment;
+#   a source must never be able to name its own grant to the target.
+# - ``grant_jti`` — routing identity; it travels inside ``remote``.
+# - ``terminal_id`` — the terminal the TARGET bound, from the attachment.
+# - ``request_id`` — never forwarded on input (the relay mints its own ids for
+#   the RPCs that need one). Forwarding it would ALSO misroute the target's
+#   refusal of this keystroke: an ``error`` carrying a ``request_id`` is the
+#   mobile watcher's shape and is not published on the remote-only channel.
+# - ``timestamp`` — stamped by the relay at forward time.
+INPUT_FORWARD_RELAY_OWNED_KEYS: frozenset[str] = frozenset(
+    {"type", "remote", "grant_jti", "terminal_id", "request_id", "timestamp"}
+)
+
+# Keys of a target ``terminal_input_ack`` the relay OWNS on the return. The
+# rest of the frame — ``seq``, ``bytes``, ``accepted``, ``error``, ``via``,
+# ``accepted_at`` and any field a newer target adds — reaches the source
+# verbatim. ``grant_jti`` and ``terminal_id`` are set FROM THE ATTACHMENT
+# RECORD (the rule every return frame follows), and the ``remote`` block is
+# stripped: it is the relay's own routing block, and no other return frame
+# hands it to the source.
+#
+# ``request_id`` and ``code`` are stripped too, because on the source's wire
+# they are the relay's voice: a ``request_id`` resolves a waiting RPC (an ack
+# answers none), and ``code`` is the field a relay refusal speaks through —
+# the one ``namespace_target_code`` exists to keep a target out of. An ack
+# states its outcome through ``accepted`` / ``error`` instead.
+INPUT_ACK_RELAY_OWNED_KEYS: frozenset[str] = frozenset(
+    {"type", "remote", "grant_jti", "terminal_id", "request_id", "code"}
+)
 
 
 def _prefix_is_disjoint_from_relay_codes() -> bool:
@@ -644,6 +701,12 @@ def is_remote_only_target_frame(msg: dict[str, Any]) -> bool:
         return False
     if msg_type == "terminal_attached":
         return True
+    if msg_type == TARGET_INPUT_ACK_FRAME_TYPE:
+        # New with the input-ack wire (Phase A1); no mobile arm consumes it,
+        # so it is admitted unconditionally like ``terminal_attached``. One
+        # that names no grant this socket holds is answered ``False`` by
+        # ``route_target_frame`` and goes nowhere.
+        return True
     if msg_type not in TARGET_REFUSAL_FRAME_TYPES:
         return False
     if msg_type == "error":
@@ -686,6 +749,11 @@ class _Attachment:
     # ships the whole ring tail, and the source writes a false DATA-LOSS marker
     # into a pane that lost nothing). See ``_handle_attach``.
     attach_frame: dict[str, Any] | None = None
+    # Set once the first ``terminal_input_ack`` naming another terminal under
+    # this grant has been logged at warning; the rest go to debug. An ack is
+    # per keystroke, so a target stuck on the defect would otherwise emit one
+    # warning per key.
+    ack_mismatch_warned: bool = False
     # Armed at most once, and never reset: the second ``attach_grant_unknown``
     # for this grant takes the unchanged fatal path. This is what makes the
     # re-present one-shot rather than a retry loop.
@@ -931,8 +999,19 @@ class RemoteTerminalRelay:
         elif msg_type == "remote_terminal_input":
             att = await self._authorize(session, msg)
             if att is not None:
+                # The WHOLE source frame minus the keys the relay owns — see
+                # ``INPUT_FORWARD_RELAY_OWNED_KEYS``. ``seq`` and ``probe``
+                # ride here, and so does any field a newer source adds.
                 await self._forward(
-                    session, msg, att, "terminal_input", {"data": msg.get("data")}
+                    session,
+                    msg,
+                    att,
+                    "terminal_input",
+                    {
+                        key: value
+                        for key, value in msg.items()
+                        if key not in INPUT_FORWARD_RELAY_OWNED_KEYS
+                    },
                 )
         elif msg_type == "remote_terminal_resize":
             att = await self._authorize(session, msg)
@@ -1552,10 +1631,14 @@ class RemoteTerminalRelay:
         extra: dict[str, Any],
     ) -> bool:
         """Forward one frame to the target for an already-authorized attachment."""
+        # ``extra`` FIRST: whatever it carries, the relay-owned keys below
+        # win. The input arm copies the source frame into ``extra`` minus a
+        # denylist; this ordering is what keeps a gap in that list from ever
+        # letting a source spell the type, terminal or authority block.
         frame: dict[str, Any] = {
+            **extra,
             "type": target_type,
             "terminal_id": att.terminal_id,
-            **extra,
             "remote": att.remote_block(),
             "timestamp": utc_now().isoformat(),
         }
@@ -2336,6 +2419,9 @@ class RemoteTerminalRelay:
         if frame_type == "terminal_buffer_response":
             return await self._route_buffer_response(session, target_device_id, frame)
 
+        if frame_type == TARGET_INPUT_ACK_FRAME_TYPE:
+            return await self._route_input_ack(session, target_device_id, frame)
+
         if frame_type == "runner_disconnected":
             # A RELAY-authored notice, not a target refusal, which is why it
             # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES`` and above it:
@@ -2452,6 +2538,70 @@ class RemoteTerminalRelay:
         if att is None or att.target_device_id != target_device_id:
             return None
         return att
+
+    async def _route_input_ack(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Route a target ``terminal_input_ack`` to the source holding its grant.
+
+        Routed by the grant the target echoed in ``remote`` (or a top-level
+        ``grant_jti``) — the target emits an ack ONLY for a ``terminal_input``
+        that carried a ``remote`` block, so an unmarked ack is not ours. The
+        grant must be one THIS socket holds, on THIS target, and BOUND: an ack
+        for an unknown, foreign, expired or not-yet-attached grant is dropped
+        (``False``) exactly as ``terminal_output`` and the unsolicited buffer
+        resync are, never turned into a refusal the source did not ask for.
+
+        Expiry needs no arm here: ``_dispatch_target_frame`` reaps expired
+        grants (and tells their sources) before any arm runs, so an ack under
+        an expired grant finds no attachment and is dropped as unknown.
+
+        The frame is copied WHOLE — see ``INPUT_ACK_RELAY_OWNED_KEYS`` — so a
+        field a newer target adds reaches the source without a relay change.
+        Only ``type`` is retyped; ``grant_jti`` / ``terminal_id`` come from the
+        attachment record, and the relay's ``remote`` block and the relay-voice
+        keys are stripped. ``error`` is target-supplied free text, so it is
+        capped at ``TARGET_MESSAGE_MAX`` like a refusal's ``message``, and a
+        non-string one is dropped. It is deliberately NOT namespaced: it is not
+        a relay ``code`` field, and its leading token is the wire refusal code
+        the source reports to coord verbatim (plan A2), which a prefix would
+        break.
+        """
+        if not _is_remote_marked(frame):
+            return False
+        att = await self._attachment_by_remote_mark(session, target_device_id, frame)
+        if att is None or not att.attached:
+            return False
+        if frame.get("terminal_id") != att.terminal_id:
+            # An ack marked with our grant naming another pane: a target
+            # defect. Handing it over would credit a keystroke to the wrong
+            # pane's write half.
+            log = logger.debug if att.ack_mismatch_warned else logger.warning
+            att.ack_mismatch_warned = True
+            log(
+                "remote_terminal_input_ack_terminal_mismatch",
+                source_device_id=session.device_id,
+                grant_jti=att.grant_jti,
+                expected_terminal_id=att.terminal_id,
+                terminal_id=frame.get("terminal_id"),
+            )
+            return False
+        payload: dict[str, Any] = {
+            key: value
+            for key, value in frame.items()
+            if key not in INPUT_ACK_RELAY_OWNED_KEYS
+        }
+        if "error" in payload:
+            error = payload["error"]
+            if isinstance(error, str):
+                payload["error"] = error[:TARGET_MESSAGE_MAX]
+            else:
+                del payload["error"]
+        payload["type"] = SOURCE_INPUT_ACK_FRAME_TYPE
+        payload["grant_jti"] = att.grant_jti
+        payload["terminal_id"] = att.terminal_id
+        await self._send_to_source(session, payload)
+        return True
 
     async def _route_buffer_response(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]

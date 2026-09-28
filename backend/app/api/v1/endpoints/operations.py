@@ -5065,6 +5065,10 @@ async def get_coord_audit_recent(
 # nothing here should ever surface a path.
 
 COORD_CLAUDE_ACCOUNTS_PATH = "/coord/claude-accounts/usage"
+# The USER-scoped twin of the feed above: every account on every device the
+# logged-in user owns, independent of tenant. Plan
+# `2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector` Phase 2.
+COORD_CLAUDE_ACCOUNTS_MINE_PATH = "/coord/claude-accounts/usage/mine"
 
 
 @router.get("/claude-accounts")
@@ -5212,6 +5216,111 @@ async def get_claude_accounts(
         # prepaid provider is configured" reading. Consumers must not render
         # `None` as `False`.
         "prepaid_table_provisioned": payload.get("prepaid_table_provisioned"),
+    }
+
+
+@router.get("/claude-accounts/mine")
+async def get_my_claude_accounts(
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Return the Claude account roster for the CALLER's own devices (user-scoped).
+
+    Proxies coord ``GET /coord/claude-accounts/usage/mine`` — plan
+    ``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``
+    Phase 2. "My accounts" is a fact about the PERSON, not about a tenant: the
+    roster is every account reported by every device the logged-in user owns
+    (``coord.devices.user_id`` with ``capability_user_paired = true``),
+    whichever tenant — if any — each device is currently paired to. So this
+    route deliberately resolves NO tenant: ``get_tenant_id`` is not a
+    dependency, and a caller whose tenant cannot be resolved still gets their
+    own roster. The tenant-scoped :func:`get_claude_accounts` is untouched and
+    remains the tenant-admin view of the whole tenant's devices.
+
+    **Web never tells coord who is asking.** Coord derives the caller's
+    ``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``
+    over the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded —
+    a client-supplied user id would be a new, weaker trust boundary. Web's only
+    job is to capture and forward the bearer (``forward_bearer=True``, since
+    there is no ``tenant_id`` to trigger it); ``current_user`` exists solely to
+    require a logged-in session before anything reaches coord.
+
+    Response envelope — :func:`get_claude_accounts`'s ``accounts`` rows, with
+    the same two provisioning flags::
+
+        {
+          "accounts": [ { "device_id": "<uuid>", "account_label": ".claude-gmail", ... } ],
+          "table_provisioned": true,
+          "columns_provisioned": true
+        }
+
+    **No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,
+    provider)`` — a tenant fact, not a per-person account fact — so they stay
+    on the tenant feed, and coord's ``/mine`` emits none.
+
+    The flags follow the same absence-is-not-zero contract as the tenant route:
+    bare ``.get()`` with no default, so a flag coord omits surfaces as ``None``
+    (unknown) and is never defaulted to ``true``. ``accounts: []`` with both
+    flags ``true`` means genuinely no paired device of this user has reported.
+
+    Coord's refusals propagate with coord's STATUS through
+    :func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so
+    a client can tell them apart rather than reading a generic 500:
+
+    - ``403 user_not_resolved`` — the bearer maps to no ``auth.users`` row;
+    - ``403 user_email_ambiguous`` — more than one ``auth.users`` row matches,
+      so nothing can pick the right one;
+    - ``500 user_lookup_failed`` — the identity bridge itself errored;
+    - ``500 usage_read_failed`` — the roster read errored.
+
+    **Where a client finds coord's code.** ``detail`` is coord's raw body as a
+    STRING, so the app's shared ``http_exception_handler``
+    (``app/middleware/error_handler.py``) renders it with web's GENERIC code
+    for the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and
+    coord's body, as JSON text, in ``message``. For example a coord 403
+    ``user_email_ambiguous`` arrives as (``message`` is a STRING whose content
+    is coord's body ``{"error":"user_email_ambiguous"}``)::
+
+        {"error": "FORBIDDEN",
+         "message": <string: {"error":"user_email_ambiguous"}>,
+         "timestamp": <float>, "path": "<request url>"}
+
+    So coord's code is ``JSON.parse(body.message).error`` — never
+    ``body.error``, which only ever names the HTTP status class.
+
+    A ``502`` is web's own verdict that coord broke the contract: a body that
+    is not a JSON object, or an ``accounts`` that is not a list. Neither is
+    coerced to an empty roster, which would be indistinguishable from "no
+    paired device of this user has reported".
+    """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
+    # — see the same comment in ``create_user_tenant``: a sync dependency runs
+    # in a threadpool with a COPIED context, the ContextVar never reaches this
+    # coroutine, and coord would answer 403 ``user_not_resolved`` for everyone.
+    capture_caller_bearer(request)
+    payload = await _proxy_coord_get(
+        COORD_CLAUDE_ACCOUNTS_MINE_PATH, forward_bearer=True
+    )
+    if not isinstance(payload, dict):
+        # A non-object body is a coord contract break, not an empty roster.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned an unexpected claude-accounts payload",
+        )
+
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        # Same contract break as a non-object body. Coercing it to `[]` would
+        # read as "no paired device reported" — a false zero, not an unknown.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned a claude-accounts payload with no accounts list",
+        )
+    return {
+        "accounts": accounts,
+        # `.get` with no default: absent stays None (unknown), never True.
+        "table_provisioned": payload.get("table_provisioned"),
+        "columns_provisioned": payload.get("columns_provisioned"),
     }
 
 
@@ -11391,9 +11500,9 @@ async def list_prompt_document_proposals(
         raise
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/approve")
 async def approve_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained deliberately though its value is now unused: the dependency is
@@ -11418,15 +11527,15 @@ async def approve_prompt_document_proposal(
     which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/approve",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/reject")
 async def reject_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained for the same reason as on approve: this dependency is the
@@ -11441,7 +11550,7 @@ async def reject_prompt_document_proposal(
     operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/reject",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
