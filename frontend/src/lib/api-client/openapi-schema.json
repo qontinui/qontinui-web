@@ -87735,6 +87735,35 @@
         ]
       }
     },
+    "/api/v1/operations/claude-accounts/mine": {
+      "get": {
+        "description": "Return the Claude account roster for the CALLER's own devices (user-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage/mine`` \u2014 plan\n``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``\nPhase 2. \"My accounts\" is a fact about the PERSON, not about a tenant: the\nroster is every account reported by every device the logged-in user owns\n(``coord.devices.user_id`` with ``capability_user_paired = true``),\nwhichever tenant \u2014 if any \u2014 each device is currently paired to. So this\nroute deliberately resolves NO tenant: ``get_tenant_id`` is not a\ndependency, and a caller whose tenant cannot be resolved still gets their\nown roster. The tenant-scoped :func:`get_claude_accounts` is untouched and\nremains the tenant-admin view of the whole tenant's devices.\n\n**Web never tells coord who is asking.** Coord derives the caller's\n``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``\nover the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded \u2014\na client-supplied user id would be a new, weaker trust boundary. Web's only\njob is to capture and forward the bearer (``forward_bearer=True``, since\nthere is no ``tenant_id`` to trigger it); ``current_user`` exists solely to\nrequire a logged-in session before anything reaches coord.\n\nResponse envelope \u2014 :func:`get_claude_accounts`'s ``accounts`` rows, with\nthe same two provisioning flags::\n\n    {\n      \"accounts\": [ { \"device_id\": \"<uuid>\", \"account_label\": \".claude-gmail\", ... } ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,\nprovider)`` \u2014 a tenant fact, not a per-person account fact \u2014 so they stay\non the tenant feed, and coord's ``/mine`` emits none.\n\nThe flags follow the same absence-is-not-zero contract as the tenant route:\nbare ``.get()`` with no default, so a flag coord omits surfaces as ``None``\n(unknown) and is never defaulted to ``true``. ``accounts: []`` with both\nflags ``true`` means genuinely no paired device of this user has reported.\n\nCoord's refusals propagate with coord's STATUS through\n:func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so\na client can tell them apart rather than reading a generic 500:\n\n- ``403 user_not_resolved`` \u2014 the bearer maps to no ``auth.users`` row;\n- ``403 user_email_ambiguous`` \u2014 more than one ``auth.users`` row matches,\n  so nothing can pick the right one;\n- ``500 user_lookup_failed`` \u2014 the identity bridge itself errored;\n- ``500 usage_read_failed`` \u2014 the roster read errored.\n\n**Where a client finds coord's code.** ``detail`` is coord's raw body as a\nSTRING, so the app's shared ``http_exception_handler``\n(``app/middleware/error_handler.py``) renders it with web's GENERIC code\nfor the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and\ncoord's body, as JSON text, in ``message``. For example a coord 403\n``user_email_ambiguous`` arrives as (``message`` is a STRING whose content\nis coord's body ``{\"error\":\"user_email_ambiguous\"}``)::\n\n    {\"error\": \"FORBIDDEN\",\n     \"message\": <string: {\"error\":\"user_email_ambiguous\"}>,\n     \"timestamp\": <float>, \"path\": \"<request url>\"}\n\nSo coord's code is ``JSON.parse(body.message).error`` \u2014 never\n``body.error``, which only ever names the HTTP status class.\n\nA ``502`` is web's own verdict that coord broke the contract: a body that\nis not a JSON object, or an ``accounts`` that is not a list. Neither is\ncoerced to an empty roster, which would be indistinguishable from \"no\npaired device of this user has reported\".",
+        "operationId": "api_v1_operations_claude_accounts_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get My Claude Accounts Api V1 Operations Claude Accounts Mine Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get My Claude Accounts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/claude-sessions": {
       "post": {
         "description": "Receive Claude Code session report from a machine.",

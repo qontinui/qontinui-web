@@ -58,6 +58,8 @@ export default defineConfig({
       // Only `*.test.ts` is collected; the harness scripts themselves are
       // run by the Spec CI workflow, not by vitest.
       "tests/spec-ci/**/*.test.ts",
+      // The pure decision next.config.mjs imports for its proxy rewrites.
+      "config/**/*.test.mjs",
     ],
     // Exclude the Playwright e2e SPECS (they import @playwright/test and run
     // under `playwright test`, not vitest) but NOT the `*.test.ts` unit tests
