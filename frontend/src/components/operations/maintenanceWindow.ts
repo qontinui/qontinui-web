@@ -873,6 +873,22 @@ export function labelRepos(labels: readonly LabelOutcome[]): string[] {
   return [...new Set(labels.map((l) => l.repo))];
 }
 
+/** Plain words for an agent-lever state, for the Return-to-service result. */
+export function agentLeverStateWords(state: AgentLeverState | null): string {
+  switch (state) {
+    case "held":
+      return "still paused";
+    case "released":
+      return "released";
+    case "hold_failed":
+      return "the pause failed";
+    case "release_failed":
+      return "coord reports the release failed; the window's drain still holds — retry the resume";
+    case null:
+      return UNKNOWN_LABEL;
+  }
+}
+
 /** Whether a window's label rows span more than one host (then show `host`). */
 export function labelsSpanHosts(labels: readonly LabelOutcome[]): boolean {
   return new Set(labels.map((l) => l.host).filter((h) => h !== null)).size > 1;
@@ -1072,9 +1088,9 @@ export interface MaintenanceError {
   message: string;
   poolKey: string | null;
   /**
-   * The machine a `ci_host_linked_to_machine` refusal names, when coord
-   * says which (`machine_device_id` / `device_id`), so the page can offer
-   * to select it.
+   * The machine a `ci_host_linked_to_machine` refusal names — coord's
+   * `linked_device_id` (with `machine_device_id` / `device_id` as
+   * fallbacks) — so the page can offer to select it.
    */
   machineDeviceId: string | null;
 }
@@ -1090,7 +1106,7 @@ export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
     case "window_busy":
       return "Another change to this window is in progress — retry shortly.";
     case "window_changed":
-      return "The window changed under you — the page has re-read it; check the levers and retry.";
+      return "The window changed under you — the page is re-reading it; check the levers and retry.";
     case "invalid_request":
       return "Coord refused the request as invalid — correct it and retry.";
     default:
@@ -1161,7 +1177,12 @@ export function describeMaintenanceError(
     code,
     message,
     poolKey: str(inner.pool_key),
-    machineDeviceId: str(inner.machine_device_id) ?? str(inner.device_id),
+    // coord names the machine in `linked_device_id`; the other two are
+    // fallbacks for a differently-spelled refusal.
+    machineDeviceId:
+      str(inner.linked_device_id) ??
+      str(inner.machine_device_id) ??
+      str(inner.device_id),
   };
 }
 

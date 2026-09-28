@@ -1027,7 +1027,7 @@ describe("/admin/coord/machine-maintenance — coord Phase 3-5 details", () => {
         detail: {
           error: "ci_host_linked_to_machine",
           message: "msi-wsl is linked to a machine",
-          machine_device_id: DEVICE,
+          linked_device_id: DEVICE,
         },
       }),
     ];
@@ -1120,6 +1120,107 @@ describe("/admin/coord/machine-maintenance — coord Phase 3-5 details", () => {
       .getAllByTestId("coord-maintenance-lever-ci-label-host")
       .map((h) => h.textContent);
     expect(hosts).toEqual(["merytshost", "msi-wsl"]);
+  });
+});
+
+describe("/admin/coord/machine-maintenance — round 9", () => {
+  it("closes the Prepare form when a re-read moves the selection to another entry", async () => {
+    search = "machine=ci:msi-wsl";
+    windowPostResponses = [
+      res(409, {
+        detail: {
+          error: "ci_host_linked_to_machine",
+          message: "msi-wsl is linked to a machine",
+          linked_device_id: DEVICE,
+        },
+      }),
+    ];
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-prepare")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-prepare-dialog"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-preset-1h")
+    );
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "wsl restart"
+    );
+    // coord's truth, served on the re-read the refusal triggers: msi-wsl is
+    // linked to DEVICE, so `ci:msi-wsl` now resolves to that machine.
+    machinesResponse = res(200, {
+      machines: [
+        {
+          device_id: DEVICE,
+          hostname: "merytshost",
+          state: "healthy",
+          ci_hosts: ["merytshost", "msi-wsl"],
+          open_window: null,
+        },
+      ],
+      unlinked_ci_hosts: [],
+    });
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-submit")
+    );
+    // The form does not silently retarget to the machine: it closes.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-maintenance-prepare-dialog")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("coord-maintenance-identity")).toHaveTextContent(
+      `merytshost · ${DEVICE}`
+    );
+    expect(calls("/fleet/maintenance-window", "POST")).toHaveLength(1);
+  });
+
+  it("a refused Return to service shows the next step and re-reads", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    closeResponse = res(409, {
+      detail: { error: "window_changed", message: "window changed" },
+    });
+    render(<MachineMaintenancePage />);
+    const ret = await screen.findByTestId("coord-maintenance-return");
+    await waitFor(() => expect(ret).not.toBeDisabled());
+    await userEvent.click(ret);
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-return-reason"),
+      "done"
+    );
+    const before = calls("/fleet/machines").length;
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-return-submit")
+    );
+    expect(
+      await screen.findByTestId("coord-maintenance-close-error-guidance")
+    ).toHaveTextContent("the page is re-reading it");
+    await waitFor(() =>
+      expect(calls("/fleet/machines").length).toBeGreaterThan(before)
+    );
+  });
+
+  it("a lever toggle refused with window_changed re-reads the machines", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    patchResponse = res(409, {
+      detail: { error: "window_changed", message: "window changed" },
+    });
+    render(<MachineMaintenancePage />);
+    const toggle = await screen.findByTestId(
+      "coord-maintenance-lever-agent-toggle"
+    );
+    await waitFor(() => expect(toggle).toHaveTextContent("Resume"));
+    const before = calls("/fleet/machines").length;
+    await userEvent.click(toggle);
+    expect(
+      await screen.findByTestId("coord-maintenance-lever-error")
+    ).toHaveTextContent("the page is re-reading it");
+    await waitFor(() =>
+      expect(calls("/fleet/machines").length).toBeGreaterThan(before)
+    );
   });
 });
 

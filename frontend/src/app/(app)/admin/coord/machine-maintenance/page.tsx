@@ -36,7 +36,7 @@
  * (and, for the sessions, `runnerStatus.ts`); this file only lays it out.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -70,8 +70,11 @@ import {
   deriveVerdictHealth,
   entryWindowId,
   findMachineEntry,
+  agentLeverStateWords,
+  errorWantsReread,
   labelOutcomeLabel,
   labelsSpanHosts,
+  maintenanceErrorGuidance,
   machineEntryLabel,
   parseMachineParam,
   type MachineEntry,
@@ -120,6 +123,14 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
       >
         Return to service failed — {result.message}
         {result.code ? ` (${result.code})` : ""}
+        {maintenanceErrorGuidance(result) && (
+          <span
+            className="block text-muted-foreground"
+            data-testid="coord-maintenance-close-error-guidance"
+          >
+            {maintenanceErrorGuidance(result)}
+          </span>
+        )}
       </p>
     );
   }
@@ -159,7 +170,7 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
       <p>
         Agent work:{" "}
         <span data-testid="coord-maintenance-close-agent">
-          {w.levers.agentWork.state ?? "UNKNOWN"}
+          {agentLeverStateWords(w.levers.agentWork.state)}
         </span>
         {w.levers.agentWork.detail ? ` — ${w.levers.agentWork.detail}` : ""}.
         CI:{" "}
@@ -264,6 +275,14 @@ export default function MachineMaintenancePage() {
     void readiness.refresh();
   }, [machines, drain, readiness]);
 
+  // A re-read can move the selection to a different entry (a CI host that
+  // turned out to be linked now resolves to its machine). An open Prepare
+  // form must not silently retarget, so it closes; reopening starts clean.
+  const entryKey = entry?.key ?? null;
+  useEffect(() => {
+    setPrepareOpen(false);
+  }, [entryKey]);
+
   const openPrepare = useCallback(
     (only?: MaintenanceLever) => {
       if (!entry) return;
@@ -288,6 +307,9 @@ export default function MachineMaintenancePage() {
     });
     setClosing(false);
     setCloseResult(res);
+    // A refusal that says the page is stale (window_changed / window_busy …)
+    // re-reads, exactly like the lever and open paths.
+    if (!res.ok && errorWantsReread(res)) afterWrite();
     if (res.ok) {
       setCloseOpen(false);
       setCloseReason("");
