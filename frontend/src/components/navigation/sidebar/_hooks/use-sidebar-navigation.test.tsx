@@ -200,7 +200,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview"]);
 
     isSuperuser = true;
-    expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
+    expect(devops()?.children?.map((c) => c.label)).toContain("Maintenance");
     expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
     expect(devops()?.children).toHaveLength(14);
   });

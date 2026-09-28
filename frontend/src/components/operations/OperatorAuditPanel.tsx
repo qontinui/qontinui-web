@@ -5,19 +5,20 @@
  * the question gets asked. Plan
  * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
  *
- * ## Why the Dev Ops page and not a sibling route
+ * ## Why beside the action and not a sibling route
  *
- * The plan left the placement open. It belongs here for one reason: **the write
- * this feed exists to explain is three inches up the page.** Every machine row
- * carries a Drain/Undrain lever (`DeviceDrainControl`), which shows the drain
- * in force NOW; this feed is the durable answer to who set or released it,
- * when, and with what reach. A sibling `/admin/coord/audit`
+ * The plan left the placement open. It belongs beside the write it explains:
+ * the Dev Ops page mounts it tenant-wide, and the Machine Maintenance page
+ * (plan `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D8)
+ * mounts it scoped to one machine's device id and CI host — the page that
+ * holds the maintenance levers, so the record of who paused a machine sits
+ * under the levers that paused it. A sibling `/admin/coord/audit`
  * route would put the record of an action on a different page from the action,
  * which is the shape the merge kill switch was MOVED OUT OF by
  * `MergeTrainActivity`'s own module doc: "nobody opens a page about dwell
  * thresholds during an incident".
  *
- * It is collapsed, with a `storageKey`, because unlike the drain control it is
+ * It is collapsed, with a `storageKey`, because unlike the levers it is
  * READ-ONLY: persisting "I keep this open" costs nothing and puts no consent
  * surface under a scrolling cursor. That is the same distinction
  * `CiCapacityDisclosure` draws in the other direction.
@@ -229,8 +230,37 @@ function AuditRowView({
   );
 }
 
-export function OperatorAuditPanel() {
-  const [filterId, setFilterId] = useState(DEFAULT_AUDIT_FILTER_ID);
+/** A one-click `resource_key` scope, e.g. "this machine's device id". */
+export interface AuditResourceKeyPreset {
+  label: string;
+  key: string;
+}
+
+export interface OperatorAuditPanelProps {
+  /**
+   * Scope the feed to named resources — plan
+   * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D8
+   * mounts it on the Machine Maintenance page filtered to the machine's
+   * device id and CI host. Each preset is one click that applies its key as
+   * coord's `resource_key` filter; the FIRST is applied on mount. Absent, the
+   * panel reads the whole tenant (the Dev Ops mount).
+   */
+  resourceKeyPresets?: readonly AuditResourceKeyPreset[];
+  /** Which action filter opens selected. Defaults to `fleet.*`. */
+  defaultFilterId?: string;
+  /** Persisted open/closed key, so two mounts do not share one state. */
+  storageKey?: string;
+  /** The intro line; the Dev Ops wording is the default. */
+  intro?: React.ReactNode;
+}
+
+export function OperatorAuditPanel({
+  resourceKeyPresets,
+  defaultFilterId = DEFAULT_AUDIT_FILTER_ID,
+  storageKey = "devops:operator-audit",
+  intro,
+}: OperatorAuditPanelProps = {}) {
+  const [filterId, setFilterId] = useState(defaultFilterId);
   const [read, setRead] = useState<AuditRead>({ state: "loading" });
   const [openKey, setOpenKey] = useState<string | null>(null);
   const filter = useMemo(() => resolveAuditFilter(filterId), [filterId]);
@@ -245,8 +275,15 @@ export function OperatorAuditPanel() {
 
   // Applied separately from the input's live value so typing does not
   // re-fetch on every keystroke — only `resourceKeyFilter` feeds `load`.
-  const [resourceKeyInput, setResourceKeyInput] = useState("");
-  const [resourceKeyFilter, setResourceKeyFilter] = useState("");
+  const initialKey = resourceKeyPresets?.[0]?.key ?? "";
+  const [resourceKeyInput, setResourceKeyInput] = useState(initialKey);
+  const [resourceKeyFilter, setResourceKeyFilter] = useState(initialKey);
+  // A different machine is a different scope: re-apply its first preset
+  // rather than keep reading the previous machine's rows.
+  useEffect(() => {
+    setResourceKeyInput(initialKey);
+    setResourceKeyFilter(initialKey);
+  }, [initialKey]);
 
   // Both the proxy and coord gate this feed on coord-tenant admin, so a
   // non-admin read is a certain 403. It is not issued: the panel says who can
@@ -313,7 +350,7 @@ export function OperatorAuditPanel() {
   return (
     <CollapsiblePanel
       data-testid="operator-audit-panel"
-      storageKey="devops:operator-audit"
+      storageKey={storageKey}
       defaultOpen={false}
       icon={<ScrollText className="h-4 w-4" />}
       title="Operator audit"
@@ -341,11 +378,38 @@ export function OperatorAuditPanel() {
     >
       <div className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Every operator write coord stamped for this tenant, newest first —
-          including the machine drains set from the rows above. The drain lever
-          shows what is in force now; this is the durable answer to &ldquo;who
-          took this host out, when, and why&rdquo;.
+          {intro ?? (
+            <>
+              Every operator write coord stamped for this tenant, newest first —
+              including machine drains and maintenance windows. The Machine
+              Maintenance page shows what is in force now; this is the durable
+              answer to &ldquo;who took this host out, when, and why&rdquo;.
+            </>
+          )}
         </p>
+
+        {resourceKeyPresets && resourceKeyPresets.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Scope</span>
+            {resourceKeyPresets.map((p) => (
+              <Button
+                key={p.key}
+                type="button"
+                size="sm"
+                variant={resourceKeyFilter === p.key ? "secondary" : "outline"}
+                onClick={() => {
+                  setResourceKeyInput(p.key);
+                  setResourceKeyFilter(p.key);
+                }}
+                data-testid="operator-audit-scope"
+                data-scope-key={p.key}
+              >
+                {p.label}:{" "}
+                <span className="ml-1 font-mono break-all">{p.key}</span>
+              </Button>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <label

@@ -228,7 +228,8 @@ export const devNavItems: NavItem[] = [
   // Runners — the ONE runners entry. The unified /runners page covers online
   // runners, session history, and auth tokens; the shared registry's own
   // `runners` item (same route) is hidden on web so it is not listed twice.
-  // The console's drain-and-rebuild page is "Runner Drain" under Dev Ops.
+  // The console's restart-prep page (pause agent work and CI on one machine)
+  // is "Maintenance" under Dev Ops.
   {
     id: "runner-fleet",
     label: "Runners",

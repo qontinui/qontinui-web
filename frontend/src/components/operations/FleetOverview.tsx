@@ -41,8 +41,10 @@ import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
-import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
-import type { UseFleetDrainResult } from "./useFleetDrain";
+import {
+  resolveMachineMaintenance,
+  type MachinesRead,
+} from "./maintenanceWindow";
 import {
   describeMirrorFreshness,
   mergeCiRunners,
@@ -122,8 +124,16 @@ function buildMachineGroups(
     return symbolClaimsByMachine.get(activity.device_id) ?? [];
   };
 
+  // Same-device only. A `device-registry` row is keyed by the paired device's
+  // OWN hostname, so this is the device reporting on itself. A `coord-mirror`
+  // row is keyed `gh-runner-<name>@<repo>`, which never equals a workstation's
+  // hostname — the machine ↔ GitHub-runner pairing this lookup used to be
+  // mistaken for comes from the DECLARED `machine_ci_hosts` join instead
+  // (`resolveMachineMaintenance` → `linkedCiHosts`, plan
+  // `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D2).
   const resolveCiRunner = (hostname: string): CiRunnerInfo | undefined => {
-    return ciRunners[hostname];
+    const info = ciRunners[hostname];
+    return info?.source === "coord-mirror" ? undefined : info;
   };
 
   const resolveVolumes = (
@@ -266,8 +276,8 @@ function buildMachineGroups(
       state: device.state,
       // Coord's own hostname, carried through rather than re-derived from the
       // group key: the group may be keyed on the device id (when coord serves
-      // no hostname), and the card's title is an operator alias. The drain
-      // control needs the identity coord will act on, not either of those.
+      // no hostname), and the card's title is an operator alias. Anything that
+      // names this device to an operator needs coord's identity, not either.
       hostname: device.hostname,
       // Coord's credential verdict for this device, carried through rather
       // than dropped (plan
@@ -380,28 +390,30 @@ export interface FleetOverviewProps {
    */
   ciMachines: DevenvMachinesRead;
   /**
-   * Which machines coord is currently holding out of the fleet, and a way to
-   * force a re-read after a write — plan
-   * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+   * Coord's machines and their maintenance windows (`useFleetMachines`) —
+   * plan `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`
+   * §D7. Each card shows its maintenance badge and links to the one page that
+   * changes it; the declared machine ↔ CI-host join also tells a workstation
+   * card which GitHub runner it hosts.
    *
-   * Owned by the page (`useFleetDrain`) and passed down, exactly like `health`
-   * and `ciMachines`: one read for the whole list, never one per card, so
-   * every row on the page agrees about what is drained.
+   * Owned by the page and passed down, exactly like `health` and
+   * `ciMachines`: one read for the whole list, never one per card, so every
+   * row on the page agrees about what is paused.
    *
    * Required, and deliberately not optional. An optional arm would let a mount
-   * render machine rows carrying no drain state at all, which at a glance is
-   * indistinguishable from a fleet with nothing drained — and "this machine is
-   * taking no new work" is exactly the fact a reader needs before concluding
-   * that an idle-looking row is a healthy one.
+   * render machine rows carrying no maintenance state at all, which at a
+   * glance is indistinguishable from a fleet with nothing paused — and "this
+   * machine is taking no new work" is exactly the fact a reader needs before
+   * concluding that an idle-looking row is a healthy one.
    */
-  drain: UseFleetDrainResult;
+  machines: MachinesRead;
   /**
    * The live `coord.device_status` stream (`useDeviceStatusStream`) — each
    * machine's current activity and the runner's own `details` bag, including
    * its `coord_credential` report.
    *
    * Owned by the page and passed down, exactly like `health`, `ciMachines` and
-   * `drain`. The hook opens a REST seed and a WebSocket PER CALL, so the page
+   * `machines`. The hook opens a REST seed and a WebSocket PER CALL, so the page
    * holds the one subscription and hands it to every consumer: this list, the
    * `DeviceStatusTile` inside it, and the health strip's credential rollup,
    * which must see the same bag these rows resolve against or the strip and
@@ -436,7 +448,7 @@ export interface FleetOverviewProps {
 export function FleetOverview({
   health,
   ciMachines,
-  drain,
+  machines,
   deviceStatus,
   nowMs,
   ciRunnerMirror,
@@ -756,24 +768,23 @@ export function FleetOverview({
                     machine={group}
                     nowMs={nowMs}
                     onRenamed={refreshFleet}
-                    // The drain join, resolved here from the page's ONE read.
-                    // Two values rather than one because they answer different
-                    // questions and fail independently: `drainTarget` is
-                    // whether this row can name a coord device at all (a
-                    // property of the JOIN), `drainState` is what coord says
-                    // about that device (a property of the READ). Collapsing
-                    // them would make "no device to drain" and "the drain read
-                    // is down" render the same, and they call for different
-                    // next steps.
-                    drainTarget={resolveDrainTarget(group.coordHealth)}
-                    drainState={resolveDeviceDrain(
-                      drain.read,
-                      group.coordHealth?.matched
-                        ? group.coordHealth.device_id
-                        : undefined,
-                      Date.now()
-                    )}
-                    onDrainActed={drain.refresh}
+                    // The maintenance join, resolved here from the page's ONE
+                    // machines read. A row that names no machine (no matched
+                    // coord device, not a CI registration) gets none, rather
+                    // than a badge claiming it is in service.
+                    maintenance={
+                      resolveMachineMaintenance(
+                        machines,
+                        {
+                          deviceId: group.coordHealth?.matched
+                            ? group.coordHealth.device_id
+                            : undefined,
+                          hostname: group.hostname,
+                        },
+                        mergedCiRunners,
+                        nowMs
+                      ) ?? undefined
+                    }
                     // The join is resolved here, per row, from the page's one
                     // read — never fetched per card. A row coord's health read
                     // does not name has no `device_id` to match on, and says

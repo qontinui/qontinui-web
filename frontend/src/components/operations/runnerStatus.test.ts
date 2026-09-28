@@ -1,5 +1,6 @@
 /**
- * runnerStatus — the derivations behind `/admin/coord/runners`.
+ * runnerStatus — the derivations behind the session wind-down on
+ * `/admin/coord/machine-maintenance`.
  *
  * Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8. Each block
  * pins one way the page could tell an operator a machine is safe to rebuild

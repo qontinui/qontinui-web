@@ -338,3 +338,45 @@ describe("OperatorAuditPanel — access and ordering", () => {
     expect(document.body.textContent).not.toContain("Drained a machine");
   });
 });
+
+/**
+ * The scoped mount — plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D8. The
+ * Machine Maintenance page shows this panel filtered to one machine's device
+ * id and CI host, one resource key at a time (coord filters by one).
+ */
+describe("the scoped mount", () => {
+  const DEVICE = "22222222-2222-2222-2222-222222222222";
+
+  it("applies the first preset on mount and switches scope on a click", async () => {
+    getMock.mockResolvedValue({ audit: [DRAIN_ROW], count: 1 });
+    render(
+      <OperatorAuditPanel
+        resourceKeyPresets={[
+          { label: "Device", key: DEVICE },
+          { label: "CI host", key: "merytshost" },
+        ]}
+        defaultFilterId="all"
+        storageKey="test:scoped-audit"
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    const first = getMock.mock.calls[0]?.[0] as string;
+    expect(first).toContain(`resource_key=${DEVICE}`);
+    // `all` — the window, lane and label rows are not all under `fleet.*`.
+    expect(first).not.toContain("action=");
+
+    getMock.mockClear();
+    const scopes = screen.getAllByTestId("operator-audit-scope");
+    expect(scopes.map((s) => s.getAttribute("data-scope-key"))).toEqual([
+      DEVICE,
+      "merytshost",
+    ]);
+    fireEvent.click(scopes[1]);
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    expect(getMock.mock.calls[0]?.[0] as string).toContain(
+      "resource_key=merytshost"
+    );
+  });
+});

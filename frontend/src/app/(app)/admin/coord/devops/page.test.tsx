@@ -105,10 +105,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...args: unknown[]) => routerPush(...args) }),
 }));
 
-// The per-row Drain lever is admin-gated (`CoordAdminOnly` -> `useAuth`), and
-// this page mounts no `AuthProvider`. Stubbed to an admin so the control that
-// Phase 4b adds is the one under test; the non-admin arm is asserted in
-// `components/operations/DeviceDrainControl.test.tsx`.
+// Admin-gated pieces of the page (`CoordAdminOnly` -> `useAuth`) need an auth
+// context, and this page mounts no `AuthProvider`. Stubbed to an admin.
 const authState = {
   isCoordAdmin: true,
   user: { is_superuser: false, coord_is_admin: true } as {
@@ -138,8 +136,8 @@ vi.mock("@/contexts/tenant-context", () => ({
   }),
 }));
 
-// Toasts are a drain write's only other output; nothing here asserts on them,
-// but sonner's real module mounts a portal this page has no business holding.
+// Nothing here asserts on toasts, but sonner's real module mounts a portal this
+// page has no business holding.
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
@@ -273,11 +271,12 @@ interface Fixture {
    */
   healthExtras?: Record<string, unknown>;
   /**
-   * What `GET /operations/fleet/drain` answers with. `undefined` means the
-   * route is NOT served — the shape of a coord that predates the plan's Phase
-   * 4a read route, which every row must render as UNKNOWN rather than calm.
+   * What `GET /operations/fleet/machines` answers with (plan
+   * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`).
+   * `undefined` means the route is NOT served — a coord a deploy behind this
+   * console — which every row must render as UNKNOWN rather than calm.
    */
-  drain?: unknown;
+  maintenance?: unknown;
   /**
    * What `GET /operations/fleet/worktree-slots` answers with (Phase 3).
    * `undefined` defaults to a zero-device payload — benign for every test
@@ -315,9 +314,9 @@ function mockRoutes(fixture: Fixture) {
   });
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
-    if (u.includes("/fleet/drain")) {
-      if (fixture.drain === undefined) {
-        // A coord that serves no drain read. NOT an empty drain map — the
+    if (u.includes("/fleet/machines")) {
+      if (fixture.maintenance === undefined) {
+        // A coord that serves no machines read. NOT an empty fleet — the
         // console must say UNKNOWN, which is what makes the deploy window
         // safe.
         return Promise.resolve({
@@ -330,7 +329,7 @@ function mockRoutes(fixture: Fixture) {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(fixture.drain),
+        json: () => Promise.resolve(fixture.maintenance),
       });
     }
     const json = u.includes("/devenv/machines")
@@ -1076,17 +1075,11 @@ describe("/admin/coord/devops — CI capacity", () => {
     // NOT a disabled toggle: that reads as "CI is off on this machine", which
     // is a claim about the machine where the truth is a gap in the join.
     expect(within(ghost).queryByRole("switch")).toBeNull();
-    // Card-wide, MINUS the drain block. Phase 4b of
-    // `2026-09-01-device-drain-does-not-reach-agent-session-spawning` renders a
-    // DISABLED drain button with a stated reason when the row's drain state
-    // could not be read — that is a rule the plan requires and
-    // `DeviceDrainControl.test.tsx` asserts, and it is about the READ rather
-    // than about the machine. The rule THIS test guards is narrower and
-    // unchanged: nothing in the CI-capacity area may render as a dead toggle,
-    // because a dead toggle there IS a claim about the machine.
-    const deadControls = Array.from(
-      ghost.querySelectorAll("[disabled]")
-    ).filter((el) => el.closest('[data-testid="device-drain"]') === null);
+    // Card-wide: nothing on the card may render as a dead toggle, because a
+    // dead toggle in the CI-capacity area IS a claim about the machine. (The
+    // card carries no drain lever any more — the maintenance levers live on
+    // their own page — so there is no exemption to carve out.)
+    const deadControls = Array.from(ghost.querySelectorAll("[disabled]"));
     expect(deadControls).toEqual([]);
     // ...and the linked machine on the same page is unaffected.
     expect(
@@ -1618,16 +1611,17 @@ describe("/admin/coord/devops — the Conditions panel", () => {
 });
 
 /**
- * The Drain / Undrain lever — plan
- * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+ * The maintenance badge — plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D7.
  *
- * These assert the WIRING the phase is about, end to end through the page: the
- * drain read reaching every row, the coord device id being the key each row
- * acts on, and every failure of that read rendering UNKNOWN rather than a calm
- * "not drained". The control's own behaviour is asserted in
- * `components/operations/DeviceDrainControl.test.tsx`.
+ * The Overview card lost its Drain / Undrain lever: one lever, one place. What
+ * each card keeps is the FACT — a badge from the page's one machines read —
+ * and a link to the Machine Maintenance page. These assert the wiring end to
+ * end through the page: the read reaching every row, the declared
+ * machine ↔ CI-host join pairing a CI registration with its machine, and a
+ * failed read rendering UNKNOWN rather than a calm card.
  */
-describe("/admin/coord/devops — machine drain", () => {
+describe("/admin/coord/devops — machine maintenance badge", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpFetch.mockReset();
@@ -1639,36 +1633,85 @@ describe("/admin/coord/devops — machine drain", () => {
   const DEVICE = "11111111-2222-3333-4444-555555555555";
   const CI_DEVICE = "99999999-8888-7777-6666-555555555555";
 
-  /** A drain map as coord's `GET /coord/fleet/drain` serves it. */
-  function drainMap(deviceId: string, until: string) {
+  function openWindow() {
     return {
-      drained: {
-        [deviceId]: {
-          until,
-          reason: "rebuilding the runner",
-          drained_by: "jspinak@gmail.com",
-          drained_at: "2026-08-31T10:00:00Z",
-        },
+      id: "7d7d7d7d-0000-4000-8000-000000000001",
+      machine_device_id: DEVICE,
+      ci_host: "spaceship-wsl",
+      state: "open",
+      until: "2099-01-01T18:00:00Z",
+      reason: "kernel update",
+      opened_by: "jspinak@gmail.com",
+      opened_at: "2026-09-28T10:00:00Z",
+      closed_by: null,
+      closed_at: null,
+      ci_paused_at: "2026-09-28T10:00:05Z",
+      pool_health: null,
+      levers: {
+        agent_work: { held: true, state: "held", detail: null },
+        ci: { held: true, state: "held", detail: null, labels: [] },
       },
     };
   }
 
-  function drainBlock(hostname: string): HTMLElement {
+  function machinesRead(window: unknown = null) {
+    return {
+      machines: [
+        {
+          device_id: DEVICE,
+          hostname: "spaceship",
+          state: "healthy",
+          ci_hosts: ["spaceship-wsl"],
+          open_window: window,
+        },
+      ],
+      unlinked_ci_hosts: [],
+    };
+  }
+
+  function block(hostname: string): HTMLElement {
     const card = document.querySelector(
       `[data-hostname="${hostname}"]`
     ) as HTMLElement;
     expect(card).not.toBeNull();
-    const block = card.querySelector(
-      '[data-testid="device-drain"]'
+    const el = card.querySelector(
+      '[data-testid="machine-maintenance"]'
     ) as HTMLElement;
-    expect(block).not.toBeNull();
-    return block;
+    expect(el).not.toBeNull();
+    return el;
   }
 
-  it("labels each row with the coord device id it will actually drain", async () => {
-    // The plan's Risks section: `spaceship` and `gh-runner-spaceship-wsl` are
-    // SEPARATE coord registrations of one box, and draining the wrong one gets
-    // no effect and no error. Two rows, two ids, each named on its own row.
+  it("badges a machine in maintenance and links it to the maintenance page", async () => {
+    mockRoutes({
+      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      maintenance: machinesRead(openWindow()),
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        within(block("spaceship")).getByTestId("machine-maintenance-badge")
+      ).toHaveTextContent(/^In maintenance until .+ · CI \+ agents$/)
+    );
+    expect(
+      within(block("spaceship")).getByTestId("machine-maintenance-link")
+    ).toHaveAttribute(
+      "href",
+      `/admin/coord/machine-maintenance?machine=${DEVICE}`
+    );
+    expect(
+      within(block("spaceship")).getByTestId("machine-maintenance-ci-hosts")
+    ).toHaveTextContent("CI host spaceship-wsl");
+    // No lever on the card: the one control lives on the maintenance page.
+    expect(document.querySelector('[data-testid="device-drain"]')).toBeNull();
+  });
+
+  it("pairs a CI registration with the machine that DECLARED its host", async () => {
+    // `spaceship` and `gh-runner-spaceship-wsl` are separate coord devices;
+    // the hostnames alone never joined them. The declared host does.
     mockRoutes({
       devices: [
         coordDevice(DEVICE, "spaceship", "healthy"),
@@ -1676,115 +1719,68 @@ describe("/admin/coord/devops — machine drain", () => {
       ],
       runners: [runner("spaceship")],
       samples: [],
-      drain: { drained: {} },
+      maintenance: machinesRead(openWindow()),
     });
 
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
       expect(
-        document.querySelector('[data-hostname="spaceship"]')
-      ).not.toBeNull()
+        within(block("gh-runner-spaceship-wsl")).getByTestId(
+          "machine-maintenance-link"
+        )
+      ).toHaveAttribute(
+        "href",
+        `/admin/coord/machine-maintenance?machine=${DEVICE}`
+      )
     );
-    const workstation = within(drainBlock("spaceship")).getByTestId(
-      "device-drain-target"
-    );
-    const ciRunner = within(drainBlock("gh-runner-spaceship-wsl")).getByTestId(
-      "device-drain-target"
-    );
-    expect(workstation).toHaveAttribute("data-device-id", DEVICE);
-    expect(ciRunner).toHaveAttribute("data-device-id", CI_DEVICE);
-    // The identity is coord's, spelled out in full on the row rather than
-    // abbreviated — it is the field that tells the two registrations apart.
-    expect(workstation.textContent).toContain(DEVICE);
-    expect(ciRunner.textContent).toContain("gh-runner-spaceship-wsl");
+    expect(
+      within(block("gh-runner-spaceship-wsl")).getByTestId(
+        "machine-maintenance-badge"
+      )
+    ).toHaveTextContent("In maintenance until");
   });
 
-  it("renders a drained row with until, by and reason", async () => {
+  it("renders UNKNOWN — never a calm card — when coord serves no machines read", async () => {
     mockRoutes({
       devices: [coordDevice(DEVICE, "spaceship", "healthy")],
       runners: [runner("spaceship")],
       samples: [],
-      // Far enough out that the assertion cannot race the clock.
-      drain: drainMap(DEVICE, "2099-01-01T00:00:00Z"),
+      maintenance: undefined,
     });
 
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(drainBlock("spaceship")).toHaveAttribute(
-        "data-device-drain",
-        "drained"
-      )
+      expect(
+        within(block("spaceship")).getByTestId("machine-maintenance-badge")
+      ).toHaveAttribute("data-maintenance-state", "unknown")
     );
-    const block = drainBlock("spaceship");
-    expect(block.textContent).toContain("Drained until");
-    expect(block.textContent).toContain("jspinak@gmail.com");
-    expect(block.textContent).toContain("rebuilding the runner");
-    // …and the lever offered is the release, not a second drain.
-    expect(
-      within(block).getByTestId("device-drain-undrain")
-    ).toBeInTheDocument();
+    expect(block("spaceship").textContent).toContain("maintenance UNKNOWN");
+    expect(block("spaceship").textContent).not.toContain("In maintenance");
   });
 
-  it("renders UNKNOWN — never 'not drained' — when coord serves no drain read", async () => {
-    // The deploy window: this console is ahead of coord's Phase 4a route, so
-    // the read 404s. `[policy: unknown-must-not-render-as-a-default]`.
+  it("renders no badge — only the link — for a machine that is in service", async () => {
     mockRoutes({
       devices: [coordDevice(DEVICE, "spaceship", "healthy")],
       runners: [runner("spaceship")],
       samples: [],
-      drain: undefined,
+      maintenance: machinesRead(null),
     });
 
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(drainBlock("spaceship")).toHaveAttribute(
-        "data-device-drain",
-        "unknown"
-      )
+      expect(
+        within(block("spaceship")).getByTestId("machine-maintenance-link")
+      ).toHaveTextContent("Prepare for restart")
     );
-    const block = drainBlock("spaceship");
-    expect(block.textContent).toContain("Drain state unknown");
-    expect(block.textContent).not.toContain("Not drained");
-    // A control that cannot read the state does not offer to change it.
-    expect(within(block).getByTestId("device-drain-open")).toBeDisabled();
     expect(
-      within(block).getByTestId("device-drain-disabled-reason").textContent
-    ).toContain("404");
-  });
-
-  it("disables the lever, with a reason, on a row coord names no device for", async () => {
-    // A host that reached the list through the runner inventory alone. The
-    // drain map is keyed by device UUID and this row has none, so there is
-    // nothing it could drain — and an enabled control here would be silently
-    // inert, which is the failure the plan's keying note exists to prevent.
-    mockRoutes({
-      devices: [],
-      runners: [runner("orphan")],
-      samples: [],
-      drain: { drained: {} },
-    });
-
-    render(<CoordDevOpsPage />);
-
-    await waitFor(() =>
-      expect(document.querySelector('[data-hostname="orphan"]')).not.toBeNull()
-    );
-    const block = drainBlock("orphan");
-    expect(block).toHaveAttribute("data-device-drain", "no_device");
-    expect(within(block).getByTestId("device-drain-open")).toBeDisabled();
-    expect(
-      within(block).getByTestId("device-drain-disabled-reason").textContent
-    ).toContain("no device row for this host");
-    // Nothing claims a target it cannot act on.
-    expect(
-      within(block).queryByTestId("device-drain-target")
+      within(block("spaceship")).queryByTestId("machine-maintenance-badge")
     ).not.toBeInTheDocument();
   });
 
-  it("reads the drain map ONCE for the whole list, never once per row", async () => {
+  it("reads the machines ONCE for the whole list, never once per row", async () => {
     mockRoutes({
       devices: [
         coordDevice(DEVICE, "spaceship", "healthy"),
@@ -1793,7 +1789,7 @@ describe("/admin/coord/devops — machine drain", () => {
       ],
       runners: [runner("spaceship"), runner("msi")],
       samples: [],
-      drain: { drained: {} },
+      maintenance: machinesRead(null),
     });
 
     render(<CoordDevOpsPage />);
@@ -1802,34 +1798,10 @@ describe("/admin/coord/devops — machine drain", () => {
       expect(document.querySelector('[data-hostname="ghost"]')).not.toBeNull()
     );
     expect(
-      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/fleet/drain"))
-    ).toHaveLength(1);
-  });
-
-  it("keeps the drain state readable for a non-admin, who gets no lever", async () => {
-    // Hiding a mutation control must never hide the FACT that a machine is out
-    // of the fleet — that fact is why an idle-looking row is idle.
-    authState.isCoordAdmin = false;
-    mockRoutes({
-      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
-      runners: [runner("spaceship")],
-      samples: [],
-      drain: drainMap(DEVICE, "2099-01-01T00:00:00Z"),
-    });
-
-    render(<CoordDevOpsPage />);
-
-    await waitFor(() =>
-      expect(drainBlock("spaceship")).toHaveAttribute(
-        "data-device-drain",
-        "drained"
+      httpFetch.mock.calls.filter((c) =>
+        String(c[0]).includes("/fleet/machines")
       )
-    );
-    const block = drainBlock("spaceship");
-    expect(block.textContent).toContain("Drained until");
-    expect(
-      within(block).queryByTestId("device-drain-undrain")
-    ).not.toBeInTheDocument();
+    ).toHaveLength(1);
   });
 });
 
@@ -2392,7 +2364,7 @@ describe("/admin/coord/devops — a CI-runner registration with the mirror down"
       ],
       runners: [runner("msi")],
       samples: [],
-      drain: { drained: {} },
+      maintenance: { machines: [], unlinked_ci_hosts: [] },
     });
 
     render(<CoordDevOpsPage />);
