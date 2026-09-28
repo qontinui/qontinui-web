@@ -101,7 +101,7 @@ const PAGE_PATH = "/admin/coord/machine-maintenance";
  */
 function ciFullyRestored(w: MaintenanceWindow): boolean {
   const c = w.levers.ci;
-  if (!c.inWindow) return true;
+  if (c.inWindow === false) return true;
   if (
     c.labels.some((l) => l.outcome === "restore_failed" || l.outcome === null)
   )

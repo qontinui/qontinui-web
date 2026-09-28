@@ -165,6 +165,7 @@ function wireWindow(overrides: Record<string, unknown> = {}) {
     closed_at: null,
     ci_paused_at: new Date().toISOString(),
     pool_health: null,
+    requested_levers: ["agent_work", "ci"],
     levers: {
       agent_work: { held: true, state: "held", detail: null },
       ci: {
