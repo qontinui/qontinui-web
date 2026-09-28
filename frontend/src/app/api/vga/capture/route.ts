@@ -10,7 +10,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { runnerBaseOrResponse } from "../_runner-base";
+import { runnerBaseOrResponse } from "@/lib/errors/endpoint-response";
 
 export async function GET(request: NextRequest) {
   const qs = request.nextUrl.searchParams.toString();

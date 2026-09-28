@@ -78,6 +78,11 @@
 
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
+import {
+  isEndpointUnresolved,
+  resolveServerBackendUrl,
+  type EndpointUnresolvedError,
+} from "@/lib/errors/endpoint-unresolved";
 
 /* -------------------------------------------------------------------- */
 /* Auth-gate flag                                                       */
@@ -137,18 +142,15 @@ function tokenKey(token: string): string {
 /**
  * Backend base URL. Matches the project's existing server-side pattern
  * used by `src/app/api/v1/*` route handlers and the `next.config.mjs`
- * `/api/:path*` rewrite: `BACKEND_URL` → `NEXT_PUBLIC_API_URL` → localhost
- * fallback. Reading it directly here (instead of relying on the rewrite
- * via an empty base) makes the gate work on environments that don't ship
- * the rewrite — preview deploys without `BACKEND_URL` set used to fall
- * through to a localhost fetch that no Vercel function can reach.
+ * `/api/:path*` rewrite: `BACKEND_URL` → `NEXT_PUBLIC_API_URL`. Reading it
+ * directly here (instead of relying on the rewrite via an empty base) makes
+ * the gate work on environments that don't ship the rewrite. Unset outside
+ * development it throws `EndpointUnresolvedError`, which
+ * `authenticateBridgeRequest` returns as `reason: "misconfigured"` — never a
+ * localhost fetch that no deployed function can reach.
  */
 function backendBaseUrl(): string {
-  return (
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8000"
-  );
+  return resolveServerBackendUrl();
 }
 
 /**
@@ -203,7 +205,12 @@ export type AuthResult =
       reason: "upstream_error";
       status: number;
       retryAfter: string | null;
-    };
+    }
+  /**
+   * No backend base is configured for this deployment, so no verdict could
+   * be asked for. → 503 carrying the variable to set.
+   */
+  | { ok: false; reason: "misconfigured"; error: EndpointUnresolvedError };
 
 /**
  * Outcome of ONE upstream verification probe (`/auth/users/me` or
@@ -299,7 +306,13 @@ export async function authenticateBridgeRequest(
     return principalToResult(cached.principal, key, token);
   }
 
-  const base = backendBaseUrl();
+  let base: string;
+  try {
+    base = backendBaseUrl();
+  } catch (err) {
+    if (!isEndpointUnresolved(err)) throw err;
+    return { ok: false, reason: "misconfigured", error: err };
+  }
 
   // Path 1: Cognito operator bearer.
   const user = await verifyUserToken(base, token);
@@ -609,6 +622,25 @@ export function upstreamErrorResponse(result: {
           : "UI Bridge relay could not verify the session token: the identity backend is unavailable",
     }),
     { status, headers },
+  );
+}
+
+/**
+ * 503 for a deployment with no backend base configured. Same envelope as the
+ * other gate responses, plus the `next_action` naming the variable to set.
+ */
+export function misconfiguredResponse(
+  error: EndpointUnresolvedError,
+): Response {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      code: "ENDPOINT_UNRESOLVED",
+      message: error.message,
+      env_var: error.envVar,
+      next_action: error.nextAction,
+    }),
+    { status: 503, headers: { "Content-Type": "application/json" } },
   );
 }
 

@@ -123,10 +123,6 @@ function ProjectList() {
   - Selected action ID
   - Panel visibility
 
-- MCP state (`mcp-store.ts`)
-  - MCP client status
-  - Available tools
-
 - Onboarding state (`onboarding-store.ts`)
   - Tutorial progress
   - Dismissed tips
