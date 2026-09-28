@@ -1213,3 +1213,58 @@ describe("per-lane drain rendering", () => {
     }
   });
 });
+
+describe("per-lane drains — round 5", () => {
+  const hold = (until: string, reason: string) => ({
+    until,
+    reason,
+    drainedBy: "jan@example.com",
+    drainedAt: "2026-09-28T10:00:00Z",
+  });
+  const PER: DeviceDrainState = {
+    state: "drained",
+    entry: {
+      ...hold("2026-09-28T20:00:00Z", "ci box rebuild"),
+      lanes: ["agent", "ci"],
+      byLane: {
+        agent: hold("2026-09-28T14:00:00Z", "agent pause"),
+        ci: hold("2026-09-28T20:00:00Z", "ci box rebuild"),
+      },
+    },
+  };
+
+  it("the no-window verdict lists only the lanes still held, each by its own hold", () => {
+    const later = Date.parse("2026-09-28T15:00:00Z");
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      later,
+      ctx({ drain: PER })
+    );
+    expect(h.detail).toContain(
+      `CI until ${formatUntil("2026-09-28T20:00:00Z", later)} — ci box rebuild`
+    );
+    expect(h.detail).not.toContain("agent pause");
+    expect(h.detail).not.toContain("nothing is paused");
+  });
+
+  it("a lane whose per-lane entry was dropped is UNKNOWN on the lever and in the badge", () => {
+    const dropped: DeviceDrainState = {
+      state: "drained",
+      entry: { ...PER.entry, byLane: {} },
+    };
+    expect(
+      deriveLeverStatus("agent_work", machine(), NOW, ctx({ drain: dropped }))
+        .kind
+    ).toBe("unknown");
+    expect(maintenanceBadge(null, false, NOW, dropped).state).toBe("unknown");
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      NOW,
+      ctx({ drain: dropped })
+    );
+    expect(h.detail).toContain("agent work UNKNOWN");
+    expect(h.detail).not.toContain("nothing is paused");
+  });
+});

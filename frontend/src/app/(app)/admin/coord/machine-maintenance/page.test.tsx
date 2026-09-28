@@ -839,6 +839,45 @@ describe("/admin/coord/machine-maintenance — review round 2", () => {
     );
   });
 
+  it("the release confirm lists each lane's OWN hold", async () => {
+    const agentUntil = new Date(Date.now() + 3_600_000).toISOString();
+    const ciUntil = new Date(Date.now() + 7_200_000).toISOString();
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: ciUntil,
+          reason: "ci box rebuild",
+          drained_by: "[redacted]",
+          drained_at: new Date().toISOString(),
+          lanes: ["agent", "ci"],
+          by_lane: {
+            agent: {
+              until: agentUntil,
+              reason: "agent pause",
+              drained_by: "jan",
+            },
+            ci: {
+              until: ciUntil,
+              reason: "ci box rebuild",
+              drained_by: "[redacted]",
+            },
+          },
+        },
+      },
+    });
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-lever-agent-release-drain")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-release-drain-agent"
+    );
+    expect(dialog).toHaveTextContent("agent work until");
+    expect(dialog).toHaveTextContent("agent pause");
+    expect(dialog).toHaveTextContent("CI until");
+    expect(dialog).toHaveTextContent("ci box rebuild");
+  });
+
   it("confirms an unlink while the window cannot be read — it may hold CI", async () => {
     machinesResponse = res(
       200,

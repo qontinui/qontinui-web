@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeDrainLanes,
   laneHold,
+  unknownDrainLanes,
   parseDrainEntry,
   parseFleetDrain,
   resolveDeviceDrain,
@@ -332,5 +333,36 @@ describe("per-lane drains (coord's by_lane)", () => {
     expect(parseFleetDrain({ drained: null, count: null }).state).toBe(
       "unknown"
     );
+  });
+});
+
+describe("per-lane entries this build could not read", () => {
+  it("an empty by_lane leaves every claimed lane UNKNOWN, never the headline", () => {
+    const e = parseDrainEntry(wireEntry({ lanes: ["agent"], by_lane: {} }))!;
+    expect(e.byLane).toEqual({});
+    expect(unknownDrainLanes(e)).toEqual(["agent"]);
+    expect(laneHold(e, "agent", NOW)).toBeNull();
+    expect(activeDrainLanes(e, NOW)).toEqual([]);
+  });
+
+  it("a dropped lane entry (no parseable until) is UNKNOWN, while the readable lane holds", () => {
+    const e = parseDrainEntry(
+      wireEntry({
+        by_lane: {
+          agent: { until: "2026-09-01T14:00:00Z", reason: "agent pause" },
+          ci: { until: "soon", reason: "garbled" },
+        },
+      })
+    )!;
+    // The dropped lane stays claimed…
+    expect(e.lanes).toEqual(["agent", "ci"]);
+    // …and reads UNKNOWN, not the headline (which is some other lane's hold).
+    expect(unknownDrainLanes(e)).toEqual(["ci"]);
+    expect(laneHold(e, "ci", NOW)).toBeNull();
+    expect(activeDrainLanes(e, NOW)).toEqual(["agent"]);
+  });
+
+  it("an older coord (no by_lane) has no unknown lanes", () => {
+    expect(unknownDrainLanes(parseDrainEntry(wireEntry())!)).toEqual([]);
   });
 });

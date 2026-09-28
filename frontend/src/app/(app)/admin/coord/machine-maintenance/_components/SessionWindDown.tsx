@@ -402,7 +402,7 @@ export function SessionWindDown({
   const badges: HealthBadge[] = [
     {
       key: "drain",
-      label: drainBadgeLabel(drainState),
+      label: drainBadgeLabel(drainState, Date.now()),
       tone: drainState.state === "unknown" ? "muted" : "default",
       title: drainState.state === "unknown" ? drainState.reason : undefined,
       "data-testid": "coord-maintenance-drain-badge",
