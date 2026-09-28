@@ -83,6 +83,12 @@ export class ApiConfig {
    * otherwise derived from {@link resolveAbsoluteBaseUrl} (http→ws,
    * https→wss) — the same same-origin derivation `useChatWebSocket` uses.
    * Throws `EndpointUnresolvedError` where that does.
+   *
+   * The same-origin arm (API base unset, so this page's origin) only works
+   * when the host in front of this app proxies WebSocket UPGRADES to the
+   * backend. Next.js rewrites do not reliably carry an upgrade, so a
+   * deployment serving backend streams same-origin needs such a proxy — or
+   * sets `NEXT_PUBLIC_WS_URL` / `NEXT_PUBLIC_API_URL` to the backend directly.
    */
   static resolveWebSocketBaseUrl(): string {
     const configured = process.env.NEXT_PUBLIC_WS_URL?.trim();

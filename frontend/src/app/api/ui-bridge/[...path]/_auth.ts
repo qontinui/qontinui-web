@@ -626,8 +626,9 @@ export function upstreamErrorResponse(result: {
 }
 
 /**
- * 503 for a deployment with no backend base configured. Same envelope as the
- * other gate responses, plus the `next_action` naming the variable to set.
+ * 503 for a deployment with no backend base configured: the shared
+ * `EndpointUnresolvedError.toBody()` shape, plus this gate's `success:false`
+ * and `message` envelope fields so the SDK's fallback handling still reads it.
  */
 export function misconfiguredResponse(
   error: EndpointUnresolvedError,
@@ -635,10 +636,10 @@ export function misconfiguredResponse(
   return new Response(
     JSON.stringify({
       success: false,
-      code: "ENDPOINT_UNRESOLVED",
+      // `endpoint_unresolved` + endpoint/env_var/error/next_action — the one
+      // shape every unresolved-base 503 in this app answers with.
+      ...error.toBody(),
       message: error.message,
-      env_var: error.envVar,
-      next_action: error.nextAction,
     }),
     { status: 503, headers: { "Content-Type": "application/json" } },
   );
