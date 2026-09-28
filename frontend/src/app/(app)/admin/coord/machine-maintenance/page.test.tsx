@@ -1019,6 +1019,110 @@ describe("/admin/coord/machine-maintenance — review round 2", () => {
   });
 });
 
+describe("/admin/coord/machine-maintenance — coord Phase 3-5 details", () => {
+  it("answers ci_host_linked_to_machine with the next step and a link to that machine", async () => {
+    search = "machine=ci:msi-wsl";
+    windowPostResponses = [
+      res(409, {
+        detail: {
+          error: "ci_host_linked_to_machine",
+          message: "msi-wsl is linked to a machine",
+          machine_device_id: DEVICE,
+        },
+      }),
+    ];
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-prepare")
+    );
+    const dialog = await screen.findByTestId(
+      "coord-maintenance-prepare-dialog"
+    );
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-preset-1h")
+    );
+    await userEvent.type(
+      within(dialog).getByTestId("coord-maintenance-prepare-reason"),
+      "wsl restart"
+    );
+    const machinesReadsBefore = calls("/fleet/machines").length;
+    await userEvent.click(
+      within(dialog).getByTestId("coord-maintenance-prepare-submit")
+    );
+    expect(
+      await within(dialog).findByTestId(
+        "coord-maintenance-prepare-error-guidance"
+      )
+    ).toHaveTextContent("open the window on that machine");
+    expect(
+      within(dialog).getByTestId("coord-maintenance-prepare-select-machine")
+    ).toHaveAttribute(
+      "href",
+      `/admin/coord/machine-maintenance?machine=${DEVICE}`
+    );
+    // The list was stale — it is re-read.
+    await waitFor(() =>
+      expect(calls("/fleet/machines").length).toBeGreaterThan(
+        machinesReadsBefore
+      )
+    );
+  });
+
+  it("renders coord's GitHub-plane detail as-is, and each label row's host across hosts", async () => {
+    machinesResponse = res(
+      200,
+      machinesBody({
+        hosts: ["merytshost", "msi-wsl"],
+        window: wireWindow({
+          levers: {
+            agent_work: { held: true, state: "held" },
+            ci: {
+              held: true,
+              state: "partial",
+              labels: [
+                {
+                  label: "qontinui",
+                  repo: "qontinui/qontinui-web",
+                  host: "merytshost",
+                  outcome: "removed",
+                },
+                {
+                  label: "qontinui",
+                  repo: "qontinui/qontinui-web",
+                  host: "msi-wsl",
+                  outcome: "failed",
+                },
+              ],
+            },
+          },
+        }),
+      })
+    );
+    readinessResponse = res(
+      200,
+      readinessBody({
+        planes: {
+          ...readinessBody().planes,
+          github_ci: {
+            ...readinessBody().planes.github_ci,
+            detail: "qontinui/qontinui-web still routes to msi-wsl",
+          },
+        },
+      })
+    );
+    render(<MachineMaintenancePage />);
+    expect(
+      await screen.findByTestId("coord-maintenance-ci-detail")
+    ).toHaveTextContent(
+      "GitHub CI: qontinui/qontinui-web still routes to msi-wsl"
+    );
+    const hosts = screen
+      .getAllByTestId("coord-maintenance-lever-ci-label-host")
+      .map((h) => h.textContent);
+    expect(hosts).toEqual(["merytshost", "msi-wsl"]);
+  });
+});
+
 describe("/admin/coord/machine-maintenance — session wind-down", () => {
   it("renders a stale runner readiness report as UNKNOWN, never its last verdict", async () => {
     samplesResponse = res(

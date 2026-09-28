@@ -241,6 +241,7 @@ async function sendWindowWrite(
       code: null,
       message: `The request could not be sent — ${errorText(err)}`,
       poolKey: null,
+      machineDeviceId: null,
     };
   }
 }
@@ -336,6 +337,7 @@ async function sendLinkWrite(
       code: null,
       message: `The request could not be sent — ${errorText(err)}`,
       poolKey: null,
+      machineDeviceId: null,
     };
   }
 }

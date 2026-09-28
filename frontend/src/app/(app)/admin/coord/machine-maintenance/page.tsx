@@ -71,6 +71,7 @@ import {
   entryWindowId,
   findMachineEntry,
   labelOutcomeLabel,
+  labelsSpanHosts,
   machineEntryLabel,
   parseMachineParam,
   type MachineEntry,
@@ -170,9 +171,15 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
       {w.levers.ci.labels.length > 0 && (
         <ul className="space-y-0.5 text-[11px]">
           {w.levers.ci.labels.map((l) => (
-            <li key={`${l.label}@${l.repo}`} className="break-words">
-              <span className="font-mono break-all">{l.repo}</span> · label{" "}
-              <span className="font-mono">{l.label}</span> —{" "}
+            <li
+              key={`${l.label}@${l.repo}@${l.host ?? ""}`}
+              className="break-words"
+            >
+              <span className="font-mono break-all">{l.repo}</span>
+              {labelsSpanHosts(w.levers.ci.labels) && l.host
+                ? ` on ${l.host}`
+                : ""}{" "}
+              · label <span className="font-mono">{l.label}</span> —{" "}
               {labelOutcomeLabel(l)}
             </li>
           ))}
@@ -548,6 +555,7 @@ export default function MachineMaintenancePage() {
           onOpenChange={setPrepareOpen}
           initialLevers={prepareLevers}
           onOpened={afterWrite}
+          onStale={afterWrite}
         />
       )}
 

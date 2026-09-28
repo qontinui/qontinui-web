@@ -276,11 +276,23 @@ export function deriveLeverStatus(
           "Running",
           withDetail("released while the window stays open", a.detail)
         );
-      case "failed":
+      case "hold_failed":
         return leverStatus(
           "failed",
           "Pause failed",
-          withDetail("coord could not drain the agent lane", a.detail)
+          withDetail(
+            "coord could not drain the agent lane — retry the pause",
+            a.detail
+          )
+        );
+      case "release_failed":
+        return leverStatus(
+          "failed",
+          "Release failed",
+          withDetail(
+            "coord could not release the agent lane — it is still held; retry the resume",
+            a.detail
+          )
         );
       case null:
         return leverStatus(

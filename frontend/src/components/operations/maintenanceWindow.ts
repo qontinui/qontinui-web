@@ -67,7 +67,16 @@ export const MAINTENANCE_LEVERS: readonly MaintenanceLever[] = [
   "ci",
 ];
 
-export type AgentLeverState = "held" | "released" | "failed";
+/**
+ * `hold_failed` — coord could not drain the agent lane when asked to hold it;
+ * `release_failed` — it could not undrain it when asked to release. Two
+ * failures with opposite next steps, so two states (coord Phase 4).
+ */
+export type AgentLeverState =
+  | "held"
+  | "released"
+  | "hold_failed"
+  | "release_failed";
 export type CiLeverState =
   | "held"
   | "partial"
@@ -88,6 +97,8 @@ export type LabelOutcomeKind =
 export interface LabelOutcome {
   label: string;
   repo: string;
+  /** The GitHub runner name this row acted on — a window can span hosts. */
+  host: string | null;
   /** `null` when coord sent an outcome this build does not know — UNKNOWN. */
   outcome: LabelOutcomeKind | null;
   rawOutcome: string | null;
@@ -192,7 +203,12 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[]): T | null {
     : null;
 }
 
-const AGENT_STATES: readonly AgentLeverState[] = ["held", "released", "failed"];
+const AGENT_STATES: readonly AgentLeverState[] = [
+  "held",
+  "released",
+  "hold_failed",
+  "release_failed",
+];
 const CI_STATES: readonly CiLeverState[] = [
   "held",
   "partial",
@@ -239,6 +255,7 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
     ? ci.labels.filter(isRecord).map((l) => ({
         label: str(l.label) ?? "(unnamed label)",
         repo: str(l.repo) ?? "(unnamed repo)",
+        host: str(l.host),
         outcome: oneOf(l.outcome, LABEL_OUTCOMES),
         rawOutcome: str(l.outcome),
         detail: str(l.detail),
@@ -856,6 +873,12 @@ export function labelRepos(labels: readonly LabelOutcome[]): string[] {
   return [...new Set(labels.map((l) => l.repo))];
 }
 
+/** Whether a window's label rows span more than one host (then show `host`). */
+export function labelsSpanHosts(labels: readonly LabelOutcome[]): boolean {
+  return new Set(labels.map((l) => l.host).filter((h) => h !== null)).size > 1;
+}
+
+/** Plain words for one `(label, repo)` outcome. */
 export function labelOutcomeLabel(o: LabelOutcome): string {
   switch (o.outcome) {
     case "removed":
@@ -881,8 +904,15 @@ export function leverActionPauses(
   const w = entry.openWindow;
   if (w === null) return true;
   const l = lever === "agent_work" ? w.levers.agentWork : w.levers.ci;
-  // A partial or failed hold is re-HELD (the retry), not released.
-  if (l.state === "partial" || l.state === "failed") return true;
+  // A partial or failed hold is re-HELD (the retry), not released; a failed
+  // RELEASE is retried as a release.
+  if (
+    l.state === "partial" ||
+    l.state === "failed" ||
+    l.state === "hold_failed"
+  )
+    return true;
+  if (l.state === "release_failed") return false;
   return !l.held;
 }
 
@@ -1016,9 +1046,12 @@ export function buildMaintenancePreview(
     if (opened) {
       for (const l of opened.levers.ci.labels) {
         lines.push({
-          key: `label-${l.label}-${l.repo}`,
+          key: `label-${l.label}-${l.repo}-${l.host ?? ""}`,
           action: `Label \`${l.label}\` — ${labelOutcomeLabel(l)}`,
-          target: l.repo,
+          target:
+            labelsSpanHosts(opened.levers.ci.labels) && l.host
+              ? `${l.repo} on ${l.host}`
+              : l.repo,
         });
       }
     } else if (hosts.length > 0) {
@@ -1038,6 +1071,41 @@ export interface MaintenanceError {
   code: string | null;
   message: string;
   poolKey: string | null;
+  /**
+   * The machine a `ci_host_linked_to_machine` refusal names, when coord
+   * says which (`machine_device_id` / `device_id`), so the page can offer
+   * to select it.
+   */
+  machineDeviceId: string | null;
+}
+
+/**
+ * The next step for a refusal whose code calls for one — shown under coord's
+ * own message. `null` for codes whose message already says it all.
+ */
+export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
+  switch (e.code) {
+    case "ci_host_linked_to_machine":
+      return "This CI host is linked to a machine — open the window on that machine instead, so one window pauses both.";
+    case "window_busy":
+      return "Another change to this window is in progress — retry shortly.";
+    case "window_changed":
+      return "The window changed under you — the page has re-read it; check the levers and retry.";
+    case "invalid_request":
+      return "Coord refused the request as invalid — correct it and retry.";
+    default:
+      return null;
+  }
+}
+
+/** Codes after which the page should re-read the window before a retry. */
+export function errorWantsReread(e: MaintenanceError): boolean {
+  return (
+    e.code === "window_changed" ||
+    e.code === "window_busy" ||
+    e.code === "window_already_open" ||
+    e.code === "ci_host_linked_to_machine"
+  );
 }
 
 /**
@@ -1059,10 +1127,16 @@ export function describeMaintenanceError(
         ? `HTTP ${status} — ${body.trim()}`
         : `HTTP ${status}`,
       poolKey: null,
+      machineDeviceId: null,
     };
   }
   if (!isRecord(parsed)) {
-    return { code: null, message: `HTTP ${status}`, poolKey: null };
+    return {
+      code: null,
+      message: `HTTP ${status}`,
+      poolKey: null,
+      machineDeviceId: null,
+    };
   }
   const inner = isRecord(parsed.detail) ? parsed.detail : parsed;
   if (Array.isArray(parsed.detail)) {
@@ -1074,6 +1148,7 @@ export function describeMaintenanceError(
       code: "validation_error",
       message: `HTTP ${status} — ${msgs.join("; ") || "the request was refused"}`,
       poolKey: null,
+      machineDeviceId: null,
     };
   }
   const code = str(inner.error);
@@ -1082,7 +1157,12 @@ export function describeMaintenanceError(
     str(inner.detail) ??
     (typeof parsed.detail === "string" ? parsed.detail : null) ??
     `HTTP ${status}`;
-  return { code, message, poolKey: str(inner.pool_key) };
+  return {
+    code,
+    message,
+    poolKey: str(inner.pool_key),
+    machineDeviceId: str(inner.machine_device_id) ?? str(inner.device_id),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1192,8 +1272,11 @@ export function maintenanceBadge(
         break;
     }
   }
-  if (a.inWindow !== false && a.state === "failed") {
+  if (a.inWindow !== false && a.state === "hold_failed") {
     return { state: "attention", label: "Agent work pause failed", title };
+  }
+  if (a.inWindow !== false && a.state === "release_failed") {
+    return { state: "attention", label: "Agent work release failed", title };
   }
   if (a.held && c.held)
     return {

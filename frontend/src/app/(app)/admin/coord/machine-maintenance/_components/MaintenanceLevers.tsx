@@ -41,6 +41,9 @@ import {
   drainLanesDetail,
   formatUntil,
   labelOutcomeLabel,
+  labelsSpanHosts,
+  errorWantsReread,
+  maintenanceErrorGuidance,
   leverActionPauses,
   type MachineEntry,
   type MaintenanceContext,
@@ -144,11 +147,18 @@ function LeverRow({
     }
     setError(
       res.status === null
-        ? { code: null, message: res.body, poolKey: null }
+        ? {
+            code: null,
+            message: res.body,
+            poolKey: null,
+            machineDeviceId: null,
+          }
         : describeMaintenanceError(res.status, res.body)
     );
   };
   const labels = lever === "ci" && window ? window.levers.ci.labels : [];
+  // A window that spans several hosts names each row's host.
+  const spanHosts = labelsSpanHosts(labels);
 
   const act = async (acceptCiQueueing?: boolean) => {
     if (busy) return;
@@ -177,6 +187,7 @@ function LeverRow({
     }
     setLastHost(null);
     setError(res);
+    if (errorWantsReread(res)) onChanged(null);
   };
 
   return (
@@ -244,13 +255,25 @@ function LeverRow({
         >
           {labels.map((l) => (
             <li
-              key={`${l.label}@${l.repo}`}
+              key={`${l.label}@${l.repo}@${l.host ?? ""}`}
               className="break-words"
               data-testid="coord-maintenance-lever-ci-label"
               data-label-outcome={l.outcome ?? "unknown"}
             >
-              <span className="font-mono break-all">{l.repo}</span> · label{" "}
-              <span className="font-mono">{l.label}</span> —{" "}
+              <span className="font-mono break-all">{l.repo}</span>
+              {spanHosts && l.host && (
+                <>
+                  {" "}
+                  on{" "}
+                  <span
+                    className="font-mono break-all"
+                    data-testid="coord-maintenance-lever-ci-label-host"
+                  >
+                    {l.host}
+                  </span>
+                </>
+              )}{" "}
+              · label <span className="font-mono">{l.label}</span> —{" "}
               {labelOutcomeLabel(l)}
               {l.detail ? ` (${l.detail})` : ""}
             </li>
@@ -284,6 +307,11 @@ function LeverRow({
         >
           {error.message}
           {error.code ? ` (${error.code})` : ""}
+          {maintenanceErrorGuidance(error) && (
+            <span className="block text-muted-foreground">
+              {maintenanceErrorGuidance(error)}
+            </span>
+          )}
         </p>
       )}
       {drainRelease && (
