@@ -130,15 +130,26 @@ plan's Phase 1 production measurement (``EXPLAIN (ANALYZE, BUFFERS)`` on the
 live table) shows the per-test probe is heap-fetch-bound. Phase 1 could not run
 from the authoring box (no AWS credentials, 2026-09-28), so this revision
 carries the ledger alone: the plan's decision table puts the ledger in every
-row. The covering index, if Phase 1 picks it, is a separate later revision with
-the ``CONCURRENTLY`` + ``autocommit_block()`` + ``indisvalid`` shape of
-``coord_test_results_idx_01``. This revision needs none of that, because it
-builds on a new, empty table inside alembic's normal transaction.
+row. The covering index, if Phase 1 picks it, is a separate later revision.
+
+Why the ledger's own index is built CONCURRENTLY
+================================================
+
+The table is created inside alembic's normal transaction. Its one secondary
+index is then built ``CONCURRENTLY`` in ``autocommit_block()``, even though the
+table is new and empty and a plain build would lock nothing. The reason is
+coord's migration classifier, the gate that lets a migration PR auto-land: it
+cannot see that the table is empty, and it rejected the first draft's plain
+``CREATE INDEX`` as "non-concurrent CREATE INDEX locks writes on a populated
+table" (measured 2026-09-29 with ``coord_reevaluate_dry`` on web#1553). On an
+empty table the concurrent build is instant. There is no ``indisvalid`` check
+after it, because the classifier also rejects ``op.get_bind()`` reads; that is
+the same shape ``coord_iops_idx_01`` shipped with.
 
 Idempotency / authorship posture
 ================================
 
-* ``CREATE TABLE IF NOT EXISTS`` / ``CREATE INDEX IF NOT EXISTS``, with a
+* ``CREATE TABLE IF NOT EXISTS`` / ``CREATE INDEX CONCURRENTLY IF NOT EXISTS``, with a
   symmetric ``downgrade()`` that drops the index and then the table. This is the
   ``coord.*`` house style (cf. ``ptbe_01_primary_tree_branch_events``).
 * **alembic is the SOLE author of the ``coord.*`` schema** (served policy
@@ -196,12 +207,18 @@ def upgrade() -> None:
         """
     )
     # "The two newest heads for this repo": an ordered probe stopping at 2.
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_test_result_heads_repo_last
-            ON coord.test_result_heads (repo, last_observed_at DESC)
-        """
-    )
+    # CONCURRENTLY although the table is new and empty: coord's migration
+    # classifier (the auto-land gate) cannot see emptiness and rejects any
+    # non-concurrent CREATE INDEX as a write lock, and on an empty table the
+    # concurrent build is instant. No indisvalid read here -- the classifier
+    # rejects op.get_bind() reads too (cf. coord_iops_idx_01).
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_test_result_heads_repo_last
+                ON coord.test_result_heads (repo, last_observed_at DESC)
+            """
+        )
 
 
 def downgrade() -> None:

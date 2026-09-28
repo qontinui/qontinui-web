@@ -18,10 +18,11 @@ Without a database (always runs):
    assignment, that header, and ``_PARENT_REVISION_ID`` here).
 2. **Every statement is ``coord.``-qualified raw SQL, and the only DROPs are in
    ``downgrade()``** — checked with ``check_coord_column_drops``'s own scanner.
-3. **No ``CONCURRENTLY`` and no ``autocommit_block``.** The table is new and
-   empty, so a plain in-transaction build is correct; a concurrent build here
-   would only add a failure mode (the covering index that WOULD need it is
-   deferred to a later revision pending the plan's Phase 1).
+3. **The table is built in the transaction and the index CONCURRENTLY outside
+   it.** coord's migration classifier (the auto-land gate) rejects a
+   non-concurrent ``CREATE INDEX`` because it cannot see that the table is
+   empty, and rejects ``op.get_bind()`` reads, so the index is built
+   ``CONCURRENTLY`` in ``autocommit_block()`` with no validity read.
 
 Against a real Postgres (skipped when none is reachable):
 
@@ -212,15 +213,42 @@ def test_every_statement_is_coord_qualified_and_drops_live_in_downgrade() -> Non
     assert not scan.violations, scan.violations
 
 
-def test_no_concurrent_build_on_a_new_empty_table() -> None:
-    code = "\n".join(_function_sql("upgrade") + _function_sql("downgrade"))
-    assert "CONCURRENTLY" not in code.upper()
+def test_table_in_transaction_index_concurrently_and_no_bind_reads() -> None:
     tree = ast.parse(_revision_source())
-    attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-    assert "autocommit_block" not in attrs, (
-        "the ledger is a new, empty table built inside alembic's transaction; "
-        "the covering index that would need autocommit_block is deferred"
+    fn = next(
+        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
     )
+    # The table: a top-level statement of upgrade(), i.e. inside alembic's transaction.
+    top_level_sql = [
+        node.value
+        for stmt in fn.body
+        if not isinstance(stmt, ast.With)
+        for node in ast.walk(stmt)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    assert any(
+        "CREATE TABLE IF NOT EXISTS coord.test_result_heads" in s for s in top_level_sql
+    )
+    assert not any("CREATE INDEX" in s.upper() for s in top_level_sql), (
+        "coord's migration classifier rejects a non-concurrent CREATE INDEX"
+    )
+    # The index: CONCURRENTLY, inside get_context().autocommit_block().
+    withs = [s for s in fn.body if isinstance(s, ast.With)]
+    assert len(withs) == 1
+    call = withs[0].items[0].context_expr
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+    assert call.func.attr == "autocommit_block"
+    in_block = [
+        node.value
+        for node in ast.walk(withs[0])
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    assert (
+        len(in_block) == 1 and "CREATE INDEX CONCURRENTLY IF NOT EXISTS" in in_block[0]
+    )
+    # No op.get_bind() anywhere: the classifier rejects bind reads on the upgrade path.
+    attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert "get_bind" not in attrs
 
 
 # ---------------------------------------------------------------------------
