@@ -30,7 +30,7 @@ durable form: coord accumulates in memory and upserts one row per key.
   classifies each ``/output`` and ``/events`` request into an outcome and
   flushes ``count`` increments with
   ``INSERT ... ON CONFLICT (day, route, outcome, device_id, served_git_sha)
-  DO UPDATE SET count = count + EXCLUDED.count, updated_at = now()``.
+  DO UPDATE SET count = data_plane_write_auth_daily.count + EXCLUDED.count, updated_at = now()``.
   A missing table degrades the flush to a warn and dropped counts; it never
   fails a request.
 * **Reader:** coord ``coord_query_data_plane_write_auth`` and its HTTP twin
