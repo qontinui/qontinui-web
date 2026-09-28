@@ -48,10 +48,8 @@ import type {
 import {
   MAX_DRAIN_DAYS,
   parseTimestamp,
-  resolveDeviceDrain,
   type DeviceDrainState,
   type DrainLane,
-  type FleetDrainRead,
 } from "./fleetDrain";
 import { UNKNOWN_LABEL, formatAgeSecs } from "./runnerStatus";
 import type { CoordCiRunnerRow } from "./ciRunnerMirror";
@@ -712,7 +710,7 @@ export function deriveVerdictHealth(
               // — but "nothing is paused" would be a claim about a drain we
               // could not read.
               `no maintenance window is open, and whether a drain holds this ` +
-              `machine is not known — ${ctx.drain.reason}. Prepare for ` +
+              `machine is not known — ${ctx.drain.reason.replace(/\.\s*$/, "")}. Prepare for ` +
               "restart pauses both."
             : "nothing is paused — agent sessions and CI jobs may start here at " +
               "any moment. Prepare for restart pauses both.",
@@ -1181,22 +1179,36 @@ export function maintenanceBadge(
 }
 
 /**
- * One picker entry's badge — the same one its Dev Ops card shows, including a
- * raw drain outside any window (a CI host has no device, so no drain).
+ * THE badge for one machine entry — the picker and the Dev Ops card both call
+ * this, so they cannot disagree.
+ *
+ * - `drain` is the entry's resolved raw drain (a CI host has none; it is
+ *   ignored there).
+ * - `refreshError` is the machines read's last refresh error while its list is
+ *   kept. Then "no window" rests on stale evidence — a window may have opened
+ *   since — and reads UNKNOWN, UNLESS a successfully read raw drain holds the
+ *   machine: that is independent, current evidence, and it wins.
  */
 export function machineEntryBadge(
   e: MachineEntry,
   now: number,
-  drain: FleetDrainRead | undefined
+  drain: DeviceDrainState | null,
+  refreshError: string | null
 ): MaintenanceBadge {
-  return maintenanceBadge(
-    e.openWindow,
-    e.openWindowUnreadable,
-    now,
-    e.kind === "machine" && drain
-      ? resolveDeviceDrain(drain, e.deviceId, now)
-      : null
-  );
+  const d = e.kind === "machine" ? drain : null;
+  if (
+    refreshError !== null &&
+    e.openWindow === null &&
+    !e.openWindowUnreadable
+  ) {
+    if (d?.state === "drained") return maintenanceBadge(null, false, now, d);
+    return {
+      state: "unknown",
+      label: `maintenance ${UNKNOWN_LABEL}`,
+      title: `the last machines refresh failed (${refreshError}), so whether a window is open is not known`,
+    };
+  }
+  return maintenanceBadge(e.openWindow, e.openWindowUnreadable, now, d);
 }
 
 /** The page's deep link for an entry. */
@@ -1327,18 +1339,6 @@ export function resolveMachineMaintenance(
       linkedCiHosts: null,
     };
   }
-  // A kept list after a failed refresh says "no window" on stale evidence: a
-  // window may have opened since, so that reading is UNKNOWN, not in service.
-  const staleNoWindow = (e: MachineEntry): MaintenanceBadge | null =>
-    read.refreshError !== null &&
-    e.openWindow === null &&
-    !e.openWindowUnreadable
-      ? {
-          state: "unknown",
-          label: `maintenance ${UNKNOWN_LABEL}`,
-          title: `the last machines refresh failed (${read.refreshError}), so whether a window is open is not known`,
-        }
-      : null;
   if (synthetic) {
     const owner = ciHostOwners(read.entries).get(synthetic.runnerName);
     const own =
@@ -1361,9 +1361,7 @@ export function resolveMachineMaintenance(
       };
     }
     return {
-      badge:
-        staleNoWindow(own) ??
-        maintenanceBadge(own.openWindow, own.openWindowUnreadable, now),
+      badge: machineEntryBadge(own, now, null, read.refreshError),
       href: maintenancePageHref(own.key),
       linkedCiHosts: null,
     };
@@ -1385,14 +1383,7 @@ export function resolveMachineMaintenance(
     };
   }
   return {
-    badge:
-      staleNoWindow(machine) ??
-      maintenanceBadge(
-        machine.openWindow,
-        machine.openWindowUnreadable,
-        now,
-        drain
-      ),
+    badge: machineEntryBadge(machine, now, drain, read.refreshError),
     href: maintenancePageHref(machine.key),
     linkedCiHosts: summarizeLinkedCiHosts(machine.ciHosts, ciRunners),
   };

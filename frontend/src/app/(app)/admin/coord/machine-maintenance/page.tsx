@@ -337,6 +337,9 @@ export default function MachineMaintenancePage() {
             id="coord-maintenance-machine"
             entries={entries}
             drain={drain.read}
+            refreshError={
+              machines.read.state === "ok" ? machines.read.refreshError : null
+            }
             value={entry?.key ?? rawMachine}
             onChange={selectMachine}
             placeholder={

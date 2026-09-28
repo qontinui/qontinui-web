@@ -36,7 +36,7 @@ import {
   machineEntryBadge,
   type MachineEntry,
 } from "./maintenanceWindow";
-import type { FleetDrainRead } from "./fleetDrain";
+import { resolveDeviceDrain, type FleetDrainRead } from "./fleetDrain";
 
 export interface MachinePickerProps {
   entries: ReadonlyArray<MachineEntry>;
@@ -50,6 +50,11 @@ export interface MachinePickerProps {
   "data-testid"?: string;
   /** Coord's raw drain read, so a drain outside any window marks its entry. */
   drain?: FleetDrainRead;
+  /**
+   * The machines read's last refresh error while its list is kept, so the
+   * picker reads a stale "no window" as UNKNOWN exactly like the card.
+   */
+  refreshError?: string | null;
 }
 
 export function MachinePicker({
@@ -62,6 +67,7 @@ export function MachinePicker({
   "aria-describedby": describedBy,
   "data-testid": testId,
   drain,
+  refreshError,
 }: MachinePickerProps) {
   const unlisted = value !== "" && !entries.some((e) => e.key === value);
   const now = Date.now();
@@ -103,7 +109,14 @@ export function MachinePicker({
               {(() => {
                 // The same badge the Dev Ops card shows: an unreadable window
                 // is "maintenance UNKNOWN", a partial pause says so.
-                const badge = machineEntryBadge(e, now, drain);
+                const badge = machineEntryBadge(
+                  e,
+                  now,
+                  e.kind === "machine" && drain
+                    ? resolveDeviceDrain(drain, e.deviceId, now)
+                    : null,
+                  refreshError ?? null
+                );
                 return badge.state === "in_service" ? null : (
                   <span
                     className="ml-2 text-xs text-muted-foreground"
