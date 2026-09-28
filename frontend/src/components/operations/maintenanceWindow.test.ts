@@ -31,6 +31,7 @@ import {
   describeMaintenanceError,
   findMachineEntry,
   leverActionPauses,
+  machineEntryBadge,
   maintenanceBadge,
   maintenanceKeyForCiHostname,
   parseMachineParam,
@@ -39,7 +40,6 @@ import {
   parseSyntheticCiHostname,
   parseWindowReadiness,
   registrationsFromMirror,
-  machineEntryBadge,
   resolveMachineMaintenance,
   summarizeLinkedCiHosts,
   validateMaintenanceForm,
@@ -50,7 +50,11 @@ import {
   type MaintenanceWindow,
   type WindowReadinessRead,
 } from "./maintenanceWindow";
-import { toLocalInputValue, type DeviceDrainState } from "./fleetDrain";
+import {
+  resolveDeviceDrain,
+  toLocalInputValue,
+  type DeviceDrainState,
+} from "./fleetDrain";
 import {
   stillRoutingCount,
   type MaintenanceContext,
@@ -1077,18 +1081,57 @@ describe("round 2", () => {
   });
 
   it("a raw drain marks the picker entry like the card", () => {
-    const drain = {
-      state: "ok" as const,
-      entries: new Map([
-        [DEVICE, DRAINED.state === "drained" ? DRAINED.entry : (null as never)],
-      ]),
-      unreadableDevices: new Set<string>(),
-    };
-    expect(machineEntryBadge(machine(), NOW, drain).state).toBe(
+    expect(machineEntryBadge(machine(), NOW, DRAINED, null).state).toBe(
       "drained_outside"
     );
-    expect(machineEntryBadge(machine(), NOW, undefined).state).toBe(
+    expect(machineEntryBadge(machine(), NOW, null, null).state).toBe(
       "in_service"
     );
+  });
+
+  it("picker and card share one badge rule for a stale 'no window'", () => {
+    // Stale list, no raw drain: UNKNOWN, with the refresh error.
+    const stale = machineEntryBadge(
+      machine(),
+      NOW,
+      { state: "not_drained" },
+      "HTTP 502"
+    );
+    expect(stale.state).toBe("unknown");
+    // A SUCCESSFULLY read raw drain is independent evidence and wins.
+    expect(machineEntryBadge(machine(), NOW, DRAINED, "HTTP 502").state).toBe(
+      "drained_outside"
+    );
+    const read: MachinesRead = {
+      state: "ok",
+      refreshError: "HTTP 502",
+      entries: [machine()],
+    };
+    expect(
+      resolveMachineMaintenance(
+        read,
+        { deviceId: DEVICE, hostname: "merytshost" },
+        {},
+        NOW,
+        DRAINED
+      )?.badge.state
+    ).toBe("drained_outside");
+  });
+
+  it("does not double the period of a drain reason that already ends with one", () => {
+    const drain = resolveDeviceDrain({ state: "loading" }, DEVICE, NOW);
+    expect(drain.state).toBe("unknown");
+    if (drain.state !== "unknown") return;
+    expect(drain.reason.endsWith(".")).toBe(true);
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      NOW,
+      ctx({ drain })
+    );
+    expect(h.detail).toContain(
+      `not known — ${drain.reason.slice(0, -1)}. Prepare for restart`
+    );
+    expect(h.detail).not.toContain("..");
   });
 });
