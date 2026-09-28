@@ -17,6 +17,10 @@ Three properties matter more than the happy path, and each has its own test:
   design; a tenant-resolution failure must not reach it.
 * **Coord's identity refusals surface verbatim**, not flattened into a
   generic 500, so a client can tell "ambiguous account" from "server broke".
+  The test app installs the PRODUCTION exception handlers
+  (``app/middleware/error_handler.py``, as ``app/main.py`` registers them),
+  so these tests assert the body a client really receives — coord's code in
+  ``message`` as JSON text — not the bare-FastAPI ``{"detail": ...}`` shape.
 """
 
 from __future__ import annotations
@@ -29,9 +33,10 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-_CALLER_TOKEN = "caller-cognito-token"
 _DEVICE_A = "00000000-0000-0000-0000-deadbeefcafe"
 _DEVICE_B = "00000000-0000-0000-0000-feedfacecafe"
 
@@ -46,8 +51,25 @@ def _build_test_app() -> FastAPI:
     )
     from app.api.v1.endpoints.operations import get_tenant_id
     from app.api.v1.endpoints.operations import router as operations_router
+    from app.middleware.error_handler import (
+        AppError,
+        app_exception_handler,
+        http_exception_handler,
+        validation_exception_handler,
+    )
 
     test_app = FastAPI()
+    # The same handlers `app/main.py` registers, so an error response here has
+    # the shape a production client receives.
+    test_app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-type]
+    test_app.add_exception_handler(
+        RequestValidationError,
+        validation_exception_handler,  # type: ignore[arg-type]
+    )
+    test_app.add_exception_handler(
+        StarletteHTTPException,
+        http_exception_handler,  # type: ignore[arg-type]
+    )
     mock_user = MagicMock()
     mock_user.id = uuid4()
     mock_user.email = "device.owner@example.com"
@@ -83,7 +105,11 @@ def _mock_response(
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
     resp.json.return_value = json_data
-    resp.text = text or (json.dumps(json_data) if json_data is not None else "")
+    # Compact separators: coord's serde_json body has no spaces, and `text` is
+    # what reaches the client verbatim.
+    resp.text = text or (
+        json.dumps(json_data, separators=(",", ":")) if json_data is not None else ""
+    )
     return resp
 
 
@@ -118,13 +144,27 @@ def _account(device_id: str, label: str, **overrides: Any) -> dict[str, Any]:
 
 
 def _get_mine(
-    client: TestClient, instance: AsyncMock, resp: MagicMock
+    client: TestClient,
+    instance: AsyncMock,
+    resp: MagicMock,
+    token: str = "mine-proxy-default-token",
 ) -> httpx.Response:
     instance.get.return_value = resp
     return client.get(
         f"{API_PREFIX}/claude-accounts/mine",
-        headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+        headers={"Authorization": f"Bearer {token}"},
     )
+
+
+def _coord_code(resp: httpx.Response) -> str:
+    """Recover coord's error code the way a client must: from ``message``.
+
+    The shared handler puts web's GENERIC status code in ``error`` and coord's
+    string body in ``message``; there is no ``detail`` key in production.
+    """
+    body = resp.json()
+    assert "detail" not in body
+    return json.loads(body["message"])["error"]
 
 
 class TestGetMyClaudeAccounts:
@@ -176,6 +216,7 @@ class TestGetMyClaudeAccounts:
         assert "prepaid_table_provisioned" not in body
 
     def test_forwards_the_callers_bearer_without_a_tenant(self, client: TestClient):
+        token = "mine-proxy-header-token-7f3a"
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             _configure_mock_client(MockClient, instance)
@@ -189,6 +230,7 @@ class TestGetMyClaudeAccounts:
                         "columns_provisioned": True,
                     }
                 ),
+                token=token,
             )
 
         # Tenant resolution is rigged to 403 in this app — a 200 proves the
@@ -201,12 +243,13 @@ class TestGetMyClaudeAccounts:
             "for every caller (forward_bearer=True missing, or the capture "
             "was moved into a Depends)"
         )
-        assert headers["Authorization"] == f"Bearer {_CALLER_TOKEN}"
+        assert headers["Authorization"] == f"Bearer {token}"
         # Web never tells coord who is asking: no user id on the wire.
         assert not any("user" in k.lower() for k in headers)
         assert not instance.get.call_args.kwargs.get("params")
 
     def test_bearer_capture_survives_a_cookie_only_session(self, client: TestClient):
+        token = "mine-proxy-cookie-token-91c2"
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = _mock_response(
@@ -217,12 +260,12 @@ class TestGetMyClaudeAccounts:
                 }
             )
             _configure_mock_client(MockClient, instance)
-            client.cookies.set("access_token", _CALLER_TOKEN)
+            client.cookies.set("access_token", token)
             resp = client.get(f"{API_PREFIX}/claude-accounts/mine")
 
         assert resp.status_code == 200
         headers = instance.get.call_args.kwargs["headers"]
-        assert headers["Authorization"] == f"Bearer {_CALLER_TOKEN}"
+        assert headers["Authorization"] == f"Bearer {token}"
 
     def test_table_not_provisioned_passes_through(self, client: TestClient):
         coord_payload = {
@@ -258,15 +301,15 @@ class TestGetMyClaudeAccounts:
         assert body["columns_provisioned"] is None
 
     @pytest.mark.parametrize(
-        ("status_code", "error"),
+        ("status_code", "web_code", "error"),
         [
-            (403, "user_not_resolved"),
-            (403, "user_email_ambiguous"),
-            (500, "user_lookup_failed"),
+            (403, "FORBIDDEN", "user_not_resolved"),
+            (403, "FORBIDDEN", "user_email_ambiguous"),
+            (500, "INTERNAL_SERVER_ERROR", "user_lookup_failed"),
         ],
     )
     def test_coord_identity_refusals_surface_verbatim(
-        self, client: TestClient, status_code: int, error: str
+        self, client: TestClient, status_code: int, web_code: str, error: str
     ):
         coord_body = {"error": error}
         with _patch_httpx() as MockClient:
@@ -279,9 +322,12 @@ class TestGetMyClaudeAccounts:
             )
 
         assert resp.status_code == status_code
-        # `_proxy_coord_get` raises HTTPException(detail=resp.text), so coord's
-        # body arrives as a JSON string inside `detail`.
-        assert json.loads(resp.json()["detail"]) == coord_body
+        body = resp.json()
+        # `error` is web's GENERIC code for the status — it cannot tell the two
+        # 403s apart. Coord's code rides `message`, as coord's body verbatim.
+        assert body["error"] == web_code
+        assert body["message"] == json.dumps(coord_body, separators=(",", ":"))
+        assert _coord_code(resp) == error
 
     def test_usage_read_failure_surfaces_verbatim(self, client: TestClient):
         coord_body = {
@@ -298,7 +344,8 @@ class TestGetMyClaudeAccounts:
             )
 
         assert resp.status_code == 500
-        assert json.loads(resp.json()["detail"])["error"] == "usage_read_failed"
+        assert resp.json()["error"] == "INTERNAL_SERVER_ERROR"
+        assert _coord_code(resp) == "usage_read_failed"
 
     def test_non_object_payload_is_502(self, client: TestClient):
         with _patch_httpx() as MockClient:
@@ -308,6 +355,27 @@ class TestGetMyClaudeAccounts:
 
         assert resp.status_code == 502
 
+    @pytest.mark.parametrize(
+        "coord_payload",
+        [
+            {"accounts": None, "table_provisioned": True, "columns_provisioned": True},
+            {"accounts": {"x": 1}, "table_provisioned": True},
+            {"table_provisioned": True, "columns_provisioned": True},
+        ],
+        ids=["null", "object", "absent"],
+    )
+    def test_non_list_accounts_is_502_not_an_empty_roster(
+        self, client: TestClient, coord_payload: dict[str, Any]
+    ):
+        # `[]` would read as "no paired device reported" — a false zero.
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            resp = _get_mine(client, instance, _mock_response(json_data=coord_payload))
+
+        assert resp.status_code == 502
+        assert "no accounts list" in resp.json()["message"]
+
     def test_coord_unreachable_returns_502(self, client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -315,7 +383,7 @@ class TestGetMyClaudeAccounts:
             _configure_mock_client(MockClient, instance)
             resp = client.get(
                 f"{API_PREFIX}/claude-accounts/mine",
-                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+                headers={"Authorization": "Bearer mine-proxy-unreachable-token"},
             )
 
         assert resp.status_code == 502

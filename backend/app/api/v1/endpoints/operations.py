@@ -5257,15 +5257,35 @@ async def get_my_claude_accounts(
     (unknown) and is never defaulted to ``true``. ``accounts: []`` with both
     flags ``true`` means genuinely no paired device of this user has reported.
 
-    Coord's refusals propagate VERBATIM through :func:`_proxy_coord_get`
-    (``HTTPException(status, detail=resp.text)``) so a client can tell them
-    apart rather than reading a generic 500:
+    Coord's refusals propagate with coord's STATUS through
+    :func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so
+    a client can tell them apart rather than reading a generic 500:
 
     - ``403 user_not_resolved`` — the bearer maps to no ``auth.users`` row;
     - ``403 user_email_ambiguous`` — more than one ``auth.users`` row matches,
       so nothing can pick the right one;
     - ``500 user_lookup_failed`` — the identity bridge itself errored;
     - ``500 usage_read_failed`` — the roster read errored.
+
+    **Where a client finds coord's code.** ``detail`` is coord's raw body as a
+    STRING, so the app's shared ``http_exception_handler``
+    (``app/middleware/error_handler.py``) renders it with web's GENERIC code
+    for the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and
+    coord's body, as JSON text, in ``message``. For example a coord 403
+    ``user_email_ambiguous`` arrives as (``message`` is a STRING whose content
+    is coord's body ``{"error":"user_email_ambiguous"}``)::
+
+        {"error": "FORBIDDEN",
+         "message": <string: {"error":"user_email_ambiguous"}>,
+         "timestamp": <float>, "path": "<request url>"}
+
+    So coord's code is ``JSON.parse(body.message).error`` — never
+    ``body.error``, which only ever names the HTTP status class.
+
+    A ``502`` is web's own verdict that coord broke the contract: a body that
+    is not a JSON object, or an ``accounts`` that is not a list. Neither is
+    coerced to an empty roster, which would be indistinguishable from "no
+    paired device of this user has reported".
     """
     # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
     # — see the same comment in ``create_user_tenant``: a sync dependency runs
@@ -5283,8 +5303,15 @@ async def get_my_claude_accounts(
         )
 
     accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        # Same contract break as a non-object body. Coercing it to `[]` would
+        # read as "no paired device reported" — a false zero, not an unknown.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned a claude-accounts payload with no accounts list",
+        )
     return {
-        "accounts": list(accounts) if isinstance(accounts, list) else [],
+        "accounts": accounts,
         # `.get` with no default: absent stays None (unknown), never True.
         "table_provisioned": payload.get("table_provisioned"),
         "columns_provisioned": payload.get("columns_provisioned"),
