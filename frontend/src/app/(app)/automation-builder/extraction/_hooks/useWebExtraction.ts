@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { ApiConfig } from "@/services/api-config";
+import { EndpointUnresolvedError } from "@/lib/errors/endpoint-unresolved";
 import { authService, extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
 import { useRunnerClient } from "@/lib/runner-client";
@@ -406,7 +408,7 @@ export function useWebExtraction({
       annotationStore.setElements(elements);
 
       if (firstAnnotation?.screenshot_id) {
-        const screenshotUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/extractions/${extractionId}/screenshots/${firstAnnotation.screenshot_id}`;
+        const screenshotUrl = `${ApiConfig.getBaseUrl()}/api/v1/extractions/${extractionId}/screenshots/${firstAnnotation.screenshot_id}`;
         annotationStore.setScreenshot(
           screenshotUrl,
           firstAnnotation.viewport_width || 1920,
@@ -550,6 +552,20 @@ export function useWebExtraction({
       return;
     }
 
+    // Resolve the absolute backend base BEFORE creating the session, so an
+    // unconfigured deployment refuses with the variable to set instead of
+    // leaving a session behind that the runner can never report into.
+    let backendUrl: string;
+    try {
+      backendUrl = ApiConfig.resolveAbsoluteBaseUrl();
+    } catch (err) {
+      if (err instanceof EndpointUnresolvedError) {
+        toast.error(err.message);
+        return;
+      }
+      throw err;
+    }
+
     stateRef.current.setExtractionDetail(null);
     stateRef.current.setAnnotations([]);
     stateRef.current.setSelectedHistoryExtractionId(null);
@@ -599,7 +615,7 @@ export function useWebExtraction({
       max_depth: webConfig.maxDepth,
       max_pages: webConfig.maxPages,
       session_id: sessionResult.id,
-      backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+      backend_url: backendUrl,
       auth_token: authToken || undefined,
     });
 

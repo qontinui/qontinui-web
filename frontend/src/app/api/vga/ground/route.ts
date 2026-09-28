@@ -8,6 +8,7 @@
 
 import { after, NextResponse, type NextRequest } from "next/server";
 
+import { EndpointUnresolvedError } from "@/lib/errors/endpoint-unresolved";
 import {
   GroundingParseError,
   GroundingUnavailableError,
@@ -121,6 +122,9 @@ export async function POST(request: NextRequest) {
         },
         { status: 502 }
       );
+    }
+    if (err instanceof EndpointUnresolvedError) {
+      return NextResponse.json(err.toBody(), { status: 503 });
     }
     if (err instanceof GroundingUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 502 });

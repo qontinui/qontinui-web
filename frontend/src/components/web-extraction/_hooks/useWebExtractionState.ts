@@ -15,6 +15,8 @@ import {
   type VisionExtractionResponse,
 } from "@/services/vision-extraction-service";
 import { toast } from "sonner";
+import { ApiConfig } from "@/services/api-config";
+import { EndpointUnresolvedError } from "@/lib/errors/endpoint-unresolved";
 import { useRunnerClient } from "@/lib/runner-client";
 import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { isRunnerNeedsLocalError } from "@/lib/runner/api-client";
@@ -244,6 +246,20 @@ export function useWebExtractionState() {
         return;
       }
 
+      // Resolve the absolute backend base BEFORE creating the session, so an
+      // unconfigured deployment refuses with the variable to set instead of
+      // leaving a session behind that the runner can never report into.
+      let backendUrl: string;
+      try {
+        backendUrl = ApiConfig.resolveAbsoluteBaseUrl();
+      } catch (err) {
+        if (err instanceof EndpointUnresolvedError) {
+          toast.error(err.message);
+          return;
+        }
+        throw err;
+      }
+
       // Create the session in the backend
       const result = await createExtraction.mutateAsync({
         projectId,
@@ -268,7 +284,7 @@ export function useWebExtractionState() {
         max_depth: extractionCfg.max_depth ?? 5,
         max_pages: extractionCfg.max_pages ?? 100,
         session_id: result.id,
-        backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+        backend_url: backendUrl,
         auth_token: authToken || undefined,
       });
 
