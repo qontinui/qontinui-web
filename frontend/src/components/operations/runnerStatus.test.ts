@@ -264,6 +264,14 @@ describe("drainBadgeLabel", () => {
       "drained · CI · agent work UNKNOWN"
     );
   });
+
+  it("reads 'drain UNKNOWN' when every claimed lane is unreadable", () => {
+    const onlyUnknown = {
+      state: "drained" as const,
+      entry: { ...perLane.entry, byLane: {} },
+    };
+    expect(drainBadgeLabel(onlyUnknown, T)).toBe("drain UNKNOWN");
+  });
 });
 
 describe("deriveRunnerSessionStatus", () => {

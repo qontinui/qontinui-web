@@ -878,6 +878,57 @@ describe("/admin/coord/machine-maintenance — review round 2", () => {
     expect(dialog).toHaveTextContent("ci box rebuild");
   });
 
+  it("offers Release drain for a lane whose per-lane entry could not be read", async () => {
+    const ciUntil = new Date(Date.now() + 7_200_000).toISOString();
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: ciUntil,
+          reason: "ci box rebuild",
+          drained_by: "jan",
+          drained_at: new Date().toISOString(),
+          lanes: ["agent", "ci"],
+          by_lane: {
+            agent: { until: "garbled" },
+            ci: { until: ciUntil, reason: "ci box rebuild" },
+          },
+        },
+      },
+    });
+    render(<MachineMaintenancePage />);
+    const lever = await screen.findByTestId("coord-maintenance-lever-agent");
+    await waitFor(() =>
+      expect(lever).toHaveAttribute("data-lever-kind", "unknown")
+    );
+    // The runner strip's drain badge is muted and says why.
+    const badge = screen.getByTestId("coord-maintenance-drain-badge");
+    expect(badge).toHaveAttribute(
+      "title",
+      "coord records a drain on agent work but that lane's per-lane entry could not be read"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-lever-agent-release-drain")
+    );
+    expect(
+      await screen.findByTestId("coord-maintenance-release-drain-unreadable")
+    ).toHaveTextContent("This lane's hold could not be read");
+    await userEvent.type(
+      screen.getByTestId("coord-maintenance-release-drain-agent-reason"),
+      "recover"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-release-drain-agent-confirm")
+    );
+    await waitFor(() =>
+      expect(calls("/fleet/undrain", "POST")).toHaveLength(1)
+    );
+    const [, init] = calls("/fleet/undrain", "POST")[0] as [
+      string,
+      { body: string },
+    ];
+    expect(JSON.parse(init.body).lanes).toEqual(["agent"]);
+  });
+
   it("confirms an unlink while the window cannot be read — it may hold CI", async () => {
     machinesResponse = res(
       200,

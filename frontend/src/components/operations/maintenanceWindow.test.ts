@@ -1268,3 +1268,39 @@ describe("per-lane drains — round 5", () => {
     expect(h.detail).not.toContain("nothing is paused");
   });
 });
+
+describe("per-lane drains — round 6", () => {
+  it("a badge with one readable and one unreadable lane is drained, naming the unknown one", () => {
+    const mixed: DeviceDrainState = {
+      state: "drained",
+      entry: {
+        until: "2026-09-28T20:00:00Z",
+        reason: "ci box",
+        drainedBy: "jan",
+        drainedAt: "2026-09-28T10:00:00Z",
+        lanes: ["agent", "ci"],
+        byLane: {
+          ci: {
+            until: "2026-09-28T20:00:00Z",
+            reason: "ci box",
+            drainedBy: "jan",
+            drainedAt: "2026-09-28T10:00:00Z",
+          },
+        },
+      },
+    };
+    const b = maintenanceBadge(null, false, NOW, mixed);
+    expect(b.state).toBe("drained_outside");
+    if (b.state === "drained_outside") {
+      expect(b.title).toContain("CI until");
+      expect(b.title).toContain("agent work UNKNOWN");
+    }
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      NOW,
+      ctx({ drain: mixed })
+    );
+    expect(h.detail).toContain("a drain outside any window is recorded:");
+  });
+});

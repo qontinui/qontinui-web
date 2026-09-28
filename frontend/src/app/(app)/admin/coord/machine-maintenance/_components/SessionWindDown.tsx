@@ -38,7 +38,10 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
-import type { DeviceDrainState } from "@/components/operations/fleetDrain";
+import {
+  unknownDrainLanes,
+  type DeviceDrainState,
+} from "@/components/operations/fleetDrain";
 import {
   CONTROL_REASON_MAX_LENGTH,
   RUNNER_SESSION_PALETTE,
@@ -399,12 +402,24 @@ export function SessionWindDown({
     send,
   ]);
 
+  const unreadableLanes =
+    drainState.state === "drained" ? unknownDrainLanes(drainState.entry) : [];
   const badges: HealthBadge[] = [
     {
       key: "drain",
       label: drainBadgeLabel(drainState, Date.now()),
-      tone: drainState.state === "unknown" ? "muted" : "default",
-      title: drainState.state === "unknown" ? drainState.reason : undefined,
+      tone:
+        drainState.state === "unknown" || unreadableLanes.length > 0
+          ? "muted"
+          : "default",
+      title:
+        drainState.state === "unknown"
+          ? drainState.reason
+          : unreadableLanes.length > 0
+            ? `coord records a drain on ${unreadableLanes
+                .map((l) => (l === "agent" ? "agent work" : "CI"))
+                .join(" + ")} but that lane's per-lane entry could not be read`
+            : undefined,
       "data-testid": "coord-maintenance-drain-badge",
     },
     {

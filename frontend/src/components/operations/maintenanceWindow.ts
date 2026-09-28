@@ -735,7 +735,8 @@ export function deriveVerdictHealth(
         lanes.length > 0 || unknownLanes.length > 0
           ? // Each lane by its OWN hold — a lane that lapsed is not listed,
             // and one whose entry is unreadable says so.
-            `no maintenance window is open; a drain outside any window holds ` +
+            `no maintenance window is open; a drain outside any window ` +
+            `${unknownLanes.length > 0 ? "is recorded:" : "holds"} ` +
             `${drainLanesDetail(ctx.drain, now)}. GitHub may still route CI ` +
             "jobs here. Prepare for restart pauses both."
           : ctx.drain?.state === "unknown"
