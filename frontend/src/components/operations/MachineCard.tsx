@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -46,22 +47,21 @@ import {
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
-import { DeviceDrainControl } from "./DeviceDrainControl";
 import type { CiCapacityJoin } from "./ciCapacity";
-import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
+import type { MachineMaintenanceView } from "./maintenanceWindow";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 /**
- * What draining a GitHub Actions runner registration does and does not do.
- * Exported so the test asserts the rendered sentence rather than a copy.
+ * What a coord drain of a GitHub Actions runner registration does and does
+ * not do. Exported so the test asserts the rendered sentence rather than a
+ * copy.
  */
 export const CI_RUNNER_DRAIN_SCOPE =
-  "GitHub Actions runner: draining it removes this runner from coord's " +
-  "merge-capacity count, but GitHub still routes jobs to it by label. " +
-  "Removing its `qontinui` label on GitHub is what stops fleet CI jobs " +
-  "arriving. A host registered on N repos has N such rows: draining this one " +
-  "leaves the other registrations counted as capacity, and coord's " +
-  "`POST /coord/fleet/drain-host` drains the whole host.";
+  "GitHub Actions runner: a coord drain of it only removes it from coord's " +
+  "merge-capacity count — GitHub still routes jobs to it by label. Pausing " +
+  "CI on the Maintenance page drains every registration of the host AND " +
+  "removes its routing labels at GitHub, and puts both back when the window " +
+  "ends.";
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -84,25 +84,21 @@ interface MachineCardProps {
    */
   ciCapacity?: CiCapacityJoin;
   /**
-   * What a drain on this row would act on, resolved by `resolveDrainTarget`
-   * from coord's device join — plan
-   * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+   * This row's maintenance state and the link to the page that changes it,
+   * resolved by `resolveMachineMaintenance` from the page's ONE machines read
+   * — plan `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`
+   * §D7.
    *
-   * Present ONLY on a list built with coord's device read (the Dev Ops
-   * Overview mount). `undefined` means this list was built without it, so the
-   * card renders no drain block at all: an absence of the READ is not a fact
-   * about the machine, and a "no coord device to drain" notice on a page that
-   * never looked would be one. Same posture as `ciCapacity`.
+   * The card carries NO lever of its own any more (it used to carry a
+   * Drain/Undrain control): two controls over one state is how an operator
+   * releases on one page what they are waiting on in the other. It shows the
+   * badge and links to `/admin/coord/machine-maintenance`.
+   *
+   * `undefined` — a list built without the machines read, or a row that
+   * names no machine — renders no maintenance block at all, the same
+   * absence-of-the-read posture as `ciCapacity`.
    */
-  drainTarget?: DrainTarget;
-  /**
-   * What coord says about that device's drain right now. Required whenever
-   * `drainTarget` is given — the two are one join and rendering the target
-   * without the state would be a control with no state beside it.
-   */
-  drainState?: DeviceDrainState;
-  /** Forced re-read of the drain map after a successful drain/undrain. */
-  onDrainActed?: () => void;
+  maintenance?: MachineMaintenanceView;
   /**
    * The clock (epoch ms) the credential report's staleness is judged against.
    * The Dev Ops Overview passes its ticking clock so a report that ages past
@@ -386,9 +382,7 @@ export function MachineCard({
   machine,
   onRenamed,
   ciCapacity,
-  drainTarget,
-  drainState,
-  onDrainActed,
+  maintenance,
   nowMs,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
@@ -908,21 +902,65 @@ export function MachineCard({
           </div>
         )}
 
-        {/* Drain — whether coord is sending this machine ANY new work, and
-            the lever that changes it. Deliberately ABOVE the CI-capacity
-            disclosure and never inside one: CI capacity is a knob about one
-            kind of work, whereas a drain is the machine's participation in the
-            fleet at all — CI, builds, agent-session spawns and continuations —
-            and it is the fact that explains an idle-looking row. Both halves
-            are required together: a target with no state beside it would be a
-            control with nothing to read. */}
-        {drainTarget && drainState && (
-          <DeviceDrainControl
-            target={drainTarget}
-            drain={drainState}
-            rowHostname={hostname}
-            onActed={onDrainActed}
-          />
+        {/* Maintenance — whether this machine is paused for a restart, and
+            the link to the one page that changes it. Deliberately ABOVE the
+            CI-capacity disclosure: a paused machine is the fact that explains
+            an idle-looking row. The badge wraps rather than truncates — the
+            deadline is identifying text. */}
+        {maintenance && (
+          <div className="space-y-1" data-testid="machine-maintenance">
+            <div className="flex flex-wrap items-center gap-2">
+              {maintenance.badge.state === "in_maintenance" && (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] whitespace-normal break-words border-sky-500/40 text-sky-300"
+                  title={maintenance.badge.title}
+                  data-testid="machine-maintenance-badge"
+                  data-maintenance-state="in_maintenance"
+                >
+                  {maintenance.badge.label}
+                </Badge>
+              )}
+              {maintenance.badge.state === "unknown" && (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] whitespace-normal break-words border-amber-500/40 text-amber-400"
+                  title={maintenance.badge.title}
+                  data-testid="machine-maintenance-badge"
+                  data-maintenance-state="unknown"
+                >
+                  {maintenance.badge.label}
+                </Badge>
+              )}
+              {maintenance.href && (
+                <Link
+                  href={maintenance.href}
+                  className="text-[11px] underline underline-offset-2 text-muted-foreground hover:text-foreground"
+                  data-testid="machine-maintenance-link"
+                >
+                  {maintenance.badge.state === "in_maintenance"
+                    ? "Maintenance →"
+                    : "Prepare for restart →"}
+                </Link>
+              )}
+            </div>
+            {maintenance.linkedCiHosts !== null && (
+              <p
+                className="text-[11px] leading-snug break-words text-muted-foreground"
+                data-testid="machine-maintenance-ci-hosts"
+              >
+                {maintenance.linkedCiHosts.length === 0
+                  ? "No CI host linked to this machine."
+                  : maintenance.linkedCiHosts
+                      .map(
+                        (h) =>
+                          `CI host ${h.host}: ${h.registrations} registration${h.registrations === 1 ? "" : "s"}` +
+                          (h.busy > 0 ? ` (${h.busy} busy)` : "")
+                      )
+                      .join(" · ")}
+              </p>
+            )}
+          </div>
         )}
 
         {/* A GitHub Actions runner registration is drainable, and the drain is

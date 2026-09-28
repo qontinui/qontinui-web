@@ -1,5 +1,6 @@
 /**
- * runnerStatus — pure derivation for `/admin/coord/runners`.
+ * runnerStatus — pure derivation for the runner session wind-down on
+ * `/admin/coord/machine-maintenance` (formerly `/admin/coord/runners`).
  *
  * Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8. The page is a
  * DEVICE MAINTENANCE surface (D10): drain one runner, watch whether it has
@@ -427,8 +428,13 @@ export function countLabel(value: number | null): string {
 /** The drain half of the strip, as one badge label. */
 export function drainBadgeLabel(drain: DeviceDrainState): string {
   switch (drain.state) {
-    case "drained":
-      return "drained";
+    case "drained": {
+      // A lane-scoped drain says which lane; `null` (legacy) is both.
+      const lanes = drain.entry.lanes;
+      return lanes === null || lanes.length === 2
+        ? "drained"
+        : `drained · ${lanes[0] === "agent" ? "agent work" : "CI"} only`;
+    }
     case "expired":
       return "drain expired";
     case "not_drained":

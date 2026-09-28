@@ -23,15 +23,16 @@
  *     shared `CiNodeConfigPanel` as a per-row disclosure on the machine list,
  *     collapsed, rather than as a fourth section: the knob and the telemetry
  *     that says what to set it to belong in one viewport. Each row also
- *     carries its drain state and the Drain/Undrain lever (plan
- *     `2026-09-01-device-drain-does-not-reach-agent-session-spawning`
- *     Phase 4b) on the same principle.
+ *     carries its maintenance badge and a link to the Machine Maintenance
+ *     page (plan
+ *     `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D7)
+ *     — the badge only: the levers live on that one page, so no machine has
+ *     two controls over one state.
  *  5. **Who changed it** — the operator audit feed, last and collapsed (plan
  *     `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5). It is
- *     history rather than liveness, and it is HERE rather than on a sibling
- *     route because the writes it explains are on this page: the drain lever
- *     shows the drain in force now, and this is the durable answer to "who
- *     took this host out, when, and why".
+ *     history rather than liveness. It is tenant-wide here; the Machine
+ *     Maintenance page mounts the same panel scoped to one machine, beside
+ *     the levers whose writes it records.
  *
  * ## The page answers THREE questions, not one
  *
@@ -77,8 +78,8 @@
  *
  * It opens SIX POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
- * the same rows to both the strip and the CI panel), `/fleet/drain` here at
- * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence,
+ * the same rows to both the strip and the CI panel), `/fleet/machines` here at
+ * 15 s, `/fleet/ci-runners` here at coord's own registrar cadence,
  * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
  * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
  * `/alerts/fault-to-visibility` here at 60 s (plan
@@ -93,14 +94,14 @@
  * DIFFERENT coord route than resource samples, so it gets its own poll
  * rather than folding into `FleetResourcesSection`'s.
  *
- * The drain poll (plan
- * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
- * is the one read here that is NOT a telemetry cadence — a drain changes
- * on an operator action. It polls anyway, and slowly, because a drain also
- * **expires by itself**: coord evaluates `until` on read and runs no sweeper,
- * so a machine re-enters the fleet with nothing writing anything anywhere. A
- * once-only read would leave "Drained until 14:03" on screen at 15:00, which
- * is a false claim rather than a stale one.
+ * The machines poll (plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D7) is
+ * the one read here that is NOT a telemetry cadence — a maintenance window
+ * changes on an operator action. It polls anyway because a window also
+ * **expires by itself**: coord evaluates `until` on read, so a machine
+ * re-enters the fleet with nothing writing anything anywhere. A once-only
+ * read would leave "In maintenance until 14:03" on screen at 15:00, which is
+ * a false claim rather than a stale one.
  *
  * The CI-runner mirror poll was added by plan
  * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2 and is not a
@@ -137,7 +138,7 @@ import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
-import { useFleetDrain } from "@/components/operations/useFleetDrain";
+import { useFleetMachines } from "@/components/operations/useMaintenanceWindow";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
@@ -171,11 +172,11 @@ export default function CoordDevOpsPage() {
   // never a fetch per machine row. It carries no CI-node configuration of its
   // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
   const ciMachines = useDevenvMachines();
-  // Which machines coord is holding out of the fleet. Owned here for the same
-  // reason the two reads above are: one read for the whole list, so no two
-  // rows can disagree about what is drained. Its `refresh` is handed down so a
-  // drain or undrain is visible immediately rather than on the next tick.
-  const drain = useFleetDrain();
+  // Which machines are in maintenance. Owned here for the same reason the two
+  // reads above are: one read for the whole list, so no two rows can disagree
+  // about what is paused. The levers themselves live on the Machine
+  // Maintenance page; each row only shows the badge and links there.
+  const machines = useFleetMachines();
   // The live device-status stream. The hook opens a REST seed and a WebSocket
   // PER CALL, so it is subscribed exactly once, here, and shared: the machine
   // list and its tile read it through `FleetOverview`, and the strip's
@@ -539,15 +540,15 @@ export default function CoordDevOpsPage() {
           facts read `unknown`, rather than vanishing or rendering as zero.
           4. CI capacity rides on each row as a collapsed disclosure, resolved
           from `ciMachines` — one read, no per-row fetch. Each row also carries
-          its drain state and the Drain/Undrain lever, resolved from `drain` —
-          the one read, again, never one per card. `deviceStatus` is the page's
+          its maintenance badge and a link to the Machine Maintenance page,
+          resolved from `machines` — the one read, again, never one per card. `deviceStatus` is the page's
           one device-status subscription, shared with the strip above.
           `ciRunnerMirror` is coord's CI-runner label mirror, one poll. */}
       <FleetOverview
         health={fleet}
         ciMachines={ciMachines}
         ciRunnerMirror={ciRunnerMirror}
-        drain={drain}
+        machines={machines.read}
         deviceStatus={deviceStatus}
         nowMs={nowMs}
       />
@@ -572,16 +573,13 @@ export default function CoordDevOpsPage() {
       {/* 5. Who changed what. Plan
           `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
 
-          It belongs on THIS page because the writes it explains are on this
-          page: each row's Drain/Undrain lever shows the drain in force NOW,
-          and this panel is the durable record of who set or released it, when,
-          and with what reach. Putting the record of an action on a
-          different page from the action is the shape the merge kill switch was
-          deliberately moved out of.
+          Tenant-wide here: the durable record of who changed what across the
+          fleet, when, and with what reach. The Machine Maintenance page mounts
+          the same panel scoped to one machine, beside the levers it records.
 
           Last, and collapsed: it is history, not liveness, so it must not
           compete with the three sections above that answer "what is happening
-          right now". Unlike the drain dialog it persists being open — it is
+          right now". Unlike a lever dialog it persists being open — it is
           read-only, so there is no consent surface to keep out from under a
           cursor. */}
       <OperatorAuditPanel />

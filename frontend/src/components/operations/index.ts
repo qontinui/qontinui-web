@@ -85,34 +85,39 @@ export {
   normalizeDeviceId,
 } from "./DevicePicker";
 export type { DevicePickerProps } from "./DevicePicker";
-export { DeviceDrainControl } from "./DeviceDrainControl";
-export type { DeviceDrainControlProps } from "./DeviceDrainControl";
 export {
   DRAIN_PRESETS,
   MAX_DRAIN_DAYS,
-  canActOnDrain,
-  describeDrainError,
-  formatDrainRemaining,
   parseDrainEntry,
   parseFleetDrain,
   resolveDeviceDrain,
-  resolveDrainTarget,
   toLocalInputValue,
-  validateDrainForm,
 } from "./fleetDrain";
 export type {
   DeviceDrainState,
   DrainEntry,
-  DrainTarget,
+  DrainLane,
   FleetDrainRead,
 } from "./fleetDrain";
+export { FLEET_DRAIN_API, useFleetDrain } from "./useFleetDrain";
+export { MachinePicker } from "./MachinePicker";
+export type { MachinePickerProps } from "./MachinePicker";
 export {
-  FLEET_DRAIN_API,
-  FLEET_UNDRAIN_API,
-  postDrain,
-  postUndrain,
-  useFleetDrain,
-} from "./useFleetDrain";
+  FLEET_MACHINES_API,
+  MAINTENANCE_WINDOW_API,
+  closeMaintenanceWindow,
+  linkCiHost,
+  openMaintenanceWindow,
+  setMaintenanceLever,
+  unlinkCiHost,
+  useFleetMachines,
+  useWindowReadiness,
+} from "./useMaintenanceWindow";
+export type {
+  CiHostLinkResult,
+  UseFleetMachinesResult,
+  WindowWriteResult,
+} from "./useMaintenanceWindow";
 export type { UseFleetDrainResult } from "./useFleetDrain";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";

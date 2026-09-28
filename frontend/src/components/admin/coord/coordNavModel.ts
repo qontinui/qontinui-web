@@ -530,20 +530,23 @@ export const GROUPS: NavGroup[] = [
         operatorOnly: true,
       },
       {
-        // A DEVICE MAINTENANCE surface (plan
-        // `2026-09-13-drained-runner-never-reaches-idle` D10): drain one
-        // runner, watch its restart readiness, and wind down the sessions in
-        // the way. Dev Ops rather than a sixth session console — it links to
+        // The MACHINE MAINTENANCE surface (plan
+        // `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`
+        // §D7): one machine, one "safe to restart?" verdict, two levers —
+        // pause agent work and pause CI (coord's CI-node lane AND the GitHub
+        // routing labels) — and one list of what is still running. It
+        // replaced "Runner Drain" (`/admin/coord/runners`, now a 308 here),
+        // whose drain did not stop GitHub routing CI jobs to the box. Dev Ops
+        // rather than a sixth session console — it links to
         // `/sessions?device=` for history instead of reimplementing it. Beside
-        // Spawn because the two are the operator's two levers on a runner:
-        // put work on it, and get it quiet enough to rebuild.
-        href: "/admin/coord/runners",
-        // Not "Runners": the app sidebar's top-level Runners entry is
-        // `/runners` (online devices, history, tokens). This page is the
-        // drain-and-rebuild lever, and one word cannot name both in one menu.
-        label: "Runner Drain",
+        // Spawn because the two are the operator's two levers on a machine:
+        // put work on it, and get it quiet enough to restart.
+        href: "/admin/coord/machine-maintenance",
+        // "Maintenance" is unused elsewhere in console nav, and "Runners"
+        // would collide with the app sidebar's top-level `/runners` entry.
+        label: "Maintenance",
         icon: Cpu,
-        testId: "coord-nav-runners",
+        testId: "coord-nav-machine-maintenance",
         operatorOnly: true,
       },
       {

@@ -1,5 +1,5 @@
 /**
- * `fleetDrain.ts` — the rules a drain control rests on, asserted without a DOM.
+ * `fleetDrain.ts` — the rules a drain READ rests on, asserted without a DOM.
  *
  * Plan `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
  * 4b. Every test here is a regression guard on a claim the surface makes to an
@@ -9,24 +9,17 @@
  *     null container and an unparseable entry are each UNKNOWN, for the whole
  *     read or for the one device it concerns. There is no input in this file
  *     that turns an absent answer into a calm one.
- *  2. **A row that cannot name a coord device has no drainable identity**, and
- *     `resolveDrainTarget` says which of the ways it failed.
- *  3. **The expiry is mandatory and bounded**, mirroring coord's own
- *     `validate_drain` so the operator is told before a round trip.
+ *  2. **A lane-less entry holds BOTH lanes**, coord's reading of a legacy row
+ *     (plan `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`
+ *     §D3) — never "holds nothing".
  */
 
 import { describe, expect, it } from "vitest";
 import {
-  MAX_DRAIN_DAYS,
-  canActOnDrain,
-  describeDrainError,
-  formatDrainRemaining,
   parseDrainEntry,
   parseFleetDrain,
   resolveDeviceDrain,
-  resolveDrainTarget,
   toLocalInputValue,
-  validateDrainForm,
   type FleetDrainRead,
 } from "./fleetDrain";
 
@@ -51,12 +44,13 @@ function okRead(): FleetDrainRead {
 }
 
 describe("parseDrainEntry", () => {
-  it("reads coord's four fields", () => {
+  it("reads coord's four fields, and no lanes as null", () => {
     expect(parseDrainEntry(wireEntry())).toEqual({
       until: "2026-09-01T18:00:00Z",
       reason: "rebuilding the runner",
       drainedBy: "jspinak@gmail.com",
       drainedAt: "2026-09-01T11:00:00Z",
+      lanes: null,
     });
   });
 
@@ -83,6 +77,7 @@ describe("parseDrainEntry", () => {
       reason: null,
       drainedBy: null,
       drainedAt: null,
+      lanes: null,
     });
   });
 });
@@ -231,158 +226,24 @@ describe("resolveDeviceDrain", () => {
   });
 });
 
-describe("resolveDrainTarget — the keying, which is the phase's real work", () => {
-  it("identifies the coord device and carries coord's OWN hostname", () => {
-    const target = resolveDrainTarget({
-      matched: true,
-      device_id: DEVICE,
-      hostname: "gh-runner-spaceship-wsl",
-    });
-    expect(target).toEqual({
-      state: "identified",
-      deviceId: DEVICE,
-      coordHostname: "gh-runner-spaceship-wsl",
-    });
+describe("parseDrainEntry — lanes", () => {
+  it("reads an explicit lane set, de-duplicated", () => {
+    expect(parseDrainEntry(wireEntry({ lanes: ["ci", "ci"] }))?.lanes).toEqual(["ci"]);
   });
 
-  it("keeps a device with no coord hostname drainable, with a null label", () => {
-    const target = resolveDrainTarget({ matched: true, device_id: DEVICE });
-    expect(target.state).toBe("identified");
-    if (target.state !== "identified") return;
-    expect(target.coordHostname).toBeNull();
+  it("reads a legacy lane-less entry as null — both lanes, coord's reading", () => {
+    expect(parseDrainEntry(wireEntry())?.lanes).toBeNull();
   });
 
-  it("gives a row coord names no device for NO drainable identity", () => {
-    const target = resolveDrainTarget({ matched: false });
-    expect(target.state).toBe("no_device");
-    if (target.state !== "no_device") return;
-    expect(target.reason).toContain("no device row for this host");
-  });
-
-  it("gives a list built without the coord read no drainable identity either", () => {
-    const target = resolveDrainTarget(undefined);
-    expect(target.state).toBe("no_device");
-    if (target.state !== "no_device") return;
-    expect(target.reason).toContain("without coord's device read");
-  });
-
-  it("refuses a matched device that carries no id", () => {
-    const target = resolveDrainTarget({ matched: true, device_id: "  " });
-    expect(target.state).toBe("no_device");
+  it("never reads an empty or unrecognised lane list as 'holds nothing'", () => {
+    expect(parseDrainEntry(wireEntry({ lanes: [] }))?.lanes).toBeNull();
+    expect(parseDrainEntry(wireEntry({ lanes: ["builds"] }))?.lanes).toBeNull();
   });
 });
 
-describe("canActOnDrain", () => {
-  const identified = resolveDrainTarget({ matched: true, device_id: DEVICE });
-  const noDevice = resolveDrainTarget({ matched: false });
-
-  it("permits acting only on an identified target with a READ state", () => {
-    expect(
-      canActOnDrain(identified, resolveDeviceDrain(okRead(), DEVICE, NOW))
-    ).toBe(true);
-    expect(canActOnDrain(identified, { state: "not_drained" })).toBe(true);
-  });
-
-  it("never permits acting on an unnamed target — the silent-inertness guard", () => {
-    expect(canActOnDrain(noDevice, { state: "not_drained" })).toBe(false);
-  });
-
-  it("never permits acting on an UNKNOWN state", () => {
-    expect(
-      canActOnDrain(identified, { state: "unknown", reason: "read failed" })
-    ).toBe(false);
-  });
-});
-
-describe("validateDrainForm — the expiry is mandatory, and bounded", () => {
-  const inAnHour = toLocalInputValue(NOW + 3_600_000);
-
-  it("accepts a near-future deadline with a reason", () => {
-    const check = validateDrainForm(inAnHour, "rebuild", NOW);
-    expect(check.ok).toBe(true);
-    if (!check.ok) return;
-    expect(Date.parse(check.untilIso)).toBeGreaterThan(NOW);
-  });
-
-  it("refuses a blank reason", () => {
-    expect(validateDrainForm(inAnHour, "   ", NOW)).toMatchObject({
-      ok: false,
-    });
-  });
-
-  it("refuses an EMPTY expiry and says there is no 'no expiry' option", () => {
-    const check = validateDrainForm("", "rebuild", NOW);
-    expect(check.ok).toBe(false);
-    if (check.ok) return;
-    expect(check.message).toContain("no deadline");
-  });
-
-  it("refuses a past deadline", () => {
-    const check = validateDrainForm(
-      toLocalInputValue(NOW - 60_000),
-      "rebuild",
-      NOW
-    );
-    expect(check.ok).toBe(false);
-  });
-
-  it(`refuses a deadline beyond ${MAX_DRAIN_DAYS} days, as coord does`, () => {
-    const check = validateDrainForm(
-      toLocalInputValue(NOW + (MAX_DRAIN_DAYS + 1) * 86_400_000),
-      "rebuild",
-      NOW
-    );
-    expect(check.ok).toBe(false);
-    if (check.ok) return;
-    expect(check.message).toContain(String(MAX_DRAIN_DAYS));
-  });
-
-  it("refuses an unreadable expiry", () => {
-    expect(validateDrainForm("tomorrow-ish", "rebuild", NOW).ok).toBe(false);
-  });
-});
-
-describe("formatDrainRemaining", () => {
-  it("renders a FUTURE deadline as a remaining duration", () => {
-    // `relativeTime` renders every future stamp as "just now"; "Drained until
-    // just now" is the opposite of what a six-hour deadline means.
-    expect(formatDrainRemaining("2026-09-01T18:00:00Z", NOW)).toBe("in 6h");
-  });
-
-  it("renders a lapsed deadline as elapsed", () => {
-    expect(formatDrainRemaining("2026-09-01T11:30:00Z", NOW)).toBe("30m ago");
-  });
-
-  it("renders days for a long drain", () => {
-    expect(formatDrainRemaining("2026-09-04T13:00:00Z", NOW)).toBe("in 3d 1h");
-  });
-
-  it("says so rather than guessing when the stamp will not parse", () => {
-    expect(formatDrainRemaining("whenever", NOW)).toBe("an unknown time");
-  });
-});
-
-describe("describeDrainError", () => {
-  it("names coord's typed refusal rather than a bare status", () => {
-    const line = describeDrainError(
-      403,
-      JSON.stringify({
-        detail: {
-          error: "device_not_in_tenant",
-          detail: "this device is not bound to your tenant",
-        },
-      })
-    );
-    expect(line).toContain("403");
-    expect(line).toContain("device_not_in_tenant");
-    expect(line).toContain("not bound to your tenant");
-  });
-
-  it("falls back to the raw body when it is not JSON", () => {
-    expect(describeDrainError(502, "bad gateway")).toBe("HTTP 502 — bad gateway");
-  });
-
-  it("falls back to the bare status on an empty body", () => {
-    expect(describeDrainError(500, "")).toBe("HTTP 500");
+describe("toLocalInputValue", () => {
+  it("renders the datetime-local form a preset writes", () => {
+    expect(toLocalInputValue(NOW)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(Date.parse(toLocalInputValue(NOW + 3_600_000))).toBe(NOW + 3_600_000);
   });
 });
