@@ -12,8 +12,9 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 // Backend proxy target for the `/api/:path*` fallback rewrite: BACKEND_URL,
-// else NEXT_PUBLIC_API_URL. Unset on a deploy build this THROWS (naming the
-// variable); unset in development it is the local dev stack
+// else NEXT_PUBLIC_API_URL. Unset on a PRODUCTION deploy build
+// (VERCEL_ENV=production or QONTINUI_DEPLOY_BUILD=1; Vercel previews excluded)
+// this THROWS, naming the variable; unset in development it is the local dev stack
 // (http://localhost:8000); unset anywhere else it rewrites to the internal
 // `/api/endpoint-unresolved/backend` 503 route — never loopback. The decision
 // lives in config/backend-rewrite.mjs, and mirrors the runtime rule in
@@ -31,7 +32,8 @@ const BACKEND = resolveUpstream('backend');
 //
 // Same rule as the backend (config/backend-rewrite.mjs): COORD_URL, the
 // dev-stack default (http://localhost:9870) only in development, a thrown
-// config error on a deploy build, the internal 503 route otherwise.
+// config error on a production deploy build, the internal 503 route otherwise
+// (including Vercel previews).
 const COORD = resolveUpstream('coord');
 
 // Composed cloud build. `@qontinui/cloud-control` is an OPTIONAL sibling

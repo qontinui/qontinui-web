@@ -8,16 +8,18 @@
  * from `COORD_URL`). For each:
  *
  *   1. configured → proxy to it;
- *   2. unset on a DEPLOY build (`VERCEL_ENV` production/preview, or
+ *   2. unset on a PRODUCTION deploy build (`VERCEL_ENV=production`, or
  *      `QONTINUI_DEPLOY_BUILD=1`) → throw at config load, naming the
  *      variable: the deploy fails loudly instead of shipping a proxy to
- *      loopback;
+ *      loopback. Vercel PREVIEW builds deliberately do not throw — the
+ *      Preview env scope need not carry these variables — and fall through
+ *      to arm 4, so a preview missing one serves the typed 503 there;
  *   3. unset under `NODE_ENV=development` → the local dev-stack default
  *      (the same defaults as `src/lib/errors/endpoint-unresolved.ts`,
  *      which owns the rule for runtime code — this file only mirrors it
  *      because a .mjs config cannot import the TS module);
- *   4. unset anywhere else (a production build that is not a deploy — CI,
- *      a self-host `next start`) → an INTERNAL route,
+ *   4. unset anywhere else (a Vercel preview, CI, a self-host
+ *      `next start`) → an INTERNAL route,
  *      `/api/endpoint-unresolved/<name>`, which answers the structured 503
  *      `{code: "endpoint_unresolved", endpoint, env_var, error, next_action}`.
  *      Never loopback.
@@ -47,13 +49,10 @@ const SPECS = {
   coord: { vars: ["COORD_URL"], label: "coord service" },
 };
 
-/** True for a build that is going to be served to users. */
+/** True for a build that is going to be served to users as PRODUCTION.
+ * `VERCEL_ENV=preview` is intentionally not one (see arm 2 above). */
 export function isDeployBuild(env) {
-  return (
-    env.VERCEL_ENV === "production" ||
-    env.VERCEL_ENV === "preview" ||
-    env.QONTINUI_DEPLOY_BUILD === "1"
-  );
+  return env.VERCEL_ENV === "production" || env.QONTINUI_DEPLOY_BUILD === "1";
 }
 
 /**

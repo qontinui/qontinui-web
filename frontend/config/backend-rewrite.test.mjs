@@ -31,7 +31,6 @@ describe("resolveUpstream", () => {
 
   it.each([
     [{ VERCEL_ENV: "production" }],
-    [{ VERCEL_ENV: "preview" }],
     [{ QONTINUI_DEPLOY_BUILD: "1", NODE_ENV: "production" }],
     // A deploy build refuses even if something set NODE_ENV=development.
     [{ QONTINUI_DEPLOY_BUILD: "1", NODE_ENV: "development" }],
@@ -63,7 +62,13 @@ describe("resolveUpstream", () => {
   });
 
   it("rewrites to the internal 503 route on a non-deploy production build", () => {
-    for (const env of [{ NODE_ENV: "production" }, { NODE_ENV: "test" }, {}]) {
+    for (const env of [
+      { NODE_ENV: "production" },
+      { NODE_ENV: "test" },
+      {},
+      // A Vercel PREVIEW build degrades to the typed 503 instead of failing.
+      { VERCEL_ENV: "preview", NODE_ENV: "production" },
+    ]) {
       expect(resolveUpstream("backend", env)).toEqual({
         kind: "unresolved",
         route: "/api/endpoint-unresolved/backend",
@@ -86,6 +91,8 @@ describe("resolveUpstream", () => {
 describe("helpers", () => {
   it("isDeployBuild", () => {
     expect(isDeployBuild({ VERCEL_ENV: "development" })).toBe(false);
+    expect(isDeployBuild({ VERCEL_ENV: "preview" })).toBe(false);
+    expect(isDeployBuild({ VERCEL_ENV: "production" })).toBe(true);
     expect(isDeployBuild({})).toBe(false);
     expect(isDeployBuild({ QONTINUI_DEPLOY_BUILD: "1" })).toBe(true);
   });
