@@ -62,8 +62,14 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+// Hoisted so a test can flip it per case (the non-admin fallback).
+const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: true, loading: false, user: { id: "u" } }),
+  useAuth: () => ({
+    isCoordAdmin: authState.isCoordAdmin,
+    loading: false,
+    user: { id: "u" },
+  }),
 }));
 
 vi.mock("sonner", () => ({
@@ -277,6 +283,7 @@ let drainResponse: Res;
 let undrainResponse: Res;
 
 beforeEach(() => {
+  authState.isCoordAdmin = true;
   search = `machine=${DEVICE}`;
   routerReplace.mockReset();
   samplesResponse = res(200, sample());
@@ -927,6 +934,73 @@ describe("/admin/coord/machine-maintenance — review round 2", () => {
       { body: string },
     ];
     expect(JSON.parse(init.body).lanes).toEqual(["agent"]);
+  });
+
+  it("offers NO release when the window is unreadable too — 'no window' is itself unknown", async () => {
+    const ciUntil = new Date(Date.now() + 7_200_000).toISOString();
+    machinesResponse = res(
+      200,
+      machinesBody({ window: { id: WINDOW, state: "??" } })
+    );
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: ciUntil,
+          reason: "ci box rebuild",
+          lanes: ["agent", "ci"],
+          by_lane: {
+            agent: { until: "garbled" },
+            ci: { until: ciUntil, reason: "ci box rebuild" },
+          },
+        },
+      },
+    });
+    render(<MachineMaintenancePage />);
+    const lever = await screen.findByTestId("coord-maintenance-lever-agent");
+    await waitFor(() =>
+      expect(lever).toHaveAttribute("data-lever-kind", "unknown")
+    );
+    // Wait for the drain read to land before asserting the absence.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-maintenance-drain-badge")
+      ).toHaveTextContent("UNKNOWN")
+    );
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-agent-release-drain")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-ci-release-drain")
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a non-admin the read-only notice, not the unknown-lane release", async () => {
+    authState.isCoordAdmin = false;
+    const ciUntil = new Date(Date.now() + 7_200_000).toISOString();
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: ciUntil,
+          reason: "ci box rebuild",
+          lanes: ["agent", "ci"],
+          by_lane: {
+            agent: { until: "garbled" },
+            ci: { until: ciUntil, reason: "ci box rebuild" },
+          },
+        },
+      },
+    });
+    render(<MachineMaintenancePage />);
+    const lever = await screen.findByTestId("coord-maintenance-lever-agent");
+    await waitFor(() =>
+      expect(lever).toHaveAttribute("data-lever-kind", "unknown")
+    );
+    expect(
+      within(lever).getByTestId("coord-admin-only-notice")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-agent-release-drain")
+    ).not.toBeInTheDocument();
   });
 
   it("confirms an unlink while the window cannot be read — it may hold CI", async () => {
