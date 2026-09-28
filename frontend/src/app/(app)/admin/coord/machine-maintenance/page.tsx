@@ -336,6 +336,7 @@ export default function MachineMaintenancePage() {
           <MachinePicker
             id="coord-maintenance-machine"
             entries={entries}
+            drain={drain.read}
             value={entry?.key ?? rawMachine}
             onChange={selectMachine}
             placeholder={

@@ -118,7 +118,13 @@ export function CiHostLink({
                   className="h-6 px-1.5 text-[11px]"
                   disabled={busy}
                   onClick={() => {
-                    if (entry.openWindow?.levers.ci.held) setConfirmUnlink(h);
+                    // Asked while the window holds CI — and while its state
+                    // could not be read, when it may be holding CI.
+                    if (
+                      entry.openWindowUnreadable ||
+                      entry.openWindow?.levers.ci.held
+                    )
+                      setConfirmUnlink(h);
                     else void unlink(h);
                   }}
                   data-testid="coord-maintenance-ci-host-unlink"

@@ -48,8 +48,10 @@ import type {
 import {
   MAX_DRAIN_DAYS,
   parseTimestamp,
+  resolveDeviceDrain,
   type DeviceDrainState,
   type DrainLane,
+  type FleetDrainRead,
 } from "./fleetDrain";
 import { UNKNOWN_LABEL, formatAgeSecs } from "./runnerStatus";
 import type { CoordCiRunnerRow } from "./ciRunnerMirror";
@@ -705,8 +707,15 @@ export function deriveVerdictHealth(
           ? `no maintenance window is open; a drain outside any window holds ` +
             `${lanesLabel(lanes)}, but GitHub may still route CI jobs here. ` +
             "Prepare for restart pauses both."
-          : "nothing is paused — agent sessions and CI jobs may start here at " +
-            "any moment. Prepare for restart pauses both.",
+          : ctx.drain?.state === "unknown"
+            ? // Still "not yet" — no window means GitHub still routes CI here
+              // — but "nothing is paused" would be a claim about a drain we
+              // could not read.
+              `no maintenance window is open, and whether a drain holds this ` +
+              `machine is not known — ${ctx.drain.reason}. Prepare for ` +
+              "restart pauses both."
+            : "nothing is paused — agent sessions and CI jobs may start here at " +
+              "any moment. Prepare for restart pauses both.",
       badges: [],
     };
   }
@@ -1171,6 +1180,25 @@ export function maintenanceBadge(
   return { state: "in_service" };
 }
 
+/**
+ * One picker entry's badge — the same one its Dev Ops card shows, including a
+ * raw drain outside any window (a CI host has no device, so no drain).
+ */
+export function machineEntryBadge(
+  e: MachineEntry,
+  now: number,
+  drain: FleetDrainRead | undefined
+): MaintenanceBadge {
+  return maintenanceBadge(
+    e.openWindow,
+    e.openWindowUnreadable,
+    now,
+    e.kind === "machine" && drain
+      ? resolveDeviceDrain(drain, e.deviceId, now)
+      : null
+  );
+}
+
 /** The page's deep link for an entry. */
 export function maintenancePageHref(key: string): string {
   return `/admin/coord/machine-maintenance?machine=${encodeURIComponent(key)}`;
@@ -1299,6 +1327,18 @@ export function resolveMachineMaintenance(
       linkedCiHosts: null,
     };
   }
+  // A kept list after a failed refresh says "no window" on stale evidence: a
+  // window may have opened since, so that reading is UNKNOWN, not in service.
+  const staleNoWindow = (e: MachineEntry): MaintenanceBadge | null =>
+    read.refreshError !== null &&
+    e.openWindow === null &&
+    !e.openWindowUnreadable
+      ? {
+          state: "unknown",
+          label: `maintenance ${UNKNOWN_LABEL}`,
+          title: `the last machines refresh failed (${read.refreshError}), so whether a window is open is not known`,
+        }
+      : null;
   if (synthetic) {
     const owner = ciHostOwners(read.entries).get(synthetic.runnerName);
     const own =
@@ -1321,7 +1361,9 @@ export function resolveMachineMaintenance(
       };
     }
     return {
-      badge: maintenanceBadge(own.openWindow, own.openWindowUnreadable, now),
+      badge:
+        staleNoWindow(own) ??
+        maintenanceBadge(own.openWindow, own.openWindowUnreadable, now),
       href: maintenancePageHref(own.key),
       linkedCiHosts: null,
     };
@@ -1343,12 +1385,14 @@ export function resolveMachineMaintenance(
     };
   }
   return {
-    badge: maintenanceBadge(
-      machine.openWindow,
-      machine.openWindowUnreadable,
-      now,
-      drain
-    ),
+    badge:
+      staleNoWindow(machine) ??
+      maintenanceBadge(
+        machine.openWindow,
+        machine.openWindowUnreadable,
+        now,
+        drain
+      ),
     href: maintenancePageHref(machine.key),
     linkedCiHosts: summarizeLinkedCiHosts(machine.ciHosts, ciRunners),
   };
