@@ -26,9 +26,11 @@ Two tables, both additive, both coord-only:
 * ``tenant_id`` UUID NOT NULL, ``device_id`` UUID NOT NULL — together a
   FOREIGN KEY to ``coord.tenant_devices (tenant_id, device_id)`` ON DELETE
   CASCADE. The composite FK is the whole point: a host can be linked only
-  to a device BOUND to that tenant, and unbinding or reaping the device
-  (``device_reaper`` deletes its ``tenant_devices`` rows) drops its links
-  with it rather than leaving a join to a machine the tenant no longer has.
+  to a device BOUND to that tenant, and unbinding the device (a DELETE of
+  its ``tenant_devices`` row) or deleting the device drops its links with it
+  rather than leaving a join to a machine the tenant no longer has. Reaping
+  is an UPDATE of ``coord.devices.reaped_at`` and does NOT drop them;
+  readers filter reaped devices themselves.
 * ``ci_host`` TEXT NOT NULL — the BARE GitHub runner name, what
   ``POST /coord/fleet/drain-host`` takes, never a synthetic
   ``gh-runner-*@repo`` hostname. CHECK non-blank.
@@ -90,17 +92,24 @@ and is unconstrained, closed by the Rust enums that write it.
   ``409 window_already_open``, enforced by the database so two concurrent
   opens cannot both win. Both predicates are plain comparisons with no
   non-IMMUTABLE function.
-* ``idx_maintenance_windows_state_until`` on ``(state, until)`` — the
-  expiry/restore arm scan.
+* ``idx_maintenance_windows_open_until`` on ``(until) WHERE state =
+  'open'`` — the expiry/restore arm scan for open windows past ``until``.
 * ``idx_maintenance_windows_tenant_opened`` on ``(tenant_id, opened_at
   DESC)`` — the window list route (``include_closed``, newest first).
+
+The database cannot see the machine/host join across the two tables: a
+machine-only window and a host-only window on one of that machine's linked
+hosts do not collide in either unique index, so the Phase 4 open route must
+fold a machine's linked hosts from ``coord.machine_ci_hosts`` into its
+window-conflict check.
 
 ## Why maintenance_windows takes no FK
 
 ``tenant_id`` and ``machine_device_id`` are plain columns, the
 ``coord_ci_runner_quarantines_01`` choice: a window is the audit record of
 what coord did to a real GitHub runner's labels, and the restore arm must be
-able to read it after the device is reaped. A cascade would erase the only
+able to read it after the device is unbound from the tenant or deleted. A
+cascade would erase the only
 record of a label still off at GitHub. ``machine_ci_hosts`` is configuration,
 not audit, so it takes the composite FK above. No SQLAlchemy model for
 either: coord-only tables stay out of the ORM graph, and web is their schema
@@ -123,8 +132,7 @@ before this lands, re-point it at the new single head. Do not add an
 ## Merge-train classifier disposition
 
 coord's migration classifier is expected to classify this revision Reject: it
-rejects a non-concurrent ``CREATE UNIQUE INDEX`` and does not recognise
-``COMMENT ON``, and it scans ``downgrade()`` too, where it rejects every
+rejects a non-concurrent ``CREATE UNIQUE INDEX``, and it scans ``downgrade()`` too, where it rejects every
 ``DROP``. Every SQL string is a static literal, so it is not rejected for
 being dynamic. The landed precedent ``coord_ci_runner_quarantines_01``
 classifies Reject the same way.
@@ -196,7 +204,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.machine_ci_hosts.device_id IS
-            'The workstation coord device (coord.devices), not a ci_runner row. With tenant_id a FK to coord.tenant_devices ON DELETE CASCADE: unbinding or reaping the device drops its links.'
+            'The workstation coord device (coord.devices), not a ci_runner row. With tenant_id a FK to coord.tenant_devices ON DELETE CASCADE: unbinding the device (DELETE of its tenant_devices row) or deleting the device drops its links. Reaping is an UPDATE of coord.devices.reaped_at and does NOT; readers filter reaped devices themselves.'
         """
     )
 
@@ -257,11 +265,12 @@ def upgrade() -> None:
             WHERE ci_host IS NOT NULL AND state = 'open'
         """
     )
-    # The expiry and restore arm scan.
+    # The expiry and restore arm scan over open windows.
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_maintenance_windows_state_until
-            ON coord.maintenance_windows (state, until)
+        CREATE INDEX IF NOT EXISTS idx_maintenance_windows_open_until
+            ON coord.maintenance_windows (until)
+            WHERE state = 'open'
         """
     )
     # The window list route, newest first.
@@ -313,7 +322,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop the maintenance-window indexes and both tables. Their comments go with them."""
     op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_windows_tenant_opened")
-    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_windows_state_until")
+    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_windows_open_until")
     op.execute("DROP INDEX IF EXISTS coord.ux_maintenance_windows_open_ci_host")
     op.execute("DROP INDEX IF EXISTS coord.ux_maintenance_windows_open_machine")
     op.execute("DROP TABLE IF EXISTS coord.maintenance_windows")
