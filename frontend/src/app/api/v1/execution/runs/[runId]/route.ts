@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 
 /**
@@ -7,11 +8,6 @@ import { cookies } from "next/headers";
  * This route reads the access token from HttpOnly cookies and forwards
  * requests to the backend with proper Bearer authentication.
  */
-
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
 
 async function getAccessToken(request: NextRequest): Promise<string | null> {
   const cookieStore = await cookies();
@@ -42,7 +38,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const backendUrl = `${BACKEND_URL}/api/v1/execution/runs/${runId}`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}/api/v1/execution/runs/${runId}`;
 
     const response = await fetch(backendUrl, {
       method: "GET",
@@ -84,7 +82,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const backendPath = isComplete
       ? `/api/v1/execution/runs/${runId}/complete`
       : `/api/v1/execution/runs/${runId}`;
-    const backendUrl = `${BACKEND_URL}${backendPath}`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}${backendPath}`;
 
     const body = await request.json();
 
@@ -123,7 +123,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const backendUrl = `${BACKEND_URL}/api/v1/execution/runs/${runId}`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}/api/v1/execution/runs/${runId}`;
 
     const response = await fetch(backendUrl, {
       method: "DELETE",

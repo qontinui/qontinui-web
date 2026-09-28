@@ -728,9 +728,8 @@ export type CoordHealthJoin =
        * is an action on a coord device that the operator must be able to
        * identify before clicking. A workstation and the CI runner registered
        * under it are separate coord registrations of one physical box, so
-       * the coord
-       * identity is exactly the field that distinguishes what a control will
-       * act on from what the row is called.
+       * the coord identity is exactly the field that distinguishes what a
+       * control will act on from what the row is called.
        *
        * Absent when coord's device row carries no hostname (it falls back to
        * keying the group on the device id). The device id is then the only

@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { runnerBaseOrResponse } from "../_runner-base";
+import { runnerBaseOrResponse } from "@/lib/errors/endpoint-response";
 
 export async function GET() {
   const base = runnerBaseOrResponse();

@@ -28,6 +28,7 @@
  */
 
 import { createLogger } from "@/lib/logger";
+import { resolveServerBackendUrl } from "@/lib/errors/endpoint-unresolved";
 
 const log = createLogger("UIBridgeAudit");
 
@@ -239,14 +240,12 @@ export function summarizeBody(
 /**
  * Backend base URL. Mirrors `_auth.ts::backendBaseUrl` — see that module
  * for the rationale (must be set directly here so the gate works in
- * environments without the `/api/:path*` rewrite).
+ * environments without the `/api/:path*` rewrite). Unset outside development
+ * it throws `EndpointUnresolvedError`, which `recordAudit`'s catch logs with
+ * the variable to set — the audit write is best-effort and never loopback.
  */
 function backendBaseUrl(): string {
-  return (
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8000"
-  );
+  return resolveServerBackendUrl();
 }
 
 /**
