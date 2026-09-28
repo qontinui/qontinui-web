@@ -43,10 +43,12 @@ Plain static ``op.execute`` literals (coord's merge classifier admits only a
 static argument, and the ``alembic-schema-arg-gate`` hook parses the SQL to
 prove each statement names its schema). ``ADD COLUMN IF NOT EXISTS`` /
 ``DROP COLUMN IF EXISTS`` so a re-run is harmless. Adding a nullable column
-with no default is a catalog-only change, so the ACCESS EXCLUSIVE lock is held
-only momentarily; ``lock_timeout`` bounds the wait to acquire it, because
-coord writes both tables continuously and a queued exclusive lock blocks every
-writer behind it.
+with no default is a catalog-only change (no table rewrite), but the ACCESS
+EXCLUSIVE lock it takes is NOT released at the statement: env.py runs the whole
+upgrade in one ``begin_transaction()``, so the lock on both tables is held
+until the alembic transaction commits. ``lock_timeout`` bounds the wait to
+acquire it, because coord writes both tables continuously and a queued
+exclusive lock blocks every writer behind it.
 """
 
 from collections.abc import Sequence
