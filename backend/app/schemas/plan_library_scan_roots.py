@@ -913,9 +913,12 @@ class ScanRootListResponse(BaseModel):
     #: ``fresh_count == 0`` means every feeder has gone quiet.
     fresh_count: int
     rows: list[ScanRootRow]
-    #: One roll-up per distinct ``source_repo`` over ``rows`` — named sources
-    #: in order, then the ``null`` group. Empty exactly when ``rows`` is, and
-    #: then ``state`` is ``unknown``: an empty roll-up is not "no drift".
+    #: One roll-up per distinct ``source_repo`` over the live rows that carry
+    #: a READING — named sources in order, then the ``null`` group. A
+    #: refusal-only row (no reading ever stored) and a retired row feed no
+    #: roll-up. Empty when no live row carries a reading — which is never
+    #: "no drift": then ``state`` is ``unknown``, or every row served says
+    #: ``refused:`` or ``retired``.
     by_source_repo: list[ScanRootSourceRollup]
     #: What the corpus holds against what exists, per scan source — a SET
     #: DIFFERENCE, never a ratio (:class:`PlanCoverage`).

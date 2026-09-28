@@ -164,22 +164,25 @@ def _body_errors(raw: bytes) -> tuple[ScanRootReport | None, list[dict[str, Any]
     """Parse and validate the raw body, exactly as FastAPI would have.
 
     Returns the report, or the errors FastAPI's own body validation raises for
-    the same input: ``missing`` at ``("body",)`` for an empty body,
+    the same input: ``missing`` at ``("body",)`` for an empty body or a JSON
+    ``null`` (FastAPI treats a required body that decodes to ``None`` as
+    absent),
     ``json_invalid`` at ``("body", <pos>)`` for a body that is not JSON, and
     the model's errors with every ``loc`` prefixed ``"body"``. That prefix is
     load-bearing: the web's 422 envelope spells ``details[].field`` as
     ``".".join(loc)``, and the runner keys its WARN on
     ``details[0].field == "body.observed_at"``.
     """
+    missing: list[dict[str, Any]] = [
+        {
+            "type": "missing",
+            "loc": ("body",),
+            "msg": "Field required",
+            "input": None,
+        }
+    ]
     if not raw:
-        return None, [
-            {
-                "type": "missing",
-                "loc": ("body",),
-                "msg": "Field required",
-                "input": None,
-            }
-        ]
+        return None, missing
     try:
         body = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -193,6 +196,8 @@ def _body_errors(raw: bytes) -> tuple[ScanRootReport | None, list[dict[str, Any]
                 "ctx": {"error": str(exc)},
             }
         ]
+    if body is None:
+        return None, missing
     try:
         return ScanRootReport.model_validate(body), []
     except ValidationError as exc:

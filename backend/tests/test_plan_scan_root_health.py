@@ -658,6 +658,27 @@ class TestRefusedVerdict:
         assert row.state == "measured"
         assert row.refused_age_secs == 5
 
+    def test_a_refusal_older_than_the_last_reading_is_not_called_its_last_report(
+        self,
+    ) -> None:
+        """Refused 10 days ago, then a good report 5 days ago: the LAST report
+        was accepted, so the stale detail must not say it was refused.
+
+        Mutation-proved: dropping the ``last_refused_at > received_at`` test in
+        ``_last_refusal_clause`` fails this test.
+        """
+        reading = _obs(received_at=NOW - timedelta(days=5))
+        refusal = _refusal(reading.device_id, last_ago=timedelta(days=10), count=3)
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "its last report was REFUSED" not in row.detail
+        assert (
+            "; it was last refused 864000 s ago (body.observed_at: value_error; "
+            "3 refused since "
+        ) in row.detail
+        assert row.detail.endswith(", before its last stored reading")
+
     def test_a_stale_refusal_falls_back_to_observation_stale_naming_it(
         self,
     ) -> None:
@@ -733,15 +754,32 @@ class TestRefusalOnlyDevice:
         )
         assert "REFUSED 3600 s ago" in row.detail
 
-    def test_the_rollup_counts_it_unmeasured_without_crashing(self) -> None:
+    def test_it_is_served_but_feeds_no_rollup(self) -> None:
+        """A refusal-only device has no reading, so it names no scan source.
+
+        Folding it into the ``null`` group would describe it as a reading that
+        named none — a device that never had a reading at all. It stays in
+        ``rows`` / ``count``, where its own ``refused:`` detail explains it.
+
+        Mutation-proved: feeding ``rollup_by_source_repo`` every live row
+        instead of the live READINGS fails this test.
+        """
         refused = uuid4()
-        health = scan_roots_health([_obs()], now=NOW, refusals=[_refusal(refused)])
+        reading = _obs()
+        health = scan_roots_health([reading], now=NOW, refusals=[_refusal(refused)])
         assert health.count == 2
-        by_key = {r.source_repo: r for r in health.by_source_repo}
-        # It names no scan source, so it lands in the ``null`` group.
-        assert by_key[None].unmeasured_device_ids == [refused]
-        assert by_key[None].state == "unknown"
-        assert by_key[SOURCE].comparable_count == 1
+        assert {r.device_id for r in health.rows} == {reading.device_id, refused}
+        assert [r.source_repo for r in health.by_source_repo] == [SOURCE]
+        [rollup] = health.by_source_repo
+        assert rollup.device_count == 1
+        assert refused not in rollup.unmeasured_device_ids
+        assert rollup.comparable_count == 1
+
+    def test_only_refusal_only_devices_serve_rows_and_no_rollup(self) -> None:
+        health = scan_roots_health([], now=NOW, refusals=[_refusal(uuid4())])
+        assert health.state == "reported"
+        assert health.count == 1
+        assert health.by_source_repo == []
 
     def test_a_refusal_joins_its_own_devices_reading_not_a_new_row(self) -> None:
         reading = _obs()

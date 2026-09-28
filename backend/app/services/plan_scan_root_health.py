@@ -261,6 +261,17 @@ COVERAGE_ALL_RETIRED_DETAIL = (
     "holds is not established. The empty list is not 'nothing is missing'."
 )
 
+#: ``coverage_detail`` when devices are live but NONE has a stored reading —
+#: every report each of them sent was refused — so no census exists to take a
+#: set difference against.
+COVERAGE_NO_LIVE_READING_DETAIL = (
+    "no_reading: no live device reporting for this organization has a stored "
+    "reading — every report they sent was refused (each row's 'refused:' "
+    "detail says why) — so nothing enumerated the stems that exist and how "
+    "much of it the corpus holds is not established. The empty list is not "
+    "'nothing is missing'."
+)
+
 #: A coverage entry's ``detail`` for the ``null`` ``source_repo`` group. A
 #: corpus row with no ``source_repo`` is out of scope for every named key by
 #: definition (it is counted in each key's ``out_of_scope_artifact_count``), so
@@ -428,15 +439,31 @@ def refused_detail(refusal: PlanScanRootRefusal, *, now: datetime) -> str:
     )
 
 
-def _last_refusal_clause(refusal: PlanScanRootRefusal | None, *, now: datetime) -> str:
-    """The tail an ``observation_stale:`` detail carries when a refusal exists."""
+def _last_refusal_clause(
+    refusal: PlanScanRootRefusal | None,
+    *,
+    now: datetime,
+    received_at: datetime | None,
+) -> str:
+    """The tail an ``observation_stale:`` detail carries when a refusal exists.
+
+    It says the device's LAST report was refused only when that is what the
+    stamps show — the refusal is newer than the last stored reading
+    (``received_at``), or there is no stored reading at all. A refusal OLDER
+    than the last good report is history: refused 10 days ago and then heard
+    from 5 days ago, the last report was accepted, so the clause says only
+    when the device was last refused.
+    """
     if refusal is None:
         return ""
-    return (
-        f"; its last report was REFUSED {_age_secs(refusal.last_refused_at, now=now)}"
+    age = _age_secs(refusal.last_refused_at, now=now)
+    tail = (
         f" s ago ({refusal.last_refused_reason}; {refusal.refused_count} refused "
         f"since {refusal.first_refused_at.isoformat()})"
     )
+    if received_at is None or refusal.last_refused_at > received_at:
+        return f"; its last report was REFUSED {age}{tail}"
+    return f"; it was last refused {age}{tail}, before its last stored reading"
 
 
 def last_contact_at(
@@ -505,7 +532,8 @@ def _render_refusal_only(
         detail = (
             "observation_stale: no reading has ever been stored for this device"
             f", and nothing has arrived within the {FRESH_WITHIN_SECS} s "
-            "freshness window" + _last_refusal_clause(refusal, now=now)
+            "freshness window"
+            + _last_refusal_clause(refusal, now=now, received_at=None)
         )
     return ScanRootRow(
         device_id=refusal.device_id,
@@ -582,7 +610,7 @@ def render_row(
             f"observation_stale: last report received {age} s ago, past the "
             f"{FRESH_WITHIN_SECS} s freshness window; it reported "
             f"state '{row.state}', which says nothing about now"
-            + _last_refusal_clause(refusal, now=now)
+            + _last_refusal_clause(refusal, now=now, received_at=row.received_at)
         )
     elif superseded is not None:
         state = "unknown"
@@ -1125,7 +1153,10 @@ def scan_roots_health(
     ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``),
     joined to the readings by device. A device with a refusal and no reading
     gets a refusal-only row, appended after the readings, most recently
-    refused first.
+    refused first. Such a row is served in ``rows`` and counted in ``count``,
+    but feeds neither ``by_source_repo`` nor ``coverage``: it has no reading,
+    so it names no scan source and carries no count, and folding it into the
+    ``null`` group would describe it as a reading that named none.
 
     RETIREMENT (invariant 3b) is applied here, so every surface excludes the
     same devices: a device silent — no reading, no refusal — for more than
@@ -1171,6 +1202,12 @@ def scan_roots_health(
     observed_ids = {obs.device_id for obs in observations}
     live: list[ScanRootRow] = []
     retired: list[ScanRootRow] = []
+    # The live rows that carry a READING. A refusal-only row (a device every
+    # report of which was refused) names no scan source and has no count, so
+    # it feeds neither the roll-up nor coverage — the ``null`` group means
+    # "a reading that names no source", which such a device never sent. The
+    # row itself says ``refused:``, and it stays in ``rows`` / ``count``.
+    live_readings: list[ScanRootRow] = []
     for obs, refusal in [
         *((obs, refusal_by_device.get(obs.device_id)) for obs in observations),
         # Refusal-only devices, in the refusal read's own order (most recently
@@ -1184,6 +1221,8 @@ def scan_roots_health(
         gone = is_retired(obs, refusal, now=now)
         rendered = render_row(obs, now=now, refusal=refusal, retired=gone)
         (retired if gone else live).append(rendered)
+        if obs is not None and not gone:
+            live_readings.append(rendered)
     rows = [*live, *retired] if include_retired else live
     if not rows:
         return ScanRootListResponse(
@@ -1205,10 +1244,10 @@ def scan_roots_health(
                 else not_computed_detail
             ),
         )
-    rollups = rollup_by_source_repo(live)
+    rollups = rollup_by_source_repo(live_readings)
     coverage = (
         coverage_by_source_repo(
-            live,
+            live_readings,
             rollups=rollups,
             observations={obs.device_id: obs for obs in observations},
             captured=captured,
@@ -1227,15 +1266,18 @@ def scan_roots_health(
         rows=rows,
         by_source_repo=rollups,
         coverage=coverage,
-        # With live rows, the roll-up is non-empty and so is the coverage list
-        # whenever it was computed at all — so an empty one here means this
-        # rendering does not compute it, or (``captured`` given) that every
-        # served row is retired, which only ``include_retired`` can serve.
+        # With a live READING, the roll-up is non-empty and so is the coverage
+        # list whenever it was computed at all — so an empty one here means
+        # this rendering does not compute it, or (``captured`` given) that no
+        # live device has a stored reading: every live one was refused on every
+        # report, or every served row is retired (``include_retired``).
         coverage_detail=(
             None
             if coverage
-            else COVERAGE_ALL_RETIRED_DETAIL
-            if captured is not None
             else not_computed_detail
+            if captured is None
+            else COVERAGE_NO_LIVE_READING_DETAIL
+            if live
+            else COVERAGE_ALL_RETIRED_DETAIL
         ),
     )

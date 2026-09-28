@@ -84,7 +84,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.crud.work_artifact import CapturedPlanCorpus, captured_plan_corpus
-from app.models.plan_scan_root import PlanScanRootObservation
+from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.schemas.plan_library_scan_roots import (
     COVERAGE_MISSING_SAMPLE_MAX,
     PlanCoverage,
@@ -93,6 +93,7 @@ from app.schemas.plan_library_scan_roots import (
 )
 from app.services.plan_scan_root_health import (
     COVERAGE_ALL_RETIRED_DETAIL,
+    COVERAGE_NO_LIVE_READING_DETAIL,
     COVERAGE_NO_OBSERVATION_DETAIL,
     COVERAGE_NOT_COMPUTED_DETAIL,
     COVERAGE_READ_FAILED_DETAIL,
@@ -1142,3 +1143,45 @@ class TestARetiredDevicesCensusNeverDecidesCoverage:
         assert health.count == 1
         assert health.coverage == []
         assert health.coverage_detail == COVERAGE_ALL_RETIRED_DETAIL
+
+
+class TestARefusalOnlyDeviceNeverEntersCoverage:
+    """A device every report of which was refused has no census and no source.
+
+    Coverage is driven off the roll-ups (``coverage_by_source_repo`` makes
+    one entry per roll-up), so the roll-up's input is what keeps the device
+    out. Mutation-proved: feeding ``rollup_by_source_repo`` every live row
+    instead of the live READINGS fails both tests below. Feeding only
+    ``coverage_by_source_repo`` every live row changes nothing observable —
+    it adds no key the roll-ups lack.
+    """
+
+    def _refusal(self) -> PlanScanRootRefusal:
+        return PlanScanRootRefusal(
+            device_id=uuid4(),
+            organization_id=None,
+            first_refused_at=NOW - timedelta(seconds=60),
+            last_refused_at=NOW - timedelta(seconds=30),
+            last_refused_reason="body.observed_at: value_error",
+            refused_count=2,
+        )
+
+    def test_it_adds_no_null_source_entry(self) -> None:
+        stems = _stems("01-a")
+        health = scan_roots_health(
+            [_obs(authored=stems, visible=stems)],
+            now=NOW,
+            refusals=[self._refusal()],
+            captured=_corpus(under_key=stems),
+        )
+        assert health.count == 2
+        assert [c.source_repo for c in health.coverage] == [SOURCE]
+        assert all(c.detail != SOURCE_REPO_UNNAMED_DETAIL for c in health.coverage)
+
+    def test_only_refused_devices_explain_the_empty_coverage(self) -> None:
+        health = scan_roots_health(
+            [], now=NOW, refusals=[self._refusal()], captured=_corpus(under_key=[])
+        )
+        assert health.count == 1
+        assert health.coverage == []
+        assert health.coverage_detail == COVERAGE_NO_LIVE_READING_DETAIL

@@ -1255,6 +1255,24 @@ class TestRefusedReportsAreRecorded:
         [refusal] = await _refusals_for(async_db_session, DEVICE_A)
         assert refusal.last_refused_reason == "body: missing"
 
+    async def test_a_json_null_body_is_missing_as_fastapi_spells_it(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        """FastAPI treats a required body that decodes to ``None`` as absent:
+        ``missing`` at ``("body",)``, not the model's ``model_type``."""
+        app = _app_with_web_envelope(async_db_session)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS,
+                content=b"null",
+                headers={"content-type": "application/json"},
+            )
+        assert resp.status_code == 422, resp.text
+        [detail] = resp.json()["details"]
+        assert (detail["field"], detail["type"]) == ("body", "missing")
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.last_refused_reason == "body: missing"
+
     async def test_the_reason_is_compact_value_free_and_counts_the_rest(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
     ) -> None:
