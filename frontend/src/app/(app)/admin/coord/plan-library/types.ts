@@ -537,7 +537,12 @@ export interface ScanRootListResponse {
   /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
   fresh_count: number;
   rows: ScanRootRow[];
-  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  /**
+   * One roll-up per distinct `source_repo`, over the live rows that carry a
+   * READING. A refusal-only row (no reading ever stored) and a retired row
+   * feed none, so this can be empty while `rows` is not — never read that as
+   * "no drift".
+   */
   by_source_repo: ScanRootSourceRollup[];
   /**
    * What the corpus holds against what exists, per scan source — a SET

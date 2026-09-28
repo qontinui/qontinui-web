@@ -917,8 +917,10 @@ class ScanRootListResponse(BaseModel):
     #: a READING — named sources in order, then the ``null`` group. A
     #: refusal-only row (no reading ever stored) and a retired row feed no
     #: roll-up. Empty when no live row carries a reading — which is never
-    #: "no drift": then ``state`` is ``unknown``, or every row served says
-    #: ``refused:`` or ``retired``.
+    #: "no drift": then ``state`` is ``unknown``, or every row served is a
+    #: refusal-only row (its detail names its last refusal — ``refused:``
+    #: inside the freshness window, ``observation_stale:`` past it) or is
+    #: marked ``retired``.
     by_source_repo: list[ScanRootSourceRollup]
     #: What the corpus holds against what exists, per scan source — a SET
     #: DIFFERENCE, never a ratio (:class:`PlanCoverage`).

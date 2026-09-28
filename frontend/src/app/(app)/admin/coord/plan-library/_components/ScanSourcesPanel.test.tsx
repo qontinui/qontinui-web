@@ -1653,3 +1653,61 @@ describe("ScanSourcesPanel — a retired device is left out, and SAID to be", ()
     );
   });
 });
+
+describe("ScanSourcesPanel — rows with no roll-up, and refusals are not quiet", () => {
+  it("rows present with an empty roll-up list say WHY there is no roll-up", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([refusedOnlyRow()], { by_source_repo: [] }))
+    );
+    render(<ScanSourcesPanel />);
+
+    // The device row is still rendered — the rows are the answer here.
+    expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
+    const unserved = screen.getByTestId(
+      "scan-sources-rollup-unserved"
+    ).textContent;
+    expect(unserved).toContain("No device below has a live stored reading");
+    expect(unserved).not.toContain("was served");
+  });
+
+  it("MUTATION: a row WITH a reading and no roll-up keeps the 'not served' reading", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row()], { by_source_repo: [] }))
+    );
+    render(<ScanSourcesPanel />);
+    expect(
+      screen.getByTestId("scan-sources-rollup-unserved").textContent
+    ).toContain("No per-source roll-up was served");
+  });
+
+  it("does not call a feeder quiet when it was refused inside the window", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([refusedOnlyRow()])));
+    render(<ScanSourcesPanel />);
+
+    const summary = screen.getByTestId("scan-sources-summary").textContent;
+    expect(summary).not.toContain("gone quiet");
+    expect(
+      screen.getByTestId("scan-sources-refused-note").textContent
+    ).toContain("1 device was refused within the window");
+  });
+
+  it("MUTATION: a refusal OLDER than the window leaves the feeder quiet", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([
+          refusedOnlyRow({
+            detail:
+              "observation_stale: no reading has ever been stored for this device",
+            refused_age_secs: 2701,
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-summary").textContent).toContain(
+      "Every feeder has gone quiet"
+    );
+    expect(screen.queryByTestId("scan-sources-refused-note")).toBeNull();
+  });
+});

@@ -634,17 +634,26 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
  */
 function ScanSourceRollups({
   rollups,
+  rows,
 }: {
   rollups: ScanRootSourceRollup[] | undefined;
+  rows: ScanRootRow[];
 }) {
   if (!rollups?.length) {
+    // The route builds roll-ups over live READINGS only, so rows that are all
+    // refusal-only (no reading ever stored) or retired legitimately produce
+    // none. Say that, rather than implying a backend that sends no roll-up.
+    const noReading =
+      rows.length > 0 &&
+      rows.every((row) => row.reported_state == null || row.retired);
     return (
       <p
         className="mt-3 text-[11px] text-muted-foreground"
         data-testid="scan-sources-rollup-unserved"
       >
-        No per-source roll-up was served, so the least-behind feeder&apos;s
-        distance is not established for any source.
+        {noReading
+          ? "No device below has a live stored reading — each was refused on every report, or is retired — so there is no per-source roll-up and the least-behind feeder's distance is not established for any source."
+          : "No per-source roll-up was served, so the least-behind feeder's distance is not established for any source."}
       </p>
     );
   }
@@ -755,7 +764,22 @@ function RetiredNote({
 export function ScanSourcesPanel() {
   const { data, fetchedAt, loading, error, reload } = useScanRoots();
 
-  const allQuiet = data != null && data.count > 0 && data.fresh_count === 0;
+  // `fresh_count` counts stored READINGS. A device refused inside the window
+  // is alive — it reported, and was refused — so "every feeder has gone
+  // quiet" would be false while one exists; the panel names the refusals
+  // instead.
+  const refusedRecently =
+    data == null
+      ? 0
+      : data.rows.filter(
+          (row) =>
+            row.refused_age_secs != null &&
+            row.refused_age_secs <= data.fresh_within_secs
+        ).length;
+  const noFreshReading =
+    data != null && data.count > 0 && data.fresh_count === 0;
+  const allQuiet = noFreshReading && refusedRecently === 0;
+  const allRefused = noFreshReading && refusedRecently > 0;
   // The empty branch is chosen by the ROWS, not by the top-level `state`.
   // Today the route only answers `unknown` when it has no rows, but nothing in
   // the wire type ties the two, and keying on `state` would silently render
@@ -823,7 +847,7 @@ export function ScanSourcesPanel() {
         </p>
       ) : (
         <>
-          <ScanSourceRollups rollups={data.by_source_repo} />
+          <ScanSourceRollups rollups={data.by_source_repo} rows={data.rows} />
           <h3 className="mt-3 text-xs font-medium">By device</h3>
           <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
             {data.rows.map((row) => (
@@ -840,6 +864,15 @@ export function ScanSourcesPanel() {
             {allQuiet
               ? " Every feeder has gone quiet — none of these readings says anything about now."
               : ""}
+            {allRefused ? (
+              <span data-testid="scan-sources-refused-note">
+                {" "}
+                No feeder has a fresh reading, but {refusedRecently} device
+                {refusedRecently === 1 ? " was" : "s were"} refused within the
+                window — alive and reporting, with every recent report rejected,
+                not quiet.
+              </span>
+            ) : null}
             <RetiredNote data={data} />
             <ReadAt at={fetchedAt} />
           </p>

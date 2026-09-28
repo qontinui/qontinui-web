@@ -677,7 +677,22 @@ class TestRefusedVerdict:
             "; it was last refused 864000 s ago (body.observed_at: value_error; "
             "3 refused since "
         ) in row.detail
-        assert row.detail.endswith(", before its last stored reading")
+        assert row.detail.endswith(", not after its last stored reading")
+
+    def test_a_refusal_at_the_same_instant_as_the_reading_is_not_after_it(
+        self,
+    ) -> None:
+        """Equal server stamps cannot be ordered, so neither the ``refused``
+        arm nor the stale clause claims the refusal was the last report."""
+        at = NOW - timedelta(hours=2)
+        reading = _obs(received_at=at)
+        refusal = _refusal(reading.device_id, last_ago=timedelta(hours=2))
+        assert refusal.last_refused_at == reading.received_at
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "its last report was REFUSED" not in row.detail
+        assert row.detail.endswith(", not after its last stored reading")
 
     def test_a_stale_refusal_falls_back_to_observation_stale_naming_it(
         self,

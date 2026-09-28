@@ -266,8 +266,8 @@ COVERAGE_ALL_RETIRED_DETAIL = (
 #: set difference against.
 COVERAGE_NO_LIVE_READING_DETAIL = (
     "no_reading: no live device reporting for this organization has a stored "
-    "reading — every report they sent was refused (each row's 'refused:' "
-    "detail says why) — so nothing enumerated the stems that exist and how "
+    "reading — every report they sent was refused (each row's detail names "
+    "its last refusal) — so nothing enumerated the stems that exist and how "
     "much of it the corpus holds is not established. The empty list is not "
     "'nothing is missing'."
 )
@@ -448,11 +448,13 @@ def _last_refusal_clause(
     """The tail an ``observation_stale:`` detail carries when a refusal exists.
 
     It says the device's LAST report was refused only when that is what the
-    stamps show — the refusal is newer than the last stored reading
-    (``received_at``), or there is no stored reading at all. A refusal OLDER
-    than the last good report is history: refused 10 days ago and then heard
-    from 5 days ago, the last report was accepted, so the clause says only
-    when the device was last refused.
+    stamps show — the refusal is strictly AFTER the last stored reading
+    (``received_at``), or there is no stored reading at all. The same strict
+    ``>`` gates :func:`render_row`'s ``refused`` arm, so the two never
+    disagree. A refusal NOT AFTER the last good report — older, or at the same
+    instant, which the server clock cannot order — is history: refused 10 days
+    ago and then heard from 5 days ago, the last report was accepted, so the
+    clause says only when the device was last refused.
     """
     if refusal is None:
         return ""
@@ -463,7 +465,7 @@ def _last_refusal_clause(
     )
     if received_at is None or refusal.last_refused_at > received_at:
         return f"; its last report was REFUSED {age}{tail}"
-    return f"; it was last refused {age}{tail}, before its last stored reading"
+    return f"; it was last refused {age}{tail}, not after its last stored reading"
 
 
 def last_contact_at(
@@ -667,6 +669,12 @@ def rollup_source(
     ``last_report_applied``. Every row lands in exactly one of the four id
     lists (invariant 6): the roll-up names every feeder, because a lagging or
     silent one can still write (and regress) the corpus.
+
+    ``rows`` are READINGS only. A refusal-only device (every report it sent
+    was refused, so no reading was ever stored) is deliberately named in NO
+    roll-up list: it names no scan source and carries no count, and placing
+    it in the ``null`` group's ``unmeasured_device_ids`` would describe it as
+    a reading that named none. Its own row's detail accounts for it.
 
     A ``measured`` reading with no ``behind`` is counted unmeasured: the write
     door refuses one, so a stored one is corrupt, and a count nobody measured
