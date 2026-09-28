@@ -20,7 +20,7 @@ import {
   type StatusPalette,
 } from "@/components/console/statusRow";
 import { UNKNOWN_LABEL } from "./runnerStatus";
-import { laneHold } from "./fleetDrain";
+import { laneHold, unknownDrainLanes } from "./fleetDrain";
 import {
   NO_MAINTENANCE_CONTEXT,
   drainedLanes,
@@ -181,6 +181,16 @@ export function deriveLeverStatus(
     }
     const lane = lever === "agent_work" ? "agent" : "ci";
     const drain = ctx.drain;
+    if (
+      drain?.state === "drained" &&
+      unknownDrainLanes(drain.entry).includes(lane)
+    ) {
+      return leverStatus(
+        "unknown",
+        UNKNOWN_LABEL,
+        "coord records a drain on this lane but its per-lane entry could not be read"
+      );
+    }
     const hold =
       drain?.state === "drained" ? laneHold(drain.entry, lane, now) : null;
     if (drain?.state === "drained" && hold !== null) {

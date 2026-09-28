@@ -50,6 +50,7 @@ import {
   parseTimestamp,
   activeDrainLanes,
   laneHold,
+  unknownDrainLanes,
   type DeviceDrainState,
   type DrainLane,
 } from "./fleetDrain";
@@ -671,15 +672,18 @@ export function drainLanesDetail(
   now: number
 ): string {
   if (drain?.state !== "drained") return "";
-  return drainedLanes(drain, now)
-    .map((l) => {
-      const hold = laneHold(drain.entry, l, now);
-      return (
-        `${lanesLabel([l])} until ${hold ? formatUntil(hold.until, now) : "an unknown time"}` +
-        ` — ${hold?.reason ?? "no reason recorded"}`
-      );
-    })
-    .join("; ");
+  const held = drainedLanes(drain, now).map((l) => {
+    const hold = laneHold(drain.entry, l, now);
+    return (
+      `${lanesLabel([l])} until ${hold ? formatUntil(hold.until, now) : "an unknown time"}` +
+      ` — ${hold?.reason ?? "no reason recorded"}`
+    );
+  });
+  const unknown = unknownDrainLanes(drain.entry).map(
+    (l) =>
+      `${lanesLabel([l])} ${UNKNOWN_LABEL} (its per-lane entry could not be read)`
+  );
+  return [...held, ...unknown].join("; ");
 }
 
 /** Plain words for a set of drain lanes. */
@@ -722,14 +726,18 @@ export function deriveVerdictHealth(
   }
   if (window === null || read.state === "no_window") {
     const lanes = drainedLanes(ctx.drain, now);
+    const unknownLanes =
+      ctx.drain?.state === "drained" ? unknownDrainLanes(ctx.drain.entry) : [];
     return {
       level: "red",
       headline: "Not yet safe to restart",
       detail:
-        lanes.length > 0
-          ? `no maintenance window is open; a drain outside any window holds ` +
-            `${lanesLabel(lanes)}, but GitHub may still route CI jobs here. ` +
-            "Prepare for restart pauses both."
+        lanes.length > 0 || unknownLanes.length > 0
+          ? // Each lane by its OWN hold — a lane that lapsed is not listed,
+            // and one whose entry is unreadable says so.
+            `no maintenance window is open; a drain outside any window holds ` +
+            `${drainLanesDetail(ctx.drain, now)}. GitHub may still route CI ` +
+            "jobs here. Prepare for restart pauses both."
           : ctx.drain?.state === "unknown"
             ? // Still "not yet" — no window means GitHub still routes CI here
               // — but "nothing is paused" would be a claim about a drain we
@@ -1125,6 +1133,12 @@ export function maintenanceBadge(
         label: "Drained (outside a window)",
         title: `a drain outside any maintenance window holds ${drainLanesDetail(drain, now)}`,
       };
+    }
+    if (
+      drain?.state === "drained" &&
+      unknownDrainLanes(drain.entry).length > 0
+    ) {
+      return unknown(`a drain is recorded but ${drainLanesDetail(drain, now)}`);
     }
     if (drain?.state === "unknown") return unknown(drain.reason);
     return { state: "in_service" };

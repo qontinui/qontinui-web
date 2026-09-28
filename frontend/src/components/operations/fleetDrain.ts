@@ -95,6 +95,10 @@ export function laneHold(
   lane: DrainLane,
   now: number
 ): DrainLaneHold | null {
+  // A lane coord claims but whose per-lane entry this build could not read is
+  // UNKNOWN (`unknownDrainLanes`) — it must not borrow the headline, which is
+  // some OTHER lane's hold.
+  if (unknownDrainLanes(entry).includes(lane)) return null;
   const own = entry.byLane?.[lane];
   const hold: DrainLaneHold | null = own
     ? own
@@ -109,6 +113,21 @@ export function laneHold(
   if (hold === null) return null;
   const untilMs = parseTimestamp(hold.until);
   return untilMs !== null && untilMs > now ? hold : null;
+}
+
+/**
+ * Lanes whose hold is UNKNOWN: coord serves `by_lane` and claims the lane (in
+ * `lanes`, in a dropped `by_lane` entry, or — lane-less — every lane), but the
+ * lane's own entry is missing or had no parseable `until`. Without `by_lane`
+ * (an older coord) nothing is unknown: every claimed lane reads the headline.
+ */
+export function unknownDrainLanes(entry: DrainEntry): DrainLane[] {
+  const byLane = entry.byLane;
+  if (byLane === null) return [];
+  const claimed = entry.lanes ?? (["agent", "ci"] as const);
+  return (["agent", "ci"] as const).filter(
+    (l) => claimed.includes(l) && byLane[l] === undefined
+  );
 }
 
 /** The lanes an entry actually holds at `now`, each by its own deadline. */
@@ -191,8 +210,11 @@ export function parseDrainEntry(value: unknown): DrainEntry | null {
   if (!isRecord(value)) return null;
   const until = optionalString(value.until);
   if (until === null || parseTimestamp(until) === null) return null;
-  const byLane = parseByLane(value.by_lane);
-  const byLaneKeys = byLane ? (Object.keys(byLane) as DrainLane[]) : [];
+  const parsed = parseByLane(value.by_lane);
+  const byLane = parsed?.lanes ?? null;
+  // Every lane `by_lane` NAMES — including one whose entry was dropped as
+  // unreadable, which must stay claimed so it reads UNKNOWN, not "not held".
+  const byLaneKeys = parsed?.named ?? [];
   return {
     until,
     reason: optionalString(value.reason),
@@ -209,12 +231,16 @@ export function parseDrainEntry(value: unknown): DrainEntry | null {
  * dropped from the map (that lane then reads the headline, when `lanes`
  * names it); a missing or non-object `by_lane` is `null` — an older coord.
  */
-function parseByLane(
-  value: unknown
-): Partial<Record<DrainLane, DrainLaneHold>> | null {
+function parseByLane(value: unknown): {
+  lanes: Partial<Record<DrainLane, DrainLaneHold>>;
+  named: DrainLane[];
+} | null {
   if (!isRecord(value)) return null;
   const out: Partial<Record<DrainLane, DrainLaneHold>> = {};
+  const named: DrainLane[] = [];
   for (const lane of ["agent", "ci"] as const) {
+    if (!(lane in value)) continue;
+    named.push(lane);
     const v = value[lane];
     if (!isRecord(v)) continue;
     const until = optionalString(v.until);
@@ -226,7 +252,7 @@ function parseByLane(
       drainedAt: optionalString(v.drained_at),
     };
   }
-  return out;
+  return { lanes: out, named };
 }
 
 /**
