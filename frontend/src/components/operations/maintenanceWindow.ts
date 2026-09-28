@@ -48,6 +48,8 @@ import type {
 import {
   MAX_DRAIN_DAYS,
   parseTimestamp,
+  activeDrainLanes,
+  laneHold,
   type DeviceDrainState,
   type DrainLane,
 } from "./fleetDrain";
@@ -651,10 +653,33 @@ export const NO_MAINTENANCE_CONTEXT: MaintenanceContext = {
   refreshError: null,
 };
 
-/** The drain lanes an ACTIVE drain holds; `null` lanes are both. */
-export function drainedLanes(drain: DeviceDrainState | null): DrainLane[] {
+/**
+ * The lanes an ACTIVE drain holds at `now`, each judged by its OWN deadline
+ * (coord's `by_lane`); a legacy lane-less row holds both.
+ */
+export function drainedLanes(
+  drain: DeviceDrainState | null,
+  now: number
+): DrainLane[] {
   if (drain?.state !== "drained") return [];
-  return drain.entry.lanes ?? ["agent", "ci"];
+  return activeDrainLanes(drain.entry, now);
+}
+
+/** "agent work until 18:00 — reason; CI until 20:00 — reason", per lane. */
+export function drainLanesDetail(
+  drain: DeviceDrainState | null,
+  now: number
+): string {
+  if (drain?.state !== "drained") return "";
+  return drainedLanes(drain, now)
+    .map((l) => {
+      const hold = laneHold(drain.entry, l, now);
+      return (
+        `${lanesLabel([l])} until ${hold ? formatUntil(hold.until, now) : "an unknown time"}` +
+        ` — ${hold?.reason ?? "no reason recorded"}`
+      );
+    })
+    .join("; ");
 }
 
 /** Plain words for a set of drain lanes. */
@@ -696,7 +721,7 @@ export function deriveVerdictHealth(
     };
   }
   if (window === null || read.state === "no_window") {
-    const lanes = drainedLanes(ctx.drain);
+    const lanes = drainedLanes(ctx.drain, now);
     return {
       level: "red",
       headline: "Not yet safe to restart",
@@ -1093,14 +1118,12 @@ export function maintenanceBadge(
     );
   }
   if (window === null) {
-    const lanes = drainedLanes(drain);
+    const lanes = drainedLanes(drain, now);
     if (lanes.length > 0 && drain?.state === "drained") {
       return {
         state: "drained_outside",
         label: "Drained (outside a window)",
-        title:
-          `a drain outside any maintenance window holds ${lanesLabel(lanes)} ` +
-          `until ${formatUntil(drain.entry.until, now)} — ${drain.entry.reason ?? "no reason recorded"}`,
+        title: `a drain outside any maintenance window holds ${drainLanesDetail(drain, now)}`,
       };
     }
     if (drain?.state === "unknown") return unknown(drain.reason);

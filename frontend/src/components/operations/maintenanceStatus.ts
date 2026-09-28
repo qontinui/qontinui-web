@@ -20,6 +20,7 @@ import {
   type StatusPalette,
 } from "@/components/console/statusRow";
 import { UNKNOWN_LABEL } from "./runnerStatus";
+import { laneHold } from "./fleetDrain";
 import {
   NO_MAINTENANCE_CONTEXT,
   drainedLanes,
@@ -180,12 +181,16 @@ export function deriveLeverStatus(
     }
     const lane = lever === "agent_work" ? "agent" : "ci";
     const drain = ctx.drain;
-    if (drain?.state === "drained" && drainedLanes(drain).includes(lane)) {
+    const hold =
+      drain?.state === "drained" ? laneHold(drain.entry, lane, now) : null;
+    if (drain?.state === "drained" && hold !== null) {
+      // THIS lane's own deadline and reason (coord's `by_lane`), not the
+      // headline — which is whichever lane ends last.
       return leverStatus(
         "drained_outside_window",
         "Drained outside a maintenance window",
-        `lanes ${lanesLabel(drainedLanes(drain))}, until ${formatUntil(drain.entry.until, now)}` +
-          ` — ${drain.entry.reason ?? "no reason recorded"}` +
+        `lanes ${lanesLabel(drainedLanes(drain, now))}, until ${formatUntil(hold.until, now)}` +
+          ` — ${hold.reason ?? "no reason recorded"}` +
           (lane === "ci" ? "; GitHub may still route CI jobs here" : "") +
           ". Release it here, or open a window"
       );
