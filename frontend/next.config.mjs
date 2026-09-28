@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bundleAnalyzer from '@next/bundle-analyzer';
+import { resolveUpstream, rewriteDestination } from './config/backend-rewrite.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,8 +11,16 @@ const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
 });
 
-// Backend URL: Use environment variable in production, localhost in development
-const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Backend proxy target for the `/api/:path*` fallback rewrite: BACKEND_URL,
+// else NEXT_PUBLIC_API_URL. Unset on a deploy build this THROWS (naming the
+// variable); unset in development it is the local dev stack
+// (http://localhost:8000); unset anywhere else it rewrites to the internal
+// `/api/endpoint-unresolved/backend` 503 route — never loopback. The decision
+// lives in config/backend-rewrite.mjs, and mirrors the runtime rule in
+// src/lib/errors/endpoint-unresolved.ts. BACKEND_URL must be present at BUILD
+// time (this table is baked into the build) AND at runtime (the
+// src/app/api/v1 route handlers read it per request).
+const BACKEND = resolveUpstream('backend');
 
 // qontinui-coord URL — separate axum service (default port 9870). The
 // browser proxies REST through Next.js to avoid CORS. The browser opens
@@ -19,7 +28,11 @@ const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL |
 // no coord credential, so live events ride the web backend's bridges
 // (`/api/v1/operations/{device-status,ci-status,coord-events}/ws`), which
 // mint the coord service token server-side.
-const COORD_URL = process.env.COORD_URL || 'http://localhost:9870';
+//
+// Same rule as the backend (config/backend-rewrite.mjs): COORD_URL, the
+// dev-stack default (http://localhost:9870) only in development, a thrown
+// config error on a deploy build, the internal 503 route otherwise.
+const COORD = resolveUpstream('coord');
 
 // Composed cloud build. `@qontinui/cloud-control` is an OPTIONAL sibling
 // package that side-effect-registers the cloud services/components into
@@ -385,7 +398,7 @@ const nextConfig = {
         // service.
         {
           source: '/coord-api/:path*',
-          destination: `${COORD_URL}/coord/:path*`,
+          destination: rewriteDestination(COORD, '/coord/:path*'),
         },
         // Exclude paths that have custom API route handlers
         // These routes read cookies and forward to backend with Bearer token
@@ -411,7 +424,8 @@ const nextConfig = {
         },
         {
           source: '/api/:path*',
-          destination: `${BACKEND_URL}/api/:path*`, // Proxy to Backend (uses env var in production)
+          // Proxy to the backend, or the internal 503 route when unresolved.
+          destination: rewriteDestination(BACKEND, '/api/:path*'),
         },
       ],
     }

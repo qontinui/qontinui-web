@@ -21,6 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { ENDPOINT_UNRESOLVED_CODE } from "@/lib/errors/endpoint-unresolved";
 
 import {
   __resetAuthCache,
@@ -669,8 +670,11 @@ describe("no backend base configured", () => {
     const res = misconfiguredResponse(result.error);
     expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.code).toBe("ENDPOINT_UNRESOLVED");
+    expect(body.success).toBe(false);
+    expect(body.code).toBe(ENDPOINT_UNRESOLVED_CODE);
+    expect(body.endpoint).toBe("backend");
     expect(body.env_var).toBe("BACKEND_URL");
+    expect(body.message).toBe(body.error);
     expect(body.next_action).toContain("Set BACKEND_URL");
   });
 });

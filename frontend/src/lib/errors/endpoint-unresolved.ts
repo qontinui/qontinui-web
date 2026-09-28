@@ -19,10 +19,21 @@
  * `process.env.NEXT_PUBLIC_*` only when the property is spelled literally at
  * the call site, so a dynamic lookup here would read `undefined` in the
  * browser bundle.
+ *
+ * `BACKEND_URL` (or `NEXT_PUBLIC_API_URL`) and `COORD_URL` must be present at
+ * BUILD time as well as at runtime: `next.config.mjs` bakes its proxy
+ * rewrites from them when the build loads the config (the same rule, mirrored
+ * in `config/backend-rewrite.mjs`), while the route handlers read them per
+ * request.
  */
 
 /** The service bases this resolver knows. */
-export type EndpointName = "api" | "backend" | "runner" | "llama_swap";
+export type EndpointName =
+  | "api"
+  | "backend"
+  | "coord"
+  | "runner"
+  | "llama_swap";
 
 interface EndpointSpec {
   /** Environment variable that configures this base. */
@@ -46,6 +57,11 @@ const ENDPOINTS: Record<EndpointName, EndpointSpec> = {
     alternateEnvVar: "NEXT_PUBLIC_API_URL",
     label: "backend API",
     devDefault: "http://localhost:8000",
+  },
+  coord: {
+    envVar: "COORD_URL",
+    label: "coord service",
+    devDefault: "http://localhost:9870",
   },
   runner: {
     envVar: "QONTINUI_RUNNER_URL",
