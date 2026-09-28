@@ -354,6 +354,7 @@ class TestGetMyClaudeAccounts:
             resp = _get_mine(client, instance, _mock_response(json_data=["nope"]))
 
         assert resp.status_code == 502
+        assert "unexpected claude-accounts payload" in resp.json()["message"]
 
     @pytest.mark.parametrize(
         "coord_payload",
