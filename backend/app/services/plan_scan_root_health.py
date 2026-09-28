@@ -1214,7 +1214,9 @@ def scan_roots_health(
     # report of which was refused) names no scan source and has no count, so
     # it feeds neither the roll-up nor coverage — the ``null`` group means
     # "a reading that names no source", which such a device never sent. The
-    # row itself says ``refused:``, and it stays in ``rows`` / ``count``.
+    # row's own detail names its last refusal (``refused:`` inside the
+    # freshness window, ``observation_stale:`` past it), and it stays in
+    # ``rows`` / ``count``.
     live_readings: list[ScanRootRow] = []
     for obs, refusal in [
         *((obs, refusal_by_device.get(obs.device_id)) for obs in observations),

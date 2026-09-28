@@ -747,7 +747,8 @@ function RetiredNote({
  *   may be stale — it does not blank them into a false zero.
  * * **Every feeder quiet** (`count > 0`, `fresh_count === 0`) is called out on
  *   its own line, because a list of rows that all say `unknown` reads, at a
- *   glance, like a list of rows.
+ *   glance, like a list of rows — unless a device was refused within the
+ *   window, which is named instead: it is alive, not quiet.
  *
  * And a fourth, which is the same rule one level up. Every age on this panel —
  * `observation_age_secs`, `observation_fresh`, `fresh_count` — is a
@@ -869,8 +870,8 @@ export function ScanSourcesPanel() {
                 {" "}
                 No feeder has a fresh reading, but {refusedRecently} device
                 {refusedRecently === 1 ? " was" : "s were"} refused within the
-                window — alive and reporting, with every recent report rejected,
-                not quiet.
+                window — alive and reporting, its latest report rejected, not
+                quiet.
               </span>
             ) : null}
             <RetiredNote data={data} />

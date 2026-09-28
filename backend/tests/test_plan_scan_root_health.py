@@ -682,8 +682,10 @@ class TestRefusedVerdict:
     def test_a_refusal_at_the_same_instant_as_the_reading_is_not_after_it(
         self,
     ) -> None:
-        """Equal server stamps cannot be ordered, so neither the ``refused``
-        arm nor the stale clause claims the refusal was the last report."""
+        """Equal server stamps cannot be ordered, so the stale clause does not
+        claim the refusal was the last report. (The ``refused`` arm cannot
+        fire in a tie by construction: it needs a stale reading and a fresh
+        refusal, which equal stamps cannot both be.)"""
         at = NOW - timedelta(hours=2)
         reading = _obs(received_at=at)
         refusal = _refusal(reading.device_id, last_ago=timedelta(hours=2))

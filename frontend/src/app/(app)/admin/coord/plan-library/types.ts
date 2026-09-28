@@ -534,7 +534,11 @@ export interface ScanRootListResponse {
   retire_after_secs: number;
   retired_count: number;
   count: number;
-  /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
+  /**
+   * `count > 0` with `fresh_count === 0` means no feeder has a fresh reading —
+   * every feeder has gone quiet, unless a row was refused within
+   * `fresh_within_secs` (`refused_age_secs`), which is alive and being refused.
+   */
   fresh_count: number;
   rows: ScanRootRow[];
   /**
