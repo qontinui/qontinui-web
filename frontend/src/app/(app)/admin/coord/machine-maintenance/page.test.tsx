@@ -81,6 +81,7 @@ vi.mock("@/components/ui/destructive-button", () => ({
 }));
 
 import MachineMaintenancePage from "./page";
+import { toast } from "sonner";
 
 const IDLE = {
   sessionId: "aaaaaaaa-1111-4111-8111-111111111111",
@@ -273,6 +274,7 @@ let closeResponse: Res;
 let linkResponse: Res;
 let controlResponse: Res | Promise<Res>;
 let drainResponse: Res;
+let undrainResponse: Res;
 
 beforeEach(() => {
   search = `machine=${DEVICE}`;
@@ -290,6 +292,11 @@ beforeEach(() => {
   closeResponse = res(200, wireWindow({ state: "closed" }));
   linkResponse = res(201, { device_id: DEVICE, ci_hosts: ["merytshost"] });
   drainResponse = res(200, { drained: {} });
+  undrainResponse = res(200, {
+    device_id: DEVICE,
+    drained: false,
+    changed: true,
+  });
   controlResponse = res(202, {
     event_id: "e0e0e0e0-0000-4000-8000-000000000000",
     session_id: IDLE.sessionId,
@@ -312,8 +319,7 @@ beforeEach(() => {
           return windowPostResponses.shift() ?? res(500, "no more");
       }
       if (url.includes("/fleet/machines")) return machinesResponse;
-      if (url.includes("/fleet/undrain"))
-        return res(200, { device_id: DEVICE, drained: false, changed: true });
+      if (url.includes("/fleet/undrain")) return undrainResponse;
       if (url.includes("/fleet/drain")) return drainResponse;
       if (url.includes("/fleet/ci-runners")) return res(200, { runners: [] });
       if (url.includes("/fleet/resource-samples")) return samplesResponse;
@@ -786,6 +792,66 @@ describe("/admin/coord/machine-maintenance — review round", () => {
       )
     );
     await waitFor(() => expect(calls("/ci-hosts", "DELETE")).toHaveLength(1));
+  });
+});
+
+describe("/admin/coord/machine-maintenance — review round 2", () => {
+  it("says an undrain whose answer did not parse was accepted with an UNKNOWN effect", async () => {
+    drainResponse = res(200, {
+      drained: {
+        [DEVICE]: {
+          until: new Date(Date.now() + 3_600_000).toISOString(),
+          reason: "agent drained it",
+          drained_by: "agent",
+          drained_at: new Date().toISOString(),
+          lanes: ["agent"],
+        },
+      },
+    });
+    undrainResponse = {
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error("not json");
+      },
+      text: async () => "ok",
+    };
+    vi.mocked(toast).mockClear();
+    vi.mocked(toast.success).mockClear();
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-lever-agent-release-drain")
+    );
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-release-drain-agent-reason"),
+      "done"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-release-drain-agent-confirm")
+    );
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        "Undrain accepted; whether it changed anything is UNKNOWN"
+      )
+    );
+    expect(toast.success).not.toHaveBeenCalledWith(
+      expect.stringContaining("Released")
+    );
+  });
+
+  it("confirms an unlink while the window cannot be read — it may hold CI", async () => {
+    machinesResponse = res(
+      200,
+      machinesBody({ window: { id: WINDOW, state: "??" } })
+    );
+    render(<MachineMaintenancePage />);
+    await userEvent.click(
+      await screen.findByTestId("coord-maintenance-ci-host-unlink")
+    );
+    expect(
+      await screen.findByTestId("coord-maintenance-ci-host-unlink-confirm")
+    ).toBeInTheDocument();
+    expect(calls("/ci-hosts", "DELETE")).toHaveLength(0);
   });
 });
 

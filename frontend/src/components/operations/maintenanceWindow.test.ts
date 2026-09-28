@@ -39,6 +39,7 @@ import {
   parseSyntheticCiHostname,
   parseWindowReadiness,
   registrationsFromMirror,
+  machineEntryBadge,
   resolveMachineMaintenance,
   summarizeLinkedCiHosts,
   validateMaintenanceForm,
@@ -1023,5 +1024,71 @@ describe("a CI card coord's list does not name", () => {
       state: "unknown",
       title: "coord's machine list does not name this CI host",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 2
+// ---------------------------------------------------------------------------
+
+describe("round 2", () => {
+  it("a drain read that failed is named in the no-window verdict, never 'nothing is paused'", () => {
+    const h = deriveVerdictHealth(
+      null,
+      { state: "no_window" },
+      NOW,
+      ctx({ drain: { state: "unknown", reason: "HTTP 404" } })
+    );
+    expect(h.level).toBe("red");
+    expect(h.detail).toContain(
+      "whether a drain holds this machine is not known — HTTP 404"
+    );
+    expect(h.detail).not.toContain("nothing is paused");
+  });
+
+  it("a kept machines list after a failed refresh badges 'no window' as UNKNOWN", () => {
+    const read: MachinesRead = {
+      state: "ok",
+      refreshError: "HTTP 502",
+      entries: [machine()],
+    };
+    const v = resolveMachineMaintenance(
+      read,
+      { deviceId: DEVICE, hostname: "merytshost" },
+      {},
+      NOW
+    );
+    expect(v?.badge.state).toBe("unknown");
+    if (v?.badge.state === "unknown")
+      expect(v.badge.title).toContain("HTTP 502");
+    // An open window is still read from the kept list — it is evidence.
+    const withWindow: MachinesRead = {
+      ...read,
+      entries: [machine({ openWindow: win() })],
+    };
+    expect(
+      resolveMachineMaintenance(
+        withWindow,
+        { deviceId: DEVICE, hostname: "merytshost" },
+        {},
+        NOW
+      )?.badge.state
+    ).toBe("in_maintenance");
+  });
+
+  it("a raw drain marks the picker entry like the card", () => {
+    const drain = {
+      state: "ok" as const,
+      entries: new Map([
+        [DEVICE, DRAINED.state === "drained" ? DRAINED.entry : (null as never)],
+      ]),
+      unreadableDevices: new Set<string>(),
+    };
+    expect(machineEntryBadge(machine(), NOW, drain).state).toBe(
+      "drained_outside"
+    );
+    expect(machineEntryBadge(machine(), NOW, undefined).state).toBe(
+      "in_service"
+    );
   });
 });

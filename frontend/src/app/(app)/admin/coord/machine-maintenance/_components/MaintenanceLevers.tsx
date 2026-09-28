@@ -113,11 +113,15 @@ function LeverRow({
     setReleasing(false);
     setReleaseReason("");
     if (res.ok) {
-      toast.success(
-        res.changed
-          ? `Released the ${LEVER_NAME[lever]} drain`
-          : `The ${LEVER_NAME[lever]} lane was not drained — nothing changed`
-      );
+      if (res.changed === null) {
+        toast("Undrain accepted; whether it changed anything is UNKNOWN");
+      } else {
+        toast.success(
+          res.changed
+            ? `Released the ${LEVER_NAME[lever]} drain`
+            : `The ${LEVER_NAME[lever]} lane was not drained — nothing changed`
+        );
+      }
       onChanged(null);
       return;
     }

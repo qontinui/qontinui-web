@@ -33,9 +33,10 @@ import {
 } from "@/components/ui/select";
 import {
   machineEntryLabel,
-  maintenanceBadge,
+  machineEntryBadge,
   type MachineEntry,
 } from "./maintenanceWindow";
+import type { FleetDrainRead } from "./fleetDrain";
 
 export interface MachinePickerProps {
   entries: ReadonlyArray<MachineEntry>;
@@ -47,6 +48,8 @@ export interface MachinePickerProps {
   disabled?: boolean;
   "aria-describedby"?: string;
   "data-testid"?: string;
+  /** Coord's raw drain read, so a drain outside any window marks its entry. */
+  drain?: FleetDrainRead;
 }
 
 export function MachinePicker({
@@ -58,6 +61,7 @@ export function MachinePicker({
   disabled,
   "aria-describedby": describedBy,
   "data-testid": testId,
+  drain,
 }: MachinePickerProps) {
   const unlisted = value !== "" && !entries.some((e) => e.key === value);
   const now = Date.now();
@@ -99,11 +103,7 @@ export function MachinePicker({
               {(() => {
                 // The same badge the Dev Ops card shows: an unreadable window
                 // is "maintenance UNKNOWN", a partial pause says so.
-                const badge = maintenanceBadge(
-                  e.openWindow,
-                  e.openWindowUnreadable,
-                  now
-                );
+                const badge = machineEntryBadge(e, now, drain);
                 return badge.state === "in_service" ? null : (
                   <span
                     className="ml-2 text-xs text-muted-foreground"

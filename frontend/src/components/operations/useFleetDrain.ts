@@ -148,7 +148,8 @@ export async function postUndrain(input: {
   reason: string;
   lanes?: DrainLane[];
 }): Promise<
-  | { ok: true; changed: boolean }
+  /** `changed: null` — a 2xx whose body did not say: accepted, effect UNKNOWN. */
+  | { ok: true; changed: boolean | null }
   | { ok: false; status: number | null; body: string }
 > {
   const body: Record<string, unknown> = {
@@ -166,7 +167,7 @@ export async function postUndrain(input: {
     }
     // `changed: false` is "it was not held" — passed through, not dressed up
     // as a release.
-    let changed = true;
+    let changed: boolean | null = null;
     try {
       const payload: unknown = await res.json();
       if (
@@ -177,7 +178,8 @@ export async function postUndrain(input: {
         changed = (payload as { changed: boolean }).changed;
       }
     } catch {
-      // A success with an unreadable body still succeeded.
+      // A success with an unreadable body still succeeded; whether it
+      // changed anything stays UNKNOWN (`null`), never an assumed `true`.
     }
     return { ok: true, changed };
   } catch (err) {
