@@ -12,6 +12,7 @@
 
 import { after, NextResponse, type NextRequest } from "next/server";
 
+import { EndpointUnresolvedError } from "@/lib/errors/endpoint-unresolved";
 import {
   GroundingUnavailableError,
   groundOnce,
@@ -128,6 +129,9 @@ export async function POST(request: NextRequest) {
       imageHeight: dims?.height ?? null,
     });
   } catch (err) {
+    if (err instanceof EndpointUnresolvedError) {
+      return NextResponse.json(err.toBody(), { status: 503 });
+    }
     if (err instanceof GroundingUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 502 });
     }

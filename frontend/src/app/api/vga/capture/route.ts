@@ -1,8 +1,8 @@
 /**
  * GET /api/vga/capture?monitor=N&region=x,y,w,h
  *
- * Thin proxy to the runner's capture endpoint at
- *   http://localhost:9876/vga/capture
+ * Thin proxy to the runner's `/vga/capture` endpoint at the base
+ * `QONTINUI_RUNNER_URL` names.
  *
  * Exists so browser code in /vga/builder can call a same-origin URL
  * — the runner's CORS config is permissive for UI Bridge, but we'd
@@ -10,12 +10,13 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-
-const RUNNER_BASE = process.env.QONTINUI_RUNNER_URL ?? "http://localhost:9876";
+import { runnerBaseOrResponse } from "../_runner-base";
 
 export async function GET(request: NextRequest) {
   const qs = request.nextUrl.searchParams.toString();
-  const url = `${RUNNER_BASE}/vga/capture${qs ? `?${qs}` : ""}`;
+  const base = runnerBaseOrResponse();
+  if (base instanceof NextResponse) return base;
+  const url = `${base}/vga/capture${qs ? `?${qs}` : ""}`;
 
   let upstream: Response;
   try {

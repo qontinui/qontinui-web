@@ -9,6 +9,7 @@
  * - Iterative refinement
  */
 
+import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 import type {
   Workflow,
   Action,
@@ -789,8 +790,9 @@ let mcpClient: MCPClient | null = null;
  */
 export function getMCPClient(): MCPClient {
   if (!mcpClient) {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_MCP_URL || "http://localhost:3000/mcp";
+    // Throws EndpointUnresolvedError (naming NEXT_PUBLIC_MCP_URL) when unset
+    // outside development; the MCP store surfaces its message.
+    const baseUrl = resolveEndpoint("mcp", process.env.NEXT_PUBLIC_MCP_URL);
     mcpClient = new MCPClient(baseUrl);
   }
   return mcpClient;

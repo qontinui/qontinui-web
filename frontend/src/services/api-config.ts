@@ -1,3 +1,5 @@
+import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
+
 export class ApiConfig {
   // Main API (authentication, users, projects)
   // Use environment variable to call backend directly (required for cookie-based auth)
@@ -45,6 +47,19 @@ export class ApiConfig {
    */
   static getBaseUrl(): string {
     return ApiConfig.API_BASE_URL;
+  }
+
+  /**
+   * The ABSOLUTE backend base URL, for a consumer outside this page that cannot
+   * use a same-origin relative path — e.g. the `backend_url` handed to the
+   * runner so it can post results back.
+   *
+   * Unlike {@link getBaseUrl}, an unset `NEXT_PUBLIC_API_URL` is not "same
+   * origin" here: outside `development` it throws `EndpointUnresolvedError`
+   * naming the variable to set, rather than handing out a dev-stack address.
+   */
+  static resolveAbsoluteBaseUrl(): string {
+    return resolveEndpoint("api", process.env.NEXT_PUBLIC_API_URL);
   }
 
   /**
