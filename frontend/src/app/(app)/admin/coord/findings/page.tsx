@@ -795,8 +795,9 @@ export default function CoordFindingsPage() {
             variant="outline"
             size="sm"
             onClick={() => void loadOlder()}
-            // A head read in flight is about to replace the list this page
-            // would append to.
+            // Belt-and-braces: a head read clears `nextCursor` as it starts, so
+            // this button is not rendered while one is in flight; `loading`
+            // here only matters if that clear is ever removed.
             disabled={loadingMore || loading}
             data-testid="coord-findings-load-older"
           >

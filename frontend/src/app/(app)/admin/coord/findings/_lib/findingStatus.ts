@@ -103,10 +103,10 @@ export interface FindingsResponse {
    * The bounded-read envelope (plan
    * `2026-09-05-findings-recent-is-a-window-that-reads-as-a-corpus`). All
    * OPTIONAL and nullable: a coord that predates it sends none of them, and the
-   * proxy's degraded body omits them today — it sends them as explicit nulls
-   * only once qontinui-web#1523 lands. Absent and null both read as UNKNOWN,
-   * never "false" or "complete" — {@link deriveFindingsBound} is the one
-   * reader of them.
+   * proxy's degraded body omits them today — once qontinui-web#1523 lands it
+   * sends them as nulls with `bound_kind: "unknown"`. Absent, null and
+   * `"unknown"` all read as UNKNOWN, never "false" or "complete" —
+   * {@link deriveFindingsBound} is the one reader of them.
    */
   /** coord cut the read short: rows past this page exist. */
   truncated?: boolean | null;
