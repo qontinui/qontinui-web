@@ -97,6 +97,9 @@ function LeverRow({
     !(lever === "agent_work" && entry.kind === "ci_host") &&
     status.kind !== "unknown" &&
     status.kind !== "window_expired" &&
+    // A half-finished Return to service: coord refuses a re-hold until the
+    // close is re-issued, so the levers wait for it.
+    window?.closing !== true &&
     status.kind !== "drained_outside_window";
   const leverLane =
     lever === "agent_work" ? ("agent" as const) : ("ci" as const);

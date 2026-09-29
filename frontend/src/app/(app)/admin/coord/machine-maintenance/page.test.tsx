@@ -1507,6 +1507,63 @@ describe("/admin/coord/machine-maintenance — coord's final contract", () => {
   });
 });
 
+describe("/admin/coord/machine-maintenance — closing", () => {
+  it("a window mid-close says so, keeps Return to service, and holds the levers", async () => {
+    machinesResponse = res(
+      200,
+      machinesBody({ window: wireWindow({ closing: true }) })
+    );
+    render(<MachineMaintenancePage />);
+    expect(
+      await screen.findByTestId("coord-maintenance-closing")
+    ).toHaveTextContent(
+      "A Return to service is in progress or was interrupted — press Return to service again to finish it"
+    );
+    expect(screen.getByTestId("coord-maintenance-return")).not.toBeDisabled();
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-agent-toggle")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-maintenance-lever-ci-toggle")
+    ).not.toBeInTheDocument();
+  });
+
+  it("an older coord (no closing field) shows no banner and keeps the levers", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    render(<MachineMaintenancePage />);
+    expect(
+      await screen.findByTestId("coord-maintenance-lever-agent-toggle")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-maintenance-closing")
+    ).not.toBeInTheDocument();
+  });
+
+  it("a re-hold refused with window_closing shows the next step and re-reads", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    patchResponse = res(409, {
+      error: "window_closing",
+      message: "re-issue the close",
+      timestamp: 1,
+      path: "/x",
+    });
+    render(<MachineMaintenancePage />);
+    const toggle = await screen.findByTestId(
+      "coord-maintenance-lever-agent-toggle"
+    );
+    await waitFor(() => expect(toggle).toHaveTextContent("Resume"));
+    const before = calls("/fleet/machines").length;
+    await userEvent.click(toggle);
+    expect(
+      await screen.findByTestId("coord-maintenance-lever-error")
+    ).toHaveTextContent("press Return to service again to finish it");
+    await waitFor(() =>
+      expect(calls("/fleet/machines")).toHaveLength(before + 1)
+    );
+  });
+});
+
 describe("/admin/coord/machine-maintenance — session wind-down", () => {
   it("renders a stale runner readiness report as UNKNOWN, never its last verdict", async () => {
     samplesResponse = res(

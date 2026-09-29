@@ -149,6 +149,13 @@ export interface MaintenanceWindow {
     detail: string | null;
   } | null;
   levers: { agentWork: AgentLever; ci: CiLever };
+  /**
+   * A Return to service is in progress, or was interrupted mid-way — coord
+   * refuses to re-hold a lever (`window_closing`) until the close is
+   * re-issued. `null` when coord sent no `closing` (an older coord): unknown,
+   * so nothing is disabled on its account.
+   */
+  closing: boolean | null;
 }
 
 /** A workstation machine from `GET /fleet/machines`. */
@@ -282,6 +289,7 @@ export function parseMaintenanceWindow(v: unknown): MaintenanceWindow | null {
     closedBy: str(v.closed_by),
     closedAt: str(v.closed_at),
     ciPausedAt: str(v.ci_paused_at),
+    closing: typeof v.closing === "boolean" ? v.closing : null,
     poolHealth: pool
       ? {
           verdict: oneOf(pool.verdict, [
@@ -1144,6 +1152,10 @@ export function buildMaintenancePreview(
   return lines;
 }
 
+/** What to do about a window whose Return to service did not finish. */
+export const CLOSING_NEXT_STEP =
+  "A Return to service is in progress or was interrupted — press Return to service again to finish it.";
+
 /**
  * coord answers `schema_pending` (503) until the web migration that creates
  * its maintenance tables deploys. That is the feature being unavailable, not
@@ -1179,6 +1191,8 @@ export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
       return "The window changed under you — the page is re-reading it; check the levers and retry.";
     case "invalid_request":
       return "Coord refused the request as invalid — correct it and retry.";
+    case "window_closing":
+      return CLOSING_NEXT_STEP;
     case "window_not_open":
       return "The window already ended — the page is re-reading it.";
     case "schema_pending":
@@ -1198,6 +1212,7 @@ export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
 export function errorWantsReread(e: MaintenanceError): boolean {
   return (
     e.code === "window_changed" ||
+    e.code === "window_closing" ||
     e.code === "window_not_open" ||
     e.code === "not_found" ||
     e.code === "window_busy" ||
