@@ -29,12 +29,13 @@ Every Actions log line carries an ISO-8601 timestamp, and the gating pytest run
 is verbose (``-v``), so each finished test prints one line
 ``tests/<file>.py::<test> PASSED``. The gap between two consecutive result lines
 is attributed to the test that ENDED it: that is the wall time pytest spent
-setting it up, running it and tearing it down. The gap before the FIRST result
-line of a run is dropped rather than attributed: it is the session-scoped setup
-(engine, ``create_all``), a per-shard constant that belongs to no file, and
-charging it to whichever file happened to be first would inflate that one file
-on every refresh. A run is delimited by pytest's ``collected N items`` line, so
-a log holding two pytest runs never bridges a gap across them.
+setting it up, running it and tearing it down. The FIRST result line of a run
+has no earlier result line to measure from, so its test gets nothing: that is a
+necessity of parsing a log, not a policy -- the only earlier anchor, pytest's
+``collected N items`` line, is followed by session start-up that is not that
+test's own time. (The junit path below deliberately does NOT mirror this drop.)
+The ``collected`` line also delimits runs, so a log holding two pytest runs
+never bridges a gap across them.
 
 A result line is a line whose content starts with ``tests/<path>.py::`` and
 contains a whitespace-preceded status word (``PASSED``, ``FAILED``,
@@ -50,9 +51,16 @@ first tab-separated field, so interleaved jobs never share a gap.
 How a junit testcase is mapped to a file
 ----------------------------------------
 
-(Session-scoped setup and teardown are trimmed from the first and last
-testcase of each junit document, consistently with the log mode's dropped
-first gap; ``_trim_session_edges`` says how and why.)
+Junit times are used exactly as reported. pytest's ``time`` is the default
+``junit_duration_report=total`` -- setup + call + teardown -- so each
+document's FIRST testcase also carries the autouse session fixture
+``booted_app`` (``backend/tests/conftest.py``), and its last testcase the
+matching teardown. That is accepted: under ``TESTING=1`` the boot is inert and
+small, while every per-edge correction tried mis-measures what it touches. A
+migration file's heavy DB test often runs LAST after near-zero static siblings,
+and a module-scoped fixture lands on a file's first test, so capping an edge
+test at its file's median cut a 66.5 s test to 0.03 s -- re-creating the very
+skew this map exists to remove.
 
 pytest's default ``xunit2`` junit omits the ``file`` attribute, leaving only a
 dotted ``classname`` (``tests.api.test_x.TestGroup``). With ``--root`` (the
@@ -68,7 +76,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import statistics
 import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -146,11 +153,10 @@ def _module_path(classname: str, root: Path | None) -> str | None:
 def junit_durations(xml_text: str, root: Path | None = None) -> dict[str, float]:
     """Seconds per test file from one junit XML document (unrounded sums).
 
-    One document is one shard's pytest run, so its FIRST testcase's time also
-    carries the session-scoped setup and its LAST the session teardown -- see
-    `_trim_session_edges`.
+    Every testcase's ``time`` is used as reported; see the module docstring for
+    why the session fixture's share on the edge testcases is not removed.
     """
-    cases: list[tuple[str, float]] = []
+    totals: defaultdict[str, float] = defaultdict(float)
     tree = ET.fromstring(xml_text)
     for case in tree.iter("testcase"):
         try:
@@ -160,44 +166,8 @@ def junit_durations(xml_text: str, root: Path | None = None) -> dict[str, float]
         path = case.get("file") or _module_path(case.get("classname", ""), root)
         if not path or not seconds >= 0:
             continue
-        cases.append((path.replace("\\", "/"), seconds))
-    totals: defaultdict[str, float] = defaultdict(float)
-    for path, seconds in _trim_session_edges(cases):
-        totals[path] += seconds
+        totals[path.replace("\\", "/")] += seconds
     return dict(totals)
-
-
-def _trim_session_edges(cases: list[tuple[str, float]]) -> list[tuple[str, float]]:
-    """Cap the first and last testcase of a run at their file's median.
-
-    pytest's junit ``time`` is setup + call + teardown of the test (the default
-    ``junit_duration_report=total``), and a session-scoped fixture is set up
-    inside the FIRST test's setup and torn down inside the LAST test's
-    teardown. On this suite that is the app boot and ``create_all`` -- a
-    per-shard constant that belongs to no file, which ``--from-logs`` already
-    drops by discarding a run's first gap. The XML carries no phase breakdown
-    to subtract it exactly, so each edge case is capped at the median time of
-    the OTHER testcases of its own file in this document: a real slow edge test
-    in a file of slow tests keeps (at most) its file's typical cost, and only
-    the excess -- the session work -- is removed. An edge case whose file has
-    no other testcase here is left as it is, since there is nothing to compare
-    it with.
-
-    Why not ``junit_duration_report=call`` for the CI run instead: that drops
-    EVERY test's setup and teardown, including the function-scoped database
-    fixtures that are most of what the migration-class tests cost, so it would
-    under-weigh exactly the files this map exists to weigh.
-    """
-    if not cases:
-        return cases
-    trimmed = list(cases)
-    edges = sorted({0, len(cases) - 1})
-    for index in edges:
-        path, seconds = cases[index]
-        others = [s for i, (p, s) in enumerate(cases) if p == path and i != index]
-        if others:
-            trimmed[index] = (path, min(seconds, statistics.median(others)))
-    return trimmed
 
 
 def merge(parts: Iterable[dict[str, float]]) -> dict[str, float]:

@@ -1745,10 +1745,8 @@ def test_junit_durations_maps_classnames_onto_files(tmp_path):
 <testcase classname="tests.test_y" name="test_e" time="garbage" />
 </testsuite></testsuites>"""
     with_root = refresh.junit_durations(xml, tmp_path)
-    # test_a (1.25) is the document's FIRST testcase, so it is capped at the
-    # median of its file's other cases (0.75); see the trim test below.
     assert with_root == pytest.approx(
-        {"tests/api/test_x.py": 1.5, "tests/test_y.py": 2.0, "tests/test_z.py": 4.0}
+        {"tests/api/test_x.py": 2.0, "tests/test_y.py": 2.0, "tests/test_z.py": 4.0}
     )
     # Without a root, trailing Test* class parts are dropped heuristically.
     assert refresh.junit_durations(xml) == pytest.approx(with_root)
@@ -1762,37 +1760,25 @@ def _junit(*cases: tuple[str, str, float]) -> str:
     return f"<testsuites><testsuite>\n{body}</testsuite></testsuites>"
 
 
-def test_junit_trims_session_setup_and_teardown_from_the_edge_testcases():
-    """Consistent with --from-logs, which drops each run's first gap.
+def test_junit_keeps_a_heavy_last_testcase_after_static_siblings():
+    """Junit times are used as reported, edges included.
 
-    The first case carries the session fixture's boot (+30 s) and the last its
-    teardown (+8 s); both are capped at the median of their file's OTHER cases,
-    while a middle case that is genuinely slow keeps its full time.
+    The real shape: a migration file's near-zero static checks followed by the
+    one heavy DB test, last in the document (shard 6 ended with
+    test_worker_hb_body_started_01_migration.py: 0.01, 0.01, 66.5). Any
+    per-edge trim cut that file to ~0 and re-created the skew.
     """
     xml = _junit(
-        ("tests.test_a", "t1", 30.2),  # 0.2 s of test + 30 s of session setup
-        ("tests.test_a", "t2", 0.2),
-        ("tests.test_a", "t3", 0.3),
-        ("tests.test_b", "t1", 12.0),  # a genuinely slow middle test: kept
-        ("tests.test_b", "t2", 1.0),
-        ("tests.test_c", "t1", 0.5),
-        ("tests.test_c", "t2", 8.5),  # 0.5 s of test + 8 s of session teardown
+        ("tests.test_a", "t1", 0.2),
+        ("tests.test_worker_hb_body_started_01_migration", "t1", 0.01),
+        ("tests.test_worker_hb_body_started_01_migration", "t2", 0.01),
+        ("tests.test_worker_hb_body_started_01_migration", "t3", 66.5),
     )
     got = refresh.junit_durations(xml)
-    assert got == pytest.approx(
-        {
-            "tests/test_a.py": 0.25 + 0.2 + 0.3,  # t1 capped at median(0.2, 0.3)
-            "tests/test_b.py": 13.0,
-            "tests/test_c.py": 0.5 + 0.5,  # t2 capped at median(0.5)
-        }
+    assert got["tests/test_worker_hb_body_started_01_migration.py"] == pytest.approx(
+        66.52
     )
-
-
-def test_junit_leaves_an_edge_case_alone_when_its_file_has_no_other_case():
-    xml = _junit(("tests.test_solo", "t1", 5.0), ("tests.test_b", "t1", 1.0))
-    assert refresh.junit_durations(xml) == pytest.approx(
-        {"tests/test_solo.py": 5.0, "tests/test_b.py": 1.0}
-    )
+    assert got["tests/test_a.py"] == pytest.approx(0.2)
 
 
 def test_render_is_sorted_and_rounded_to_a_tenth():
