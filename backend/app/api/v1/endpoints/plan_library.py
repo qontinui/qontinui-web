@@ -2438,7 +2438,7 @@ async def _load_scan_roots(
         return scan_roots_read_failed(exc)
     try:
         return scan_roots_health(observations, now=datetime.now(UTC), refusals=refusals)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — degraded to unknown, logged below
         # Report-only, like the read above: a rendering defect must degrade the
         # block, never fail the response — on the upsert and PATCH routes this
         # runs AFTER the write committed, so a 500 here would report a landed
