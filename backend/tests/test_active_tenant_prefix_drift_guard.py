@@ -169,6 +169,8 @@ _EXCLUSIONS: dict[str, str] = {
     # is not bound to would re-stamp the row there and the designation would
     # silently vanish from the device's runner. Follow-up: route the PUT
     # through coord's binding-checked test-targets upsert, then add the prefix.
+    # Do NOT drop this entry without that backend fix: it is the only thing
+    # that fails if the prefix is re-added (the raw-read rule cannot see it).
     "/api/v1/fleet/test-targets/{device_id}/{app_id}": (
         "PUT re-stamps tenant_id with no coord.tenant_devices binding check; "
         "follow-up: route it through coord's binding-checked upsert, then add "
@@ -200,7 +202,7 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
     "app.api.v1.endpoints.admin_dev": (
-        "_cache_tenant_key matches the selection against identity.tenants"
+        "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
