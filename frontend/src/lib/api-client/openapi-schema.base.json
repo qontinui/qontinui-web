@@ -82791,7 +82791,7 @@
     },
     "/api/v1/fleet/test-targets/{device_id}/{app_id}": {
       "delete": {
-        "description": "Remove a test-host designation (idempotent \u2014 204 even if absent).",
+        "description": "Remove a test-host designation through coord.\n\ncoord's DELETE is scoped to the caller's EFFECTIVE tenant and answers\n``200 {\"deleted\": false}`` for a row stamped with any other tenant \u2014 which\nis NOT a removal. So ``deleted: false`` is never taken as success on its\nown: the row is read back. Absent means the designation the operator asked\nto remove is gone (204, idempotent as before). Still present means it\nlives in another project \u2014 409 ``designation_in_other_project`` naming\nit, since reporting success there would leave the device's runner serving\na designation the operator believes is removed.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_delete",
         "parameters": [
           {
@@ -82840,7 +82840,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nThe write is coord's: ``POST /coord/trees/test-targets/upsert`` with the\ncaller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is\nstamped with the caller's EFFECTIVE tenant and refused unless the device is\nbound to it. Idempotent \u2014 re-designating updates ``auto_fresh``.\n\nWeb checks what coord does not, BEFORE calling it: the device must be owned\nby the caller (404) and the app must be registered (404). A device the\neffective tenant has no binding for is a 409\n``device_not_bound_to_project`` naming that project. The response is the\nrow as it now reads, joined with device + freshness.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {

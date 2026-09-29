@@ -12,24 +12,42 @@ Backs the fleet UI's three write/read surfaces (see plan
   :class:`app.models.test_target.TestTarget`).
 
 Reads are scoped to the caller's owned devices (``Device.user_id ==
-current_user.id``); the ``coord.test_targets`` write additionally stamps the
-caller's EFFECTIVE coord tenant (``operations.get_tenant_id``: home, unless the
-caller sends ``X-Qontinui-Active-Tenant`` naming a tenant it is a member of --
-with no ``coord.tenant_devices`` binding check), the same
-operator-scoped posture the plan's migration prescribes.
+current_user.id``). The designation WRITES (PUT / DELETE) have exactly one
+writer: coord's binding-checked ``POST /coord/trees/test-targets/upsert`` and
+``DELETE /coord/trees/test-targets/:device_id/:app_id``, reached through the
+``operations`` proxy helpers with the caller's bearer and
+``X-Qontinui-Active-Tenant`` forwarded (``get_tenant_id`` captures both). coord
+stamps the row with the caller's EFFECTIVE tenant and refuses a device that
+tenant has no ``coord.tenant_devices`` binding for — the same set of tenants
+the runner's ``by-device`` poll serves, so a designation web accepts is one the
+device's runner can see. This module never writes ``coord.test_targets``
+itself: a second writer with a weaker invariant is how a designation used to be
+stamped into a project the device is not bound to and silently vanish from its
+runner. Plan
+``2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to``. The GET still reads the table through the ``TestTarget`` ORM
+model.
+
+coord checks the tenant BINDING only — not caller ownership and not that the
+app is registered — so both checks stay here, ahead of any coord call.
 """
 
 from __future__ import annotations
 
+from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from qontinui_schemas.common import utc_now
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.api.v1.endpoints.operations import get_tenant_id
+from app.api.v1.endpoints.operations import (
+    _proxy_coord_delete,
+    _proxy_coord_post,
+    get_tenant_id,
+)
 from app.models.app_deploy_state import AppDeployState
 from app.models.app_registry import App
 from app.models.device import Device
@@ -42,8 +60,10 @@ from app.schemas.fleet_targets import (
     TestTargetDesignation,
     TestTargetRow,
 )
+from app.services.coord_identity import get_coord_identity
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -227,20 +247,84 @@ async def _owned_device(db: AsyncSession, device_id: UUID, user_id: UUID) -> Dev
     return device
 
 
+_COORD_UPSERT_PATH = "/coord/trees/test-targets/upsert"
+
+# coord's ``post_upsert`` answers ``404 {"error": "device not found"}`` when the
+# caller's effective tenant has no ``coord.tenant_devices`` binding for the
+# device — deliberately indistinguishable from "no such device". Web can tell
+# the two apart only because ``_owned_device`` has ALREADY proved the device
+# exists and belongs to the caller, so after that check this body means one
+# thing: the device is not bound to the project the request targets.
+_COORD_UNBOUND_ERROR = "device not found"
+
+
+def _coord_delete_path(device_id: UUID, app_id: str) -> str:
+    return f"/coord/trees/test-targets/{device_id}/{quote(app_id, safe='')}"
+
+
+async def _project_label(request: Request, tenant_id: UUID) -> str:
+    """How to name coord tenant ``tenant_id`` to the operator.
+
+    The display name (else slug) from the caller's coord memberships, which
+    ``get_tenant_id`` has already fetched and memoized on the request — so
+    this costs no extra round-trip on the paths that reach it. Falls back to
+    the bare tenant id when the caller is not a member of that tenant or the
+    identity cannot be read: a refusal message must never fail to render.
+    """
+    try:
+        identity = await get_coord_identity(request)
+    except HTTPException:
+        return str(tenant_id)
+    for tenant in identity.tenants:
+        if tenant.tenant_id == tenant_id:
+            return f'"{tenant.display_name or tenant.slug}"'
+    return str(tenant_id)
+
+
+def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
+    """Give a coord JSON refusal the ``message`` the error envelope renders.
+
+    coord's refusals are ``{"error": "<prose>"}`` with no ``message``, and
+    ``http_exception_handler`` would otherwise render ``message`` as the Python
+    repr of the whole dict. Anything else passes through unchanged.
+    """
+    detail: Any = exc.detail
+    if isinstance(detail, dict) and "message" not in detail:
+        error = detail.get("error")
+        if isinstance(error, str):
+            return HTTPException(
+                status_code=exc.status_code,
+                detail={
+                    "error": "coord_refused",
+                    "message": f"coord refused the designation: {error}",
+                    "coord_error": error,
+                },
+            )
+    return exc
+
+
 @router.put("/test-targets/{device_id}/{app_id}", response_model=TestTargetRow)
 async def designate_test_target(
     device_id: UUID,
     app_id: str,
     body: TestTargetDesignation,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> TestTargetRow:
     """Designate ``device_id`` as a test host for ``app_id`` (upsert).
 
-    Writes ``coord.test_targets`` stamped with the caller's effective coord
-    tenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent — re-designating updates ``auto_fresh``. The device
-    must be owned by the caller and the app must be registered.
+    The write is coord's: ``POST /coord/trees/test-targets/upsert`` with the
+    caller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is
+    stamped with the caller's EFFECTIVE tenant and refused unless the device is
+    bound to it. Idempotent — re-designating updates ``auto_fresh``.
+
+    Web checks what coord does not, BEFORE calling it: the device must be owned
+    by the caller (404) and the app must be registered (404). A device the
+    effective tenant has no binding for is a 409
+    ``device_not_bound_to_project`` naming that project. The response is the
+    row as it now reads, joined with device + freshness.
     """
     device = await _owned_device(db, device_id, current_user.id)
 
@@ -251,23 +335,73 @@ async def designate_test_target(
             detail={"code": "app_not_found", "message": f"App '{app_id}' not found."},
         )
 
-    existing = await db.get(TestTarget, (device_id, app_id))
-    if existing is None:
-        target = TestTarget(
-            device_id=device_id,
-            app_id=app_id,
+    try:
+        await _proxy_coord_post(
+            _COORD_UPSERT_PATH,
+            {
+                "device_id": str(device_id),
+                "app_id": app_id,
+                "auto_fresh": body.auto_fresh,
+            },
             tenant_id=tenant_id,
-            auto_fresh=body.auto_fresh,
+            structured_errors=True,
         )
-        db.add(target)
-    else:
-        existing.auto_fresh = body.auto_fresh
-        existing.tenant_id = tenant_id
-        existing.updated_at = utc_now()
-        target = existing
+    except HTTPException as exc:
+        detail: Any = exc.detail
+        if (
+            exc.status_code == 404
+            and isinstance(detail, dict)
+            and detail.get("error") == _COORD_UNBOUND_ERROR
+        ):
+            # ``tenant_id`` is the tenant coord actually used: a header naming
+            # a tenant the caller is not a member of degrades to home coord-
+            # side, and ``get_tenant_id`` returns coord's post-override answer.
+            project = await _project_label(request, tenant_id)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "device_not_bound_to_project",
+                    "message": (
+                        f"Device {device.name!r} is not bound to project "
+                        f"{project}, the project this designation targets, so "
+                        f"its runner would never see it. Bind the device to "
+                        f"{project}, or switch to a project the device is "
+                        f"bound to, then designate it again."
+                    ),
+                    "device_id": str(device_id),
+                    "tenant_id": str(tenant_id),
+                },
+            ) from exc
+        raise _reraise_coord_refusal(exc) from exc
 
-    await db.commit()
-    await db.refresh(target)
+    # coord answers only ``{device_id, app_id, auto_fresh}``; the response
+    # model carries timestamps and freshness, so read the row coord just wrote.
+    # ``populate_existing`` so nothing cached in this session can stand in for
+    # what coord committed.
+    target = await db.get(TestTarget, (device_id, app_id), populate_existing=True)
+    if target is None:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "designation_not_visible",
+                "message": (
+                    "coord accepted the designation but no row is visible for "
+                    f"device {device_id} / app '{app_id}'; it may have been "
+                    "removed concurrently. Refresh and retry."
+                ),
+            },
+        )
+    if target.tenant_id != tenant_id:
+        # coord's ON CONFLICT updates auto_fresh but keeps the row's existing
+        # tenant stamp, so a row written into another tenant earlier stays
+        # there. Logged, not refused: the auto_fresh change did apply.
+        logger.warning(
+            "test_target_stamped_in_other_tenant",
+            device_id=str(device_id),
+            app_id=app_id,
+            row_tenant_id=str(target.tenant_id),
+            effective_tenant_id=str(tenant_id),
+        )
 
     state = await db.get(AppDeployState, (device_id, app_id))
     return TestTargetRow(
@@ -289,12 +423,58 @@ async def designate_test_target(
 async def undesignate_test_target(
     device_id: UUID,
     app_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
-) -> None:
-    """Remove a test-host designation (idempotent — 204 even if absent)."""
-    await _owned_device(db, device_id, current_user.id)
-    target = await db.get(TestTarget, (device_id, app_id))
-    if target is not None:
-        await db.delete(target)
-        await db.commit()
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Response:
+    """Remove a test-host designation through coord.
+
+    coord's DELETE is scoped to the caller's EFFECTIVE tenant and answers
+    ``200 {"deleted": false}`` for a row stamped with any other tenant — which
+    is NOT a removal. So ``deleted: false`` is never taken as success on its
+    own: the row is read back. Absent means the designation the operator asked
+    to remove is gone (204, idempotent as before). Still present means it
+    lives in another project — 409 ``designation_in_other_project`` naming
+    it, since reporting success there would leave the device's runner serving
+    a designation the operator believes is removed.
+    """
+    device = await _owned_device(db, device_id, current_user.id)
+
+    result = await _proxy_coord_delete(
+        _coord_delete_path(device_id, app_id), tenant_id=tenant_id
+    )
+    if isinstance(result, dict) and result.get("deleted") is True:
+        return Response(status_code=204)
+
+    remaining = await db.get(TestTarget, (device_id, app_id), populate_existing=True)
+    if remaining is None:
+        return Response(status_code=204)
+
+    selected = await _project_label(request, tenant_id)
+    if remaining.tenant_id == tenant_id:
+        # coord removed nothing although the row is in the selected tenant — a
+        # concurrent re-designation, or a coord answer this code cannot read.
+        message = (
+            f"coord removed nothing: the designation of device {device.name!r} "
+            f"for app '{app_id}' is still recorded under project {selected}. "
+            "Refresh and retry."
+        )
+    else:
+        owner = await _project_label(request, remaining.tenant_id)
+        message = (
+            f"The designation of device {device.name!r} for app '{app_id}' is "
+            f"recorded under project {owner}, not the selected project "
+            f"{selected}, so it was not removed. Switch to project {owner} "
+            "and remove it there."
+        )
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "designation_in_other_project",
+            "message": message,
+            "device_id": str(device_id),
+            "tenant_id": str(tenant_id),
+            "row_tenant_id": str(remaining.tenant_id),
+        },
+    )
