@@ -44,7 +44,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_alerts_onset_01"
-_PARENT_REVISION_ID = "sched_cond_01_scheduled_tasks_conditions"
+_PARENT_REVISION_ID = "coordinput_01_operator_inputs"
 
 _COLUMNS = {
     "onset_at": "timestamp with time zone",
