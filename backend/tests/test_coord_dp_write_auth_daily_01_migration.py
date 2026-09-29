@@ -68,7 +68,7 @@ _REVISION_FILENAME = "coord_dp_write_auth_daily_01_create.py"
 
 # Pinned as a literal, not read back from the module: the head this revision
 # was authored against. A moved head is re-pointed in the revision AND here.
-_PARENT_REVISION_ID = "cinode_03_dispatch_pr_head_base_sha"
+_PARENT_REVISION_ID = "coord_test_result_heads_01"
 
 _SCHEMA = "coord"
 _TABLE = "data_plane_write_auth_daily"

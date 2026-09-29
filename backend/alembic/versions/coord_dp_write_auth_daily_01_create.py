@@ -1,7 +1,7 @@
 """coord.data_plane_write_auth_daily — durable per-day auth observation of coord session writes
 
 Revision ID: coord_dp_write_auth_daily_01
-Revises: cinode_03_dispatch_pr_head_base_sha
+Revises: coord_test_result_heads_01
 Create Date: 2026-09-28
 
 Phase 1 ("observe, durably") of plan
@@ -92,7 +92,7 @@ coord OWNS reads/writes of this table; web only authors the DDL. Per fleet
 policy coord authors ZERO ``coord.*`` DDL, so THIS web migration is the sole
 DDL author.
 
-Chains off ``cinode_03_dispatch_pr_head_base_sha``, the single head of
+Chains off ``coord_test_result_heads_01``, the single head of
 ``origin/main`` at authoring time. If a concurrent land moves the head before
 this merges, re-point ``down_revision`` (and the ``Revises:`` line and the
 test's pinned parent) onto the new head.
@@ -104,7 +104,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_dp_write_auth_daily_01"
-down_revision: str | Sequence[str] | None = "cinode_03_dispatch_pr_head_base_sha"
+down_revision: str | Sequence[str] | None = "coord_test_result_heads_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
