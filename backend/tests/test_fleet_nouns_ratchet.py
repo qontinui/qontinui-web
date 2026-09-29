@@ -44,6 +44,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tomllib
 from collections import Counter
 from dataclasses import dataclass
@@ -66,8 +67,10 @@ SKIP_DIRS = {"__pycache__"}
 # SPAN INCLUDES ITS GUARD CHARACTER"), so `qontinui-dev-notes` arrives as
 # ` qontinui-dev-notes/`, `(qontinui-dev-notes ` … The token is the span with
 # separator/punctuation guards trimmed, so one noun is one baseline row.
-_LEAD_TRIM = " \t\"'`()[]{},;=|:*$#/"
-_TRAIL_TRIM = " \t\"'`()[]{},;=|:*$#/.>"
+# ONE trim set for both ends, so `../qontinui-web.`, `"qontinui-web"` and
+# `(qontinui-web)` are all the token `qontinui-web`, and `$QONTINUI_ROOT` /
+# `"QONTINUI_ROOT"` are both `QONTINUI_ROOT`.
+_GUARD_TRIM = " \t\"'`()[]{}<>,;=|:*$#/\\.!?"
 
 
 @dataclass(frozen=True)
@@ -98,25 +101,64 @@ def _read_pin() -> dict[str, str]:
     return {"ref": ref, "sha256": sha}
 
 
+def _read_vocabulary_bytes(pin: dict[str, str]) -> tuple[bytes, Path]:
+    """The pinned vocabulary's bytes, and where they came from.
+
+    An explicit ``$QONTINUI_FLEET_NOUNS_FILE``, and ANY run under CI
+    (``$GITHUB_ACTIONS``), is strict: that file at the pinned digest, or red.
+    Only the IMPLICIT local sibling gets a fallback (qontinui-claude-config
+    check #71's): when ``../qontinui-schemas/fleet-nouns.toml`` is absent or at
+    another commit, read ``git -C ../qontinui-schemas show <ref>:fleet-nouns.toml``
+    — the pinned blob from the sibling's object store — and verify its digest.
+    """
+    from_env = os.environ.get(ENV_FILE)
+    strict = bool(from_env) or bool(os.environ.get("GITHUB_ACTIONS"))
+    path = Path(from_env) if from_env else DEFAULT_VOCAB
+    why: list[str] = []
+    if path.is_file():
+        raw = path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest == pin["sha256"]:
+            return raw, path
+        why.append(
+            f"{path} has sha256 {digest}, but fleet-nouns.pin.toml pins {pin['sha256']} "
+            f"(qontinui-schemas {pin['ref']})"
+        )
+    else:
+        where = "$" + ENV_FILE if from_env else "the default sibling path"
+        why.append(f"fleet-noun vocabulary not found at {path} ({where})")
+    if not strict:
+        sibling = DEFAULT_VOCAB.parent
+        spec = f"{pin['ref']}:fleet-nouns.toml"
+        proc = subprocess.run(
+            ["git", "-C", str(sibling), "show", spec],
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode == 0:
+            digest = hashlib.sha256(proc.stdout).hexdigest()
+            if digest == pin["sha256"]:
+                return proc.stdout, sibling / f"<git {spec}>"
+            why.append(
+                f"git -C {sibling} show {spec} has sha256 {digest}, not the pinned {pin['sha256']}"
+            )
+        else:
+            err = proc.stderr.decode("utf-8", "replace").strip()
+            why.append(
+                f"git -C {sibling} show {spec} failed ({err}) — fetch that commit into the sibling"
+            )
+    pytest.fail(
+        "; ".join(why)
+        + f". Check out qontinui-schemas at {pin['ref']} beside this repo, "
+        f"or set {ENV_FILE}. An absent or different vocabulary is UNKNOWN, not 'no fleet "
+        "nouns' — this is a red, never a skip. (Bumping the pin is a reviewed PR that "
+        "also rebaselines.)"
+    )
+
+
 def load_vocabulary() -> Vocabulary:
     pin = _read_pin()
-    from_env = os.environ.get(ENV_FILE)
-    path = Path(from_env) if from_env else DEFAULT_VOCAB
-    if not path.is_file():
-        pytest.fail(
-            f"fleet-noun vocabulary not found at {path} "
-            f"({'$' + ENV_FILE if from_env else 'the default sibling path'}). Check out "
-            f"qontinui-schemas at {pin['ref']} beside this repo, or set {ENV_FILE}. An "
-            "absent vocabulary is UNKNOWN, not 'no fleet nouns' — this is a red, never a skip."
-        )
-    raw = path.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
-    if digest != pin["sha256"]:
-        pytest.fail(
-            f"{path} has sha256 {digest}, but fleet-nouns.pin.toml pins {pin['sha256']} "
-            f"(qontinui-schemas {pin['ref']}). Check out schemas at the pinned ref, or bump "
-            "the pin (and rebaseline) in a reviewed PR."
-        )
+    raw, path = _read_vocabulary_bytes(pin)
     data = tomllib.loads(raw.decode("utf-8"))
     classes = tuple(
         FleetClass(
@@ -152,44 +194,88 @@ def surviving_matches(cls: FleetClass, line: str) -> list[re.Match[str]]:
 
 
 def token_of(match: re.Match[str]) -> str:
-    return match.group(0).lstrip(_LEAD_TRIM).rstrip(_TRAIL_TRIM) or match.group(0)
+    return match.group(0).strip(_GUARD_TRIM) or match.group(0)
 
 
 Key = tuple[str, str, str]  # (file relative to backend/, class id, token)
 
 
-def scan(
-    vocab: Vocabulary,
-) -> tuple[Counter[Key], dict[Key, list[int]], int, list[str]]:
-    """Count surviving matches per (file, class, token) under ``backend/app``.
+@dataclass(frozen=True)
+class ScanResult:
+    counts: Counter[Key]
+    where: dict[Key, list[int]]
+    scanned: int
+    unreadable: tuple[str, ...]
+    source: str  # "git ls-files" or "os.walk"
 
-    Returns (counts, line numbers per key, files scanned, files unreadable).
-    """
+
+def _candidate_files(root: Path) -> tuple[list[Path], str]:
+    """Files under ``root``: from ``git ls-files`` (tracked plus untracked,
+    ignored files excluded) inside a work tree, else a filesystem walk."""
+    proc = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--full-name",
+            "--",
+            ".",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    top = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode == 0 and top.returncode == 0:
+        base = Path(top.stdout.strip())
+        names = sorted({n for n in proc.stdout.decode("utf-8").split("\0") if n})
+        # --cached lists a tracked file deleted in the work tree; skip those.
+        files = [base / n for n in names if (base / n).is_file()]
+        return files, "git ls-files"
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        files.extend(Path(dirpath) / name for name in sorted(filenames))
+    return files, "os.walk"
+
+
+def scan(vocab: Vocabulary, root: Path = SCAN_ROOT) -> ScanResult:
+    """Count surviving matches per (file, class, token) under ``root``."""
     counts: Counter[Key] = Counter()
     where: dict[Key, list[int]] = {}
     scanned = 0
     unreadable: list[str] = []
-    for dirpath, dirnames, filenames in os.walk(SCAN_ROOT):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
-        for name in sorted(filenames):
-            path = Path(dirpath) / name
-            rel = path.relative_to(BACKEND).as_posix()
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                unreadable.append(rel)
-                continue
-            scanned += 1
-            # splitlines() also splits on \r, \x0b, U+2028 …; the contract says
-            # strip the line TERMINATOR, so split on \n and drop a trailing \r.
-            for lineno, line in enumerate(text.split("\n"), start=1):
-                line = line.removesuffix("\r")
-                for cls in vocab.classes:
-                    for m in surviving_matches(cls, line):
-                        key = (rel, cls.id, token_of(m))
-                        counts[key] += 1
-                        where.setdefault(key, []).append(lineno)
-    return counts, where, scanned, unreadable
+    files, source = _candidate_files(root)
+    for path in files:
+        try:
+            rel = path.resolve().relative_to(BACKEND).as_posix()
+        except ValueError:
+            rel = path.as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            unreadable.append(rel)
+            continue
+        scanned += 1
+        # splitlines() also splits on \r, \x0b, U+2028 …; the contract says
+        # strip the line TERMINATOR, so split on \n and drop a trailing \r.
+        for lineno, line in enumerate(text.split("\n"), start=1):
+            line = line.removesuffix("\r")
+            for cls in vocab.classes:
+                for m in surviving_matches(cls, line):
+                    key = (rel, cls.id, token_of(m))
+                    counts[key] += 1
+                    where.setdefault(key, []).append(lineno)
+    return ScanResult(counts, where, scanned, tuple(unreadable), source)
 
 
 # --- baseline file ---------------------------------------------------------
@@ -250,6 +336,11 @@ def vocab() -> Vocabulary:
     return load_vocabulary()
 
 
+@pytest.fixture(scope="module")
+def scanned(vocab: Vocabulary) -> ScanResult:
+    return scan(vocab)
+
+
 def test_engine_honours_the_vocabulary_contract(vocab: Vocabulary) -> None:
     """Every example hits its own class; no look-alike or product constant hits ANY class.
 
@@ -287,17 +378,23 @@ def test_exclude_is_span_scoped_not_line_scoped(vocab: Vocabulary) -> None:
     )
 
 
-def test_scan_is_not_vacuous(vocab: Vocabulary) -> None:
-    _, _, scanned, unreadable = scan(vocab)
-    assert scanned > 0, (
-        f"scanned=0 under {SCAN_ROOT} — a scan of nothing is a failure, not a pass"
+def test_scan_is_not_vacuous(scanned: ScanResult) -> None:
+    assert scanned.scanned > 0, (
+        f"scanned=0 under {SCAN_ROOT} ({scanned.source}) — a scan of nothing is a "
+        "failure, not a pass"
     )
     py = sum(1 for _ in SCAN_ROOT.rglob("*.py"))
-    assert py > 0 and scanned >= py - len(unreadable), (scanned, py, unreadable)
+    unreadable_py = [u for u in scanned.unreadable if u.endswith(".py")]
+    assert py > 0, f"no .py files under {SCAN_ROOT}"
+    assert not unreadable_py, (
+        f"unreadable (NOT scanned) Python modules: {unreadable_py}"
+    )
 
 
-def test_fleet_nouns_in_backend_app_do_not_grow(vocab: Vocabulary) -> None:
-    counts, where, _, _ = scan(vocab)
+def test_fleet_nouns_in_backend_app_do_not_grow(
+    vocab: Vocabulary, scanned: ScanResult
+) -> None:
+    counts, where = scanned.counts, scanned.where
     if os.environ.get(ENV_REBASELINE) == "1":
         BASELINE_PATH.write_text(render_baseline(counts, vocab.ref), encoding="utf-8")
     baseline = load_baseline()
@@ -320,4 +417,12 @@ def test_fleet_nouns_in_backend_app_do_not_grow(vocab: Vocabulary) -> None:
                 f"STALE ALLOWANCE {rel} class={cls} token={token!r}: baseline allows {allowed}, "
                 f"scan finds {have} — {fix} in {BASELINE_PATH.name} (the ratchet only shrinks)"
             )
-    assert not (new_leaks or stale), "\n".join(new_leaks + stale)
+    footer = [
+        f"(scanned {scanned.scanned} file(s) via {scanned.source}; vocabulary {vocab.path})"
+    ]
+    if scanned.unreadable:
+        footer.append(
+            "UNREADABLE, NOT SCANNED (their counts are UNKNOWN): "
+            + ", ".join(scanned.unreadable)
+        )
+    assert not (new_leaks or stale), "\n".join(new_leaks + stale + footer)

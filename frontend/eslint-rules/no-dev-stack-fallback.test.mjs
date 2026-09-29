@@ -3,9 +3,10 @@
  * 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists,
  * phase A5 / defect 5).
  *
- * The invalid cases include defect 5's six residual sites VERBATIM as they
- * stood at web `1400265cb` before PR #1550 removed them — the rule exists to
- * make exactly those lines red again. The port list itself is checked
+ * The invalid cases reproduce the SHAPE (file path, variable, fallback
+ * literal) of defect 5's residual sites at web `1400265cb`, before PR #1550
+ * removed them — not the lines byte for byte. The two `app/api/vga/*` runner
+ * sites are a stated valid case: 9876 is a product constant. The port list itself is checked
  * against the pinned vocabulary in `no-dev-stack-fallback.vocabulary.test.mjs`.
  */
 
@@ -60,12 +61,19 @@ ruleTester.run("no-dev-stack-fallback", rule, {
     { filename: F, code: `const r = x || "localhost:30010";` },
     { filename: F, code: `const r = x || "http://notlocalhost:8000";` },
     { filename: F, code: "const r = x || `${host}:8000`;" },
+    // --- identifiers that do NOT resolve to a same-file const dev URL --------
+    { filename: F, code: `let D = "http://localhost:8000"; const r = x || D;` }, // mutable: not followed
+    { filename: F, code: `import { D } from "./d"; const r = x || D;` },
+    { filename: F, code: `const D = "https://api.qontinui.io"; const r = x || D;` },
+    { filename: F, code: `const r = x || (dev ? a : b);` },
     // --- non-string right operands ------------------------------------------
     { filename: F, code: `const r = x || DEFAULT_URL;` },
     { filename: F, code: `const r = x ?? 8000;` },
     // --- out of scope: tests and the resolver files -------------------------
     { filename: "src/lib/foo.test.ts", code: `const r = x || "http://localhost:8000";` },
     { filename: "tests/e2e/helpers.ts", code: `const r = x || "http://localhost:3001";` },
+    { filename: "e2e/fixtures.ts", code: `const r = x || "http://localhost:3001";` },
+    { filename: "src/components/__tests__/helper.ts", code: `const r = x || "http://localhost:3001";` },
     { filename: "playwright.config.ts", code: `const r = x || "http://localhost:3001";` },
     ...Object.keys(RESOLVER_FILES).map((filename) => ({
       filename,
@@ -79,7 +87,7 @@ ruleTester.run("no-dev-stack-fallback", rule, {
   ],
 
   invalid: [
-    // --- defect 5's residual sites, verbatim (web 1400265cb) ----------------
+    // --- the shape of defect 5's residual sites (web 1400265cb) -------------
     {
       filename: "src/app/(app)/automation-builder/extraction/_hooks/useWebExtraction.ts",
       code: `const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";`,
@@ -127,6 +135,15 @@ ruleTester.run("no-dev-stack-fallback", rule, {
       code: `export function AppBrowser({ connectPlaceholder = "http://localhost:3001" }) { return null; }`,
       errors: [err],
     },
+    // --- a product route NAMED `tests` is not a test file -------------------
+    { filename: "src/app/(app)/build/tests/_hooks/x.ts", code: `const r = x || "http://localhost:8000";`, errors: [err] },
+    { filename: "src/app/(app)/build/e2e/page.tsx", code: `const r = x || "http://localhost:8000";`, errors: [err] },
+    // --- through a same-file const, and through a conditional ---------------
+    { filename: F, code: `const DEFAULT_API = "http://localhost:8000"; const r = process.env.X || DEFAULT_API;`, errors: [err] },
+    { filename: F, code: `const A = "http://localhost:8000"; const B = A; const r = x ?? B;`, errors: [err] },
+    { filename: F, code: `const DEFAULT_API = "http://localhost:8000"; function f(base = DEFAULT_API) {}`, errors: [err] },
+    { filename: F, code: `const r = x || (dev ? "http://localhost:8000" : prod);`, errors: [err] },
+    { filename: F, code: `const r = x ?? (dev ? prod : "http://127.0.0.1:9875");`, errors: [err] },
     // --- a near-miss of an allowlisted path is NOT exempt -------------------
     { filename: "src/lib/errors/endpoint-unresolved.helpers.ts", code: `const r = x || "http://localhost:8000";`, errors: [err] },
   ],
@@ -149,5 +166,7 @@ describe("no-dev-stack-fallback scope", () => {
     expect(isOutOfScope("src/services/mcp-client.ts")).toBe(false);
     expect(isOutOfScope("config/other.mjs")).toBe(false);
     expect(isOutOfScope("C:\\x\\frontend\\src\\lib\\a.ts")).toBe(false);
+    expect(isOutOfScope("/abs/qontinui-web/frontend/src/app/(app)/build/tests/page.tsx")).toBe(false);
+    expect(isOutOfScope("/abs/qontinui-web/frontend/tests/e2e/x.ts")).toBe(true);
   });
 });

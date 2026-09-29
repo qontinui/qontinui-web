@@ -34,6 +34,10 @@
  * own `9876` is a PRODUCT CONSTANT (vocabulary `[[product_constant]]`) and is
  * never flagged.
  *
+ * The right operand is followed through a same-file `const` string
+ * (`const DEFAULT = "http://localhost:8000"; x || DEFAULT`) and through both
+ * branches of a conditional (`x || (dev ? "http://localhost:8000" : y)`).
+ *
  * SCOPE lives here, not in eslint.config.mjs, so it has one definition:
  * test files are out of scope (a test legitimately targets the dev stack),
  * and `RESOLVER_FILES` — the only files allowed to hold a dev default — are
@@ -122,7 +126,9 @@ export function frontendRelative(filename) {
   return idx >= 0 ? posix.slice(idx + "/frontend/".length) : posix;
 }
 
-const TEST_FILE = /(?:^|\/)(?:__tests__|tests|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)playwright[^/]*\.config\.[cm]?[jt]s$|(?:^|\/)vitest[^/]*\.config\.[cm]?[jt]s$/;
+// `tests/` and `e2e/` only at the FRONTEND ROOT: a product route may itself be
+// named `tests` (`src/app/(app)/build/tests/**` is the tests UI, not a test).
+const TEST_FILE = /^(?:tests|e2e)\/|(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)playwright[^/]*\.config\.[cm]?[jt]s$|(?:^|\/)vitest[^/]*\.config\.[cm]?[jt]s$/;
 
 /** True for a file this rule does not govern. */
 export function isOutOfScope(filename) {
@@ -177,20 +183,69 @@ const rule = {
     const filename = context.filename ?? context.getFilename?.();
     if (isOutOfScope(filename)) return {};
 
+    const sourceCode = context.sourceCode ?? context.getSourceCode();
+
+    /** A same-file `const NAME = "<string>"` the identifier resolves to, or null. */
+    function constInitializer(identifier) {
+      let scope = sourceCode.getScope ? sourceCode.getScope(identifier) : context.getScope();
+      while (scope) {
+        const variable = scope.set.get(identifier.name);
+        if (variable) {
+          const def = variable.defs[0];
+          if (
+            variable.defs.length === 1 &&
+            def?.type === "Variable" &&
+            def.parent?.kind === "const" &&
+            def.node.id?.type === "Identifier" &&
+            def.node.init
+          ) {
+            return def.node.init;
+          }
+          return null;
+        }
+        scope = scope.upper;
+      }
+      return null;
+    }
+
+    /**
+     * The value nodes a fallback can evaluate to: the node itself, both
+     * branches of a conditional, and — for an identifier — its same-file
+     * `const` initializer (followed a bounded number of hops).
+     */
+    function candidateValues(node, depth = 0) {
+      const n = unwrap(node);
+      if (!n || depth > 5) return [];
+      if (n.type === "ConditionalExpression") {
+        return [
+          ...candidateValues(n.consequent, depth + 1),
+          ...candidateValues(n.alternate, depth + 1),
+        ];
+      }
+      if (n.type === "Identifier") {
+        const init = constInitializer(n);
+        return init ? candidateValues(init, depth + 1) : [];
+      }
+      return [n];
+    }
+
     function check(valueNode, where) {
-      const text = stringText(valueNode);
-      if (text === null) return;
-      const port = devStackPortIn(text);
-      if (port === null) return;
-      context.report({
-        node: valueNode,
-        messageId: "devStackFallback",
-        data: {
-          text: text.replace(/\u0000/g, "${…}"),
-          context: where,
-          klass: classOfPort(port),
-        },
-      });
+      for (const candidate of candidateValues(valueNode)) {
+        const text = stringText(candidate);
+        if (text === null) continue;
+        const port = devStackPortIn(text);
+        if (port === null) continue;
+        context.report({
+          node: valueNode,
+          messageId: "devStackFallback",
+          data: {
+            text: text.replace(/\u0000/g, "${…}"),
+            context: where,
+            klass: classOfPort(port),
+          },
+        });
+        return;
+      }
     }
 
     return {

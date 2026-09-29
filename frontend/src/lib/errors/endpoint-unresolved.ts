@@ -33,7 +33,8 @@ export type EndpointName =
   | "backend"
   | "coord"
   | "runner"
-  | "llama_swap";
+  | "llama_swap"
+  | "runner_db";
 
 interface EndpointSpec {
   /** Environment variable that configures this base. */
@@ -72,6 +73,13 @@ const ENDPOINTS: Record<EndpointName, EndpointSpec> = {
     envVar: "QONTINUI_LLAMA_SWAP_URL",
     label: "grounding model server (llama-swap)",
     devDefault: "http://localhost:8100",
+  },
+  runner_db: {
+    envVar: "RUNNER_DATABASE_URL",
+    alternateEnvVar: "DATABASE_URL",
+    label: "runner database (the PostgreSQL DSN the /api/vga/* routes use)",
+    devDefault:
+      "postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_db",
   },
 };
 

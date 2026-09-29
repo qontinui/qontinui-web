@@ -39,6 +39,7 @@ describe("resolveEndpoint", () => {
     ["backend", "BACKEND_URL"],
     ["runner", "QONTINUI_RUNNER_URL"],
     ["llama_swap", "QONTINUI_LLAMA_SWAP_URL"],
+    ["runner_db", "RUNNER_DATABASE_URL"],
   ] as const)(
     "fails loudly for %s in production when unset, naming %s",
     (endpoint, envVar) => {

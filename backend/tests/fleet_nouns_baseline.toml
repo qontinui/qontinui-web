@@ -121,7 +121,7 @@
 "localhost:9000" = 1
 
 ["app/core/test_credentials.py".repo_layout]
-"../qontinui-web" = 1
+"qontinui-web" = 1
 
 ["app/crud/device_connection.py".machine_path]
 "D:/qontinui-root" = 1

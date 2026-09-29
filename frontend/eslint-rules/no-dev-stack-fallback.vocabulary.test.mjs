@@ -9,9 +9,9 @@
  *   1. the file resolves and its digest equals the pin (absent or different
  *      is a RED with the reason — never a skip: an absent vocabulary is
  *      UNKNOWN, not "no fleet nouns");
- *   2. `VOCABULARY_PORTS.dev_ports` / `.supervisor_dependency` are EXACTLY
- *      the ports the vocabulary's `dev_ports` / `supervisor_dependency`
- *      patterns match on a loopback URL (evaluated with `new RegExp(pattern)`,
+ * *   2. `VOCABULARY_PORTS.dev_ports` / `.supervisor_dependency` are EXACTLY
+ *      the ports (swept 1..65535) the vocabulary's `dev_ports` /
+ *      `supervisor_dependency` patterns match on a loopback URL (evaluated with `new RegExp(pattern)`,
  *      no flags, per the vocabulary's consumer contract);
  *   3. the web-only ports are disjoint from the vocabulary's and from every
  *      product constant;
@@ -19,10 +19,13 @@
  *      classes, and no look-alike or product constant.
  *
  * Resolution: $QONTINUI_FLEET_NOUNS_FILE, else
- * `<repo>/../qontinui-schemas/fleet-nouns.toml`. CI sets the variable to a
- * sparse checkout at the pinned ref (.github/actions/fleet-nouns-vocab).
+ * `<repo>/../qontinui-schemas/fleet-nouns.toml`, else (implicit local sibling
+ * only, never in CI) the pinned blob via `git -C ../qontinui-schemas show`.
+ * CI sets the variable to a sparse checkout at the pinned ref
+ * (.github/actions/fleet-nouns-vocab).
  */
 
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -131,36 +134,62 @@ function readPin() {
   return pin;
 }
 
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * The pinned vocabulary's bytes.
+ *
+ * An explicit $QONTINUI_FLEET_NOUNS_FILE, and ANY run under CI
+ * ($GITHUB_ACTIONS), is strict: that file, at the pinned digest, or red.
+ * Only the IMPLICIT local sibling gets a fallback (qontinui-claude-config
+ * check #71's): when `../qontinui-schemas/fleet-nouns.toml` is absent or at
+ * another commit, read `git -C ../qontinui-schemas show <ref>:fleet-nouns.toml`
+ * — the pinned blob from the sibling's object store — and verify its digest.
+ */
 function resolveVocabulary() {
   const pin = readPin();
   const fromEnv = process.env.QONTINUI_FLEET_NOUNS_FILE;
-  const path = fromEnv || resolve(REPO_ROOT, "..", "qontinui-schemas", "fleet-nouns.toml");
-  if (!existsSync(path)) {
-    throw new Error(
-      `fleet-noun vocabulary not found at ${path} (${fromEnv ? "$QONTINUI_FLEET_NOUNS_FILE" : "the default sibling path"}). ` +
-        `Check out qontinui-schemas at ${pin.ref} beside this repo, or set QONTINUI_FLEET_NOUNS_FILE. ` +
-        "An absent vocabulary is UNKNOWN, not 'no fleet nouns' — this is a red, never a skip.",
-    );
+  const strict = Boolean(fromEnv) || Boolean(process.env.GITHUB_ACTIONS);
+  const sibling = resolve(REPO_ROOT, "..", "qontinui-schemas");
+  const path = fromEnv || resolve(sibling, "fleet-nouns.toml");
+  const why = [];
+  if (existsSync(path)) {
+    const bytes = readFileSync(path);
+    const digest = sha256(bytes);
+    if (digest === pin.sha256) return parseToml(bytes.toString("utf8"));
+    why.push(`${path} has sha256 ${digest}, but fleet-nouns.pin.toml pins ${pin.sha256} (schemas ${pin.ref})`);
+  } else {
+    why.push(`fleet-noun vocabulary not found at ${path} (${fromEnv ? "$QONTINUI_FLEET_NOUNS_FILE" : "the default sibling path"})`);
   }
-  const bytes = readFileSync(path);
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (digest !== pin.sha256) {
-    throw new Error(
-      `${path} has sha256 ${digest}, but fleet-nouns.pin.toml pins ${pin.sha256} (schemas ${pin.ref}). ` +
-        `Check out qontinui-schemas at the pinned ref, or bump the pin in a reviewed PR.`,
-    );
+  if (!strict) {
+    try {
+      const bytes = execFileSync("git", ["-C", sibling, "show", `${pin.ref}:fleet-nouns.toml`], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const digest = sha256(bytes);
+      if (digest === pin.sha256) return parseToml(bytes.toString("utf8"));
+      why.push(`git -C ${sibling} show ${pin.ref}:fleet-nouns.toml has sha256 ${digest}, not the pinned ${pin.sha256}`);
+    } catch (err) {
+      why.push(`git -C ${sibling} show ${pin.ref}:fleet-nouns.toml failed (${String(err.stderr ?? err.message).trim()}) — fetch that commit into the sibling`);
+    }
   }
-  return parseToml(bytes.toString("utf8"));
+  throw new Error(
+    `${why.join("; ")}. Check out qontinui-schemas at ${pin.ref} beside this repo, or set QONTINUI_FLEET_NOUNS_FILE. ` +
+      "An absent or different vocabulary is UNKNOWN, not 'no fleet nouns' — this is a red, never a skip.",
+  );
 }
 
-/** Ports whose loopback URL the class pattern matches, from the numbers in it. */
+/**
+ * Every port 1..65535 whose loopback URL the class pattern matches — a SWEEP,
+ * so a range or character class in the pattern cannot hide a port.
+ */
 function portsMatchedBy(pattern) {
   const re = new RegExp(pattern);
-  const candidates = new Set((pattern.match(/[0-9]{3,5}/g) ?? []).map(Number));
-  return [...candidates]
-    .filter((p) => p > 0 && p < 65536)
-    .filter((p) => re.test(`http://localhost:${p}/`) && re.test(`http://127.0.0.1:${p}`))
-    .sort((a, b) => a - b);
+  const ports = [];
+  for (let p = 1; p < 65536; p++) {
+    if (re.test(`http://localhost:${p}/`) || re.test(`http://127.0.0.1:${p}`)) ports.push(p);
+  }
+  return ports;
 }
 
 describe("no-dev-stack-fallback port list == pinned fleet-noun vocabulary", () => {

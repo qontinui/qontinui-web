@@ -7,14 +7,8 @@ description: >-
   frontend/eslint-rules/no-dev-stack-fallback.vocabulary.test.mjs. Both also
   verify the digest; this step fails first so a broken fetch reads as itself.
   Requires the qontinui-web checkout to have run first (the pin is read from it).
-
-inputs:
-  check-drift:
-    description: >-
-      "true" adds an ADVISORY step (never fails the job) warning when schemas
-      main's fleet-nouns.toml differs from the pin.
-    required: false
-    default: "false"
+  Drift of schemas main from the pin is a separate, advisory, last step in
+  frontend-ci.yml, never part of this action.
 
 runs:
   using: composite
@@ -25,16 +19,22 @@ runs:
     - name: Read the fleet-noun vocabulary pin
       id: pin
       shell: bash
+      # tomllib, not sed: exactly [fleet_nouns].ref / .sha256, so a comment,
+      # a reordered key or a second table cannot be misread as the pin.
       run: |
-        pin="$GITHUB_WORKSPACE/fleet-nouns.pin.toml"
-        ref="$(sed -n 's/^ref = "\([0-9a-f]\{40\}\)"$/\1/p' "$pin")"
-        sha="$(sed -n 's/^sha256 = "\([0-9a-f]\{64\}\)"$/\1/p' "$pin")"
-        if [ -z "$ref" ] || [ -z "$sha" ]; then
-          echo "::error title=fleet-noun pin::$pin must carry ref (40 hex) and sha256 (64 hex) under [fleet_nouns]"
-          exit 1
-        fi
-        echo "ref=$ref" >> "$GITHUB_OUTPUT"
-        echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+        python3 - "$GITHUB_WORKSPACE/fleet-nouns.pin.toml" >> "$GITHUB_OUTPUT" <<'PY'
+        import re, sys, tomllib
+        path = sys.argv[1]
+        with open(path, "rb") as fh:
+            pin = tomllib.load(fh).get("fleet_nouns", {})
+        ref, sha = pin.get("ref", ""), pin.get("sha256", "")
+        if not (isinstance(ref, str) and re.fullmatch(r"[0-9a-f]{40}", ref)
+                and isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha)):
+            print(f"::error title=fleet-noun pin::{path} must carry [fleet_nouns] ref (40 hex) and sha256 (64 hex)", file=sys.stderr)
+            sys.exit(1)
+        print(f"ref={ref}")
+        print(f"sha256={sha}")
+        PY
 
     # PUBLIC sibling, at the pinned commit; only the vocabulary file is read.
     # actions/checkout cannot write outside $GITHUB_WORKSPACE, so it lands in
@@ -67,24 +67,3 @@ runs:
         fi
         echo "fleet-nouns.toml at $PIN_REF verified (sha256 $got)."
         echo "QONTINUI_FLEET_NOUNS_FILE=$file" >> "$GITHUB_ENV"
-
-    # ADVISORY, never fails: has schemas main moved past the pin? A drift is a
-    # ::warning:: carrying the bump recipe, not a red.
-    - name: Fleet-noun vocabulary drift from schemas main (advisory)
-      if: ${{ inputs.check-drift == 'true' }}
-      shell: bash
-      env:
-        PIN_REF: ${{ steps.pin.outputs.ref }}
-        PIN_SHA256: ${{ steps.pin.outputs.sha256 }}
-      run: |
-        main_file="$RUNNER_TEMP/fleet-nouns-main.toml"
-        if ! curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 -o "$main_file" https://raw.githubusercontent.com/qontinui/qontinui-schemas/main/fleet-nouns.toml; then
-          echo "::warning title=fleet-noun vocabulary drift::could not fetch schemas main's fleet-nouns.toml -- drift from the pin ($PIN_REF) is UNKNOWN"
-          exit 0
-        fi
-        main_sha256="$(sha256sum "$main_file" | cut -d' ' -f1)"
-        if [ "$main_sha256" = "$PIN_SHA256" ]; then
-          echo "fleet-nouns.toml on schemas main matches the pin ($PIN_REF)."
-        else
-          echo "::warning title=fleet-noun vocabulary drift::schemas main's fleet-nouns.toml (sha256 $main_sha256) differs from the pin ($PIN_REF, sha256 $PIN_SHA256). Bump fleet-nouns.pin.toml in a PR, rebaseline with QONTINUI_FLEET_NOUNS_REBASELINE=1 (backend/tests/test_fleet_nouns_ratchet.py) and review the diff."
-        fi

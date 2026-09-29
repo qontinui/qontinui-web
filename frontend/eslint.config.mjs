@@ -96,6 +96,14 @@ const eslintConfig = [
     },
   },
   {
+    // CommonJS scripts (scripts/prod-probes/*.cjs): `require()` IS the import
+    // syntax there, so the TS "no require imports" rule does not apply.
+    files: ["**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     // API clients under `src/lib/api/` must go through `httpClient` (see
     // `@/services/service-factory`), never a bare `fetch`. A bare fetch sends
     // no `Authorization: Bearer` header, so in prod (Cognito bearer auth) the
