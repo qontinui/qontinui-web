@@ -25,6 +25,7 @@ import {
   NO_MAINTENANCE_CONTEXT,
   drainedLanes,
   formatUntil,
+  isLabelLevelRefusal,
   labelMayStillRoute,
   labelRepos,
   lanesLabel,
@@ -330,16 +331,28 @@ export function deriveLeverStatus(
       );
     case "partial": {
       const n = stillRoutingCount(c.labels);
+      const refusedAll = c.labels
+        .filter((l) => isLabelLevelRefusal(l))
+        .map((l) => `label ${l.label} refused on all repos`);
       const unknownN = new Set(
-        c.labels.filter((l) => l.outcome === null).map((l) => l.repo)
+        c.labels
+          .filter((l) => l.outcome === null && !isLabelLevelRefusal(l))
+          .map((l) => l.repo)
       ).size;
       return leverStatus(
         "partial",
         "CI partly paused",
         withDetail(
-          `${n} repo${n === 1 ? "" : "s"} still route${n === 1 ? "s" : ""} here` +
-            (unknownN > 0 ? ` (${unknownN} ${UNKNOWN_LABEL})` : "") +
-            " — retry",
+          [
+            // The repo count, unless the only trouble is label-level.
+            n > 0 || refusedAll.length === 0
+              ? `${n} repo${n === 1 ? "" : "s"} still route${n === 1 ? "s" : ""} here` +
+                (unknownN > 0 ? ` (${unknownN} ${UNKNOWN_LABEL})` : "")
+              : null,
+            ...refusedAll,
+          ]
+            .filter((part): part is string => part !== null)
+            .join("; ") + " — retry",
           c.detail
         )
       );

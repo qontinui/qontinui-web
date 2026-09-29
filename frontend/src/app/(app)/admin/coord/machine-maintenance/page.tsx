@@ -73,6 +73,8 @@ import {
   agentLeverStateWords,
   errorWantsReread,
   labelOutcomeLabel,
+  isLabelLevelRefusal,
+  labelLevelRefusalLine,
   labelRepoDisplay,
   labelsSpanHosts,
   maintenanceErrorGuidance,
@@ -185,19 +187,27 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
       </p>
       {w.levers.ci.labels.length > 0 && (
         <ul className="space-y-0.5 text-[11px]">
-          {w.levers.ci.labels.map((l) => (
-            <li
-              key={`${l.label}@${l.repo}@${l.host ?? ""}`}
-              className="break-words"
-            >
-              <span className="font-mono break-all">{labelRepoDisplay(l)}</span>
-              {labelsSpanHosts(w.levers.ci.labels) && l.host
-                ? ` on ${l.host}`
-                : ""}{" "}
-              · label <span className="font-mono">{l.label}</span> —{" "}
-              {labelOutcomeLabel(l)}
-            </li>
-          ))}
+          {w.levers.ci.labels.map((l) =>
+            isLabelLevelRefusal(l) ? (
+              <li key={`${l.label}@*@${l.host ?? ""}`} className="break-words">
+                {labelLevelRefusalLine(l)}
+              </li>
+            ) : (
+              <li
+                key={`${l.label}@${l.repo}@${l.host ?? ""}`}
+                className="break-words"
+              >
+                <span className="font-mono break-all">
+                  {labelRepoDisplay(l)}
+                </span>
+                {labelsSpanHosts(w.levers.ci.labels) && l.host
+                  ? ` on ${l.host}`
+                  : ""}{" "}
+                · label <span className="font-mono">{l.label}</span> —{" "}
+                {labelOutcomeLabel(l)}
+              </li>
+            )
+          )}
         </ul>
       )}
     </div>
