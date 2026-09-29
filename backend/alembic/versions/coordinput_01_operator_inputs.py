@@ -95,11 +95,12 @@ One row per ``(tenant, session-or-resource, channel, 60-second bucket)``. A
 human typing a 400-character redirect produces one row, not 400. The bucket
 width is the RUNNER's ``session::operator_touch::BUCKET_WIDTH_SECS`` /
 ``epoch_bucket()``, as defined in the demand store's emitter
-(qontinui-runner#1680, still open when this revision was authored — it is not
-on runner ``main`` yet). The operator-input emitter imports that constant
-rather than defining a second one, and coord mints no bucket of its own; there
-is one bucket width in the fleet, not two. Volume is therefore bounded by construction at ≤ 1 row per session per
-channel per minute of actual human activity.
+(qontinui-runner#1829, which supersedes #1680; both still open when this
+revision was authored — neither is on runner ``main`` yet). The operator-input
+emitter must import that constant rather than define a second one, and coord
+mints no bucket of its own; there is one bucket width in the fleet, not two.
+Volume is therefore bounded by construction at ≤ 1 row per session per channel
+per minute of actual human activity.
 
 Column contract — ``coord.operator_inputs``
 ===========================================
