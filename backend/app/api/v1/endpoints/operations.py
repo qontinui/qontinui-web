@@ -958,6 +958,7 @@ async def _proxy_coord_get(
     forward_bearer: bool = False,
     headers: dict[str, str] | None = None,
     timeout: httpx.Timeout | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -1012,6 +1013,17 @@ async def _proxy_coord_get(
     recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
     keeps the 5s fail-fast for every other proxy: coord answering a small JSON
     read slower than that means something is wrong, and that is worth surfacing.
+
+    ``structured_errors`` — when True, a coord ≥400 body that parses to a JSON
+    OBJECT becomes the ``HTTPException.detail`` verbatim (via
+    :func:`_coord_error_detail`) instead of ``resp.text``, so coord's typed
+    refusal (``{"error": "repo_not_in_caller_tenant", "repo": …}``) reaches the
+    browser as structured fields rather than an escaped string. Opt-in per
+    route for the same reason as ``_proxy_coord_post``'s flag of the same name:
+    a dict detail changes the production error envelope
+    (``http_exception_handler`` splices it to the top level), which is a
+    contract change for every caller that renders ``detail`` as a string.
+    Default False keeps ``detail=resp.text`` exactly.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1035,7 +1047,10 @@ async def _proxy_coord_get(
                 detail="timeout waiting for coord",
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     return resp.json()
 
 
@@ -1821,15 +1836,20 @@ async def get_pr_merge_graph(
     + the `@xyflow/react` workspace dep already present in
     ``frontend/package.json``.
 
-    Cross-tenant edges are never traversed coord-side; the
-    ``X-Qontinui-Tenant-Id`` header injected here is what enforces
-    scoping. Two tenants viewing the same repo see disjoint graphs
-    in the v1 one-repo-one-tenant model.
+    Tenant scoping is coord's: it resolves the tenant from the caller's
+    forwarded credential (``tenant_id`` here only triggers bearer
+    forwarding — the legacy ``X-Qontinui-Tenant-Id`` header is retired), never
+    traverses a cross-tenant edge, and answers ``404 {"error":
+    "repo_not_in_caller_tenant", "caller_tenant_id": …, "repo": …}`` for a
+    repo that tenant does not own. ``structured_errors=True`` keeps that
+    refusal a JSON object end to end so the graph can render a readable
+    sentence instead of an escaped string.
     """
     return await _proxy_coord_get(
         "/pr-merge/graph",
         params={"repo": repo, "pr": pr},
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
