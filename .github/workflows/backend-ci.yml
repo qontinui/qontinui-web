@@ -1336,24 +1336,41 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # `continue-on-error` because a nightly whose shards were ALL cancelled
+      # uploads no junit artifact at all, and the download action fails on an
+      # empty pattern match. That is not this job's failure to report -- the
+      # shards' own checks already say it -- so the next step counts what
+      # arrived and skips rather than going red.
       - name: Download the shards' junit results
+        continue-on-error: true
         uses: actions/download-artifact@v5
         with:
           pattern: junit-results-shard-*
           path: junit
 
       - name: Build shard-durations-proposed.json
+        id: build
         run: |
-          found=$(find junit -name '*.xml' -type f | wc -l)
+          found=0
+          if [ -d junit ]; then
+            found=$(find junit -name '*.xml' -type f | wc -l)
+          fi
           echo "junit files downloaded: ${found} (expected 6)"
+          if [ "${found}" = "0" ]; then
+            echo "::notice title=No shard durations proposal tonight::No shard uploaded a junit file (every shard was cancelled or timed out before pytest wrote one), so there is nothing to measure. Skipping the proposal; this is not a failure of this job."
+            echo "proposed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "${found}" != "6" ]; then
             echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not 6, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
           fi
           python scripts/ci/refresh_shard_durations.py junit \
             --root backend \
             --out shard-durations-proposed.json
+          echo "proposed=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload shard-durations-proposed.json
+        if: steps.build.outputs.proposed == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: shard-durations-proposed
