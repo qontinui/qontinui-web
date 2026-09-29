@@ -268,6 +268,9 @@ def test_table_shape_check_and_round_trip() -> None:
                 assert got_default is None, (name, info)
             else:
                 assert got_default is not None and default in got_default, (name, info)
+                if name == "waiters":
+                    # Exact, not substring: a default of '10' must not pass.
+                    assert got_default.strip() == "0", (name, info)
         n_cols = scalar(
             engine,
             "SELECT count(*) FROM information_schema.columns "
