@@ -13,8 +13,9 @@
  *   runner at `:9876`) plus the GitHub self-hosted runner names DECLARED to be
  *   the same box. A GitHub runner name no machine claims is listed as a
  *   machine of its own, so it can still be paused. The join is declared, never
- *   inferred from names: `spaceship` and `gh-runner-spaceship-wsl@…` look alike
- *   and a wrong guess pauses the wrong box.
+ *   inferred from names: a workstation (`<host>`) and the CI runner registered
+ *   under it (`gh-runner-<host>-wsl@…`) look alike, and a wrong guess
+ *   pauses the wrong box.
  * - A **maintenance window** is one mandatorily-expiring record on a machine
  *   saying which of two LEVERS are held:
  *   - `agent_work` — the workstation device's `agent` drain lane (spawns and
