@@ -1336,7 +1336,7 @@ def test_zero_second_files_are_spread_not_piled_into_one_shard():
     """
     counts = {f"tests/test_zero_{i:03d}.py": 3 for i in range(40)}
     counts.update({f"tests/test_heavy_{i}.py": 10 for i in range(6)})
-    durations = {path: 0.0 for path in counts}
+    durations = dict.fromkeys(counts, 0.0)
     durations.update({f"tests/test_heavy_{i}.py": 100.0 for i in range(6)})
     weights, mode, _ = splitter.seconds_weights(counts, durations, _ordinary)
     assert mode == "seconds"
