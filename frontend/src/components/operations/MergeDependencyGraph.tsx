@@ -67,7 +67,10 @@ type PrNodeData = {
   pr_number: number;
   tenant_id: string | null;
   outer_state: string | null;
-  ready: boolean;
+  topo_merge_ready?: boolean;
+  block_reason_code?: string | null;
+  /** Legacy wire name for `topo_merge_ready` — see {@link GraphNode}. */
+  ready?: boolean;
   merge_state_status: string | null;
   isCycleMember: boolean;
 } & Record<string, unknown>;
@@ -96,7 +99,27 @@ interface GraphNode {
   pr_number: number;
   tenant_id: string | null;
   outer_state: string | null;
-  ready: boolean;
+  /**
+   * The topological-merge predicate (`is_pr_ready_for_topo_merge`). It
+   * requires review `APPROVED`, which agents on this fleet never give, so it
+   * reads `false` for PRs the merge train will land. Secondary signal only —
+   * never the "landable" colour.
+   */
+  topo_merge_ready?: boolean;
+  /**
+   * The merge predicate's latest verdict (the latest `predicate_eval`
+   * `pr_events` row — the same verdict `coord_pr_status` serves). `"none"`
+   * means the predicate passed; `null` means no verdict is recorded. Absent
+   * on a coord that predates the field.
+   */
+  block_reason_code?: string | null;
+  /**
+   * LEGACY: the pre-rename wire name of `topo_merge_ready` (same predicate).
+   * Served only by a coord predating plan
+   * `2026-09-28-coord-pr-merge-ready-false-stall-and-events-tenant-mismatch`
+   * Phase 2c; read only when `block_reason_code` is absent.
+   */
+  ready?: boolean;
   merge_state_status: string | null;
 }
 
@@ -113,6 +136,54 @@ interface GraphResponse {
   topo_order: PrRef[];
   cycle_detected: boolean;
   cycle_members: PrRef[];
+}
+
+// ---------------------------------------------------------------------------
+// Readiness — which predicate says "landable"
+// ---------------------------------------------------------------------------
+
+type ReadinessFields = Pick<
+  GraphNode,
+  "topo_merge_ready" | "block_reason_code" | "ready"
+>;
+
+/**
+ * Primary "landable" signal: the MERGE predicate's verdict, not the
+ * review-gated topo flag. A coord that predates `block_reason_code` omits the
+ * key, and only then does the legacy `ready` stand in. A present `null` (no
+ * verdict recorded yet) is not landable.
+ */
+function isLandable(node: ReadinessFields): boolean {
+  if (node.block_reason_code !== undefined) {
+    return node.block_reason_code === "none";
+  }
+  return node.ready === true;
+}
+
+/** The topo-merge flag under either wire name; `undefined` when neither is served. */
+function topoMergeReady(node: ReadinessFields): boolean | undefined {
+  return node.topo_merge_ready ?? node.ready;
+}
+
+/** Tooltip text naming the merge verdict and the topo flag, for operators. */
+function readinessTooltip(node: ReadinessFields): string {
+  const parts: string[] = [];
+  if (node.block_reason_code === undefined) {
+    parts.push("merge predicate verdict: not served by this coord build");
+  } else if (node.block_reason_code === null) {
+    parts.push("merge predicate verdict: none recorded yet");
+  } else if (node.block_reason_code === "none") {
+    parts.push("merge predicate: passed");
+  } else {
+    parts.push(`merge predicate blocked: ${node.block_reason_code}`);
+  }
+  const topo = topoMergeReady(node);
+  if (topo !== undefined) {
+    parts.push(
+      `topo merge ready: ${topo ? "yes" : "no"} (requires review APPROVED)`
+    );
+  }
+  return parts.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +210,7 @@ function nodeTint(
       text: "#fee2e2",
     };
   }
-  if (node.ready) {
+  if (isLandable(node)) {
     return {
       border: "#86efac",
       bg: "#14532d",
@@ -168,7 +239,7 @@ function nodeTint(
 // ---------------------------------------------------------------------------
 
 const NODE_WIDTH = 220;
-const NODE_HEIGHT = 80;
+const NODE_HEIGHT = 96;
 
 function layoutNodes(
   nodes: Node<PrNodeData>[],
@@ -218,6 +289,12 @@ function PrNodeComponent({ data }: NodeProps<Node<PrNodeData>>) {
   const repoShort = data.repo.includes("/")
     ? data.repo.split("/").slice(-1)[0]
     : data.repo;
+  const landable = isLandable(data);
+  const topo = topoMergeReady(data);
+  const blockReason =
+    data.block_reason_code && data.block_reason_code !== "none"
+      ? data.block_reason_code
+      : null;
   return (
     <div
       style={{
@@ -235,7 +312,10 @@ function PrNodeComponent({ data }: NodeProps<Node<PrNodeData>>) {
         fontFamily: "var(--font-mono, ui-monospace, monospace)",
       }}
       data-pr-cycle={data.isCycleMember ? "true" : "false"}
-      data-pr-ready={data.ready ? "true" : "false"}
+      data-pr-ready={landable ? "true" : "false"}
+      data-pr-block-reason={data.block_reason_code ?? undefined}
+      data-pr-topo-ready={topo === undefined ? undefined : String(topo)}
+      title={readinessTooltip(data)}
     >
       <Handle type="target" position={Position.Left} />
       <div style={{ fontSize: 12, fontWeight: 600 }}>
@@ -250,11 +330,41 @@ function PrNodeComponent({ data }: NodeProps<Node<PrNodeData>>) {
           ⚠ cycle member
         </div>
       )}
-      {data.ready && !data.isCycleMember && (
-        <div style={{ fontSize: 10, fontWeight: 600, color: "#bbf7d0" }}>
-          ✓ ready
+      {blockReason && !data.isCycleMember && (
+        <div
+          style={{
+            fontSize: 10,
+            opacity: 0.85,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          data-testid="merge-dep-graph-block-reason"
+        >
+          blocked: {blockReason}
         </div>
       )}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {landable && !data.isCycleMember && (
+          <span style={{ fontSize: 10, fontWeight: 600, color: "#bbf7d0" }}>
+            ✓ ready
+          </span>
+        )}
+        {topo !== undefined && (
+          <span
+            style={{
+              fontSize: 9,
+              padding: "0 4px",
+              borderRadius: 4,
+              border: "1px solid currentColor",
+              opacity: 0.7,
+            }}
+            data-testid="merge-dep-graph-topo-badge"
+          >
+            topo {topo ? "✓" : "✗"}
+          </span>
+        )}
+      </div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
