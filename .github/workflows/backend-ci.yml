@@ -6,6 +6,10 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
+      # reads: a pin bump must run the ratchet it re-seeds.
+      - 'fleet-nouns.pin.toml'
+      - '.github/actions/fleet-nouns-vocab/**'
       # The composed backend is pinned by this file: backend/Dockerfile clones
       # qontinui-cloud-control at the sha it names. A pin bump changes what the
       # image contains while touching no path under backend/**, so without this
@@ -72,6 +76,10 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
+      # reads: a pin bump must run the ratchet it re-seeds.
+      - 'fleet-nouns.pin.toml'
+      - '.github/actions/fleet-nouns-vocab/**'
       # See the pull_request filter above.
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
@@ -419,6 +427,13 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
+
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -6,11 +6,17 @@ on:
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+      # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
+      - "fleet-nouns.pin.toml"
+      - ".github/actions/fleet-nouns-vocab/**"
   push:
     branches: [main, develop]
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+      # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
+      - "fleet-nouns.pin.toml"
+      - ".github/actions/fleet-nouns-vocab/**"
   workflow_dispatch:
 
 jobs:
@@ -24,6 +30,15 @@ jobs:
     steps:
       - name: Checkout qontinui-web
         uses: actions/checkout@v5
+
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
+        with:
+          check-drift: "true"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -195,6 +210,13 @@ jobs:
         with:
           repository: qontinui/qontinui-cloud-control
           path: .sibling/qontinui-cloud-control
+
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

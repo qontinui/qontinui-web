@@ -1,0 +1,307 @@
+# The fleet-noun ratchet baseline for backend/app — GENERATED, then only ever
+# lowered by hand. Read by backend/tests/test_fleet_nouns_ratchet.py.
+#
+# One table per (file, class); each key is a TOKEN (the matched noun, guard
+# punctuation trimmed) and its value the EXACT number of matches allowed.
+# More matches than allowed is a new leak; fewer (or a row with none left) is a
+# stale allowance — lower or delete the row in the PR that removed the hit.
+#
+# Every row below was seeded 2026-09-29 from the day-one scan at the pinned
+# vocabulary (qontinui-schemas 02fdbb9764f42e6eb7cc0f2586f77bf689f192b0): the census of fleet nouns already in
+# backend/app, pending disposition under plan
+# 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists.
+# A row is NOT an endorsement — it is debt that is not allowed to grow.
+#
+# Regenerate (review the diff; a new row is a new leak):
+#   QONTINUI_FLEET_NOUNS_REBASELINE=1 poetry run pytest tests/test_fleet_nouns_ratchet.py
+
+
+["app/api/deps.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/deps.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/embeddings.py".dev_ports]
+"127.0.0.1:8001" = 1
+
+["app/api/v1/api.py".machine_path]
+"D:/qontinui-root" = 3
+
+["app/api/v1/api.py".repo_layout]
+"qontinui-root" = 3
+
+["app/api/v1/endpoints/agent_sessions.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/agent_sessions.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/annotations_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/automation_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/collaboration_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/devices.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/devices.py".repo_layout]
+"qontinui-dev-notes" = 1
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/devices_ws.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/devices_ws.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/exports.py".repo_layout]
+"QONTINUI_ROOT" = 2
+
+["app/api/v1/endpoints/memory.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/memory.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/operations.py".machine_path]
+"D:/qontinui-root" = 4
+
+["app/api/v1/endpoints/operations.py".repo_layout]
+"qontinui-root" = 4
+
+["app/api/v1/endpoints/pair_codes.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/pair_codes.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/plan_library.py".repo_layout]
+"qontinui-dev-notes" = 5
+
+["app/api/v1/endpoints/project_sync.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/runner_chat_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/runner_command_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/runner_status_ws.py".dev_ports]
+"localhost:6379" = 1
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/runner_terminal_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/api/v1/endpoints/screenshots.py".repo_layout]
+"qontinui-root" = 2
+
+["app/api/v1/endpoints/served_routes.py".repo_layout]
+"qontinui-dev-notes" = 1
+
+["app/api/v1/endpoints/testing/deps.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/api/v1/endpoints/testing/deps.py".repo_layout]
+"qontinui-root" = 1
+
+["app/api/v1/endpoints/testing_ws.py".dev_ports]
+"localhost:8000" = 1
+
+["app/core/config.py".dev_ports]
+"localhost:3001" = 1
+"localhost:8000" = 3
+"localhost:8001" = 1
+"localhost:9000" = 1
+
+["app/core/test_credentials.py".repo_layout]
+"../qontinui-web" = 1
+
+["app/crud/device_connection.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/crud/device_connection.py".repo_layout]
+"qontinui-root" = 1
+
+["app/crud/device_crud.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/crud/device_crud.py".repo_layout]
+"qontinui-root" = 1
+
+["app/crud/pair_code_crud.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/crud/pair_code_crud.py".repo_layout]
+"qontinui-root" = 1
+
+["app/crud/runner_crud.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/crud/runner_crud.py".repo_layout]
+"qontinui-root" = 1
+
+["app/crud/runner_session.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/crud/runner_session.py".repo_layout]
+"qontinui-root" = 1
+
+["app/main.py".dev_ports]
+"127.0.0.1:8001" = 1
+"localhost:3001" = 1
+
+["app/middleware/DATABASE_TIMING_README.md".dev_ports]
+"localhost:8000" = 1
+
+["app/middleware/rate_limit.py".dev_ports]
+"localhost:6379" = 1
+
+["app/models/bridge_audit_log.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/models/bridge_audit_log.py".repo_layout]
+"qontinui-root" = 1
+
+["app/models/claude_account.py".repo_layout]
+"qontinui-claude-config" = 1
+
+["app/models/device.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/models/device.py".repo_layout]
+"qontinui-root" = 1
+
+["app/models/pair_code.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/models/pair_code.py".repo_layout]
+"qontinui-root" = 1
+
+["app/models/runner.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/models/runner.py".repo_layout]
+"qontinui-root" = 1
+
+["app/schemas/claude_account.py".repo_layout]
+"qontinui-claude-config" = 1
+
+["app/schemas/device.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/schemas/device.py".repo_layout]
+"qontinui-root" = 1
+
+["app/schemas/memory.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/schemas/memory.py".repo_layout]
+"qontinui-root" = 1
+
+["app/schemas/pair_code.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/schemas/pair_code.py".repo_layout]
+"qontinui-root" = 1
+
+["app/schemas/plan_library.py".repo_layout]
+"qontinui-dev-notes" = 2
+
+["app/schemas/plan_library_scan_roots.py".repo_layout]
+"qontinui-dev-notes" = 3
+
+["app/services/action_executor.py".dev_ports]
+"localhost:8001" = 1
+
+["app/services/agent_text_unit_service.py".repo_layout]
+"qontinui-claude-config" = 1
+
+["app/services/avatar_service.py".dev_ports]
+"localhost:9000" = 1
+
+["app/services/coord_device_status.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/coord_device_status.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/coord_jwks.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/coord_jwks.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/devenv_drift.py".repo_layout]
+"qontinui-dev-notes" = 1
+
+["app/services/devenv_section_policy.py".repo_layout]
+"QONTINUI_ROOT" = 1
+"qontinui-claude-config" = 1
+"qontinui-dev-notes" = 1
+"qontinui-root" = 1
+
+["app/services/embedding_service.py".dev_ports]
+"localhost:8001" = 2
+
+["app/services/memory_redaction.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/memory_redaction.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/memory_retrieval.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/memory_retrieval.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/memory_store.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/memory_store.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/memory_vectors.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/memory_vectors.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/pattern_matcher.py".dev_ports]
+"localhost:8001" = 1
+
+["app/services/plan_difficulty.py".repo_layout]
+"qontinui-claude-config" = 1
+"qontinui-dev-notes" = 2
+
+["app/services/plan_status/__init__.py".repo_layout]
+"qontinui-dev-notes" = 6
+
+["app/services/plan_status/classifier.py".repo_layout]
+"qontinui-claude-config" = 1
+"qontinui-dev-notes" = 2
+
+["app/services/plan_status/plan-status-vectors.json".repo_layout]
+"qontinui-dev-notes" = 5
+
+["app/services/plan_status/plan-status-vectors.json".tenant_literal]
+"c231d9da-0ca8" = 1
+
+["app/services/runner/device_selector.py".machine_path]
+"D:/qontinui-root" = 1
+
+["app/services/runner/device_selector.py".repo_layout]
+"qontinui-root" = 1
+
+["app/services/runner/remote_terminal_relay.py".fleet_host_name]
+"merytshost" = 1
+
+["app/worker/tasks.py".repo_layout]
+"qontinui-root" = 1

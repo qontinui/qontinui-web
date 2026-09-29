@@ -50,7 +50,9 @@ export function AppBrowser({
   showSpecStatus,
   treeMaxHeight,
   treeTitle,
-  connectPlaceholder = "http://localhost:3001",
+  // A hint for the USER's app address, not this app's dev port (3001 was
+  // qontinui-web's own dev frontend — a fleet noun on a user's screen).
+  connectPlaceholder = "http://localhost:<port>",
   variant = "card",
   children,
 }: AppBrowserProps) {

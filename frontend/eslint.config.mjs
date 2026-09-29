@@ -81,6 +81,21 @@ const eslintConfig = [
     },
   },
   {
+    // Phase A5 of
+    // plans/2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists.md
+    // (defect 5): a loopback dev-stack URL (localhost:8000, :9875, …) as a
+    // `||` / `??` fallback or a default value. PR #1550 removed every such
+    // site and put the dev defaults in ONE resolver
+    // (src/lib/errors/endpoint-unresolved.ts); this is the ratchet that keeps
+    // the class from regrowing. The port list is the fleet-noun vocabulary's
+    // (pinned by ../fleet-nouns.pin.toml, asserted by the rule's vocabulary
+    // test). SCOPE (test files out, the resolver files exempt by exact path)
+    // lives in the rule, so there is one definition of it.
+    rules: {
+      "@qontinui-web/no-dev-stack-fallback": "error",
+    },
+  },
+  {
     // API clients under `src/lib/api/` must go through `httpClient` (see
     // `@/services/service-factory`), never a bare `fetch`. A bare fetch sends
     // no `Authorization: Bearer` header, so in prod (Cognito bearer auth) the

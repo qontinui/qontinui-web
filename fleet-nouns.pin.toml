@@ -1,0 +1,34 @@
+# The fleet-noun vocabulary this repo's lints read, PINNED.
+#
+# `qontinui-schemas/fleet-nouns.toml` is the ONE vocabulary of fleet nouns
+# (dev-stack ports, the dev-only supervisor, sibling-repo names, fleet hosts
+# and device ids, the maintainers' tenant, operator paths). This file names
+# the schemas commit and the sha256 of that file at it; two consumers read it:
+#
+#   * backend/tests/test_fleet_nouns_ratchet.py — scans backend/app for every
+#     class, ratcheted by backend/tests/fleet_nouns_baseline.toml;
+#   * frontend/eslint-rules/no-dev-stack-fallback.vocabulary.test.mjs —
+#     asserts the ESLint rule's hard-coded port list equals the vocabulary's
+#     `dev_ports` + `supervisor_dependency`.
+#
+# Why a pin and not schemas `main`: a vocabulary edit there would otherwise
+# redden every PR here; at a pin, a red can only come from THIS repo's change.
+# CI fetches the file at `ref` by a sparse checkout
+# (.github/actions/fleet-nouns-vocab) and both consumers refuse a file whose
+# digest differs from `sha256`. Locally they read
+# `../qontinui-schemas/fleet-nouns.toml` (override: $QONTINUI_FLEET_NOUNS_FILE),
+# with the same digest check — a sibling checkout at another commit is a red
+# naming both digests, never a silent scan with different classes.
+#
+# To bump: set `ref` to the new schemas commit and `sha256` to
+# `git -C ../qontinui-schemas show <ref>:fleet-nouns.toml | sha256sum`, then
+# re-run the backend test with QONTINUI_FLEET_NOUNS_REBASELINE=1 and review
+# the baseline diff. The frontend-ci advisory step warns when schemas main has
+# moved past this pin.
+#
+# Plan 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists,
+# phase A5.
+
+[fleet_nouns]
+ref = "02fdbb9764f42e6eb7cc0f2586f77bf689f192b0"
+sha256 = "3f0c20a5fdc2cc73568d773122160a4efcdf9c1c93961670af19ae015976039a"
