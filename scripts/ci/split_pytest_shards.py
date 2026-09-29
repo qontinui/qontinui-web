@@ -303,6 +303,13 @@ def file_weights(nodeids: list[str]) -> dict[str, int]:
 #: drives real alembic upgrades/downgrades goes through this harness module.
 MIGRATION_MARKER = "_alembic_harness"
 
+#: The least a collected file weighs in seconds mode. Refreshes round to 0.1 s,
+#: so dozens of fast files are committed as 0.0 -- and a zero weight never
+#: changes a bin's load, so LPT's lowest-index tie-break would put EVERY one of
+#: them in the same shard (measured: 79 files in one shard against 46 in each
+#: of the others). A floor makes each file count, and keeps them spread.
+MIN_FILE_SECONDS = 0.05
+
 #: The two weight classes an unlisted file can fall back to.
 MIGRATION_CLASS = "migration"
 ORDINARY_CLASS = "ordinary"
@@ -320,6 +327,11 @@ def load_durations(path: str) -> tuple[dict[str, float] | None, str]:
     try:
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
+    # The file EXISTS and was read; its bytes are just not UTF-8 text. That is
+    # a broken map, not an absent one. (UnicodeDecodeError is a ValueError, so
+    # it must be caught first.)
+    except UnicodeDecodeError:
+        return None, "unparseable"
     except (OSError, ValueError):
         return None, "missing"
     try:
@@ -405,7 +417,10 @@ def seconds_weights(
     classes = {path: classify(path) for path in sorted(counts)}
     defaults = class_defaults(counts, durations, classes)
     weights = {
-        path: durations[path] if path in durations else n * defaults[classes[path]]
+        path: max(
+            durations[path] if path in durations else n * defaults[classes[path]],
+            MIN_FILE_SECONDS,
+        )
         for path, n in counts.items()
     }
     return weights, ("mixed" if unlisted else "seconds"), len(unlisted)

@@ -35,6 +35,7 @@ import ast
 import importlib.util
 import io
 import json
+import math
 import re
 import subprocess
 import sys
@@ -1326,6 +1327,34 @@ def test_no_usable_durations_is_exactly_the_count_split(durations):
     assert splitter.assign(weights, 6) == splitter.assign(counts, 6)
 
 
+def test_zero_second_files_are_spread_not_piled_into_one_shard():
+    """0.0 s entries (a 0.1 s rounding artefact) must not all land together.
+
+    A zero weight never changes a bin's load, so without a floor the
+    lowest-index tie-break sent every one of them to the same shard.
+    """
+    counts = {f"tests/test_zero_{i:03d}.py": 3 for i in range(40)}
+    counts.update({f"tests/test_heavy_{i}.py": 10 for i in range(6)})
+    durations = {path: 0.0 for path in counts}
+    durations.update({f"tests/test_heavy_{i}.py": 100.0 for i in range(6)})
+    weights, mode, _ = splitter.seconds_weights(counts, durations, _ordinary)
+    assert mode == "seconds"
+    assert min(weights.values()) == splitter.MIN_FILE_SECONDS
+    bins = splitter.assign(weights, 6)
+    zeros = [sum(1 for p in b if "_zero_" in p) for b in bins]
+    assert sum(zeros) == 40
+    assert max(zeros) <= math.ceil(40 / 6) + 1, zeros
+
+
+def test_the_floor_also_applies_to_the_class_median_fallback():
+    counts = {"tests/test_a.py": 4, "tests/test_new.py": 4}
+    weights, mode, _ = splitter.seconds_weights(
+        counts, {"tests/test_a.py": 0.0}, _ordinary
+    )
+    assert mode == "mixed"
+    assert weights["tests/test_new.py"] == splitter.MIN_FILE_SECONDS
+
+
 def test_the_class_is_a_text_scan_for_the_alembic_harness():
     assert (
         splitter.classify_source("from tests._alembic_harness import run_alembic\n")
@@ -1366,6 +1395,13 @@ def test_load_durations_accepts_only_a_map_of_non_negative_seconds(
     loaded, got = splitter.load_durations(str(path))
     assert got == state
     assert (loaded is not None) == (state == "loaded")
+
+
+def test_load_durations_reports_non_utf8_bytes_as_unparseable(tmp_path):
+    """The file exists and was read; its bytes are broken. That is not missing."""
+    path = tmp_path / "d.json"
+    path.write_bytes(b'{"tests/test_a.py": 1.0, "\xff\xfe": 2}')
+    assert splitter.load_durations(str(path)) == (None, "unparseable")
 
 
 def test_load_durations_reports_a_missing_file(tmp_path):
@@ -1585,6 +1621,49 @@ def test_the_durations_proposal_is_nightly_only_and_never_gates():
             f"job {jid!r} needs the durations proposal; a tuning-file proposal "
             "must never be able to hold or red a gate"
         )
+
+
+def _proposal_step(name: str) -> dict:
+    return _step(_workflow()["jobs"][PROPOSAL_JOB], name)
+
+
+@pytest.mark.parametrize("make_dir", [False, True], ids=["no-dir", "empty-dir"])
+def test_the_proposal_skips_cleanly_when_no_shard_uploaded_junit(tmp_path, make_dir):
+    """All shards cancelled -> no junit -> a ::notice and a skip, never a red job.
+
+    Runs the build step's REAL script from the workflow, in a directory with
+    no junit files, and checks the exit code and the output that gates the
+    upload step.
+    """
+    if make_dir:
+        (tmp_path / "junit").mkdir()
+    step = _proposal_step("Build shard-durations-proposed.json")
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    proc = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin", "GITHUB_OUTPUT": str(output)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "::notice" in proc.stdout
+    assert "proposed=false" in output.read_text(encoding="utf-8")
+    assert not (tmp_path / "shard-durations-proposed.json").exists()
+
+
+def test_the_proposal_warns_on_a_partial_set_and_gates_its_upload():
+    build = _proposal_step("Build shard-durations-proposed.json")
+    assert build.get("id") == "build"
+    assert "::warning title=Shard durations proposal is partial" in build["run"]
+    assert "proposed=true" in build["run"]
+    download = _proposal_step("Download the shards' junit results")
+    assert download.get("continue-on-error") is True, (
+        "a nightly with every shard cancelled has no artifact to download"
+    )
+    upload = _proposal_step("Upload shard-durations-proposed.json")
+    assert upload.get("if") == "steps.build.outputs.proposed == 'true'"
 
 
 # --- the refresh script -----------------------------------------------------
