@@ -30,11 +30,35 @@ Balance
 -------
 
 Files are packed greedily: heaviest file first, each file into the lightest
-bin so far. That is the classic LPT heuristic — on the real corpus (230 files,
-~4100 collected tests) it lands within 0.1% of perfect at 4 and at 6 shards.
-Weight is the collected-test count per file, so parametrized tests are counted
-as the many tests they actually are, not as the one function they are written
-as.
+bin so far. That is the classic LPT heuristic. What "heavy" means depends on
+``--durations``:
+
+* **Seconds** (the gating lane). ``--durations tests/shard-durations.json``
+  names a committed ``{"tests/<file>.py": <seconds>}`` map, produced by
+  ``scripts/ci/refresh_shard_durations.py`` from measured shard timings. A
+  listed file weighs its measured seconds. An UNLISTED file (new since the last
+  refresh) weighs ``count x class median seconds-per-test``, the median taken
+  over the listed files of its class in the same map. There are two classes,
+  and the rule is a TEXT SCAN, never an import: a file whose source contains
+  ``_alembic_harness`` is a migration-class file (it drives real alembic
+  upgrades/downgrades, ~100x the median per-test cost of the rest -- measured on the
+  2026-09-29 nightly: the harness files were 87 of 307 files and 77% of the
+  suite's seconds); every other file is the ordinary class. An unreadable file
+  is ordinary. A class with no listed member falls back to the median over all
+  listed files.
+* **Counts** (no ``--durations``, or a durations file that is absent,
+  unparseable, or lists none of the collected files). Weight is the
+  collected-test count per file, so parametrized tests are counted as the many
+  tests they actually are. This is the pre-durations behaviour, and it is what
+  a broken tuning file DEGRADES to: a splitter that failed closed on a tuning
+  file would red every shard over something that cannot make the partition
+  wrong, only less balanced.
+
+The verdict line says which happened: ``weights=seconds`` (every collected file
+listed), ``weights=mixed`` (some unlisted, weighed by class median),
+``weights=count``; ``unlisted=<n>`` is the number of collected files the map
+does not name; ``durations=`` is ``loaded``, ``missing``, ``unparseable`` or
+``none`` (flag not given).
 
 What this guarantees, and what it does not
 ------------------------------------------
@@ -44,9 +68,11 @@ set of collected files (**complete**), no file appears in two shards
 (**disjoint**), and the assignment depends only on the collected set — not on
 input order, not on the shard being asked (**deterministic**).
 
-NOT guaranteed: equal wall time. Test count is a proxy for duration; a file of
-slow DB tests outweighs its count. The job's budget tripwire is the feedback
-loop for that.
+NOT guaranteed: equal wall time. Seconds measured on one nightly are an
+estimate of the next; a stale map, a new slow file in the ordinary class, or a
+slow runner all skew the deal. The durations map only moves the weights; it
+can never change WHICH files are collected, so completeness and disjointness
+hold whatever it contains -- including when it is corrupt.
 
 Failure posture
 ---------------
@@ -80,9 +106,14 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
+import math
 import re
+import statistics
 import sys
 from collections import Counter
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TextIO
 
 # A pytest `--collect-only -q` line is a node id: a path, then optionally
@@ -268,7 +299,119 @@ def file_weights(nodeids: list[str]) -> dict[str, int]:
     return dict(counts)
 
 
-def assign(weights: dict[str, int], shards: int) -> list[list[str]]:
+#: The text whose presence makes a test file migration-class. Every test that
+#: drives real alembic upgrades/downgrades goes through this harness module.
+MIGRATION_MARKER = "_alembic_harness"
+
+#: The two weight classes an unlisted file can fall back to.
+MIGRATION_CLASS = "migration"
+ORDINARY_CLASS = "ordinary"
+
+
+def load_durations(path: str) -> tuple[dict[str, float] | None, str]:
+    """The durations map at `path`, and how reading it went.
+
+    Returns ``(map, "loaded")``, or ``(None, "missing")`` when the file cannot
+    be read, or ``(None, "unparseable")`` when it is not a JSON object of
+    ``"<path>.py": <finite, non-negative number>``. One bad entry makes the
+    whole file unparseable: a map that is half-trusted is harder to reason
+    about than one that is not trusted at all, and the fallback is safe.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, ValueError):
+        return None, "missing"
+    try:
+        raw = json.loads(text)
+    except ValueError:
+        return None, "unparseable"
+    if not isinstance(raw, dict):
+        return None, "unparseable"
+    out: dict[str, float] = {}
+    for key, value in raw.items():
+        # `bool` is an `int` subclass; `true` is not a number of seconds.
+        if (
+            not key.endswith(".py")
+            or isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            return None, "unparseable"
+        out[key] = float(value)
+    return out, "loaded"
+
+
+def classify_source(text: str) -> str:
+    """A test file's weight class, from its SOURCE TEXT (never by importing it)."""
+    return MIGRATION_CLASS if MIGRATION_MARKER in text else ORDINARY_CLASS
+
+
+def read_class(path: str) -> str:
+    """`classify_source` of the file at `path` (relative to the cwd).
+
+    An unreadable file is ordinary. Every shard reads the same checkout, so
+    this is as deterministic as the collection itself.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return ORDINARY_CLASS
+    return classify_source(text)
+
+
+def class_defaults(
+    counts: Mapping[str, int],
+    durations: Mapping[str, float],
+    classes: Mapping[str, str],
+) -> dict[str, float]:
+    """Median seconds-per-test per class, over the LISTED collected files.
+
+    A class with no listed member takes the median over every listed file.
+    Empty when no collected file is listed at all.
+    """
+    per_test: dict[str, list[float]] = {}
+    for path in sorted(counts):
+        if path in durations and counts[path] > 0:
+            rate = durations[path] / counts[path]
+            per_test.setdefault(classes[path], []).append(rate)
+    everything = [rate for rates in per_test.values() for rate in rates]
+    if not everything:
+        return {}
+    overall = statistics.median(everything)
+    return {
+        cls: statistics.median(per_test[cls]) if per_test.get(cls) else overall
+        for cls in (MIGRATION_CLASS, ORDINARY_CLASS)
+    }
+
+
+def seconds_weights(
+    counts: Mapping[str, int],
+    durations: Mapping[str, float] | None,
+    classify: Callable[[str], str] = read_class,
+) -> tuple[dict[str, float], str, int]:
+    """Per-file weights, the weight mode, and how many files are unlisted.
+
+    The mode is ``seconds`` (every collected file listed), ``mixed`` (some
+    weighed by class median) or ``count`` (no usable durations: the weights are
+    the collected-test counts, exactly as before durations existed).
+    """
+    unlisted = sorted(
+        path for path in counts if durations is None or path not in durations
+    )
+    if durations is None or len(unlisted) == len(counts):
+        return {path: float(n) for path, n in counts.items()}, "count", len(unlisted)
+    classes = {path: classify(path) for path in sorted(counts)}
+    defaults = class_defaults(counts, durations, classes)
+    weights = {
+        path: durations[path] if path in durations else n * defaults[classes[path]]
+        for path, n in counts.items()
+    }
+    return weights, ("mixed" if unlisted else "seconds"), len(unlisted)
+
+
+def assign(weights: Mapping[str, float], shards: int) -> list[list[str]]:
     """Greedy LPT pack of weighted files into `shards` bins.
 
     Deterministic by construction: files are ordered by descending weight with
@@ -280,7 +423,7 @@ def assign(weights: dict[str, int], shards: int) -> list[list[str]]:
         raise ValueError(f"shards must be >= 1, got {shards}")
 
     bins: list[list[str]] = [[] for _ in range(shards)]
-    loads = [0] * shards
+    loads = [0.0] * shards
 
     for path, weight in sorted(weights.items(), key=lambda kv: (-kv[1], kv[0])):
         target = min(range(shards), key=lambda i: (loads[i], i))
@@ -331,8 +474,27 @@ def main(argv: list[str] | None = None) -> int:
             "without selecting a shard; requires a positive --min-files"
         ),
     )
+    parser.add_argument(
+        "--durations",
+        help=(
+            "JSON map of test file -> measured seconds; deals the shards by "
+            "seconds instead of test count. Absent or unparseable degrades to "
+            "count weights (said on the verdict line), never to an error"
+        ),
+    )
     args = parser.parse_args(argv)
     mode = "count" if args.count_only else "select"
+
+    # `--count-only` is a pure COLLECTION check, and it must stay one: a
+    # weighting input there would suggest the floor depends on it. Refused
+    # rather than ignored, so a caller that passes it learns it did nothing.
+    if args.count_only and args.durations is not None:
+        print(
+            "::error::--durations only affects shard SELECTION; --count-only "
+            "checks the collection and must not take it.",
+            file=_stderr(),
+        )
+        return _finish(1, "bad_args", mode=mode, reason="durations_with_count_only")
 
     # `--count-only` exists for ONE caller, the workflow's collect step, and its
     # entire job is to apply a floor. Permitting a zero floor there would let the
@@ -475,7 +637,19 @@ def main(argv: list[str] | None = None) -> int:
             min_nodeids=args.min_nodeids,
         )
 
-    selected = assign(weights, args.shards)[args.shard - 1]
+    if args.durations is None:
+        durations, durations_state = None, "none"
+    else:
+        durations, durations_state = load_durations(args.durations)
+        if durations is None:
+            print(
+                f"::warning::--durations {args.durations!r} is {durations_state}; "
+                "dealing the shards by test COUNT instead. The partition is still "
+                "complete and disjoint -- only the balance suffers.",
+                file=_stderr(),
+            )
+    deal, weight_mode, unlisted = seconds_weights(weights, durations)
+    selected = assign(deal, args.shards)[args.shard - 1]
 
     if not selected:
         print(
@@ -493,6 +667,9 @@ def main(argv: list[str] | None = None) -> int:
             shard=args.shard,
             files=len(weights),
             nodeids=len(nodeids),
+            weights=weight_mode,
+            unlisted=unlisted,
+            durations=durations_state,
         )
 
     body = "\n".join(selected) + "\n"
@@ -529,9 +706,11 @@ def main(argv: list[str] | None = None) -> int:
 
     total = sum(weights.values())
     mine = sum(weights[p] for p in selected)
+    unit = "est. seconds" if weight_mode != "count" else "weight (tests)"
     print(
         f"shard {args.shard}/{args.shards}: {len(selected)} of {len(weights)} files, "
-        f"{mine} of {total} collected tests",
+        f"{mine} of {total} collected tests, {sum(deal[p] for p in selected):.1f} "
+        f"of {sum(deal.values()):.1f} {unit}",
         file=_stderr(),
     )
     return _finish(
@@ -544,6 +723,9 @@ def main(argv: list[str] | None = None) -> int:
         nodeids=len(nodeids),
         selected_files=len(selected),
         selected_tests=mine,
+        weights=weight_mode,
+        unlisted=unlisted,
+        durations=durations_state,
     )
 
 
