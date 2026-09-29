@@ -1,7 +1,7 @@
 """agent.plan_scan_root_refusals — each device's refused scan-source reports
 
 Revision ID: plan_library_09_scan_root_refusals
-Revises: coord_dp_write_auth_daily_01
+Revises: gates_clear_independence_01
 Create Date: 2026-09-28
 
 Phase 1 of ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``.
@@ -67,7 +67,7 @@ from alembic import op
 revision: str = "plan_library_09_scan_root_refusals"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "coord_dp_write_auth_daily_01"
+down_revision = "gates_clear_independence_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

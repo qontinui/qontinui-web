@@ -41,7 +41,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_09_scan_root_refusals"
-_PARENT_REVISION_ID = "coord_dp_write_auth_daily_01"
+_PARENT_REVISION_ID = "gates_clear_independence_01"
 _REVISION_FILENAME = "plan_library_09_scan_root_refusals.py"
 _TABLE = "plan_scan_root_refusals"
 
