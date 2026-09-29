@@ -53,10 +53,13 @@ as test time, so it is unmeasured -- and a shard with no measured row makes the
 verdict ``unknown``: the shard is missing, not fast.
 
 A measured row counts only with ``conclusion`` ``success``, or ``cancelled``
-with a runner assigned -- a budget timeout concludes ``cancelled`` (run
-36548570438 shard 6 ran 09:20:52 -> 10:06:11 and must read ``over_margin``). A
-shard cancelled at its timeout measures slightly OVER the budget, so a ``pct``
-just above 100 is expected, not a bug. Any other conclusion (``failure``,
+after running at least ``JOB_TIMEOUT_MINUTES - 2`` minutes -- a budget timeout
+concludes ``cancelled`` (run 36548570438 shard 6 ran 09:20:52 -> 10:06:11 and
+must read ``over_margin``). That floor is always the REAL job budget, never the
+override, so a dispatch with a low override still recognises a real timeout. A
+shorter ``cancelled`` is a manual or external cancel mid-shard: ``unknown``,
+naming the shard and its duration. A shard cancelled at its timeout measures
+slightly OVER the budget, so a ``pct`` just above 100 is expected, not a bug. Any other conclusion (``failure``,
 ``skipped``, ...) means the shard's time does not describe a full pass over its
 files, so the verdict is ``unknown``, naming the shard and conclusion.
 
@@ -80,15 +83,23 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from fractions import Fraction
 from typing import Any
 
-# The margin as an integer percentage, so the compare below is exact:
-# `45 * 0.70` is 31.499999999999996 in binary floating point, which would turn a
-# shard of exactly 31.5 min over the margin. `max_min * 100 > budget_min * 70`
-# has no such rounding at the boundary.
+# Every verdict compare is done in exact rational arithmetic: shard durations
+# are `Fraction` seconds and budgets are `Fraction` minutes, parsed from their
+# decimal text. No binary float ever reaches a boundary -- `budget * 0.70` in
+# float misfires at exactly 70% for 13 of the integer budgets 1..120 (e.g. 7
+# min with a 4.9-min shard), and so does `max_min * 100 > budget_min * 70` over
+# float minutes. `pct` and `skew` on `Result` are floats for DISPLAY only.
 MARGIN_PCT = 70
-MAX_SKEW = 2.0
+MAX_SKEW = 2
+# A `cancelled` row counts only when it ran at least this close to the REAL job
+# budget -- the same 2-minute slack backend-ci.yml's timeout marker uses
+# (`budget_floor = JOB_TIMEOUT_MINUTES - 2`). Anything shorter was cancelled by
+# someone, not by the budget, and describes no full pass over the shard.
+TIMEOUT_SLACK_MIN = 2
 DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
 PER_PAGE = 100
@@ -147,19 +158,34 @@ def format_line(result: Result) -> str:
     )
 
 
-def parse_budget(base: str | None, override: str | None) -> float:
-    """The effective budget in minutes. A non-empty override wins."""
-    raw = override.strip() if override and override.strip() else (base or "").strip()
-    source = "HEADROOM_BUDGET_OVERRIDE" if override and override.strip() else "JOB_TIMEOUT_MINUTES"
-    if not raw:
+def parse_minutes(raw: str | None, source: str) -> Fraction:
+    """A positive, finite number of minutes, parsed EXACTLY from its decimal text."""
+    text = (raw or "").strip()
+    if not text:
         raise MeasurementError(f"{source} is empty; no budget to measure against")
     try:
-        value = float(raw)
-    except ValueError as exc:
-        raise MeasurementError(f"{source}={raw!r} is not a number") from exc
-    if not value > 0 or value != value or value == float("inf"):
-        raise MeasurementError(f"{source}={raw!r} is not a positive finite number")
+        value = Fraction(text)
+    except (ValueError, ZeroDivisionError) as exc:
+        raise MeasurementError(f"{source}={text!r} is not a finite number") from exc
+    if value <= 0:
+        raise MeasurementError(f"{source}={text!r} is not a positive number")
     return value
+
+
+def parse_budget(base: str | None, override: str | None) -> Fraction:
+    """The effective budget in minutes. A non-empty override wins."""
+    if override and override.strip():
+        return parse_minutes(override, "HEADROOM_BUDGET_OVERRIDE")
+    return parse_minutes(base, "JOB_TIMEOUT_MINUTES")
+
+
+def _seconds(delta: timedelta) -> Fraction:
+    return Fraction(delta.days * 86400 + delta.seconds) + Fraction(delta.microseconds, 1_000_000)
+
+
+def _minutes(seconds: Fraction) -> float:
+    """Display only."""
+    return float(seconds / 60)
 
 
 def _parse_ts(value: Any, job_name: str, field: str) -> datetime | None:
@@ -189,15 +215,21 @@ def _is_measured(job: dict[str, Any], started: datetime | None, completed: datet
     return completed > started
 
 
-def shard_durations(jobs: list[dict[str, Any]], expected_shards: int) -> dict[int, float]:
-    """Minutes per shard number, from the run's job rows.
+def shard_durations(
+    jobs: list[dict[str, Any]],
+    expected_shards: int,
+    job_timeout_min: Fraction,
+) -> dict[int, Fraction]:
+    """Exact seconds per shard number, from the run's job rows.
 
     Raises ``MeasurementError`` for anything that makes the measurement
     untrustworthy: a malformed timestamp, a duplicate shard row, a measured
-    shard whose conclusion is neither ``success`` nor ``cancelled``, or a shard
-    with no measured row (never picked up by a runner, or absent).
+    shard whose conclusion is neither ``success`` nor a ``cancelled`` at the
+    timeout floor (``job_timeout_min - TIMEOUT_SLACK_MIN``), or a shard with no
+    measured row (never picked up by a runner, or absent).
     """
-    measured: dict[int, float] = {}
+    timeout_floor_s = (job_timeout_min - TIMEOUT_SLACK_MIN) * 60
+    measured: dict[int, Fraction] = {}
     seen: dict[int, str] = {}
     unmeasured: dict[int, str] = {}
     for job in jobs:
@@ -241,7 +273,16 @@ def shard_durations(jobs: list[dict[str, Any]], expected_shards: int) -> dict[in
                 "'cancelled' (a budget timeout) is a measurable pass"
             )
         assert started is not None and completed is not None
-        measured[shard] = (completed - started).total_seconds() / 60.0
+        seconds = _seconds(completed - started)
+        if conclusion == "cancelled" and seconds < timeout_floor_s:
+            raise MeasurementError(
+                f"shard {shard} was cancelled after {_minutes(seconds):.1f} min, short of "
+                f"the {float(job_timeout_min - TIMEOUT_SLACK_MIN):g}-min timeout floor "
+                f"(JOB_TIMEOUT_MINUTES {float(job_timeout_min):g} - {TIMEOUT_SLACK_MIN}): "
+                "an external or manual cancel, not a budget timeout, so its time "
+                "describes no full pass"
+            )
+        measured[shard] = seconds
 
     missing = sorted(set(range(1, expected_shards + 1)) - set(measured))
     if missing:
@@ -254,41 +295,54 @@ def shard_durations(jobs: list[dict[str, Any]], expected_shards: int) -> dict[in
 
 def evaluate(
     jobs: list[dict[str, Any]],
-    budget_min: float,
+    budget_min: Fraction | int,
     expected_shards: int = DEFAULT_EXPECTED_SHARDS,
+    *,
+    job_timeout_min: Fraction | int | None = None,
 ) -> Result:
-    """Pure verdict over a list of GitHub job dicts."""
+    """Pure verdict over a list of GitHub job dicts.
+
+    ``budget_min`` is what the margin is measured against (the override when
+    one is set). ``job_timeout_min`` is the REAL job budget, used only for the
+    cancelled-at-timeout floor; it defaults to ``budget_min``.
+    """
+    budget = Fraction(budget_min)
+    job_timeout = Fraction(job_timeout_min) if job_timeout_min is not None else budget
     try:
-        durations = shard_durations(jobs, expected_shards)
+        durations = shard_durations(jobs, expected_shards, job_timeout)
     except MeasurementError as exc:
-        return Result("unknown", str(exc), budget_min=budget_min)
+        return Result("unknown", str(exc), budget_min=float(budget))
 
     slowest_shard = max(durations, key=lambda s: durations[s])
-    max_min = durations[slowest_shard]
-    min_min = min(durations.values())
-    base = Result("ok", "", budget_min, max_min, min_min, slowest_shard)
-    pct, skew = base.pct, base.skew
+    max_s = durations[slowest_shard]
+    min_s = min(durations.values())
+    result = Result(
+        "ok", "", float(budget), _minutes(max_s), _minutes(min_s), slowest_shard
+    )
+    pct, skew = result.pct, result.skew
     assert pct is not None and skew is not None
 
-    # Exact compare on minutes; pct and skew are for display only.
-    if max_min * 100 > budget_min * MARGIN_PCT:
+    # Exact rational compares; pct and skew are for display only.
+    if max_s * 100 > budget * 60 * MARGIN_PCT:
         verdict, reason = (
             "over_margin",
-            f"shard {slowest_shard} took {max_min:.1f} min, {pct:.1f}% of the "
-            f"{budget_min:g}-minute budget (margin {MARGIN_PCT:g}%)",
+            f"shard {slowest_shard} took {_minutes(max_s):.1f} min, {pct:.1f}% of the "
+            f"{float(budget):g}-minute budget (margin {MARGIN_PCT}%)",
         )
-    elif max_min > min_min * MAX_SKEW:
+    elif max_s > min_s * MAX_SKEW:
         verdict, reason = (
             "skewed",
-            f"slowest/fastest shard = {max_min:.1f}/{min_min:.1f} min = {skew:.2f}x "
-            f"(limit {MAX_SKEW:g}x); the shard deal is unbalanced",
+            f"slowest/fastest shard = {_minutes(max_s):.1f}/{_minutes(min_s):.1f} min = "
+            f"{skew:.2f}x (limit {MAX_SKEW}x); the shard deal is unbalanced",
         )
     else:
         verdict, reason = (
             "ok",
             f"slowest shard {slowest_shard} at {pct:.1f}% of budget, skew {skew:.2f}x",
         )
-    return Result(verdict, reason, budget_min, max_min, min_min, slowest_shard)
+    return Result(
+        verdict, reason, float(budget), _minutes(max_s), _minutes(min_s), slowest_shard
+    )
 
 
 def fetch_jobs(repo: str, run_id: str, token: str, api_root: str = API_ROOT) -> list[dict[str, Any]]:
@@ -327,6 +381,9 @@ def fetch_jobs(repo: str, run_id: str, token: str, api_root: str = API_ROOT) -> 
 
 def run(args: argparse.Namespace, env: dict[str, str]) -> Result:
     try:
+        # The real budget is parsed even when an override is set: the
+        # cancelled-at-timeout floor is always measured against it.
+        job_timeout = parse_minutes(env.get("JOB_TIMEOUT_MINUTES"), "JOB_TIMEOUT_MINUTES")
         budget = parse_budget(env.get("JOB_TIMEOUT_MINUTES"), env.get("HEADROOM_BUDGET_OVERRIDE"))
     except MeasurementError as exc:
         return Result("unknown", str(exc))
@@ -345,8 +402,8 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> Result:
                 env.get("GITHUB_API_URL") or API_ROOT,
             )
     except (MeasurementError, OSError, ValueError) as exc:
-        return Result("unknown", str(exc), budget_min=budget)
-    return evaluate(jobs, budget, args.expected_shards)
+        return Result("unknown", str(exc), budget_min=float(budget))
+    return evaluate(jobs, budget, args.expected_shards, job_timeout_min=job_timeout)
 
 
 def main(argv: list[str] | None = None) -> int:
