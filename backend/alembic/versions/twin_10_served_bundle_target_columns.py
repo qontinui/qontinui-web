@@ -78,8 +78,12 @@ nullable columns with no default, and a ``NOT VALID`` constraint that scans
 nothing.
 
 INVALID-index limit: the index is built ``CONCURRENTLY`` outside the
-migration transaction, so a build that fails partway (a lock or statement
-timeout, a cancel) can leave an INVALID index that a re-run's ``IF NOT
+migration transaction, where no ``lock_timeout`` applies (the ``SET LOCAL``
+ended with the transaction it was set in, and coord's classifier admits no
+session-level ``SET``). The build therefore waits, without a bound, for every
+older transaction in the database to finish. It never blocks writers, but it
+can hold up a deploy. A build that fails partway (a cancel, or a timeout the
+role or database itself configures) can leave an INVALID index that a re-run's ``IF NOT
 EXISTS`` then skips, reporting success. The index only speeds up per-tenant
 reads, so an invalid one is slow rather than wrong. Recovery:
 ``DROP INDEX CONCURRENTLY coord.idx_client_telemetry_observations_tenant_id``
@@ -139,6 +143,9 @@ def upgrade() -> None:
     # 4. The FK, in the fresh transaction that also stamps the version, so a
     #    partial run never leaves it committed without the stamp. NOT VALID
     #    skips a scan that could find nothing: every existing tenant_id is NULL.
+    #    env.py runs every pending revision in one transaction, so this bound
+    #    also covers any revision applied after this one in the same run. That
+    #    fails safe: a later revision can only fail faster, never wait longer.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -151,20 +158,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Contract: drop the FK, the index and both columns. The observation
-    tenant_id is a derived attribution, not source data; a production_url set
-    after upgrade is lost."""
+    """Contract: drop the FK, the index and both columns, in ONE transaction.
+
+    One transaction, so a failed downgrade (say, the 3s lock timeout) rolls
+    back completely and leaves the database stamped at twin_10 with all of
+    twin_10's objects in place. A ``DROP INDEX CONCURRENTLY`` would have to
+    commit on its own and buys nothing here, because ``DROP COLUMN`` takes
+    ACCESS EXCLUSIVE regardless.
+
+    Data lost: every ``production_url`` and every observation's ``tenant_id``.
+    The attribution was stamped at observation time and cannot be rebuilt."""
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.client_telemetry_observations "
         "DROP CONSTRAINT IF EXISTS fk_client_telemetry_observations_tenant_id"
     )
-    with op.get_context().autocommit_block():
-        op.execute(
-            "DROP INDEX CONCURRENTLY IF EXISTS "
-            "coord.idx_client_telemetry_observations_tenant_id"
-        )
-    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute("DROP INDEX IF EXISTS coord.idx_client_telemetry_observations_tenant_id")
     op.execute(
         "ALTER TABLE coord.client_telemetry_observations DROP COLUMN IF EXISTS tenant_id"
     )

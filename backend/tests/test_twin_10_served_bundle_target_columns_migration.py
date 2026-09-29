@@ -12,9 +12,10 @@ Without a database (always runs):
    ``downgrade()``, and the column-drop guard reads the upgrade path as
    dropping nothing.
 3. Both directions are static ``op.execute`` SQL with no bind-parameter
-   spelling and no ``op.get_bind()`` (the classifier refuses it), the upgrade
-   carries no data DML, and the FK is a separate ``ADD CONSTRAINT ... NOT
-   VALID`` rather than an inline ``REFERENCES``.
+   spelling and no ``op.get_bind()``, the upgrade carries no data DML, and the
+   FK is a separate ``ADD CONSTRAINT ... NOT VALID`` rather than an inline
+   ``REFERENCES``. These mirror the rules of coord's migration classifier;
+   they do not run it, so a classifier change will not show here.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
@@ -339,10 +340,11 @@ def test_columns_fk_and_partial_index() -> None:
         assert (
             scalar(
                 engine,
-                "SELECT confrelid::regclass::text FROM pg_constraint WHERE conname = :n",
+                "SELECT confrelid = 'coord.tenants'::regclass "
+                "FROM pg_constraint WHERE conname = :n",
                 n=_FK,
             )
-            == "coord.tenants"
+            is True
         )
         assert index_exists(engine, _INDEX)
         assert _index_is_valid(engine, _INDEX), "a half-built CONCURRENTLY index"
