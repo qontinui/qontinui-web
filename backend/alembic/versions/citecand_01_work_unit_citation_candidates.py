@@ -35,8 +35,8 @@ the other direction: a prose line that merely began with ``Plan:`` was captured
 as a citation, could not be retracted, and flipped a unit to ``shipped: true``
 with half the plan unbuilt. A PR saying *"follow-up to plan X"* is not delivery
 of X. So inferred references live in their own table rather than as a new
-``source`` literal on ``coord.work_unit_pr_citations``: that table has 18
-reader files in coord (2026-09-29, and growing), and any ONE reader that forgot
+``source`` literal on ``coord.work_unit_pr_citations``: that table has many
+reader files in coord, and any ONE reader that forgot
 to exclude an inferred source would forge ``shipped``. A separate table makes
 the safe reading the default one — a reader that has never heard of candidates
 cannot mistake one for delivery.
@@ -135,9 +135,11 @@ Indexes (both partial on the open queue)
 How coord reads it: fail-closed behind a schema-readiness observation
 =====================================================================
 
-coord reads and writes this table ONLY behind a POSITIVE schema-readiness
+coord MUST read and write this table ONLY behind a POSITIVE schema-readiness
 observation (``schema_readiness.rs``, ``citation_candidates_observed`` — the
-twin of ``citation_delivery_scope_observed``). Until coord has observed this
+twin of ``citation_delivery_scope_observed``; added by Phase 2 of plan
+``2026-09-20-coord-reads-a-clean-not-delivered-for-work-that-landed-without-a-plan-trailer``,
+which lands in qontinui-coord AFTER this revision). Until coord has observed this
 table present, every candidate WRITE is skipped (fail-closed: nothing is
 written to a table coord has not seen) and the delivery reduction treats the
 candidate axis as unobserved rather than empty — an absent table is UNKNOWN,
@@ -251,8 +253,8 @@ def upgrade() -> None:
         'never carries a delivery_scope. An open candidate whose PR is merged only '
         'breaks the clean not-delivered answer (a citation gap, so '
         'evidence_complete goes false). Promotion is an explicit caller act '
-        'through coord''s citation writer. coord reads and writes this table only '
-        'behind a positive schema-readiness observation (fail-closed).'
+        'through coord''s citation writer. coord must read and write this table '
+        'only behind a positive schema-readiness observation (fail-closed).'
         """
     )
     op.execute(
