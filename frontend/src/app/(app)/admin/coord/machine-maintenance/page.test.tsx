@@ -422,6 +422,10 @@ describe("/admin/coord/machine-maintenance — verdict and levers", () => {
     expect(
       screen.getByTestId("coord-maintenance-plane-agent")
     ).toHaveTextContent("agent UNKNOWN");
+    // The agent plane's own detail, as coord sent it.
+    expect(
+      screen.getByTestId("coord-maintenance-agent-plane-detail")
+    ).toHaveTextContent("Agent plane: not served yet");
     const reg = await screen.findByTestId("coord-maintenance-ci-registration");
     expect(reg).toHaveTextContent("merytshost");
     expect(reg).toHaveTextContent("qontinui/qontinui-web");
@@ -1351,19 +1355,98 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
 });
 
 describe("/admin/coord/machine-maintenance — coord's final contract", () => {
-  it("renders schema_pending as UNKNOWN with the migration reason, not an error", async () => {
-    machinesResponse = res(503, {
-      error: "schema_pending",
-      message: "migration not applied",
-    });
+  // The EXACT body the browser receives from the web proxy in production:
+  // the maintenance GET proxies pass coord's error structured, and
+  // `http_exception_handler` wraps it as {error, message, timestamp, path}
+  // (pinned by the backend's TestReadErrorsReachTheBrowserStructured).
+  const envelope = (error: string, message: string) => ({
+    error,
+    message,
+    timestamp: 1790000000.5,
+    path: "https://api.qontinui.io/api/v1/operations/fleet/machines",
+  });
+
+  it("renders schema_pending on the machines read as UNKNOWN with the migration reason", async () => {
+    machinesResponse = res(
+      503,
+      envelope("schema_pending", "coord.maintenance_windows does not exist yet")
+    );
     render(<MachineMaintenancePage />);
     const notice = await screen.findByTestId(
       "coord-maintenance-machines-notice"
     );
     expect(notice).toHaveTextContent("coord's database is not migrated yet");
+    expect(notice).not.toHaveTextContent("HTTP 503");
     expect(screen.getByTestId("coord-maintenance-verdict")).toHaveTextContent(
       "Restart readiness UNKNOWN"
     );
+  });
+
+  it("still finds schema_pending in the pre-fix stringified envelope (defence in depth)", async () => {
+    machinesResponse = res(
+      503,
+      envelope(
+        "SERVICE_UNAVAILABLE",
+        JSON.stringify({ error: "schema_pending", message: "not migrated" })
+      )
+    );
+    render(<MachineMaintenancePage />);
+    expect(
+      await screen.findByTestId("coord-maintenance-machines-notice")
+    ).toHaveTextContent("coord's database is not migrated yet");
+  });
+
+  it("renders schema_pending on the readiness read as an UNKNOWN verdict", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    readinessResponse = res(
+      503,
+      envelope("schema_pending", "coord.maintenance_windows does not exist yet")
+    );
+    render(<MachineMaintenancePage />);
+    const strip = await screen.findByTestId("coord-maintenance-verdict");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("coord's database is not migrated yet")
+    );
+    expect(strip).toHaveTextContent("Restart readiness UNKNOWN");
+  });
+
+  it("a close that leaves a removal in flight is not 'fully restored'", async () => {
+    machinesResponse = res(200, machinesBody({ window: wireWindow() }));
+    closeResponse = res(
+      200,
+      wireWindow({
+        state: "closed",
+        levers: {
+          agent_work: { held: false, state: "released" },
+          ci: {
+            held: false,
+            state: "released",
+            labels: [
+              {
+                label: "qontinui",
+                repo: "qontinui/qontinui-web",
+                outcome: "removed",
+                detail: "pending: restore owed",
+              },
+            ],
+          },
+        },
+      })
+    );
+    render(<MachineMaintenancePage />);
+    const ret = await screen.findByTestId("coord-maintenance-return");
+    await waitFor(() => expect(ret).not.toBeDisabled());
+    await userEvent.click(ret);
+    await userEvent.type(
+      await screen.findByTestId("coord-maintenance-return-reason"),
+      "done"
+    );
+    await userEvent.click(
+      screen.getByTestId("coord-maintenance-return-submit")
+    );
+    expect(
+      await screen.findByTestId("coord-maintenance-close-headline")
+    ).toHaveTextContent("Returned to service — CI not fully restored");
   });
 
   it("renders label rows in flight, unanswered and label-level as coord means them", async () => {

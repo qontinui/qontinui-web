@@ -1215,6 +1215,29 @@ export function describeMaintenanceError(
   status: number,
   body: string
 ): MaintenanceError {
+  return describeOnce(status, body);
+}
+
+/**
+ * A JSON object with an `error` code, serialised INTO a string — what a
+ * proxy that stringifies coord's body (`detail=resp.text`) produces inside
+ * the envelope's `message` or FastAPI's `detail`. Defence in depth: the
+ * maintenance proxies pass coord's error structured, but a route that does
+ * not must still surface coord's code rather than "SERVICE_UNAVAILABLE".
+ */
+function nestedCoordError(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  if (!t.startsWith("{")) return null;
+  try {
+    const obj: unknown = JSON.parse(t);
+    return isRecord(obj) && str(obj.error) !== null ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+function describeOnce(status: number, body: string): MaintenanceError {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -1237,6 +1260,9 @@ export function describeMaintenanceError(
     };
   }
   const inner = isRecord(parsed.detail) ? parsed.detail : parsed;
+  const nested =
+    nestedCoordError(inner.message) ?? nestedCoordError(parsed.detail);
+  if (nested !== null) return describeOnce(status, nested);
   if (Array.isArray(parsed.detail)) {
     const msgs = parsed.detail
       .filter(isRecord)

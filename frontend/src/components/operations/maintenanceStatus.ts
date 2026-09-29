@@ -333,7 +333,10 @@ export function deriveLeverStatus(
       const n = stillRoutingCount(c.labels);
       const refusedAll = c.labels
         .filter((l) => isLabelLevelRefusal(l))
-        .map((l) => `label ${l.label} refused on all repos`);
+        .map(
+          (l) =>
+            `label ${l.label} refused on all repos: ${l.detail ?? l.rawOutcome ?? "coord gave no detail"}`
+        );
       const unknownN = new Set(
         c.labels
           .filter((l) => l.outcome === null && !isLabelLevelRefusal(l))

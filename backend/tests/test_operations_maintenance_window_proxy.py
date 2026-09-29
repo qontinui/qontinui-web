@@ -570,3 +570,83 @@ class TestWindowReadiness:
             _mock_client(MockClient, "get", httpx.ReadTimeout("slow"))
             resp = client.get(f"{API_PREFIX}/maintenance-window/{WINDOW_ID}/readiness")
         assert resp.status_code == 504
+
+
+# ---------------------------------------------------------------------------
+# The error body the browser actually receives
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def enveloped_client() -> TestClient:
+    """The app WITH the production HTTPException handler registered.
+
+    Every other test here runs against a bare ``FastAPI()`` and so sees
+    FastAPI's ``{"detail": …}``. Production registers
+    ``app.middleware.error_handler.http_exception_handler``, which rewrites
+    the body into the ``{"error", "message", "timestamp", "path", …}``
+    envelope — and the page reads THAT. A test of the wire the page parses
+    has to go through it.
+    """
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    from app.middleware.error_handler import http_exception_handler
+
+    app = _build_test_app()
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+    return TestClient(app)
+
+
+SCHEMA_PENDING = {
+    "error": "schema_pending",
+    "message": "coord.maintenance_windows does not exist yet",
+}
+
+
+class TestReadErrorsReachTheBrowserStructured:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/machines",
+            f"/machines/{DEVICE_ID}/ci-hosts",
+            "/maintenance-window",
+            f"/maintenance-window/{WINDOW_ID}/readiness",
+        ],
+    )
+    def test_schema_pending_keeps_coords_code_at_the_top_level(
+        self, enveloped_client: TestClient, path: str
+    ):
+        # The defect this pins: a text detail turned coord's 503 into
+        # {"error": "SERVICE_UNAVAILABLE", "message": "{\"error\": …}"}, so the
+        # page could never see `schema_pending`.
+        with _patch_httpx() as MockClient:
+            _mock_client(MockClient, "get", _mock_response(503, SCHEMA_PENDING))
+            resp = enveloped_client.get(f"{API_PREFIX}{path}")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["error"] == "schema_pending"
+        assert body["message"] == SCHEMA_PENDING["message"]
+
+    def test_a_non_json_coord_error_still_arrives_as_text(
+        self, enveloped_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            resp_mock = _mock_response(502, None, text="<html>bad gateway</html>")
+            resp_mock.json.side_effect = ValueError("not json")
+            _mock_client(MockClient, "get", resp_mock)
+            resp = enveloped_client.get(f"{API_PREFIX}/machines")
+        assert resp.status_code == 502
+        assert resp.json()["message"] == "<html>bad gateway</html>"
+
+    def test_other_get_routes_keep_their_text_detail(
+        self, enveloped_client: TestClient
+    ):
+        # Opt-in: the CI-runner mirror read (not a maintenance route) keeps
+        # the text detail its consumers parse today.
+        with _patch_httpx() as MockClient:
+            _mock_client(MockClient, "get", _mock_response(503, SCHEMA_PENDING))
+            resp = enveloped_client.get(f"{API_PREFIX}/ci-runners")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["error"] == "SERVICE_UNAVAILABLE"
+        assert "schema_pending" in body["message"]

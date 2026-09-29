@@ -5351,7 +5351,9 @@ async def get_fleet_machines(
     Passed through untouched. An empty ``ci_hosts`` means "no CI host linked",
     which the page renders as exactly that and never as "CI not paused".
     """
-    return await _proxy_coord_get("/coord/fleet/machines", tenant_id=tenant_id)
+    return await _proxy_coord_get(
+        "/coord/fleet/machines", tenant_id=tenant_id, structured_errors=True
+    )
 
 
 @router.get("/fleet/machines/{device_id}/ci-hosts")
@@ -5361,7 +5363,9 @@ async def get_machine_ci_hosts(
 ) -> Any:
     """Return the GitHub runner names declared to be this machine."""
     return await _proxy_coord_get(
-        f"/coord/fleet/machines/{device_id}/ci-hosts", tenant_id=tenant_id
+        f"/coord/fleet/machines/{device_id}/ci-hosts",
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -5445,7 +5449,10 @@ async def get_maintenance_windows(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     return await _proxy_coord_get(
-        "/coord/fleet/maintenance-window", params=params, tenant_id=tenant_id
+        "/coord/fleet/maintenance-window",
+        params=params,
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -5541,6 +5548,7 @@ async def get_maintenance_window_readiness(
     return await _proxy_coord_get(
         f"/coord/fleet/maintenance-window/{window_id}/readiness",
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
