@@ -2412,6 +2412,10 @@ async def _load_scan_roots(
 ) -> ScanRootListResponse:
     """``corpus_health.scan_roots`` alone — the degrading scan-root read.
 
+    Degrades on BOTH halves: a failed read (inside a savepoint) and a failed
+    rendering of what was read — every route that serves the block, list pages
+    included, reads ``unknown`` with a ``read_failed:`` detail rather than 500.
+
     Split out of :func:`_load_corpus_health` so a single-artifact route can
     judge its row's ``status_currency`` against the SAME rendering (readings
     AND refusals, so retirement liveness matches the list route's) without
@@ -2435,7 +2439,19 @@ async def _load_scan_roots(
             exc_info=True,
         )
         return scan_roots_read_failed(exc)
-    return scan_roots_health(observations, now=datetime.now(UTC), refusals=refusals)
+    try:
+        return scan_roots_health(observations, now=datetime.now(UTC), refusals=refusals)
+    except Exception as exc:
+        # Report-only, like the read above: a rendering defect must degrade the
+        # block, never fail the response — on the upsert and PATCH routes this
+        # runs AFTER the write committed, so a 500 here would report a landed
+        # write as failed. Broad on purpose; the log keeps the traceback.
+        logger.warning(
+            "plan_library.corpus_health_scan_roots_render_failed",
+            error=type(exc).__name__,
+            exc_info=True,
+        )
+        return scan_roots_read_failed(exc, rendering=True)
 
 
 async def _row_currency(

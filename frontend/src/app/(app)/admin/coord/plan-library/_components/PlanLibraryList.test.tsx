@@ -192,4 +192,28 @@ describe("every row states the currency of its own status", () => {
     expect(badge).toHaveAttribute("data-state", "unknown");
     expect(badge).toHaveTextContent("Currency unknown");
   });
+
+  it("renders a state this console does not know as UNKNOWN, not blank", async () => {
+    get.mockResolvedValue({
+      items: [
+        artifact(ON_PAGE, {
+          status_currency: {
+            state: "fed_from_the_future",
+            as_of: null,
+            ref_sha: null,
+            ref_age_secs: null,
+            detail: null,
+          },
+        }),
+      ],
+      total: 1,
+    });
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveTextContent("Currency unknown");
+    expect(badge.getAttribute("title")).toContain("fed_from_the_future");
+  });
 });
