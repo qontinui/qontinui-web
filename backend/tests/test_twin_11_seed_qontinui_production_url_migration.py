@@ -6,7 +6,8 @@ data half: seed ``production_url`` on qontinui's own ``vercel`` /
 
 Without a database (always runs):
 
-1. Chain wiring: the parent is twin_10 and the ``Revises:`` header agrees.
+1. Chain wiring: the parent is ``sched_cond_01`` (which sits on twin_10, the
+   revision that added the column) and the ``Revises:`` header agrees.
 2. ``upgrade()`` is exactly one static, ``coord.``-qualified ``UPDATE`` that
    fills NULL only and matches both system-tenant slugs; ``downgrade()`` runs
    nothing.
@@ -49,7 +50,7 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "twin_11_seed_qontinui_production_url"
 _REVISION_FILENAME = "twin_11_seed_qontinui_production_url.py"
-_PARENT_REVISION_ID = "twin_10_served_bundle_target_columns"
+_PARENT_REVISION_ID = "sched_cond_01_scheduled_tasks_conditions"
 
 _SEED_URL = "https://qontinui.io/"
 _SYSTEM_SLUGS = ("qontinui", "personal-jspinak")
@@ -93,7 +94,7 @@ def _calls(fn: ast.FunctionDef) -> list[ast.Call]:
 # ---------------------------------------------------------------------------
 
 
-def test_revision_ids_are_wired_onto_twin_10() -> None:
+def test_revision_ids_are_wired_onto_the_current_head() -> None:
     module = load_revision_module(_revision_path(), f"_test_{_REVISION_ID}")
     assert module.revision == _REVISION_ID
     assert module.down_revision == _PARENT_REVISION_ID
