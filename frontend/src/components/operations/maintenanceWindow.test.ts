@@ -33,6 +33,7 @@ import {
   formatUntil,
   leverActionPauses,
   machineEntryBadge,
+  CLOSING_NEXT_STEP,
   SCHEMA_PENDING_REASON,
   agentLeverStateWords,
   errorWantsReread,
@@ -1707,5 +1708,23 @@ describe("error bodies as the browser receives them", () => {
     expect(
       deriveLeverStatus("ci", machine({ openWindow: w }), NOW).reason
     ).toContain("label linux refused on all repos: github_read_only_label");
+  });
+});
+
+describe("a half-finished Return to service (closing)", () => {
+  it("parses closing defensively: true, false, and absent as UNKNOWN", () => {
+    expect(win({ closing: true }).closing).toBe(true);
+    expect(win({ closing: false }).closing).toBe(false);
+    expect(win().closing).toBeNull();
+    expect(win({ closing: "yes" }).closing).toBeNull();
+  });
+
+  it("maps window_closing to 'press Return to service again' and a re-read", () => {
+    const e = describeMaintenanceError(
+      409,
+      JSON.stringify({ error: "window_closing", message: "re-issue the close" })
+    );
+    expect(maintenanceErrorGuidance(e)).toBe(CLOSING_NEXT_STEP);
+    expect(errorWantsReread(e)).toBe(true);
   });
 });

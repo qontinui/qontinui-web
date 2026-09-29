@@ -70,6 +70,7 @@ import {
   deriveVerdictHealth,
   entryWindowId,
   findMachineEntry,
+  CLOSING_NEXT_STEP,
   agentLeverStateWords,
   errorWantsReread,
   labelOutcomeLabel,
@@ -540,6 +541,16 @@ export default function MachineMaintenancePage() {
                   )}
                 </div>
               </CoordAdminOnly>
+
+              {openWindow?.closing === true && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs break-words"
+                  data-testid="coord-maintenance-closing"
+                >
+                  {CLOSING_NEXT_STEP}
+                </p>
+              )}
 
               {closeResult?.ok && <CloseResult result={closeResult} />}
 
