@@ -1,7 +1,9 @@
 """Structural and round-trip test for alembic ``twin_10_served_bundle_target_columns``.
 
 Plan ``2026-09-17-twin-observer-genericity-non-release-consumers`` Phase 2 — the
-expand step coord's served-bundle observer (Phase 3) reads.
+expand step coord's served-bundle observer (Phase 3) reads. The revision is
+schema-only so coord's migration classifier can prove it additive; the
+``production_url`` seed is a separate revision.
 
 Without a database (always runs):
 
@@ -9,19 +11,18 @@ Without a database (always runs):
 2. Every DDL object is ``coord.``-qualified, the only DROP is in
    ``downgrade()``, and the column-drop guard reads the upgrade path as
    dropping nothing.
-3. Both directions are static ``op.execute`` SQL with no bind-parameter spelling.
+3. Both directions are static ``op.execute`` SQL with no bind-parameter
+   spelling and no ``op.get_bind()`` (the classifier refuses it), the upgrade
+   carries no data DML, and the FK is a separate ``ADD CONSTRAINT ... NOT
+   VALID`` rather than an inline ``REFERENCES``.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
 4. Both columns land nullable with the declared types, the tenant FK is
-   ``ON DELETE SET NULL``, and the partial index exists and is ``indisvalid``
-   (a killed ``CONCURRENTLY`` build leaves an invalid one ``IF NOT EXISTS``
-   would skip).
-5. The seed fills only the bootstrap tenant's ``vercel``/``qontinui-web`` row —
-   not another tenant's, not another bootstrap vercel target, not a non-vercel
-   row named ``qontinui-web`` — and never overwrites an operator-set value.
-6. ``upgrade()`` is idempotent, and up, down, up leaves no residue.
+   ``ON DELETE SET NULL``, and the partial index exists and is ``indisvalid``.
+5. A run that died after committing the columns re-runs cleanly.
+6. Up, down, up leaves no residue.
 """
 
 from __future__ import annotations
@@ -29,12 +30,9 @@ from __future__ import annotations
 import ast
 import re
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
@@ -60,13 +58,12 @@ _REVISION_FILENAME = "twin_10_served_bundle_target_columns.py"
 
 # Pinned as a literal, not read back from the module: the head this revision
 # was authored against. A moved head is re-pointed in the revision AND here.
-_PARENT_REVISION_ID = "coord_dp_write_auth_daily_01"
+_PARENT_REVISION_ID = "plan_library_09_scan_root_refusals"
 
 _TARGETS = "coord.twin_targets"
 _OBSERVATIONS = "coord.client_telemetry_observations"
 _INDEX = "idx_client_telemetry_observations_tenant_id"
-_SEED_URL = "https://qontinui.io/"
-_BOOTSTRAP_SLUG = "personal-jspinak"
+_FK = "fk_client_telemetry_observations_tenant_id"
 
 _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
@@ -102,15 +99,18 @@ def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
 
 
 def _sql_literals(fn: ast.FunctionDef) -> list[str]:
-    """Every string constant (including f-string parts) inside ``fn``, minus its docstring."""
+    """Every string constant (including f-string parts) inside ``fn``, minus its
+    docstring, in source order (``ast.walk`` is breadth-first)."""
     doc = ast.get_docstring(fn, clean=False)
-    return [
-        node.value
+    nodes = [
+        node
         for node in ast.walk(fn)
         if isinstance(node, ast.Constant)
         and isinstance(node.value, str)
         and node.value != doc
     ]
+    nodes.sort(key=lambda n: (n.lineno, n.col_offset))
+    return [n.value for n in nodes]
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ def test_docstring_header_matches_the_identifiers() -> None:
 # CREATE INDEX names an unqualified index (it lands in its table's schema); the
 # table it indexes is caught by the ``ON`` arm.
 _OBJECT_RE = re.compile(
-    r"(?:ALTER\s+TABLE|UPDATE|DROP\s+INDEX(?:\s+CONCURRENTLY)?|REFERENCES|FROM|\bON)"
+    r"(?:ALTER\s+TABLE|DROP\s+INDEX(?:\s+CONCURRENTLY)?|REFERENCES|FROM|\bON)"
     r"(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+([A-Za-z_.\"]+)",
     re.I,
 )
@@ -173,7 +173,7 @@ def test_every_ddl_object_is_coord_qualified() -> None:
                 assert obj.startswith("coord."), (
                     f"{fn_name}(): object {obj!r} is not coord-qualified"
                 )
-    assert seen >= 8, "the object regex matched too little; it is not measuring"
+    assert seen >= 9, "the object regex matched too little; it is not measuring"
 
 
 def test_the_only_drop_is_inside_downgrade() -> None:
@@ -204,8 +204,8 @@ def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
 def test_both_directions_are_op_execute_only() -> None:
     """SQL goes through ``op.execute`` with a static literal only (the
     schema-arg gate audits only constant SQL). ``op.get_context`` opens the
-    ``autocommit_block`` the CONCURRENTLY index needs; ``op.get_bind`` is the
-    post-build ``indisvalid`` read in ``_require_valid``."""
+    ``autocommit_block`` the CONCURRENTLY index needs. ``op.get_bind`` is
+    absent: coord's migration classifier rejects SQL run through it."""
     calls = [
         node
         for node in ast.walk(_tree())
@@ -218,7 +218,6 @@ def test_both_directions_are_op_execute_only() -> None:
     assert {c.func.attr for c in calls} == {  # type: ignore[attr-defined]
         "execute",
         "get_context",
-        "get_bind",
     }
     for call in calls:
         if call.func.attr != "execute":  # type: ignore[attr-defined]
@@ -228,18 +227,53 @@ def test_both_directions_are_op_execute_only() -> None:
             f"op.execute at line {call.lineno} must take one static SQL literal "
             "(an f-string escapes the schema-arg gate)"
         )
+    # No SQL through any other receiver (``op.get_bind().execute(...)``, a
+    # connection): the classifier cannot inspect it and rejects the file.
+    foreign = [
+        node.lineno
+        for node in ast.walk(_tree())
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"execute", "exec_driver_sql", "scalar"}
+        and not (isinstance(node.func.value, ast.Name) and node.func.value.id == "op")
+    ]
+    assert not foreign, f"SQL executed outside op.execute at lines {foreign}"
 
 
-def test_upgrade_bounds_its_lock_wait_and_checks_the_concurrent_build() -> None:
-    tree = _tree()
-    up = _sql_literals(_function(tree, "upgrade"))
+def test_upgrade_is_schema_only() -> None:
+    """Data DML is refused by coord's classifier; the seed lives in twin_11."""
+    for sql in _sql_literals(_function(_tree(), "upgrade")):
+        assert not re.match(r"\s*(?:UPDATE|INSERT|DELETE|MERGE|COPY)\b", sql, re.I), (
+            f"data DML in upgrade(): {sql.strip()[:80]!r}"
+        )
+
+
+def test_upgrade_bounds_its_lock_wait() -> None:
+    up = _sql_literals(_function(_tree(), "upgrade"))
     assert up and re.match(r"\s*SET\s+LOCAL\s+lock_timeout", up[0], re.I), (
         "the first statement of upgrade() must bound the ACCESS EXCLUSIVE wait"
     )
-    body = ast.unparse(_function(tree, "upgrade"))
-    assert "_require_valid(_INDEX)" in body, (
-        "a killed CONCURRENTLY build leaves an INVALID index IF NOT EXISTS skips"
-    )
+    # The constraint runs in the fresh transaction after the autocommit block,
+    # so it needs its own bound.
+    fk_at = next(i for i, sql in enumerate(up) if "ADD CONSTRAINT" in sql)
+    assert re.match(r"\s*SET\s+LOCAL\s+lock_timeout", up[fk_at - 1], re.I)
+
+
+def test_fk_is_a_separate_not_valid_constraint_added_last() -> None:
+    """coord's classifier rejects ``ADD COLUMN ... REFERENCES`` (a validated
+    FK) and admits ``ADD CONSTRAINT`` only with ``NOT VALID`` as its last two
+    tokens. Last, so it commits only with the version stamp."""
+    up = _sql_literals(_function(_tree(), "upgrade"))
+    for sql in up:
+        if re.search(r"ADD\s+COLUMN", sql, re.I):
+            assert "REFERENCES" not in sql.upper(), sql
+    fk = [sql for sql in up if "ADD CONSTRAINT" in sql.upper()]
+    assert len(fk) == 1
+    words = fk[0].split()
+    assert words[-2:] == ["NOT", "VALID"]
+    assert _FK in fk[0]
+    assert re.search(r"ON\s+DELETE\s+SET\s+NULL", fk[0])
+    assert up[-1] is fk[0], "the FK must be the last statement of upgrade()"
 
 
 def test_no_sql_body_carries_a_bind_parameter_spelling() -> None:
@@ -255,15 +289,6 @@ def test_no_sql_body_carries_a_bind_parameter_spelling() -> None:
 # ---------------------------------------------------------------------------
 # live database
 # ---------------------------------------------------------------------------
-
-
-def _bootstrap_tenant(engine: Engine) -> uuid.UUID | None:
-    with engine.connect() as conn:
-        row = conn.execute(
-            text("SELECT tenant_id FROM coord.tenants WHERE slug = :slug"),
-            {"slug": _BOOTSTRAP_SLUG},
-        ).fetchone()
-    return row[0] if row else None
 
 
 def _index_is_valid(engine: Engine, index_name: str) -> bool:
@@ -311,6 +336,14 @@ def test_columns_fk_and_partial_index() -> None:
             None,
         )
         assert _fk_delete_action(engine) == "n"  # SET NULL
+        assert (
+            scalar(
+                engine,
+                "SELECT confrelid::regclass::text FROM pg_constraint WHERE conname = :n",
+                n=_FK,
+            )
+            == "coord.tenants"
+        )
         assert index_exists(engine, _INDEX)
         assert _index_is_valid(engine, _INDEX), "a half-built CONCURRENTLY index"
         indexdef = scalar(
@@ -323,100 +356,29 @@ def test_columns_fk_and_partial_index() -> None:
 
 
 @_needs_pg
-def test_seed_targets_only_the_bootstrap_row_and_never_overwrites() -> None:
-    with ephemeral_database(admin_database_url(), "twin10_seed") as (engine, db_url):
+def test_a_run_that_died_after_the_columns_committed_reruns_cleanly() -> None:
+    """The columns commit before the index build; if the build (or the FK)
+    then fails, the version is not stamped and alembic re-runs upgrade(). The
+    re-run must not trip over what the first attempt left behind."""
+    with ephemeral_database(admin_database_url(), "twin10_rerun") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
-
-        bootstrap = _bootstrap_tenant(engine)
-        other = uuid.uuid4()
         with engine.begin() as conn:
-            if bootstrap is None:
-                bootstrap = uuid.uuid4()
-                conn.execute(
-                    text(
-                        "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
-                        "VALUES (:id, :slug, :slug)"
-                    ),
-                    {"id": bootstrap, "slug": _BOOTSTRAP_SLUG},
-                )
             conn.execute(
                 text(
-                    "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
-                    "VALUES (:id, 'twin10-other', 'twin10-other')"
-                ),
-                {"id": other},
-            )
-            # The row the seed targets, plus three near-misses it must leave
-            # NULL: another tenant's qontinui-web, another bootstrap vercel
-            # target, and a non-vercel bootstrap row named qontinui-web (the
-            # surface CHECK admits 'ecs'). Each near-miss fails a different
-            # filter of the seed's WHERE.
-            for tenant, surface, target in (
-                (bootstrap, "vercel", "qontinui-web"),
-                (other, "vercel", "qontinui-web"),
-                (bootstrap, "vercel", "twin10-other-project"),
-                (bootstrap, "ecs", "qontinui-web"),
-            ):
-                conn.execute(
-                    text(
-                        "INSERT INTO coord.twin_targets (tenant_id, surface, target) "
-                        "VALUES (:t, :s, :g) "
-                        "ON CONFLICT (tenant_id, surface, target) DO NOTHING"
-                    ),
-                    {"t": tenant, "s": surface, "g": target},
+                    "ALTER TABLE coord.twin_targets "
+                    "ADD COLUMN IF NOT EXISTS production_url TEXT"
                 )
-
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE coord.client_telemetry_observations "
+                    "ADD COLUMN IF NOT EXISTS tenant_id UUID"
+                )
+            )
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-
-        def url_for(
-            tenant: uuid.UUID, surface: str = "vercel", target: str = "qontinui-web"
-        ) -> object:
-            return scalar(
-                engine,
-                "SELECT production_url FROM coord.twin_targets WHERE tenant_id = :t "
-                "AND surface = :s AND target = :g",
-                t=tenant,
-                s=surface,
-                g=target,
-            )
-
-        assert url_for(bootstrap) == _SEED_URL
-        assert url_for(other) is None
-        assert url_for(bootstrap, target="twin10-other-project") is None
-        assert url_for(bootstrap, surface="ecs") is None
-        assert (
-            scalar(
-                engine,
-                "SELECT count(*) FROM coord.twin_targets WHERE production_url IS NOT NULL",
-            )
-            == 1
-        ), "the seed must fill exactly one row"
-
-        # An operator-set value survives a re-run of upgrade(): the seed only
-        # fills a NULL, and every DDL statement is IF NOT EXISTS.
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "UPDATE coord.twin_targets SET production_url = 'https://example.test/' "
-                    "WHERE tenant_id = :t AND surface = 'vercel' AND target = 'qontinui-web'"
-                ),
-                {"t": bootstrap},
-            )
-        _rerun_upgrade(engine)
-        assert url_for(bootstrap) == "https://example.test/"
-        assert url_for(other) is None
-
-
-def _rerun_upgrade(engine: Engine) -> None:
-    """Execute the revision's ``upgrade()`` again against an already-upgraded DB."""
-    module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
-    # The migration context owns the transaction (as alembic's env.py does), so
-    # the revision's autocommit_block() can commit it before the CONCURRENTLY
-    # index build.
-    with engine.connect() as conn:
-        ctx = MigrationContext.configure(conn)
-        with Operations.context(ctx), ctx.begin_transaction():
-            module.upgrade()
+        assert _fk_delete_action(engine) == "n"
+        assert index_exists(engine, _INDEX)
+        assert _index_is_valid(engine, _INDEX)
 
 
 @_needs_pg
@@ -427,32 +389,16 @@ def test_up_down_up_leaves_no_residue() -> None:
         assert column_info(engine, "twin_targets", "production_url") is None
         assert column_info(engine, "client_telemetry_observations", "tenant_id") is None
         assert not index_exists(engine, _INDEX)
+        assert (
+            scalar(
+                engine,
+                "SELECT count(*) FROM pg_constraint WHERE conname = :n",
+                n=_FK,
+            )
+            == 0
+        )
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert column_info(engine, "twin_targets", "production_url") is not None
         assert index_exists(engine, _INDEX)
-
-
-@_needs_pg
-def test_require_valid_raises_on_a_missing_or_invalid_index() -> None:
-    """The in-migration guard must actually fire, not merely be called."""
-    module = load_revision_module(_revision_path(), f"_guard_{_REVISION_ID}")
-    with ephemeral_database(admin_database_url(), "twin10_guard") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        with engine.connect() as conn:
-            ctx = MigrationContext.configure(conn)
-            with Operations.context(ctx), ctx.begin_transaction():
-                module._require_valid(_INDEX)  # valid: no raise
-                with pytest.raises(RuntimeError, match="no_such_index"):
-                    module._require_valid("no_such_index")
-                # Simulate the killed-CONCURRENTLY residue.
-                conn.execute(
-                    text(
-                        "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
-                        "(SELECT c.oid FROM pg_class c JOIN pg_namespace n "
-                        "ON n.oid = c.relnamespace WHERE n.nspname = 'coord' "
-                        "AND c.relname = :idx)"
-                    ),
-                    {"idx": _INDEX},
-                )
-                with pytest.raises(RuntimeError, match="INVALID"):
-                    module._require_valid(_INDEX)
+        assert _index_is_valid(engine, _INDEX)
+        assert _fk_delete_action(engine) == "n"
