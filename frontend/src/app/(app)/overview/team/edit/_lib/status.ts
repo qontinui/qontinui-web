@@ -10,8 +10,9 @@
 export type Status =
   | { kind: "idle" }
   | { kind: "saving" }
-  /** Carries the version that landed, so the message can name it. */
-  | { kind: "saved"; version: number }
+  /** Carries the version that landed, so the message can name it, and — when
+   *  the content saved but recording its source document did not — why. */
+  | { kind: "saved"; version: number; sourceError?: string }
   | { kind: "conflict"; currentVersion: number | null }
   | { kind: "failed"; message: string };
 

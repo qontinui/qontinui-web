@@ -52,6 +52,8 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { ReleaseRow } from "@/components/admin/coord/ReleaseRow";
 import {
   RELEASE_ATTENTION_BY_STATE,
@@ -117,7 +119,11 @@ function deriveReleasesHealth(
   }
 
   const level: HealthStripLevel =
-    stuck > 0 ? "red" : error || inFlight > 0 || unknown > 0 ? "amber" : "green";
+    stuck > 0
+      ? "red"
+      : error || inFlight > 0 || unknown > 0
+        ? "amber"
+        : "green";
   return {
     level,
     headline:
@@ -133,7 +139,9 @@ function deriveReleasesHealth(
       // successful read, not from now.
       error ? "counts are from the last successful read" : null,
       `${inSync} in sync`,
-      unknown > 0 ? `${unknown} descriptor${unknown === 1 ? "" : "s"} coord could not read` : null,
+      unknown > 0
+        ? `${unknown} descriptor${unknown === 1 ? "" : "s"} coord could not read`
+        : null,
       target ? `target ${target}` : null,
     ]
       .filter(Boolean)
@@ -186,7 +194,7 @@ export default function CoordReleasesPage() {
   useEffect(() => {
     const id = setTimeout(
       () => setAppliedRepo(repoFilter.trim()),
-      REPO_DEBOUNCE_MS,
+      REPO_DEBOUNCE_MS
     );
     return () => clearTimeout(id);
   }, [repoFilter]);
@@ -198,17 +206,24 @@ export default function CoordReleasesPage() {
     setReloadNonce((n) => n + 1);
   }, [repoFilter]);
 
-  // Fetch + poll for the applied repo. A per-run `ignore` guard drops a stale
-  // response, so an earlier slow request can never overwrite a newer one.
-  useEffect(() => {
-    let ignore = false;
-    const load = async () => {
+  // Fetch + poll for the applied repo, single-flight (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): one
+  // request per tick, never overlapping itself, and a superseded flight (the
+  // repo changed, or the nonce forced a reload) writes nothing, so an earlier
+  // slow request can never overwrite a newer one. `reloadNonce` is a dependency
+  // ONLY so that a forced reload gives the hook a new `poll`, which is what
+  // makes it read at once with the current repo.
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
       try {
-        const body = await runnerReleasesService.list({
-          limit: 100,
-          ...(appliedRepo ? { repo: appliedRepo } : {}),
-        });
-        if (ignore) return;
+        const body = await runnerReleasesService.list(
+          {
+            limit: 100,
+            ...(appliedRepo ? { repo: appliedRepo } : {}),
+          },
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
         setReleases(body.history ?? []);
         setTarget(body.target ?? null);
         setError(body.coord_error ?? null);
@@ -222,21 +237,24 @@ export default function CoordReleasesPage() {
         // this reason.
         setLoaded(true);
       } catch (e) {
-        if (ignore) return;
+        if (!isCurrent()) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!ignore) setSettled(true);
+        if (isCurrent()) setSettled(true);
       }
-    };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see the nonce note above
+    [appliedRepo, reloadNonce]
+  );
+
+  useEffect(() => {
     setLoaded(false);
     setSettled(false);
-    load();
-    const id = setInterval(load, POLL_INTERVAL_MS);
-    return () => {
-      ignore = true;
-      clearInterval(id);
-    };
-  }, [appliedRepo, reloadNonce]);
+  }, [poll]);
+
+  useSingleFlightPoll(poll, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   // Newest-first by observed_at (coord already sorts; guarded here so the
   // contract is explicit and stable regardless of coord ordering).
@@ -330,9 +348,7 @@ export default function CoordReleasesPage() {
 
       <RecordList
         items={shown}
-        itemKey={(e) =>
-          `${e.tag ?? e.version ?? "rel"}-${e.observed_at ?? ""}`
-        }
+        itemKey={(e) => `${e.tag ?? e.version ?? "rel"}-${e.observed_at ?? ""}`}
         loaded={settled || releases.length > 0}
         skeletonRows={6}
         renderRow={(entry, ctx) => (
@@ -344,19 +360,22 @@ export default function CoordReleasesPage() {
         )}
         empty={
           error ? null : (
-          <p className="text-sm text-muted-foreground italic">
-            {tab !== "all" ? (
-              <>No observed releases in this window are {tab === "attention" ? "stuck" : "in flight"}.</>
-            ) : (
-              <>
-                No observed releases
-                {repoFilter.trim() ? ` for ${repoFilter.trim()}` : ""} yet. Coord
-                observes GitHub Releases (webhook + poll) for the runner
-                installer surface; a published release with its `-setup.exe` and
-                `latest.json` assets appears here once observed.
-              </>
-            )}
-          </p>
+            <p className="text-sm text-muted-foreground italic">
+              {tab !== "all" ? (
+                <>
+                  No observed releases in this window are{" "}
+                  {tab === "attention" ? "stuck" : "in flight"}.
+                </>
+              ) : (
+                <>
+                  No observed releases
+                  {repoFilter.trim() ? ` for ${repoFilter.trim()}` : ""} yet.
+                  Coord observes GitHub Releases (webhook + poll) for the runner
+                  installer surface; a published release with its `-setup.exe`
+                  and `latest.json` assets appears here once observed.
+                </>
+              )}
+            </p>
           )
         }
       />

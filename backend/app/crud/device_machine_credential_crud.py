@@ -25,6 +25,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.devenv import DeviceMachineCredential
@@ -73,6 +74,56 @@ def _expiry(
     return base + timedelta(days=ttl_days)
 
 
+class DeviceMachineKeyRevokedError(Exception):
+    """:func:`mint` refused to re-mint over an operator-revoked key."""
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(f"device machine key for {device_id} is revoked")
+        self.device_id = device_id
+
+
+class DeviceMachineKeyStillUsableError(Exception):
+    """:func:`mint` refused to rotate a key that is still usable for longer
+    than the caller's ``refuse_if_usable_beyond`` window."""
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(f"device machine key for {device_id} is still usable")
+        self.device_id = device_id
+
+
+#: One key per device (``devenv.device_machine_credentials``); see
+#: ``app.models.devenv.DeviceMachineCredential``.
+_DEVICE_UNIQUE_CONSTRAINT: Final[str] = "uq_devenv_dmk_device_id"
+
+
+def _violated_constraint(exc: IntegrityError) -> str | None:
+    """Name of the constraint an ``IntegrityError`` violated, if the driver says.
+
+    asyncpg carries it structurally as ``constraint_name`` on the original
+    exception, which SQLAlchemy's adapter chains as the translated error's
+    ``__cause__``. Falls back to searching the message text so another driver
+    (or a wrapped error) still resolves, rather than reading as "unknown".
+    """
+    orig = exc.orig
+    for err in (orig, getattr(orig, "__cause__", None)):
+        name = getattr(err, "constraint_name", None)
+        if isinstance(name, str) and name:
+            return name
+    text = str(orig)
+    return _DEVICE_UNIQUE_CONSTRAINT if _DEVICE_UNIQUE_CONSTRAINT in text else None
+
+
+def _usable_beyond(cred: DeviceMachineCredential, horizon: datetime) -> bool:
+    """True when ``cred`` does not expire before ``horizon`` (no expiry
+    counts as never expiring). Revocation is the caller's check."""
+    if cred.expires_at is None:
+        return True
+    expires = cred.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    return expires > horizon
+
+
 async def mint(
     db: AsyncSession,
     *,
@@ -80,6 +131,8 @@ async def mint(
     owner_user_id: UUID | None,
     tenant_id: UUID | None = None,
     ttl_days: int = DEVICE_MACHINE_KEY_TTL_DAYS,
+    refuse_if_revoked: bool = False,
+    refuse_if_usable_beyond: timedelta | None = None,
 ) -> tuple[str, DeviceMachineCredential]:
     """Mint (or rotate) the device machine key for ``device_id``.
 
@@ -88,19 +141,47 @@ async def mint(
     key per device): a re-mint replaces the prior credential in place,
     rotating the secret and clearing any previous revocation/usage stamps.
 
+    The two ``refuse_*`` guards (both off by default, so the owner's
+    user-bearer mint and pair-cli keep the unconditional rotate) are
+    evaluated AFTER the ``SELECT ... FOR UPDATE`` of the existing row, on
+    freshly loaded state (``populate_existing``), so a concurrent revoke or
+    mint cannot slip between the check and the write:
+
+    * ``refuse_if_revoked`` — an existing row with ``revoked_at`` set raises
+      :class:`DeviceMachineKeyRevokedError` instead of being un-revoked.
+    * ``refuse_if_usable_beyond`` — an existing unrevoked row that stays
+      usable for longer than this window (``expires_at`` further than
+      ``now + window``, or no expiry at all) raises
+      :class:`DeviceMachineKeyStillUsableError` instead of being rotated.
+      The same error is raised when no row existed but a concurrent mint
+      inserted one first (the unique constraint on ``device_id``).
+
     Returns ``(plaintext_key, credential)`` — the plaintext is delivered to
     the runner exactly once. The caller commits.
     """
-    plaintext, dmk_hash, dmk_prefix = generate_device_machine_key()
-    now = datetime.now(UTC)
-    expires_at = _expiry(now, ttl_days)
-
     stmt = (
         select(DeviceMachineCredential)
         .where(DeviceMachineCredential.device_id == device_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     cred = (await db.execute(stmt)).scalar_one_or_none()
+
+    # Read the clock AFTER the lock is held, so a wait on a concurrent
+    # writer's lock cannot age the window check or the new expiry.
+    plaintext, dmk_hash, dmk_prefix = generate_device_machine_key()
+    now = datetime.now(UTC)
+    expires_at = _expiry(now, ttl_days)
+
+    if cred is not None:
+        if refuse_if_revoked and cred.revoked_at is not None:
+            raise DeviceMachineKeyRevokedError(device_id)
+        if (
+            refuse_if_usable_beyond is not None
+            and cred.revoked_at is None
+            and _usable_beyond(cred, now + refuse_if_usable_beyond)
+        ):
+            raise DeviceMachineKeyStillUsableError(device_id)
 
     if cred is None:
         cred = DeviceMachineCredential(
@@ -113,7 +194,24 @@ async def mint(
             last_used_at=None,
             revoked_at=None,
         )
-        db.add(cred)
+        if refuse_if_usable_beyond is None:
+            db.add(cred)
+        else:
+            # First-insert race: FOR UPDATE locks nothing when no row exists,
+            # so a concurrent mint can insert first. That winner just minted
+            # a fresh full-TTL key, so answer as if we had seen it —
+            # still usable — instead of surfacing the unique violation. The
+            # savepoint keeps the session usable after the failed INSERT.
+            # Only the guarded (self-mint) path does this; the owner's mint
+            # and pair-cli keep propagating the IntegrityError.
+            try:
+                async with db.begin_nested():
+                    db.add(cred)
+                    await db.flush()
+            except IntegrityError as exc:
+                if _violated_constraint(exc) != _DEVICE_UNIQUE_CONSTRAINT:
+                    raise
+                raise DeviceMachineKeyStillUsableError(device_id) from exc
     else:
         # Rotate the existing row in place — replace the secret and reset
         # the lifecycle stamps so the re-minted key is fresh.

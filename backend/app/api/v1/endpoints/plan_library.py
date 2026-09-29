@@ -2392,6 +2392,10 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     try:
         async with db.begin_nested():
             observations = await scan_root_crud.list_observations(db, org_id=org_id)
+            # Same savepoint: a refused device must read ``refused:`` here
+            # exactly as on ``GET /plan-library/scan-roots``, and a failed
+            # refusal read degrades the block like a failed reading read.
+            refusals = await scan_root_crud.list_refusals(db, org_id=org_id)
     except SQLAlchemyError as exc:
         # The page names only the class; the log carries the traceback, so a
         # missing migration and a timeout stay distinguishable to an operator —
@@ -2404,7 +2408,9 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
         )
         scan_roots = scan_roots_read_failed(exc)
     else:
-        scan_roots = scan_roots_health(observations, now=datetime.now(UTC))
+        scan_roots = scan_roots_health(
+            observations, now=datetime.now(UTC), refusals=refusals
+        )
     artifact_count, plan_count, newest = crud.corpus_totals(census)
     return CorpusHealth(
         artifact_count=artifact_count,

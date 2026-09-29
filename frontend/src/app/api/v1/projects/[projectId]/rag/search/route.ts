@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 
 /**
@@ -29,10 +30,8 @@ export async function POST(
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const backendUrl =
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8000";
+  const backendUrl = backendBaseOrResponse();
+  if (backendUrl instanceof NextResponse) return backendUrl;
   const targetUrl = `${backendUrl}/api/v1/projects/${projectId}/rag/search`;
 
   try {

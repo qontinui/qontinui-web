@@ -5446,6 +5446,31 @@
         "title": "Body_upload_file_api_v1_files_upload_post",
         "type": "object"
       },
+      "Body_upload_file_api_v1_overview_files_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_file_api_v1_overview_files_post",
+        "type": "object"
+      },
       "Body_upload_image_api_v1_projects__project_id__images_upload_post": {
         "properties": {
           "file": {
@@ -8314,7 +8339,7 @@
         "type": "object"
       },
       "CiNodeConfig": {
-        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.",
+        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
           "enabled": {
             "default": false,
@@ -8322,11 +8347,17 @@
             "type": "boolean"
           },
           "max_concurrent_builds": {
-            "default": 1,
-            "maximum": 64.0,
-            "minimum": 1.0,
-            "title": "Max Concurrent Builds",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 64.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent Builds"
           },
           "min_free_disk_gb": {
             "default": 20,
@@ -23323,6 +23354,23 @@
         "title": "FileImportResult",
         "type": "object"
       },
+      "FileItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/FileRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "FileItem",
+        "type": "object"
+      },
       "FileListResponse": {
         "description": "Response for file listing.",
         "properties": {
@@ -23351,6 +23399,79 @@
           "total_size_bytes"
         ],
         "title": "FileListResponse",
+        "type": "object"
+      },
+      "FileRead": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_path": {
+            "title": "Download Path",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "uploaded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded By"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "page_id",
+          "uploaded_by",
+          "created_at",
+          "download_path"
+        ],
+        "title": "FileRead",
         "type": "object"
       },
       "FileUpdateRequest": {
@@ -23426,6 +23547,60 @@
           "message"
         ],
         "title": "FileUploadResponse",
+        "type": "object"
+      },
+      "FilesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/FileRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "FilesItem",
+        "type": "object"
+      },
+      "FilesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "FilesList",
         "type": "object"
       },
       "FindingCategoryConfigCreate": {
@@ -33048,6 +33223,546 @@
         "title": "PackageUpdate",
         "type": "object"
       },
+      "PageCreate": {
+        "properties": {
+          "body_md": {
+            "default": "",
+            "maxLength": 500000,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Related",
+            "type": "array"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "PageCreate",
+        "type": "object"
+      },
+      "PageItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PageRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PageItem",
+        "type": "object"
+      },
+      "PageRead": {
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "excerpt": {
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "body_md",
+          "excerpt",
+          "doc_number",
+          "doc_status",
+          "owner",
+          "related",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "PageRead",
+        "type": "object"
+      },
+      "PageRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title"
+        ],
+        "title": "PageRef",
+        "type": "object"
+      },
+      "PageUpdate": {
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "maxLength": 500000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "PageUpdate",
+        "type": "object"
+      },
+      "PageVersionList": {
+        "properties": {
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PageVersionSummary"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions",
+          "current_version"
+        ],
+        "title": "PageVersionList",
+        "type": "object"
+      },
+      "PageVersionRead": {
+        "properties": {
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by",
+          "body_md",
+          "doc_number",
+          "doc_status",
+          "owner"
+        ],
+        "title": "PageVersionRead",
+        "type": "object"
+      },
+      "PageVersionSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by"
+        ],
+        "title": "PageVersionSummary",
+        "type": "object"
+      },
+      "PagesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PageRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PagesItem",
+        "type": "object"
+      },
+      "PagesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PageRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "PagesList",
+        "type": "object"
+      },
       "PaginatedAnnotationsResponse": {
         "description": "Paginated annotations response",
         "properties": {
@@ -38945,6 +39660,16 @@
             },
             "title": "Running Task Ids",
             "type": "array"
+          },
+          "ui_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -40664,6 +41389,16 @@
             },
             "title": "Running Task Ids",
             "type": "array"
+          },
+          "ui_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -41092,6 +41827,124 @@
           "reportedAt"
         ],
         "title": "RunnerUiError",
+        "type": "object"
+      },
+      "RunnerUiThread": {
+        "additionalProperties": true,
+        "description": "Native UI-thread liveness a runner reports about itself.\n\nPlan ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``.\n\nThe runner publishes this block on every heartbeat (``qontinui-runner``\n``src-tauri/src/heartbeat.rs``, ``HeartbeatUiThread``, introduced in\nrunner ``7d837703a`` \u2014\nthe single serializer for all three heartbeat sinks). Until this model the\nbackend dropped it at the door: ``RunnerHeartbeat`` is a plain\n``BaseModel``, so pydantic's default ``extra='ignore'`` discarded the key and\na wedged UI thread was never visible off-box.\n\n``derived_status`` collapses several faults into one word; this block is\nwhat separates them:\n\n* ``wedged is True`` \u2014 the 2026-08-19 failure (window frozen, X button dead)\n  which every other heartbeat field reports as healthy.\n* ``wedged is None`` vs ``False`` \u2014 the deliberate UNKNOWN / not-wedged\n  split. ``None`` means nothing was established (non-Windows, no window\n  handle cached yet, monitor stopped) and must NEVER render as \"not wedged\".\n* ``ping_delivery`` / ``false_death_suppressed`` \u2014 separate \"the UI is dead\"\n  from \"the runner could not reach it and is deliberately declining to\n  recreate it\", a suppression that can hold for hours while\n  ``derived_status`` reads ``errored`` throughout.\n\nEvery field is optional: a runner predating a field omits it, and absent is\nUNKNOWN. ``extra='allow'`` keeps keys a newer runner adds (e.g. the\npong-receive liveness of plan\n``2026-09-09-the-pong-receive-path-has-no-liveness-signal-so-fd-exhaustion-still-reads-as-ui-death``)\ninstead of dropping them at the door the way the whole block used to be.\nExtras arrive on an UNAUTHENTICATED route and are held in process memory,\nso they are bounded (see ``_bound_untrusted_input``): at most\n``MAX_EXTRA_KEYS`` scalar values, strings capped at ``MAX_EXTRA_STR``.\nAnything else is dropped, never rejected \u2014 a newer runner's unexpected\nkey must not cost it its whole heartbeat.\n\nThe wire keys are snake_case and read BY NAME. ``backend_relay.rs`` records\nthe incident where camelCase keys were silently dropped and\n``heartbeat_device`` fell back to writing a literal ``\"healthy\"`` every\n30 s; ``tests/test_dev_dashboard_ui_thread.py`` pins the ten-key snake_case\nshape the Rust test ``payload_carries_the_native_ui_thread_block`` pins on\nthe other side.",
+        "properties": {
+          "event_pong_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Pong Age Ms"
+          },
+          "events_undelivered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Undelivered"
+          },
+          "false_death_suppressed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Death Suppressed"
+          },
+          "last_ping_emit_fail_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ping Emit Fail Age Ms"
+          },
+          "last_ping_emit_ok_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ping Emit Ok Age Ms"
+          },
+          "ping_delivery": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ping Delivery"
+          },
+          "ping_emit_failures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ping Emit Failures"
+          },
+          "probe_wedged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe Wedged"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "wedged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wedged"
+          }
+        },
+        "title": "RunnerUiThread",
         "type": "object"
       },
       "RuntimeData": {
@@ -41854,6 +42707,14 @@
             "title": "Fresh Within Secs",
             "type": "integer"
           },
+          "retire_after_secs": {
+            "title": "Retire After Secs",
+            "type": "integer"
+          },
+          "retired_count": {
+            "title": "Retired Count",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/ScanRootRow"
@@ -41874,6 +42735,8 @@
           "state",
           "detail",
           "fresh_within_secs",
+          "retire_after_secs",
+          "retired_count",
           "count",
           "fresh_count",
           "rows",
@@ -42078,7 +42941,7 @@
         "type": "object"
       },
       "ScanRootRow": {
-        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* a ``refused:`` detail when the device's latest contact within\n  ``fresh_within_secs`` was a REFUSED report (a 422) and no fresh reading\n  stands \u2014 including a device refused on its first-ever report, which has\n  no reading at all. The device is alive and being refused, which is not\n  what a silent one looks like;\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``), naming its last refusal when\n  it has one;\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``refused`` > ``observation_stale`` > ``reading_superseded``\n> ``ref_stale``. A FRESH reading keeps its own verdict even when a refusal\nfollowed it; the refusal fields are served beside it either way.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.\n\n**A refusal-only row** (a device whose every report was refused, so no\nreading was ever stored) carries ``null`` in every READING field \u2014\n``reported_state``, ``counts_are_floors``, ``observed_at``,\n``received_at``, ``last_report_applied``, ``last_report_observed_at``,\n``observed_skew_secs``, ``observation_age_secs`` and the reported values \u2014\nand ``observation_fresh: false``. ``null`` there is \"no reading exists\",\nnever a default.",
         "properties": {
           "ahead": {
             "anyOf": [
@@ -42103,8 +42966,15 @@
             "title": "Behind"
           },
           "counts_are_floors": {
-            "title": "Counts Are Floors",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Are Floors"
           },
           "default_ref": {
             "anyOf": [
@@ -42144,29 +43014,86 @@
             ],
             "title": "Head Sha"
           },
+          "last_refused_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused At"
+          },
+          "last_refused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused Reason"
+          },
           "last_report_applied": {
-            "title": "Last Report Applied",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Applied"
           },
           "last_report_observed_at": {
-            "title": "Last Report Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Observed At"
           },
           "observation_age_secs": {
-            "title": "Observation Age Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Secs"
           },
           "observation_fresh": {
             "title": "Observation Fresh",
             "type": "boolean"
           },
           "observed_at": {
-            "title": "Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
           },
           "observed_skew_secs": {
-            "title": "Observed Skew Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Skew Secs"
           },
           "plans_dir": {
             "anyOf": [
@@ -42180,8 +43107,15 @@
             "title": "Plans Dir"
           },
           "received_at": {
-            "title": "Received At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
           },
           "ref_age_secs": {
             "anyOf": [
@@ -42204,6 +43138,28 @@
               }
             ],
             "title": "Ref Sha"
+          },
+          "refused_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Age Secs"
+          },
+          "refused_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Count"
           },
           "repo_root": {
             "anyOf": [
@@ -42228,14 +43184,25 @@
             "title": "Reported Detail"
           },
           "reported_state": {
-            "enum": [
-              "measured",
-              "not_scanning",
-              "not_a_git_work_tree",
-              "unknown"
+            "anyOf": [
+              {
+                "enum": [
+                  "measured",
+                  "not_scanning",
+                  "not_a_git_work_tree",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Reported State",
-            "type": "string"
+            "title": "Reported State"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
           },
           "source_repo": {
             "anyOf": [
@@ -42281,7 +43248,12 @@
           "last_report_observed_at",
           "observed_skew_secs",
           "observation_age_secs",
-          "observation_fresh"
+          "observation_fresh",
+          "last_refused_at",
+          "last_refused_reason",
+          "refused_count",
+          "refused_age_secs",
+          "retired"
         ],
         "title": "ScanRootRow",
         "type": "object"
@@ -51421,6 +52393,87 @@
           }
         },
         "title": "TenantRenameIn",
+        "type": "object"
+      },
+      "TenantTranscriptSyncPatch": {
+        "additionalProperties": false,
+        "description": "Closed body for the transcript-sync write \u2014 see wire fact 2 above.",
+        "properties": {
+          "transcript_sync_enabled": {
+            "title": "Transcript Sync Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "transcript_sync_enabled"
+        ],
+        "title": "TenantTranscriptSyncPatch",
+        "type": "object"
+      },
+      "TenantTranscriptSyncView": {
+        "description": "The tenant's transcript-sync consent, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "column_missing": {
+            "default": false,
+            "title": "Column Missing",
+            "type": "boolean"
+          },
+          "transcript_sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript Sync Enabled"
+          }
+        },
+        "required": [
+          "transcript_sync_enabled",
+          "can_edit"
+        ],
+        "title": "TenantTranscriptSyncView",
+        "type": "object"
+      },
+      "TenantTranscriptSyncWriteResult": {
+        "description": "What was written, and \u2014 separately \u2014 what coord now reads back.\n\n``effective`` is ``None`` with ``readback_error`` set when coord accepted\nthe write but did not return the policy it re-read (its own post-upsert\nSELECT failed). That is UNKNOWN, not \"applied\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantTranscriptSyncView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "written"
+        ],
+        "title": "TenantTranscriptSyncWriteResult",
         "type": "object"
       },
       "TestRunComplete": {
@@ -75402,6 +76455,55 @@
         ]
       }
     },
+    "/api/v1/devices/{device_id}/machine-credential/self-mint": {
+      "post": {
+        "description": "Mint (or rotate) a device's OWN machine key, authenticated by its live\ndevice JWT \u2014 no user session.\n\nPlan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.\nThe ``dmk_`` is the only credential that re-derives a device JWT after the\nJWT has expired (``/exchange``), but until now it was issued only by\npairing and by the user-bearer :func:`mint_device_machine_credential`. A\nrunner paired before the auto-mint, or one that lost its key, therefore\nhad no way to acquire one unattended, and an outage longer than its\nJWT's remaining life stranded it until an operator re-paired. The runner\ncalls this while it still holds a valid device JWT and its stored key is\nabsent or near expiry.\n\n**Authentication** (:func:`~app.api.deps.get_paired_device`): only an\nUNEXPIRED coord-signed device JWT with ``sub_type=device`` and\n``mint_provenance=paired``. No bearer / expired / invalid \u2192 401; an agent\ncredential (including the anonymous bootstrap mint), a capability grant,\nor a ``bootstrap``/``unknown`` provenance \u2192 403.\n\n**Authorization**, all server-side, nothing read from a body:\n\n* the token's ``device_id`` claim MUST equal the path \u2192 else 403\n  ``device_mismatch``. A device mints only its own key.\n* coord must know the device: ``GET /coord/devices/{id}/state``,\n  forwarding the caller's verified device JWT (5 s budget). A 404 \u2192 403\n  ``device_not_owned``; a row naming a different ``device_id`` \u2192 403\n  ``device_mismatch``; coord refusing the forwarded token (401/403 or\n  any other non-404 4xx except 429) \u2192 403 ``coord_refused_device_token``;\n  coord unreachable, timed out, any other transport failure, a 5xx, or a\n  429 rate limit \u2192 **503** ``coord_device_lookup_unavailable``; any\n  status below 400 other than 200, a 200 that is not a JSON object, or a\n  row whose ``tenant_id`` is missing, null or unparseable \u2192 **502**\n  ``coord_device_state_malformed``. In every\n  one of these nothing is minted \u2014 an unanswered or unreadable lookup is\n  UNKNOWN, never a licence to mint.\n* an existing key that an operator REVOKED is not re-minted \u2192 403\n  ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``\n  on rotation, so without this a device could undo its own revocation;\n  re-enrolment after a revocation stays with the owner's user-bearer mint.\n* an existing unrevoked key still usable for more than\n  :data:`SELF_MINT_RENEWAL_WINDOW` (7 days) is NOT rotated \u2192 409\n  ``machine_key_still_usable``.\n\nBoth key-state checks run inside ``dmk_crud.mint``, after its\n``SELECT ... FOR UPDATE`` of the row, so a concurrent revoke cannot be\nundone and two concurrent self-mints cannot both rotate (the second sees\nthe first's fresh key and gets the 409).\n\n**Owner**: the verified device JWT's ``user_id`` claim. The read\nboundary forbids web reading ``coord.devices`` directly, and no coord\nread route that accepts a device JWT returns the owner. How coord sets\nthat claim (qontinui-coord ``origin/main`` ``9774f4e43``):\n\n* pairing \u2014 ``post_pair_complete`` and ``post_pair_cli``\n  (``routes_phase3.rs:2431``/``:2461`` and ``:2585``/``:2615``) write the\n  paired user to ``coord.devices.user_id`` via ``record_pairing``\n  (``:2254``, UPSERT ``user_id = $4``) and mint the JWT for that SAME\n  user in the same request;\n* ``service-mint`` reads ``user_id`` from the ``coord.devices`` row\n  (``tokens.rs:623``, minted at ``:670``);\n* refresh does NOT re-read it: ``authorize_device_refresh`` copies the\n  presented claim (``tokens.rs:222-224``, minted at ``:455-458``) and\n  checks only ``capability_user_paired`` (``:383``) and the tenant\n  binding.\n\nSo the claim equals ``coord.devices.user_id`` at pairing, but after the\ndevice is RE-PAIRED to another user, the previous user's token keeps its\n``user_id`` for as long as it keeps being refreshed \u2014 not merely until it\nexpires. Such a token can enrol (within the 7-day rule below) a key whose\n``owner_user_id`` names the previous user. That field is a label: the key\nis still bound to this device only, and web's ``/exchange`` sends coord\n``service-mint`` only the path ``device_id`` (the ``X-Qontinui-User-Id``\nheader it also sends is never read: ``post_service_mint_device`` takes no\nheaders, ``tokens.rs:586-589``), and service-mint\nresolves both owner and tenant from ``coord.devices`` (``tokens.rs:623``\n\u2192 ``:670``). The JWT a key yields is therefore always the CURRENT\nowner's; the stale label grants nothing.\n\n**Tenant**: the ``tenant_id`` of coord's ``/state`` row \u2014 the same\n``coord.devices.tenant_id`` column the user-bearer route reads through\n``/owned`` (which accepts only an operator bearer). The token's own\n``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it\nnames whichever tenant slot the token was minted for. The stored tenant\nis a label on the key; ``/exchange`` does not read it.\n\n**When it mints**: only when the device has no key, or its key is expired\nor within 7 days of expiry. The new key gets the normal\n``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry and replaces the old one, whose\nplaintext stops working. Replacing a lost-but-still-valid key is the\nowner's job, through the user-bearer ``/mint``.\n\n**The bound on what this adds.** The caller already holds an unexpired\ndevice JWT for this device, which can self-refresh at coord indefinitely\nwhile it stays unexpired. The ``dmk_`` it receives is bound to the same\ndevice, exchanges only for a device JWT for that device (``/exchange``\n403s any other), is owner-attributed, expires, and cannot be re-minted\nhere once revoked. So a leaked live device JWT (or a JWT that a leaked\n``dmk_`` derived via ``/exchange``) gains exactly this: it can obtain a\n``dmk_`` for this device ONLY while the device has no key usable for more\nthan 7 days. It cannot rotate, and so cannot silently invalidate, the\nreal runner's usable recovery key. Inside the final 7 days, or with no\nkey at all, it can win the renewal race; the real runner then finds its\nown key refused at ``/exchange``.\n\nResponse: the same :class:`DeviceMachineCredentialMintResponse` as\n``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.",
+        "operationId": "api_v1_devices_device_id_machine_credential_self_mint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialMintResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Self Mint Device Machine Credential",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/{runner_id}/chat/create": {
       "post": {
         "description": "Create a new chat session on a connected runner.",
@@ -77694,7 +78796,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID.",
+        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID. Telemetry event types (funnel events)\nare never returned.",
         "operationId": "api_v1_events_get",
         "parameters": [
           {
@@ -77970,7 +79072,7 @@
     },
     "/api/v1/events/unseen": {
       "get": {
-        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.",
+        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.\nTelemetry event types (funnel events) are never returned, so they never\nmove the unread badge.",
         "operationId": "api_v1_events_unseen_get",
         "parameters": [
           {
@@ -86883,6 +87985,35 @@
         ]
       }
     },
+    "/api/v1/operations/claude-accounts/mine": {
+      "get": {
+        "description": "Return the Claude account roster for the CALLER's own devices (user-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage/mine`` \u2014 plan\n``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``\nPhase 2. \"My accounts\" is a fact about the PERSON, not about a tenant: the\nroster is every account reported by every device the logged-in user owns\n(``coord.devices.user_id`` with ``capability_user_paired = true``),\nwhichever tenant \u2014 if any \u2014 each device is currently paired to. So this\nroute deliberately resolves NO tenant: ``get_tenant_id`` is not a\ndependency, and a caller whose tenant cannot be resolved still gets their\nown roster. The tenant-scoped :func:`get_claude_accounts` is untouched and\nremains the tenant-admin view of the whole tenant's devices.\n\n**Web never tells coord who is asking.** Coord derives the caller's\n``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``\nover the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded \u2014\na client-supplied user id would be a new, weaker trust boundary. Web's only\njob is to capture and forward the bearer (``forward_bearer=True``, since\nthere is no ``tenant_id`` to trigger it); ``current_user`` exists solely to\nrequire a logged-in session before anything reaches coord.\n\nResponse envelope \u2014 :func:`get_claude_accounts`'s ``accounts`` rows, with\nthe same two provisioning flags::\n\n    {\n      \"accounts\": [ { \"device_id\": \"<uuid>\", \"account_label\": \".claude-gmail\", ... } ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,\nprovider)`` \u2014 a tenant fact, not a per-person account fact \u2014 so they stay\non the tenant feed, and coord's ``/mine`` emits none.\n\nThe flags follow the same absence-is-not-zero contract as the tenant route:\nbare ``.get()`` with no default, so a flag coord omits surfaces as ``None``\n(unknown) and is never defaulted to ``true``. ``accounts: []`` with both\nflags ``true`` means genuinely no paired device of this user has reported.\n\nCoord's refusals propagate with coord's STATUS through\n:func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so\na client can tell them apart rather than reading a generic 500:\n\n- ``403 user_not_resolved`` \u2014 the bearer maps to no ``auth.users`` row;\n- ``403 user_email_ambiguous`` \u2014 more than one ``auth.users`` row matches,\n  so nothing can pick the right one;\n- ``500 user_lookup_failed`` \u2014 the identity bridge itself errored;\n- ``500 usage_read_failed`` \u2014 the roster read errored.\n\n**Where a client finds coord's code.** ``detail`` is coord's raw body as a\nSTRING, so the app's shared ``http_exception_handler``\n(``app/middleware/error_handler.py``) renders it with web's GENERIC code\nfor the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and\ncoord's body, as JSON text, in ``message``. For example a coord 403\n``user_email_ambiguous`` arrives as (``message`` is a STRING whose content\nis coord's body ``{\"error\":\"user_email_ambiguous\"}``)::\n\n    {\"error\": \"FORBIDDEN\",\n     \"message\": <string: {\"error\":\"user_email_ambiguous\"}>,\n     \"timestamp\": <float>, \"path\": \"<request url>\"}\n\nSo coord's code is ``JSON.parse(body.message).error`` \u2014 never\n``body.error``, which only ever names the HTTP status class.\n\nA ``502`` is web's own verdict that coord broke the contract: a body that\nis not a JSON object, or an ``accounts`` that is not a list. Neither is\ncoerced to an empty roster, which would be indistinguishable from \"no\npaired device of this user has reported\".",
+        "operationId": "api_v1_operations_claude_accounts_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get My Claude Accounts Api V1 Operations Claude Accounts Mine Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get My Claude Accounts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/claude-sessions": {
       "post": {
         "description": "Receive Claude Code session report from a machine.",
@@ -88975,17 +90106,17 @@
         ]
       }
     },
-    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
+    "/api/v1/operations/coord/prompt-document-proposals/{policy_proposal_id}/approve": {
       "post": {
         "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts\nTHAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``\nitself from the operator context the request already carries \u2014 so sending it\nfrom here is not a redundant belt-and-braces, it is a hard ``400``:\n``invalid body: unknown field `decided_by`, expected `decision_note```.\nThat is what this endpoint did until 2026-09-04, which made **every** approve\nand reject click fail. Do not reintroduce it: identity is coord's to derive,\nexactly as it is on the agent-notifications door.\n\nCoord's 4xx (already decided, stale ``base_version``, unknown id) passes\nthrough verbatim \u2014 including the 404 you get before coord's Phase 5 deploy,\nwhich must stay visible rather than silently no-op.",
-        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_policy_proposal_id_approve_post",
         "parameters": [
           {
             "in": "path",
-            "name": "proposal_id",
+            "name": "policy_proposal_id",
             "required": true,
             "schema": {
-              "title": "Proposal Id",
+              "title": "Policy Proposal Id",
               "type": "string"
             }
           }
@@ -89013,7 +90144,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Approve Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Approve Post"
+                  "title": "Response Approve Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Policy Proposal Id  Approve Post"
                 }
               }
             },
@@ -89041,17 +90172,17 @@
         ]
       }
     },
-    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
+    "/api/v1/operations/coord/prompt-document-proposals/{policy_proposal_id}/reject": {
       "post": {
         "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction as :func:`approve_prompt_document_proposal`, and the\nsame reason for it: ``decision_note`` is the only field coord's\n``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the\noperator context. Sending it is a ``400``, not a courtesy.",
-        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_policy_proposal_id_reject_post",
         "parameters": [
           {
             "in": "path",
-            "name": "proposal_id",
+            "name": "policy_proposal_id",
             "required": true,
             "schema": {
-              "title": "Proposal Id",
+              "title": "Policy Proposal Id",
               "type": "string"
             }
           }
@@ -89079,7 +90210,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Reject Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Reject Post"
+                  "title": "Response Reject Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Policy Proposal Id  Reject Post"
                 }
               }
             },
@@ -89332,6 +90463,83 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/auto-publish/status": {
+      "get": {
+        "description": "What the auto-publisher would do next, per candidate document.\n\nPlan ``2026-09-19-policy-publish-all-and-auto-publish`` D4. A READ, so it\ngates on tenant MEMBERSHIP like every sibling document read \u2014 the point of\nthe route is that a pending publication is *visible before it happens*\n(``decision_record/notification-not-permission``), and a view only an admin\ncan open is a view most of the fleet never sees.\n\nEach candidate reports ``publish_mode``, ``direction`` (``loosening`` or\n``other``), ``settles_at``, ``held`` plus the held lint tokens, and the\ndocument versions the pending publication would include. Coord computes all\nof it \u2014 including what it WOULD do while the D5 kill switch is off \u2014 so\nnothing here re-derives a settle time or a hold from the document list.",
+        "operationId": "api_v1_operations_coord_prompt_documents_auto_publish_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Auto Publish Status Api V1 Operations Coord Prompt Documents Auto Publish Status Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Prompt Document Auto Publish Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/publish-all": {
+      "post": {
+        "description": "Publish every changed document into the fleet channel in one call.\nTenant-admin only.\n\nPlan ``2026-09-19-policy-publish-all-and-auto-publish`` D1. Only the SYSTEM\ntenant may publish; coord is the authority on that and answers\n``not_system_tenant`` otherwise, which passes through \u2014 exactly as the\nsingle-document :func:`publish_prompt_document` proxy does, and for the same\nreason: nothing on the prompt-documents wire tells a browser whether the\ntenant it is looking at carries the system marker.\n\nBody: ``{release_note?, items?, dry_run?}``.\n\n* ``dry_run`` defaults to ``true`` SERVER-SIDE, which is the OPPOSITE of\n  the single-document ``/publish`` default. It is forwarded only when the\n  caller names it, so the safe default stays coord's rather than a second\n  copy here that could drift the other way \u2014 and note that an explicit\n  ``false`` IS forwarded: the guard below is ``is not None``, not a\n  truthiness test, because ``dry_run: false`` is the whole armed run and a\n  falsy-drop would turn every publication into a silent preview.\n* ``items`` is the armed run's list, ``[{kind, name, expected_version}]``.\n  Each ``expected_version`` is the optimistic-lock guard, and it must be the\n  version the DRY RUN returned: a document edited between the preview and\n  the click then fails ``version_conflict`` instead of publishing a body\n  nobody has seen. That is the same guarantee single-document publishing\n  gives, applied per item.\n\nThe allowlist is deliberate, and it is two levels deep \u2014 the same posture\nthe ``/publish`` proxy takes with ``release_note``/``expected_version``.\n``published_by`` is NOT forwarded and is never taken from the browser: coord\nstamps the publisher from its own authenticated ``OperatorContext``. A\nper-item allowlist is what stops a browser smuggling one in under an item,\nwhere a wholesale ``{**body}`` forward would carry it through unseen.",
+        "operationId": "api_v1_operations_coord_prompt_documents_publish_all_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Publish All Prompt Documents Api V1 Operations Coord Prompt Documents Publish All Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish All Prompt Documents",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}": {
       "post": {
         "description": "Create a new hand-authored prompt document under ``kind``. Tenant-admin only.\n\nThe body is forwarded as ``{name, description?, body, format?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion-1 snapshot coord writes carries the real author. Coord validates the\nkebab-case ``name`` and non-empty ``body`` (its 400 passes through) and\nanswers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status\nis echoed to the browser verbatim.",
@@ -89442,7 +90650,7 @@
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body/attrs/authorship tier.\nTenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,\nagent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_write_tier`` is the per-document authorship setting \u2014 one of\n``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is\ncoord's LEGACY two-state spelling of the same setting, kept on the wire for\na client that predates the tier; coord resolves a legacy ``true`` as \"at\nleast allow\", so a stored ``allow_with_notification`` survives it, and a\nlegacy ``false`` is an unambiguous ``deny``. Send the tier when the caller\ncan name one \u2014 only an explicit tier can move a document ONTO, or DOWN off,\nthe notification tier. Both are forwarded verbatim; neither is synthesised\nfrom the other here, because collapsing them at this hop would strip a\nprecondition the operator set with no error and no audit signal.\n\nEither field is deliberately NOT attrs-shaped: supplying one takes coord's\n**versioning** path even when nothing else changes, because who may write a\npolicy document is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting them leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
+        "description": "Edit a prompt document's description/body/attrs/authorship tier/publish\nmode. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,\nagent_writable?, publish_mode?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_write_tier`` is the per-document authorship setting \u2014 one of\n``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is\ncoord's LEGACY two-state spelling of the same setting, kept on the wire for\na client that predates the tier; coord resolves a legacy ``true`` as \"at\nleast allow\", so a stored ``allow_with_notification`` survives it, and a\nlegacy ``false`` is an unambiguous ``deny``. Send the tier when the caller\ncan name one \u2014 only an explicit tier can move a document ONTO, or DOWN off,\nthe notification tier. Both are forwarded verbatim; neither is synthesised\nfrom the other here, because collapsing them at this hop would strip a\nprecondition the operator set with no error and no audit signal.\n\nEither field is deliberately NOT attrs-shaped: supplying one takes coord's\n**versioning** path even when nothing else changes, because who may write a\npolicy document is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting them leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.\n\n``publish_mode`` is the per-document distribution judgement (plan\n``2026-09-19-policy-publish-all-and-auto-publish`` D2) \u2014 one of ``auto``\n(the auto-publisher publishes a settled version on its own), ``manual``\n(only a click publishes it; it still appears in publish-all) or ``never``\n(publish-all leaves it out). Absent/``null`` is UNDECIDED, which coord's\nfirst worker pass rules on rather than a state this console can write.\nMeaningful only on system-tenant rows, and refused by coord on a\nnon-publishable kind.\n\nIt takes the **versioning** path for the same reason ``agent_write_tier``\ndoes, stated the same way: whether a document distributes itself to every\ntenant with no human in the loop is authority, not configuration, and an\nauthority flip with no immutable record is what the version table exists to\nprevent. This proxy needs no code for it \u2014 the forward below is wholesale \u2014\nbut the field list above is the only place a reader of this module learns\nthe key exists, so it is named here rather than left to coord's schema.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {
@@ -92173,7 +93381,7 @@
     },
     "/api/v1/operations/fleet/volumes": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/fleet/volumes`` (tenant-scoped).\n\nThe fleet-wide sibling of :func:`get_device_volumes`: the latest\ncapacity snapshot per ``(device, volume)`` across every device in the\ncaller's tenant, so the fleet dashboard can render one machine card per\ndevice without N per-device requests. Response shape is coord-authored::\n\n    {\"devices\": [{\"device_id\": \"<uuid>\", \"volumes\": [VolumeRow, ...]},\n                 ...], \"count\": <int>}\n\nDevices absent from the payload have NEVER reported volume telemetry.\nThat is UNKNOWN, not zero \u2014 see the section note above.",
+        "description": "Proxy coord's ``GET /coord/fleet/volumes`` (tenant-scoped).\n\nThe fleet-wide sibling of :func:`get_device_volumes`: the latest\ncapacity snapshot per ``(device, volume)`` across every device in the\ncaller's tenant, so the fleet dashboard can render one machine card per\ndevice without N per-device requests. Response shape is coord-authored::\n\n    {\"devices\": [{\"device_id\": \"<uuid>\", \"volumes\": [VolumeRow, ...]},\n                 ...], \"count\": <int>}\n\nDevices absent from the payload have NEVER reported volume telemetry.\nThat is UNKNOWN, not zero \u2014 see the section note above.\n\nCoord's error answers pass through with their status AND JSON body\nverbatim (:func:`_proxy_coord_passthrough`), not re-wrapped as an\n``HTTPException`` detail string. The dashboard branches on two of them\n(plan ``2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland``\nD2/D4): ``503 {\"error\":\"deadline\",\"budget_ms\":N}`` renders UNKNOWN naming\nthe budget, and ``404 {\"error\":\"route_disabled\"}`` renders \"disabled by\noperator\". Wrapped, the browser saw this module's generic error envelope\nwith coord's body flattened into a ``message`` string.",
         "operationId": "api_v1_operations_fleet_volumes_get",
         "responses": {
           "200": {
@@ -92195,7 +93403,7 @@
     },
     "/api/v1/operations/fleet/worktree-slots": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).\n\nFleet-wide worktree-allocation-slot occupancy: how many of each device's\n``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape\nis coord-authored and passed through untouched::\n\n    {\"tenant_id\": \"<uuid>\", \"device_count\": <int>, \"truncated\": false,\n     \"device_cap\": 100, \"census_window_secs\": 900,\n     \"devices\": [{\"device_id\": \"<uuid>\", \"hostname\": \"<string>|null\",\n         \"active_worktrees\": <int>, \"max_worktrees\": 8,\n         \"census_recent_rows\": <int>,\n         \"occupants\": {\"shown\": 0, \"total\": 0, \"truncated\": false,\n                        \"rows\": []}}]}\n\n``census_recent_rows == 0`` means coord has no recent census hit for\nthat device within the narrow (``census_window_secs``, default 900s)\nwindow, so ``active_worktrees`` for that device could not be\ncorroborated as live and the caller MUST render that row UNKNOWN \u2014 never\nan idle/empty machine and never a healthy ``0/8`` \u2014 see the frontend\nhook and `FleetResourceStrip`'s existing honesty rules.",
+        "description": "Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).\n\nFleet-wide worktree-allocation-slot occupancy: how many of each device's\n``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape\nis coord-authored and passed through untouched::\n\n    {\"tenant_id\": \"<uuid>\", \"device_count\": <int>, \"truncated\": false,\n     \"device_cap\": 100, \"census_window_secs\": 900,\n     \"devices\": [{\"device_id\": \"<uuid>\", \"hostname\": \"<string>|null\",\n         \"active_worktrees\": <int>, \"max_worktrees\": 8,\n         \"census_recent_rows\": <int>,\n         \"occupants\": {\"shown\": 0, \"total\": 0, \"truncated\": false,\n                        \"rows\": []}}]}\n\n``census_recent_rows == 0`` means coord has no recent census hit for\nthat device within the narrow (``census_window_secs``, default 900s)\nwindow, so ``active_worktrees`` for that device could not be\ncorroborated as live and the caller MUST render that row UNKNOWN \u2014 never\nan idle/empty machine and never a healthy ``0/8`` \u2014 see the frontend\nhook and `FleetResourceStrip`'s existing honesty rules.\n\nError answers pass through verbatim, status and JSON body, for the same\nreason as :func:`get_fleet_volumes`: the section renders coord's\n``503 deadline`` and ``404 route_disabled`` bodies specifically.",
         "operationId": "api_v1_operations_fleet_worktree_slots_get",
         "responses": {
           "200": {
@@ -95046,7 +96254,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/doctor": {
       "get": {
-        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /\nprofile_present / merge_enabled / config_yaml / bootstrap_pr /\nci_workflow / ruleset_bypass`` and ``status`` in\n``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
+        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /\nrepo_archived / profile_present / merge_enabled / config_yaml /\nbootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /\nconfig_yml_current`` (ids are stable and append-only, but NOT positional\n-- key on ``id``, never on index) and ``status`` in\n``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of\nthem passing: ``tenant_mapped / repo_enrolled / profile_present /\nmerge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``\n(``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and\n``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
         "operationId": "api_v1_operations_pr_merge_onboarding_doctor_get",
         "parameters": [
           {
@@ -97311,6 +98519,73 @@
         ]
       }
     },
+    "/api/v1/operations/tenant-policy/transcript-sync": {
+      "get": {
+        "description": "Read whether coord accepts session output for the caller's tenant.\n\n``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see\n``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike\nthat route it carries NO superuser bypass: coord's ``patch_tenant_policy``\nauthorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who\nis not an admin of this tenant is refused ``admin_required`` \u2014 an enabled\nbutton would promise a write coord will not take.",
+        "operationId": "api_v1_operations_tenant_policy_transcript_sync_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTranscriptSyncView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Tenant Transcript Sync",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Turn transcript sync on or off for the caller's effective tenant.\n\nTenant-admin gated web-side; coord re-checks and answers 403\n``admin_required`` otherwise, and 503 ``column_not_present`` while the\ncolumn's migration has not reached its database \u2014 both pass through\nverbatim. Coord re-reads the policy after its upsert and returns it, so no\nsecond round trip is needed for the read-back.",
+        "operationId": "api_v1_operations_tenant_policy_transcript_sync_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantTranscriptSyncPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTranscriptSyncWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Tenant Transcript Sync",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/tenants": {
       "get": {
         "description": "Return the tenants the current operator belongs to.\n\nSourced from coord's ``GET /admin/coord/me`` over the HTTP boundary\n(no cross-schema read): an operator with rows in N tenants comes back\nwith N entries; single-tenant operators come back with one. The\n``active_tenant_id`` field is the operator's home tenant \u2014 the natural\ndefault for first-load selection; the frontend persists subsequent\nswitches in localStorage (`tenant-context.tsx`).\n\nCoord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);\n``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so\nthe first entry is the active default. A coord 403 for an unlinked\noperator propagates as ``tenant_not_resolved``.\n\nThe per-tenant ``name`` is coord's ``display_name`` \u2014 the human-chosen\n\"Project\" name a user typed into ``POST /tenants``. It is optional on\nthe ``/me`` wire (absent on a coord that predates it, and null for the\nSSO auto-provisioned tenants that only ever got a slug), so ``name``\nfalls back to the slug. The dashboard tenant chip renders whichever\nit gets.\n\nWire shape::\n\n    { \"tenants\": [ { \"id\": \"<uuid>\", \"slug\": \"<str>\", \"name\": \"<str>\",\n                     \"roles\": [\"<role>\", ...] } ],\n      \"active_tenant_id\": \"<uuid>\" }",
@@ -98778,6 +100053,255 @@
         ]
       }
     },
+    "/api/v1/overview/files": {
+      "get": {
+        "operationId": "api_v1_overview_files_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      },
+      "post": {
+        "description": "Upload one file, optionally attached to a document. See the module\ndocstring for what is checked; every refusal names why.",
+        "operationId": "api_v1_overview_files_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_api_v1_overview_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Upload File",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/files/{file_id}/content": {
+      "get": {
+        "description": "The file's bytes, for any member of the project. See the module\ndocstring for why this is not a presigned URL.",
+        "operationId": "api_v1_overview_files_file_id_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inline",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Inline",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Download File",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/files/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_files_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_files_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      }
+    },
     "/api/v1/overview/intent-documents": {
       "get": {
         "operationId": "api_v1_overview_intent_documents_get",
@@ -98985,6 +100509,500 @@
         "tags": [
           "overview",
           "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/pages": {
+      "get": {
+        "operationId": "api_v1_overview_pages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_pages_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/backlinks": {
+      "get": {
+        "description": "Pages that link here \u2014 by wiki link or as a related document.",
+        "operationId": "api_v1_overview_pages_page_id_backlinks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PageRef"
+                  },
+                  "title": "Response Page Backlinks Api V1 Overview Pages  Page Id  Backlinks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Page Backlinks",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions": {
+      "get": {
+        "description": "Every version of a page, newest first. Readable by any member.",
+        "operationId": "api_v1_overview_pages_page_id_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageVersionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Page Versions",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions/{version}": {
+      "get": {
+        "operationId": "api_v1_overview_pages_page_id_versions_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Page Version",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions/{version}/revert": {
+      "post": {
+        "description": "Restore an earlier version by writing it as a NEW version.\n\nSame contract as any write: ``If-Match`` names the version the reader saw,\nand a page that has moved on is a 409 carrying the server's copy. The\nrelated-documents list is not versioned (it is a link set, not content)\nand is left as it is.",
+        "operationId": "api_v1_overview_pages_page_id_versions_version_revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Revert Page",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_pages_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_pages_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_pages_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
         ]
       }
     },
@@ -100108,7 +102126,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``; a device whose latest contact within the window was a\nREFUSED report reads ``refused:`` first of all. The device's own values\nstay in ``reported_state`` / ``reported_detail``. An organization with no\nrows answers ``state: \"unknown\"``, never an empty \"all current\".\n\nA device silent \u2014 no reading and no refused report \u2014 for more than\n``retire_after_secs`` (30 days) is RETIRED: left out of ``rows``,\n``by_source_repo`` and ``coverage``, and counted in ``retired_count``.\n``include_retired=true`` serves those rows too, marked ``retired: true``.\nNothing is deleted; a retired device's next report brings it back.\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "parameters": [
           {
@@ -100120,6 +102138,18 @@
               "default": true,
               "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
               "title": "Coverage",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+              "title": "Include Retired",
               "type": "boolean"
             }
           }
@@ -100160,7 +102190,7 @@
         ]
       },
       "post": {
-        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.\n\nA REFUSED report (any 422 on the body) is recorded before it is answered:\nthe device's refusal row in ``agent.plan_scan_root_refusals`` is upserted\nand committed \u2014 its stored reading, if any, is not touched \u2014 and the 422\nbody is the same as FastAPI's own validation would produce. An operator\nsession is still a 403 first, from the dependency.",
         "operationId": "api_v1_plan_library_scan_roots_post",
         "requestBody": {
           "content": {

@@ -62,6 +62,40 @@ permissions:
 env:
   PYTHON_VERSION: '3.12'
 
+# Supersede a PR run when a newer commit is pushed to the same PR, so the
+# previous head's runs stop consuming (and queueing for) runners. This
+# workflow's lanes: `pull_request` and `workflow_dispatch` only.
+#
+# The slug is a LITERAL, not `${{ github.workflow }}`. coord models a
+# workflow's group template itself and interpolates only `github.event_name`
+# and `github.ref`, collapsing every other expression to the empty string
+# (`qontinui-coord` `ci_observer.rs::resolve_group_template`), so a
+# `github.workflow` key would make every workflow here model to one identical
+# group string. The four blocks already in this directory use a literal slug
+# for the same reason.
+#
+# The key includes the EVENT because `schedule`, `workflow_dispatch` and a
+# `push` to the default branch all resolve `github.ref` to `refs/heads/main`.
+# Without it those lanes would share one group and supersede each other, and an
+# in-flight run would occupy the very group a prospective land resolves into --
+# which `run_is_reaper_at_risk` reads as a reap hazard and hard-blocks the
+# merge train on.
+#
+# `cancel-in-progress` is an EXPRESSION, not `true`: only a `pull_request` run
+# is ever superseded. A run on a `push` or `schedule` lane is never cancelled
+# by this block, though note that a still-PENDING run in a group IS reaped when
+# a newer run enters it -- GitHub keeps at most one pending run per group.
+#
+# NOTE this workflow has no `push` lane on the DEFAULT branch, and that is what
+# makes a group safe here. A top-level group on a workflow that runs on
+# `push: main` makes its post-land runs reaper-at-risk, which flips coord's
+# blocking set from soft (relaxable by the optimism gate) to a hard block --
+# see `merge_safety_from_observation`, whose soft-blocking arm requires those
+# runs to share NO concurrency group.
+concurrency:
+  group: memory-recall-eval-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   recall-eval:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,

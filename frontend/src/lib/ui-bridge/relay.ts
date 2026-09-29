@@ -30,16 +30,26 @@ import {
 import IORedis from "ioredis";
 export const __ioredisTraceAnchor: unknown = IORedis;
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
+import {
+  resolveEndpoint,
+  tryResolveEndpoint,
+} from "@/lib/errors/endpoint-unresolved";
 
 /**
  * Runner screenshot endpoint — used as fallback when the browser relay is
  * unresponsive. The SDK fetches it from THIS SERVER process, which has no
  * runner target and cannot use the browser's per-request resolver (the relay
- * needs the user's bearer), so it can only mean "the runner on the machine
- * serving this app" — i.e. local dev. On a deployed server nothing answers
- * there and the SDK reports the fallback as failed.
+ * needs the user's bearer), so it can only mean a runner this server is
+ * configured to reach: `QONTINUI_RUNNER_URL`, or the local-dev runner in
+ * development. Unset in a published build there is NO fallback (the SDK
+ * treats the option as absent) rather than a fetch to this server's loopback.
  */
-const RUNNER_SCREENSHOT_URL = "http://localhost:9876/ui-bridge/sdk/screenshot";
+const runnerForFallback = tryResolveEndpoint(() =>
+  resolveEndpoint("runner", process.env.QONTINUI_RUNNER_URL)
+);
+const RUNNER_SCREENSHOT_URL = runnerForFallback.ok
+  ? `${runnerForFallback.url}/ui-bridge/sdk/screenshot`
+  : undefined;
 
 // Specs for `createRelayHandlers`. This module runs on the SERVER, which has
 // no runner target: runners are addressed per request from the browser (the
