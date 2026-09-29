@@ -9,10 +9,11 @@
  *   1. the file resolves and its digest equals the pin (absent or different
  *      is a RED with the reason — never a skip: an absent vocabulary is
  *      UNKNOWN, not "no fleet nouns");
- * *   2. `VOCABULARY_PORTS.dev_ports` / `.supervisor_dependency` are EXACTLY
+ *   2. `VOCABULARY_PORTS.dev_ports` / `.supervisor_dependency` are EXACTLY
  *      the ports (swept 1..65535) the vocabulary's `dev_ports` /
- *      `supervisor_dependency` patterns match on a loopback URL (evaluated with `new RegExp(pattern)`,
- *      no flags, per the vocabulary's consumer contract);
+ *      `supervisor_dependency` patterns match on a loopback URL (evaluated
+ *      with `new RegExp(pattern)`, no flags, per the vocabulary's consumer
+ *      contract);
  *   3. the web-only ports are disjoint from the vocabulary's and from every
  *      product constant;
  *   4. the rule's matcher hits every loopback-URL example of those two

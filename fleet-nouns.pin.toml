@@ -16,9 +16,14 @@
 # CI fetches the file at `ref` by a sparse checkout
 # (.github/actions/fleet-nouns-vocab) and both consumers refuse a file whose
 # digest differs from `sha256`. Locally they read
-# `../qontinui-schemas/fleet-nouns.toml` (override: $QONTINUI_FLEET_NOUNS_FILE),
-# with the same digest check — a sibling checkout at another commit is a red
-# naming both digests, never a silent scan with different classes.
+# `../qontinui-schemas/fleet-nouns.toml` with the same digest check; when that
+# sibling is absent or at another commit they read the pinned blob with
+# `git -C ../qontinui-schemas show <ref>:fleet-nouns.toml` (digest-checked too).
+# So locally it is red only when the pinned commit is absent from the
+# sibling's objects (`git -C ../qontinui-schemas fetch` fixes that). Under CI
+# ($GITHUB_ACTIONS) or with the $QONTINUI_FLEET_NOUNS_FILE override there is no
+# fallback: that file at the pinned digest, or red naming both digests — never
+# a silent scan with different classes.
 #
 # To bump: set `ref` to the new schemas commit and `sha256` to
 # `git -C ../qontinui-schemas show <ref>:fleet-nouns.toml | sha256sum`, then

@@ -34,6 +34,15 @@ describe("resolveEndpoint", () => {
     );
   });
 
+  it("names a connection string, not a base URL, for the runner database", () => {
+    const err = refusal(() =>
+      resolveEndpoint("runner_db", undefined, "production")
+    );
+    expect(err.nextAction).toBe(
+      "Set RUNNER_DATABASE_URL (or DATABASE_URL) to the PostgreSQL connection string of the runner database the /api/vga/* routes use."
+    );
+  });
+
   it.each([
     ["api", "NEXT_PUBLIC_API_URL"],
     ["backend", "BACKEND_URL"],

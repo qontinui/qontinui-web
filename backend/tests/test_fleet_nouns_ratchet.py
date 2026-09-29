@@ -101,6 +101,16 @@ def _read_pin() -> dict[str, str]:
     return {"ref": ref, "sha256": sha}
 
 
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[bytes] | None:
+    """Run git in ``cwd``; None when git itself cannot run (not on PATH, …)."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(cwd), *args], capture_output=True, check=False
+        )
+    except OSError:
+        return None
+
+
 def _read_vocabulary_bytes(pin: dict[str, str]) -> tuple[bytes, Path]:
     """The pinned vocabulary's bytes, and where they came from.
 
@@ -130,12 +140,10 @@ def _read_vocabulary_bytes(pin: dict[str, str]) -> tuple[bytes, Path]:
     if not strict:
         sibling = DEFAULT_VOCAB.parent
         spec = f"{pin['ref']}:fleet-nouns.toml"
-        proc = subprocess.run(
-            ["git", "-C", str(sibling), "show", spec],
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode == 0:
+        proc = _git(sibling, "show", spec)
+        if proc is None:  # no git on PATH, unreadable sibling, …
+            why.append(f"git -C {sibling} show {spec} could not run (git unavailable)")
+        elif proc.returncode == 0:
             digest = hashlib.sha256(proc.stdout).hexdigest()
             if digest == pin["sha256"]:
                 return proc.stdout, sibling / f"<git {spec}>"
@@ -207,37 +215,28 @@ class ScanResult:
     scanned: int
     unreadable: tuple[str, ...]
     source: str  # "git ls-files" or "os.walk"
+    py_scanned: int  # readable .py files among those scanned
 
 
 def _candidate_files(root: Path) -> tuple[list[Path], str]:
     """Files under ``root``: from ``git ls-files`` (tracked plus untracked,
-    ignored files excluded) inside a work tree, else a filesystem walk."""
-    proc = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "--full-name",
-            "--",
-            ".",
-        ],
-        capture_output=True,
-        check=False,
+    ignored files excluded) inside a work tree, else a filesystem walk (also
+    when git itself cannot run)."""
+    listing = _git(
+        root,
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--full-name",
+        "--",
+        ".",
     )
-    top = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode == 0 and top.returncode == 0:
-        base = Path(top.stdout.strip())
-        names = sorted({n for n in proc.stdout.decode("utf-8").split("\0") if n})
+    top = _git(root, "rev-parse", "--show-toplevel")
+    if listing and top and listing.returncode == 0 and top.returncode == 0:
+        base = Path(top.stdout.decode("utf-8").strip())
+        names = sorted({n for n in listing.stdout.decode("utf-8").split("\0") if n})
         # --cached lists a tracked file deleted in the work tree; skip those.
         files = [base / n for n in names if (base / n).is_file()]
         return files, "git ls-files"
@@ -254,6 +253,7 @@ def scan(vocab: Vocabulary, root: Path = SCAN_ROOT) -> ScanResult:
     where: dict[Key, list[int]] = {}
     scanned = 0
     unreadable: list[str] = []
+    py_scanned = 0
     files, source = _candidate_files(root)
     for path in files:
         try:
@@ -266,6 +266,7 @@ def scan(vocab: Vocabulary, root: Path = SCAN_ROOT) -> ScanResult:
             unreadable.append(rel)
             continue
         scanned += 1
+        py_scanned += path.suffix == ".py"
         # splitlines() also splits on \r, \x0b, U+2028 …; the contract says
         # strip the line TERMINATOR, so split on \n and drop a trailing \r.
         for lineno, line in enumerate(text.split("\n"), start=1):
@@ -275,7 +276,7 @@ def scan(vocab: Vocabulary, root: Path = SCAN_ROOT) -> ScanResult:
                     key = (rel, cls.id, token_of(m))
                     counts[key] += 1
                     where.setdefault(key, []).append(lineno)
-    return ScanResult(counts, where, scanned, tuple(unreadable), source)
+    return ScanResult(counts, where, scanned, tuple(unreadable), source, py_scanned)
 
 
 # --- baseline file ---------------------------------------------------------
@@ -383,11 +384,35 @@ def test_scan_is_not_vacuous(scanned: ScanResult) -> None:
         f"scanned=0 under {SCAN_ROOT} ({scanned.source}) — a scan of nothing is a "
         "failure, not a pass"
     )
-    py = sum(1 for _ in SCAN_ROOT.rglob("*.py"))
     unreadable_py = [u for u in scanned.unreadable if u.endswith(".py")]
-    assert py > 0, f"no .py files under {SCAN_ROOT}"
     assert not unreadable_py, (
         f"unreadable (NOT scanned) Python modules: {unreadable_py}"
+    )
+    # Cross-check the walk against an independent count of the Python modules:
+    # `git ls-files '*.py'` when the scan came from git (the same universe),
+    # the filesystem otherwise. Fewer scanned than exist = a silent skip.
+    if scanned.source == "git ls-files":
+        listing = _git(
+            SCAN_ROOT,
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*.py",
+        )
+        assert listing is not None and listing.returncode == 0, (
+            "git ls-files '*.py' failed"
+        )
+        names = [n for n in listing.stdout.decode("utf-8").split("\0") if n]
+        py = sum(1 for n in names if (SCAN_ROOT / n).is_file())
+    else:
+        py = sum(1 for p in SCAN_ROOT.rglob("*.py") if "__pycache__" not in p.parts)
+    assert py > 0, f"no .py files under {SCAN_ROOT} ({scanned.source})"
+    assert scanned.py_scanned == py, (
+        f"scanned {scanned.py_scanned} .py file(s) via {scanned.source}, but {py} "
+        f"exist under {SCAN_ROOT} — the walk skipped modules"
     )
 
 

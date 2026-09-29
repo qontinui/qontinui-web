@@ -43,6 +43,8 @@ interface EndpointSpec {
   alternateEnvVar?: string;
   /** Human name used in the error sentence. */
   label: string;
+  /** What the variable holds, in the next action. Defaults to "base URL". */
+  valueNoun?: string;
   /** Used ONLY when `NODE_ENV === "development"`. */
   devDefault: string;
 }
@@ -77,7 +79,8 @@ const ENDPOINTS: Record<EndpointName, EndpointSpec> = {
   runner_db: {
     envVar: "RUNNER_DATABASE_URL",
     alternateEnvVar: "DATABASE_URL",
-    label: "runner database (the PostgreSQL DSN the /api/vga/* routes use)",
+    label: "runner database the /api/vga/* routes use",
+    valueNoun: "PostgreSQL connection string",
     devDefault:
       "postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_db",
   },
@@ -106,7 +109,7 @@ export class EndpointUnresolvedError extends Error {
     const vars = spec.alternateEnvVar
       ? `${spec.envVar} (or ${spec.alternateEnvVar})`
       : spec.envVar;
-    const nextAction = `Set ${vars} to the base URL of the ${spec.label}.`;
+    const nextAction = `Set ${vars} to the ${spec.valueNoun ?? "base URL"} of the ${spec.label}.`;
     super(
       `This deployment is misconfigured — the ${spec.label} address is not set. ${nextAction}`
     );
