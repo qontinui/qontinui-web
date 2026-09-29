@@ -80,6 +80,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { messageFromErrorBody } from "@/lib/errors/backend-error-message";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 
@@ -142,7 +143,7 @@ interface GraphResponse {
 // Readiness — which predicate says "landable"
 // ---------------------------------------------------------------------------
 
-type ReadinessFields = Pick<
+export type ReadinessFields = Pick<
   GraphNode,
   "topo_merge_ready" | "block_reason_code" | "ready"
 >;
@@ -153,7 +154,7 @@ type ReadinessFields = Pick<
  * key, and only then does the legacy `ready` stand in. A present `null` (no
  * verdict recorded yet) is not landable.
  */
-function isLandable(node: ReadinessFields): boolean {
+export function isLandable(node: ReadinessFields): boolean {
   if (node.block_reason_code !== undefined) {
     return node.block_reason_code === "none";
   }
@@ -161,12 +162,12 @@ function isLandable(node: ReadinessFields): boolean {
 }
 
 /** The topo-merge flag under either wire name; `undefined` when neither is served. */
-function topoMergeReady(node: ReadinessFields): boolean | undefined {
+export function topoMergeReady(node: ReadinessFields): boolean | undefined {
   return node.topo_merge_ready ?? node.ready;
 }
 
 /** Tooltip text naming the merge verdict and the topo flag, for operators. */
-function readinessTooltip(node: ReadinessFields): string {
+export function readinessTooltip(node: ReadinessFields): string {
   const parts: string[] = [];
   if (node.block_reason_code === undefined) {
     parts.push("merge predicate verdict: not served by this coord build");
@@ -184,6 +185,52 @@ function readinessTooltip(node: ReadinessFields): string {
     );
   }
   return parts.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Coord's typed refusal fields, wherever the backend put them: under
+ * `detail` (FastAPI's default handler — a test app, a local dev backend) or
+ * spliced to the top level (production `http_exception_handler`).
+ */
+function refusalFields(text: string): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const detail = obj.detail;
+  if (detail !== null && typeof detail === "object" && !Array.isArray(detail)) {
+    return detail as Record<string, unknown>;
+  }
+  return obj;
+}
+
+/**
+ * The operator-facing sentence for a failed graph read. Coord scopes the
+ * graph by the caller's credential tenant and refuses a repo that tenant does
+ * not own with `404 {"error": "repo_not_in_caller_tenant", "repo": …}` — that
+ * gets a plain sentence. Anything else goes through the shared guarded
+ * reader, so an HTML gateway page or a brace-blob never reaches the panel.
+ */
+export function graphErrorMessage(text: string, status: number): string {
+  const fields = refusalFields(text);
+  if (fields?.error === "repo_not_in_caller_tenant") {
+    const repo =
+      typeof fields.repo === "string" && fields.repo ? fields.repo : null;
+    return repo
+      ? `${repo} is not owned by your tenant, so coord will not show its dependency graph.`
+      : "This repo is not owned by your tenant, so coord will not show its dependency graph.";
+  }
+  return messageFromErrorBody(text, status);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +444,9 @@ export function MergeDependencyGraph({ repo, pr }: MergeDependencyGraphProps) {
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/graph?${params.toString()}`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      if (!res.ok) {
+        throw new Error(graphErrorMessage(await res.text(), res.status));
+      }
       const body = (await res.json()) as GraphResponse;
       setGraph(body);
     } catch (err) {
@@ -467,7 +516,10 @@ export function MergeDependencyGraph({ repo, pr }: MergeDependencyGraphProps) {
         </Button>
       </div>
       {error && (
-        <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
+        <p
+          className="text-xs text-red-300 mb-2 flex items-center gap-1"
+          data-testid="merge-dep-graph-error"
+        >
           <AlertTriangle className="h-3 w-3" />
           {error}
         </p>
