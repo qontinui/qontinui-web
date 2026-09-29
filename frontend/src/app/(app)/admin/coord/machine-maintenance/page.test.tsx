@@ -1350,6 +1350,76 @@ describe("/admin/coord/machine-maintenance — round 9", () => {
   });
 });
 
+describe("/admin/coord/machine-maintenance — coord's final contract", () => {
+  it("renders schema_pending as UNKNOWN with the migration reason, not an error", async () => {
+    machinesResponse = res(503, {
+      error: "schema_pending",
+      message: "migration not applied",
+    });
+    render(<MachineMaintenancePage />);
+    const notice = await screen.findByTestId(
+      "coord-maintenance-machines-notice"
+    );
+    expect(notice).toHaveTextContent("coord's database is not migrated yet");
+    expect(screen.getByTestId("coord-maintenance-verdict")).toHaveTextContent(
+      "Restart readiness UNKNOWN"
+    );
+  });
+
+  it("renders label rows in flight, unanswered and label-level as coord means them", async () => {
+    machinesResponse = res(
+      200,
+      machinesBody({
+        window: wireWindow({
+          levers: {
+            agent_work: { held: true, state: "held" },
+            ci: {
+              held: true,
+              state: "partial",
+              labels: [
+                {
+                  label: "qontinui",
+                  repo: "qontinui/one",
+                  outcome: "removed",
+                  detail: "pending: sent",
+                },
+                {
+                  label: "qontinui",
+                  repo: "qontinui/two",
+                  outcome: "removed",
+                  detail: "outcome unknown; will be restored",
+                },
+                {
+                  label: "linux",
+                  repo: "*",
+                  outcome: "failed",
+                  detail: "github_read_only_label",
+                },
+              ],
+            },
+          },
+        }),
+      })
+    );
+    render(<MachineMaintenancePage />);
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId("coord-maintenance-lever-ci-label")
+      ).toHaveLength(3)
+    );
+    const rows = screen
+      .getAllByTestId("coord-maintenance-lever-ci-label")
+      .map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("removal in progress");
+    expect(rows[1]).toContain("outcome unknown; will be restored");
+    expect(rows[2]).toContain("all repos");
+    expect(rows[2]).toContain("github_read_only_label");
+    expect(screen.getByTestId("coord-maintenance-lever-ci")).toHaveTextContent(
+      "3 repos still route here"
+    );
+  });
+});
+
 describe("/admin/coord/machine-maintenance — session wind-down", () => {
   it("renders a stale runner readiness report as UNKNOWN, never its last verdict", async () => {
     samplesResponse = res(

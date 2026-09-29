@@ -73,6 +73,7 @@ import {
   agentLeverStateWords,
   errorWantsReread,
   labelOutcomeLabel,
+  labelRepoDisplay,
   labelsSpanHosts,
   maintenanceErrorGuidance,
   machineEntryLabel,
@@ -189,7 +190,7 @@ function CloseResult({ result }: { result: WindowWriteResult }) {
               key={`${l.label}@${l.repo}@${l.host ?? ""}`}
               className="break-words"
             >
-              <span className="font-mono break-all">{l.repo}</span>
+              <span className="font-mono break-all">{labelRepoDisplay(l)}</span>
               {labelsSpanHosts(w.levers.ci.labels) && l.host
                 ? ` on ${l.host}`
                 : ""}{" "}

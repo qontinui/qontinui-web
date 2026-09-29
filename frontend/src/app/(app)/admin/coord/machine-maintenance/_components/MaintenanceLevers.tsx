@@ -41,6 +41,7 @@ import {
   drainLanesDetail,
   formatUntil,
   labelOutcomeLabel,
+  labelRepoDisplay,
   labelsSpanHosts,
   errorWantsReread,
   maintenanceErrorGuidance,
@@ -260,7 +261,7 @@ function LeverRow({
               data-testid="coord-maintenance-lever-ci-label"
               data-label-outcome={l.outcome ?? "unknown"}
             >
-              <span className="font-mono break-all">{l.repo}</span>
+              <span className="font-mono break-all">{labelRepoDisplay(l)}</span>
               {spanHosts && l.host && (
                 <>
                   {" "}
@@ -275,7 +276,9 @@ function LeverRow({
               )}{" "}
               · label <span className="font-mono">{l.label}</span> —{" "}
               {labelOutcomeLabel(l)}
-              {l.detail ? ` (${l.detail})` : ""}
+              {l.detail && labelOutcomeLabel(l) !== l.detail
+                ? ` (${l.detail})`
+                : ""}
             </li>
           ))}
         </ul>

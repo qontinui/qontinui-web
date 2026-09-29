@@ -28,6 +28,7 @@ import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { RUNNER_POLL_MS } from "./useRunnerWindDown";
 import {
+  SCHEMA_PENDING_REASON,
   describeMaintenanceError,
   parseMachines,
   parseMaintenanceWindow,
@@ -52,6 +53,16 @@ export function windowUrl(windowId: string): string {
 
 export function windowReadinessUrl(windowId: string): string {
   return `${windowUrl(windowId)}/readiness`;
+}
+
+/**
+ * Whether a read answered coord's `schema_pending` (503): the feature is not
+ * available yet, which the page shows as UNKNOWN rather than as an error.
+ */
+async function isSchemaPending(res: Response): Promise<boolean> {
+  if (res.status !== 503) return false;
+  const text = await res.text().catch(() => "");
+  return describeMaintenanceError(503, text).code === "schema_pending";
 }
 
 function errorText(err: unknown): string {
@@ -97,6 +108,8 @@ export function useFleetMachines(): UseFleetMachinesResult {
             "/coord/fleet/machines answered 404) — expected while coord is a " +
             "deploy behind this console. Machines may still be in maintenance."
         );
+      } else if (await isSchemaPending(res)) {
+        next = fail(SCHEMA_PENDING_REASON);
       } else if (res.status === 403) {
         next = fail(
           "the machines read is for coord tenant admins (HTTP 403) — this " +
@@ -164,6 +177,8 @@ export function useWindowReadiness(windowId: string | null): {
               "coord serves no readiness for this window (HTTP 404) — either " +
               "coord is a deploy behind this console or the window just closed",
           };
+        } else if (await isSchemaPending(res)) {
+          next = { state: "unknown", reason: SCHEMA_PENDING_REASON };
         } else if (!res.ok) {
           next = {
             state: "unknown",
