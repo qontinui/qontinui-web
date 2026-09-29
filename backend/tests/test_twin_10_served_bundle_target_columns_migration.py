@@ -430,3 +430,29 @@ def test_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert column_info(engine, "twin_targets", "production_url") is not None
         assert index_exists(engine, _INDEX)
+
+
+@_needs_pg
+def test_require_valid_raises_on_a_missing_or_invalid_index() -> None:
+    """The in-migration guard must actually fire, not merely be called."""
+    module = load_revision_module(_revision_path(), f"_guard_{_REVISION_ID}")
+    with ephemeral_database(admin_database_url(), "twin10_guard") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            with Operations.context(ctx), ctx.begin_transaction():
+                module._require_valid(_INDEX)  # valid: no raise
+                with pytest.raises(RuntimeError, match="no_such_index"):
+                    module._require_valid("no_such_index")
+                # Simulate the killed-CONCURRENTLY residue.
+                conn.execute(
+                    text(
+                        "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
+                        "(SELECT c.oid FROM pg_class c JOIN pg_namespace n "
+                        "ON n.oid = c.relnamespace WHERE n.nspname = 'coord' "
+                        "AND c.relname = :idx)"
+                    ),
+                    {"idx": _INDEX},
+                )
+                with pytest.raises(RuntimeError, match="INVALID"):
+                    module._require_valid(_INDEX)
