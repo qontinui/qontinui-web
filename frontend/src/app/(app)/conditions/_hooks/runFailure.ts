@@ -85,14 +85,19 @@ export function describeRunFailure(err: unknown): string {
     return veto.hint ? `${sentence} ${veto.hint}` : sentence;
   }
   if (httpStatusOf(err) === 409) {
-    // A 409 that is not the veto shape: show coord's words, not a guess —
-    // innermost first, so a JSON string nested in `message` is not shown raw.
-    const body = httpBodyOf(err) ?? "";
-    const message = candidates(body)
-      .reverse()
-      .map((c) => str(c.message) ?? str(c.hint) ?? str(c.error))
-      .find((m) => m !== null);
-    return `Run not started: ${message ?? "the server refused the run (409)."}`;
+    // A 409 that is not the veto shape: show coord's words, not a guess.
+    // Only the INNERMOST object is read — when coord's body was nested as a
+    // JSON string in the envelope's `message`, falling back to the envelope
+    // would show that raw JSON. An innermost object with no words of its own
+    // gets a generic sentence instead.
+    const found = candidates(httpBodyOf(err) ?? "");
+    const innermost = found[found.length - 1];
+    const message = innermost
+      ? (str(innermost.message) ?? str(innermost.hint) ?? str(innermost.error))
+      : null;
+    return message
+      ? `Run not started: ${message}`
+      : "Run could not be started (409): the server refused it without saying why.";
   }
   return err instanceof Error ? err.message : "Failed to start run";
 }

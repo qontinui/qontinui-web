@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
@@ -43,6 +43,7 @@ vi.mock("@/contexts/tenant-context", () => ({
 }));
 
 import { GroupList } from "./GroupList";
+import { RUNNER_HINT_POLL_MS } from "../_hooks/runnerAvailability";
 
 const GROUP = {
   group_id: "g1",
@@ -117,17 +118,40 @@ describe("GroupList runner hint", () => {
     expect(run.getAttribute("aria-describedby")).toBe("conditions-runner-hint");
   });
 
-  it("shows no hint when the roster read fails (unknown is not 'no runners')", async () => {
-    route({
-      groups: [GROUP],
-      health: new Error(
-        "GET /api/v1/operations/fleet/health failed: 403 - forbidden"
-      ),
-    });
-    render(<GroupList />);
-    await screen.findByText("Menu");
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
-    expect(screen.queryByTestId("conditions-runner-hint")).toBeNull();
+  it("withdraws the hint when a later roster read fails (a failed read is unknown, not 'no runners')", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      route({
+        groups: [GROUP],
+        health: {
+          devices: [{ device_id: DEV, within_dispatch_window: false }],
+        },
+      });
+      render(<GroupList />);
+      // First poll answers: no device checked in, so the hint is shown.
+      expect(await screen.findByTestId("conditions-runner-hint")).toBeTruthy();
+
+      // The next poll is refused (a non-operator's 403).
+      route({
+        groups: [GROUP],
+        health: new Error(
+          "GET /api/v1/operations/fleet/health failed: 403 - forbidden"
+        ),
+      });
+      const healthCalls = () =>
+        get.mock.calls.filter((c) => String(c[0]).endsWith("/fleet/health"))
+          .length;
+      const before = healthCalls();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(RUNNER_HINT_POLL_MS);
+      });
+      await waitFor(() => expect(healthCalls()).toBeGreaterThan(before));
+      await waitFor(() =>
+        expect(screen.queryByTestId("conditions-runner-hint")).toBeNull()
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

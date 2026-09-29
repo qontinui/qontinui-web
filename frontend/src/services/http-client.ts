@@ -68,7 +68,7 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // home tenant). Without it the page reads and writes the operator's home
   // project whichever project is selected. Plan
   // 2026-09-17-regression-tests-target-the-selected-project, Phase 1.
-  "/api/v1/conditions",
+  "/api/v1/conditions/",
 ];
 
 function readActiveTenantId(): string | null {

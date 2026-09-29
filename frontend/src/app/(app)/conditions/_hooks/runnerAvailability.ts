@@ -27,10 +27,21 @@
  * non-operator. Every failure, loading state, unrecognised shape, or a device
  * whose liveness coord does not state is UNKNOWN, and UNKNOWN shows NO hint
  * ([policy: silent-empty-is-unknown]). The hint appears only on positive
- * evidence that no listed device can take the run. The capability half of
- * coord's pick (`claude_code_available`) is not on the roster wire, so the
- * hint can under-report (a live, undrained machine with no Claude Code still
- * fails the run) but never invents a miss — coord stays the authority.
+ * evidence about the listed devices.
+ *
+ * ## A likely outcome, never a certainty
+ *
+ * The hint keys on coord's `within_dispatch_window` (heartbeat within
+ * `COORD_DEVICE_HEARTBEAT_TTL_SECS`, default 120 s, or probe-reachable). The
+ * run picker (`pr_merge/preconditions.rs` `audit_pool_sql`) uses a LOOSER,
+ * env-configurable window that is not on the wire
+ * (`COORD_AUDIT_CAPABLE_LIVENESS_SECS`, default 300 s). So for a few minutes
+ * after a device stops checking in the hint can warn while coord would still
+ * pick it — it can warn a little early. It can also under-report: the
+ * capability half of the pick (`claude_code_available`) is not on the roster
+ * wire either. Both are why the wording states the observation ("has checked
+ * in recently") and a PROBABLE consequence, never that the run will fail.
+ * Coord's pick stays the authority, and Run is never blocked.
  */
 
 import { useCallback, useState } from "react";
@@ -104,16 +115,15 @@ export function runnerHintText(
   const project = projectName ? `“${projectName}”` : "this project";
   if (kind === "no_runner_online") {
     return (
-      `No runner paired to ${project} is online. Runs execute on a runner ` +
-      `paired to the group's project, so a run started now will be recorded ` +
-      `as an error (“no capable runner online”) until one comes online.`
+      `No runner paired to ${project} has checked in recently, so a run ` +
+      `started now will probably fail (recorded as “no capable runner ` +
+      `online”). Runs execute on a runner paired to the group's project.`
     );
   }
   return (
-    `Every online runner paired to ${project} is drained. Runs execute on a ` +
-    `runner paired to the group's project, so a run started now will be ` +
-    `recorded as an error (“every capable runner is drained”) until a drain ` +
-    `is lifted or expires.`
+    `Every runner of ${project} that checked in recently is drained, so a ` +
+    `run started now will probably be recorded as “every capable runner is ` +
+    `drained” until a drain is lifted or expires.`
   );
 }
 

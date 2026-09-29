@@ -48,4 +48,16 @@ describe("describeRunFailure", () => {
     expect(spawnVetoOf(err)).toBeNull();
     expect(describeRunFailure(err)).toBe(err.message);
   });
+
+  it("falls back to a generic sentence when coord's nested body has no words", () => {
+    const envelope = JSON.stringify({
+      error: "conflict",
+      message: JSON.stringify({ code: 7 }),
+    });
+    const text = describeRunFailure(rejection(409, envelope));
+    expect(text).toBe(
+      "Run could not be started (409): the server refused it without saying why."
+    );
+    expect(text).not.toContain("{");
+  });
 });
