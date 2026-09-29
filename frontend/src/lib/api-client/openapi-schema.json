@@ -82230,7 +82230,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {
