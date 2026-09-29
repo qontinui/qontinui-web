@@ -13,6 +13,7 @@ Routes
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
 ``GET   /plan-library/followups``  identified-but-UNOWNED follow-ups (Phase 7)
+``GET   /plan-library/vocabulary`` every closed field the write doors accept + how a wrong write is corrected
 ``GET   /plan-library/export``     the filtered corpus as a zip of verbatim .md
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
 ``GET   /plan-library/{id}/export`` one artifact's verbatim body (head or version)
@@ -181,6 +182,7 @@ from app.schemas.plan_library import (
     PlanCandidateResponse,
     PlanDifficultyItem,
     PlanDifficultyResponse,
+    PlanLibraryVocabularyResponse,
     ReconciliationAxisA,
     ReconciliationAxisB,
     ReconciliationAxisC,
@@ -208,6 +210,7 @@ from app.services.plan_difficulty import (
     MODEL_TIERS,
     RUBRIC_VERSION,
 )
+from app.services.plan_library_vocabulary import build_vocabulary
 from app.services.plan_scan_root_health import (
     scan_roots_health,
     scan_roots_read_failed,
@@ -3635,6 +3638,38 @@ async def list_open_followups(
         offset=offset,
         limit=limit,
     )
+
+
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/vocabulary",
+    response_model=PlanLibraryVocabularyResponse,
+    summary="Every closed field the write doors accept, and how a wrong write is corrected",
+)
+async def get_write_vocabulary(
+    current_user: User = Depends(get_audit_actor_user),
+) -> PlanLibraryVocabularyResponse:
+    """Read this BEFORE writing: the accepted values of every closed field on
+    ``POST /plan-library``, ``POST /plan-library/{id}/edges`` and
+    ``POST /plan-library/scan-roots``, what each
+    value asserts, and — per write door — how a wrong write is corrected.
+
+    Phase 3 of plan
+    ``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.
+    Three wrong ``supersedes`` edges were written in one day by agents that
+    could not read the relation vocabulary before writing, on a store where a
+    recorded edge cannot be retracted. Every value is derived from the schema
+    ``Literal``s (never retyped) and every correction sentence from
+    ``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.
+
+    Same admission as the write doors it describes
+    (:func:`~app.api.deps.get_audit_actor_user`: a Cognito user OR a coord
+    device JWT), so an agent holding only the runner's device token can read
+    it. The payload is the same for every caller; the principal is resolved
+    only to refuse an anonymous one.
+    """
+    del current_user  # admission only — the vocabulary is not org-scoped
+    return build_vocabulary()
 
 
 @router.get(
