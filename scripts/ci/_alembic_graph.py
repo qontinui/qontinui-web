@@ -46,6 +46,15 @@ GIT_TIMEOUT_SECONDS = 60
 # becomes a head, and `file_count` still counts the file, so nothing reports it.
 # Today's margin: `revision: str = "<id>"` wraps at an id length of 71, and the
 # longest id in the tree is 57.
+#
+# DEFERRED, deliberately: this class is the AUTHORING alphabet, and it is
+# `(.+?)` — any character. Narrowing it (say to `SAFE_ID_RE`'s set) would catch
+# an odd id at authoring time, but it would fail PRs on a shape this repo has
+# never forbidden, and it does nothing for ids already on main. The parse side
+# is widened to cover it instead (`PARENT_REF_RE` below); constraining what may
+# be authored is the stricter follow-up, recorded here so the next reader finds
+# a decision rather than an omission (plan
+# `2026-09-23-alembic-parse-alphabet-is-narrower-than-the-authoring-one`).
 REV_RE = re.compile(
     r'^revision\s*(?::[^=\n]*)?\s*=\s*\(?\s*["\'](.+?)["\']',
     re.M,
@@ -54,12 +63,42 @@ DOWN_RE = re.compile(
     r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
     re.M,
 )
-PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
+# The PARSE alphabet: what may be read as a REFERENCE to a revision. It must
+# be at least as wide as what `REV_RE` accepts as a revision id — parse ⊇
+# author — or an id that is legal to write (`SAFE_ID_RE` below names `.` and `-`
+# as legal) is invisible as a parent, its parent reads as a head, and the gate
+# reports a fork alembic does not see. `\w` alone was that gap: correct only
+# because no id in the tree had exercised it yet.
+#
+# `[\w.\-]+` is a strict SUPERSET of the old `\w[\w]*`, so the change is
+# monotone in the sense the paragraph below spells out for `DOWN_RE`: it can
+# only find MORE parents, and more parents can only SHRINK the head set — a
+# FAIL can become a PASS, never the reverse. Deliberately NOT narrowed to
+# `SAFE_ID_RE`'s ASCII set: `\w` is Unicode-aware, so an ASCII class would stop
+# matching an id this pattern matches today, losing a parent and growing the
+# head set. The hyphen is escaped and last so a later edit cannot turn it into
+# a range. Replayed old against new over all 611 revision files on
+# `ee23f9b28` (2026-09-30): the ORDERED parent lists agree for every file.
+#
+# Two consumers COUNT the matches rather than collecting a set —
+# `_walk_to_fork_root` (`len(parents) > 1` is a merge revision) and
+# `old_parent_of` (`== 1`) — so the monotonicity argument does not cover them.
+# `DOWN_RE`'s single-line fallback captures a trailing `# comment`, and a quoted
+# `.`/`-` string in one now counts as a literal where it did not before. That
+# is the same pre-existing hazard a quoted `\w` word in a comment already has;
+# the replay above is its empirical bound.
+PARENT_REF_RE = re.compile(r'["\']([\w.\-]+)["\']')
 
 #: Revision ids are interpolated into PR comments, so anything outside this
 #: set is stripped before rendering. ``REV_RE`` captures ``(.+?)`` between
 #: quotes, which would otherwise let a revision id in someone's own PR close
 #: a markdown code span and fire an @mention from a bot-authored comment.
+#:
+#: This is a RENDER control, and it is narrower than ``PARENT_REF_RE`` ON
+#: PURPOSE: the two answer different questions (what may be printed into
+#: someone else's PR, versus what may be read as a parent). Do not "harmonise"
+#: them — widening this one re-opens the injection, and narrowing the parse
+#: class to match it drops Unicode-word parents and grows the head set.
 SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 
 # FORMER PARSE LIMIT, now closed: ``DOWN_RE`` used to be line-anchored, so a

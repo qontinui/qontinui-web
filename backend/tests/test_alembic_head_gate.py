@@ -2909,3 +2909,62 @@ def test_a_file_in_a_listable_but_unenterable_directory_is_unreadable_not_a_cras
     finally:
         # Restore, or pytest cannot clean `tmp_path` up afterwards.
         locked_dir.chmod(0o700)
+
+
+# ---------------------------------------------------------------------------
+# The PARSE alphabet covers the AUTHORING alphabet (parse ⊇ author)
+# ---------------------------------------------------------------------------
+#
+# Plan ``2026-09-23-alembic-parse-alphabet-is-narrower-than-the-authoring-one``.
+# ``REV_RE`` accepts any character in a revision id, but ``PARENT_REF_RE`` used
+# to match ``\w`` only, so an id carrying ``.`` or ``-`` parsed as a revision
+# and was invisible as a parent: its parent read as a head, and the gate
+# reported a fork alembic does not see. These tests pin the INVARIANT, not the
+# current regex, and each one fails against the old ``\w[\w]*`` class.
+
+#: Ids that are legal to author today. ``é`` is the Unicode-word case: ``\w``
+#: matches it, so a plain-ASCII parse class would LOSE it and grow the head set.
+AUTHORABLE_IDS = ("0001-initial", "rev.01", "2026-09-23_add_x", "révision_01")
+
+
+@pytest.mark.parametrize("rev_id", AUTHORABLE_IDS)
+def test_every_authorable_id_is_parseable_as_a_parent(rev_id: str) -> None:
+    import _alembic_graph as graph
+
+    parsed_parent = graph.parse_source(_revision(rev_id, None))
+    assert parsed_parent is not None
+    assert parsed_parent[0] == rev_id, "REV_RE must accept the id as a revision"
+
+    parsed_child = graph.parse_source(_revision("child", rev_id))
+    assert parsed_child is not None
+    assert graph.PARENT_REF_RE.findall(parsed_child[1]) == [rev_id]
+
+
+@pytest.mark.parametrize("rev_id", AUTHORABLE_IDS)
+def test_a_punctuated_parent_is_not_reported_as_a_head(rev_id: str) -> None:
+    # End to end through `scan_sources` — the call site the blocking gate
+    # reads — so a regex test cannot pass while a call site drops the parent.
+    scan = scan_sources(_tree((rev_id, None), ("child", rev_id)))
+    assert scan.heads == ("child",)
+
+
+def test_count_sensitive_sites_see_one_punctuated_parent_behind_a_comment() -> None:
+    # `_walk_to_fork_root` and `old_parent_of` COUNT literals, so they are not
+    # covered by the head-set monotonicity argument. A trailing `# fmt: skip`
+    # is a real spelling (four revision files on main carry it) and must leave
+    # exactly one parent.
+    import _alembic_graph as graph
+
+    sources = {
+        **_tree(("a", None), ("rev.01", "a")),
+        Path("c.py"): (
+            'revision: str = "c"\n'
+            'down_revision: str | Sequence[str] | None = "rev.01"  # fmt: skip\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("c",)
+    assert graph.old_parent_of(scan, "c") == "rev.01"
+    # `rev.01` is unlanded, so the walk must continue THROUGH it to the
+    # shallowest unlanded revision; an unread parent would stop at `c`.
+    assert fork_root("c", scan.revisions, {"a"}) == "rev.01"
