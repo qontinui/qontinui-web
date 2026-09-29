@@ -94,4 +94,26 @@ describe("runnerHintText", () => {
       "every capable runner is drained"
     );
   });
+
+  it("states a probable outcome, not a certainty — the hint's liveness window is stricter than the run picker's", () => {
+    // The hint keys on coord's `within_dispatch_window` (120 s default); the
+    // run picker accepts devices seen within 300 s, so a run may still be
+    // picked up. The words must observe and predict, never promise.
+    const none = runnerHintText("no_runner_online", "Shop");
+    expect(none).toBe(
+      "No runner paired to “Shop” has checked in recently, so a run started " +
+        "now will probably fail (recorded as “no capable runner online”). " +
+        "Runs execute on a runner paired to the group's project."
+    );
+    const drained = runnerHintText("all_drained", "Shop");
+    expect(drained).toBe(
+      "Every runner of “Shop” that checked in recently is drained, so a run " +
+        "started now will probably be recorded as “every capable runner is " +
+        "drained” until a drain is lifted or expires."
+    );
+    for (const text of [none, drained]) {
+      expect(text).toContain("probably");
+      expect(text).not.toMatch(/will be recorded as an error/);
+    }
+  });
 });
