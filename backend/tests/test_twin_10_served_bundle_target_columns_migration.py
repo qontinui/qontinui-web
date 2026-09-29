@@ -202,8 +202,10 @@ def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
 
 
 def test_both_directions_are_op_execute_only() -> None:
-    """SQL goes through ``op.execute`` only; ``op.get_context`` is allowed
-    solely to open the ``autocommit_block`` the CONCURRENTLY index needs."""
+    """SQL goes through ``op.execute`` with a static literal only (the
+    schema-arg gate audits only constant SQL). ``op.get_context`` opens the
+    ``autocommit_block`` the CONCURRENTLY index needs; ``op.get_bind`` is the
+    post-build ``indisvalid`` read in ``_require_valid``."""
     calls = [
         node
         for node in ast.walk(_tree())
@@ -216,14 +218,28 @@ def test_both_directions_are_op_execute_only() -> None:
     assert {c.func.attr for c in calls} == {  # type: ignore[attr-defined]
         "execute",
         "get_context",
+        "get_bind",
     }
     for call in calls:
-        if call.func.attr == "get_context":  # type: ignore[attr-defined]
+        if call.func.attr != "execute":  # type: ignore[attr-defined]
             continue
         assert len(call.args) == 1
-        assert isinstance(call.args[0], (ast.Constant, ast.JoinedStr)), (
-            f"op.execute at line {call.lineno} must take one SQL literal"
+        assert isinstance(call.args[0], ast.Constant), (
+            f"op.execute at line {call.lineno} must take one static SQL literal "
+            "(an f-string escapes the schema-arg gate)"
         )
+
+
+def test_upgrade_bounds_its_lock_wait_and_checks_the_concurrent_build() -> None:
+    tree = _tree()
+    up = _sql_literals(_function(tree, "upgrade"))
+    assert up and re.match(r"\s*SET\s+LOCAL\s+lock_timeout", up[0], re.I), (
+        "the first statement of upgrade() must bound the ACCESS EXCLUSIVE wait"
+    )
+    body = ast.unparse(_function(tree, "upgrade"))
+    assert "_require_valid(_INDEX)" in body, (
+        "a killed CONCURRENTLY build leaves an INVALID index IF NOT EXISTS skips"
+    )
 
 
 def test_no_sql_body_carries_a_bind_parameter_spelling() -> None:
@@ -256,7 +272,9 @@ def _index_is_valid(engine: Engine, index_name: str) -> bool:
         scalar(
             engine,
             "SELECT i.indisvalid FROM pg_index i "
-            "JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = :n",
+            "JOIN pg_class c ON c.oid = i.indexrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'coord' AND c.relname = :n",
             n=index_name,
         )
     )
