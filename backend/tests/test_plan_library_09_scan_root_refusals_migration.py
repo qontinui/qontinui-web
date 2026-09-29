@@ -41,7 +41,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_09_scan_root_refusals"
-_PARENT_REVISION_ID = "coord_sessev_interact_idx_01"
+_PARENT_REVISION_ID = "coord_dp_write_auth_daily_01"
 _REVISION_FILENAME = "plan_library_09_scan_root_refusals.py"
 _TABLE = "plan_scan_root_refusals"
 
@@ -77,9 +77,13 @@ def test_the_revision_id_is_unique_in_the_chain() -> None:
 
 
 def test_the_migration_nil_uuid_is_the_models() -> None:
-    from app.models.work_artifact import NIL_ORGANIZATION_ID
+    # The index expression must be the upsert's ON CONFLICT target verbatim;
+    # IDENTITY_ORG_SQL renders NIL_ORGANIZATION_ID into it, so this also pins
+    # the migration's literal nil UUID (a literal, because coord's migration
+    # classifier refuses an f-string op.execute).
+    from app.models.plan_scan_root import IDENTITY_ORG_SQL
 
-    assert f'_NIL_UUID = "{NIL_ORGANIZATION_ID}"' in _revision_source()
+    assert IDENTITY_ORG_SQL in _revision_source()
 
 
 def test_the_migration_reason_bound_is_the_models() -> None:
