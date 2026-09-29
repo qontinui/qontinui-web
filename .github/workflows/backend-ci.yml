@@ -105,7 +105,18 @@ on:
   # nightly run makes that drift loud (the drift-check fails) instead of silent.
   schedule:
     - cron: '17 7 * * *' # 07:17 UTC daily
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      # TEST LEVER for the `shard-headroom` job only (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-... Phase 3).
+      # Empty (the default, and always on `schedule`) uses JOB_TIMEOUT_MINUTES.
+      # A value below the measured slowest shard must turn that job red with
+      # `verdict=over_margin`. It changes no other job's budget.
+      headroom_budget_override:
+        description: 'Test only: budget (minutes) the shard-headroom alarm measures against. Empty = the real per-shard budget.'
+        required: false
+        default: ''
+        type: string
 
 env:
   PYTHON_VERSION: '3.12'
@@ -1355,3 +1366,58 @@ jobs:
       - name: Test Docker image
         run: |
           docker run --rm qontinui-backend:test python -c "import app; print('Import successful')"
+
+  # Nightly headroom alarm for the `Run Tests` shards (plan
+  # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-
+  # carries-the-migration-tests-back-to-the-budget, Phase 3). It reads THIS
+  # run's shard jobs back from the API and goes RED when the slowest shard
+  # exceeds 70% of the per-shard budget (`over_margin`), when slowest/fastest
+  # > 2.0 (`skewed` -- the deal is stale), or when it cannot measure at all
+  # (`unknown` is never a pass). Logic and tests:
+  # scripts/ci/shard_headroom.py, backend/tests/test_shard_headroom.py.
+  #
+  # Why a RED job and not a `::warning::`: the warning channel is measured dead
+  # (twice, per the plan) -- the `test` job's soft-budget tripwire already
+  # warns on green runs, and nothing reads a warning on a green run. A red
+  # SCHEDULE run holds nothing: coord's main baseline is push-event-only
+  # (`ci_runs_watcher.rs`, citing `ci_baseline.rs` `establishes_main_baseline`),
+  # and a scheduled red is exactly what
+  # `qontinui-runner/scripts/detect-schedule-red-streaks.sh` exists to read.
+  #
+  # It can never hold a PR: it runs on `schedule` / `workflow_dispatch` only,
+  # and it is deliberately NOT in `test-gate`'s `needs` (the `Run Tests`
+  # aggregate PRs wait on).
+  shard-headroom:
+    name: Run Tests shard headroom
+    needs: [test]
+    # `always()` so a failed or budget-cancelled shard still gets measured --
+    # a shard cancelled AT its budget is the loudest over_margin there is.
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The workflow declares no top-level `permissions:`, so the jobs read must
+    # not depend on the repo's default token scope.
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # The `test` job's `timeout-minutes`, hand-copied (GitHub exposes no
+      # expression for another job's timeout). Pinned equal by
+      # backend/tests/test_shard_headroom.py.
+      JOB_TIMEOUT_MINUTES: '45'
+      # The `test` job's matrix length, pinned equal by the same test.
+      EXPECTED_SHARDS: '6'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      - name: Measure Run Tests shard headroom
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEADROOM_BUDGET_OVERRIDE: ${{ inputs.headroom_budget_override }}
+        run: |
+          set -o pipefail
+          python3 scripts/ci/shard_headroom.py --expected-shards "$EXPECTED_SHARDS" 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
