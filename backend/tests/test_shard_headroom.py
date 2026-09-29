@@ -71,7 +71,9 @@ def _job(
         ],
         "created_at": _ts(T0),
         "started_at": _ts(T0),
-        "completed_at": _ts(T0 + timedelta(minutes=minutes)),
+        # Whole seconds, rounded: GitHub stamps are second-resolution, and a
+        # float `timedelta(minutes=4.9)` must not truncate to 293 s.
+        "completed_at": _ts(T0 + timedelta(seconds=round(minutes * 60))),
     }
     job.update(overrides)
     return job
@@ -128,9 +130,32 @@ def test_over_margin_when_slowest_exceeds_seventy_percent():
     assert result.pct == pytest.approx(37.3 / 45 * 100)
 
 
-def test_exactly_at_the_margin_is_not_over():
-    result = headroom.evaluate(_run([31.5, 30, 30, 30, 30, 30]), 45)
-    assert result.verdict == "ok"
+# 7 and 23 are budgets where a float `budget * 0.70` (or float-minute
+# `max * 100 > budget * 70`) misfires at exactly 70%; 45 is the real budget.
+MARGIN_BUDGETS = [7, 23, 45, 46, 1, 13, 120]
+
+
+@pytest.mark.parametrize("budget", MARGIN_BUDGETS)
+def test_exactly_at_the_margin_is_not_over(budget):
+    at_margin = budget * 0.7  # minutes; budget * 42 whole seconds
+    result = headroom.evaluate(_run([at_margin] * 6), budget)
+    assert result.verdict == "ok", headroom.format_line(result)
+
+
+@pytest.mark.parametrize("budget", MARGIN_BUDGETS)
+def test_one_second_past_the_margin_is_over(budget):
+    rows = _run([budget * 0.7] * 6)
+    rows[2] = _job(3, budget * 0.7 + 1 / 60)
+    result = headroom.evaluate(rows, budget)
+    assert result.verdict == "over_margin", headroom.format_line(result)
+
+
+def test_fractional_budget_is_parsed_exactly():
+    # 0.1 is not representable in binary; Fraction("4.5") and "0.1" are exact.
+    budget = headroom.parse_budget("45", "4.5")
+    assert budget == headroom.Fraction(9, 2)
+    rows = _run([budget * 0.7] * 6)  # 189 s
+    assert headroom.evaluate(rows, budget).verdict == "ok"
 
 
 def test_over_margin_takes_precedence_over_skew():
@@ -144,13 +169,6 @@ def test_skewed_when_slowest_over_twice_fastest():
     assert result.verdict == "skewed"
     assert result.exit_code != 0
     assert result.skew == pytest.approx(29.9 / 9.6)
-
-
-def test_one_second_over_the_margin_is_over():
-    # 31.5 min + 1 s. The compare is exact, so neither float rounding of
-    # 45 * 0.70 nor the display rounding of pct can move the boundary.
-    result = headroom.evaluate(_run([31.5 + 1 / 60, 30, 30, 30, 30, 30]), 45)
-    assert result.verdict == "over_margin"
 
 
 def test_skew_of_exactly_two_is_not_skewed():
@@ -278,10 +296,47 @@ def test_a_measured_shard_with_another_conclusion_is_unknown(conclusion):
     assert repr(conclusion) in result.reason
 
 
-def test_a_runner_side_cancel_counts():
+def test_a_short_runner_side_cancel_is_unknown():
+    # A manual or external cancel mid-shard: the runner ran, but its time
+    # describes no full pass. Counting it would pass on a truncated run.
     rows = _run([20, 18, 22, 19, 21, 17])
     rows[0] = _job(1, 19, conclusion="cancelled")
-    assert headroom.evaluate(rows, 45).verdict == "ok"
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "shard 1 was cancelled after 19.0 min" in result.reason
+
+
+def test_all_six_cancelled_mid_shard_is_unknown_not_ok():
+    rows = [_job(i + 1, 12, conclusion="cancelled") for i in range(6)]
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert result.exit_code != 0
+
+
+def test_a_cancel_at_the_timeout_floor_is_counted():
+    # 44.0 >= 45 - 2: a budget timeout, measured, and over the margin.
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[0] = _job(1, 44.0, conclusion="cancelled")
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "over_margin"
+    assert result.max_min == pytest.approx(44.0)
+
+
+def test_a_cancel_one_second_short_of_the_floor_is_unknown():
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[0] = _job(1, 43 - 1 / 60, conclusion="cancelled")
+    assert headroom.evaluate(rows, 45).verdict == "unknown"
+
+
+def test_the_timeout_floor_uses_the_real_budget_not_the_override():
+    # A dispatch with override 10 must still recognise a real 45-min timeout
+    # (floor 43), and must still refuse a 12-min cancel, which a floor derived
+    # from the override (8) would have counted.
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[0] = _job(1, 45.3, conclusion="cancelled")
+    assert headroom.evaluate(rows, 10, job_timeout_min=45).verdict == "over_margin"
+    rows[0] = _job(1, 12, conclusion="cancelled")
+    assert headroom.evaluate(rows, 10, job_timeout_min=45).verdict == "unknown"
 
 
 # --- real runs --------------------------------------------------------------
@@ -395,6 +450,22 @@ def test_cli_ok_and_override(tmp_path, monkeypatch, capsys):
         {"JOB_TIMEOUT_MINUTES": "45", "HEADROOM_BUDGET_OVERRIDE": "15"},
     )
     assert code != 0 and line.endswith("verdict=over_margin")
+
+
+def test_cli_override_keeps_the_real_timeout_floor(tmp_path, monkeypatch, capsys):
+    payload = json.loads(
+        (FIXTURES / "run-36548570438.json").read_text(encoding="utf-8")
+    )
+    code, line = _cli(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        payload,
+        {"JOB_TIMEOUT_MINUTES": "45", "HEADROOM_BUDGET_OVERRIDE": "10"},
+    )
+    assert code != 0 and line.endswith(
+        "budget_min=10 pct=453.2 skew=2.88 verdict=over_margin"
+    )
 
 
 def test_cli_missing_budget_is_unknown(tmp_path, monkeypatch, capsys):
