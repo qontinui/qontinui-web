@@ -191,8 +191,8 @@ def test_notif_producerless_01_drops_rows_and_labels_and_defaults_columns() -> N
                 engine, "notification_preferences", column, "project"
             ) == ("boolean", "NO", "true"), (
                 f"project.notification_preferences.{column} must survive this "
-                "revision with DEFAULT true — the previous image still maps it "
-                "and the new image omits it on INSERT"
+                "revision with DEFAULT true — every image up to this change maps "
+                "it, and the Phase 3 image will omit it on INSERT"
             )
         _insert_prefs_omitting_dead_columns(engine, user_id)
         for column in _PREF_COLUMNS:
