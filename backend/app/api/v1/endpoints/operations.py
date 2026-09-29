@@ -5010,7 +5010,7 @@ def _validate_ci_host(v: str) -> str:
         raise ValueError("ci_host is one GitHub runner name and has no whitespace")
     if "@" in v or "/" in v:
         raise ValueError(
-            "ci_host is the bare GitHub runner name (e.g. `merytshost`), not a "
+            "ci_host is the bare GitHub runner name (e.g. `my-runner`), not a "
             "synthetic `gh-runner-*@owner/repo` hostname"
         )
     return v

@@ -3,12 +3,12 @@
 /**
  * The machine ↔ CI-host join, declared by an operator (plan §D2, path 2).
  *
- * The join is DECLARED, never inferred from names: `spaceship` and
- * `gh-runner-spaceship-wsl@…` look alike and a wrong guess pauses the wrong
- * box. So a machine with no declared host says exactly that — "No CI host
- * linked — link one" — and offers the one small form that fixes it. A linked
- * host can be unlinked here too, which is the fix a `ci_host_linked_elsewhere`
- * refusal on ANOTHER machine points at.
+ * The join is DECLARED, never inferred from names: a workstation (`<host>`) and
+ * the CI runner registered under it (`gh-runner-<host>-wsl@…`) look alike, and a
+ * wrong guess pauses the wrong box. So a machine with no declared host says
+ * exactly that — "No CI host linked — link one" — and offers the one small
+ * form that fixes it. A linked host can be unlinked here too, which is the fix
+ * a `ci_host_linked_elsewhere` refusal on ANOTHER machine points at.
  *
  * `ci_host` is the bare GitHub runner name (what coord's `drain-host` and label
  * routes take), never the synthetic `gh-runner-*@repo` hostname.
@@ -160,7 +160,7 @@ export function CiHostLink({
               value={host}
               disabled={busy}
               onChange={(e) => setHost(e.target.value)}
-              placeholder="GitHub runner name, e.g. merytshost"
+              placeholder="GitHub runner name, e.g. my-runner"
               className="h-8 w-64 text-xs"
               data-testid="coord-maintenance-ci-host-input"
             />
