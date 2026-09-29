@@ -48809,7 +48809,7 @@
         "type": "object"
       },
       "StatusCurrency": {
-        "description": "How current a row's ``status`` can be taken to be \u2014 with its evidence.\n\n``as_of`` is the newest ``received_at`` among the readings that produced a\nfeeder verdict (the row's ``updated_at`` for ``asserted_once``; null for\n``unfed_key``/``unknown``). ``ref_sha``/``ref_age_secs`` are the\nfreshest-ref qualifying reading's, null otherwise. ``behind`` is\ndeliberately NOT carried: it is not a property of the body.",
+        "description": "How current a row's ``status`` can be taken to be \u2014 with its evidence.\n\n``as_of`` is the newest ``received_at`` among the readings that produced\nTHIS verdict \u2014 the in-step readings for ``fed_in_step`` (a floor reading\nbeside them does not move it), the floor readings for ``fed_stale_ref``;\nthe row's ``updated_at`` for ``asserted_once``; null for\n``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the\nfreshest-ref reading among the same set, null otherwise. ``behind`` is\ndeliberately NOT carried: it is not a property of the body.",
         "properties": {
           "as_of": {
             "anyOf": [

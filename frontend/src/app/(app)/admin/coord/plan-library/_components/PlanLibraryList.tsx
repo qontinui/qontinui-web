@@ -27,6 +27,7 @@ import { ArtifactDetailPanel } from "./ArtifactDetailPanel";
 import {
   KIND_LABELS,
   STATUS_CURRENCY_LABELS,
+  STATUS_CURRENCY_STATES,
   WORK_ARTIFACT_KINDS,
   kindLabel,
   type StatusCurrency,
@@ -53,6 +54,12 @@ const CURRENCY_VARIANT: Record<
   unknown: "outline",
 };
 
+function isStatusCurrencyState(
+  value: string | undefined
+): value is StatusCurrencyState {
+  return (STATUS_CURRENCY_STATES as readonly string[]).includes(value ?? "");
+}
+
 /**
  * How far the row's `status` can be trusted now — the served
  * `status_currency`, with its own detail as the tooltip. A row a backend did
@@ -64,10 +71,16 @@ function StatusCurrencyBadge({
 }: {
   currency: StatusCurrency | undefined;
 }) {
-  const state: StatusCurrencyState = currency?.state ?? "unknown";
-  const detail =
-    currency?.detail ??
-    (currency ? undefined : "status currency not served by this backend");
+  const served: string | undefined = currency?.state;
+  const recognised = isStatusCurrencyState(served);
+  // A state this console was not written for renders as UNKNOWN, naming the
+  // served word — never as a blank badge, which would read as "fine".
+  const state: StatusCurrencyState = recognised ? served : "unknown";
+  const detail = !currency
+    ? "status currency not served by this backend"
+    : !recognised
+      ? `unrecognised status currency '${served ?? ""}' — this console predates it`
+      : (currency.detail ?? undefined);
   return (
     <Badge
       variant={CURRENCY_VARIANT[state]}
