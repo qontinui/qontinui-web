@@ -6,6 +6,16 @@ is older than ``JOURNEY_EDGE_RETENTION_DAYS`` (default 90). Modelled on
 ``app.jobs.render_log_retention``: committed chunks, so a pass that is
 interrupted keeps the chunks it finished.
 
+Scope: THIS BACKEND'S DATABASE ONLY. The runner writes journey edges to its
+own embedded Postgres (the vendored copy of this schema), which this job can
+never reach; the runner prunes its own embedded database, and that prune is
+added in the runner half of the same Phase 1. Rows here are those that reach
+the web backend's Postgres — this job says nothing about a runner's ledger.
+
+Every pass logs ``duration_seconds``. The ledger deliberately has no
+``observed_at``-only index (see the ``journey_01_edge_ledger`` docstring); a
+pass exceeding 60 s is one of that decision's two named revisit triggers.
+
 ``project.journey_frontier`` needs no retention — its primary key
 ``(app_id, node_key, affordance_fingerprint)`` bounds it.
 
@@ -16,12 +26,14 @@ in this backend), so the job speaks plain SQL through ``sqlalchemy.text``.
 A missing table is a normal state, not a crash: the scheduler boots on any
 database the alembic chain has not yet reached (a dev box behind ``main``, a
 fresh test database built from the models). The pass then logs
-``journey_edge_observations absent — migration not applied`` once and returns
+``journey_edge_observations absent — migration not applied`` once per pass
+(so once per hourly run, for as long as the table is absent) and returns
 ``table_present: False`` — reported as absent, never as "deleted 0 rows".
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -84,6 +96,7 @@ async def delete_journey_edges_older_than_retention(
     invalidation columns withdraw a row from reads, they do not extend its
     life.
     """
+    started = time.monotonic()
     retention_days = settings.JOURNEY_EDGE_RETENTION_DAYS
     cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
 
@@ -111,6 +124,7 @@ async def delete_journey_edges_older_than_retention(
     logger.info(
         "Cleaned up old journey edge observations",
         deleted_edges=deleted,
+        duration_seconds=round(time.monotonic() - started, 3),
         cutoff=cutoff.isoformat(),
         retention_days=retention_days,
     )

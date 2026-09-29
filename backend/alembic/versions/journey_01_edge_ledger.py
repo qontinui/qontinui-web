@@ -34,11 +34,13 @@ What this revision adds
 
 ``project.journey_edge_observations`` — one row per agent UI action the runner
 carried (``from_node`` → ``to_node``, the trigger, the outcome, provenance).
-Mirrors ``co_occurrence_observations`` deliberately: UUID PK with a server
-default, server-stamped ``observed_at``, JSONB payload columns, and the SAME
-four invalidation columns with the same types, so a bad run is withdrawn the
-same way (set ``invalidated_*``) and every read filters ``invalidated_at IS
-NULL``. The graph is DERIVED on read (plan D1); nothing here is a graph.
+Mirrors ``co_occurrence_observations`` deliberately in its JSONB payload
+columns, its server-stamped time column (``observed_at``, as ``captured_at``
+there), and the SAME four invalidation columns with the same types, so a bad
+run is withdrawn the same way (set ``invalidated_*``) and every read filters
+``invalidated_at IS NULL``. The ``id`` default ``gen_random_uuid()`` is NEW
+here — ``co_occurrence_observations.id`` has no server default (its writer
+supplies the id) — so the producer's INSERT may omit ``id``. The graph is DERIVED on read (plan D1); nothing here is a graph.
 
 ``project.journey_frontier`` — one row per affordance that was SEEN on a node
 and never activated from it, keyed ``(app_id, node_key,
@@ -63,6 +65,12 @@ the contract:
   undeclared, which is NOT "safe");
 * frontier ``reason`` ∈ ``not_yet_activated, effect_undeclared, effect_write,
   effect_destructive, budget_exhausted, activation_failed``.
+
+The JSONB columns carry a shape CHECK as well: ``from_node``, ``trigger`` and
+frontier ``node`` must be JSON objects, and ``to_node`` is SQL NULL or an
+object. Without it a JSON ``null`` (``'null'::jsonb``, which is NOT SQL NULL)
+could pose as a node — satisfying ``NOT NULL`` and slipping past the
+pending-edge rule as an "observed" destination that names nothing.
 
 A CHECK rather than trusting the writer: the producer is a fire-and-forget task
 on the runner's hot path, and a misspelled outcome word would otherwise sit in
@@ -89,7 +97,11 @@ No ``observed_at``-only index for the retention job
 (``app.jobs.journey_edge_retention``): it runs hourly over a table measured at
 ~11 snapshot-equivalents per 30 days on the one box that reported (Phase 0 U5),
 so a b-tree maintained on every INSERT to speed an hourly scan is the worse
-trade. Revisit with the retention window if a high-volume box reports.
+trade. Revisit — add ``(observed_at)`` — when EITHER trigger fires: the
+runner's ``/apps/{app_id}/journey/health`` reports an edges-written count above
+1,000,000, or one retention pass takes longer than 60 s (the job logs
+``duration_seconds`` on every pass, so the second is observable in the
+backend log).
 
 ``project.journey_explorations`` is NOT created here — Phase 3 adds it with the
 explorer that writes it (no table without a writer).
@@ -143,7 +155,13 @@ CREATE TABLE project.journey_edge_observations (
             'changed', 'no_change', 'error', 'settle_timeout', 'to_node_unobserved'
         )),
     CONSTRAINT ck_journey_edge_observations_to_node_iff_observed
-        CHECK ((to_node IS NULL) = (outcome = 'to_node_unobserved'))
+        CHECK ((to_node IS NULL) = (outcome = 'to_node_unobserved')),
+    CONSTRAINT ck_journey_edge_observations_from_node_object
+        CHECK (jsonb_typeof(from_node) = 'object'),
+    CONSTRAINT ck_journey_edge_observations_to_node_object
+        CHECK (to_node IS NULL OR jsonb_typeof(to_node) = 'object'),
+    CONSTRAINT ck_journey_edge_observations_trigger_object
+        CHECK (jsonb_typeof(trigger) = 'object')
 )
 """
 
@@ -179,7 +197,9 @@ CREATE TABLE project.journey_frontier (
         CHECK (reason IN (
             'not_yet_activated', 'effect_undeclared', 'effect_write',
             'effect_destructive', 'budget_exhausted', 'activation_failed'
-        ))
+        )),
+    CONSTRAINT ck_journey_frontier_node_object
+        CHECK (jsonb_typeof(node) = 'object')
 )
 """
 
