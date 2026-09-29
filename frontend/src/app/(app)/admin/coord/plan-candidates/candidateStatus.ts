@@ -55,6 +55,7 @@ import {
 } from "@/components/console";
 import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
 import type { DisclosureLine } from "@/components/admin/coord/disclosureLines";
+import type { StatusCurrency } from "../plan-library/types";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -121,6 +122,17 @@ export interface PlanCandidate {
   coord?: CandidateCoordLink;
   document_state?: DocumentState;
   difficulty?: string | null;
+  /**
+   * `sha256(body)`; `null` on a work-unit-only row. Optional here only by this
+   * mirror's tolerant-read convention — the backend always sends the key.
+   */
+  content_sha256?: string | null;
+  /**
+   * How far `status` can be trusted now — the SAME type the plan-library
+   * console renders (imported, not redefined, so the two cannot drift).
+   * `null` on a work-unit-only row; `document_state` says why.
+   */
+  status_currency?: StatusCurrency | null;
 }
 
 export interface OpenFollowup {

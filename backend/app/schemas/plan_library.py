@@ -327,10 +327,12 @@ StatusCurrencyState = Literal[
 class StatusCurrency(BaseModel):
     """How current a row's ``status`` can be taken to be — with its evidence.
 
-    ``as_of`` is the newest ``received_at`` among the readings that produced a
-    feeder verdict (the row's ``updated_at`` for ``asserted_once``; null for
-    ``unfed_key``/``unknown``). ``ref_sha``/``ref_age_secs`` are the
-    freshest-ref qualifying reading's, null otherwise. ``behind`` is
+    ``as_of`` is the newest ``received_at`` among the readings that produced
+    THIS verdict — the in-step readings for ``fed_in_step`` (a floor reading
+    beside them does not move it), the floor readings for ``fed_stale_ref``;
+    the row's ``updated_at`` for ``asserted_once``; null for
+    ``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the
+    freshest-ref reading among the same set, null otherwise. ``behind`` is
     deliberately NOT carried: it is not a property of the body.
     """
 

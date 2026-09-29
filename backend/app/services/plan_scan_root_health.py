@@ -353,16 +353,23 @@ def all_retired_detail(retired_count: int) -> str:
 READ_FAILED_PREFIX = "read_failed:"
 
 
-def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
+def scan_roots_read_failed(
+    error: BaseException, *, rendering: bool = False
+) -> ScanRootListResponse:
     """The block when the readings could not be READ — UNKNOWN, with no rows.
 
     Names only the error's class: its message can carry SQL and parameters,
-    which have no business on a corpus page.
+    which have no business on a corpus page. ``rendering=True`` is the same
+    verdict for readings that were read but could not be RENDERED (a defect in
+    :func:`scan_roots_health`): it keeps :data:`READ_FAILED_PREFIX`, because
+    for a reader the two say the same thing — nothing about the feeders is
+    established — and a route that already wrote must not turn that into a 500.
     """
+    what = "read but could not be rendered" if rendering else "could not be read"
     return ScanRootListResponse(
         state="unknown",
         detail=(
-            f"{READ_FAILED_PREFIX} the plan-scan-source readings could not be read "
+            f"{READ_FAILED_PREFIX} the plan-scan-source readings {what} "
             f"({type(error).__name__}), so whether the corpus's feeders are "
             "current is not established. The empty list is not 'no drift'."
         ),
