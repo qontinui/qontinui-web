@@ -95,15 +95,22 @@ def upgrade() -> None:
     # ``app.models.work_artifact.NIL_ORGANIZATION_ID``. It is written as a
     # literal, not interpolated: coord's migration classifier refuses an
     # f-string ``op.execute`` because its fields are not the SQL that runs.
-    op.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_scan_root_refusals_identity
-            ON agent.plan_scan_root_refusals (
-                coalesce(organization_id, '00000000-0000-0000-0000-000000000000'::uuid),
-                device_id
-            )
-        """
-    )
+    #
+    # CONCURRENTLY inside an autocommit block: the table above is new and
+    # empty, so a plain build would lock nothing, but coord's classifier
+    # cannot see that from the statement and admits only a non-transactional
+    # CONCURRENTLY build with an IF NOT EXISTS guard.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS
+                uq_plan_scan_root_refusals_identity
+                ON agent.plan_scan_root_refusals (
+                    coalesce(organization_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                    device_id
+                )
+            """
+        )
 
 
 def downgrade() -> None:
