@@ -51,7 +51,7 @@ GIT_TIMEOUT_SECONDS = 60
 # `(.+?)` — any character. Narrowing it (say to `SAFE_ID_RE`'s set) would catch
 # an odd id at authoring time, but it would fail PRs on a shape this repo has
 # never forbidden, and it does nothing for ids already on main. The parse side
-# is widened to cover it instead (`PARENT_REF_RE` below); constraining what may
+# reads the SAME alphabet instead (`parent_refs` below); constraining what may
 # be authored is the stricter follow-up, recorded here so the next reader finds
 # a decision rather than an omission (plan
 # `2026-09-23-alembic-parse-alphabet-is-narrower-than-the-authoring-one`).
@@ -63,31 +63,43 @@ DOWN_RE = re.compile(
     r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
     re.M,
 )
-# The PARSE alphabet: what may be read as a REFERENCE to a revision. It must
-# be at least as wide as what `REV_RE` accepts as a revision id — parse ⊇
-# author — or an id that is legal to write (`SAFE_ID_RE` below names `.` and `-`
-# as legal) is invisible as a parent, its parent reads as a head, and the gate
-# reports a fork alembic does not see. `\w` alone was that gap: correct only
-# because no id in the tree had exercised it yet.
-#
-# `[\w.\-]+` is a strict SUPERSET of the old `\w[\w]*`, so the change is
-# monotone in the sense the paragraph below spells out for `DOWN_RE`: it can
-# only find MORE parents, and more parents can only SHRINK the head set — a
-# FAIL can become a PASS, never the reverse. Deliberately NOT narrowed to
-# `SAFE_ID_RE`'s ASCII set: `\w` is Unicode-aware, so an ASCII class would stop
-# matching an id this pattern matches today, losing a parent and growing the
-# head set. The hyphen is escaped and last so a later edit cannot turn it into
-# a range. Replayed old against new over all 611 revision files on
-# `ee23f9b28` (2026-09-30): the ORDERED parent lists agree for every file.
-#
-# Two consumers COUNT the matches rather than collecting a set —
-# `_walk_to_fork_root` (`len(parents) > 1` is a merge revision) and
-# `old_parent_of` (`== 1`) — so the monotonicity argument does not cover them.
-# `DOWN_RE`'s single-line fallback captures a trailing `# comment`, and a quoted
-# `.`/`-` string in one now counts as a literal where it did not before. That
-# is the same pre-existing hazard a quoted `\w` word in a comment already has;
-# the replay above is its empirical bound.
-PARENT_REF_RE = re.compile(r'["\']([\w.\-]+)["\']')
+# The PARSE alphabet: what may be read as a REFERENCE to a revision. It is
+# exactly the AUTHORING alphabet — `REV_RE`'s lazy `(.+?)` between quotes stops
+# at the first quote and never crosses a newline, so an id is any run of
+# characters other than a quote or a newline, and so is a parent reference.
+# Anything narrower makes an id that is legal to write invisible as a parent:
+# its parent reads as a head, and the gate reports a fork alembic does not see.
+# `\w[\w]*` was that gap — correct only because no id in the tree had exercised
+# it (`rev.01`, `a b` and `a/b` all load in alembic and all read as extra heads
+# under it). Do not narrow it to `SAFE_ID_RE`'s set either: that is a RENDER
+# control, and an ASCII class would also drop the Unicode word ids `\w` matches.
+PARENT_REF_RE = re.compile(r'["\']([^"\'\n]+)["\']')
+
+# One token stream over a `down_revision` right-hand side: a quoted literal, or
+# a `#` comment running to end of line. Scanning left to right, a `#` INSIDE a
+# quoted id is consumed by the literal alternative first, so only a comment is
+# skipped. `DOWN_RE`'s single-line fallback captures a trailing comment, and a
+# comment is where a stray id-shaped string lives (`# was "rev.0"`); counting
+# it as a parent is wrong in BOTH directions a caller cares about — it turns a
+# scalar into a phantom merge revision for `_walk_to_fork_root`/`old_parent_of`,
+# and, worse for a blocking gate, a comment naming a real revision would hide
+# that revision's head from `scan_sources`.
+_RHS_TOKEN_RE = re.compile(r'#[^\n]*|["\']([^"\'\n]+)["\']')
+
+
+def parent_refs(down_rhs: str) -> list[str]:
+    r"""The parent ids a ``down_revision`` right-hand side declares, in order.
+
+    Every consumer that reads parents goes through here — the head set, the
+    fork-root walk, the parent pin, and ``migrate.yml``'s DAG snapshot — so they
+    cannot disagree about what a parent is. Comments are skipped (see
+    ``_RHS_TOKEN_RE``). Replayed over all 611 revision files on ``ee23f9b28``
+    (2026-09-30) against the former ``\w[\w]*`` class read without comment
+    skipping: the ordered parent lists agree for every file, and the head set is
+    unchanged.
+    """
+    return [m.group(1) for m in _RHS_TOKEN_RE.finditer(down_rhs) if m.group(1)]
+
 
 #: Revision ids are interpolated into PR comments, so anything outside this
 #: set is stripped before rendering. ``REV_RE`` captures ``(.+?)`` between
@@ -98,7 +110,8 @@ PARENT_REF_RE = re.compile(r'["\']([\w.\-]+)["\']')
 #: PURPOSE: the two answer different questions (what may be printed into
 #: someone else's PR, versus what may be read as a parent). Do not "harmonise"
 #: them — widening this one re-opens the injection, and narrowing the parse
-#: class to match it drops Unicode-word parents and grows the head set.
+#: class to match it makes legal ids invisible as parents and grows the head
+#: set.
 SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 
 # FORMER PARSE LIMIT, now closed: ``DOWN_RE`` used to be line-anchored, so a
@@ -261,7 +274,7 @@ def scan_sources(sources: dict[Path, str]) -> Scan:
             duplicates.append((rev, paths[rev], path))
         revisions[rev] = down
         paths[rev] = path
-        parents.update(PARENT_REF_RE.findall(down))
+        parents.update(parent_refs(down))
     heads = tuple(sorted(r for r in revisions if r not in parents))
     return Scan(
         file_count=len(sources),
@@ -410,7 +423,7 @@ def _walk_to_fork_root(
         down = revisions.get(current)
         if down is None:
             return current, "", ""
-        parents = PARENT_REF_RE.findall(down)
+        parents = parent_refs(down)
         if len(parents) > 1:
             return None, BLOCK_MERGE_REVISION, current
         if not parents:
@@ -930,7 +943,7 @@ def old_parent_of(scan: Scan, revision: str) -> str | None:
     A fork root is never a merge revision (those are ``blocked``), so there is
     at most one string literal to read.
     """
-    parents = PARENT_REF_RE.findall(scan.revisions.get(revision, ""))
+    parents = parent_refs(scan.revisions.get(revision, ""))
     return parents[0] if len(parents) == 1 else None
 
 
