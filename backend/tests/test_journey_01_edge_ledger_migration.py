@@ -132,7 +132,7 @@ _NODE = json.dumps(
         "stateIds": ["runners-list"],
         "modelled": True,
         "pathnameTemplate": "/admin/coord/runners",
-        "pathname": "/admin/coord/runners",
+        "pageLabel": "coord-runners",
     }
 )
 _TRIGGER = json.dumps(
