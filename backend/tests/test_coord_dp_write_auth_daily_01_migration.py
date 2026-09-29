@@ -336,7 +336,12 @@ def _upsert(
 
 
 def _count(engine: Engine) -> int:
-    value = scalar(engine, f"SELECT count(*) FROM {_QUALIFIED}")
+    # Scoped to the route and day this test writes, never the whole table.
+    value = scalar(
+        engine,
+        f"SELECT count(*) FROM {_QUALIFIED} "
+        f"WHERE route = 'session_output' AND day = '{_DAY.isoformat()}'",
+    )
     assert isinstance(value, int)
     return value
 
