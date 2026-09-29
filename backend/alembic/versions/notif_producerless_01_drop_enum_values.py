@@ -32,19 +32,24 @@ previous image still maps them, and dropping them under it would break every
 this change's image is the one serving (the "gone means DEPLOYED, not merged"
 rule in ``knowledge-base/qontinui-specific/database-migrations.md``).
 
-Why the three columns gain ``DEFAULT true`` here — REQUIRED, not cosmetic
+Why the three columns gain ``DEFAULT true`` here — for Phase 3's image
 ==========================================================================
 
 ``05a366f58455_initial_schema_squashed`` created all three columns
-``nullable=False`` with NO server default; until now the ORM's Python-side
-``default=True`` supplied the value on every INSERT. The image this revision
-ships with no longer maps the columns, so its INSERTs
-(``NotificationPreferences.create_default``, the first preference read for a
-new user) omit them — and a NOT NULL column with no default rejects that row.
-A server default of ``true`` makes the omitted columns legal and preserves the
-old default-ON value. It is harmless to the previous image, which always sends
-an explicit value. Adding a default is a catalog-only change (no table
-rewrite).
+``nullable=False`` with NO server default; the ORM's Python-side
+``default=True`` supplies the value on every INSERT. That is why the image
+this revision ships with still MAPS the three columns (it only stops reading
+and exposing them): if that image served before this revision ran, an
+unmapped column would make every ``NotificationPreferences.create_default``
+INSERT violate NOT NULL.
+
+Phase 3 removes the mappings together with a revision that drops the columns,
+and meets the same race in its turn: its image may serve before its drop runs.
+The server default set here is what makes that safe — an INSERT omitting the
+columns is then legal against the not-yet-dropped schema. So the default must
+be DEPLOYED before Phase 3 starts, which is why it lands now. It is harmless to
+every image that maps the columns (they send an explicit value), and adding a
+default is a catalog-only change (no table rewrite).
 
 Dropping ENUM values
 ==========================================================================
