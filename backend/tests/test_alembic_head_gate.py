@@ -2988,3 +2988,18 @@ def test_a_hash_inside_a_quoted_id_is_part_of_the_id() -> None:
     import _alembic_graph as graph
 
     assert graph.parent_refs('("rev#1", "b")  # tail') == ["rev#1", "b"]
+
+
+def test_repoint_advice_keeps_a_hash_inside_the_old_parent_id() -> None:
+    # `repoint_sites` rewrites the author's own line. Splitting it on a raw
+    # `#` cut through `"rev#1"` and printed `= "new"#1"` — invalid Python —
+    # as the gate's advice.
+    import _alembic_graph as graph
+
+    source = _revision("c", "rev#1")
+    scan = scan_sources({**_tree(("rev#1", None)), Path("c.py"): source})
+    sites = graph.repoint_sites(scan, "c", "new", source, {})
+    assert sites.down_revision == (
+        'down_revision: str | Sequence[str] | None = "rev#1"',
+        'down_revision: str | Sequence[str] | None = "new"',
+    )
