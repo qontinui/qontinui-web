@@ -138,7 +138,9 @@ MARGIN_BUDGETS = [7, 23, 45, 46, 1, 13, 120]
 @pytest.mark.parametrize("budget", MARGIN_BUDGETS)
 def test_exactly_at_the_margin_is_not_over(budget):
     at_margin = budget * 0.7  # minutes; budget * 42 whole seconds
-    result = headroom.evaluate(_run([at_margin] * 6), budget)
+    # The job timeout is held at 120 so every budget in the list is a legal
+    # (lowering) override and the timeout floor stays meaningful.
+    result = headroom.evaluate(_run([at_margin] * 6), budget, job_timeout_min=120)
     assert result.verdict == "ok", headroom.format_line(result)
 
 
@@ -146,7 +148,7 @@ def test_exactly_at_the_margin_is_not_over(budget):
 def test_one_second_past_the_margin_is_over(budget):
     rows = _run([budget * 0.7] * 6)
     rows[2] = _job(3, budget * 0.7 + 1 / 60)
-    result = headroom.evaluate(rows, budget)
+    result = headroom.evaluate(rows, budget, job_timeout_min=120)
     assert result.verdict == "over_margin", headroom.format_line(result)
 
 
@@ -294,6 +296,92 @@ def test_a_measured_shard_with_another_conclusion_is_unknown(conclusion):
     assert result.verdict == "unknown"
     assert "shard 5" in result.reason
     assert repr(conclusion) in result.reason
+
+
+def test_a_counted_timeout_forces_over_margin_whatever_the_budget():
+    # Six shards cancelled at 45.2 min against JOB_TIMEOUT_MINUTES=45: each
+    # time is a lower bound. Even at a budget where 45.2 min is inside 70%,
+    # a shard that hit its real budget is over the margin by definition.
+    rows = [_job(i + 1, 45.2, conclusion="cancelled") for i in range(6)]
+    result = headroom.evaluate(rows, 45, job_timeout_min=45)
+    assert result.verdict == "over_margin"
+    assert "lower bound" in result.reason
+    # And a budget large enough to put 45.2 min under 70% (JOB_TIMEOUT 70,
+    # override 70) still cannot turn a counted timeout into a pass.
+    rows = [_job(i + 1, 68.5, conclusion="cancelled") for i in range(6)]
+    rows[0] = _job(1, 30, conclusion="success")
+    result = headroom.evaluate(rows, 70, job_timeout_min=70)
+    assert result.verdict == "over_margin"
+
+
+def test_an_override_above_the_real_budget_is_unknown():
+    rows = [_job(i + 1, 45.2, conclusion="cancelled") for i in range(6)]
+    result = headroom.evaluate(rows, 70, job_timeout_min=45)
+    assert result.verdict == "unknown"
+    assert result.exit_code != 0
+    assert "may only lower" in result.reason
+
+
+def test_cli_override_above_the_real_budget_is_unknown(tmp_path, monkeypatch, capsys):
+    payload = [_job(i + 1, 45.2, conclusion="cancelled") for i in range(6)]
+    code, line = _cli(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        payload,
+        {"JOB_TIMEOUT_MINUTES": "45", "HEADROOM_BUDGET_OVERRIDE": "70"},
+    )
+    assert code == 2 and line.endswith("verdict=unknown")
+
+
+@pytest.mark.parametrize("timeout", [2, 1, 0.5])
+def test_a_job_timeout_at_or_below_the_slack_is_unknown(timeout):
+    budget = headroom.Fraction(str(timeout))
+    result = headroom.evaluate(_run([0.2] * 6), budget, job_timeout_min=budget)
+    assert result.verdict == "unknown"
+    assert "timeout floor would be meaningless" in result.reason
+
+
+@pytest.mark.parametrize("expected", [0, -1])
+def test_a_nonsense_shard_count_is_unknown(expected):
+    result = headroom.evaluate(_run([20] * 6), 45, expected)
+    assert result.verdict == "unknown"
+    assert result.exit_code == 2
+
+
+def test_cli_a_nonsense_shard_count_keeps_the_one_line_contract(
+    tmp_path, monkeypatch, capsys
+):
+    path = tmp_path / "jobs.json"
+    path.write_text(json.dumps(_run([20] * 6)), encoding="utf-8")
+    monkeypatch.setenv("JOB_TIMEOUT_MINUTES", "45")
+    monkeypatch.delenv("HEADROOM_BUDGET_OVERRIDE", raising=False)
+    code = headroom.main(["--jobs-json", str(path), "--expected-shards", "0"])
+    out = capsys.readouterr().out.strip().splitlines()
+    assert code == 2
+    assert len(out) == 1 and out[0].endswith("verdict=unknown")
+
+
+@pytest.mark.parametrize("entry", [None, 3, "Run Tests (shard 1/6)", ["x"]])
+def test_a_non_object_job_entry_is_unknown(entry):
+    rows = _run([20] * 6)
+    rows.insert(2, entry)
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "job entry 2" in result.reason
+
+
+def test_cli_a_non_object_job_entry_keeps_the_one_line_contract(
+    tmp_path, monkeypatch, capsys
+):
+    code, line = _cli(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        {"jobs": [1, 2, 3]},
+        {"JOB_TIMEOUT_MINUTES": "45"},
+    )
+    assert code == 2 and line.endswith("verdict=unknown")
 
 
 def test_a_short_runner_side_cancel_is_unknown():

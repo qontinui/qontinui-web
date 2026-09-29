@@ -59,7 +59,12 @@ must read ``over_margin``). That floor is always the REAL job budget, never the
 override, so a dispatch with a low override still recognises a real timeout. A
 shorter ``cancelled`` is a manual or external cancel mid-shard: ``unknown``,
 naming the shard and its duration. A shard cancelled at its timeout measures
-slightly OVER the budget, so a ``pct`` just above 100 is expected, not a bug. Any other conclusion (``failure``,
+slightly OVER the budget, so a ``pct`` just above 100 is expected, not a bug.
+Its time is only a LOWER BOUND, so a counted timeout forces ``over_margin``
+whatever the budget -- and ``HEADROOM_BUDGET_OVERRIDE`` may only LOWER the
+budget (it exists to push the alarm red); an override above
+``JOB_TIMEOUT_MINUTES`` is ``unknown``, as is ``JOB_TIMEOUT_MINUTES <= 2``
+(the timeout floor would be meaningless). Any other conclusion (``failure``,
 ``skipped``, ...) means the shard's time does not describe a full pass over its
 files, so the verdict is ``unknown``, naming the shard and conclusion.
 
@@ -89,10 +94,12 @@ from typing import Any
 
 # Every verdict compare is done in exact rational arithmetic: shard durations
 # are `Fraction` seconds and budgets are `Fraction` minutes, parsed from their
-# decimal text. No binary float ever reaches a boundary -- `budget * 0.70` in
-# float misfires at exactly 70% for 13 of the integer budgets 1..120 (e.g. 7
-# min with a 4.9-min shard), and so does `max_min * 100 > budget_min * 70` over
-# float minutes. `pct` and `skew` on `Result` are floats for DISPLAY only.
+# decimal text. No binary float ever reaches a boundary: both float forms --
+# a `budget * 0.70` threshold and `max_min * 100 > budget_min * 70` over float
+# minutes -- misfire at exactly 70% for some ordinary integer budgets (7 min
+# with a 4.9-min shard reads over the margin under the latter; how many budgets
+# misfire depends on how the float expression is spelled, which is the point).
+# `pct` and `skew` on `Result` are floats for DISPLAY only.
 MARGIN_PCT = 70
 MAX_SKEW = 2
 # A `cancelled` row counts only when it ran at least this close to the REAL job
@@ -100,6 +107,10 @@ MAX_SKEW = 2
 # (`budget_floor = JOB_TIMEOUT_MINUTES - 2`). Anything shorter was cancelled by
 # someone, not by the budget, and describes no full pass over the shard.
 TIMEOUT_SLACK_MIN = 2
+# A counted timeout-cancel is a LOWER BOUND on the shard's time, not a
+# measurement: the shard would have run longer. A shard that hit its REAL budget
+# is over the margin by definition, so it forces `over_margin` whatever the
+# (possibly overridden) budget says.
 DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
 PER_PAGE = 100
@@ -219,8 +230,11 @@ def shard_durations(
     jobs: list[dict[str, Any]],
     expected_shards: int,
     job_timeout_min: Fraction,
-) -> dict[int, Fraction]:
-    """Exact seconds per shard number, from the run's job rows.
+) -> tuple[dict[int, Fraction], set[int]]:
+    """Exact seconds per shard number, and the shards that hit their timeout.
+
+    The second element names the shards counted from a timeout-cancel: their
+    seconds are a lower bound, not a measurement.
 
     Raises ``MeasurementError`` for anything that makes the measurement
     untrustworthy: a malformed timestamp, a duplicate shard row, a measured
@@ -229,10 +243,20 @@ def shard_durations(
     measured row (never picked up by a runner, or absent).
     """
     timeout_floor_s = (job_timeout_min - TIMEOUT_SLACK_MIN) * 60
+    if expected_shards < 1:
+        raise MeasurementError(f"expected_shards={expected_shards} is not a shard count")
+    if job_timeout_min <= TIMEOUT_SLACK_MIN:
+        raise MeasurementError(
+            f"JOB_TIMEOUT_MINUTES={float(job_timeout_min):g} is not above the "
+            f"{TIMEOUT_SLACK_MIN}-min timeout slack; the timeout floor would be meaningless"
+        )
     measured: dict[int, Fraction] = {}
+    timed_out: set[int] = set()
     seen: dict[int, str] = {}
     unmeasured: dict[int, str] = {}
-    for job in jobs:
+    for index, job in enumerate(jobs):
+        if not isinstance(job, dict):
+            raise MeasurementError(f"job entry {index} is {type(job).__name__}, not an object")
         name = job.get("name")
         if not isinstance(name, str):
             continue
@@ -282,6 +306,8 @@ def shard_durations(
                 "an external or manual cancel, not a budget timeout, so its time "
                 "describes no full pass"
             )
+        if conclusion == "cancelled":
+            timed_out.add(shard)
         measured[shard] = seconds
 
     missing = sorted(set(range(1, expected_shards + 1)) - set(measured))
@@ -290,7 +316,7 @@ def shard_durations(
         raise MeasurementError(
             f"measured {len(measured)} of {expected_shards} shards; " + "; ".join(details)
         )
-    return measured
+    return measured, timed_out
 
 
 def evaluate(
@@ -309,7 +335,13 @@ def evaluate(
     budget = Fraction(budget_min)
     job_timeout = Fraction(job_timeout_min) if job_timeout_min is not None else budget
     try:
-        durations = shard_durations(jobs, expected_shards, job_timeout)
+        if budget > job_timeout:
+            raise MeasurementError(
+                f"budget {float(budget):g} min exceeds JOB_TIMEOUT_MINUTES "
+                f"{float(job_timeout):g}; HEADROOM_BUDGET_OVERRIDE may only lower the "
+                "budget (it exists to push the alarm red)"
+            )
+        durations, timed_out = shard_durations(jobs, expected_shards, job_timeout)
     except MeasurementError as exc:
         return Result("unknown", str(exc), budget_min=float(budget))
 
@@ -323,7 +355,15 @@ def evaluate(
     assert pct is not None and skew is not None
 
     # Exact rational compares; pct and skew are for display only.
-    if max_s * 100 > budget * 60 * MARGIN_PCT:
+    if timed_out:
+        shards = ", ".join(map(str, sorted(timed_out)))
+        verdict, reason = (
+            "over_margin",
+            f"shard(s) {shards} hit the real {float(job_timeout):g}-minute job budget "
+            "and were cancelled; that time is a lower bound, so the margin is exceeded "
+            "by definition",
+        )
+    elif max_s * 100 > budget * 60 * MARGIN_PCT:
         verdict, reason = (
             "over_margin",
             f"shard {slowest_shard} took {_minutes(max_s):.1f} min, {pct:.1f}% of the "
