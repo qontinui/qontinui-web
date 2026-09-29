@@ -40,6 +40,8 @@ ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
 _HOME = UUID("11111111-1111-1111-1111-111111111111")
 _SELECTED = UUID("22222222-2222-2222-2222-222222222222")
 _OTHER = UUID("33333333-3333-3333-3333-333333333333")
+# A tenant the caller is NOT a coord member of.
+_FOREIGN = UUID("77777777-7777-7777-7777-777777777777")
 _USER = UUID("44444444-4444-4444-4444-444444444444")
 _STRANGER = UUID("55555555-5555-5555-5555-555555555555")
 _DEVICE = UUID("66666666-6666-6666-6666-666666666666")
@@ -95,7 +97,14 @@ def _row(tenant_id: UUID, auto_fresh: bool = True) -> SimpleNamespace:
 
 
 class _FakeSession:
-    """Async session answering ``get`` by model; records every write attempt."""
+    """Async session answering ``get`` by model; records every write attempt.
+
+    ``targets`` is the sequence of answers to successive ``TestTarget`` reads
+    (the PUT reads before AND after coord's write); the last one repeats. Every
+    ``TestTarget`` read must pass ``populate_existing=True`` — a read that could
+    be served from the session's identity map would not observe what coord
+    committed — and is counted in ``target_reads``.
+    """
 
     def __init__(
         self,
@@ -103,13 +112,15 @@ class _FakeSession:
         device: SimpleNamespace | None,
         app_registered: bool = True,
         target: SimpleNamespace | None = None,
+        targets: list[SimpleNamespace | None] | None = None,
     ) -> None:
         self.device = device
         self.app_registered = app_registered
-        self.target = target
+        self.targets = list(targets) if targets is not None else [target]
+        self.target_reads = 0
         self.writes: list[str] = []
 
-    async def get(self, model: Any, _pk: Any, **_kw: Any) -> Any:
+    async def get(self, model: Any, _pk: Any, **kw: Any) -> Any:
         from app.models.app_deploy_state import AppDeployState
         from app.models.app_registry import App
         from app.models.device import Device
@@ -120,7 +131,10 @@ class _FakeSession:
         if model is App:
             return SimpleNamespace(app_id=_APP) if self.app_registered else None
         if model is TestTarget:
-            return self.target
+            assert kw.get("populate_existing") is True, kw
+            index = min(self.target_reads, len(self.targets) - 1)
+            self.target_reads += 1
+            return self.targets[index]
         if model is AppDeployState:
             return None
         raise AssertionError(f"unexpected get({model!r})")
@@ -234,6 +248,8 @@ def test_put_bound_device_goes_through_coord_with_the_selection_forwarded():
     assert body["auto_fresh"] is True
     # coord is the only writer: web touched nothing.
     assert session.writes == []
+    # One read before the write (other-project check), one after (response).
+    assert session.target_reads == 2
 
 
 def test_put_unbound_device_is_a_409_naming_the_project_and_writes_nothing():
@@ -361,6 +377,8 @@ def test_delete_goes_through_coord_with_the_selection_forwarded():
     assert forwarded[ACTIVE_TENANT_HEADER] == str(_SELECTED)
     assert forwarded["Authorization"] == "Bearer cognito-token"
     assert session.writes == []
+    # coord's ``deleted: true`` is trusted: no verification read.
+    assert session.target_reads == 0
 
 
 def test_delete_not_deleted_while_row_lives_in_another_project_is_a_409():
@@ -382,6 +400,7 @@ def test_delete_not_deleted_while_row_lives_in_another_project_is_a_409():
     assert detail["row_tenant_id"] == str(_OTHER)
     assert '"other-proj"' in detail["message"]
     assert '"Selected Project"' in detail["message"]
+    assert "remove it there" in detail["message"]
     assert session.writes == []
 
 
@@ -440,3 +459,106 @@ def test_unbound_refusal_wire_shape_under_the_real_error_envelope():
     body = response.json()
     assert body["error"] == "device_not_bound_to_project"
     assert body["message"].startswith("Device 'build-box' is not bound to project")
+
+
+def test_put_row_in_another_project_is_refused_before_coord_is_called():
+    """coord's upsert keeps an existing row's tenant stamp and binding-checks
+    the EFFECTIVE tenant, so re-designating a row stamped in project A while B
+    is selected would flip A's row (invisible to the runner if the device is no
+    longer bound to A) and answer 200. It must be refused before any write."""
+    session = _FakeSession(device=_device(), target=_row(_OTHER))
+    response, _, ctor = _call(
+        session,
+        "PUT",
+        effective=_SELECTED,
+        headers={ACTIVE_TENANT_HEADER: str(_SELECTED)},
+        json={"auto_fresh": True},
+    )
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "designation_in_other_project"
+    assert detail["row_tenant_id"] == str(_OTHER)
+    assert '"other-proj"' in detail["message"]
+    assert 'designate it again in "Selected Project"' in detail["message"]
+    ctor.assert_not_called()
+    assert session.writes == []
+
+
+def test_put_row_in_a_non_member_project_names_no_tenant():
+    session = _FakeSession(device=_device(), target=_row(_FOREIGN))
+    response, _, ctor = _call(
+        session, "PUT", effective=_SELECTED, json={"auto_fresh": True}
+    )
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert "row_tenant_id" not in detail
+    assert str(_FOREIGN) not in detail["message"]
+    assert "not a member of" in detail["message"]
+    assert "Switch to" not in detail["message"]
+    ctor.assert_not_called()
+
+
+def test_put_new_designation_proceeds_and_reads_back():
+    session = _FakeSession(device=_device(), targets=[None, _row(_SELECTED)])
+    response, instance, _ = _call(
+        session,
+        "PUT",
+        effective=_SELECTED,
+        coord_body={"device_id": str(_DEVICE), "app_id": _APP, "auto_fresh": True},
+        json={"auto_fresh": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert instance.post.await_count == 1
+
+
+def test_put_row_not_visible_after_coord_accepted_is_a_502():
+    session = _FakeSession(device=_device(), targets=[None, None])
+    response, _, _ = _call(
+        session,
+        "PUT",
+        effective=_SELECTED,
+        coord_body={"device_id": str(_DEVICE), "app_id": _APP, "auto_fresh": True},
+        json={"auto_fresh": True},
+    )
+
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"]["error"] == "designation_not_visible"
+
+
+_SQL_LEAK = "test_targets post_upsert: UPSERT coord.test_targets: relation x"
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_coord_5xx_is_generic_and_leaks_no_coord_text(method: str):
+    session = _FakeSession(device=_device())
+    response, _, _ = _call(
+        session,
+        method,
+        effective=_SELECTED,
+        coord_status=500,
+        coord_body={"error": _SQL_LEAK},
+        json={"auto_fresh": True} if method == "PUT" else None,
+    )
+
+    assert response.status_code == 500, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "coord_failed"
+    assert "(500)" in detail["message"]
+    assert "coord.test_targets" not in response.text
+    assert session.writes == []
+
+
+def test_delete_not_deleted_row_in_non_member_project_names_no_tenant():
+    session = _FakeSession(device=_device(), target=_row(_FOREIGN))
+    response, _, _ = _call(
+        session, "DELETE", effective=_SELECTED, coord_body={"deleted": False}
+    )
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert "row_tenant_id" not in detail
+    assert str(_FOREIGN) not in detail["message"]
+    assert "Ask that project's operator" in detail["message"]
