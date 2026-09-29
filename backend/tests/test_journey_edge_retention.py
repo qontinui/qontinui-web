@@ -2,10 +2,16 @@
 
 The test database is built from the SQLAlchemy models, and the journey ledger
 has no model (its precedent ``co_occurrence_observations`` has none either), so
-it starts ABSENT here — which is exactly the absent-table path. The present-table
-tests create it inside the test's own transaction from the ``journey_01``
-revision's own DDL constant, so the table under test is the migration's table,
-not a hand-kept copy; the transaction rollback removes it again.
+it normally starts ABSENT here — which is exactly the absent-table path. The
+present-table tests create it inside the test's own transaction from the
+``journey_01`` revision's own DDL constant, so the table under test is the
+migration's table, not a hand-kept copy; the transaction rollback removes it
+again.
+
+Pointed at a database the alembic chain HAS reached, the table already exists:
+the absent-table tests then skip (their precondition cannot be arranged), and
+the ``ledger`` fixture uses the existing table, emptying it inside the test's
+transaction so the rollback restores whatever rows it held.
 """
 
 from __future__ import annotations
@@ -57,11 +63,31 @@ def _revision() -> ModuleType:
 
 @pytest_asyncio.fixture
 async def ledger(async_db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
-    """The test session with the journey ledger created from the revision's DDL."""
-    revision = _revision()
-    await async_db_session.execute(text(revision.CREATE_EDGE_OBSERVATIONS_SQL))
-    for statement in revision.CREATE_EDGE_OBSERVATIONS_INDEXES_SQL:
-        await async_db_session.execute(text(statement))
+    """The test session with an EMPTY journey ledger.
+
+    Created from the revision's DDL when absent; an existing (migrated) table is
+    used as-is and emptied — both inside the test transaction, so the rollback
+    undoes either.
+    """
+    if await retention.journey_edge_table_present(async_db_session):
+        await async_db_session.execute(text(f"DELETE FROM {retention.TABLE}"))
+    else:
+        revision = _revision()
+        await async_db_session.execute(text(revision.CREATE_EDGE_OBSERVATIONS_SQL))
+        for statement in revision.CREATE_EDGE_OBSERVATIONS_INDEXES_SQL:
+            await async_db_session.execute(text(statement))
+    yield async_db_session
+
+
+@pytest_asyncio.fixture
+async def no_ledger(async_db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """The test session on a database WITHOUT the ledger, or a skip."""
+    if await retention.journey_edge_table_present(async_db_session):
+        pytest.skip(
+            f"{retention.TABLE} already exists in this test database (it was "
+            "migrated rather than built from the models), so the absent-table "
+            "precondition cannot be arranged here"
+        )
     yield async_db_session
 
 
@@ -103,14 +129,12 @@ async def _surviving_ids(db: AsyncSession) -> set[str]:
 
 
 @pytest.mark.asyncio
-async def test_absent_table_logs_once_and_returns_without_deleting(
-    async_db_session: AsyncSession,
+async def test_absent_table_logs_once_per_pass_and_returns_without_deleting(
+    no_ledger: AsyncSession,
 ):
-    assert not await retention.journey_edge_table_present(async_db_session)
-
     with capture_logs() as logs:
         outcome = await retention.delete_journey_edges_older_than_retention(
-            async_db_session, now=_NOW
+            no_ledger, now=_NOW
         )
 
     assert outcome.table_present is False
@@ -127,13 +151,13 @@ async def test_absent_table_logs_once_and_returns_without_deleting(
 
 
 @pytest.mark.asyncio
-async def test_scheduled_job_survives_an_absent_table(async_db_session: AsyncSession):
+async def test_scheduled_job_survives_an_absent_table(no_ledger: AsyncSession):
     """Drive the REAL scheduler coroutine against a database with no ledger."""
     from app.core.scheduler import _job_journey_edge_retention
 
     class _SessionCtx:
         async def __aenter__(self):
-            return async_db_session
+            return no_ledger
 
         async def __aexit__(self, *exc):
             return False
@@ -176,6 +200,10 @@ async def test_deletes_expired_edges_and_keeps_fresh_ones(ledger: AsyncSession):
     assert len(report) == 1
     assert report[0]["deleted_edges"] == 2
     assert report[0]["retention_days"] == 90
+    # The pass duration is logged: a pass over 60 s is the named trigger for
+    # revisiting the ledger's missing observed_at index.
+    assert isinstance(report[0]["duration_seconds"], float)
+    assert report[0]["duration_seconds"] >= 0
 
 
 @pytest.mark.asyncio
