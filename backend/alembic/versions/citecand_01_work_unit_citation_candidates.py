@@ -149,9 +149,25 @@ Idempotency / authorship posture
 ================================
 
 * ``CREATE SCHEMA IF NOT EXISTS coord`` first, then ``CREATE TABLE IF NOT
-  EXISTS`` / ``CREATE INDEX IF NOT EXISTS`` through raw ``op.execute`` —
-  matching ``coord_workunits_04`` and ``phaseatt_01``. coord boots against this
-  same schema, so re-running against an already-applied DB must be a no-op.
+  EXISTS`` (with its CHECKs, identity key and FK inline) and the ``COMMENT
+  ON`` statements through raw ``op.execute`` — matching ``coord_workunits_04``
+  and ``phaseatt_01``. coord boots against this same schema, so re-running
+  against an already-applied DB must be a no-op.
+* Both indexes are built LAST, as ``CREATE INDEX CONCURRENTLY IF NOT EXISTS``
+  inside ``with op.get_context().autocommit_block():`` — the
+  ``twin_10_served_bundle_target_columns`` idiom. That is the only index form
+  coord's merge-train migration classifier (qontinui-coord
+  ``pr_merge/migration_classifier.rs``) admits as auto-safe: it rejects every
+  non-concurrent ``CREATE INDEX``, even on a brand-new table, and admits
+  ``CONCURRENTLY`` only when it can prove the statement runs outside a
+  transaction. The block commits the table first, so a failed index build
+  leaves the table in place and un-stamped, and the re-run the guard makes
+  safe picks up where it stopped. (A CONCURRENTLY build that fails part-way
+  can leave an INVALID index that ``IF NOT EXISTS`` then skips; on a table
+  created empty moments earlier there is nothing for the build to fail on.)
+  The identity key stays an inline table constraint, not a unique index: it is
+  built with the empty table in one statement, which the classifier admits
+  under ``CREATE TABLE IF NOT EXISTS``.
 * Every statement names its schema explicitly (the ``alembic-schema-arg-gate``
   pre-commit hook audits raw ``op.execute`` SQL for that).
 * **alembic is the SOLE author of the ``coord.*`` schema.** No Rust
@@ -230,21 +246,6 @@ def upgrade() -> None:
         )
         """
     )
-    # The per-unit read: coord's delivery derivation asks "does this unit hold
-    # an OPEN candidate?" on every verdict. Resolved rows never break the clean
-    # zero, so only the open queue is indexed.
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_work_unit_citation_candidates_open "
-        "ON coord.work_unit_citation_candidates (work_unit_id) "
-        "WHERE resolved_at IS NULL"
-    )
-    # The tenant-wide unresolved queue the list door pages oldest-first.
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_work_unit_citation_candidates_tenant_open "
-        "ON coord.work_unit_citation_candidates (tenant_id, created_at) "
-        "WHERE resolved_at IS NULL"
-    )
-
     op.execute(
         """
         COMMENT ON TABLE coord.work_unit_citation_candidates IS
@@ -276,6 +277,34 @@ def upgrade() -> None:
         'dismissed row from being re-raised by a later webhook.'
         """
     )
+
+    # Both indexes CONCURRENTLY, inside autocommit_block(): it commits the
+    # table and comments above first, then builds each index outside a
+    # transaction. coord's merge-train migration classifier admits an index
+    # build in no other form (a plain CREATE INDEX locks writes), and the
+    # IF NOT EXISTS guard keeps a re-run a no-op. Last in upgrade() so nothing
+    # after the block runs back inside a transaction the block already ended.
+    with op.get_context().autocommit_block():
+        # The per-unit read: coord's delivery derivation asks "does this unit
+        # hold an OPEN candidate?" on every verdict. Resolved rows never break
+        # the clean zero, so only the open queue is indexed.
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_work_unit_citation_candidates_open
+                ON coord.work_unit_citation_candidates (work_unit_id)
+                WHERE resolved_at IS NULL
+            """
+        )
+        # The tenant-wide unresolved queue the list door pages oldest-first.
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_work_unit_citation_candidates_tenant_open
+                ON coord.work_unit_citation_candidates (tenant_id, created_at)
+                WHERE resolved_at IS NULL
+            """
+        )
 
 
 def downgrade() -> None:
