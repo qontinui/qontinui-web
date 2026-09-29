@@ -580,3 +580,130 @@ class TestRoutesCarryTheBlock:
         ]
         assert currency["state"] == "unknown"
         assert currency["detail"] == reason
+
+
+def _break_scan_root_render(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A NON-SQL failure: the readings are read, then rendering raises."""
+    from app.api.v1.endpoints import plan_library as endpoint
+
+    def _raises(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("renderer defect")
+
+    monkeypatch.setattr(endpoint, "scan_roots_health", _raises)
+
+
+async def _break(mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    if mode == "sql_read":
+        await _break_scan_root_read(monkeypatch)
+    else:
+        _break_scan_root_render(monkeypatch)
+
+
+@pytest.mark.asyncio
+class TestSingleRowRoutesDegradeRatherThanFail:
+    """A failed scan-root read OR rendering is ``unknown`` on the single-row
+    routes, with the route still 200 — and on the write routes, which judge the
+    currency AFTER the write, the write has still landed."""
+
+    @pytest.mark.parametrize("mode", ["sql_read", "render"])
+    async def test_get_detail(
+        self,
+        mode: str,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await _seed_reading(async_db_session, source_repo=KEY)
+        fed = await _row(async_db_session, source_repo=KEY)
+        await _break(mode, monkeypatch)
+
+        resp = await client.get(
+            f"{API_PREFIX}/{fed.id}", params={"include_coord": "false"}
+        )
+        assert resp.status_code == 200, resp.text
+        currency = resp.json()["status_currency"]
+        assert currency["state"] == "unknown"
+        assert currency["detail"].startswith("read_failed:")
+        assert "renderer defect" not in currency["detail"]
+
+    @pytest.mark.parametrize("mode", ["sql_read", "render"])
+    async def test_upsert(
+        self,
+        mode: str,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await _seed_reading(async_db_session, source_repo=KEY)
+        await _break(mode, monkeypatch)
+        slug = f"posted-{uuid4().hex[:10]}"
+
+        resp = await client.post(
+            API_PREFIX,
+            json={
+                "kind": "plan",
+                "slug": slug,
+                "title": "Posted",
+                "status": "draft",
+                "body": "# posted",
+                "source_repo": KEY,
+                "captured_by": "runner_scan",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        currency = resp.json()["artifact"]["status_currency"]
+        assert currency["state"] == "unknown"
+        assert currency["detail"].startswith("read_failed:")
+
+        # The write landed.
+        rows, total = await crud.list_artifacts(
+            async_db_session, org_id=None, slug=slug, offset=0, limit=10
+        )
+        assert total == 1
+        assert rows[0].title == "Posted"
+
+    @pytest.mark.parametrize("mode", ["sql_read", "render"])
+    async def test_patch_kind(
+        self,
+        mode: str,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await _seed_reading(async_db_session, source_repo=KEY)
+        fed = await _row(async_db_session, source_repo=KEY)
+        await _break(mode, monkeypatch)
+
+        resp = await client.patch(
+            f"{API_PREFIX}/{fed.id}/kind", json={"kind": "handoff"}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["kind"] == "handoff"
+        assert body["kind_locked"] is True
+        assert body["status_currency"]["state"] == "unknown"
+        assert body["status_currency"]["detail"].startswith("read_failed:")
+
+        # The write landed.
+        stored = await crud.get_artifact(async_db_session, fed.id, org_id=None)
+        assert stored is not None
+        assert stored.kind == "handoff"
+        assert stored.kind_locked is True
+
+    async def test_a_render_failure_degrades_the_list_route_too(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Consistent across routes: the list page degrades the same way."""
+        await _seed_reading(async_db_session, source_repo=KEY)
+        fed = await _row(async_db_session, source_repo=KEY)
+        _break_scan_root_render(monkeypatch)
+
+        resp = await client.get(API_PREFIX, params={"limit": 200})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["corpus_health"]["scan_roots"]["detail"].startswith("read_failed:")
+        by_id = {item["id"]: item for item in body["items"]}
+        assert by_id[str(fed.id)]["status_currency"]["state"] == "unknown"
