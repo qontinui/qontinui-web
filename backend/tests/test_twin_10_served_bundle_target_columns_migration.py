@@ -15,9 +15,12 @@ With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
 4. Both columns land nullable with the declared types, the tenant FK is
-   ``ON DELETE SET NULL``, and the partial index exists.
-5. The seed fills only the bootstrap tenant's ``vercel``/``qontinui-web`` row,
-   and never overwrites a value an operator already set.
+   ``ON DELETE SET NULL``, and the partial index exists and is ``indisvalid``
+   (a killed ``CONCURRENTLY`` build leaves an invalid one ``IF NOT EXISTS``
+   would skip).
+5. The seed fills only the bootstrap tenant's ``vercel``/``qontinui-web`` row —
+   not another tenant's, not another bootstrap vercel target, not a non-vercel
+   row named ``qontinui-web`` — and never overwrites an operator-set value.
 6. ``upgrade()`` is idempotent, and up, down, up leaves no residue.
 """
 
@@ -152,7 +155,7 @@ def test_docstring_header_matches_the_identifiers() -> None:
 # CREATE INDEX names an unqualified index (it lands in its table's schema); the
 # table it indexes is caught by the ``ON`` arm.
 _OBJECT_RE = re.compile(
-    r"(?:ALTER\s+TABLE|UPDATE|DROP\s+INDEX|\bON)"
+    r"(?:ALTER\s+TABLE|UPDATE|DROP\s+INDEX(?:\s+CONCURRENTLY)?|REFERENCES|FROM|\bON)"
     r"(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+([A-Za-z_.\"]+)",
     re.I,
 )
@@ -170,7 +173,7 @@ def test_every_ddl_object_is_coord_qualified() -> None:
                 assert obj.startswith("coord."), (
                     f"{fn_name}(): object {obj!r} is not coord-qualified"
                 )
-    assert seen >= 6, "the object regex matched too little; it is not measuring"
+    assert seen >= 8, "the object regex matched too little; it is not measuring"
 
 
 def test_the_only_drop_is_inside_downgrade() -> None:
@@ -199,6 +202,8 @@ def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
 
 
 def test_both_directions_are_op_execute_only() -> None:
+    """SQL goes through ``op.execute`` only; ``op.get_context`` is allowed
+    solely to open the ``autocommit_block`` the CONCURRENTLY index needs."""
     calls = [
         node
         for node in ast.walk(_tree())
@@ -208,8 +213,13 @@ def test_both_directions_are_op_execute_only() -> None:
         and node.func.value.id == "op"
     ]
     assert calls, "no op calls found"
-    assert {c.func.attr for c in calls} == {"execute"}  # type: ignore[attr-defined]
+    assert {c.func.attr for c in calls} == {  # type: ignore[attr-defined]
+        "execute",
+        "get_context",
+    }
     for call in calls:
+        if call.func.attr == "get_context":  # type: ignore[attr-defined]
+            continue
         assert len(call.args) == 1
         assert isinstance(call.args[0], (ast.Constant, ast.JoinedStr)), (
             f"op.execute at line {call.lineno} must take one SQL literal"
@@ -238,6 +248,18 @@ def _bootstrap_tenant(engine: Engine) -> uuid.UUID | None:
             {"slug": _BOOTSTRAP_SLUG},
         ).fetchone()
     return row[0] if row else None
+
+
+def _index_is_valid(engine: Engine, index_name: str) -> bool:
+    """``indisvalid`` — a half-built CONCURRENTLY index exists but cannot serve."""
+    return bool(
+        scalar(
+            engine,
+            "SELECT i.indisvalid FROM pg_index i "
+            "JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = :n",
+            n=index_name,
+        )
+    )
 
 
 def _fk_delete_action(engine: Engine) -> object:
@@ -272,6 +294,7 @@ def test_columns_fk_and_partial_index() -> None:
         )
         assert _fk_delete_action(engine) == "n"  # SET NULL
         assert index_exists(engine, _INDEX)
+        assert _index_is_valid(engine, _INDEX), "a half-built CONCURRENTLY index"
         indexdef = scalar(
             engine,
             "SELECT indexdef FROM pg_indexes WHERE schemaname = 'coord' "
@@ -305,36 +328,51 @@ def test_seed_targets_only_the_bootstrap_row_and_never_overwrites() -> None:
                 ),
                 {"id": other},
             )
-            for tenant in (bootstrap, other):
+            # The row the seed targets, plus three near-misses it must leave
+            # NULL: another tenant's qontinui-web, another bootstrap vercel
+            # target, and a non-vercel bootstrap row named qontinui-web (the
+            # surface CHECK admits 'ecs'). Each near-miss fails a different
+            # filter of the seed's WHERE.
+            for tenant, surface, target in (
+                (bootstrap, "vercel", "qontinui-web"),
+                (other, "vercel", "qontinui-web"),
+                (bootstrap, "vercel", "twin10-other-project"),
+                (bootstrap, "ecs", "qontinui-web"),
+            ):
                 conn.execute(
                     text(
                         "INSERT INTO coord.twin_targets (tenant_id, surface, target) "
-                        "VALUES (:t, 'vercel', 'qontinui-web') "
+                        "VALUES (:t, :s, :g) "
                         "ON CONFLICT (tenant_id, surface, target) DO NOTHING"
                     ),
-                    {"t": tenant},
+                    {"t": tenant, "s": surface, "g": target},
                 )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
 
-        def url_for(tenant: uuid.UUID) -> object:
+        def url_for(
+            tenant: uuid.UUID, surface: str = "vercel", target: str = "qontinui-web"
+        ) -> object:
             return scalar(
                 engine,
                 "SELECT production_url FROM coord.twin_targets WHERE tenant_id = :t "
-                "AND surface = 'vercel' AND target = 'qontinui-web'",
+                "AND surface = :s AND target = :g",
                 t=tenant,
+                s=surface,
+                g=target,
             )
 
         assert url_for(bootstrap) == _SEED_URL
         assert url_for(other) is None
+        assert url_for(bootstrap, target="twin10-other-project") is None
+        assert url_for(bootstrap, surface="ecs") is None
         assert (
             scalar(
                 engine,
-                "SELECT count(*) FROM coord.twin_targets "
-                "WHERE production_url IS NOT NULL AND surface <> 'vercel'",
+                "SELECT count(*) FROM coord.twin_targets WHERE production_url IS NOT NULL",
             )
-            == 0
-        )
+            == 1
+        ), "the seed must fill exactly one row"
 
         # An operator-set value survives a re-run of upgrade(): the seed only
         # fills a NULL, and every DDL statement is IF NOT EXISTS.
@@ -354,9 +392,12 @@ def test_seed_targets_only_the_bootstrap_row_and_never_overwrites() -> None:
 def _rerun_upgrade(engine: Engine) -> None:
     """Execute the revision's ``upgrade()`` again against an already-upgraded DB."""
     module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
-    with engine.begin() as conn:
+    # The migration context owns the transaction (as alembic's env.py does), so
+    # the revision's autocommit_block() can commit it before the CONCURRENTLY
+    # index build.
+    with engine.connect() as conn:
         ctx = MigrationContext.configure(conn)
-        with Operations.context(ctx):
+        with Operations.context(ctx), ctx.begin_transaction():
             module.upgrade()
 
 
