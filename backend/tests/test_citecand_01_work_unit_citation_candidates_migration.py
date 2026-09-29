@@ -154,6 +154,15 @@ def _sql_literals(fn: ast.FunctionDef) -> list[str]:
     ]
 
 
+def _string_constants(node: ast.AST) -> list[str]:
+    """Every string constant anywhere under ``node``."""
+    return [
+        n.value
+        for n in ast.walk(node)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ]
+
+
 def _upgrade_sql() -> str:
     return "\n".join(_sql_literals(_function(_tree(), "upgrade")))
 
@@ -218,7 +227,8 @@ _TABLE_OBJECT_RE = re.compile(
     re.I,
 )
 _INDEX_OBJECT_RE = re.compile(
-    r"(?:CREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+\w+\s+ON"
+    r"(?:CREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+CONCURRENTLY)?(?:\s+IF\s+NOT\s+EXISTS)?"
+    r"\s+\w+\s+ON"
     r"|DROP\s+INDEX(?:\s+IF\s+EXISTS)?)\s+([A-Za-z_.\"]+)",
     re.I,
 )
@@ -273,12 +283,68 @@ def test_both_directions_are_static_op_execute_with_no_bind() -> None:
         and node.func.value.id == "op"
     ]
     assert calls, "no op calls found"
-    assert {c.func.attr for c in calls} == {"execute"}  # type: ignore[attr-defined]
+    attrs = {c.func.attr for c in calls}  # type: ignore[attr-defined]
+    assert attrs == {"execute", "get_context"}, attrs
     for call in calls:
+        if call.func.attr == "get_context":  # type: ignore[attr-defined]
+            # Only as the autocommit_block() receiver; it binds nothing.
+            assert not call.args and not call.keywords
+            continue
         assert len(call.args) == 1 and isinstance(call.args[0], ast.Constant), (
             f"op.execute at line {call.lineno} must take one static SQL literal"
         )
         assert isinstance(call.args[0].value, str)
+
+
+def _is_autocommit_with(node: ast.stmt) -> bool:
+    """``with op.get_context().autocommit_block():`` — nothing else."""
+    if not isinstance(node, ast.With) or len(node.items) != 1:
+        return False
+    ctx = node.items[0].context_expr
+    return (
+        isinstance(ctx, ast.Call)
+        and isinstance(ctx.func, ast.Attribute)
+        and ctx.func.attr == "autocommit_block"
+        and isinstance(ctx.func.value, ast.Call)
+        and isinstance(ctx.func.value.func, ast.Attribute)
+        and ctx.func.value.func.attr == "get_context"
+        and isinstance(ctx.func.value.func.value, ast.Name)
+        and ctx.func.value.func.value.id == "op"
+    )
+
+
+def test_every_index_build_is_concurrent_inside_the_last_autocommit_block() -> None:
+    """The form coord's merge-train migration classifier admits as auto-safe.
+
+    It rejects any non-concurrent ``CREATE INDEX`` on the upgrade path and
+    admits ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` only when the
+    ``op.execute`` sits lexically inside ``with
+    op.get_context().autocommit_block():``. The block is last so no statement
+    runs after it in a transaction the block already committed.
+    """
+    up = _function(_tree(), "upgrade")
+    body = up.body[1:] if ast.get_docstring(up) is not None else up.body
+    blocks = [n for n in body if _is_autocommit_with(n)]
+    assert len(blocks) == 1, "upgrade() must hold exactly one autocommit_block()"
+    assert body[-1] is blocks[0], "the autocommit_block() must be upgrade()'s last"
+    inside = _string_constants(blocks[0])
+    outside = "\n".join(
+        lit for n in body if n is not blocks[0] for lit in _string_constants(n)
+    )
+    assert not re.search(r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b", outside, re.I), (
+        "an index build outside the autocommit_block() is a non-concurrent build"
+    )
+    # One op.execute literal per build, so each literal is one statement.
+    builds = [
+        lit.strip()
+        for lit in inside
+        if re.search(r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b", lit, re.I)
+    ]
+    assert len(builds) == 2, builds
+    for build in builds:
+        assert re.match(
+            r"CREATE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\b", build, re.I
+        ), f"not a guarded concurrent build: {build!r}"
 
 
 def test_upgrade_ddl_is_idempotent_and_carries_the_contract() -> None:
@@ -297,7 +363,7 @@ def test_upgrade_ddl_is_idempotent_and_carries_the_contract() -> None:
         (_TENANT_INDEX, r"tenant_id,\s*created_at"),
     ):
         assert re.search(
-            rf"CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+{index}\s+ON\s+"
+            rf"CREATE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+{index}\s+ON\s+"
             rf"{_SCHEMA}\.{_TABLE}\s*\({cols}\)\s*WHERE\s+resolved_at\s+IS\s+NULL",
             up,
             re.I,
