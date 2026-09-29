@@ -108,8 +108,9 @@ _DEAD_LABELS = (
 # Every label that remains, in their original order.
 _REMAINING_LABELS = "'MENTION', 'SHARE', 'COMMENT', 'REPLY'"
 
-# The preference columns no image maps any more once this change serves; they
-# are NOT NULL with no server default until this revision gives them one.
+# The retired preference columns. They are NOT NULL with no server default
+# until this revision gives them one, which the Phase 3 image (the first that
+# no longer maps them) relies on.
 _DEAD_PREF_COLUMNS = (
     "email_team_invites",
     "in_app_team_invites",
