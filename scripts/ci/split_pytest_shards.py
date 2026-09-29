@@ -310,6 +310,11 @@ MIGRATION_MARKER = "_alembic_harness"
 #: of the others). A floor makes each file count, and keeps them spread.
 MIN_FILE_SECONDS = 0.05
 
+#: The most one test file may plausibly take, in seconds (a day). The job's
+#: own budget is under an hour, so a larger value is a corrupt map, not a
+#: measurement -- and one absurd weight would empty every other file's shard.
+MAX_FILE_SECONDS = 86400.0
+
 #: The two weight classes an unlisted file can fall back to.
 MIGRATION_CLASS = "migration"
 ORDINARY_CLASS = "ordinary"
@@ -320,9 +325,10 @@ def load_durations(path: str) -> tuple[dict[str, float] | None, str]:
 
     Returns ``(map, "loaded")``, or ``(None, "missing")`` when the file cannot
     be read, or ``(None, "unparseable")`` when it is not a JSON object of
-    ``"<path>.py": <finite, non-negative number>``. One bad entry makes the
-    whole file unparseable: a map that is half-trusted is harder to reason
-    about than one that is not trusted at all, and the fallback is safe.
+    ``"<path>.py": <seconds in 0..MAX_FILE_SECONDS>`` (or is not UTF-8). One
+    bad entry makes the whole file unparseable: a map that is half-trusted is
+    harder to reason about than one that is not trusted at all, and the
+    fallback is safe.
     """
     try:
         with open(path, encoding="utf-8") as handle:
@@ -347,11 +353,17 @@ def load_durations(path: str) -> tuple[dict[str, float] | None, str]:
             not key.endswith(".py")
             or isinstance(value, bool)
             or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value < 0
         ):
             return None, "unparseable"
-        out[key] = float(value)
+        try:
+            # A JSON integer is unbounded: `float(10**400)` raises rather than
+            # returning inf, and `math.isfinite` would raise the same way.
+            seconds = float(value)
+        except OverflowError:
+            return None, "unparseable"
+        if not math.isfinite(seconds) or not 0 <= seconds <= MAX_FILE_SECONDS:
+            return None, "unparseable"
+        out[key] = seconds
     return out, "loaded"
 
 
