@@ -35965,6 +35965,17 @@
             ],
             "title": "Authored At"
           },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
           "coord": {
             "$ref": "#/components/schemas/CandidateCoordLink"
           },
@@ -36120,6 +36131,16 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusCurrency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36152,7 +36173,9 @@
           "created_at",
           "last_touched",
           "age_days",
-          "coord"
+          "coord",
+          "content_sha256",
+          "status_currency"
         ],
         "title": "PlanCandidate",
         "type": "object"
@@ -49653,6 +49676,75 @@
         "title": "StateUpdateRequest",
         "type": "object"
       },
+      "StatusCurrency": {
+        "description": "How current a row's ``status`` can be taken to be \u2014 with its evidence.\n\n``as_of`` is the newest ``received_at`` among the readings that produced a\nfeeder verdict (the row's ``updated_at`` for ``asserted_once``; null for\n``unfed_key``/``unknown``). ``ref_sha``/``ref_age_secs`` are the\nfreshest-ref qualifying reading's, null otherwise. ``behind`` is\ndeliberately NOT carried: it is not a property of the body.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "state": {
+            "enum": [
+              "fed_in_step",
+              "fed_stale_ref",
+              "unfed_key",
+              "asserted_once",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "as_of",
+          "ref_sha",
+          "ref_age_secs",
+          "detail"
+        ],
+        "title": "StatusCurrency",
+        "type": "object"
+      },
       "StepExecutionConfig": {
         "additionalProperties": true,
         "description": "Step configuration captured for AI visibility.",
@@ -59710,6 +59802,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -59757,6 +59852,7 @@
           "current_version",
           "created_at",
           "updated_at",
+          "status_currency",
           "body",
           "versions",
           "edges"
@@ -60220,6 +60316,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -60259,7 +60358,8 @@
           "captured_by",
           "current_version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "status_currency"
         ],
         "title": "WorkArtifactSummary",
         "type": "object"
