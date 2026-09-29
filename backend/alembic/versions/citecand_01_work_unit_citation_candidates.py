@@ -162,9 +162,14 @@ Idempotency / authorship posture
   ``CONCURRENTLY`` only when it can prove the statement runs outside a
   transaction. The block commits the table first, so a failed index build
   leaves the table in place and un-stamped, and the re-run the guard makes
-  safe picks up where it stopped. (A CONCURRENTLY build that fails part-way
-  can leave an INVALID index that ``IF NOT EXISTS`` then skips; on a table
-  created empty moments earlier there is nothing for the build to fail on.)
+  safe picks up where it stopped. A CONCURRENTLY build can still be cancelled
+  or hit a ``statement_timeout``, and it waits for older transactions on the
+  database to finish, so a long-running coord transaction can stall this
+  revision. A build that fails part-way leaves an INVALID index that
+  ``IF NOT EXISTS`` then skips on re-run, so after deploy confirm both indexes
+  read ``pg_index.indisvalid = true`` (the ``coord_iops_idx_01`` /
+  ``coord_alerts_pagedidx_01`` precedent); if one does not, drop it and re-run.
+  Uniqueness never depends on either index — the identity key is a constraint.
   The identity key stays an inline table constraint, not a unique index: it is
   built with the empty table in one statement, which the classifier admits
   under ``CREATE TABLE IF NOT EXISTS``.
@@ -282,8 +287,9 @@ def upgrade() -> None:
     # table and comments above first, then builds each index outside a
     # transaction. coord's merge-train migration classifier admits an index
     # build in no other form (a plain CREATE INDEX locks writes), and the
-    # IF NOT EXISTS guard keeps a re-run a no-op. Last in upgrade() so nothing
-    # after the block runs back inside a transaction the block already ended.
+    # IF NOT EXISTS guard keeps a re-run a no-op. Last in upgrade() so every
+    # statement above commits together before the first build starts, and the
+    # version stamp is the only thing that runs after it.
     with op.get_context().autocommit_block():
         # The per-unit read: coord's delivery derivation asks "does this unit
         # hold an OPEN candidate?" on every verdict. Resolved rows never break
