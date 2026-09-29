@@ -1,7 +1,7 @@
 """agent.plan_scan_root_refusals — each device's refused scan-source reports
 
 Revision ID: plan_library_09_scan_root_refusals
-Revises: coord_sessev_interact_idx_01
+Revises: coord_dp_write_auth_daily_01
 Create Date: 2026-09-28
 
 Phase 1 of ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``.
@@ -58,13 +58,9 @@ from alembic import op
 revision: str = "plan_library_09_scan_root_refusals"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "coord_sessev_interact_idx_01"
+down_revision = "coord_dp_write_auth_daily_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# The sentinel the functional unique index folds a NULL organization onto.
-# Must equal ``app.models.work_artifact.NIL_ORGANIZATION_ID``.
-_NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 
 def upgrade() -> None:
@@ -94,11 +90,16 @@ def upgrade() -> None:
         """
     )
 
+    # The nil UUID is the sentinel the functional unique index folds a NULL
+    # organization onto; it must equal
+    # ``app.models.work_artifact.NIL_ORGANIZATION_ID``. It is written as a
+    # literal, not interpolated: coord's migration classifier refuses an
+    # f-string ``op.execute`` because its fields are not the SQL that runs.
     op.execute(
-        f"""
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_scan_root_refusals_identity
             ON agent.plan_scan_root_refusals (
-                coalesce(organization_id, '{_NIL_UUID}'::uuid),
+                coalesce(organization_id, '00000000-0000-0000-0000-000000000000'::uuid),
                 device_id
             )
         """
