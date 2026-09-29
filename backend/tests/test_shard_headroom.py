@@ -65,6 +65,11 @@ def _job(
         "name": f"Run Tests (shard {shard}/{total})",
         "status": "completed",
         "conclusion": "success",
+        "runner_id": 1000320000 + shard,
+        "steps": [
+            {"name": "Run tests", "status": "completed", "conclusion": "success"}
+        ],
+        "created_at": _ts(T0),
         "started_at": _ts(T0),
         "completed_at": _ts(T0 + timedelta(minutes=minutes)),
     }
@@ -141,6 +146,13 @@ def test_skewed_when_slowest_over_twice_fastest():
     assert result.skew == pytest.approx(29.9 / 9.6)
 
 
+def test_one_second_over_the_margin_is_over():
+    # 31.5 min + 1 s. The compare is exact, so neither float rounding of
+    # 45 * 0.70 nor the display rounding of pct can move the boundary.
+    result = headroom.evaluate(_run([31.5 + 1 / 60, 30, 30, 30, 30, 30]), 45)
+    assert result.verdict == "over_margin"
+
+
 def test_skew_of_exactly_two_is_not_skewed():
     result = headroom.evaluate(_run([20, 10, 15, 15, 15, 15]), 45)
     assert result.verdict == "ok"
@@ -150,7 +162,7 @@ def test_unknown_when_a_shard_is_missing():
     result = headroom.evaluate(_run([20, 18, 22, 19, 21]), 45)
     assert result.verdict == "unknown"
     assert result.exit_code != 0
-    assert "shard(s) 6" in result.reason
+    assert "shard 6 has no row" in result.reason
 
 
 def test_unknown_on_no_jobs_at_all():
@@ -190,28 +202,118 @@ def test_unknown_when_the_matrix_length_disagrees():
     assert "5 shards" in result.reason
 
 
-def test_queued_cancelled_rows_are_ignored():
-    rows = _run([20, 18, 22, 19, 21, 17])
-    # A cancelled-while-queued twin with no start, and one with a zero and a
-    # negative duration: none of them may become the "fastest shard".
-    rows.append(
-        _job(1, 0, conclusion="cancelled", started_at=None, completed_at=_ts(T0))
+def _queue_cancelled(shard: int) -> dict[str, Any]:
+    """The REAL shape of a job cancelled while queued (run 36515758971).
+
+    GitHub does NOT null ``started_at``: it stamps ``started_at = created_at``
+    and ``completed_at`` at the cancel, a POSITIVE gap of pure queue time, with
+    ``runner_id: 0`` and ``steps: []``.
+    """
+    return _job(
+        shard,
+        3.6,
+        conclusion="cancelled",
+        runner_id=0,
+        steps=[],
+        created_at=_ts(T0),
     )
-    rows.append(_job(2, 0, conclusion="cancelled"))
-    rows.append(_job(3, -1, conclusion="cancelled"))
-    result = headroom.evaluate(rows, 45)
-    assert result.verdict == "ok"
-    assert result.min_min == pytest.approx(17)
 
 
-def test_a_shard_with_only_a_queued_cancelled_row_is_unknown_not_fast():
-    rows = _run([20, 18, 22, 19, 21])
-    rows.append(
-        _job(6, 0, conclusion="cancelled", started_at=None, completed_at=_ts(T0))
-    )
+def test_all_six_queue_cancelled_is_unknown_not_ok():
+    rows = [_queue_cancelled(i + 1) for i in range(6)]
     result = headroom.evaluate(rows, 45)
     assert result.verdict == "unknown"
-    assert "shard(s) 6" in result.reason
+    assert result.exit_code != 0
+    assert "never executed by a runner" in result.reason
+
+
+def test_one_queue_cancelled_shard_is_unknown_not_skewed():
+    # 3.6 min of queue time against ~20 min shards would read as skew 5.8x if
+    # it were timed. It must not be: the shard is missing, not fast.
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[1] = _queue_cancelled(2)
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "shard 2 was never executed by a runner" in result.reason
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"runner_id": None},
+        {"runner_id": 0},
+        {"steps": []},
+        {"steps": None},
+        {"started_at": None, "completed_at": None},
+        {"completed_at": _ts(T0)},  # zero duration
+        {"completed_at": _ts(T0 - timedelta(minutes=1))},  # negative
+    ],
+)
+def test_every_unmeasured_shape_leaves_the_shard_missing(overrides):
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[5] = _job(6, 17, conclusion="cancelled", **overrides)
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "shard 6" in result.reason
+
+
+def test_a_duplicate_shard_row_is_unknown():
+    # filter=latest yields one row per job; a second row is a malformed read.
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows.append(_job(3, 21))
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "two rows name shard 3" in result.reason
+
+
+@pytest.mark.parametrize(
+    "conclusion", ["failure", "skipped", "timed_out", "neutral", None]
+)
+def test_a_measured_shard_with_another_conclusion_is_unknown(conclusion):
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[4] = _job(5, 21, conclusion=conclusion)
+    result = headroom.evaluate(rows, 45)
+    assert result.verdict == "unknown"
+    assert "shard 5" in result.reason
+    assert repr(conclusion) in result.reason
+
+
+def test_a_runner_side_cancel_counts():
+    rows = _run([20, 18, 22, 19, 21, 17])
+    rows[0] = _job(1, 19, conclusion="cancelled")
+    assert headroom.evaluate(rows, 45).verdict == "ok"
+
+
+# --- real runs --------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures" / "shard_headroom"
+
+
+def _fixture(run_id: int) -> list[dict[str, Any]]:
+    payload = json.loads((FIXTURES / f"run-{run_id}.json").read_text(encoding="utf-8"))
+    jobs = payload["jobs"]
+    assert isinstance(jobs, list)
+    return jobs
+
+
+def test_real_run_with_every_shard_cancelled_in_the_queue_is_unknown():
+    """Run 36515758971: the reviewer's false-pass case; it used to read ``ok``."""
+    result = headroom.evaluate(_fixture(36515758971), 45)
+    assert result.verdict == "unknown"
+    assert result.exit_code != 0
+
+
+def test_real_run_with_a_shard_timed_out_at_its_budget_is_over_margin():
+    """Run 36548570438: shard 6 ran 09:20:52 -> 10:06:11 and was cancelled at 45 min.
+
+    A shard cancelled at its timeout measures slightly OVER the budget, so a
+    ``pct`` just above 100 is expected.
+    """
+    result = headroom.evaluate(_fixture(36548570438), 45)
+    assert result.verdict == "over_margin"
+    assert result.slowest_shard == 6
+    assert result.max_min == pytest.approx((45 * 60 + 19) / 60)
+    assert result.pct is not None and 100 < result.pct < 101
 
 
 def test_a_shard_cancelled_at_its_budget_is_over_margin():
@@ -396,12 +498,28 @@ def test_expected_shards_is_in_lockstep_with_the_matrix():
     assert headroom.DEFAULT_EXPECTED_SHARDS == len(matrix)
 
 
+def _needs_closure(jobs: dict, job_id: str) -> set[str]:
+    """Every job ``job_id`` waits on, directly or through another job's ``needs``."""
+    closure: set[str] = set()
+    pending = [job_id]
+    while pending:
+        needs = jobs[pending.pop()].get("needs") or []
+        for need in [needs] if isinstance(needs, str) else needs:
+            if need not in closure:
+                closure.add(need)
+                pending.append(need)
+    return closure
+
+
+def test_needs_closure_is_transitive():
+    jobs = {"a": {"needs": ["b"]}, "b": {"needs": "c"}, "c": {}}
+    assert _needs_closure(jobs, "a") == {"b", "c"}
+
+
 def test_the_job_never_holds_a_pr():
     doc = _doc()
     job = _headroom_job()
-    gate_needs = doc["jobs"]["test-gate"]["needs"]
-    gate_needs = [gate_needs] if isinstance(gate_needs, str) else gate_needs
-    assert "shard-headroom" not in gate_needs
+    assert "shard-headroom" not in _needs_closure(doc["jobs"], "test-gate")
     condition = job["if"]
     assert "always()" in condition
     assert "github.event_name == 'schedule'" in condition
@@ -412,6 +530,17 @@ def test_the_job_never_holds_a_pr():
 
 def test_the_job_declares_its_own_actions_read():
     assert _headroom_job()["permissions"]["actions"] == "read"
+
+
+def test_the_checkout_does_not_persist_the_token():
+    checkouts = [
+        s
+        for s in _headroom_job()["steps"]
+        if str(s.get("uses", "")).startswith("actions/checkout")
+    ]
+    assert checkouts and all(
+        s["with"]["persist-credentials"] is False for s in checkouts
+    )
 
 
 def test_the_override_input_exists_and_reaches_the_step():
