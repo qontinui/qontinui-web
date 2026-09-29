@@ -776,6 +776,15 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/helper-tasks",
     "https://api.test/api/v1/devices/pair-codes",
     "https://api.test/api/v1/agent-registry",
+    // Found by the backend drift guard
+    // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
+    // the caller's tenant, so a missing entry serves the home project.
+    "https://api.test/api/v1/admin/prompt-injections?limit=50",
+    "https://api.test/api/v1/design-policies",
+    "https://api.test/api/v1/digital-twin/subspaces",
+    "https://api.test/api/v1/memory/records",
+    "https://api.test/api/v1/plan-library/candidates",
+    "https://api.test/api/v1/session-repository/unfinished",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -821,6 +830,30 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     await client.fetch(url);
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
+
+  // The narrow-prefix choices: siblings of a scoped family that ignore the
+  // tenant must stay header-free (see the drift guard's _EXCLUSIONS).
+  it.each([
+    "https://api.test/api/v1/fleet/apps",
+    // Tenant-resolving, but excluded until the PUT goes through coord's
+    // binding-checked upsert (drift guard _EXCLUSIONS).
+    "https://api.test/api/v1/fleet/test-targets/dev-1/web",
+    "https://api.test/api/v1/users/me/preferences",
+    "https://api.test/api/v1/auth/users/me",
+    "https://api.test/api/v1/devices/abc/dispatch",
+    "https://api.test/api/v1/devenv/environments/e1/canonical",
+  ])(
+    "does NOT attach the header on a header-free or excluded route: %s",
+    async (url) => {
+      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+      const captured = captureFetchHeaders();
+      const client = new HttpClient(
+        makeTokenManager() as unknown as TokenManager
+      );
+      await client.fetch(url);
+      expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+    }
+  );
 
   it("does NOT attach the header on /constraints/ (runner proxy, not coord)", async () => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
