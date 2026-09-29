@@ -25,6 +25,7 @@ import {
   NO_MAINTENANCE_CONTEXT,
   drainedLanes,
   formatUntil,
+  labelMayStillRoute,
   labelRepos,
   lanesLabel,
   stillRoutingCount,
@@ -323,7 +324,7 @@ export function deriveLeverStatus(
         "held",
         `Paused until ${until}`,
         withDetail(
-          `labels off on ${labelRepos(c.labels.filter((l) => l.outcome === "removed")).length} repo(s)`,
+          `labels off on ${labelRepos(c.labels.filter((l) => l.outcome === "removed" && !labelMayStillRoute(l))).length} repo(s)`,
           c.detail
         )
       );

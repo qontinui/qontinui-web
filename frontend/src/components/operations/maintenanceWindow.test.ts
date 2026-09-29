@@ -33,8 +33,12 @@ import {
   formatUntil,
   leverActionPauses,
   machineEntryBadge,
+  SCHEMA_PENDING_REASON,
   agentLeverStateWords,
   errorWantsReread,
+  labelOutcomeLabel,
+  labelRepoDisplay,
+  labelRepos,
   labelsSpanHosts,
   maintenanceBadge,
   maintenanceErrorGuidance,
@@ -1492,5 +1496,120 @@ describe("coord contract — round 9", () => {
         machineDeviceId: null,
       })
     ).toContain("the page is re-reading it");
+  });
+});
+
+describe("coord's final contract — label rows and error codes", () => {
+  const row = (
+    o: Partial<{ repo: string; outcome: string; detail: string | null }>
+  ) =>
+    parseMaintenanceWindow(
+      wireWindow({
+        levers: {
+          agent_work: { held: true, state: "held" },
+          ci: {
+            held: true,
+            state: "partial",
+            labels: [
+              {
+                label: "qontinui",
+                repo: "a/one",
+                outcome: "removed",
+                detail: null,
+                ...o,
+              },
+            ],
+          },
+        },
+      })
+    )!.levers.ci.labels[0];
+
+  it("a pending removal reads 'removal in progress' and still routes", () => {
+    const l = row({ outcome: "removed", detail: "pending: write sent" });
+    expect(labelOutcomeLabel(l)).toBe("removal in progress");
+    expect(stillRoutingCount([l])).toBe(1);
+  });
+
+  it("a removal GitHub never answered shows coord's words and still routes", () => {
+    const l = row({
+      outcome: "removed",
+      detail: "outcome unknown; will be restored at window end",
+    });
+    expect(labelOutcomeLabel(l)).toBe(
+      "outcome unknown; will be restored at window end"
+    );
+    expect(stillRoutingCount([l])).toBe(1);
+    // …and is not counted among the repos whose label is off.
+    const w = win({
+      levers: {
+        agent_work: { held: true, state: "held" },
+        ci: {
+          held: true,
+          state: "partial",
+          labels: [
+            {
+              label: "qontinui",
+              repo: "a/one",
+              outcome: "removed",
+              detail: "outcome unknown; will be restored",
+            },
+            {
+              label: "qontinui",
+              repo: "a/two",
+              outcome: "removed",
+              detail: null,
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      deriveLeverStatus("ci", machine({ openWindow: w }), NOW).reason
+    ).toContain("1 repo still routes here");
+  });
+
+  it("a label-level refusal with repo '*' reads 'all repos' and names no repo", () => {
+    const l = row({
+      repo: "*",
+      outcome: "failed",
+      detail: "github_read_only_label",
+    });
+    expect(labelRepoDisplay(l)).toBe("all repos");
+    expect(labelRepos([l])).toEqual([]);
+  });
+
+  it("maps the new refusal codes to a next step", () => {
+    const err = (code: string, extra: Record<string, unknown> = {}) =>
+      describeMaintenanceError(
+        409,
+        JSON.stringify({ error: code, message: "m", ...extra })
+      );
+    expect(maintenanceErrorGuidance(err("window_not_open"))).toContain(
+      "already ended"
+    );
+    expect(errorWantsReread(err("window_not_open"))).toBe(true);
+    expect(maintenanceErrorGuidance(err("schema_pending"))).toBe(
+      SCHEMA_PENDING_REASON
+    );
+    expect(maintenanceErrorGuidance(err("admin_required"))).toContain(
+      "tenant admin"
+    );
+    expect(errorWantsReread(err("not_found"))).toBe(true);
+    const drain = err("drain_refused", {
+      drain: { error: "device_not_in_tenant", message: "not yours" },
+    });
+    expect(drain.message).toBe("not yours");
+    // invalid_request may arrive as 400 or 422.
+    for (const status of [400, 422]) {
+      const e = describeMaintenanceError(
+        status,
+        JSON.stringify({
+          error: "invalid_request",
+          message: "unknown field `x`",
+        })
+      );
+      expect(e.code).toBe("invalid_request");
+      expect(e.message).toBe("unknown field `x`");
+    }
   });
 });

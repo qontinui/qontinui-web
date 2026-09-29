@@ -857,20 +857,49 @@ export function formatUntil(untilIso: string, now: number): string {
   return `${date} ${time}`;
 }
 
-/** How many `(label, repo)` pairs still route here after a delabel attempt. */
-export function stillRoutingCount(labels: readonly LabelOutcome[]): number {
-  // A repo whose outcome coord did not send in a form this build reads is
-  // UNKNOWN — it may still route here, so it counts, never as delabelled.
-  return new Set(
-    labels
-      .filter((l) => l.outcome === "failed" || l.outcome === null)
-      .map((l) => l.repo)
-  ).size;
+/** A row whose removal is still in flight (coord's `pending:` detail). */
+export function labelRemovalPending(l: LabelOutcome): boolean {
+  return l.detail?.startsWith("pending:") ?? false;
 }
 
-/** The distinct repos a label outcome list names, in order. */
+/**
+ * A row coord marked `removed` although GitHub never answered the write
+ * (detail `outcome unknown; will be restored …`) — owed a restore, and
+ * counted as STILL ROUTING, never as delabelled.
+ */
+export function labelRemovalUnanswered(l: LabelOutcome): boolean {
+  return (
+    l.outcome === "removed" &&
+    (l.detail?.startsWith("outcome unknown; will be restored") ?? false)
+  );
+}
+
+/** A row that may still route jobs here. */
+export function labelMayStillRoute(l: LabelOutcome): boolean {
+  return (
+    l.outcome === "failed" ||
+    l.outcome === null ||
+    labelRemovalPending(l) ||
+    labelRemovalUnanswered(l)
+  );
+}
+
+/** `repo: "*"` is a label-level refusal naming no repo — "all repos". */
+export function labelRepoDisplay(l: LabelOutcome): string {
+  return l.repo === "*" ? "all repos" : l.repo;
+}
+
+/** How many repos may still route here after a delabel attempt. */
+export function stillRoutingCount(labels: readonly LabelOutcome[]): number {
+  // A repo whose outcome coord did not send in a form this build reads is
+  // UNKNOWN, a removal in flight has not landed, and a removal GitHub never
+  // answered is unconfirmed — each may still route here, so each counts.
+  return new Set(labels.filter(labelMayStillRoute).map((l) => l.repo)).size;
+}
+
+/** The distinct repos a label outcome list names, in order (never `*`). */
 export function labelRepos(labels: readonly LabelOutcome[]): string[] {
-  return [...new Set(labels.map((l) => l.repo))];
+  return [...new Set(labels.map((l) => l.repo).filter((r) => r !== "*"))];
 }
 
 /** Plain words for an agent-lever state, for the Return-to-service result. */
@@ -896,6 +925,9 @@ export function labelsSpanHosts(labels: readonly LabelOutcome[]): boolean {
 
 /** Plain words for one `(label, repo)` outcome. */
 export function labelOutcomeLabel(o: LabelOutcome): string {
+  if (labelRemovalPending(o)) return "removal in progress";
+  // GitHub never answered: coord's own words say what happens next.
+  if (labelRemovalUnanswered(o) && o.detail) return o.detail;
   switch (o.outcome) {
     case "removed":
       return "label removed";
@@ -1066,8 +1098,8 @@ export function buildMaintenancePreview(
           action: `Label \`${l.label}\` — ${labelOutcomeLabel(l)}`,
           target:
             labelsSpanHosts(opened.levers.ci.labels) && l.host
-              ? `${l.repo} on ${l.host}`
-              : l.repo,
+              ? `${labelRepoDisplay(l)} on ${l.host}`
+              : labelRepoDisplay(l),
         });
       }
     } else if (hosts.length > 0) {
@@ -1081,6 +1113,14 @@ export function buildMaintenancePreview(
   }
   return lines;
 }
+
+/**
+ * coord answers `schema_pending` (503) until the web migration that creates
+ * its maintenance tables deploys. That is the feature being unavailable, not
+ * an error — reads render it as UNKNOWN with this reason.
+ */
+export const SCHEMA_PENDING_REASON =
+  "coord's database is not migrated yet — maintenance windows are unavailable until the web migration deploys";
 
 /** A write's refusal, split so the page can branch on the code. */
 export interface MaintenanceError {
@@ -1109,6 +1149,16 @@ export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
       return "The window changed under you — the page is re-reading it; check the levers and retry.";
     case "invalid_request":
       return "Coord refused the request as invalid — correct it and retry.";
+    case "window_not_open":
+      return "The window already ended — the page is re-reading it.";
+    case "schema_pending":
+      return SCHEMA_PENDING_REASON;
+    case "admin_required":
+      return "This needs a coord tenant admin.";
+    case "not_found":
+      return "Coord does not know this window or machine any more — the page is re-reading it.";
+    case "drain_refused":
+      return "Coord's drain refused the change; its reason is above.";
     default:
       return null;
   }
@@ -1118,6 +1168,8 @@ export function maintenanceErrorGuidance(e: MaintenanceError): string | null {
 export function errorWantsReread(e: MaintenanceError): boolean {
   return (
     e.code === "window_changed" ||
+    e.code === "window_not_open" ||
+    e.code === "not_found" ||
     e.code === "window_busy" ||
     e.code === "window_already_open" ||
     e.code === "ci_host_linked_to_machine"
@@ -1168,7 +1220,15 @@ export function describeMaintenanceError(
     };
   }
   const code = str(inner.error);
+  // A drain refusal carries the drain's own body under `drain`; its message
+  // is the reason the operator needs.
+  const drain = isRecord(inner.drain) ? inner.drain : null;
+  const drainMessage =
+    code === "drain_refused" && drain
+      ? (str(drain.message) ?? str(drain.detail) ?? str(drain.error))
+      : null;
   const message =
+    drainMessage ??
     str(inner.message) ??
     str(inner.detail) ??
     (typeof parsed.detail === "string" ? parsed.detail : null) ??
