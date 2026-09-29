@@ -262,33 +262,115 @@ def _coord_delete_path(device_id: UUID, app_id: str) -> str:
     return f"/coord/trees/test-targets/{device_id}/{quote(app_id, safe='')}"
 
 
-async def _project_label(request: Request, tenant_id: UUID) -> str:
-    """How to name coord tenant ``tenant_id`` to the operator.
+async def _member_label(request: Request, tenant_id: UUID) -> str | None:
+    """The quoted display name (else slug) of ``tenant_id`` when the caller is
+    a coord member of it, else ``None``.
 
-    The display name (else slug) from the caller's coord memberships, which
-    ``get_tenant_id`` has already fetched and memoized on the request — so
-    this costs no extra round-trip on the paths that reach it. Falls back to
-    the bare tenant id when the caller is not a member of that tenant or the
-    identity cannot be read: a refusal message must never fail to render.
+    Read from the caller's coord memberships, which ``get_tenant_id`` has
+    already fetched and memoized on the request — so this costs no extra
+    round-trip on the paths that reach it. ``None`` also when the identity
+    cannot be read: a refusal message must never fail to render.
     """
     try:
         identity = await get_coord_identity(request)
     except HTTPException:
-        return str(tenant_id)
+        return None
     for tenant in identity.tenants:
         if tenant.tenant_id == tenant_id:
             return f'"{tenant.display_name or tenant.slug}"'
-    return str(tenant_id)
+    return None
+
+
+async def _project_label(request: Request, tenant_id: UUID) -> str:
+    """How to name coord tenant ``tenant_id`` to the operator: its display
+    name when the caller is a member, else the bare tenant id. Used only for
+    the effective tenant, which the caller is a member of by construction."""
+    return await _member_label(request, tenant_id) or str(tenant_id)
+
+
+async def _other_project_conflict(
+    request: Request,
+    *,
+    device: Device,
+    app_id: str,
+    row_tenant_id: UUID,
+    tenant_id: UUID,
+    redesignate: bool,
+) -> HTTPException:
+    """409 ``designation_in_other_project`` for a row stamped with a tenant
+    other than the effective one.
+
+    When the caller is a member of the owning tenant the message names it and
+    says to remove it there. When they are not, it names nothing — neither a
+    raw tenant id nor an instruction to switch to a project they cannot
+    select — and says to ask that project's operator; ``row_tenant_id`` is
+    returned only in the member case, so a foreign tenant id never leaves the
+    backend.
+    """
+    selected = await _project_label(request, tenant_id)
+    owner = await _member_label(request, row_tenant_id)
+    what = f"The designation of device {device.name!r} for app '{app_id}'"
+    verb = "changed" if redesignate else "removed"
+    then = f", then designate it again in {selected}" if redesignate else ""
+    if owner is not None:
+        message = (
+            f"{what} is recorded under project {owner}, not the selected "
+            f"project {selected}, so it was not {verb}. Switch to project "
+            f"{owner} and remove it there{then}."
+        )
+    else:
+        message = (
+            f"{what} is recorded under a project you are not a member of, not "
+            f"the selected project {selected}, so it was not {verb}. Ask that "
+            f"project's operator to remove it{then}."
+        )
+    detail: dict[str, str] = {
+        "error": "designation_in_other_project",
+        "message": message,
+        "device_id": str(device.device_id),
+        "tenant_id": str(tenant_id),
+    }
+    if owner is not None:
+        detail["row_tenant_id"] = str(row_tenant_id)
+    return HTTPException(status_code=409, detail=detail)
+
+
+# The two failures ``operations``' proxy helpers raise themselves (not coord's
+# body), safe to show verbatim.
+_PROXY_TRANSPORT_ERRORS = frozenset(
+    {"coord is not reachable", "timeout waiting for coord"}
+)
 
 
 def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
-    """Give a coord JSON refusal the ``message`` the error envelope renders.
+    """Normalize a coord failure for the error envelope.
 
-    coord's refusals are ``{"error": "<prose>"}`` with no ``message``, and
-    ``http_exception_handler`` would otherwise render ``message`` as the Python
-    repr of the whole dict. Anything else passes through unchanged.
+    * 4xx with a JSON ``{"error": "<prose>"}`` body (no ``message``): reworded
+      as ``coord_refused`` with a readable ``message`` —
+      ``http_exception_handler`` would otherwise render ``message`` as the
+      Python repr of the whole dict.
+    * 5xx: a generic "coord failed" with the status only. coord's 5xx text can
+      carry SQL/pool context (``pg_error::wrap``), which must not reach the
+      browser, and it is NOT tagged ``coord_refused`` — the frontend unwraps
+      that code as an operator-facing refusal, which a server fault is not.
+      The proxy helpers' own transport messages (unreachable / timeout) are
+      kept, since they are web's text, not coord's.
+    * Anything else passes through unchanged.
     """
     detail: Any = exc.detail
+    if exc.status_code >= 500:
+        if isinstance(detail, str) and detail in _PROXY_TRANSPORT_ERRORS:
+            return exc
+        return HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "error": "coord_failed",
+                "message": (
+                    "coord failed to record the designation "
+                    f"({exc.status_code}). Retry; if it persists, check coord."
+                ),
+            },
+        )
     if isinstance(detail, dict) and "message" not in detail:
         error = detail.get("error")
         if isinstance(error, str):
@@ -321,10 +403,12 @@ async def designate_test_target(
     bound to it. Idempotent — re-designating updates ``auto_fresh``.
 
     Web checks what coord does not, BEFORE calling it: the device must be owned
-    by the caller (404) and the app must be registered (404). A device the
-    effective tenant has no binding for is a 409
-    ``device_not_bound_to_project`` naming that project. The response is the
-    row as it now reads, joined with device + freshness.
+    by the caller (404), the app must be registered (404), and an existing row
+    for the pair must not be stamped with another project (409
+    ``designation_in_other_project``) — coord's upsert would update that row
+    in place and keep its old stamp. A device the effective tenant has no
+    binding for is a 409 ``device_not_bound_to_project`` naming that project.
+    The response is the row as it now reads, joined with device + freshness.
     """
     device = await _owned_device(db, device_id, current_user.id)
 
@@ -333,6 +417,23 @@ async def designate_test_target(
         raise HTTPException(
             status_code=404,
             detail={"code": "app_not_found", "message": f"App '{app_id}' not found."},
+        )
+
+    # Refuse BEFORE mutating. coord's upsert ``ON CONFLICT`` updates
+    # ``auto_fresh`` but keeps the row's existing ``tenant_id``, and its binding
+    # check is against the EFFECTIVE tenant, not the row's. So a row stamped
+    # with project A (e.g. by the pre-proxy web writer) for a device now bound
+    # only to B passes coord's check when B is selected, flips A's row, and
+    # stays invisible to the device's runner — while this route answered 200.
+    existing = await db.get(TestTarget, (device_id, app_id), populate_existing=True)
+    if existing is not None and existing.tenant_id != tenant_id:
+        raise await _other_project_conflict(
+            request,
+            device=device,
+            app_id=app_id,
+            row_tenant_id=existing.tenant_id,
+            tenant_id=tenant_id,
+            redesignate=True,
         )
 
     try:
@@ -353,9 +454,13 @@ async def designate_test_target(
             and isinstance(detail, dict)
             and detail.get("error") == _COORD_UNBOUND_ERROR
         ):
-            # ``tenant_id`` is the tenant coord actually used: a header naming
-            # a tenant the caller is not a member of degrades to home coord-
-            # side, and ``get_tenant_id`` returns coord's post-override answer.
+            # ``tenant_id`` is the tenant coord's ``/admin/coord/me`` resolved
+            # for this request with the same forwarded override (a header
+            # naming a non-member tenant degrades to home there). coord applies
+            # the override to the upsert INDEPENDENTLY — a separate request,
+            # which fails open to home on a PG error — so this is the tenant
+            # the write almost certainly targeted, not a value coord returned
+            # from the upsert itself.
             project = await _project_label(request, tenant_id)
             raise HTTPException(
                 status_code=409,
@@ -376,8 +481,8 @@ async def designate_test_target(
 
     # coord answers only ``{device_id, app_id, auto_fresh}``; the response
     # model carries timestamps and freshness, so read the row coord just wrote.
-    # ``populate_existing`` so nothing cached in this session can stand in for
-    # what coord committed.
+    # ``populate_existing`` so the pre-write read cached in this session cannot
+    # stand in for what coord committed.
     target = await db.get(TestTarget, (device_id, app_id), populate_existing=True)
     if target is None:
         raise HTTPException(
@@ -392,9 +497,11 @@ async def designate_test_target(
             },
         )
     if target.tenant_id != tenant_id:
-        # coord's ON CONFLICT updates auto_fresh but keeps the row's existing
-        # tenant stamp, so a row written into another tenant earlier stays
-        # there. Logged, not refused: the auto_fresh change did apply.
+        # The pre-write check above refuses this case; reaching it means a
+        # concurrent writer stamped the row with another tenant between that
+        # read and coord's upsert (the race window). Logged, not refused: the
+        # write already happened, and refusing after mutating would report a
+        # failure for a change that did apply.
         logger.warning(
             "test_target_stamped_in_other_tenant",
             device_id=str(device_id),
@@ -441,9 +548,12 @@ async def undesignate_test_target(
     """
     device = await _owned_device(db, device_id, current_user.id)
 
-    result = await _proxy_coord_delete(
-        _coord_delete_path(device_id, app_id), tenant_id=tenant_id
-    )
+    try:
+        result = await _proxy_coord_delete(
+            _coord_delete_path(device_id, app_id), tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        raise _reraise_coord_refusal(exc) from exc
     if isinstance(result, dict) and result.get("deleted") is True:
         return Response(status_code=204)
 
@@ -451,28 +561,27 @@ async def undesignate_test_target(
     if remaining is None:
         return Response(status_code=204)
 
+    if remaining.tenant_id != tenant_id:
+        raise await _other_project_conflict(
+            request,
+            device=device,
+            app_id=app_id,
+            row_tenant_id=remaining.tenant_id,
+            tenant_id=tenant_id,
+            redesignate=False,
+        )
+    # coord removed nothing although the row is in the selected tenant — a
+    # concurrent re-designation, or a coord answer this code cannot read.
     selected = await _project_label(request, tenant_id)
-    if remaining.tenant_id == tenant_id:
-        # coord removed nothing although the row is in the selected tenant — a
-        # concurrent re-designation, or a coord answer this code cannot read.
-        message = (
-            f"coord removed nothing: the designation of device {device.name!r} "
-            f"for app '{app_id}' is still recorded under project {selected}. "
-            "Refresh and retry."
-        )
-    else:
-        owner = await _project_label(request, remaining.tenant_id)
-        message = (
-            f"The designation of device {device.name!r} for app '{app_id}' is "
-            f"recorded under project {owner}, not the selected project "
-            f"{selected}, so it was not removed. Switch to project {owner} "
-            "and remove it there."
-        )
     raise HTTPException(
         status_code=409,
         detail={
             "error": "designation_in_other_project",
-            "message": message,
+            "message": (
+                f"coord removed nothing: the designation of device "
+                f"{device.name!r} for app '{app_id}' is still recorded under "
+                f"project {selected}. Refresh and retry."
+            ),
             "device_id": str(device_id),
             "tenant_id": str(tenant_id),
             "row_tenant_id": str(remaining.tenant_id),
