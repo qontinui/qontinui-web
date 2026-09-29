@@ -4,9 +4,9 @@ The revision deletes every notification carrying one of the five
 producer-less labels (``LOCK_RELEASED``, ``PROJECT_UPDATE``, ``TEAM_INVITE``,
 ``ACCESS_GRANTED``, ``ACCESS_REVOKED``), removes those labels from the
 ``notificationtype`` PG ENUM by rename-and-recreate, and gives the three dead
-preference columns a ``DEFAULT true`` so an image that no longer maps them can
-still INSERT a preferences row. It deliberately drops NO column: the image
-serving before this change still maps them.
+preference columns a ``DEFAULT true`` so the Phase 3 image, which no longer
+maps them, can still INSERT a preferences row. It deliberately drops NO
+column: every image up to and including this change still maps them.
 
 What is asserted
 ================

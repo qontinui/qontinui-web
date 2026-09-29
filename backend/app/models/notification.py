@@ -152,6 +152,17 @@ class NotificationPreferences(Base):
     in_app_shares = Column(Boolean, default=True, nullable=False)
     in_app_replies = Column(Boolean, default=True, nullable=False)
 
+    # RETIRED — these three toggles gate nothing (their notification types
+    # have no producer) and are no longer read or exposed anywhere. The
+    # mappings stay ONLY so this image's INSERTs still supply a value if it
+    # serves before migration notif_producerless_01_drop_enum_values: the
+    # columns are NOT NULL and have no server default until that revision
+    # gives them one. Removed, with the columns, by Phase 3 of plan
+    # 2026-09-19-delete-producerless-notification-types-and-their-toggles.
+    email_team_invites = Column(Boolean, default=True, nullable=False)
+    in_app_team_invites = Column(Boolean, default=True, nullable=False)
+    in_app_project_updates = Column(Boolean, default=True, nullable=False)
+
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
