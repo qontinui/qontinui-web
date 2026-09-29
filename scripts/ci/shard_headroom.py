@@ -34,13 +34,31 @@ Verdicts, in precedence order
 ``ok``
     Exits 0.
 
-What is ignored
----------------
+Which rows count
+----------------
 
-A job cancelled while still QUEUED never ran: GitHub gives it a null
-``started_at`` or a ``completed_at`` at or before its ``started_at``. Such a row
-carries no timing and is skipped. If that leaves a shard with no measured row
-at all, the verdict is ``unknown`` — the shard is missing, not fast.
+The read uses ``filter=latest``, which returns ONE row per job, for the run's
+latest attempt only; a re-run attempt replaces rather than adds rows. Two rows
+naming the same shard therefore cannot happen on a well-formed read, and are
+refused as ``unknown`` rather than resolved by guessing which one is real.
+
+A shard row is MEASURED only when a runner actually executed it: a non-zero
+``runner_id``, a non-empty ``steps`` list, a ``started_at`` and a
+``completed_at`` strictly after it. A job cancelled while still QUEUED does NOT
+get a null ``started_at`` -- GitHub stamps ``started_at = created_at`` and a
+``completed_at`` at the cancel, a POSITIVE gap of pure queue time (run
+36515758971: all six shards ``conclusion=cancelled``, ``runner_id=0``,
+``steps=[]``, 03:07:41 -> 03:11:17). Timing such a row would report queue time
+as test time, so it is unmeasured -- and a shard with no measured row makes the
+verdict ``unknown``: the shard is missing, not fast.
+
+A measured row counts only with ``conclusion`` ``success``, or ``cancelled``
+with a runner assigned -- a budget timeout concludes ``cancelled`` (run
+36548570438 shard 6 ran 09:20:52 -> 10:06:11 and must read ``over_margin``). A
+shard cancelled at its timeout measures slightly OVER the budget, so a ``pct``
+just above 100 is expected, not a bug. Any other conclusion (``failure``,
+``skipped``, ...) means the shard's time does not describe a full pass over its
+files, so the verdict is ``unknown``, naming the shard and conclusion.
 
 Budget
 ------
@@ -65,7 +83,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-MARGIN_PCT = 70.0
+# The margin as an integer percentage, so the compare below is exact:
+# `45 * 0.70` is 31.499999999999996 in binary floating point, which would turn a
+# shard of exactly 31.5 min over the margin. `max_min * 100 > budget_min * 70`
+# has no such rounding at the boundary.
+MARGIN_PCT = 70
 MAX_SKEW = 2.0
 DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
@@ -154,15 +176,30 @@ def _parse_ts(value: Any, job_name: str, field: str) -> datetime | None:
     return parsed
 
 
+def _is_measured(job: dict[str, Any], started: datetime | None, completed: datetime | None) -> bool:
+    """Did a runner actually execute this row? See the module docstring."""
+    runner_id = job.get("runner_id")
+    steps = job.get("steps")
+    if not isinstance(runner_id, int) or isinstance(runner_id, bool) or runner_id <= 0:
+        return False
+    if not isinstance(steps, list) or not steps:
+        return False
+    if started is None or completed is None:
+        return False
+    return completed > started
+
+
 def shard_durations(jobs: list[dict[str, Any]], expected_shards: int) -> dict[int, float]:
     """Minutes per shard number, from the run's job rows.
 
     Raises ``MeasurementError`` for anything that makes the measurement
-    untrustworthy. Rows cancelled while queued (no start, or a non-positive
-    duration) are skipped; when a shard has several measured rows the
-    latest-completed one counts.
+    untrustworthy: a malformed timestamp, a duplicate shard row, a measured
+    shard whose conclusion is neither ``success`` nor ``cancelled``, or a shard
+    with no measured row (never picked up by a runner, or absent).
     """
-    measured: dict[int, tuple[datetime, float]] = {}
+    measured: dict[int, float] = {}
+    seen: dict[int, str] = {}
+    unmeasured: dict[int, str] = {}
     for job in jobs:
         name = job.get("name")
         if not isinstance(name, str):
@@ -178,29 +215,41 @@ def shard_durations(jobs: list[dict[str, Any]], expected_shards: int) -> dict[in
             )
         if not 1 <= shard <= expected_shards:
             raise MeasurementError(f"{name!r} is outside 1..{expected_shards}")
+        if shard in seen:
+            raise MeasurementError(
+                f"two rows name shard {shard}; filter=latest yields one row per job, "
+                "so this read is malformed"
+            )
+        seen[shard] = name
         started = _parse_ts(job.get("started_at"), name, "started_at")
         completed = _parse_ts(job.get("completed_at"), name, "completed_at")
-        if started is None:
-            # Never left the queue -- a cancelled-while-queued row carries no timing.
-            continue
-        if completed is None:
+        conclusion = job.get("conclusion")
+        if started is not None and completed is None:
             raise MeasurementError(
                 f"{name!r} started but has no completed_at (status={job.get('status')!r})"
             )
-        minutes = (completed - started).total_seconds() / 60.0
-        if minutes <= 0:
+        if not _is_measured(job, started, completed):
+            unmeasured[shard] = (
+                f"shard {shard} was never executed by a runner "
+                f"(conclusion={conclusion!r}, runner_id={job.get('runner_id')!r}, "
+                f"steps={len(job.get('steps') or [])})"
+            )
             continue
-        prior = measured.get(shard)
-        if prior is None or completed > prior[0]:
-            measured[shard] = (completed, minutes)
+        if conclusion not in ("success", "cancelled"):
+            raise MeasurementError(
+                f"shard {shard} concluded {conclusion!r}; only 'success' or a runner-side "
+                "'cancelled' (a budget timeout) is a measurable pass"
+            )
+        assert started is not None and completed is not None
+        measured[shard] = (completed - started).total_seconds() / 60.0
 
     missing = sorted(set(range(1, expected_shards + 1)) - set(measured))
     if missing:
+        details = [unmeasured.get(s, f"shard {s} has no row") for s in missing]
         raise MeasurementError(
-            f"measured {len(measured)} of {expected_shards} shards; no timed row for "
-            f"shard(s) {', '.join(map(str, missing))}"
+            f"measured {len(measured)} of {expected_shards} shards; " + "; ".join(details)
         )
-    return {shard: minutes for shard, (_, minutes) in measured.items()}
+    return measured
 
 
 def evaluate(
@@ -221,13 +270,14 @@ def evaluate(
     pct, skew = base.pct, base.skew
     assert pct is not None and skew is not None
 
-    if pct > MARGIN_PCT:
+    # Exact compare on minutes; pct and skew are for display only.
+    if max_min * 100 > budget_min * MARGIN_PCT:
         verdict, reason = (
             "over_margin",
             f"shard {slowest_shard} took {max_min:.1f} min, {pct:.1f}% of the "
             f"{budget_min:g}-minute budget (margin {MARGIN_PCT:g}%)",
         )
-    elif skew > MAX_SKEW:
+    elif max_min > min_min * MAX_SKEW:
         verdict, reason = (
             "skewed",
             f"slowest/fastest shard = {max_min:.1f}/{min_min:.1f} min = {skew:.2f}x "

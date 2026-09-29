@@ -1410,6 +1410,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          # Only the script is needed, and nothing here pushes: do not leave the
+          # token in .git/config for the rest of the job.
+          persist-credentials: false
           sparse-checkout: scripts/ci
           sparse-checkout-cone-mode: true
 
