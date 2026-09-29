@@ -296,6 +296,51 @@ class CandidateCoordLink(BaseModel):
     unavailable_reason: str | None = None
 
 
+# ─────────────────────── status currency ───────────────────────
+#
+# Plan ``2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-
+# whether-it-is-current``, Phase 1 (design decisions D3/D4). A row's ``status``
+# is whatever its last writer asserted; this block says how far that assertion
+# can be trusted NOW. It is a signal, never a filter (D5).
+
+#: The closed vocabulary. ``unknown`` is a member, and no arm but ``unfed_key``
+#: is reachable by absence — and that one is positive evidence that no reading
+#: covers the row's key.
+#:
+#: * ``fed_in_step`` — a FRESH, applied, ``measured`` scan-root reading for this
+#:   row's ``source_repo`` read a ref it fetched within the runner's window
+#:   (``counts_are_floors: false``). Keyed on the feeder's REF, never on
+#:   ``behind`` — ``behind`` measures how parked the checkout's HEAD is, which
+#:   says nothing about the body the sync read (the plan's 2026-09-29 vet).
+#: * ``fed_stale_ref`` — fresh, applied, ``measured`` readings exist for the
+#:   key, but every one is a floor: the feeder is alive, reading an old ref.
+#: * ``unfed_key`` — no (non-retired) reading names this ``source_repo``.
+#: * ``asserted_once`` — ``captured_by`` is ``agent``/``operator``: a door
+#:   write no feeder maintains.
+#: * ``unknown`` — readings name the key but none is fresh+applied+measured,
+#:   or the scan-root readings could not be read; ``detail`` says which.
+StatusCurrencyState = Literal[
+    "fed_in_step", "fed_stale_ref", "unfed_key", "asserted_once", "unknown"
+]
+
+
+class StatusCurrency(BaseModel):
+    """How current a row's ``status`` can be taken to be — with its evidence.
+
+    ``as_of`` is the newest ``received_at`` among the readings that produced a
+    feeder verdict (the row's ``updated_at`` for ``asserted_once``; null for
+    ``unfed_key``/``unknown``). ``ref_sha``/``ref_age_secs`` are the
+    freshest-ref qualifying reading's, null otherwise. ``behind`` is
+    deliberately NOT carried: it is not a property of the body.
+    """
+
+    state: StatusCurrencyState
+    as_of: IsoDatetime | None
+    ref_sha: str | None
+    ref_age_secs: int | None
+    detail: str | None
+
+
 # ───────────────────────── responses ─────────────────────────
 
 
@@ -332,6 +377,10 @@ class WorkArtifactSummary(BaseORMSchema):
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
     difficulty_rubric_version: int | None = None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: REQUIRED with no default: a default here would be a healthy-looking
+    #: verdict nobody computed, which is the defect this field exists to close.
+    status_currency: StatusCurrency
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -672,6 +721,15 @@ class PlanCandidate(BaseModel):
     difficulty_conceptual: DifficultyLevel | None = None
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
+    #: The backing artifact's ``sha256(body)`` — what a byte comparison against
+    #: the ref needs without a second read per row. ``None`` on a work-unit-only
+    #: row (there is no body). Required key, no default.
+    content_sha256: str | None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: ``None`` on a work-unit-only row, where ``document_state`` already says
+    #: there is no artifact whose currency could be judged. Required key, no
+    #: default.
+    status_currency: StatusCurrency | None
 
 
 # ─────────────── difficulty map ───────────────
