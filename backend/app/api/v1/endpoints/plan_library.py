@@ -188,6 +188,7 @@ from app.schemas.plan_library import (
     ReconciliationResponse,
     ReconciliationRow,
     ReconciliationVerdict,
+    StatusCurrency,
     WorkArtifactDetail,
     WorkArtifactEdgeClaim,
     WorkArtifactEdgeCreate,
@@ -200,6 +201,7 @@ from app.schemas.plan_library import (
     WorkArtifactVersionRead,
     WorkUnitPopulationState,
 )
+from app.schemas.plan_library_scan_roots import ScanRootListResponse, ScanRootRow
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
 from app.services.plan_difficulty import (
@@ -211,6 +213,8 @@ from app.services.plan_difficulty import (
 from app.services.plan_scan_root_health import (
     scan_roots_health,
     scan_roots_read_failed,
+    status_currency_for,
+    status_currency_inputs,
 )
 
 logger = structlog.get_logger(__name__)
@@ -430,8 +434,35 @@ def _actor(user: User) -> str:
     return getattr(user, "email", None) or str(user.id)
 
 
-def _summary(row: WorkArtifact) -> WorkArtifactSummary:
-    return WorkArtifactSummary.model_validate(row)
+#: What :func:`_currency` needs, computed ONCE per response by
+#: :func:`status_currency_inputs`: the rendered scan-root rows grouped by
+#: ``source_repo``, and the read-failure detail (``None`` when the read held).
+_CurrencyInputs = tuple[dict[str, list[ScanRootRow]], str | None]
+
+
+def _currency(row: WorkArtifact, inputs: _CurrencyInputs) -> StatusCurrency:
+    """The row's :class:`StatusCurrency` against one response's readings."""
+    rows_by_source_repo, read_failed_detail = inputs
+    return status_currency_for(
+        row, rows_by_source_repo, read_failed_detail=read_failed_detail
+    )
+
+
+def _summary(row: WorkArtifact, status_currency: StatusCurrency) -> WorkArtifactSummary:
+    """The list-row shape — ``status_currency`` is REQUIRED, never defaulted.
+
+    Every other field is read off the ORM row exactly as ``from_attributes``
+    would; the currency is not a column, so it is passed in, and a caller that
+    has not computed one cannot build a summary at all.
+    """
+    fields = {
+        name: getattr(row, name)
+        for name in WorkArtifactSummary.model_fields
+        if name != "status_currency"
+    }
+    return WorkArtifactSummary.model_validate(
+        {**fields, "status_currency": status_currency}
+    )
 
 
 def _age_days(anchor: datetime, now: datetime) -> float:
@@ -526,6 +557,10 @@ def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCan
             ),
         ),
         document_state="unsynced" if unit.source_path else "absent",
+        # No artifact, so no body and no status whose currency a reading could
+        # vouch for — ``document_state`` above says why. Null, not a verdict.
+        content_sha256=None,
+        status_currency=None,
     )
 
 
@@ -534,6 +569,8 @@ def _detail(
     versions: list[WorkArtifactVersion],
     edges: list[WorkArtifactEdgeRead],
     coord: CandidateCoordLink | None = None,
+    *,
+    status_currency: StatusCurrency,
 ) -> WorkArtifactDetail:
     """Assemble the single-artifact response.
 
@@ -566,6 +603,7 @@ def _detail(
         body=row.body,
         versions=[WorkArtifactVersionRead.model_validate(v) for v in versions],
         edges=edges,
+        status_currency=status_currency,
     )
 
 
@@ -2264,14 +2302,18 @@ async def list_work_artifacts(
         offset=offset,
         limit=limit,
     )
-    items = [_summary(r) for r in rows]
+    # BEFORE the items: each row's ``status_currency`` is a lookup into this
+    # block's rendered scan-root rows, so it is read once and served as-is.
+    corpus_health = await _load_corpus_health(db, org_id=org_id)
+    inputs = status_currency_inputs(corpus_health.scan_roots)
+    items = [_summary(r, _currency(r, inputs)) for r in rows]
     return WorkArtifactListResponse(
         items=items,
         count=len(items),
         total=total,
         offset=offset,
         limit=limit,
-        corpus_health=await _load_corpus_health(db, org_id=org_id),
+        corpus_health=corpus_health,
         # Byte-identical on all three routes — one source, copied per response.
         model_tiers=dict(MODEL_TIERS),
         model_selectors=dict(MODEL_SELECTORS),
@@ -2351,6 +2393,27 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     ``MissingGreenlet`` and take down the page rather than degrade.
     """
     census = await crud.capture_health(db, org_id=org_id)
+    scan_roots = await _load_scan_roots(db, org_id=org_id)
+    artifact_count, plan_count, newest = crud.corpus_totals(census)
+    return CorpusHealth(
+        artifact_count=artifact_count,
+        plan_count=plan_count,
+        newest_updated_at=newest,
+        capture=_capture_health_response(census),
+        scan_roots=scan_roots,
+    )
+
+
+async def _load_scan_roots(
+    db: AsyncSession, *, org_id: UUID | None
+) -> ScanRootListResponse:
+    """``corpus_health.scan_roots`` alone — the degrading scan-root read.
+
+    Split out of :func:`_load_corpus_health` so a single-artifact route can
+    judge its row's ``status_currency`` against the SAME rendering (readings
+    AND refusals, so retirement liveness matches the list route's) without
+    also paying for the corpus-wide capture census it never serves.
+    """
     try:
         async with db.begin_nested():
             observations = await scan_root_crud.list_observations(db, org_id=org_id)
@@ -2368,19 +2431,16 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
             error=type(exc).__name__,
             exc_info=True,
         )
-        scan_roots = scan_roots_read_failed(exc)
-    else:
-        scan_roots = scan_roots_health(
-            observations, now=datetime.now(UTC), refusals=refusals
-        )
-    artifact_count, plan_count, newest = crud.corpus_totals(census)
-    return CorpusHealth(
-        artifact_count=artifact_count,
-        plan_count=plan_count,
-        newest_updated_at=newest,
-        capture=_capture_health_response(census),
-        scan_roots=scan_roots,
-    )
+        return scan_roots_read_failed(exc)
+    return scan_roots_health(observations, now=datetime.now(UTC), refusals=refusals)
+
+
+async def _row_currency(
+    db: AsyncSession, row: WorkArtifact, *, org_id: UUID | None
+) -> StatusCurrency:
+    """One row's currency, for the routes that return a single artifact."""
+    scan_roots = await _load_scan_roots(db, org_id=org_id)
+    return _currency(row, status_currency_inputs(scan_roots))
 
 
 # NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
@@ -3372,6 +3432,35 @@ async def list_plan_candidates(
         db, org_id=org_id, offset=0, limit=limit
     )
 
+    # Report-only on THIS route: before it carried the block, /candidates read
+    # neither the capture census nor the scan-root table, so a failure in
+    # either must not take the candidates down. A savepoint contains the failed
+    # statement; the block is then null with the reason beside it — UNKNOWN,
+    # never a healthy-looking default.
+    corpus_health: CorpusHealth | None = None
+    corpus_health_unavailable_reason: str | None = None
+    try:
+        async with db.begin_nested():
+            corpus_health = await _load_corpus_health(db, org_id=org_id)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "plan_library.candidates_corpus_health_read_failed",
+            error=type(exc).__name__,
+            exc_info=True,
+        )
+        corpus_health_unavailable_reason = (
+            f"read_failed: the corpus health block could not be read "
+            f"({type(exc).__name__}); the candidates are unaffected, and a null "
+            "block is UNKNOWN, not healthy."
+        )
+    # Every artifact-backed row's ``status_currency`` is a lookup into this
+    # block's rendered scan-root rows — read once, BEFORE the items, and a
+    # nulled block maps to ``unknown`` on every row with its reason.
+    currency_inputs = status_currency_inputs(
+        corpus_health.scan_roots if corpus_health is not None else None,
+        unavailable_reason=corpus_health_unavailable_reason,
+    )
+
     now = datetime.now(UTC)
     items: list[PlanCandidate] = []
     for candidate in rows:
@@ -3455,29 +3544,9 @@ async def list_plan_candidates(
                 difficulty_conceptual=row.difficulty_conceptual,
                 difficulty_implementation=row.difficulty_implementation,
                 difficulty_source=row.difficulty_source,
+                content_sha256=row.content_sha256,
+                status_currency=_currency(row, currency_inputs),
             )
-        )
-
-    # Report-only on THIS route: before it carried the block, /candidates read
-    # neither the capture census nor the scan-root table, so a failure in
-    # either must not take the candidates down. A savepoint contains the failed
-    # statement; the block is then null with the reason beside it — UNKNOWN,
-    # never a healthy-looking default.
-    corpus_health: CorpusHealth | None = None
-    corpus_health_unavailable_reason: str | None = None
-    try:
-        async with db.begin_nested():
-            corpus_health = await _load_corpus_health(db, org_id=org_id)
-    except SQLAlchemyError as exc:
-        logger.warning(
-            "plan_library.candidates_corpus_health_read_failed",
-            error=type(exc).__name__,
-            exc_info=True,
-        )
-        corpus_health_unavailable_reason = (
-            f"read_failed: the corpus health block could not be read "
-            f"({type(exc).__name__}); the candidates are unaffected, and a null "
-            "block is UNKNOWN, not healthy."
         )
 
     return PlanCandidateResponse(
@@ -3724,7 +3793,13 @@ async def get_work_artifact(
                 unavailable_reason="not fetched (include_coord=false)",
             )
 
-    return _detail(row, versions, edges, coord_block)
+    return _detail(
+        row,
+        versions,
+        edges,
+        coord_block,
+        status_currency=await _row_currency(db, row, org_id=org_id),
+    )
 
 
 @router.get(
@@ -3936,7 +4011,9 @@ async def upsert_work_artifact(
         response.headers["X-Artifact-Unchanged"] = "true"
 
     return WorkArtifactUpsertResponse(
-        changed=changed, created=created, artifact=_summary(artifact)
+        changed=changed,
+        created=created,
+        artifact=_summary(artifact, await _row_currency(db, artifact, org_id=org_id)),
     )
 
 
@@ -4120,7 +4197,7 @@ async def patch_work_artifact_kind(
         kind=updated.kind,
         actor=_actor(current_user),
     )
-    return _summary(updated)
+    return _summary(updated, await _row_currency(db, updated, org_id=org_id))
 
 
 @router.post(

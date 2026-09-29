@@ -114,11 +114,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.crud.work_artifact import CapturedPlanCorpus
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
+from app.schemas.plan_library import StatusCurrency
 from app.schemas.plan_library_scan_roots import (
     COVERAGE_MISSING_SAMPLE_MAX,
     PlanCensusSide,
@@ -344,6 +345,14 @@ def all_retired_detail(retired_count: int) -> str:
     )
 
 
+#: The prefix :func:`scan_roots_read_failed` stamps on its detail — and the
+#: ONLY thing that separates a block whose readings could not be read from one
+#: whose readings were read and are absent (``no_observation:``). Both have
+#: ``state: "unknown"`` and no rows; :func:`status_currency_inputs` keys on
+#: this prefix so the two never collapse into one another.
+READ_FAILED_PREFIX = "read_failed:"
+
+
 def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
     """The block when the readings could not be READ — UNKNOWN, with no rows.
 
@@ -353,7 +362,7 @@ def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
     return ScanRootListResponse(
         state="unknown",
         detail=(
-            f"read_failed: the plan-scan-source readings could not be read "
+            f"{READ_FAILED_PREFIX} the plan-scan-source readings could not be read "
             f"({type(error).__name__}), so whether the corpus's feeders are "
             "current is not established. The empty list is not 'no drift'."
         ),
@@ -1289,5 +1298,219 @@ def scan_roots_health(
             else COVERAGE_NO_LIVE_READING_DETAIL
             if live
             else COVERAGE_ALL_RETIRED_DETAIL
+        ),
+    )
+
+
+# ─────────────── per-row status currency (plan 2026-09-20, Phase 1) ───────────────
+#
+# ``2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-whether-it-
+# is-current``, design decisions D3/D4 as corrected by the 2026-09-29 vet. A
+# lookup of a plan-library row's ``source_repo`` into the rendered per-device
+# ROWS the corpus-health block already carries — zero new queries.
+#
+# The feeder arms key on the FEEDER'S REF (``counts_are_floors``), NEVER on
+# ``behind``: since runner ``d4cf3f0e1`` the body sync reads the fetched ref,
+# not HEAD, so ``behind`` measures how parked the primary checkout is and says
+# nothing about the body the corpus received. A fresh reading ``behind: 1991``
+# against a ref fetched seconds earlier is a feeder in step. Nothing in this
+# section reads ``behind``, and ``ScanRootSourceRollup`` (whose ``min_behind``
+# is that axis) is deliberately not consulted.
+
+#: How many devices an ``unknown`` detail names before it summarises the rest.
+_CURRENCY_DETAIL_DEVICES = 3
+
+#: The door writes no feeder maintains (``captured_by``).
+_ASSERTED_DOORS = frozenset({"agent", "operator"})
+
+
+class _CurrencySubject(Protocol):
+    """What :func:`status_currency_for` reads off a plan-library row."""
+
+    @property
+    def captured_by(self) -> str: ...
+
+    @property
+    def source_repo(self) -> str | None: ...
+
+    @property
+    def updated_at(self) -> datetime: ...
+
+
+def status_currency_inputs(
+    scan_roots: ScanRootListResponse | None,
+    *,
+    unavailable_reason: str | None = None,
+) -> tuple[dict[str, list[ScanRootRow]], str | None]:
+    """Group a rendered block's rows by ``source_repo``, once per response.
+
+    Returns ``(rows_by_source_repo, read_failed_detail)``. The detail is set —
+    and every row then reads ``unknown`` — when the block is absent
+    (``/candidates``' outer savepoint nulled it; ``unavailable_reason`` names
+    why) or when its readings could not be read (:data:`READ_FAILED_PREFIX`).
+    A block that was read and holds no rows is NOT a failure: every row then
+    reads ``unfed_key``, which is what an empty, successfully-read table says.
+
+    Rows naming no ``source_repo`` (refusal-only devices, readings that named
+    none) and retired rows are left out: neither can vouch for a key.
+    """
+    if scan_roots is None:
+        return {}, (
+            unavailable_reason
+            or "read_failed: the corpus health block could not be read, so no "
+            "scan-root reading was available to judge this row against"
+        )
+    if scan_roots.detail is not None and scan_roots.detail.startswith(
+        READ_FAILED_PREFIX
+    ):
+        return {}, scan_roots.detail
+    grouped: dict[str, list[ScanRootRow]] = {}
+    for row in scan_roots.rows:
+        if row.source_repo is None or row.retired:
+            continue
+        grouped.setdefault(row.source_repo, []).append(row)
+    return grouped, None
+
+
+def _is_fresh_applied_measured(row: ScanRootRow) -> bool:
+    """A reading that establishes something about NOW for its key.
+
+    Fresh by this server's clock, not contradicted by a later-declined report,
+    and what the device reported was a measurement. Reads the REPORTED state,
+    not the verdict: a ``measured`` floor of 0 behind renders verdict
+    ``unknown`` (``ref_stale:``) and is exactly the ``fed_stale_ref`` case.
+    """
+    return (
+        row.observation_fresh
+        and row.last_report_applied is True
+        and row.reported_state == "measured"
+    )
+
+
+def _freshest_ref(rows: Sequence[ScanRootRow]) -> ScanRootRow:
+    """The row whose ref was fetched most recently; an unknown age sorts last.
+
+    Ties break on ``device_id`` so two reads of the same rows agree.
+    """
+    return min(
+        rows,
+        key=lambda r: (
+            r.ref_age_secs is None,
+            r.ref_age_secs if r.ref_age_secs is not None else 0,
+            str(r.device_id),
+        ),
+    )
+
+
+def _newest_received(rows: Sequence[ScanRootRow]) -> datetime | None:
+    stamps = [r.received_at for r in rows if r.received_at is not None]
+    return max(stamps) if stamps else None
+
+
+def _unknown_rows_detail(source_repo: str, rows: Sequence[ScanRootRow]) -> str:
+    """Forward the rows' own verdicts — bounded, and naming what was elided."""
+    ordered = sorted(rows, key=lambda r: str(r.device_id))
+    parts = [
+        f"device {r.device_id}: {r.detail or f'state {r.reported_state!r}'}"
+        for r in ordered[:_CURRENCY_DETAIL_DEVICES]
+    ]
+    more = len(ordered) - _CURRENCY_DETAIL_DEVICES
+    if more > 0:
+        parts.append(f"and {more} more")
+    return (
+        f"no_fresh_measured_reading: {len(ordered)} reading(s) name "
+        f"'{source_repo}' but none is a fresh, applied, measured one, so "
+        "whether this status is current is not established — " + "; ".join(parts)
+    )
+
+
+def _unfed(detail: str) -> StatusCurrency:
+    return StatusCurrency(
+        state="unfed_key", as_of=None, ref_sha=None, ref_age_secs=None, detail=detail
+    )
+
+
+def status_currency_for(
+    artifact: _CurrencySubject,
+    rows_by_source_repo: Mapping[str, Sequence[ScanRootRow]],
+    *,
+    read_failed_detail: str | None,
+) -> StatusCurrency:
+    """How current ``artifact.status`` can be taken to be. Pure; no I/O.
+
+    Precedence (D4): ``asserted_once`` — a door write no feeder maintains — is
+    decided by ``captured_by`` alone, before any reading is consulted. Then a
+    failed read is ``unknown``. Then the readings for THIS row's
+    ``source_repo``: any fresh+applied+measured one with
+    ``counts_are_floors: false`` → ``fed_in_step``; fresh+applied+measured but
+    all floors → ``fed_stale_ref``; readings but none qualifying → ``unknown``
+    with their details; no reading names the key → ``unfed_key``. Every arm but
+    that last needs positive evidence, and ``unfed_key`` IS positive evidence:
+    the table was read and no reading covers the key.
+    """
+    if artifact.captured_by in _ASSERTED_DOORS:
+        return StatusCurrency(
+            state="asserted_once",
+            as_of=artifact.updated_at,
+            ref_sha=None,
+            ref_age_secs=None,
+            detail=(
+                f"captured_by '{artifact.captured_by}': written once through a "
+                "door no scanner maintains, so this status is what that write "
+                "asserted and nothing re-reads it"
+            ),
+        )
+    if read_failed_detail is not None:
+        return StatusCurrency(
+            state="unknown",
+            as_of=None,
+            ref_sha=None,
+            ref_age_secs=None,
+            detail=read_failed_detail,
+        )
+    key = artifact.source_repo
+    if key is None:
+        return _unfed(
+            "unfed_key: this row carries no source_repo, so no scan-root "
+            "reading can name it"
+        )
+    rows = list(rows_by_source_repo.get(key, ()))
+    if not rows:
+        return _unfed(
+            f"unfed_key: no live scan-root reading names '{key}', so no feeder "
+            "re-reads this row and its status is whatever was last asserted"
+        )
+    qualifying = [r for r in rows if _is_fresh_applied_measured(r)]
+    if not qualifying:
+        return StatusCurrency(
+            state="unknown",
+            as_of=None,
+            ref_sha=None,
+            ref_age_secs=None,
+            detail=_unknown_rows_detail(key, rows),
+        )
+    in_step = [r for r in qualifying if r.counts_are_floors is False]
+    if in_step:
+        best = _freshest_ref(in_step)
+        return StatusCurrency(
+            state="fed_in_step",
+            as_of=_newest_received(in_step),
+            ref_sha=best.ref_sha,
+            ref_age_secs=best.ref_age_secs,
+            detail=(
+                f"{len(in_step)} fresh reading(s) of '{key}' read a ref fetched "
+                "within the runner's freshness window"
+            ),
+        )
+    best = _freshest_ref(qualifying)
+    return StatusCurrency(
+        state="fed_stale_ref",
+        as_of=_newest_received(qualifying),
+        ref_sha=best.ref_sha,
+        ref_age_secs=best.ref_age_secs,
+        detail=(
+            f"ref_stale: {len(qualifying)} fresh reading(s) of '{key}' each read "
+            "a ref older than the runner's freshness window or of unknown age, "
+            "so the feeder is alive but may be serving an old body"
         ),
     )
