@@ -96,41 +96,47 @@ def _target_metadata():
     return Base.metadata
 
 
-# Atlas-owned tables (Row 3 schema-half pilot, Wave 1.4).
+# Atlas-owned schemas.
 #
-# Atlas Community is the source of truth for this set; the HCL lives at
-# ``qontinui-runner/atlas/schema.hcl``. Historical alembic migrations for
-# these tables remain in ``versions/`` as frozen history.
+# Atlas Community owns these schemas WHOLLY — every table, index, constraint
+# and sequence in them; the HCL lives at ``qontinui-runner/atlas/schema.hcl``.
+# ``atlas_managed`` holds the runner's regression and spec-proposal tables and
+# ``orchestration`` the conductor ledger (plan ``2026-05-14-atlas-wave-6-triage``).
+# Alembic never authors DDL in either schema. Revision ``f9d3e8a4c1b6`` still
+# creates legacy ``project.regression_*`` copies as frozen history; the runner's
+# boot self-heal moves them into ``atlas_managed`` on every database it owns.
 #
 # NOTE: ``alembic revision --autogenerate`` is PROHIBITED in this repo —
 # revisions are hand-authored (see .github/PULL_REQUEST_TEMPLATE.md). The
-# reason is much broader than this set: the ``coord`` schema is almost
+# reason is much broader than these schemas: the ``coord`` schema is almost
 # entirely unmodeled (the chain creates ~78 coord tables; 3 have SQLAlchemy
 # models), so an autogenerate run would propose DROPPING the ~75 it cannot
-# see. The filter below is defense-in-depth for the Atlas-owned subset if
+# see. The filter below is defense-in-depth for the Atlas-owned schemas if
 # anyone ever runs it anyway; it is not a licence to.
-#
-# When Atlas takes over additional tables, add them here too.
-ATLAS_OWNED_TABLES: set[tuple[str, str]] = {
-    ("project", "regression_suites"),
-    ("project", "regression_runs"),
-    ("project", "regression_diagnoses"),
-    ("project", "regression_assertion_executions"),
-    ("coord", "coordinator_shadow_decisions"),
-}
+ATLAS_OWNED_SCHEMAS: frozenset[str] = frozenset({"atlas_managed", "orchestration"})
+
+
+def _object_schema(object_) -> str | None:
+    """Return the schema an autogenerate candidate lives in.
+
+    Tables carry ``.schema`` directly. Indexes, constraints and columns do
+    not (or carry ``None``); they belong to their parent ``.table``.
+    """
+    schema = getattr(object_, "schema", None)
+    if schema is None:
+        table = getattr(object_, "table", None)
+        schema = getattr(table, "schema", None)
+    return schema
 
 
 def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG001
-    """Skip Atlas-owned tables on autogenerate.
+    """Skip every object in an Atlas-owned schema on autogenerate.
 
-    Indexes and FKs hanging off skipped tables come along for the ride —
-    alembic doesn't surface them as standalone autogenerate candidates
-    when their parent table is filtered out.
+    Applies to tables and to anything hanging off them (indexes, unique
+    constraints, foreign keys, columns), resolved via the parent table's
+    schema. Everything outside those schemas is included unchanged.
     """
-    if type_ == "table":
-        schema = getattr(object_, "schema", None)
-        return (schema, name) not in ATLAS_OWNED_TABLES
-    return True
+    return _object_schema(object_) not in ATLAS_OWNED_SCHEMAS
 
 
 def run_migrations_offline() -> None:

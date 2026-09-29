@@ -202,7 +202,12 @@ from app.schemas.plan_library import (
 )
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
-from app.services.plan_difficulty import MODEL_TIERS, RUBRIC_VERSION
+from app.services.plan_difficulty import (
+    MODEL_SELECTOR_VOCABULARY,
+    MODEL_SELECTORS,
+    MODEL_TIERS,
+    RUBRIC_VERSION,
+)
 from app.services.plan_scan_root_health import (
     scan_roots_health,
     scan_roots_read_failed,
@@ -2267,6 +2272,10 @@ async def list_work_artifacts(
         offset=offset,
         limit=limit,
         corpus_health=await _load_corpus_health(db, org_id=org_id),
+        # Byte-identical on all three routes — one source, copied per response.
+        model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
 
@@ -2345,6 +2354,10 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     try:
         async with db.begin_nested():
             observations = await scan_root_crud.list_observations(db, org_id=org_id)
+            # Same savepoint: a refused device must read ``refused:`` here
+            # exactly as on ``GET /plan-library/scan-roots``, and a failed
+            # refusal read degrades the block like a failed reading read.
+            refusals = await scan_root_crud.list_refusals(db, org_id=org_id)
     except SQLAlchemyError as exc:
         # The page names only the class; the log carries the traceback, so a
         # missing migration and a timeout stay distinguishable to an operator —
@@ -2357,7 +2370,9 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
         )
         scan_roots = scan_roots_read_failed(exc)
     else:
-        scan_roots = scan_roots_health(observations, now=datetime.now(UTC))
+        scan_roots = scan_roots_health(
+            observations, now=datetime.now(UTC), refusals=refusals
+        )
     artifact_count, plan_count, newest = crud.corpus_totals(census)
     return CorpusHealth(
         artifact_count=artifact_count,
@@ -3482,6 +3497,10 @@ async def list_plan_candidates(
         open_followup_total=followup_total,
         corpus_health=corpus_health,
         corpus_health_unavailable_reason=corpus_health_unavailable_reason,
+        # Byte-identical on all three routes — one source, copied per response.
+        model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
 
@@ -3564,7 +3583,10 @@ async def list_plan_difficulty(
         rerate_pending=outcome.pending if outcome else None,
         rerate_failed_reason=failed_reason,
         rubric_version=RUBRIC_VERSION,
+        # Byte-identical on all three routes — one source, copied per response.
         model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
 

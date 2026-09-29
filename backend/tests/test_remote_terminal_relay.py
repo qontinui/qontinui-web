@@ -1463,6 +1463,215 @@ async def test_represented_attach_can_still_be_answered_and_binds(
     await relay.release_source(ws)
 
 
+# The arms below are the re-present's RE-CHECK after the delay: the timer is
+# armed on one state of the world and fires on another. Each one pins a way that
+# state can move in the gap, and what the relay must do about it.
+
+
+async def _arm_represent(
+    relay: RemoteTerminalRelay, ws: _FakeWS, manager: Any, claims: dict[str, Any]
+) -> Any:
+    """Attach, answer ``attach_grant_unknown`` once, and return the session.
+
+    The re-present task is ARMED but not yet run: ``create_task`` schedules it,
+    and nothing here yields to the loop before the caller does.
+    """
+    await _attach(relay, ws, manager, claims)
+    first = _forwarded_attach(manager)
+    session = relay._sessions[id(ws)]
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": first["request_id"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+    assert routed is True
+    assert session.grants[claims["jti"]].represented is True
+    assert ws.of_type("remote_terminal_error") == []
+    return session
+
+
+async def test_represent_skipped_when_source_released_during_delay(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source that went away in the gap is not re-offered on its behalf."""
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _arm_represent(relay, ws, manager, claims)
+
+    await relay.release_source(ws)
+    await _drain_background(relay)
+
+    assert len(_forwarded_attaches(manager)) == 1
+    assert redis.empty()
+
+
+async def test_represent_evicts_when_grant_expired_during_delay(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A grant that lapsed in the gap is evicted with its expiry code, not re-sent.
+
+    The relay's own verifier now agrees with the target, so the source is told
+    the settled answer — under its original attach ``request_id``, so its
+    waiter settles instead of timing out.
+    """
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    session = await _arm_represent(relay, ws, manager, claims)
+    att = session.grants[claims["jti"]]
+    att.exp = int(time.time()) - 1
+
+    await _drain_background(relay)
+
+    assert len(_forwarded_attaches(manager)) == 1
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["code"] == att.expired_code() == rtr.CODE_GRANT_EXPIRED
+    assert errors[0]["grant_jti"] == claims["jti"]
+    assert errors[0]["request_id"] == "req-attach-1"
+    assert session.grants == {}
+    assert redis.empty()
+
+
+@pytest.mark.parametrize("failure", ["returns_false", "raises"])
+async def test_represent_to_a_gone_target_evicts_as_not_connected(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """A target that dropped in the gap is a refusal, not a silent 20 s wait.
+
+    Both shapes of "the send did not land" — a ``False`` receipt from the
+    liveness gate and an exception — take the same path: the attachment is
+    evicted and the source gets ``target_not_connected`` under its own attach
+    ``request_id``.
+    """
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    session = await _arm_represent(relay, ws, manager, claims)
+    if failure == "returns_false":
+        manager.send_terminal.return_value = False
+    else:
+        manager.send_terminal.side_effect = RuntimeError("socket gone")
+
+    await _drain_background(relay)
+
+    # The re-present WAS attempted (the mock records the call either way)...
+    assert len(_forwarded_attaches(manager)) == 2
+    # ...and no wire id is left behind for a stray answer to be credited to.
+    # (Both the explicit withdrawal and the eviction's own sweep of the grant's
+    # pending entries guarantee this; the assertion pins the outcome, not which.)
+    assert session.pending_attach == {}
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["code"] == rtr.CODE_TARGET_NOT_CONNECTED
+    assert errors[0]["request_id"] == "req-attach-1"
+    assert session.grants == {}
+    assert redis.empty()
+
+
+@pytest.mark.parametrize(
+    "code", ["attach_grant_unknown", "remote_create_grant_unknown"]
+)
+async def test_refused_create_is_never_represented(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+) -> None:
+    """A create is not idempotent: re-offering one risks a second PTY.
+
+    Pinned for both spellings a target might use, including the attach one, so
+    a target answering a create with the ATTACH code still lands on the fatal
+    path. Several guards exclude a create independently (its kind, the RPC it
+    correlates to, and the absence of a cached attach frame); this pins the
+    outcome they jointly promise rather than any one of them.
+    """
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": code,
+            "message": "no such grant",
+        },
+    )
+    await _drain_background(relay)
+
+    assert routed is True
+    assert len(_forwarded_creates(manager)) == 1
+    assert _forwarded_attaches(manager) == []
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["code"] == rtr.namespace_target_code(code)
+    assert errors[0]["request_id"] == "req-create-1"
+    assert session.grants == {}
+    _assert_only_the_create_claim_survives(redis, claims)
+
+
+async def test_uncorrelated_grant_unknown_naming_a_pending_attach_is_not_represented(
+    relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only an answer to OUR attach RPC arms the re-present.
+
+    A remote-marked refusal with no ``request_id`` of ours is resolved by the
+    ``grant_jti`` the TARGET supplied (``_attachment_by_remote_mark``). That can
+    name a pending, unattached attach grant, which passes every attachment-side
+    check of ``_should_represent_attach``. What keeps it off the re-present is
+    that it did not correlate off ``pending_attach``, and this is the one case
+    where that guard is the only one.
+    """
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    assert att.attached is False and att.attach_frame is not None
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+    await _drain_background(relay)
+
+    assert routed is True
+    assert att.represented is False
+    assert len(_forwarded_attaches(manager)) == 1
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["code"] == "attach_grant_unknown"
+    assert errors[0]["grant_jti"] == claims["jti"]
+    await relay.release_source(ws)
+
+
 async def test_unrelated_target_frames_are_ignored(relay: RemoteTerminalRelay) -> None:
     ws = _FakeWS()
     manager = _manager()
@@ -3146,12 +3355,17 @@ async def _create(
         )
 
 
-def _forwarded_create(manager: Any) -> dict[str, Any]:
-    frames = [
+def _forwarded_creates(manager: Any) -> list[dict[str, Any]]:
+    """Every ``terminal_create`` frame the relay forwarded, in order."""
+    return [
         c.args[1]
         for c in manager.send_terminal.await_args_list
         if c.args[1].get("type") == "terminal_create"
     ]
+
+
+def _forwarded_create(manager: Any) -> dict[str, Any]:
+    frames = _forwarded_creates(manager)
     assert frames, manager.send_terminal.await_args_list
     return frames[-1]
 
@@ -4718,3 +4932,398 @@ async def test_pending_buffer_is_capped_and_expires(
     # The parallel deadline map never outlives its entries.
     assert set(session.pending_buffer_deadline) == set(session.pending_buffer)
     await relay.release_source(ws)
+
+
+# ---------------------------------------------------------------------------
+# Input acknowledgement (plan
+# `2026-09-20-remote-session-interactivity-is-a-query-and-both-halves-hold`,
+# Phase A1): the forward copies the whole source frame, and the target's
+# `terminal_input_ack` is published, retyped and routed back by grant.
+# ---------------------------------------------------------------------------
+
+
+def _ack(claims: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    """A target ``terminal_input_ack`` as the runner emits it (wire contract A1)."""
+    frame: dict[str, Any] = {
+        "type": "terminal_input_ack",
+        "remote": {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]},
+        "terminal_id": "t1",
+        "seq": 7,
+        "bytes": 2,
+        "accepted": True,
+        "via": "traffic",
+        "accepted_at": "2026-09-27T12:00:00Z",
+    }
+    frame.update(overrides)
+    return frame
+
+
+async def test_forwarded_input_carries_seq_probe_and_unknown_fields(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The forward copies the WHOLE source frame minus the relay-owned keys.
+
+    Fails on the unfixed relay, which rebuilt ``terminal_input`` from
+    ``{"data": ...}`` alone: ``seq`` would never reach the target (so no ack
+    could be matched to its keystroke) and ``probe`` would be dropped, turning
+    every liveness probe into a real zero-byte input.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    for frame in (
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "request_id": "src-req",
+            "data": "bHM=",
+            "seq": 41,
+            "future_field": {"nested": [1, 2]},
+        },
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "",
+            "seq": 42,
+            "probe": True,
+            # A source may not name its own authority block to the target.
+            "remote": {"source_device_id": "forged", "grant_jti": "forged"},
+        },
+    ):
+        await _send(relay, ws, manager, frame)
+
+    assert ws.of_type("error") == []
+    assert manager.send_terminal.await_count == 2
+    remote = {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]}
+    traffic, probe = (c.args[1] for c in manager.send_terminal.await_args_list)
+
+    assert traffic["type"] == "terminal_input"
+    assert traffic["terminal_id"] == "t1"
+    assert traffic["data"] == "bHM="
+    assert traffic["seq"] == 41
+    assert traffic["future_field"] == {"nested": [1, 2]}
+    assert traffic["remote"] == remote
+    assert "probe" not in traffic
+    # Relay-owned: never forwarded. A forwarded request_id would route the
+    # target's refusal of this keystroke onto the mobile path.
+    assert "request_id" not in traffic
+    assert "grant_jti" not in traffic
+
+    assert probe["type"] == "terminal_input"
+    assert probe["data"] == ""
+    assert probe["seq"] == 42
+    assert probe["probe"] is True
+    assert probe["remote"] == remote
+    await relay.release_source(ws)
+
+
+async def test_input_ack_reaches_the_source_retyped_with_unknown_fields_intact(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    accepted = _ack(claims, from_the_future={"k": "v"})
+    refused = _ack(
+        claims,
+        seq=8,
+        bytes=0,
+        accepted=False,
+        error="input_write_failed: broken pipe",
+        via="probe",
+    )
+    assert await relay.route_target_frame(session, TARGET_DEVICE, accepted) is True
+    assert await relay.route_target_frame(session, TARGET_DEVICE, refused) is True
+
+    assert ws.sent[before:] == [
+        {
+            "type": "remote_terminal_input_ack",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "seq": 7,
+            "bytes": 2,
+            "accepted": True,
+            "via": "traffic",
+            "accepted_at": "2026-09-27T12:00:00Z",
+            "from_the_future": {"k": "v"},
+        },
+        {
+            "type": "remote_terminal_input_ack",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "seq": 8,
+            "bytes": 0,
+            "accepted": False,
+            "error": "input_write_failed: broken pipe",
+            "via": "probe",
+            "accepted_at": "2026-09-27T12:00:00Z",
+        },
+    ]
+    await relay.release_source(ws)
+
+
+async def test_input_ack_with_null_seq_from_an_old_source_still_routes(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    assert (
+        await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims, seq=None))
+        is True
+    )
+    delivered = ws.of_type("remote_terminal_input_ack")
+    assert len(delivered) == 1
+    assert "seq" in delivered[0] and delivered[0]["seq"] is None
+    await relay.release_source(ws)
+
+
+async def test_input_ack_for_an_unknown_or_unbound_grant_is_dropped(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Dropped (``False``, nothing sent) exactly as sibling return frames are.
+
+    Never a refusal: the source asked nothing the relay could answer, and
+    every source listening on the target's channel sees every ack.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    # A second grant on the same socket, registered but NOT yet bound.
+    unbound = _claims()
+    await _attach(relay, ws, manager, unbound, request_id="req-attach-2")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    for frame in (
+        # A grant this socket does not hold (another source's ack).
+        _ack(claims, remote={"grant_jti": "not-ours"}),
+        _ack(claims, remote=None, grant_jti="not-ours-either"),
+        # Our grant, but the target has not bound it yet.
+        _ack(unbound, terminal_id=None),
+        _ack(unbound),
+        # Our grant naming a terminal it does not hold: a target defect.
+        _ack(claims, terminal_id="t-other"),
+        # Unmarked: the target acks only frames that carried a `remote` block.
+        {k: v for k, v in _ack(claims).items() if k != "remote"},
+    ):
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
+
+    # And our grant's ack on ANOTHER target's channel is not ours either.
+    assert await relay.route_target_frame(session, str(uuid4()), _ack(claims)) is False
+    assert ws.sent[before:] == []
+    await relay.release_source(ws)
+
+
+async def test_input_ack_under_an_expired_grant_is_reaped_not_delivered(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Expiry is the dispatch's reap, not the ack arm's: the grant is evicted
+    (the source hears the expiry) and the ack finds nothing to route to."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    assert await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims)) is False
+    assert ws.of_type("remote_terminal_input_ack") == []
+    assert claims["jti"] not in session.grants
+    await relay.release_source(ws)
+
+
+async def test_input_ack_routes_by_the_remote_block_over_a_foreign_top_level_jti(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``remote.grant_jti`` is the routing mark; a top-level ``grant_jti``
+    naming another source's grant neither misroutes nor leaks through."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    frame = _ack(claims, grant_jti="another-sources-grant")
+    assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+    (delivered,) = ws.of_type("remote_terminal_input_ack")
+    assert delivered["grant_jti"] == claims["jti"]
+    await relay.release_source(ws)
+
+
+async def test_input_ack_cannot_speak_in_the_relays_voice(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``code`` / ``request_id`` are stripped and ``error`` is capped."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    long_error = "input_write_failed: " + "x" * 5000
+    frames = (
+        _ack(
+            claims,
+            accepted=False,
+            error=long_error,
+            code="listener_lost",
+            request_id="history:1",
+        ),
+        _ack(claims, seq=8, accepted=False, error={"not": "a string"}),
+    )
+    for frame in frames:
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+
+    capped, non_string = ws.of_type("remote_terminal_input_ack")
+    assert "code" not in capped and "request_id" not in capped
+    assert capped["error"] == long_error[: rtr.TARGET_MESSAGE_MAX]
+    assert capped["error"].startswith("input_write_failed: ")
+    assert "error" not in non_string and non_string["accepted"] is False
+    await relay.release_source(ws)
+
+
+async def test_input_ack_terminal_mismatch_warns_once_per_grant(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    with (
+        patch.object(rtr.logger, "warning") as warning,
+        patch.object(rtr.logger, "debug") as debug,
+    ):
+        for _ in range(3):
+            assert (
+                await relay.route_target_frame(
+                    session, TARGET_DEVICE, _ack(claims, terminal_id="t-other")
+                )
+                is False
+            )
+    mismatch = "remote_terminal_input_ack_terminal_mismatch"
+    assert [c.args[0] for c in warning.call_args_list].count(mismatch) == 1
+    assert [c.args[0] for c in debug.call_args_list].count(mismatch) == 2
+    await relay.release_source(ws)
+
+
+async def test_forward_keeps_relay_owned_keys_whatever_extra_carries(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Relay-owned keys win in ``_forward`` even if ``extra`` names them."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    manager.send_terminal.reset_mock()
+
+    sent = await relay._forward(
+        session,
+        {},
+        att,
+        "terminal_input",
+        {
+            "type": "terminal_create",
+            "terminal_id": "t-forged",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "remote": {"grant_jti": "forged"},
+            "data": "eA==",
+        },
+    )
+    assert sent is True
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["terminal_id"] == "t1"
+    assert frame["remote"] == att.remote_block()
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+    assert frame["data"] == "eA=="
+    await relay.release_source(ws)
+
+
+async def test_source_input_cannot_override_type_or_timestamp(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Through the source path the relay's ``type`` and ``timestamp`` win.
+
+    ``terminal_id`` cannot be exercised here: a source naming a terminal other
+    than the bound one is refused by ``_authorize`` before any forward, which
+    the second half pins. The ``_forward`` ordering for ``terminal_id`` is
+    covered directly by
+    ``test_forward_keeps_relay_owned_keys_whatever_extra_carries``.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "data": "eA==",
+            "seq": 1,
+        },
+    )
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+
+    manager.send_terminal.reset_mock()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t-other",
+            "data": "eA==",
+            "seq": 2,
+        },
+    )
+    manager.send_terminal.assert_not_called()
+    assert ws.of_type("error")[-1]["code"] == "attach_not_registered"
+    await relay.release_source(ws)
+
+
+async def test_remote_only_predicate_admits_terminal_input_ack() -> None:
+    assert rtr.is_remote_only_target_frame({"type": "terminal_input_ack"}) is True
+    assert (
+        rtr.is_remote_only_target_frame(
+            {"type": "terminal_input_ack", "remote": {"grant_jti": "j"}}
+        )
+        is True
+    )
+
+
+async def test_router_publishes_terminal_input_ack_on_the_remote_only_channel() -> None:
+    manager = _manager()
+    msg = {
+        "type": "terminal_input_ack",
+        "remote": {"grant_jti": "j", "source_device_id": SOURCE_DEVICE},
+        "terminal_id": "t1",
+        "seq": 1,
+        "bytes": 1,
+        "accepted": True,
+        "via": "traffic",
+        "accepted_at": "2026-09-27T12:00:00Z",
+    }
+    with patch.object(
+        devices_ws.remote_terminal_relay, "publish_target_frame", AsyncMock()
+    ) as p:
+        await devices_ws._route_device_message(msg, "dev-1", "user-1", manager)
+    p.assert_awaited_once_with("dev-1", msg)
+    manager.send_terminal_response_to_mobiles.assert_not_called()

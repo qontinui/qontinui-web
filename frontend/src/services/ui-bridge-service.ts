@@ -136,13 +136,6 @@ export function createUIBridgeClient(config: UIBridgeConfig) {
   };
 }
 
-/**
- * Pre-configured clients for known apps.
- */
-export const webFrontendBridge = createUIBridgeClient({
-  baseUrl: "http://localhost:3001/api/ui-bridge",
-});
-
 /** The UI Bridge of a runner's own frontend, for the given runner target. */
 export function createRunnerFrontendBridge(target: RunnerTarget) {
   return createUIBridgeClient({

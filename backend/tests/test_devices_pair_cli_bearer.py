@@ -29,7 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.services.strategy import strategy_client
+from app.services.coord_service_account import coord_service_account
 
 _USER_ID = uuid4()
 _CALLER_TOKEN = "cognito-operator-token-abc123"
@@ -77,12 +77,13 @@ def _patch_httpx():
 
 
 def _patch_enabled(*, enabled: bool = True):
-    # ``strategy_client.enabled`` is a property backed by ``_admin_secret``;
-    # patch the backing attr so the 503 short-circuit fires (or not). We do NOT
-    # mock ``_headers`` because the endpoint no longer uses the minted service
-    # token — it forwards the caller's Cognito bearer instead.
+    # ``coord_service_account.enabled`` is a property backed by
+    # ``_admin_secret``; patch the backing attr so the 503 short-circuit
+    # fires (or not). We do NOT mock ``_headers`` because the endpoint no
+    # longer uses the minted service token — it forwards the caller's
+    # Cognito bearer instead.
     return patch.object(
-        strategy_client,
+        coord_service_account,
         "_admin_secret",
         "test-secret" if enabled else None,
     )

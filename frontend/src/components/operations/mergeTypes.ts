@@ -643,6 +643,21 @@ export interface MergeEconomics {
    * unknown (no lands, or no CI observed).
    */
   candidate_ci_minutes_per_land?: number | null;
+  /**
+   * p90 first-proposal→land age in SECONDS — how long a PR's content waited
+   * from the FIRST time it was proposed to the train (across churn-guard
+   * re-proposals on the same branch) until it landed. The plan
+   * 2026-07-17-merge-train-long-ci-redesign §6 regression metric. Null ⇒
+   * nothing landed in the window — UNKNOWN, never 0. A duration: never summed
+   * across repos.
+   */
+  proposal_age_at_land_p90_secs?: number | null;
+  /** p50 of the same population as `proposal_age_at_land_p90_secs`. */
+  proposal_age_at_land_p50_secs?: number | null;
+  /** Lands backing the `proposal_age_at_land_*` percentiles. */
+  proposal_age_at_land_sample_size?: number | null;
+  /** coord's own statement of how `proposal_age_at_land_*` is derived. */
+  proposal_age_at_land_basis?: string | null;
   /** coord's own statement of what `green_candidates_discarded` counted. */
   green_candidates_discarded_basis?: string | null;
   /** coord's own statement of what `base_mismatch_discards` counted. */

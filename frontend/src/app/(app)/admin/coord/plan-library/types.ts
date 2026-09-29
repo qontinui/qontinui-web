@@ -357,6 +357,33 @@ export const PLAN_CAPTURE_DOMAIN = "plan_capture";
 export const PLAN_CAPTURE_LEVELS = ["off", "record"] as const;
 export type PlanCaptureLevel = (typeof PLAN_CAPTURE_LEVELS)[number];
 
+/**
+ * The domain gating the AGENT door for the delivery-scope citation backfill
+ * write (`POST /coord/citations/backfill-delivery-scope`). Levels: `off` (the
+ * agent door refuses, 403) | `dry_run` (the agent door only plans — zero
+ * writes) | `live` (the agent door writes). The operator SSO door is not
+ * governed by it. Plan
+ * `2026-09-23-delivery-scope-backfill-write-is-operator-only-so-a-mechanical-reconcile-needs-a-human`.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DOMAIN =
+  "citation_scope_backfill_write";
+
+export const CITATION_SCOPE_BACKFILL_WRITE_LEVELS = [
+  "off",
+  "dry_run",
+  "live",
+] as const;
+export type CitationScopeBackfillWriteLevel =
+  (typeof CITATION_SCOPE_BACKFILL_WRITE_LEVELS)[number];
+
+/**
+ * What coord resolves for a tenant with NO row (`resolved_scope: "none"`). A
+ * no-row answer naming a different level means the answering coord build
+ * predates the dial — the panel says so rather than repeating this constant.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DEFAULT_LEVEL: CitationScopeBackfillWriteLevel =
+  "dry_run";
+
 // `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
 // the `policy_write` dial became a second consumer — one wire contract, one
 // definition. Re-exported here so this file's public surface is unchanged.
@@ -408,9 +435,14 @@ export function scanRootStateLabel(state: string): string {
  * `reported_state`. `state` is the backend's VERDICT, and it is the field that
  * decides WHAT MAY BE CLAIMED: it is `"unknown"` whenever the reading cannot
  * support a claim about NOW, even though the device reported `"measured"`.
- * Three rules produce that, in precedence order, each naming itself in
+ * Four rules produce that, in precedence order, each naming itself in
  * `detail`:
  *
+ * * `refused:` — the device's latest contact inside `fresh_within_secs` was a
+ *   REFUSED report (a 422 that stored nothing) and no fresh reading stands.
+ *   The device is alive and being refused — not what a silent one looks
+ *   like. Outranks every other verdict. A device refused on its FIRST report
+ *   has no reading at all: every reading field below is then `null`.
  * * `observation_stale:` — nothing received from the device inside
  *   `fresh_within_secs`. A device that went quiet has established nothing.
  * * `reading_superseded:` — its latest report was observed BEFORE the stored
@@ -437,8 +469,11 @@ export interface ScanRootRow {
   /** The VERDICT. Key on this, never on `reported_state`. */
   state: ScanRootState;
   detail: string | null;
-  /** What the device sent, verbatim. Never a verdict. */
-  reported_state: ScanRootState;
+  /**
+   * What the device sent, verbatim. Never a verdict. `null` on a
+   * refusal-only row — no reading was ever stored.
+   */
+  reported_state: ScanRootState | null;
   reported_detail: string | null;
   plans_dir: string | null;
   repo_root: string | null;
@@ -450,15 +485,31 @@ export interface ScanRootRow {
   behind: number | null;
   ahead: number | null;
   ref_age_secs: number | null;
-  /** `true` = the counts are LOWER BOUNDS ("at least N"), not exact. */
-  counts_are_floors: boolean;
-  observed_at: string;
-  received_at: string;
-  last_report_applied: boolean;
-  last_report_observed_at: string;
-  observed_skew_secs: number;
-  observation_age_secs: number;
+  /**
+   * `true` = the counts are LOWER BOUNDS ("at least N"), not exact. `null` on
+   * a refusal-only row, like every reading field below it.
+   */
+  counts_are_floors: boolean | null;
+  observed_at: string | null;
+  received_at: string | null;
+  last_report_applied: boolean | null;
+  last_report_observed_at: string | null;
+  observed_skew_secs: number | null;
+  observation_age_secs: number | null;
+  /** `false` on a refusal-only row: there is no reading to be fresh. */
   observation_fresh: boolean;
+  /** The device's latest REFUSED report (server clock); `null` = never refused. */
+  last_refused_at: string | null;
+  /** `"<field>: <type>"` of that refusal, `(+N more)`. Never an input value. */
+  last_refused_reason: string | null;
+  /** Refused reports since the first. `null` = never refused — NOT 0. */
+  refused_count: number | null;
+  refused_age_secs: number | null;
+  /**
+   * Silent — no reading, no refused report — for more than
+   * `retire_after_secs`. Only served under `?include_retired=true`.
+   */
+  retired: boolean;
 }
 
 /**
@@ -474,11 +525,28 @@ export interface ScanRootListResponse {
   state: ScanRootListState;
   detail: string | null;
   fresh_within_secs: number;
+  /**
+   * The retirement window (30 days). A device neither whose reading nor whose
+   * refused report arrived within it is left out of `rows`, `by_source_repo`
+   * and `coverage` — and counted in `retired_count`, so the exclusion is
+   * never silent. Nothing is deleted.
+   */
+  retire_after_secs: number;
+  retired_count: number;
   count: number;
-  /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
+  /**
+   * `count > 0` with `fresh_count === 0` means no feeder has a fresh reading —
+   * every feeder has gone quiet, unless a row was refused within
+   * `fresh_within_secs` (`refused_age_secs`), which is alive and being refused.
+   */
   fresh_count: number;
   rows: ScanRootRow[];
-  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  /**
+   * One roll-up per distinct `source_repo`, over the live rows that carry a
+   * READING. A refusal-only row (no reading ever stored) and a retired row
+   * feed none, so this can be empty while `rows` is not — never read that as
+   * "no drift".
+   */
   by_source_repo: ScanRootSourceRollup[];
   /**
    * What the corpus holds against what exists, per scan source — a SET
@@ -707,7 +775,7 @@ export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
   device_id: false,
   state: false,
   detail: true,
-  reported_state: false,
+  reported_state: true,
   reported_detail: true,
   plans_dir: true,
   repo_root: true,
@@ -718,14 +786,19 @@ export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
   behind: true,
   ahead: true,
   ref_age_secs: true,
-  counts_are_floors: false,
-  observed_at: false,
-  received_at: false,
-  last_report_applied: false,
-  last_report_observed_at: false,
-  observed_skew_secs: false,
-  observation_age_secs: false,
+  counts_are_floors: true,
+  observed_at: true,
+  received_at: true,
+  last_report_applied: true,
+  last_report_observed_at: true,
+  observed_skew_secs: true,
+  observation_age_secs: true,
   observation_fresh: false,
+  last_refused_at: true,
+  last_refused_reason: true,
+  refused_count: true,
+  refused_age_secs: true,
+  retired: false,
 };
 
 /** `ScanRootListResponse`'s nullability, as a value. See [`WireNullability`]. */
@@ -733,6 +806,8 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   state: false,
   detail: true,
   fresh_within_secs: false,
+  retire_after_secs: false,
+  retired_count: false,
   count: false,
   fresh_count: false,
   rows: false,
@@ -820,7 +895,7 @@ type Expect<T extends true> = T;
  */
 export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootRow["state"], ScanRootState>>,
-  Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
+  Expect<Equal<ScanRootRow["reported_state"], ScanRootState | null>>,
   Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
   Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
   Expect<Equal<PlanCoverage["state"], PlanCoverageState>>,

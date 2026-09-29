@@ -246,18 +246,26 @@ def _expected_midpoint_fee_micros() -> int:
 # ===========================================================================
 
 
-def _build_app(*, db_session: AsyncSession, user, tenant_id: UUID, is_admin: bool):
-    """Mount the overview router with db, auth and tenant deps overridden.
+def _build_app(
+    *,
+    db_session: AsyncSession,
+    user,
+    tenant_id: UUID,
+    is_admin: bool,
+    roles: tuple[str, ...] | None = None,
+):
+    """Mount the overview routers with db, auth and the coord caller stubbed.
 
-    The two tenant dependencies are overridden separately, and the admin one
-    raises 403 for a non-admin — which is exactly the shape
-    ``require_coord_tenant_admin`` produces against a coord that reports an
-    operator without ``admin`` in the effective tenant.
+    Only :func:`app.overview.permissions.get_overview_caller` — the one place
+    coord is asked who the caller is — is replaced. Everything after it (the
+    project's ``editing_roles``, the permission decision, the tenant every
+    read and write lands in) runs for real, so the gates are tested rather
+    than assumed. A non-admin is a coord ``operator``.
     """
     from app.api.deps import current_active_user, get_async_db
-    from app.api.v1.endpoints.operations import require_coord_tenant_admin_target
-    from app.api.v1.endpoints.overview import get_overview_tenant_id
     from app.api.v1.endpoints.overview import router as overview_router
+    from app.overview.permissions import OverviewCaller, get_overview_caller
+    from app.overview.router import router as authoring_router
 
     app = FastAPI()
     app.dependency_overrides[current_active_user] = lambda: user
@@ -266,15 +274,14 @@ def _build_app(*, db_session: AsyncSession, user, tenant_id: UUID, is_admin: boo
         yield db_session
 
     app.dependency_overrides[get_async_db] = _db_override
-    app.dependency_overrides[get_overview_tenant_id] = lambda: tenant_id
-
-    def _admin_dep():
-        if not is_admin:
-            raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
-        return tenant_id
-
-    app.dependency_overrides[require_coord_tenant_admin_target] = _admin_dep
+    caller_roles = (
+        roles if roles is not None else (("admin",) if is_admin else ("operator",))
+    )
+    app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
+        tenant_id=tenant_id, roles=caller_roles
+    )
     app.include_router(overview_router, prefix=API)
+    app.include_router(authoring_router, prefix=API)
     return app
 
 
@@ -406,13 +413,18 @@ class TestOverviewSchemaBinding:
         # Relative to THIS file, not to the pytest working directory: a
         # cwd-relative path makes the test a statement about where it was
         # run from.
-        migration = (
-            Path(__file__).resolve().parent.parent
-            / "alembic"
-            / "versions"
-            / "overview_01_estimate_baseline.py"
-        ).read_text()
-        in_migration = set(re.findall(r"CONSTRAINT (ck_overview_\w+)", migration))
+        versions = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+        migrations = sorted(versions.glob("overview_*.py"))
+        assert len(migrations) >= 2, "the overview migrations could not be found"
+        # Every overview revision, in both spellings they use: raw SQL
+        # (``CONSTRAINT ck_…``) and op/sa calls (``"ck_…"``).
+        in_migration = {
+            name
+            for path in migrations
+            for name in re.findall(
+                r"(?:CONSTRAINT |[\"'])(ck_overview_\w+)", path.read_text()
+            )
+        }
 
         assert in_migration, "the migration's CHECK names could not be read"
         assert in_models == in_migration, (
@@ -1106,6 +1118,55 @@ class TestEstimateCrud:
         # And the baseline is listed first, which is how the Team page picks it.
         assert listed[0]["id"] == second["id"]
 
+    async def test_the_source_is_a_document_of_this_project_or_nothing(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        # Phase 2c of 2026-09-20-overview-authoring-layer: "Use as the project
+        # estimate" records the delivery-plan document an estimate was built
+        # from. The column has no FK, so the endpoints check it.
+        from app.models.overview import Page
+
+        def page(tenant: UUID, kind: str, slug: str) -> Page:
+            return Page(tenant_id=tenant, kind=kind, slug=slug, title=slug)
+
+        plan = page(TENANT_A, "document", "delivery-plan")
+        wiki = page(TENANT_A, "wiki", "glossary")
+        foreign = page(TENANT_B, "document", "their-plan")
+        async_db_session.add_all([plan, wiki, foreign])
+        await async_db_session.flush()
+
+        created = await _create_estimate(admin_a, source_page_id=str(plan.id))
+        assert created["source_page_id"] == str(plan.id)
+
+        for bad in (wiki.id, foreign.id, uuid4()):
+            refused = await admin_a.patch(
+                f"{API}/estimates/{created['id']}",
+                json={"source_page_id": str(bad)},
+            )
+            assert refused.status_code == 422, refused.text
+            assert refused.json()["detail"]["error"] == "source_page_not_found"
+            made = await admin_a.post(
+                f"{API}/estimates",
+                json={"name": "x", "purpose": "budget", "source_page_id": str(bad)},
+            )
+            assert made.status_code == 422, made.text
+
+        other = page(TENANT_A, "document", "delivery-plan-v2")
+        async_db_session.add(other)
+        await async_db_session.flush()
+        relinked = await admin_a.patch(
+            f"{API}/estimates/{created['id']}",
+            json={"source_page_id": str(other.id)},
+        )
+        assert relinked.status_code == 200, relinked.text
+        assert relinked.json()["source_page_id"] == str(other.id)
+
+        cleared = await admin_a.patch(
+            f"{API}/estimates/{created['id']}", json={"source_page_id": None}
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["source_page_id"] is None
+
     async def test_patch_leaves_absent_fields_alone(
         self, admin_a: httpx.AsyncClient
     ) -> None:
@@ -1406,12 +1467,12 @@ class TestContentReplace:
 
 
 class TestTenantResolution:
-    """The read dependency's own logic, against a stubbed coord identity."""
+    """The caller dependency's own logic, against a stubbed coord identity."""
 
     async def test_it_returns_the_active_tenant_not_the_home_one(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.api.v1.endpoints import overview as overview_ep
+        from app.overview import permissions
         from app.services.coord_identity import CoordIdentity, CoordTenant
 
         identity = CoordIdentity(
@@ -1429,19 +1490,24 @@ class TestTenantResolution:
         async def _identity(_request):
             return identity
 
-        monkeypatch.setattr(overview_ep, "get_coord_identity", _identity)
+        monkeypatch.setattr(permissions, "get_coord_identity", _identity)
 
-        resolved = await overview_ep.get_overview_tenant_id(
+        caller = await permissions.get_overview_caller(
             _FakeRequest({"X-Qontinui-Active-Tenant": str(TENANT_B)})
         )
-        assert resolved == TENANT_B
+        assert caller.tenant_id == TENANT_B
+        # Admin of A, operator of B, and B is selected: the roles are B's.
+        # This is the cross-tenant-union defect the served permission closes
+        # (plan 2026-09-20-overview-authoring-layer §4a) — `is_admin` above is
+        # the union, and it must not leak into the answer for B.
+        assert caller.roles == ("operator",)
 
     async def test_a_tenant_the_operator_does_not_belong_to_degrades_to_home(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Never widens: an unknown selection falls back to home rather than
         serving a project the operator is not a member of."""
-        from app.api.v1.endpoints import overview as overview_ep
+        from app.overview import permissions
         from app.services.coord_identity import CoordIdentity, CoordTenant
 
         identity = CoordIdentity(
@@ -1456,16 +1522,16 @@ class TestTenantResolution:
         async def _identity(_request):
             return identity
 
-        monkeypatch.setattr(overview_ep, "get_coord_identity", _identity)
-        resolved = await overview_ep.get_overview_tenant_id(
+        monkeypatch.setattr(permissions, "get_coord_identity", _identity)
+        caller = await permissions.get_overview_caller(
             _FakeRequest({"X-Qontinui-Active-Tenant": str(uuid4())})
         )
-        assert resolved == TENANT_A
+        assert caller.tenant_id == TENANT_A
 
     async def test_an_unresolvable_tenant_is_403_not_a_silent_empty_project(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.api.v1.endpoints import overview as overview_ep
+        from app.overview import permissions
         from app.services.coord_identity import CoordIdentity
 
         identity = CoordIdentity(
@@ -1480,14 +1546,14 @@ class TestTenantResolution:
         async def _identity(_request):
             return identity
 
-        monkeypatch.setattr(overview_ep, "get_coord_identity", _identity)
+        monkeypatch.setattr(permissions, "get_coord_identity", _identity)
         with pytest.raises(HTTPException) as excinfo:
-            await overview_ep.get_overview_tenant_id(_FakeRequest({}))
+            await permissions.get_overview_caller(_FakeRequest({}))
         assert excinfo.value.status_code == 403
 
 
 class _FakeRequest:
-    """The two things ``get_overview_tenant_id`` reads off a request."""
+    """The two things ``get_overview_caller`` reads off a request."""
 
     def __init__(self, headers: dict[str, str]) -> None:
         self.headers = headers

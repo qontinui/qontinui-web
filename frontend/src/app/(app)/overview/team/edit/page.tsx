@@ -18,13 +18,14 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { formatMicros } from "@/components/overview/money";
 import { NotAvailable } from "@/components/overview/UnavailableNotes";
 import { estimateVocabulary } from "@/components/overview/vocabulary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/auth-context";
+import { useOverviewCatalog } from "@/components/overview/editing/permissions";
 import { useTenant } from "@/contexts/tenant-context";
 import {
   parseAllocationsCsv,
@@ -36,6 +37,7 @@ import {
   createEstimate,
   fetchEstimate,
   fetchEstimates,
+  patchEstimate,
   pickBaseline,
   saveEstimateContent,
   type EstimateDetail,
@@ -50,6 +52,8 @@ import {
   draftToContent,
   type Draft,
 } from "./_lib/draft";
+import { saveThenRecordSource } from "./_lib/save";
+import { useSourceDocument, type SourceDocument } from "./_lib/source";
 import { statusAfterEdit, type Status } from "./_lib/status";
 
 const TEAM_ROUTE = "/overview/team";
@@ -117,11 +121,98 @@ function conflictVersion(message: string): number | null {
   }
 }
 
-function CreateEstimate({ onCreated }: { onCreated: () => void }) {
+/** Says which document the estimate is being built from, and what happens
+ *  to it. `linked`: it is already this estimate's recorded source. */
+function SourceBanner({
+  source,
+  linked,
+  creating,
+}: {
+  source: SourceDocument;
+  linked: boolean;
+  creating: boolean;
+}) {
+  return (
+    <section
+      role="note"
+      className="max-w-[46rem] rounded-md border border-border bg-muted/30 px-4 py-3 text-[15px] leading-relaxed"
+      data-ui-bridge-id="overview.estimate-editor.source"
+    >
+      <p className="text-foreground">
+        Building the estimate from &ldquo;
+        <Link
+          href={`/overview/documents/${encodeURIComponent(source.id)}`}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {source.title}
+        </Link>
+        &rdquo;.
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {source.gantt
+          ? creating
+            ? "Once the estimate exists, its gantt chart will be waiting in the import box. "
+            : "Its gantt chart is in the import box below: read it, and use it if it looks right. "
+          : "It has no mermaid gantt chart, so the schedule is entered here as usual. "}
+        {linked
+          ? "It is already recorded as this estimate’s source."
+          : creating
+            ? "Creating the estimate records it as the source."
+            : "Saving records it as this estimate’s source."}
+      </p>
+    </section>
+  );
+}
+
+/** Whether a failed write was the server refusing `source_page_id` (the
+ *  document is not, or no longer, a document of this project). Read off the
+ *  status and the body's error code, not a bare substring. */
+function isSourceRefusal(message: string): boolean {
+  return (
+    failureStatus(message) === 422 &&
+    /"error"\s*:\s*"source_page_not_found"/.test(message)
+  );
+}
+
+function CreateEstimate({
+  onCreated,
+  source,
+  onSourceGone,
+}: {
+  onCreated: () => void;
+  source: SourceDocument | null;
+  /** The source turned out not to be a document here: forget it page-wide,
+   *  so the editor that follows does not keep trying to record it. */
+  onSourceGone: () => void;
+}) {
   const [name, setName] = useState("Estimate v0.1");
   const [purpose, setPurpose] = useState<EstimatePurposeOption>("budget");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The source stopped being a document of this project between loading and
+  // Create: say so, and offer the estimate without it rather than failing.
+  const [sourceGone, setSourceGone] = useState(false);
+
+  const create = (withSource: boolean) => {
+    setBusy(true);
+    setError(null);
+    createEstimate({
+      name: name.trim(),
+      purpose,
+      is_baseline: true,
+      source_page_id: withSource ? (source?.id ?? null) : null,
+    })
+      .then(onCreated)
+      .catch((err) => {
+        const message = errorText(err);
+        if (withSource && isSourceRefusal(message)) {
+          setSourceGone(true);
+        } else {
+          setError(message);
+        }
+      })
+      .finally(() => setBusy(false));
+  };
 
   return (
     <section
@@ -186,18 +277,31 @@ function CreateEstimate({ onCreated }: { onCreated: () => void }) {
           {error}
         </p>
       )}
+      {sourceGone && source && (
+        <div role="alert" className="mt-4 text-sm">
+          <p className="text-destructive">
+            &ldquo;{source.title}&rdquo; is no longer a document in this
+            project, so it can&rsquo;t be the estimate&rsquo;s source.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              onSourceGone();
+              create(false);
+            }}
+            className="mt-2 inline-flex min-h-9 items-center rounded-md border border-border px-3 text-sm text-foreground hover:bg-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-ui-bridge-id="overview.estimate-editor.create.without-source"
+          >
+            Create it without a source
+          </button>
+        </div>
+      )}
 
       <button
         type="button"
         disabled={busy || name.trim() === ""}
-        onClick={() => {
-          setBusy(true);
-          setError(null);
-          createEstimate({ name: name.trim(), purpose, is_baseline: true })
-            .then(onCreated)
-            .catch((err) => setError(errorText(err)))
-            .finally(() => setBusy(false));
-        }}
+        onClick={() => create(true)}
         className="mt-6 inline-flex min-h-9 items-center rounded-md bg-primary px-3.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-ui-bridge-id="overview.estimate-editor.create.submit"
       >
@@ -210,12 +314,15 @@ function CreateEstimate({ onCreated }: { onCreated: () => void }) {
 function GanttImport({
   onImport,
   busy = false,
+  initialText = "",
 }: {
   onImport: (text: string) => void;
   /** A save is in flight — see `PasteBox`'s `busy`. */
   busy?: boolean;
+  /** A chart to start from: the source document's, when it has one. */
+  initialText?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [preview, setPreview] = useState<ReturnType<
     typeof parseMermaidGantt
   > | null>(null);
@@ -326,10 +433,16 @@ function GanttImport({
 function EstimateEditor({
   detail,
   onSaved,
+  source,
 }: {
   detail: EstimateDetail;
   onSaved: (fresh: EstimateDetail) => void;
+  source: SourceDocument | null;
 }) {
+  // Recorded as part of Save, not by a button of its own: a separate write
+  // would reload the estimate and discard an unsaved working copy.
+  const linkSource =
+    source !== null && detail.estimate.source_page_id !== source.id;
   const [draft, setDraft] = useState<Draft>(() => draftFromEstimate(detail));
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const vocabulary = estimateVocabulary(detail.estimate.purpose);
@@ -364,9 +477,19 @@ function EstimateEditor({
 
   const save = () => {
     setStatus({ kind: "saving" });
-    saveEstimateContent(detail.estimate.id, draftToContent(draft)).then(
-      (fresh) => {
-        setStatus({ kind: "saved", version: fresh.estimate.version });
+    saveThenRecordSource({
+      save: () =>
+        saveEstimateContent(detail.estimate.id, draftToContent(draft)),
+      patch: patchEstimate,
+      sourceId: linkSource && source !== null ? source.id : null,
+      errorText,
+    }).then(
+      ({ fresh, sourceError }) => {
+        setStatus({
+          kind: "saved",
+          version: fresh.estimate.version,
+          ...(sourceError ? { sourceError } : {}),
+        });
         onSaved(fresh);
       },
       (err) => {
@@ -385,6 +508,9 @@ function EstimateEditor({
 
   return (
     <div className="space-y-12" data-ui-bridge-id="overview.estimate-editor">
+      {source && (
+        <SourceBanner source={source} linked={!linkSource} creating={false} />
+      )}
       <section>
         <p className="text-sm text-muted-foreground">
           {detail.estimate.name} &middot; {vocabulary.noun}
@@ -400,6 +526,7 @@ function EstimateEditor({
         <Heading>Phases and tasks</Heading>
         <GanttImport
           busy={status.kind === "saving"}
+          initialText={source?.gantt ?? ""}
           onImport={(text) => {
             const parsed = ganttToPhases(parseMermaidGantt(text));
             editDraft((d) => applyGanttImport(d, parsed));
@@ -603,6 +730,16 @@ function EstimateEditor({
           {status.kind === "saved" && (
             <span className="text-muted-foreground">
               Saved as version {status.version}. The Team page now shows this.
+              {status.sourceError && (
+                <span className="text-destructive">
+                  {" "}
+                  But &ldquo;{source?.title}&rdquo; couldn&rsquo;t be recorded
+                  as its source
+                  {failureStatus(status.sourceError) === 409
+                    ? ": somebody else saved the estimate in between. Save again to record it."
+                    : `: ${status.sourceError}`}
+                </span>
+              )}
             </span>
           )}
           {status.kind === "conflict" && (
@@ -627,8 +764,30 @@ function EstimateEditor({
   );
 }
 
-export default function EstimateEditorPage() {
-  const { isCoordAdmin } = useAuth();
+// `useSearchParams` needs a Suspense boundary above it.
+export default function EstimateEditorRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-[52rem] space-y-4" aria-busy>
+          <Skeleton className="h-7 w-64" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      }
+    >
+      <EstimateEditorPage />
+    </Suspense>
+  );
+}
+
+function EstimateEditorPage() {
+  // The served permission for THIS project, never `isCoordAdmin` (a union
+  // across every project the viewer belongs to). Until it has answered the
+  // page waits rather than guessing either way.
+  const catalog = useOverviewCatalog();
+  const canEdit =
+    catalog.state === "ready" &&
+    catalog.catalog.resources.some((r) => r.name === "estimates" && r.can_edit);
   const {
     activeTenantId,
     loading: tenantsLoading,
@@ -641,6 +800,16 @@ export default function EstimateEditorPage() {
     | { kind: "ready"; detail: EstimateDetail }
   >({ kind: "loading" });
   const [reloadToken, setReloadToken] = useState(0);
+  const sourceState = useSourceDocument(
+    useSearchParams().get("from_document"),
+    tenantsLoading || tenantsError !== null,
+    activeTenantId
+  );
+  // Set when Create found the document gone; reset with the document read.
+  const [sourceDropped, setSourceDropped] = useState(false);
+  useEffect(() => setSourceDropped(false), [sourceState]);
+  const source =
+    sourceState.kind === "ready" && !sourceDropped ? sourceState.source : null;
 
   useEffect(() => {
     if (tenantsLoading || tenantsError) return;
@@ -679,16 +848,44 @@ export default function EstimateEditorPage() {
     );
   }
 
-  if (!isCoordAdmin) {
+  if (catalog.state === "error") {
+    return (
+      <div
+        className="max-w-[42rem]"
+        data-ui-bridge-id="overview.estimate-editor.page"
+      >
+        <LoadFailure
+          what="whether you can edit this project"
+          message={catalog.message}
+          uiBridgeId="overview.estimate-editor.permission.error"
+        />
+      </div>
+    );
+  }
+
+  if (catalog.state === "loading") {
+    return (
+      <div
+        className="max-w-[52rem] space-y-4"
+        data-ui-bridge-id="overview.estimate-editor.page"
+        aria-busy
+      >
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!canEdit) {
     return (
       <section
         className="max-w-[38rem]"
         data-ui-bridge-id="overview.estimate-editor.forbidden"
       >
-        <Heading>Only an administrator can edit the estimate</Heading>
+        <Heading>You can read this estimate but not change it</Heading>
         <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-          You can read everything the estimate produces on the Team page; only
-          an administrator of this project can change it.
+          You can read everything the estimate produces on the Team page. Who
+          may change it is set by this project&rsquo;s administrators.
         </p>
         <Link
           href={TEAM_ROUTE}
@@ -705,9 +902,9 @@ export default function EstimateEditorPage() {
     <div
       className="max-w-[52rem]"
       data-ui-bridge-id="overview.estimate-editor.page"
-      aria-busy={state.kind === "loading"}
+      aria-busy={state.kind === "loading" || sourceState.kind === "loading"}
     >
-      {state.kind === "loading" && (
+      {(state.kind === "loading" || sourceState.kind === "loading") && (
         <div className="space-y-4" aria-hidden>
           <Skeleton className="h-7 w-64" />
           <Skeleton className="h-4 w-full" />
@@ -721,15 +918,48 @@ export default function EstimateEditorPage() {
           uiBridgeId="overview.estimate-editor.error"
         />
       )}
-      {state.kind === "none" && (
-        <CreateEstimate onCreated={() => setReloadToken((n) => n + 1)} />
+      {sourceState.kind === "missing" && (
+        <p
+          role="status"
+          className="mb-8 max-w-[46rem] text-[15px] text-muted-foreground"
+          data-ui-bridge-id="overview.estimate-editor.source.missing"
+        >
+          The document this was opened from isn&rsquo;t a document in this
+          project, so nothing will be recorded as the estimate&rsquo;s source.
+        </p>
       )}
-      {state.kind === "ready" && (
-        <EstimateEditor
-          detail={state.detail}
-          onSaved={(fresh) => setState({ kind: "ready", detail: fresh })}
-        />
+      {sourceState.kind === "error" && (
+        <div className="mb-8">
+          <LoadFailure
+            what="the document this estimate is built from"
+            message={sourceState.message}
+            announce={false}
+            uiBridgeId="overview.estimate-editor.source.error"
+          />
+        </div>
       )}
+      {state.kind === "none" &&
+        // Wait for the document too, so Create records it as the source.
+        sourceState.kind !== "loading" && (
+          <div className="space-y-8">
+            {source && <SourceBanner source={source} linked={false} creating />}
+            <CreateEstimate
+              source={source}
+              onSourceGone={() => setSourceDropped(true)}
+              onCreated={() => setReloadToken((n) => n + 1)}
+            />
+          </div>
+        )}
+      {state.kind === "ready" &&
+        // The editor seeds its gantt box from the source once, on mount:
+        // wait for the document so the chart is there when it does.
+        sourceState.kind !== "loading" && (
+          <EstimateEditor
+            detail={state.detail}
+            source={source}
+            onSaved={(fresh) => setState({ kind: "ready", detail: fresh })}
+          />
+        )}
     </div>
   );
 }

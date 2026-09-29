@@ -40,7 +40,7 @@ from app.schemas.pair_code import (
 )
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
-from app.services.strategy import strategy_client
+from app.services.coord_service_account import coord_service_account
 
 logger = structlog.get_logger(__name__)
 
@@ -174,7 +174,7 @@ async def redeem_pair_code_endpoint(
     # reusing the same backend code path the authenticated /pair-cli
     # endpoint uses (modulo the user-JWT — here we trust the pair code
     # itself, so we mint with the code's burned-in tenant + issuer).
-    if not strategy_client.enabled:
+    if not coord_service_account.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
@@ -183,7 +183,7 @@ async def redeem_pair_code_endpoint(
             ),
         )
 
-    headers = await strategy_client._headers(str(row.issued_by_user_id))  # noqa: SLF001
+    headers = await coord_service_account._headers(str(row.issued_by_user_id))  # noqa: SLF001
     body: dict[str, Any] = {
         "device_id": str(payload.device_id),
         "hostname": payload.hostname,

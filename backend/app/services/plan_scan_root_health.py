@@ -33,8 +33,24 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    stale or of unknown age, ``refs_not_shared:`` when they counted against
    different or unidentified refs (then the minimum is a floor whatever each
    ref's age, and incomparability is what the roll-up can name).
-3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
-   ``reading_superseded`` > ``ref_stale``.
+3. **A contradicted reading is UNKNOWN.** Precedence: ``refused`` >
+   ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.
+3a. **A refused device is ALIVE, not silent** (Phase 1 of
+   ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``). A
+   device whose latest contact within :data:`FRESH_WITHIN_SECS` was a refused
+   report, with no fresh reading standing, reads ``state: "unknown"`` with a
+   ``refused:`` detail naming the reason, the attempt's age and the count —
+   including a device refused on its first-ever report, which has no reading
+   row and is rendered from its refusal alone. A FRESH reading keeps its own
+   verdict, and a refusal older than the window falls back to
+   ``observation_stale`` with a detail naming it.
+3b. **A device silent for 30 days is RETIRED, never deleted** (Phase 2 of the
+   same plan). Its liveness clock is ``max(received_at, last_refused_at)`` — a
+   device refused on every report for a month is alive — and past
+   :data:`RETIRE_AFTER_SECS` it is left out of the rows, the roll-up and the
+   coverage alike, counted in ``retired_count`` so the exclusion is never
+   silent. The filter lives HERE, the one renderer, so every surface excludes
+   the same devices.
 4. **The roll-up is taken over what a reading still establishes about now.**
    Its COMPARISON SET is every reading that is fresh (heard from within the
    window), applied (not contradicted by a later, declined report) and carries
@@ -102,7 +118,7 @@ from typing import Any
 from uuid import UUID
 
 from app.crud.work_artifact import CapturedPlanCorpus
-from app.models.plan_scan_root import PlanScanRootObservation
+from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.schemas.plan_library_scan_roots import (
     COVERAGE_MISSING_SAMPLE_MAX,
     PlanCensusSide,
@@ -117,6 +133,14 @@ from app.schemas.plan_library_scan_roots import (
 #: heartbeats. The runner re-posts an unchanged reading at least every 15 min,
 #: so one missed heartbeat is jitter and three is a feeder that went quiet.
 FRESH_WITHIN_SECS = 2700
+
+#: A device this server has heard NOTHING from — no reading, no refused report
+#: — for longer than this is RETIRED (invariant 3b): left out of every
+#: rendering by default, and counted. 30 days is long past any freshness
+#: question and past an ordinary offline stretch (a laptop left over a
+#: holiday); a wrong guess costs nothing, because the device's next report
+#: brings it straight back.
+RETIRE_AFTER_SECS = 30 * 86_400
 
 #: Top-level ``detail`` for an organization no device has reported for.
 NO_OBSERVATION_DETAIL = (
@@ -227,6 +251,27 @@ COVERAGE_NO_OBSERVATION_DETAIL = (
     "not 'nothing is missing'."
 )
 
+#: ``coverage_detail`` when devices HAVE reported but every one is retired, on
+#: a read that asked for retired rows (so rows are served) — coverage is taken
+#: over feeders that could matter now, and there are none.
+COVERAGE_ALL_RETIRED_DETAIL = (
+    "all_retired: every device reporting for this organization is retired "
+    "(silent for longer than the retirement window), and a retired device's "
+    "census never decides coverage, so how much of what exists the corpus "
+    "holds is not established. The empty list is not 'nothing is missing'."
+)
+
+#: ``coverage_detail`` when devices are live but NONE has a stored reading —
+#: every report each of them sent was refused — so no census exists to take a
+#: set difference against.
+COVERAGE_NO_LIVE_READING_DETAIL = (
+    "no_reading: no live device reporting for this organization has a stored "
+    "reading — every report they sent was refused (each row's detail names "
+    "its last refusal) — so nothing enumerated the stems that exist and how "
+    "much of it the corpus holds is not established. The empty list is not "
+    "'nothing is missing'."
+)
+
 #: A coverage entry's ``detail`` for the ``null`` ``source_repo`` group. A
 #: corpus row with no ``source_repo`` is out of scope for every named key by
 #: definition (it is counted in each key's ``out_of_scope_artifact_count``), so
@@ -282,6 +327,23 @@ def census_truncated_detail(sources: Sequence[str]) -> str:
     )
 
 
+def all_retired_detail(retired_count: int) -> str:
+    """Top-level ``detail`` when every device that ever reported is retired.
+
+    Distinct from :data:`NO_OBSERVATION_DETAIL` on purpose: that one says no
+    device ever reported, which would be false here — N did, and then went
+    silent for longer than the retirement window.
+    """
+    return (
+        f"all_retired: every one of the {retired_count} device(s) that reported "
+        "a plan-scan-source reading for this organization has been silent — no "
+        f"reading and no refused report — for more than {RETIRE_AFTER_SECS} s, "
+        "so they are left out and whether the corpus's feeders are current is "
+        "not established. Read GET /plan-library/scan-roots?include_retired=true "
+        "to see them; a retired device's next report brings it back."
+    )
+
+
 def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
     """The block when the readings could not be READ — UNKNOWN, with no rows.
 
@@ -296,6 +358,8 @@ def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
             "current is not established. The empty list is not 'no drift'."
         ),
         fresh_within_secs=FRESH_WITHIN_SECS,
+        retire_after_secs=RETIRE_AFTER_SECS,
+        retired_count=0,
         count=0,
         fresh_count=0,
         rows=[],
@@ -360,26 +424,195 @@ def zero_behind_floor_detail(row: PlanScanRootObservation) -> str | None:
     return ref_stale_zero_behind_detail(row.ahead)
 
 
-def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
-    """One stored reading, with the verdict a reader is owed on top.
+def _age_secs(stamp: datetime, *, now: datetime) -> int:
+    """Whole seconds since ``stamp`` on this server's clock, never negative."""
+    return max(0, int((now - stamp).total_seconds()))
 
-    Precedence: ``observation_stale`` (a device this server has not heard from
-    within the window says nothing about now) > ``reading_superseded`` (the
-    device's latest report contradicts the stored reading) > ``ref_stale`` (a
-    0-behind floor). Otherwise the verdict is what the device reported.
+
+def refused_detail(refusal: PlanScanRootRefusal, *, now: datetime) -> str:
+    """The ``refused:`` verdict — the device is alive and being refused."""
+    return (
+        f"refused: {refusal.last_refused_reason}, last attempt "
+        f"{_age_secs(refusal.last_refused_at, now=now)} s ago "
+        f"({refusal.refused_count} refused since "
+        f"{refusal.first_refused_at.isoformat()})"
+    )
+
+
+def _last_refusal_clause(
+    refusal: PlanScanRootRefusal | None,
+    *,
+    now: datetime,
+    received_at: datetime | None,
+) -> str:
+    """The tail an ``observation_stale:`` detail carries when a refusal exists.
+
+    It says the device's LAST report was refused only when that is what the
+    stamps show — the refusal is strictly AFTER the last stored reading
+    (``received_at``), or there is no stored reading at all. The same strict
+    ``>`` gates :func:`render_row`'s ``refused`` arm, so the two never
+    disagree. A refusal NOT AFTER the last good report — older, or at the same
+    instant, which the server clock cannot order — is history: refused 10 days
+    ago and then heard from 5 days ago, the last report was accepted, so the
+    clause says only when the device was last refused.
     """
+    if refusal is None:
+        return ""
+    age = _age_secs(refusal.last_refused_at, now=now)
+    tail = (
+        f" s ago ({refusal.last_refused_reason}; {refusal.refused_count} refused "
+        f"since {refusal.first_refused_at.isoformat()})"
+    )
+    if received_at is None or refusal.last_refused_at > received_at:
+        return f"; its last report was REFUSED {age}{tail}"
+    return f"; it was last refused {age}{tail}, not after its last stored reading"
+
+
+def last_contact_at(
+    row: PlanScanRootObservation | None, refusal: PlanScanRootRefusal | None
+) -> datetime:
+    """The retirement clock: ``max(received_at, last_refused_at)``.
+
+    Either may be absent (a refusal-only device has no reading; most devices
+    were never refused), never both — a row is rendered from one or the other.
+    A refused report is contact: a device refused on every report for a month
+    is alive, and Phase 1 exists to show it, so it must never be retired.
+    """
+    stamps = [
+        stamp
+        for stamp in (
+            row.received_at if row is not None else None,
+            refusal.last_refused_at if refusal is not None else None,
+        )
+        if stamp is not None
+    ]
+    if not stamps:  # pragma: no cover — every rendered device has one
+        raise ValueError("a device with neither a reading nor a refusal")
+    return max(stamps)
+
+
+def is_retired(
+    row: PlanScanRootObservation | None,
+    refusal: PlanScanRootRefusal | None,
+    *,
+    now: datetime,
+) -> bool:
+    """Heard nothing — reading or refusal — for more than the retirement window."""
+    return _age_secs(last_contact_at(row, refusal), now=now) > RETIRE_AFTER_SECS
+
+
+def _refusal_fields(
+    refusal: PlanScanRootRefusal | None, *, now: datetime
+) -> dict[str, Any]:
+    if refusal is None:
+        return {
+            "last_refused_at": None,
+            "last_refused_reason": None,
+            "refused_count": None,
+            "refused_age_secs": None,
+        }
+    return {
+        "last_refused_at": refusal.last_refused_at,
+        "last_refused_reason": refusal.last_refused_reason,
+        "refused_count": refusal.refused_count,
+        "refused_age_secs": _age_secs(refusal.last_refused_at, now=now),
+    }
+
+
+def _render_refusal_only(
+    refusal: PlanScanRootRefusal, *, now: datetime, retired: bool
+) -> ScanRootRow:
+    """A device with a refusal and NO reading: every reading field is ``null``.
+
+    Refused within the window reads ``refused:``; past it,
+    ``observation_stale:`` naming the refusal — never a fabricated reading.
+    """
+    refused_age = _age_secs(refusal.last_refused_at, now=now)
+    if refused_age <= FRESH_WITHIN_SECS:
+        detail = refused_detail(refusal, now=now)
+    else:
+        detail = (
+            "observation_stale: no reading has ever been stored for this device"
+            f", and nothing has arrived within the {FRESH_WITHIN_SECS} s "
+            "freshness window"
+            + _last_refusal_clause(refusal, now=now, received_at=None)
+        )
+    return ScanRootRow(
+        device_id=refusal.device_id,
+        state="unknown",
+        detail=detail,
+        reported_state=None,
+        reported_detail=None,
+        plans_dir=None,
+        repo_root=None,
+        source_repo=None,
+        default_ref=None,
+        ref_sha=None,
+        head_sha=None,
+        behind=None,
+        ahead=None,
+        ref_age_secs=None,
+        counts_are_floors=None,
+        observed_at=None,
+        received_at=None,
+        last_report_applied=None,
+        last_report_observed_at=None,
+        observed_skew_secs=None,
+        observation_age_secs=None,
+        observation_fresh=False,
+        retired=retired,
+        **_refusal_fields(refusal, now=now),
+    )
+
+
+def render_row(
+    row: PlanScanRootObservation | None,
+    *,
+    now: datetime,
+    refusal: PlanScanRootRefusal | None = None,
+    retired: bool = False,
+) -> ScanRootRow:
+    """One device's stored reading and refusal, with the reader's verdict on top.
+
+    Precedence: ``refused`` (the device's latest contact within the window was
+    a refused report and no fresh reading stands — it is alive, not silent) >
+    ``observation_stale`` (a device this server has not heard from within the
+    window says nothing about now; the detail names a stale refusal) >
+    ``reading_superseded`` (the device's latest report contradicts the stored
+    reading) > ``ref_stale`` (a 0-behind floor). Otherwise the verdict is what
+    the device reported.
+
+    ``row`` is ``None`` for a device refused on every report it ever sent; it
+    is rendered from ``refusal`` alone. ``retired`` is the caller's verdict
+    (:func:`is_retired`), carried onto the row.
+    """
+    if row is None:
+        if refusal is None:  # pragma: no cover — nothing to render
+            raise ValueError("render_row needs a reading or a refusal")
+        return _render_refusal_only(refusal, now=now, retired=retired)
     age = observation_age_secs(row, now=now)
     fresh = age <= FRESH_WITHIN_SECS
     superseded = superseded_detail(row)
     floor_detail = zero_behind_floor_detail(row)
+    refused_now = (
+        refusal is not None
+        and not fresh
+        and refusal.last_refused_at > row.received_at
+        and _age_secs(refusal.last_refused_at, now=now) <= FRESH_WITHIN_SECS
+    )
     state: str
     detail: str | None
-    if not fresh:
+    if refused_now:
+        assert refusal is not None  # narrowed by ``refused_now``
+        state = "unknown"
+        detail = refused_detail(refusal, now=now)
+    elif not fresh:
         state = "unknown"
         detail = (
             f"observation_stale: last report received {age} s ago, past the "
             f"{FRESH_WITHIN_SECS} s freshness window; it reported "
             f"state '{row.state}', which says nothing about now"
+            + _last_refusal_clause(refusal, now=now, received_at=row.received_at)
         )
     elif superseded is not None:
         state = "unknown"
@@ -413,6 +646,8 @@ def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
         observed_skew_secs=observed_skew_secs(row),
         observation_age_secs=age,
         observation_fresh=fresh,
+        retired=retired,
+        **_refusal_fields(refusal, now=now),
     )
 
 
@@ -434,6 +669,12 @@ def rollup_source(
     ``last_report_applied``. Every row lands in exactly one of the four id
     lists (invariant 6): the roll-up names every feeder, because a lagging or
     silent one can still write (and regress) the corpus.
+
+    ``rows`` are READINGS only. A refusal-only device (every report it sent
+    was refused, so no reading was ever stored) is deliberately named in NO
+    roll-up list: it names no scan source and carries no count, and placing
+    it in the ``null`` group's ``unmeasured_device_ids`` would describe it as
+    a reading that named none. Its own row's detail accounts for it.
 
     A ``measured`` reading with no ``behind`` is counted unmeasured: the write
     door refuses one, so a stored one is corrupt, and a count nobody measured
@@ -643,7 +884,8 @@ def _census_sort_key(
     return (
         int(unknown_age),
         row.ref_age_secs if row.ref_age_secs is not None else 0,
-        row.observation_age_secs,
+        # Only fresh readings reach this sort, and each has an age.
+        row.observation_age_secs or 0,
         str(row.device_id),
     )
 
@@ -848,18 +1090,55 @@ def coverage_by_source_repo(
     ]
 
 
+def _refusals_by_device(
+    refusals: Sequence[PlanScanRootRefusal],
+) -> dict[UUID, PlanScanRootRefusal]:
+    return {refusal.device_id: refusal for refusal in refusals}
+
+
+def live_observations(
+    observations: Sequence[PlanScanRootObservation],
+    *,
+    refusals: Sequence[PlanScanRootRefusal] = (),
+    now: datetime,
+) -> list[PlanScanRootObservation]:
+    """The readings whose device is NOT retired (invariant 3b), in order.
+
+    A reading is kept when its device's liveness clock —
+    ``max(received_at, last_refused_at)`` — is inside
+    :data:`RETIRE_AFTER_SECS`, so a device refused recently keeps even a
+    month-old reading in play.
+    """
+    by_device = _refusals_by_device(refusals)
+    return [
+        obs
+        for obs in observations
+        if not is_retired(obs, by_device.get(obs.device_id), now=now)
+    ]
+
+
 def coverage_source_repos(
     observations: Sequence[PlanScanRootObservation],
+    *,
+    refusals: Sequence[PlanScanRootRefusal] = (),
+    now: datetime,
 ) -> list[str]:
     """The NAMED scan sources a coverage read needs a corpus side for.
 
     Sorted and deduplicated, so the crud query's ``IN`` list is stable. The
     ``null`` group is excluded: it can never be joined to a corpus row, and
     asking for it would widen the stem query for a key that always reads
-    ``unknown``.
+    ``unknown``. A RETIRED device's readings are excluded too, by the same
+    rule :func:`scan_roots_health` applies (invariant 3b) — the route computes
+    this before the renderer runs, and a retired device's census must not
+    decide which keys coverage is taken over.
     """
     return sorted(
-        {obs.source_repo for obs in observations if obs.source_repo is not None}
+        {
+            obs.source_repo
+            for obs in live_observations(observations, refusals=refusals, now=now)
+            if obs.source_repo is not None
+        }
     )
 
 
@@ -867,14 +1146,35 @@ def scan_roots_health(
     observations: Sequence[PlanScanRootObservation],
     *,
     now: datetime,
+    refusals: Sequence[PlanScanRootRefusal] = (),
     captured: CapturedPlanCorpus | None = None,
     coverage_requested: bool = True,
+    include_retired: bool = False,
 ) -> ScanRootListResponse:
-    """Every device's reading, judged, plus the per-source roll-up.
+    """Every device's reading and refusal, judged, plus the per-source roll-up.
 
     The one rendering behind ``GET /plan-library/scan-roots`` and
     ``corpus_health.scan_roots``. No rows answers ``state: "unknown"`` with
     :data:`NO_OBSERVATION_DETAIL`, never an empty "all current".
+
+    ``refusals`` are the organization's refused-report rows (Phase 1 of
+    ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``),
+    joined to the readings by device. A device with a refusal and no reading
+    gets a refusal-only row, appended after the readings, most recently
+    refused first. Such a row is served in ``rows`` and counted in ``count``,
+    but feeds neither ``by_source_repo`` nor ``coverage``: it has no reading,
+    so it names no scan source and carries no count, and folding it into the
+    ``null`` group would describe it as a reading that named none.
+
+    RETIREMENT (invariant 3b) is applied here, so every surface excludes the
+    same devices: a device silent — no reading, no refusal — for more than
+    :data:`RETIRE_AFTER_SECS` is counted in ``retired_count`` and left out of
+    ``rows``, ``by_source_repo`` and ``coverage``. ``include_retired`` (only
+    ``GET /plan-library/scan-roots`` passes it) puts such rows back into
+    ``rows``, marked ``retired: true``; they still feed neither the roll-up
+    nor coverage, which are claims about feeders that could matter now. When
+    no row is served and some device is retired, the top-level detail says so
+    (:func:`all_retired_detail`) rather than claiming nobody ever reported.
 
     ``captured`` is the corpus side of the coverage set difference, and it is
     OPTIONAL because only one of the two renderings computes coverage. Omitted
@@ -906,12 +1206,43 @@ def scan_roots_health(
         if coverage_requested
         else COVERAGE_NOT_REQUESTED_DETAIL
     )
-    rows = [render_row(obs, now=now) for obs in observations]
+    refusal_by_device = _refusals_by_device(refusals)
+    observed_ids = {obs.device_id for obs in observations}
+    live: list[ScanRootRow] = []
+    retired: list[ScanRootRow] = []
+    # The live rows that carry a READING. A refusal-only row (a device every
+    # report of which was refused) names no scan source and has no count, so
+    # it feeds neither the roll-up nor coverage — the ``null`` group means
+    # "a reading that names no source", which such a device never sent. The
+    # row's own detail names its last refusal (``refused:`` inside the
+    # freshness window, ``observation_stale:`` past it), and it stays in
+    # ``rows`` / ``count``.
+    live_readings: list[ScanRootRow] = []
+    for obs, refusal in [
+        *((obs, refusal_by_device.get(obs.device_id)) for obs in observations),
+        # Refusal-only devices, in the refusal read's own order (most recently
+        # refused first).
+        *(
+            (None, refusal)
+            for refusal in refusals
+            if refusal.device_id not in observed_ids
+        ),
+    ]:
+        gone = is_retired(obs, refusal, now=now)
+        rendered = render_row(obs, now=now, refusal=refusal, retired=gone)
+        (retired if gone else live).append(rendered)
+        if obs is not None and not gone:
+            live_readings.append(rendered)
+    rows = [*live, *retired] if include_retired else live
     if not rows:
         return ScanRootListResponse(
             state="unknown",
-            detail=NO_OBSERVATION_DETAIL,
+            detail=all_retired_detail(len(retired))
+            if retired
+            else NO_OBSERVATION_DETAIL,
             fresh_within_secs=FRESH_WITHIN_SECS,
+            retire_after_secs=RETIRE_AFTER_SECS,
+            retired_count=len(retired),
             count=0,
             fresh_count=0,
             rows=[],
@@ -923,10 +1254,10 @@ def scan_roots_health(
                 else not_computed_detail
             ),
         )
-    rollups = rollup_by_source_repo(rows)
+    rollups = rollup_by_source_repo(live_readings)
     coverage = (
         coverage_by_source_repo(
-            rows,
+            live_readings,
             rollups=rollups,
             observations={obs.device_id: obs for obs in observations},
             captured=captured,
@@ -938,13 +1269,25 @@ def scan_roots_health(
         state="reported",
         detail=None,
         fresh_within_secs=FRESH_WITHIN_SECS,
+        retire_after_secs=RETIRE_AFTER_SECS,
+        retired_count=len(retired),
         count=len(rows),
         fresh_count=sum(1 for r in rows if r.observation_fresh),
         rows=rows,
         by_source_repo=rollups,
         coverage=coverage,
-        # With rows, the roll-up is non-empty and so is the coverage list
-        # whenever it was computed at all — so an empty one here means only
-        # that this rendering does not compute it, and says so.
-        coverage_detail=None if coverage else not_computed_detail,
+        # With a live READING, the roll-up is non-empty and so is the coverage
+        # list whenever it was computed at all — so an empty one here means
+        # this rendering does not compute it, or (``captured`` given) that no
+        # live device has a stored reading: every live one was refused on every
+        # report, or every served row is retired (``include_retired``).
+        coverage_detail=(
+            None
+            if coverage
+            else not_computed_detail
+            if captured is None
+            else COVERAGE_NO_LIVE_READING_DETAIL
+            if live
+            else COVERAGE_ALL_RETIRED_DETAIL
+        ),
     )

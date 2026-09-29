@@ -147,6 +147,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -178,6 +179,7 @@ import {
   isMigrationPending,
   isUnread,
   kindOptions,
+  linkedRefFindingHref,
   linkedRefNotice,
   matchesNotificationRef,
   mergeKindVocabulary,
@@ -185,9 +187,21 @@ import {
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
+/**
+ * What a TIMER-driven head read passes: one request (no 5xx retry chain — the
+ * next tick is the retry), with the 503 opt-out and the 429 arm kept as
+ * `NOTIFICATIONS_REQUEST_OPTIONS` has them. Also what the mount and
+ * filter-change head reads pass. Other reads an operator's click issues (mark
+ * read, paging) keep the plain options.
+ */
+const NOTIFICATIONS_POLL_OPTIONS = {
+  ...NOTIFICATIONS_REQUEST_OPTIONS,
+  ...COORD_DASHBOARD_POLL_OPTIONS,
+};
 /** Page size asked of coord. Coord owns the clamp; this is a request. */
 const PAGE_SIZE = 50;
 
@@ -417,7 +431,7 @@ export default function CoordNotificationsPage() {
 
   /** Fetch the head page. `merge` keeps already-loaded later pages. */
   const fetchHead = useCallback(
-    async (merge: boolean) => {
+    async (merge: boolean, polled = false) => {
       const gen = queryGenRef.current;
       // Taken BEFORE the request goes out, so the ticket orders reads by when
       // they were issued rather than by when they happened to come back.
@@ -425,7 +439,7 @@ export default function CoordNotificationsPage() {
       try {
         const body = await httpClient.get<NotificationsResponse>(
           `${API}/notifications?${buildQuery({ kind, unreadOnly, agentClearancesOnly })}`,
-          NOTIFICATIONS_REQUEST_OPTIONS
+          polled ? NOTIFICATIONS_POLL_OPTIONS : NOTIFICATIONS_REQUEST_OPTIONS
         );
         if (queryGenRef.current !== gen) return;
         const page = body.notifications ?? [];
@@ -532,6 +546,34 @@ export default function CoordNotificationsPage() {
   // Filter change resets the page walk — a cursor is only meaningful within
   // the query that produced it — and retires every response still in flight
   // for the previous filter.
+  //
+  // Timer ticks are single-flight and no-retry (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick that finds ANY head read outstanding is skipped, and the next tick —
+  // not `httpClient`'s 5xx backoff chain — is the retry.
+  //
+  // This page deliberately does NOT use `useSingleFlight`, whose refresh
+  // queues behind an outstanding read. A filter change is a new QUESTION and
+  // must answer at once, beside a read still open for the old one (the
+  // generation guard in `fetchHead` discards the old answer); that is the list
+  // pages' capability, the one `useGuardedPoll` documents. So the read a
+  // filter change starts is issued directly and only the ticks are latched,
+  // by counting the reads outstanding.
+  const headReadsOutstanding = useRef(0);
+  const readHead = useCallback(
+    async (merge: boolean) => {
+      headReadsOutstanding.current += 1;
+      try {
+        // The mount and filter-change read is no-retry too: a slow coord would
+        // otherwise cost a retry chain per edit; the next tick is the retry.
+        await fetchHead(merge, true);
+      } finally {
+        headReadsOutstanding.current -= 1;
+      }
+    },
+    [fetchHead]
+  );
+
   useEffect(() => {
     queryGenRef.current += 1;
     setLoading(true);
@@ -542,10 +584,13 @@ export default function CoordNotificationsPage() {
     setPagingFailed(false);
     setNextCursor(null);
     setExpanded(null);
-    fetchHead(false);
-    const id = setInterval(() => fetchHead(true), POLL_INTERVAL_MS);
+    void readHead(false);
+    const id = setInterval(() => {
+      if (headReadsOutstanding.current > 0) return;
+      void readHead(true);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetchHead]);
+  }, [readHead]);
 
   const markRead = useCallback(
     async (selection: MarkReadSelection, bulk = false) => {
@@ -823,6 +868,36 @@ export default function CoordNotificationsPage() {
    */
   const feedUnknown = readIsUnknown(queryLoaded, readFailed);
 
+  // One state object for the `?ref=` banner, read by BOTH the sentence and
+  // the findings link beside it, so they are derived from the same inputs.
+  const linkedRefState: Parameters<typeof linkedRefNotice>[0] = {
+    found: Boolean(linkedMatch),
+    // The same predicate `RecordList`'s `loaded` uses below — nothing
+    // has been read yet, so "not on this page" would be a claim
+    // rather than a fact.
+    loading: loading && rows.length === 0,
+    // Not `error`. This arm says "the feed above failed to load", and
+    // `error` is the page's ONE error line — mark-read writes to it
+    // too, so a rejected POST made the banner blame a feed that had
+    // loaded perfectly well.
+    error: readFailed,
+    // The paging arm needs this to keep the filter clause it would
+    // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
+    // `filterActive` that scopes mark-all, so "a filter is on" means
+    // one thing on this page.
+    filterActive,
+    // …and NOT folded into the line above, for the same reason the
+    // strip keeps them apart. `readFailed || pagingFailed` made a
+    // failed "Load more" report "the feed above failed to load" about a
+    // feed the strip was simultaneously painting green — the two states
+    // want different sentences and different remedies.
+    pagingFailed,
+    migrationPending,
+  };
+  const linkedFindingHref = linkedRef
+    ? linkedRefFindingHref(linkedRefState, linkedRef)
+    : null;
+
   return (
     <div
       className="p-3 sm:p-6 space-y-4"
@@ -919,30 +994,19 @@ export default function CoordNotificationsPage() {
           className="text-sm text-muted-foreground"
           data-testid="coord-notifications-linked-ref"
         >
-          {linkedRefNotice({
-            found: Boolean(linkedMatch),
-            // The same predicate `RecordList`'s `loaded` uses below — nothing
-            // has been read yet, so "not on this page" would be a claim
-            // rather than a fact.
-            loading: loading && rows.length === 0,
-            // Not `error`. This arm says "the feed above failed to load", and
-            // `error` is the page's ONE error line — mark-read writes to it
-            // too, so a rejected POST made the banner blame a feed that had
-            // loaded perfectly well.
-            error: readFailed,
-            // The paging arm needs this to keep the filter clause it would
-            // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
-            // `filterActive` that scopes mark-all, so "a filter is on" means
-            // one thing on this page.
-            filterActive,
-            // …and NOT folded into the line above, for the same reason the
-            // strip keeps them apart. `readFailed || pagingFailed` made a
-            // failed "Load more" report "the feed above failed to load" about a
-            // feed the strip was simultaneously painting green — the two states
-            // want different sentences and different remedies.
-            pagingFailed,
-            migrationPending,
-          })}
+          {linkedRefNotice(linkedRefState)}
+          {linkedFindingHref && (
+            <>
+              {" "}
+              <Link
+                href={linkedFindingHref}
+                className="underline underline-offset-2"
+                data-testid="coord-notifications-linked-finding"
+              >
+                Open the finding
+              </Link>
+            </>
+          )}
         </p>
       )}
 

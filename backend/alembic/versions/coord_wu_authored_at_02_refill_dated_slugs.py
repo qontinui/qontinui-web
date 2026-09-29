@@ -29,10 +29,15 @@ its authoring day.
 
 The companion qontinui-coord change makes ``upsert_work_unit`` derive the date
 from a dated slug when the caller omits it, which closes the source. This
-revision repairs the rows already written. **Land and deploy that coord change
-FIRST**: a dateless dated-slug row created between this revision applying and
-the coord deploy would read NULL again, and nothing re-runs this refill. The
-web PR carries a ``coord:downstream-of`` label on the coord PR for that reason.
+revision repairs the rows already written. **That coord change must be
+deployed FIRST**: a dateless dated-slug row created between this revision
+applying and the coord deploy would read NULL again, and nothing re-runs this
+refill. No dependency label enforced it — the coord PR, qontinui-coord#2140,
+was closed unmerged, so a ``coord:downstream-of`` edge on it could never clear.
+The ordering held anyway: the change reached qontinui-coord ``main`` as
+``214a15f96`` on 2026-09-13, ten days before this revision reached web
+``main`` (``54ddf7169``, 2026-09-23), and is an ancestor of the coord build
+serving just after this revision applied (``037fc1a8``).
 
 What it does
 ============

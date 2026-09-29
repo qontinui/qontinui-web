@@ -108,6 +108,57 @@ def _write_velocity_entry(entry: dict) -> None:
 atexit.register(_flush_velocity_buffer)
 
 
+# The synthetic-traffic tag coord's route-serving observer sends
+# (plan 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb, D4).
+SYNTHETIC_HEADER = "X-Qontinui-Synthetic"
+SYNTHETIC_ROUTE_SERVING_OBSERVER = "route-serving-observer"
+# Any other value of the header is logged as this, never verbatim: the header
+# is client-controlled, and a raw echo would let any caller write arbitrary
+# text into the request log.
+SYNTHETIC_OTHER = "other"
+USER_AGENT_MAX_CHARS = 256
+
+
+def classify_synthetic(value: str | None) -> str | None:
+    """Classify an ``X-Qontinui-Synthetic`` header value for the request log.
+
+    ``None`` when the header is absent, the known tag when it matches exactly,
+    and ``"other"`` for any other value (including an empty one).
+    """
+    if value is None:
+        return None
+    if value == SYNTHETIC_ROUTE_SERVING_OBSERVER:
+        return SYNTHETIC_ROUTE_SERVING_OBSERVER
+    return SYNTHETIC_OTHER
+
+
+def truncate_user_agent(value: str | None) -> str | None:
+    """The ``User-Agent`` header, cut to ``USER_AGENT_MAX_CHARS`` characters."""
+    if value is None:
+        return None
+    return value[:USER_AGENT_MAX_CHARS]
+
+
+def peer_ip_from(forwarded_for: str | None, client_host: str | None) -> str | None:
+    """The address the nearest proxy saw, which the client cannot forge.
+
+    Behind the ALB this is the RIGHTMOST ``X-Forwarded-For`` entry: the ALB
+    appends the connecting peer to whatever the client sent, so every entry to
+    its left is client-supplied. With no (non-empty) ``X-Forwarded-For`` the
+    request arrived directly, and the socket peer is the answer.
+
+    This is unforgeable only while the ALB is the sole way in. A task reachable
+    directly (a security-group opening) would let a caller supply the whole
+    header, including its last entry.
+    """
+    if forwarded_for:
+        entries = [e.strip() for e in forwarded_for.split(",")]
+        entries = [e for e in entries if e]
+        if entries:
+            return entries[-1]
+    return client_host
+
+
 class LoggingMiddleware(BaseHTTPMiddleware):
     """
     Middleware to log all HTTP requests and responses with performance metrics
@@ -117,7 +168,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     - Response status code
     - Request duration
     - User ID (if authenticated)
-    - IP address
+    - IP address (leftmost X-Forwarded-For, client-controlled) and peer IP
+      (rightmost X-Forwarded-For, appended by the ALB)
+    - User agent (truncated) and the synthetic-traffic tag, if any
     - Errors and exceptions
     """
 
@@ -133,7 +186,24 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
         path = request.url.path
         ip_address = self._get_client_ip(request)
+        # Every X-Forwarded-For header LINE, joined: a client-sent line plus a
+        # proxy-added one must not leave peer_ip reading the client's.
+        peer_ip = peer_ip_from(
+            ",".join(request.headers.getlist("X-Forwarded-For")) or None,
+            request.client.host if request.client else None,
+        )
+        user_agent = truncate_user_agent(request.headers.get("User-Agent"))
+        synthetic = classify_synthetic(request.headers.get(SYNTHETIC_HEADER))
         request_id = request.headers.get("X-Request-ID", "")
+        # The same three facts on the velocity entry's http.* attributes.
+        # `http.synthetic` is omitted when the request carried no tag, as it
+        # is in the log event.
+        traffic_attributes: dict[str, str | None] = {
+            "http.user_agent": user_agent,
+            "http.peer_ip": peer_ip,
+        }
+        if synthetic is not None:
+            traffic_attributes["http.synthetic"] = synthetic
 
         # Skip health check logging (too noisy)
         if path == "/health":
@@ -161,6 +231,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 user_id=user_id,
                 ip_address=ip_address,
+                user_agent=user_agent,
+                synthetic=synthetic,
+                peer_ip=peer_ip,
             )
 
             # Log slow requests (>1 second)
@@ -187,6 +260,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                         "http.route": path,
                         "http.status_code": status_code,
                         "request_id": request_id,
+                        **traffic_attributes,
                     },
                     "success": status_code < 500,
                 }
@@ -222,6 +296,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                         "http.route": path,
                         "http.status_code": 500,
                         "request_id": request_id,
+                        **traffic_attributes,
                     },
                     "success": False,
                     "error": f"{type(e).__name__}: {e}",

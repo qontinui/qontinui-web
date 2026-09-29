@@ -257,6 +257,114 @@ describe("Add a member by email — the `added` arm", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Arm 1b — `notice`: was the colleague actually told?
+// ---------------------------------------------------------------------------
+
+/**
+ * The `added` arm now attempts a "you have been given access" email and
+ * reports the attempt as `notice`. The defect this closes had TWO halves and
+ * this block pins the second: the colleague was never emailed AND the
+ * administrator was never told that, so a success screen described an
+ * outcome that had not happened.
+ *
+ * Three states, deliberately — `sent`, `not_sent`, and a body that says
+ * nothing at all (a backend older than the field). The third renders silence
+ * rather than either claim; inventing an answer there is the same defect one
+ * layer along.
+ *
+ * In every state the GRANT is stated and is not retracted: the role really
+ * was granted, and copy that hedges it would send an administrator to undo
+ * work that succeeded.
+ */
+describe("Add a member by email — the `notice` field", () => {
+  async function submitAndRead(notice?: string): Promise<string> {
+    addResponse = {
+      status: 200,
+      body: {
+        status: "added",
+        operator_id: "op-1",
+        role: "operator",
+        ...(notice === undefined ? {} : { notice }),
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "colleague@example.com");
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() => expect(outcome.textContent ?? "").toMatch(/granted/i));
+    return outcome.textContent ?? "";
+  }
+
+  it("says they were emailed when the notice was sent", async () => {
+    const text = await submitAndRead("sent");
+
+    expect(text).toMatch(/granted/i);
+    expect(text).toMatch(/emailed them/i);
+    // And it does not also tell the administrator to go and do it by hand.
+    expect(text).not.toMatch(/could not email/i);
+  });
+
+  it("says plainly that they could not be emailed, without alarming", async () => {
+    const text = await submitAndRead("not_sent");
+
+    // The administrator has an action: tell them.
+    expect(text).toMatch(/could not email/i);
+    expect(text).toMatch(/let them know yourself/i);
+    // The grant worked, and the copy still says so — this is the whole
+    // point. A failed courtesy email must not read as a failed grant.
+    expect(text).toMatch(/granted/i);
+    expect(text).toMatch(/works now/i);
+    // Still a success toast: the thing the administrator came to do
+    // succeeded.
+    expect(toastSuccess).toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    // The wording it must never acquire.
+    expect(text).not.toMatch(/failed/i);
+    expect(text).not.toMatch(/not granted/i);
+  });
+
+  it("says they already had access when nothing needed sending", async () => {
+    // The re-add arm. The backend refuses to email somebody who already had
+    // access to this team — that is what stops the form being an
+    // email-sending primitive — so the copy has to explain the silence
+    // rather than leave the administrator assuming a first-time notice went
+    // out.
+    const text = await submitAndRead("not_needed");
+
+    expect(text).toMatch(/already had access/i);
+    expect(text).toMatch(/did not email them again/i);
+    // Still not alarming, and still not a retraction of the grant.
+    expect(text).toMatch(/granted/i);
+    expect(toastSuccess).toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(text).not.toMatch(/could not email/i);
+    expect(text).not.toMatch(/failed/i);
+  });
+
+  it("claims nothing about email when the backend did not say", async () => {
+    // A backend older than `notice`. Silence is the honest rendering of
+    // "we do not know"; either claim would be invented.
+    const text = await submitAndRead(undefined);
+
+    expect(text).toMatch(/granted/i);
+    expect(text).not.toMatch(/emailed/i);
+    expect(text).not.toMatch(/could not email/i);
+  });
+
+  it("treats an unrecognised notice value as saying nothing", async () => {
+    // `notice` is body-controlled, like `status` beside it. A future arm, a
+    // truncated value or a slab of HTML must not be rendered, and must not
+    // be read as either answer.
+    const text = await submitAndRead("<b>definitely sent</b>");
+
+    expect(text).toMatch(/granted/i);
+    expect(text).not.toMatch(/emailed/i);
+    expect(text).not.toMatch(/could not email/i);
+    expect(text).not.toMatch(/definitely sent/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Arm 2 — invited (Phase 3 creates the account; Phase 4 is this copy)
 // ---------------------------------------------------------------------------
 

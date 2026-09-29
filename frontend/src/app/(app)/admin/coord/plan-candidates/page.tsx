@@ -84,6 +84,7 @@ import {
   deriveCandidateDisclosure,
   deriveCandidateHealth,
   describeCandidateWindow,
+  describeCandidateDifficulty,
   describeCoordLink,
   describePrState,
   describeReadiness,
@@ -99,10 +100,13 @@ const DEFAULT_PAGE_SIZE = 25;
 
 function CandidateRow({
   candidate,
+  tiers,
   expanded,
   onToggle,
 }: {
   candidate: PlanCandidate;
+  /** The response's `model_tiers` — one map for the page, not per row. */
+  tiers: Readonly<Record<string, string>> | undefined;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -309,7 +313,10 @@ function CandidateRow({
               </div>
             )}
             <div>work_unit_slug: {candidate.work_unit_slug ?? "null"}</div>
-            <div>difficulty: {candidate.difficulty ?? "unrated"}</div>
+            <div data-testid="coord-candidate-difficulty">
+              difficulty:{" "}
+              {describeCandidateDifficulty(candidate.difficulty, tiers)}
+            </div>
           </div>
         }
       />
@@ -534,6 +541,7 @@ export default function CoordPlanCandidatesPage() {
         renderRow={(candidate, ctx) => (
           <CandidateRow
             candidate={candidate}
+            tiers={data?.model_tiers}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
           />

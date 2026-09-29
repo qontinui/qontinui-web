@@ -89,15 +89,25 @@ import {
 } from "@/components/admin/coord/onboardingClaimStatus";
 // Wave 5 surfaces.
 import {
-  PROPOSAL_ATTENTION_BY_KIND,
-  PROPOSAL_AUTHOR_GLYPH_KINDS,
-  PROPOSAL_KIND_CLASS,
-} from "@/app/(app)/admin/coord/prompt-document-proposals/proposalStatus";
+  POLICY_PROPOSAL_ATTENTION_BY_KIND,
+  POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS,
+  POLICY_PROPOSAL_KIND_CLASS,
+} from "@/app/(app)/admin/coord/prompt-document-proposals/policyProposalStatus";
 import {
   CLEARANCE_ATTENTION_BY_KIND,
   CLEARANCE_AUTHOR_GLYPH_KINDS,
   CLEARANCE_RULE_CLASS,
 } from "@/app/(app)/admin/coord/gate-clearance/clearanceRuleStatus";
+// The findings reader — plan
+// `2026-09-15-the-console-names-a-finding-it-cannot-open` Phase 2. A
+// `*Status.ts` in a `_lib/` beside its own route: `attention.test.ts`'s
+// `src/app/**` glob reaches it at any depth, so no discovery line was widened
+// for it.
+import {
+  FINDING_ATTENTION_BY_RETENTION,
+  FINDING_AUTHOR_GLYPH_RETENTIONS,
+  FINDING_RETENTION_CLASS,
+} from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -209,6 +219,15 @@ export interface ConsoleSurface {
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   {
+    surface: "findings (/admin/coord/findings)",
+    module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
+    attentionByKind: FINDING_ATTENTION_BY_RETENTION,
+    palette: {
+      badgeClass: FINDING_RETENTION_CLASS,
+      authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
     surface: "merge pipeline (/admin/coord/pipeline)",
     module: "components/operations/prPipeline.ts",
     attentionByKind: PIPELINE_ATTENTION,
@@ -311,11 +330,11 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   {
     surface: "policy-edit proposals (/admin/coord/prompt-document-proposals)",
     module:
-      "app/(app)/admin/coord/prompt-document-proposals/proposalStatus.ts",
-    attentionByKind: PROPOSAL_ATTENTION_BY_KIND,
+      "app/(app)/admin/coord/prompt-document-proposals/policyProposalStatus.ts",
+    attentionByKind: POLICY_PROPOSAL_ATTENTION_BY_KIND,
     palette: {
-      badgeClass: PROPOSAL_KIND_CLASS,
-      authorGlyphKinds: PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      badgeClass: POLICY_PROPOSAL_KIND_CLASS,
+      authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

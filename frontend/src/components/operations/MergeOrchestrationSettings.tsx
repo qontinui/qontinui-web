@@ -260,7 +260,6 @@ interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
   post_merge_verification_lag_p95_seconds: number | null;
-  author_feedback_latency_p95_seconds: number | null;
   operator_override_rate: number | null;
   total_decisions: number;
 }
@@ -627,14 +626,13 @@ function TenantDefaultsCard({
               Auto-spawn fix session when main goes red
             </Label>
             <p className="text-xs text-muted-foreground">
-              When a repo&apos;s main goes red (a tenant-wide merge outage —
-              every green PR is frozen until it&apos;s fixed), coord consults
+              When a repo&apos;s main goes red (candidates rebased onto it
+              generally fail CI until it&apos;s fixed), coord consults
               its red-main-fix policy and, where that policy is graduated and
               the fleet flag is armed, opens a visible terminal session on your
               device that diagnoses the failing check and authors a fix; the fix
-              lands via coord&apos;s audited recovery lane. On by default — turn
-              this off to opt this repo out. Reversible any time; every recovery
-              land is audited.
+              lands through coord&apos;s ordinary merge path. On by default — turn
+              this off to opt this repo out. Reversible any time.
             </p>
           </div>
           <Switch
@@ -1225,7 +1223,7 @@ function RepoOverrideCard({
             <p className="text-xs text-muted-foreground">
               Per-repo override of the tenant-wide auto-spawn setting. On red
               main, coord opens a visible fix session on your device; the fix
-              lands via coord&apos;s audited recovery lane.
+              lands through coord&apos;s ordinary merge path.
             </p>
           </div>
           <div className="space-y-1">
@@ -1635,12 +1633,6 @@ function SloRepoCard({
             <p className="text-muted-foreground">Verify lag p95</p>
             <p className="text-foreground">
               {fmtSecs(w.post_merge_verification_lag_p95_seconds)}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Author feedback p95</p>
-            <p className="text-foreground">
-              {fmtSecs(w.author_feedback_latency_p95_seconds)}
             </p>
           </div>
         </div>

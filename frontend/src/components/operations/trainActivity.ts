@@ -391,6 +391,9 @@ export interface RepoCandidateChurn {
   baseMoveDiscards: ChurnReading;
   /** `candidate_ci_minutes_per_land` — CI minutes burnt per land. */
   ciMinutesPerLand: ChurnReading;
+  /** `proposal_age_at_land_p90_secs` — p90 SECONDS from a PR's first
+   *  proposal to its land. A duration, rendered as one. */
+  proposalAgeAtLandP90: ChurnReading;
 }
 
 export interface TrainBanner {
@@ -1304,7 +1307,7 @@ function note(v: string | null | undefined): string | null {
 }
 
 /**
- * The three per-repo churn readings from one economics row. An absent row
+ * The four per-repo churn readings from one economics row. An absent row
  * (coord served nothing for the repo, or the read failed) is all-unknown with
  * a note saying so — a `—` with no explanation is a dead end on hover.
  */
@@ -1317,9 +1320,13 @@ export function deriveRepoChurn(
       greenDiscarded: { value: null, note: absent },
       baseMoveDiscards: { value: null, note: absent },
       ciMinutesPerLand: { value: null, note: absent },
+      proposalAgeAtLandP90: { value: null, note: absent },
     };
   }
   const coverage = note(econ.coverage_note);
+  const ageBasis = note(econ.proposal_age_at_land_basis);
+  const ageSamples = measured(econ.proposal_age_at_land_sample_size);
+  const ageP90 = measured(econ.proposal_age_at_land_p90_secs);
   return {
     greenDiscarded: {
       value: measured(econ.green_candidates_discarded),
@@ -1333,7 +1340,45 @@ export function deriveRepoChurn(
       value: measured(econ.candidate_ci_minutes_per_land),
       note: coverage,
     },
+    proposalAgeAtLandP90: {
+      // A negative age is coord clock skew, not a fast land: UNKNOWN.
+      value: ageP90 !== null && ageP90 >= 0 ? ageP90 : null,
+      note: proposalAgeNote(econ, ageP90, ageSamples, ageBasis),
+    },
   };
+}
+
+/**
+ * The hover for the proposal→land p90: how many lands back it, then coord's
+ * basis — a p90 over two lands reads very differently from one over forty.
+ * A coord that never SERVED the field says so, rather than borrowing the
+ * candidate-CI coverage note, which is about something else.
+ */
+function proposalAgeNote(
+  econ: MergeEconomics,
+  p90: number | null,
+  samples: number | null,
+  basis: string | null
+): string {
+  if (econ.proposal_age_at_land_p90_secs === undefined && basis === null) {
+    return "coord did not serve proposal→land age for this repo (its build predates the field)";
+  }
+  if (p90 !== null && p90 < 0) {
+    return `coord served a negative age (${p90} s) — clock skew, shown as unknown`;
+  }
+  // Only an explicit null means "nothing landed"; a malformed value that
+  // `measured` rejected is unreadable, not empty.
+  if (
+    econ.proposal_age_at_land_p90_secs === null &&
+    samples === null &&
+    basis === null
+  ) {
+    return "nothing landed in the window";
+  }
+  const lands =
+    samples === null ? null : `${samples} land${samples === 1 ? "" : "s"}`;
+  if (lands && basis) return `${lands} — ${basis}`;
+  return lands ?? basis ?? "coord served no basis for proposal→land age";
 }
 
 /**

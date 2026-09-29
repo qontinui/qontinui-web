@@ -36,6 +36,19 @@ class EmailTemplateService:
             loader=FileSystemLoader(str(self.template_dir)),
             autoescape=True,  # Enable autoescaping for security
         )
+        # A `.txt` template is NOT HTML, so HTML-escaping it is a bug rather
+        # than a safety measure: it renders an apostrophe in a tenant name as
+        # `&#39;` in the plain-text part a mail client shows when it will not
+        # render HTML. An overlay shares this environment's LOADER while
+        # turning autoescape off for that one render path.
+        #
+        # It does NOT share the template cache: `Environment.overlay` ends in
+        # `rv.cache = copy_cache(self.cache)`, and `copy_cache` returns an
+        # EMPTY cache of the same kind rather than the same object (verified
+        # against jinja2 3.1.6). So the two environments compile and cache
+        # independently — which is what we want, since a template compiled
+        # under one autoescape setting must never be served to the other.
+        self.text_env = self.env.overlay(autoescape=False)
 
     def render_template(self, template_name: str, context: dict) -> str:
         """
@@ -62,6 +75,34 @@ class EmailTemplateService:
             logger.error(f"Template not found: {e}")
             # Return a simple fallback if template not found
             return f"<html><body><h2>{context.get('title', 'Notification')}</h2><p>{context.get('message', '')}</p></body></html>"
+
+    def render_text_template(self, template_name: str, context: dict) -> str:
+        """
+        Render the PLAIN-TEXT version of an email template.
+
+        The counterpart to :meth:`render_template`. MOST templates here ship
+        an HTML and a ``.txt`` half — not all of them; ``admin_notification``
+        is HTML-only, which is why ``template_exists`` and ``list_templates``
+        test for the pair rather than assuming it. Until now only the HTML
+        half was ever rendered, so the text part of a multipart message was
+        whatever the composer passed as ``text_body``, which for most of them
+        is the empty string.
+
+        Args:
+            template_name: Base name of template (e.g., "member_added")
+            context: Dictionary of variables to pass to template
+
+        Returns:
+            Plain-text content string, or ``""`` when no ``.txt`` template
+            exists — an absent text part is what every composer already sends,
+            so it degrades to the status quo rather than to an exception.
+        """
+        try:
+            text_template = self.text_env.get_template(f"{template_name}.txt")
+            return text_template.render(**context)
+        except TemplateNotFound as e:
+            logger.error(f"Text template not found: {e}")
+            return ""
 
     def template_exists(self, template_name: str) -> bool:
         """

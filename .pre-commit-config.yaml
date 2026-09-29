@@ -173,6 +173,13 @@ repos:
         # `COORD_SCHEMA_DROPS` at module level or the hook fails before any
         # network call. Shift-left: the CI check is the guard, this is the
         # early answer.
+        #
+        # `--files` has no merge base, so this hook judges every revision
+        # WHOLE — including an edit to a LANDED revision, which the CI lane
+        # (`--base-ref`) judges only by its delta (the module docstring's
+        # "Edited landed revisions"). A hook red on a landed revision you only
+        # touched (web#1457's `SET LOCAL` shape) can therefore be CI-green;
+        # the required CI check is the authority for that case.
 
       - id: gitignore-tracked-files
         name: no tracked file is gitignored

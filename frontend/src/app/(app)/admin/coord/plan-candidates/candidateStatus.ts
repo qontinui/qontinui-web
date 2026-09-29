@@ -166,6 +166,11 @@ export interface PlanCandidateResponse {
   open_followup_total?: number;
   corpus_health?: CorpusHealth | null;
   corpus_health_unavailable_reason?: string | null;
+  /** Level → model tier, DISPLAY copy (never parsed). Envelope-level: a
+   *  corpus constant, served byte-identically on `/difficulty` and the list
+   *  route. Absent on a backend that predates plan
+   *  `2026-09-22-route-plan-sweeps-by-difficulty` Phase 1. */
+  model_tiers?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +449,26 @@ export function describePrState(pr: CandidateLinkedPr): string {
     default:
       return "merge state unknown";
   }
+}
+
+/**
+ * A candidate's difficulty and the model tier it routes to, from the tier map
+ * the same response carries. `null` is `unrated` — never `low`: the library
+ * holds no body for the plan, or its best-effort rating is pending or failed.
+ * An ABSENT field is a response that did not say, so it reads as unknown
+ * rather than unrated (R6: absence is not zero). A level the map does not
+ * name (or a backend that serves no map) renders the level alone rather than
+ * inventing a tier.
+ */
+export function describeCandidateDifficulty(
+  difficulty: string | null | undefined,
+  tiers: Readonly<Record<string, string>> | undefined
+): string {
+  if (difficulty === undefined) return "unknown (not served)";
+  if (!difficulty) return "unrated";
+  const tier =
+    tiers && Object.hasOwn(tiers, difficulty) ? tiers[difficulty] : undefined;
+  return tier ? `${difficulty} — route to ${tier}` : difficulty;
 }
 
 // ---------------------------------------------------------------------------

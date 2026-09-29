@@ -213,12 +213,12 @@ class Settings(BaseSettings):
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
 
-    # Strategy Collaboration (Phase 1) — coord service-account bridge.
+    # Coord service-account bridge (used by device pairing).
     # Feature is DISABLED until COORD_ADMIN_SECRET is set (i.e. until
     # the next coord deploy provisions it); endpoints then return 503.
     COORD_URL: str = Field(
         default="http://localhost:9870",
-        description="Base URL of qontinui-coord for the strategy bridge",
+        description="Base URL of qontinui-coord for the coord service-account bridge",
     )
     COORD_DEVICE_URL: str | None = Field(
         default=None,
@@ -238,7 +238,8 @@ class Settings(BaseSettings):
         default=None,
         description=(
             "Shared secret for POST /coord/auth/service-token. Unset = "
-            "strategy feature disabled. Set-but-wrong = fail-fast at startup."
+            "coord service-account bridge disabled (device pairing "
+            "unavailable). Set-but-wrong = fail-fast at startup."
         ),
     )
     STRATEGY_SERVICE_NAME: str = Field(
@@ -498,6 +499,10 @@ class Settings(BaseSettings):
     )
     RENDER_LOG_RETENTION_DAYS: int = Field(
         default=7,
+        # ge=1: 0 would make the hourly retention job delete every render log
+        # up to the moment it runs, and a negative value everything plus the
+        # future; neither is a retention period.
+        ge=1,
         description="Auto-delete render logs older than this many days",
     )
     RENDER_LOG_MAX_SNAPSHOTS: int = Field(
@@ -730,7 +735,7 @@ def coord_device_base() -> str:
     that: measured 2026-08-25, the local secret authenticated against the
     local coord (200) and was rejected by the fleet coord (401), so
     repointing COORD_URL to fix device verification would have
-    fail-fast-ed the backend at boot in strategy_client.startup().
+    fail-fast-ed the backend at boot in coord_service_account.startup().
 
     Unset (the default) means "same as COORD_URL", so every existing
     deployment — prod, CI, single-coord dev — is byte-for-byte unchanged.

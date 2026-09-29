@@ -33,6 +33,9 @@ env:
 
 jobs:
   seed:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2), LOW-N: max 1.50 min over 2 green run(s).
+    # Conservative: max(10, 3x the worst observed). Replaces GitHub's 360-min default.
+    timeout-minutes: 10
     name: Run seed_claude_accounts as a one-off ECS task
     runs-on: ubuntu-latest
     environment: production

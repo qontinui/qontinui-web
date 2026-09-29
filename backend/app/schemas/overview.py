@@ -21,10 +21,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.overview.precision import numeric
 
 LabourBilling = Literal["unbilled", "day_rates", "fixed_fee"]
 EstimatePurpose = Literal["budget", "comparison", "forecast"]
@@ -32,6 +34,23 @@ EstimateStatus = Literal["draft", "for_decision", "approved", "superseded"]
 GateStatus = Literal["pending", "passed", "failed", "waived"]
 TaskStatus = Literal["planned", "in_progress", "done"]
 CostLineKind = Literal["build_non_labour", "run_annual"]
+EditingRole = Literal["admin", "agent_supervisor", "operator"]
+
+
+def _default_editing_roles() -> list[EditingRole]:
+    return ["admin"]
+
+
+# Every decimal below is bounded to the ``NUMERIC(p, s)`` column it is stored
+# in (``app.models.overview``), so an oversized value is a 422 naming the
+# field rather than a database overflow. See ``app.overview.precision``.
+HoursPerDay = Annotated[Decimal, numeric(5, 2, gt=0, le=24)]
+WorkingDayFactor = Annotated[Decimal, numeric(6, 4, gt=0, le=1)]
+ContingencyPct = Annotated[Decimal, numeric(6, 3, ge=0)]
+WorkingWeeks = Annotated[Decimal, numeric(8, 2, ge=0)]
+PersonDays = Annotated[Decimal, numeric(10, 2, ge=0)]
+Fte = Annotated[Decimal, numeric(8, 3, ge=0)]
+TierMultiplier = Annotated[Decimal, numeric(8, 4, gt=0)]
 
 
 def _normalize_currency(value: str | None) -> str | None:
@@ -64,6 +83,15 @@ class OverviewSettingsRead(BaseModel):
     hours_per_day: Decimal
     working_day_factor: Decimal
     first_value_date: date | None
+    editing_roles: list[EditingRole] = Field(default_factory=_default_editing_roles)
+
+    @field_validator("editing_roles", mode="before")
+    @classmethod
+    def _null_reads_as_admins(cls, v: object) -> object:
+        # The column is nullable only so its migration is provably additive;
+        # a NULL means the default, never "nobody".
+        return _default_editing_roles() if v is None else v
+
     version: int
     is_default: bool = False
     updated_at: datetime | None = None
@@ -74,9 +102,14 @@ class OverviewSettingsWrite(BaseModel):
     base_currency: str = "USD"
     fx_rates: dict[str, Any] = Field(default_factory=dict)
     labour_billing: LabourBilling = "unbilled"
-    hours_per_day: Decimal = Decimal("8")
-    working_day_factor: Decimal = Decimal("1.0")
+    hours_per_day: HoursPerDay = Decimal("8")
+    working_day_factor: WorkingDayFactor = Decimal("1.0")
     first_value_date: date | None = None
+    #: Which tenant roles may edit the overview. ``None`` (the default) leaves
+    #: the stored set alone — this PUT otherwise replaces every field, and a
+    #: client that predates the setting must not silently reset it. ``admin``
+    #: must be in any set given.
+    editing_roles: list[EditingRole] | None = None
     #: Optimistic concurrency. When given, the write is refused with 409 if
     #: the stored row has moved past it. Absent means "I did not read a
     #: version" — which is accepted, because the alternative is that a first
@@ -90,22 +123,17 @@ class OverviewSettingsWrite(BaseModel):
         assert normalized is not None
         return normalized
 
-    @field_validator("hours_per_day")
+    @field_validator("editing_roles")
     @classmethod
-    def _hours(cls, v: Decimal) -> Decimal:
-        if v <= 0 or v > 24:
-            raise ValueError("hours_per_day must be between 0 and 24")
-        return v
-
-    @field_validator("working_day_factor")
-    @classmethod
-    def _factor(cls, v: Decimal) -> Decimal:
-        if v <= 0 or v > 1:
+    def _editing_roles(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        if "admin" not in v:
             raise ValueError(
-                "working_day_factor is the share of a nominal day actually "
-                "worked, so it is above 0 and at most 1"
+                "editing_roles must include admin — the setting widens who "
+                "may edit, it cannot lock the project's administrators out"
             )
-        return v
+        return sorted(set(v))
 
 
 # ---------------------------------------------------------------------------
@@ -120,15 +148,8 @@ class EstimateCreate(BaseModel):
     is_baseline: bool = False
     source_page_id: UUID | None = None
     accuracy_note: str | None = None
-    contingency_pct: Decimal | None = None
+    contingency_pct: ContingencyPct | None = None
     notes: str = ""
-
-    @field_validator("contingency_pct")
-    @classmethod
-    def _contingency(cls, v: Decimal | None) -> Decimal | None:
-        if v is not None and v < 0:
-            raise ValueError("contingency_pct cannot be negative")
-        return v
 
 
 class EstimateUpdate(BaseModel):
@@ -145,7 +166,7 @@ class EstimateUpdate(BaseModel):
     is_baseline: bool | None = None
     source_page_id: UUID | None = None
     accuracy_note: str | None = None
-    contingency_pct: Decimal | None = None
+    contingency_pct: ContingencyPct | None = None
     notes: str | None = None
     expected_version: int | None = None
 
@@ -201,7 +222,7 @@ class EstimateListResponse(BaseModel):
 
 class TaskEffortWrite(BaseModel):
     role_code: str = Field(min_length=1, max_length=50)
-    planned_person_days: Decimal = Field(ge=0)
+    planned_person_days: PersonDays
 
 
 class PhaseTaskWrite(BaseModel):
@@ -239,7 +260,7 @@ class PhaseWrite(BaseModel):
     planned_end: date | None = None
     #: What the SOURCE plan stated. The rollup computes its own figure and
     #: reports both, so a disagreement is visible rather than overwritten.
-    stated_working_weeks: Decimal | None = Field(default=None, ge=0)
+    stated_working_weeks: WorkingWeeks | None = None
     gate_criteria: str = ""
     actual_start: date | None = None
     actual_end: date | None = None
@@ -294,12 +315,12 @@ class RoleWrite(BaseModel):
 class AllocationWrite(BaseModel):
     phase_code: str = Field(min_length=1, max_length=50)
     role_code: str = Field(min_length=1, max_length=50)
-    fte: Decimal = Field(ge=0)
+    fte: Fte
 
 
 class PriceTierWrite(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    multiplier: Decimal = Field(gt=0)
+    multiplier: TierMultiplier
     is_primary: bool = False
 
 

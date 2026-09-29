@@ -19,7 +19,7 @@ ends, and this file pins both:
 2. **Boot is inert.** `app.main._boot_side_effects_disabled()` (reads `TESTING`,
    the same idiom `app/core/sentry_config.py` uses) gates the boot steps that
    write shared rows, reach the network, or spawn session-long background loops:
-   `init_db`, the wrapper-registry sync loop, the strategy service-account mint,
+   `init_db`, the wrapper-registry sync loop, the coord service-account mint,
    and the recording-pipeline recovery UPDATE. Each gate's own comment in
    `app/main.py` says why it is safe to skip.
 
@@ -54,7 +54,7 @@ import app.main as app_main
 GATED_CALLS = (
     "init_db",  # boot-time INSERT+commit of the FIRST_SUPERUSER shell row
     "start_sync_job",  # network fetch + hourly wrapper_entries writer
-    "strategy_client.startup",  # coord token mint + session-long refresh task
+    "coord_service_account.startup",  # coord token mint + session-long refresh task
     "recover_running_runs_on_boot",  # bulk UPDATE over recording_pipeline_runs
 )
 
@@ -69,7 +69,7 @@ CONFTEST_PY = Path(__file__).with_name("conftest.py")
 
 
 def _call_name(node: ast.Call) -> str:
-    """Dotted name of a call target, e.g. ``strategy_client.startup``."""
+    """Dotted name of a call target, e.g. ``coord_service_account.startup``."""
     parts: list[str] = []
     func: ast.expr = node.func
     while isinstance(func, ast.Attribute):

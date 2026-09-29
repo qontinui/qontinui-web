@@ -12,7 +12,7 @@ Both coords published the SAME `kid` over DIFFERENT keys, so every device
 token was rejected — and repointing `COORD_URL` was not available as a fix,
 because the local admin secret authenticated against the local coord (200)
 and was rejected by the fleet coord (401), which would have fail-fast-ed the
-backend at boot in `strategy_client.startup()`.
+backend at boot in `coord_service_account.startup()`.
 
 See plan `2026-08-25-coord-jwt-kid-collides-across-environments`.
 """
@@ -40,8 +40,9 @@ def test_unset_means_same_as_coord_url() -> None:
 def test_set_overrides_only_the_device_surface(monkeypatch: pytest.MonkeyPatch) -> None:
     """Setting it must not disturb `COORD_URL` itself.
 
-    The admin bridge, the operator proxy routes and the strategy client all
-    keep reading `COORD_URL`; only the device-identity readers follow this.
+    The admin bridge, the operator proxy routes and the coord service-account
+    client all keep reading `COORD_URL`; only the device-identity readers
+    follow this.
     """
     monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://coord.example.io")
     assert coord_device_base() == "https://coord.example.io"

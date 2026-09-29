@@ -818,10 +818,13 @@ function ChurnCell({
   label,
   reading,
   testId,
+  format = formatChurnValue,
 }: {
   label: string;
   reading: ChurnReading;
   testId: string;
+  /** Renders a measured value; `null` must render as `—`. */
+  format?: (value: number | null) => string;
 }) {
   const unknown = reading.value === null;
   return (
@@ -844,7 +847,7 @@ function ChurnCell({
               : undefined
         }
       >
-        {formatChurnValue(reading.value)}
+        {format(reading.value)}
       </span>
     </span>
   );
@@ -949,7 +952,7 @@ function RepoRow({
           {row.activity.kind !== "idle" ? row.activity.detail : row.headline}
         </span>
 
-        {/* Candidate-CI churn for THIS repo, from coord's economics row. Three
+        {/* Candidate-CI churn for THIS repo, from coord's economics row. Four
             mono readings on the line (R2 — still one line; dropped below `lg`
             like the reason slot, the hover note survives on each). `—` is
             UNKNOWN, never 0, and carries coord's basis / coverage note as its
@@ -972,6 +975,12 @@ function RepoRow({
             label="CI min / land"
             reading={row.churn.ciMinutesPerLand}
             testId="churn-ci-minutes-per-land"
+          />
+          <ChurnCell
+            label="proposal→land p90"
+            reading={row.churn.proposalAgeAtLandP90}
+            testId="churn-proposal-age-at-land-p90"
+            format={formatDuration}
           />
         </span>
 

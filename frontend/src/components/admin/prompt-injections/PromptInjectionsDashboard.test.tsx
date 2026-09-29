@@ -147,9 +147,9 @@ describe("PromptInjectionsDashboard — R6's failed-read arms", () => {
     // Assert the UNFILTERED wording first. Without this the test is vacuous:
     // the pre-fix component printed "matching the current filters"
     // unconditionally, so the post-type assertion alone passes against it.
-    expect(await screen.findByTestId("prompt-injections-empty")).toHaveTextContent(
-      /returned no prompt injections for this workspace/i
-    );
+    expect(
+      await screen.findByTestId("prompt-injections-empty")
+    ).toHaveTextContent(/returned no prompt injections for this workspace/i);
 
     await userEvent.type(
       screen.getByTestId("prompt-injections-session-input"),
@@ -262,33 +262,42 @@ describe("PromptInjectionsDashboard — a filter set is this route's param", () 
     // the key cannot discriminate them and only ordering can.
     //
     // Reachable without touching the filters at all — a poll tick does not set
-    // `loading`, so a manual refresh can overlap one, and two poll ticks can
-    // overlap each other. Here the mount read hangs, a poll tick supersedes it
-    // with real rows, and the mount read then rejects.
-    vi.useFakeTimers();
+    // `loading`, so a manual refresh is enabled while one is out and is issued
+    // at once beside it (two poll TICKS can no longer overlap: a tick is
+    // skipped while a read is outstanding, see singleFlightGroup3.test). Here
+    // the mount read answers, a poll tick hangs, a refresh click supersedes it
+    // with fresh rows, and the tick's read then rejects.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      let failFirst: (e: unknown) => void = () => {};
+      let failTick: (e: unknown) => void = () => {};
       listPromptInjections
+        .mockResolvedValueOnce(envelope([row()]))
         .mockImplementationOnce(
-          () => new Promise((_, reject) => (failFirst = reject))
+          () => new Promise((_, reject) => (failTick = reject))
         )
-        .mockResolvedValue(envelope([row()]));
+        .mockResolvedValue(envelope([row(), row({ event_id: EVENT_B })]));
 
       render(<PromptInjectionsDashboard />);
+      expect(
+        await screen.findAllByTestId("prompt-injections-row")
+      ).toHaveLength(1);
 
-      // Drive one poll tick; that read resolves with a row.
+      // Drive one poll tick; its read hangs.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_001);
       });
-      expect(screen.getAllByTestId("prompt-injections-row")).toHaveLength(1);
+      await userEvent.click(screen.getByTestId("prompt-injections-refresh"));
+      expect(
+        await screen.findAllByTestId("prompt-injections-row")
+      ).toHaveLength(2);
 
-      // Now the superseded mount read fails, late.
+      // Now the superseded tick read fails, late.
       await act(async () => {
-        failFirst(new PromptInjectionsApiError(503, "the OLD request died"));
+        failTick(new PromptInjectionsApiError(503, "the OLD request died"));
       });
 
       expect(screen.queryByTestId("prompt-injections-error")).toBeNull();
-      expect(screen.getAllByTestId("prompt-injections-row")).toHaveLength(1);
+      expect(screen.getAllByTestId("prompt-injections-row")).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
@@ -416,7 +425,9 @@ describe("PromptInjectionsDashboard — a 404 is an ANSWER", () => {
   });
 
   it("reports a missing event as absent, not as an outage", async () => {
-    listPromptInjections.mockResolvedValue(envelope([row({ event_id: EVENT_B })]));
+    listPromptInjections.mockResolvedValue(
+      envelope([row({ event_id: EVENT_B })])
+    );
     getPromptInjection.mockRejectedValue(
       new PromptInjectionsApiError(404, "not found")
     );
@@ -440,7 +451,9 @@ describe("PromptInjectionsDashboard — a 404 is an ANSWER", () => {
     // match, so only a branch on the structured `.status` can classify it.
     // This arm exists so the fix cannot over-apply and call every unreachable
     // coord a tidy "no such event".
-    listPromptInjections.mockResolvedValue(envelope([row({ event_id: EVENT_B })]));
+    listPromptInjections.mockResolvedValue(
+      envelope([row({ event_id: EVENT_B })])
+    );
     getPromptInjection.mockRejectedValue(
       new PromptInjectionsApiError(502, "bad gateway")
     );
@@ -468,7 +481,9 @@ describe("PromptInjectionsDashboard — truncation is derived, because no total 
     // page is the ONLY evidence on the wire that older events exist. Without
     // this the badge reads "200" as if that were the corpus.
     const full = Array.from({ length: 200 }, (_, i) =>
-      row({ event_id: `3f1c9d20-0000-4a5b-9c33-${String(i).padStart(12, "0")}` })
+      row({
+        event_id: `3f1c9d20-0000-4a5b-9c33-${String(i).padStart(12, "0")}`,
+      })
     );
     listPromptInjections.mockResolvedValue(envelope(full));
 

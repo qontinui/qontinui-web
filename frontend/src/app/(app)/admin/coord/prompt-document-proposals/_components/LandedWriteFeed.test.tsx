@@ -322,11 +322,42 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     ).toBeNull();
   });
 
-  it("shows a CREATED document's reasoning as a finding reference, never as a link into the notifications feed", () => {
+  it("links a CREATED document's reasoning into the findings reader, not the notifications feed", () => {
     // Creation never emits a notice and the reconciler skips v1 — the caveat
-    // on this very page says so. A link would send the operator to an event
-    // that cannot exist, where the `?ref=` banner reports it as one that "may
-    // be older than these".
+    // on this very page says so — so a notifications link would send the
+    // operator to an event that cannot exist. The reasoning is still readable:
+    // it is the finding its author filed, and `/admin/coord/findings` opens
+    // it. Plan `2026-09-15-the-console-names-a-finding-it-cannot-open`.
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    const link = screen.getByTestId(
+      "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+    );
+    expect(link).toHaveAttribute(
+      "href",
+      "/admin/coord/findings?id=fec41291-67ed-4cf8-b331-888ad1126b45"
+    );
+    expect(link).toHaveAttribute("data-reasoning-arm", "finding_only");
+    // Accessible TEXT, not a `title`: what a keyboard or screen-reader
+    // operator gets is the same word the edit rows carry, because the control
+    // now does the same thing — it opens the reasoning.
+    expect(link).toHaveTextContent(/why/i);
+  });
+
+  it("no longer renders the inert reference or its expanded id line", () => {
+    // Delete-over-deprecate. Both existed only because the console had no
+    // findings reader: a <span> the operator could not click, and the uuid
+    // printed a second time in the detail as his only handle. A reference he
+    // cannot act on, beside a link he can, is worse than neither.
     renderFeed({
       writes: [
         write({
@@ -340,34 +371,19 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     });
     expect(
       screen.queryByTestId(
-        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
       )
     ).toBeNull();
-    const ref = screen.getByTestId(
-      "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
-    );
-    expect(ref.tagName).not.toBe("A");
-    expect(ref.querySelector("a")).toBeNull();
-    // Accessible TEXT, not a `title`: the explanation is what a keyboard or
-    // screen-reader operator gets. The row stays short (the cluster it sits
-    // in never shrinks), and says where the id is.
-    expect(ref).toHaveTextContent(/no notice sent/i);
-    expect(ref).toHaveTextContent(/expand this row/i);
-    // The FULL id lives in the expanded detail (R8), as selectable text: it
-    // is the only handle on the reasoning the console offers, so it must be
-    // complete and copyable, never truncated or hover-only — and present
-    // whether or not the diff bodies came back.
-    const idTestId =
-      "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-1";
-    expect(screen.queryByTestId(idTestId)).toBeNull();
     fireEvent.click(
       screen.getByTestId(
         "write-toggle-decision_record-escalate-path-clearance-is-agent-work-1"
       )
     );
-    expect(screen.getByTestId(idTestId)).toHaveTextContent(
-      "fec41291-67ed-4cf8-b331-888ad1126b45"
-    );
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
   });
 
   it("still links a v2 edit of that same document into the notifications feed", () => {
@@ -382,19 +398,14 @@ describe("LandedWriteFeed — the linked reasoning", () => {
         }),
       ],
     });
-    expect(
-      screen.getByTestId(
-        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
-      )
-    ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    const link = screen.getByTestId(
+      "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+    );
+    expect(link).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    expect(link).toHaveAttribute("data-reasoning-arm", "notice");
     // The tooltip names the finding the notice carries.
-    expect(
-      screen.getByTestId(
-        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
-      )
-    ).toHaveAttribute("title", expect.stringContaining("ref-2"));
-    // And NOT the finding-only reference as well — the two arms are exclusive,
-    // in the row and in the expanded detail.
+    expect(link).toHaveAttribute("title", expect.stringContaining("ref-2"));
+    // And NOT the deleted finding-only reference, in the row or in the detail.
     expect(
       screen.queryByTestId(
         "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-2"

@@ -14,6 +14,7 @@ by ``tests/test_plan_difficulty.py``; this file pins the STORAGE contract:
 
 from __future__ import annotations
 
+import json
 from uuid import UUID, uuid4
 
 import httpx
@@ -24,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact
-from app.services.plan_difficulty import RUBRIC_VERSION
+from app.services.plan_difficulty import (
+    MODEL_SELECTOR_VOCABULARY,
+    MODEL_SELECTORS,
+    MODEL_TIERS,
+    RUBRIC_VERSION,
+)
 from tests.test_plan_library_api import API_PREFIX, _build_app
 
 pytestmark = pytest.mark.asyncio
@@ -427,3 +433,57 @@ class TestDifficultyRoute:
         assert len(mine) == 1
         assert mine[0]["difficulty"] == "high"
         assert mine[0]["difficulty_source"] == "declared"
+
+
+class TestModelRoutingMapsOnEveryConsumingRoute:
+    """``model_tiers``, ``model_selectors`` and ``model_selector_vocabulary``
+    are served on all three routes a consumer routes from — the list route
+    (``/latest-draft``), ``/candidates`` (``/vet-imp-sweep``) and
+    ``/difficulty`` (the console) — and with identical serialized maps, so the three homes
+    cannot drift. Plan ``2026-09-22-route-plan-sweeps-by-difficulty`` Phase 1.
+    """
+
+    _KEYS = ("model_tiers", "model_selectors", "model_selector_vocabulary")
+
+    async def test_all_three_routes_carry_identical_maps(
+        self, http: httpx.AsyncClient
+    ) -> None:
+        responses = {
+            "list": await http.get(API_PREFIX, params={"kind": "plan", "limit": 1}),
+            "candidates": await http.get(
+                f"{API_PREFIX}/candidates",
+                params={"include_coord": "false", "limit": 1},
+            ),
+            "difficulty": await http.get(f"{API_PREFIX}/difficulty"),
+        }
+        blocks: dict[str, str] = {}
+        for route, response in responses.items():
+            assert response.status_code == 200, (route, response.text)
+            payload = response.json()
+            for key in self._KEYS:
+                assert payload.get(key) is not None, (route, key)
+            assert payload["model_tiers"] == MODEL_TIERS, route
+            assert payload["model_selectors"] == MODEL_SELECTORS, route
+            assert payload["model_selector_vocabulary"] == MODEL_SELECTOR_VOCABULARY
+            # Byte-identical: compare the raw serialised maps, not just equality.
+            blocks[route] = json.dumps(
+                {key: payload[key] for key in self._KEYS}, sort_keys=False
+            )
+        assert len(set(blocks.values())) == 1, blocks
+
+    async def test_the_maps_are_envelope_level_not_per_item(
+        self, http: httpx.AsyncClient
+    ) -> None:
+        slug = _slug("2026-09-22-envelope")
+        created = await http.post(
+            API_PREFIX,
+            json={"kind": "plan", "slug": slug, "title": "t", "body": _HIGH_BODY},
+        )
+        assert created.status_code == 201, created.text
+        payload = (
+            await http.get(API_PREFIX, params={"kind": "plan", "slug": slug})
+        ).json()
+        assert payload["items"], payload
+        for item in payload["items"]:
+            for key in self._KEYS:
+                assert key not in item

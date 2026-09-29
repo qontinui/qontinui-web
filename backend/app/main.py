@@ -39,6 +39,7 @@ from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import AsyncSessionLocal
+from app.middleware.body_limit import BodyLimit, BodyLimitMiddleware
 from app.middleware.database_timing import (
     DatabaseTimingMiddleware,
     init_database_timing,
@@ -57,6 +58,10 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.overview import files as overview_files
+from app.overview.router import (
+    CONTRACT_RESPONSE_HEADERS as OVERVIEW_CONTRACT_HEADERS,
+)
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -205,6 +210,24 @@ logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONM
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
 
+# Upload body caps, before anything parses the body (the multipart parser
+# would otherwise spool an unbounded body to disk ahead of authentication).
+# Inside CORSMiddleware, so a 413 still carries the CORS headers a browser
+# needs to read it.
+app.add_middleware(
+    BodyLimitMiddleware,
+    limits={
+        ("POST", f"{settings.API_V1_STR}/overview/files"): BodyLimit(
+            max_bytes=overview_files.MAX_UPLOAD_REQUEST_BYTES,
+            error="file_too_large",
+            message=(
+                "Files can be at most "
+                f"{overview_files.MAX_FILE_BYTES // (1024 * 1024)} MB."
+            ),
+        ),
+    },
+)
+
 # Response headers a browser client is allowed to READ.
 #
 # Exactly seven response headers are CORS-safelisted — Cache-Control,
@@ -251,6 +274,9 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # nothing — a rule CORS silently breaks when the header is unpublished.
             *ARTIFACT_EXPORT_HEADERS,
             *CORPUS_EXPORT_HEADERS,
+            # The overview authoring contract: a record's version as its ETag,
+            # and the marker on a create answered from an Idempotency-Key.
+            *OVERVIEW_CONTRACT_HEADERS,
         ]
     )
 )
@@ -530,7 +556,7 @@ async def startup_event():
     # next_fire_at` — so there is nothing to re-hydrate into Redis, and a Redis
     # flush can no longer drop a schedule.)
 
-    # Strategy Collaboration (Phase 1) service-account bridge. No-op
+    # Coord service-account bridge (used by device pairing). No-op
     # until COORD_ADMIN_SECRET is set; fail-fast when set-but-misconfig.
     #
     # Skipped under tests because "no-op unless COORD_ADMIN_SECRET is set" is
@@ -538,14 +564,14 @@ async def startup_event():
     # box that exports it for coord work would have the test process mint a real
     # token against coord over the network at boot (fail-fast → raises and kills
     # the whole session) and then keep a `_refresh_loop` task alive for the rest
-    # of it. `/strategy` route tests build their own client and mock the mint;
+    # of it. Device-pairing route tests build their own client and mock the mint;
     # the live-coord ones live under tests/integration/, which conftest ignores.
     if skip_side_effects:
-        logger.info("strategy_client_startup_skipped", reason="TESTING=1")
+        logger.info("coord_service_account_startup_skipped", reason="TESTING=1")
     else:
-        from app.services.strategy import strategy_client
+        from app.services.coord_service_account import coord_service_account
 
-        await strategy_client.startup()
+        await coord_service_account.startup()
 
     # Recording-pipeline async-run recovery (Phase 4 of plan
     # 2026-05-17-web-runner-ws-bridge-plan-b.md). Flips stale

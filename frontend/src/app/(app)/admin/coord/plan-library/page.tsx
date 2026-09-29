@@ -15,9 +15,12 @@
  * Six sections, in the order an operator uses them:
  *
  * 1. **Plan capture** — the `plan_capture` fleet-policy toggle, first-class at
- *    the top because it is the one control on this page that changes what the
- *    fleet does. It shows the value devices RESOLVE, not the value last
- *    written.
+ *    the top because the dials here are the only controls on this page that
+ *    change what the fleet does. It shows the value devices RESOLVE, not the
+ *    value last written. Beside it, the `citation_scope_backfill_write` dial
+ *    (`off` | `dry_run` | `live`): whether an AGENT may run the delivery-scope
+ *    citation backfill write — a cost decision recorded once (plan
+ *    `2026-09-23-delivery-scope-backfill-write-is-operator-only-so-a-mechanical-reconcile-needs-a-human`).
  * 2. **Capture health** — which door is feeding the store, so "the agent door
  *    is unused" is visible rather than inferred.
  * 3. **Scan sources** — how far the working tree behind each device's body
@@ -45,8 +48,8 @@
  * Authz: the `/admin/coord` layout does **not** admin-gate — any authenticated
  * tenant member may VIEW these pages, and its own header says not to restate
  * it as "admin-gated" (`admin/coord/layout.tsx`). Reads here are therefore
- * member-visible and tenant-scoped server-side; the one MUTATING control (the
- * capture toggle) is gated by coord-tenant admin on the backend
+ * member-visible and tenant-scoped server-side; the MUTATING controls (the
+ * two fleet-policy dials) are gated by coord-tenant admin on the backend
  * (`require_coord_tenant_admin`) and merely *reflected* in the UI via
  * `can_edit`. The kind correction is likewise gated by the backend's own
  * org scoping. Talks only to the always-registered `httpClient`, matching
@@ -71,6 +74,7 @@
 import { useState } from "react";
 import { Library } from "lucide-react";
 import { CapturePolicyPanel } from "./_components/CapturePolicyPanel";
+import { CitationBackfillPolicyPanel } from "./_components/CitationBackfillPolicyPanel";
 import { CaptureHealthPanel } from "./_components/CaptureHealthPanel";
 import { ScanSourcesPanel } from "./_components/ScanSourcesPanel";
 import { PlanCoveragePanel } from "./_components/PlanCoveragePanel";
@@ -105,14 +109,15 @@ export default function PlanLibraryPage() {
             nav crumb abbreviates. Pixel-identical either way. */}
         <h2 className="text-sm font-semibold">Plan &amp; Prompt Library</h2>
         <p className="max-w-4xl text-xs text-muted-foreground">
-          A searchable <em>index</em> of the prompts, findings reports,
-          handoffs and plans the fleet produces — <strong>not a backup</strong>:
-          nothing here restores a file, and a document deleted on disk keeps its
-          history here.
+          A searchable <em>index</em> of the prompts, findings reports, handoffs
+          and plans the fleet produces — <strong>not a backup</strong>: nothing
+          here restores a file, and a document deleted on disk keeps its history
+          here.
         </p>
       </div>
 
       <CapturePolicyPanel />
+      <CitationBackfillPolicyPanel />
       <CaptureHealthPanel />
       <ScanSourcesPanel />
       <PlanCoveragePanel />

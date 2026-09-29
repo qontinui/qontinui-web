@@ -67,6 +67,7 @@ describe("coordNavModel", () => {
       "Plan Forks",
       "Plan Follow-ups",
       "Questions",
+      "Findings",
       "Agents",
       "Agent Commands",
       "Agent Skills",
@@ -120,6 +121,7 @@ describe("coordNavModel", () => {
     expect(group("access").items.map((i) => i.href)).toEqual([
       "/admin/coord/members",
       "/admin/coord/agent-registry",
+      "/admin/coord/tenant-policy",
     ]);
   });
 

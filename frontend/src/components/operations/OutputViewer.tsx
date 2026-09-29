@@ -5,6 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
 interface OutputViewerProps {
   /** Runner UUID — keys the backend's `/operations/fleet/runners/{id}/output` proxy. */
@@ -23,35 +25,40 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
-  const fetchOutput = useCallback(async () => {
-    try {
-      const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
-      const res = await httpClient.fetch(url);
+  const fetchOutput = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
+        const res = await httpClient.fetch(url, COORD_DASHBOARD_POLL_OPTIONS);
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "Unknown error");
-        setError(`Failed to fetch output: ${res.status} - ${text}`);
-        return;
+        if (!res.ok) {
+          const text = await res.text().catch(() => "Unknown error");
+          if (!isCurrent()) return;
+          setError(`Failed to fetch output: ${res.status} - ${text}`);
+          return;
+        }
+
+        const data = await res.json();
+        if (!isCurrent()) return;
+        setOutput(data.output ?? data.text ?? JSON.stringify(data, null, 2));
+        setError(null);
+      } catch (err) {
+        if (!isCurrent()) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch task output"
+        );
+      } finally {
+        if (isCurrent()) setLoading(false);
       }
+    },
+    [runnerId, taskRunId]
+  );
 
-      const data = await res.json();
-      setOutput(data.output ?? data.text ?? JSON.stringify(data, null, 2));
-      setError(null);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch task output"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [runnerId, taskRunId]);
-
-  // Initial fetch + polling
-  useEffect(() => {
-    fetchOutput();
-    const interval = setInterval(fetchOutput, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchOutput]);
+  // Initial fetch + polling. Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick that finds the previous read outstanding is skipped, and a failing
+  // read is retried by the next tick, not by `httpClient`'s 5xx backoff chain.
+  useSingleFlightPoll(fetchOutput, POLL_INTERVAL_MS);
 
   // Auto-scroll when output changes
   useEffect(() => {

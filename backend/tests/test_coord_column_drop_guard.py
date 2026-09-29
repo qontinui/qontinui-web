@@ -39,9 +39,11 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import sys
 import urllib.error
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -720,6 +722,287 @@ def test_missing_manifest_json_file_is_vacuous(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 6b. the null-`main` UNKNOWN names its precondition as a machine-readable
+#     marker (plan 2026-09-13-a-machine-checkable-precondition-written-as-prose-
+#     is-an-unregistered-gate, Phase 4), and no other path prints one
+# ---------------------------------------------------------------------------
+
+# Byte-for-byte the line qontinui-coord's `guard_rerun.rs` test fixture pins
+# (`const MARKER`) and its allowlist admits for this guard.
+COORD_MARKER_LINE = (
+    'UNKNOWN-PENDING-PRECONDITION: {"kind":"sql_count",'
+    '"query_id":"schema_read_surfaces_main_at_head","op":"gte","n":1}'
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_step_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a CI run of this suite from writing into its OWN step summary."""
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+
+_WORKFLOW_COMMAND = re.compile(r"^::(error|warning|notice)(?: [^:]*)?::")
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\S*Z ")
+
+
+def _as_job_log(text: str) -> list[str]:
+    """The process's raw streams as the Actions job log shows them: the runner
+    RENDERS a ``::error::msg`` workflow command as ``##[error]msg`` (and
+    ``::warning …::`` as ``##[warning]``). Plain lines pass through."""
+    return [
+        _WORKFLOW_COMMAND.sub(lambda m: f"##[{m.group(1)}]", line)
+        for line in text.splitlines()
+    ]
+
+
+def _coord_clean(line: str) -> str:
+    """A model of coord's ``ci_baseline::clean_log_line``: strip ANSI escapes,
+    GitHub's per-line timestamp and ONE leading ``##[error]``, then trim."""
+    line = _TIMESTAMP.sub("", _ANSI.sub("", line), count=1)
+    return line.removeprefix("##[error]").strip()
+
+
+def _markers(text: str) -> list[str]:
+    """Lines coord's ``parse_precondition_markers`` would take as a marker."""
+    prefix = guard.PRECONDITION_MARKER_PREFIX.rstrip()
+    cleaned = (_coord_clean(line) for line in _as_job_log(text))
+    return [line for line in cleaned if line.startswith(prefix)]
+
+
+def test_the_marker_model_matches_coords_normalisation() -> None:
+    """Pin the helper against the shapes coord's own tests use."""
+    decorated = f"2026-09-13T10:00:01.0Z \x1b[31m##[error]{COORD_MARKER_LINE}\x1b[0m"
+    assert _markers(decorated) == [COORD_MARKER_LINE]
+    assert _markers(f"::error::{COORD_MARKER_LINE}") == [COORD_MARKER_LINE]
+    # A warning is not stripped, and a mid-sentence mention is not a marker.
+    assert _markers(f"::warning title=x::{COORD_MARKER_LINE}") == []
+    assert _markers(f"see {COORD_MARKER_LINE}") == []
+
+
+def _main_null_payload() -> dict:
+    return _manifest(("prompt_documents", "agent_write_tier", "sql"), main=None)
+
+
+def test_main_null_prints_exactly_one_marker_equal_to_the_constant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS  # still UNKNOWN, still not green
+    captured = capsys.readouterr()
+    markers = _markers(captured.out + captured.err)
+    assert markers == [COORD_MARKER_LINE]
+    body = markers[0].removeprefix(guard.PRECONDITION_MARKER_PREFIX)
+    assert json.loads(body) == guard.MAIN_AT_HEAD_PRECONDITION
+    # The human sentence stays beside it.
+    assert "serves `main.sha`" in captured.err
+
+
+def test_main_null_marker_survives_a_real_process_and_its_log(
+    tmp_path: Path,
+) -> None:
+    """The job log is the process's streams: run it as CI does, offline."""
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    manifest = _write_manifest(tmp_path, _main_null_payload())
+    result = _run("--files", str(fixture), "--manifest-json", str(manifest))
+    assert result.returncode == guard.EXIT_VACUOUS
+    assert _markers(result.stdout + result.stderr) == [COORD_MARKER_LINE]
+
+
+def test_main_null_on_actions_annotates_a_warning_and_writes_the_summary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert _markers(err) == [COORD_MARKER_LINE]
+    warnings = [
+        line
+        for line in err.splitlines()
+        if line.startswith("::warning title=UNKNOWN-PENDING-PRECONDITION::")
+    ]
+    assert len(warnings) == 1
+    assert "Not a violation." in warnings[0]
+    # Never an ::error:: annotation for the pending precondition itself.
+    assert not any(line.startswith("::error::UNKNOWN") for line in err.splitlines())
+    written = summary.read_text(encoding="utf-8")
+    assert written.startswith("UNKNOWN — pending precondition ")
+    # Only what the guard knows: coord MAY re-run, once, not on candidates.
+    assert written.rstrip().endswith(
+        "coord may re-run this check once when it holds (not on merge-candidate "
+        "refs; at most once per head). Not a violation."
+    )
+    assert "coord re-runs this check when it holds" not in written + err
+
+
+def test_an_unwritable_step_summary_is_reported_and_is_not_a_second_marker(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A directory cannot be opened for append: the OSError fallback fires.
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(_main_null_payload()))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    fallback = [line for line in err.splitlines() if "cannot append to" in line]
+    assert len(fallback) == 1
+    assert _markers(fallback[0]) == []
+    assert _markers(err) == [COORD_MARKER_LINE]
+
+
+def test_both_halves_null_reports_deployed_and_prints_no_marker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`deployed` is read first, so it is the half named — and its condition
+    has no coord predicate, so no marker (see the comment in parse_manifest)."""
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), main=None, deployed=None
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "`deployed` half of the manifest is null" in err
+    assert "`main` half of the manifest is null" not in err
+    assert _markers(err) == []
+
+
+Case = tuple[list[str], guard.Fetcher]
+
+
+def _drop_args(
+    tmp_path: Path, table: str, column: str, schema: str = "coord"
+) -> list[str]:
+    fixture = _write(tmp_path, "r.py", _drop_column_revision(table, column, schema))
+    return ["--files", str(fixture)]
+
+
+def _deployed_null(tmp_path: Path) -> Case:
+    payload = _manifest(("prompt_documents", "agent_write_tier", "sql"), deployed=None)
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        payload
+    )
+
+
+def _empty_deployed(tmp_path: Path) -> Case:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), deployed_surfaces=[]
+    )
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        payload
+    )
+
+
+def _wildcard(tmp_path: Path) -> Case:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        ("prompt_documents", "*", "unresolved_wildcard"),
+    )
+    return _drop_args(tmp_path, "prompt_documents", "scratch"), _fetch_of(payload)
+
+
+def _fetch_fails(tmp_path: Path) -> Case:
+    def failing(url: str) -> bytes:
+        raise guard.ManifestUnavailableError(f"{url}: connection reset")
+
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), failing
+
+
+def _route_absent(tmp_path: Path) -> Case:
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _http_error(404)
+
+
+def _violation(tmp_path: Path) -> Case:
+    return _drop_args(tmp_path, "prompt_documents", "agent_writable"), _fetch_of(
+        READS_AGENT_WRITABLE
+    )
+
+
+def _report_only(tmp_path: Path) -> Case:
+    args, fetch = _violation(tmp_path)
+    return [*args, "--report-only"], fetch
+
+
+def _static_violation(tmp_path: Path) -> Case:
+    fixture = _write(tmp_path, "p.py", PDTIER_01.read_text(encoding="utf-8"))
+    return ["--files", str(fixture)], _forbid_fetch
+
+
+def _no_coord_drop(tmp_path: Path) -> Case:
+    return _drop_args(
+        tmp_path, "prompt_documents", "agent_writable", schema="project"
+    ), _forbid_fetch
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        (_deployed_null, guard.EXIT_VACUOUS),
+        (_empty_deployed, guard.EXIT_VACUOUS),
+        (_wildcard, guard.EXIT_VACUOUS),
+        (_fetch_fails, guard.EXIT_VACUOUS),
+        (_route_absent, guard.EXIT_VACUOUS),
+        (_violation, guard.EXIT_VIOLATION),
+        (_report_only, 0),
+        (_static_violation, guard.EXIT_VIOLATION),
+        (_no_coord_drop, 0),
+    ],
+    ids=[
+        "deployed-null",
+        "empty-deployed",
+        "wildcard",
+        "fetch-fails",
+        "route-absent-404",
+        "violation",
+        "report-only",
+        "static-violation",
+        "no-coord-drop",
+    ],
+)
+def test_no_other_path_prints_a_marker(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case,
+    expected: int,
+) -> None:
+    """coord's allowlist admits only the null-`main` predicate for this guard,
+    so any other UNKNOWN printing one would be refused — and any other exit is
+    no pending precondition at all. Annotations ON, so a stray ``::warning``
+    or summary line is caught too."""
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(guard._gate_lib, "ANNOTATIONS", True)
+    args, fetch = case(tmp_path)
+    assert guard.main(args, fetch=fetch) == expected
+    captured = capsys.readouterr()
+    assert _markers(captured.out + captured.err) == []
+    assert "UNKNOWN-PENDING-PRECONDITION" not in captured.out + captured.err
+    assert "::warning" not in captured.out + captured.err
+    assert not summary.exists()
+
+
+# ---------------------------------------------------------------------------
 # 7. the wildcard waiver
 # ---------------------------------------------------------------------------
 
@@ -1340,7 +1623,7 @@ def test_fetch_manifest_records_the_http_status(monkeypatch) -> None:
     """The status must survive the fetch, or `main()` cannot tell 401 from 503."""
 
     def boom(url, timeout):  # noqa: ANN001, ARG001
-        raise urllib.error.HTTPError(url, 404, "nope", None, None)
+        raise urllib.error.HTTPError(url, 404, "nope", Message(), None)
 
     monkeypatch.setattr(guard.urllib.request, "urlopen", boom)
     with pytest.raises(guard.ManifestUnavailableError) as excinfo:
@@ -1452,3 +1735,223 @@ def test_the_scripts_docstring_names_every_lane() -> None:
     it leaves the script describing a shape the repo no longer has.
     """
     assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
+
+
+# ---------------------------------------------------------------------------
+# An EDITED landed revision is judged by its delta (qontinui-web#1457)
+# ---------------------------------------------------------------------------
+
+_LANDED = (
+    '"""landed revision"""\n'
+    "from alembic import op\n\n"
+    "def upgrade():\n"
+    '    op.drop_column("sessions", "plan_slug", schema="coord")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_an_edit_that_adds_no_drop_to_a_landed_revision_is_not_rejudged(
+    tmp_path: Path,
+) -> None:
+    """web#1457's shape: a landed drop revision gains only a SET LOCAL line."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED, path)
+    assert [(d.table, d.column) for d in head.drops] == [("sessions", "plan_slug")]
+    delta = guard.delta_scan(head, base, edited, _LANDED)
+    assert delta.drops == []
+    assert delta.unresolved == []
+    assert delta.violations == []
+
+
+def test_a_new_drop_added_to_a_landed_revision_is_still_judged(tmp_path: Path) -> None:
+    """Mutation guard: the delta arm must not launder a drop the edit ADDS."""
+    edited = _LANDED.replace(
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n',
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n'
+        '    op.drop_column("sessions", "work_unit_slug", schema="coord")\n',
+    )
+    path = tmp_path / "rev.py"
+    delta = guard.delta_scan(
+        guard.scan_source(edited, path),
+        guard.scan_source(_LANDED, path),
+        edited,
+        _LANDED,
+    )
+    assert [(d.table, d.column) for d in delta.drops] == [
+        ("sessions", "work_unit_slug")
+    ]
+
+
+_LANDED_DECLARED = (
+    '"""landed revision with a declared unresolved drop"""\n'
+    "from alembic import op\n\n"
+    'revision = "abc"\n'
+    'down_revision = "xyz"\n\n'
+    'COORD_SCHEMA_DROPS: list[tuple[str, str]] = [("sessions", "plan_slug")]\n\n'
+    "def upgrade():\n"
+    '    t, c = "sessions", "plan_slug"\n'
+    '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_a_new_unresolved_site_under_an_unchanged_declaration_is_judged_whole(
+    tmp_path: Path,
+) -> None:
+    """Review blocker: a second f-string drop the declaration silently covers."""
+    edited = _LANDED_DECLARED.replace(
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n',
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n'
+        '    t2, c2 = "sessions", "work_unit_slug"\n'
+        '    op.execute(f"ALTER TABLE coord.{t2} DROP COLUMN {c2}")\n',
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
+    assert delta.drops
+
+
+def test_a_rewritten_revision_identity_is_judged_whole(tmp_path: Path) -> None:
+    """A landed file given a new revision id is a new migration that will run."""
+    edited = _LANDED_DECLARED.replace('revision = "abc"', 'revision = "def"', 1)
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
+
+
+def test_a_violation_the_edit_introduces_is_not_laundered(tmp_path: Path) -> None:
+    """The edit removes the only other mention of the declared names, so the
+    declaration cross-check now fails; the delta must not clear that."""
+    edited = _LANDED_DECLARED.replace(
+        '    t, c = "sessions", "plan_slug"\n', "    t, c = TABLE, COLUMN\n"
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED_DECLARED, path)
+    assert head.violations and not base.violations
+    assert guard.delta_scan(head, base, edited, _LANDED_DECLARED) is head
+
+
+_LANDED_UNDECLARED = (
+    '"""landed before the gate: an unresolved site and no declaration"""\n'
+    "from alembic import op\n\n"
+    "def upgrade():\n"
+    '    t, c = "sessions", "plan_slug"\n'
+    '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_a_line_shift_alone_keeps_a_landed_violation_out_of_the_verdict(
+    tmp_path: Path,
+) -> None:
+    """Static violations compare up to line numbers: inserting a line above a
+    landed revision's pre-existing violation is not a new violation."""
+    edited = _LANDED_UNDECLARED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED_UNDECLARED, path)
+    assert head.violations and head.violations != base.violations
+    delta = guard.delta_scan(head, base, edited, _LANDED_UNDECLARED)
+    assert delta is not head
+    assert delta.violations == []
+
+
+def test_the_base_ref_lane_applies_the_delta_only_to_landed_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main()'s wiring: a file present at the merge base is delta-judged and
+    reported as such; an ADDED file (``base_source`` -> ``None``) is judged whole."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    landed = _write(tmp_path, "landed.py", edited)
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [landed])
+    monkeypatch.setattr(guard, "merge_base", lambda _ref: "base-sha")
+    monkeypatch.setattr(
+        guard, "base_source", lambda _sha, path: _LANDED if path == landed else None
+    )
+    assert guard.main(["--base-ref", "origin/main"], fetch=_forbid_fetch) == 0
+    out = capsys.readouterr().out
+    assert "edited landed revision, judged by its delta; 1 drop(s)" in out
+    # The verdict must not read as "drops nothing" when a landed drop was skipped.
+    assert "this PR's edits ADD no drop" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out
+
+    added = _write(tmp_path, "added.py", _LANDED_UNDECLARED)
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [added])
+    code = guard.main(["--base-ref", "origin/main"], fetch=_forbid_fetch)
+    captured = capsys.readouterr()
+    assert code == guard.EXIT_VIOLATION
+    assert "cannot resolve statically" in captured.err
+    assert "edited landed revision" not in captured.out
+    assert "drop(s) in edited landed revision(s)" not in captured.out
+
+
+def test_the_files_lane_never_consults_a_merge_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--files`` has no base: it judges whole and must not resolve one."""
+
+    def _no_merge_base(_ref: str) -> str:
+        raise AssertionError("--files resolved a merge base")
+
+    def _no_base_source(_sha: str, _path: Path) -> str:
+        raise AssertionError("--files read a base-version source")
+
+    monkeypatch.setattr(guard, "merge_base", _no_merge_base)
+    monkeypatch.setattr(guard, "base_source", _no_base_source)
+    fixture = _write(tmp_path, "rev.py", _LANDED_UNDECLARED)
+    code = guard.main(["--files", str(fixture)], fetch=_forbid_fetch)
+    assert code == guard.EXIT_VIOLATION
+
+
+def test_an_ok_verdict_also_names_the_landed_drops_it_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A PR that adds a checked drop AND edits a landed revision passes on the
+    manifest path; the OK line must not hide the landed drop the delta skipped."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    landed = _write(tmp_path, "landed.py", edited)
+    added = _write(
+        tmp_path,
+        "added.py",
+        _LANDED.replace('"sessions", "plan_slug"', '"sessions", "unread_col"'),
+    )
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [landed, added])
+    monkeypatch.setattr(guard, "merge_base", lambda _ref: "base-sha")
+    monkeypatch.setattr(
+        guard, "base_source", lambda _sha, path: _LANDED if path == landed else None
+    )
+    code = guard.main(
+        ["--base-ref", "origin/main"], fetch=_fetch_of(READS_AGENT_WRITABLE)
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK: none of the 1 dropped surface(s)" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out

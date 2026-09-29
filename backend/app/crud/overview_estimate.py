@@ -24,6 +24,7 @@ over coord's HTTP API by the endpoint layer and arrives here as a plain UUID.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -69,6 +70,7 @@ DEFAULT_SETTINGS = {
     "hours_per_day": Decimal("8"),
     "working_day_factor": Decimal("1.0"),
     "first_value_date": None,
+    "editing_roles": ["admin"],
     "version": 0,
 }
 
@@ -108,8 +110,17 @@ async def upsert_settings(
     working_day_factor: Decimal,
     first_value_date,
     expected_version: int | None,
+    editing_roles: Sequence[str] | None = None,
 ) -> OverviewSettings:
-    row = await db.get(OverviewSettings, tenant_id)
+    # Locked AND refreshed, so the version comparison below and the write it
+    # guards cannot interleave with a concurrent save. The refresh matters as
+    # much as the lock: the request has usually read this row already (the
+    # permission check does), and without `populate_existing` the session
+    # hands back that cached copy — the lock is taken, but the version it
+    # compares is the one read BEFORE it.
+    row = await db.get(
+        OverviewSettings, tenant_id, with_for_update=True, populate_existing=True
+    )
     if row is None:
         if expected_version not in (None, 0):
             raise VersionConflict(0)
@@ -124,6 +135,10 @@ async def upsert_settings(
     row.hours_per_day = hours_per_day
     row.working_day_factor = working_day_factor
     row.first_value_date = first_value_date
+    if editing_roles is not None:
+        row.editing_roles = list(editing_roles)
+    elif row.editing_roles is None:
+        row.editing_roles = ["admin"]
     row.updated_by = actor
     row.updated_at = _now()
     row.version = (row.version or 0) + 1
@@ -149,26 +164,40 @@ async def list_estimates(db: AsyncSession, *, tenant_id: UUID) -> list[Estimate]
 
 
 async def get_estimate(
-    db: AsyncSession, *, tenant_id: UUID, estimate_id: UUID
+    db: AsyncSession, *, tenant_id: UUID, estimate_id: UUID, lock: bool = False
 ) -> Estimate | None:
+    """``lock=True`` takes the row lock a write needs before it compares
+    ``version`` — the comparison on an unlocked read could interleave with a
+    concurrent save and let both through."""
     stmt = select(Estimate).where(
         Estimate.id == estimate_id, Estimate.tenant_id == tenant_id
     )
+    if lock:
+        # Refreshed as well as locked: a cached copy would compare a version
+        # read before the lock (see `upsert_settings`).
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return (await db.execute(stmt)).scalars().first()
 
 
 async def load_estimate_graph(
-    db: AsyncSession, *, tenant_id: UUID, estimate_id: UUID
+    db: AsyncSession, *, tenant_id: UUID, estimate_id: UUID, lock: bool = False
 ) -> Estimate | None:
     """The estimate with every child eagerly loaded.
 
     The rollup is a pure function over loaded rows, so it must not lazy-load
     inside an async session (which raises). This is the one loader that feeds
     it.
+
+    ``populate_existing``: an estimate already in the session (loaded by an
+    earlier plain read, or written by a content replace) would otherwise be
+    returned as it is, with its children NOT loaded — and the first access to
+    one lazy-loads, which an async session refuses. ``lock=True`` takes the
+    row lock a versioned write needs before it compares ``version``.
     """
     stmt = (
         select(Estimate)
         .where(Estimate.id == estimate_id, Estimate.tenant_id == tenant_id)
+        .execution_options(populate_existing=True)
         .options(
             selectinload(Estimate.roles),
             selectinload(Estimate.price_tiers),
@@ -180,6 +209,8 @@ async def load_estimate_graph(
             .selectinload(PhaseTask.efforts),
         )
     )
+    if lock:
+        stmt = stmt.with_for_update(of=Estimate)
     return (await db.execute(stmt)).scalars().first()
 
 

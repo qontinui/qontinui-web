@@ -22,7 +22,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.services.strategy import strategy_client
+from app.services.coord_service_account import coord_service_account
 
 _USER_ID = uuid4()
 _SERVICE_TOKEN = "coord-service-jwt-for-qontinui-web-strategy"
@@ -71,13 +71,13 @@ def _patches():
     out a deterministic service header pair, and capture the outbound POST
     (which lives in the shared ``coord_proxy`` helper)."""
     return (
-        patch.object(strategy_client, "_admin_secret", "test-secret"),
+        patch.object(coord_service_account, "_admin_secret", "test-secret"),
         patch(
             "app.api.v1.endpoints.devices.get_coord_identity",
             new=AsyncMock(return_value=MagicMock()),
         ),
         patch.object(
-            strategy_client,
+            coord_service_account,
             "_ensure_token",
             new=AsyncMock(return_value=_SERVICE_TOKEN),
         ),

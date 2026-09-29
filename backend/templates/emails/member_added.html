@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }
+        .content { background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }
+        .details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>You have been given access</h1>
+        </div>
+        <div class="content">
+            <p>Hi,</p>
+            <p>You have been given access to <strong>{{ tenant_name }}</strong> on Qontinui.</p>
+
+            <div class="details">
+                <h3>Your access</h3>
+                <p><strong>Team:</strong> {{ tenant_name }}</p>
+                <p><strong>Your role:</strong> {{ role_label }}</p>
+            </div>
+
+            <p>
+                Nothing about your own account has changed. Sign in the way you
+                always do, then use the team selector at the top of the page to
+                switch to {{ tenant_name }}.
+            </p>
+
+            <a href="{{ login_url }}" class="button">Go to Qontinui</a>
+
+            <p style="margin-top: 30px; color: #666;">
+                If you were not expecting this, you can ignore this message —
+                nothing is required of you.<br><br>
+                Best regards,<br>
+                The Qontinui Team
+            </p>
+        </div>
+    </div>
+</body>
+</html>
