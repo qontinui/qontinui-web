@@ -274,7 +274,30 @@ def test_fk_is_a_separate_not_valid_constraint_added_last() -> None:
     assert words[-2:] == ["NOT", "VALID"]
     assert _FK in fk[0]
     assert re.search(r"ON\s+DELETE\s+SET\s+NULL", fk[0])
-    assert up[-1] is fk[0], "the FK must be the last statement of upgrade()"
+    ddl = [sql for sql in up if not re.match(r"\s*SET\s", sql, re.I)]
+    assert ddl[-1] is fk[0], "the FK must be the last DDL statement of upgrade()"
+
+
+def test_both_directions_end_by_restoring_the_lock_bound() -> None:
+    """env.py runs every pending revision in one transaction; the 3s bound
+    must not leak into the next one."""
+    for fn_name in ("upgrade", "downgrade"):
+        sql = _sql_literals(_function(_tree(), fn_name))
+        assert re.fullmatch(
+            r"\s*SET\s+LOCAL\s+lock_timeout\s*=\s*DEFAULT\s*", sql[-1], re.I
+        ), f"{fn_name}() must end with SET LOCAL lock_timeout = DEFAULT"
+
+
+def test_downgrade_is_one_bounded_transaction() -> None:
+    """An autocommit block would commit part of the downgrade on its own and
+    could strand the database at twin_10 without its FK or index. coord's
+    classifier skips downgrade(), so only this test guards it."""
+    fn = _function(_tree(), "downgrade")
+    body = ast.unparse(fn)
+    assert "get_context" not in body and "autocommit_block" not in body
+    sql = _sql_literals(fn)
+    assert not any("CONCURRENTLY" in s.upper() for s in sql)
+    assert re.match(r"\s*SET\s+LOCAL\s+lock_timeout\s*=\s*'3s'", sql[0], re.I)
 
 
 def test_no_sql_body_carries_a_bind_parameter_spelling() -> None:

@@ -75,13 +75,17 @@ Locking: ``SET LOCAL lock_timeout = '3s'`` before each transactional group of
 ``ALTER``s, so a long reader on the hot oplog fails the migration fast instead
 of queueing every writer behind a lock request. Every ``ALTER`` is catalog-only:
 nullable columns with no default, and a ``NOT VALID`` constraint that scans
-nothing.
+nothing. Each direction ends with ``SET LOCAL lock_timeout = DEFAULT``:
+``env.py`` runs every pending revision in one transaction, and a later one
+must not inherit this bound.
 
 INVALID-index limit: the index is built ``CONCURRENTLY`` outside the
 migration transaction, where no ``lock_timeout`` applies (the ``SET LOCAL``
 ended with the transaction it was set in, and coord's classifier admits no
-session-level ``SET``). The build therefore waits, without a bound, for every
-older transaction in the database to finish. It never blocks writers, but it
+session-level ``SET``). The build therefore waits without a bound, first to
+acquire SHARE UPDATE EXCLUSIVE on the table (queueing behind conflicting DDL
+or a running ``VACUUM``), then for every older transaction in the database to
+finish. It never blocks writers, but it
 can hold up a deploy. A build that fails partway (a cancel, or a timeout the
 role or database itself configures) can leave an INVALID index that a re-run's ``IF NOT
 EXISTS`` then skips, reporting success. The index only speeds up per-tenant
@@ -143,9 +147,6 @@ def upgrade() -> None:
     # 4. The FK, in the fresh transaction that also stamps the version, so a
     #    partial run never leaves it committed without the stamp. NOT VALID
     #    skips a scan that could find nothing: every existing tenant_id is NULL.
-    #    env.py runs every pending revision in one transaction, so this bound
-    #    also covers any revision applied after this one in the same run. That
-    #    fails safe: a later revision can only fail faster, never wait longer.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -155,14 +156,17 @@ def upgrade() -> None:
             ON DELETE SET NULL NOT VALID
         """
     )
+    # env.py runs every pending revision in one transaction: hand the next one
+    # the lock bound it would have had without this revision.
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
     """Contract: drop the FK, the index and both columns, in ONE transaction.
 
     One transaction, so a failed downgrade (say, the 3s lock timeout) rolls
-    back completely and leaves the database stamped at twin_10 with all of
-    twin_10's objects in place. A ``DROP INDEX CONCURRENTLY`` would have to
+    back completely, leaving the database at the revision the downgrade started
+    from, with all of twin_10's objects in place. A ``DROP INDEX CONCURRENTLY`` would have to
     commit on its own and buys nothing here, because ``DROP COLUMN`` takes
     ACCESS EXCLUSIVE regardless.
 
@@ -178,3 +182,4 @@ def downgrade() -> None:
         "ALTER TABLE coord.client_telemetry_observations DROP COLUMN IF EXISTS tenant_id"
     )
     op.execute("ALTER TABLE coord.twin_targets DROP COLUMN IF EXISTS production_url")
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
