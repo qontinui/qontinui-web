@@ -13,9 +13,12 @@ path, where it surfaces only as ``LedgerState::write_failing``:
    and accepts every contract word.
 3. **The pending-edge rule** — ``to_node IS NULL`` iff ``outcome =
    'to_node_unobserved'``, enforced in both directions.
-4. **Defaults** — ``id`` and ``observed_at`` are server-stamped, so the
+4. **Shape of the JSONB columns** — a JSON ``null`` cannot pose as a node or
+   a trigger: ``from_node`` / ``trigger`` / frontier ``node`` must be objects,
+   ``to_node`` SQL NULL or an object.
+5. **Defaults** — ``id`` and ``observed_at`` are server-stamped, so the
    producer's INSERT may omit them.
-5. **No ``journey_explorations``** — Phase 3 owns it.
+6. **No ``journey_explorations``** — Phase 3 owns it.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -35,6 +38,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    column_info,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -221,11 +225,17 @@ def _primary_key(engine: Engine, qualified: str) -> list[str]:
         ]
 
 
+# A JSON null — ``CAST('null' AS jsonb)`` — which is NOT SQL NULL.
+_JSON_NULL = "null"
+
+
 def _insert_edge(
     engine: Engine,
     *,
     run_kind: str = "agent_action",
+    from_node: str = _NODE,
     to_node: str | None = _NODE,
+    trigger: str = _TRIGGER,
     outcome: str = "changed",
 ) -> None:
     with engine.begin() as conn:
@@ -233,28 +243,36 @@ def _insert_edge(
             _INSERT_EDGE,
             {
                 "run_kind": run_kind,
-                "from_node": _NODE,
+                "from_node": from_node,
                 "to_node": to_node,
-                "trigger": _TRIGGER,
+                "trigger": trigger,
                 "outcome": outcome,
             },
         )
 
 
 def _insert_frontier(
-    engine: Engine, *, fp: str, effect: str | None, reason: str
+    engine: Engine,
+    *,
+    fp: str,
+    effect: str | None,
+    reason: str,
+    node: str = _NODE,
 ) -> None:
     with engine.begin() as conn:
-        conn.execute(
+        first_seen_at, last_seen_at = conn.execute(
             _INSERT_FRONTIER,
             {
                 "node_key": "coord-runners#runners-list",
-                "node": _NODE,
+                "node": node,
                 "fp": fp,
                 "effect": effect,
                 "reason": reason,
             },
-        )
+        ).one()
+    # Both server-stamped, and in order.
+    assert first_seen_at is not None and last_seen_at is not None
+    assert first_seen_at <= last_seen_at
 
 
 @pytest.mark.skipif(
@@ -297,24 +315,23 @@ def test_journey_01_creates_the_contract_tables_and_enforces_their_vocabularies(
             "journey_explorations belongs to Phase 3, with the explorer that writes it"
         )
 
-        # 3. Every contract word is accepted; defaults are server-stamped.
+        # 3. Server defaults, read from the catalog — the producer's INSERT
+        # omits these columns, so each must carry its default.
+        for table, column, default in (
+            (_EDGES, "id", "gen_random_uuid()"),
+            (_EDGES, "observed_at", "now()"),
+            (_FRONTIER, "first_seen_at", "now()"),
+            (_FRONTIER, "last_seen_at", "now()"),
+        ):
+            info = column_info(engine, table, column, schema="project")
+            assert info is not None and info[2] == default, (table, column, info)
+
+        # Every contract word is accepted.
         for run_kind in _RUN_KINDS:
             _insert_edge(engine, run_kind=run_kind)
         for outcome in _OUTCOMES:
             _insert_edge(engine, outcome=outcome)
         _insert_edge(engine, to_node=None, outcome="to_node_unobserved")
-        with engine.connect() as conn:
-            stamped = conn.execute(
-                text(
-                    """
-                    SELECT COUNT(*) FILTER (WHERE id IS NOT NULL
-                                              AND observed_at IS NOT NULL),
-                           COUNT(*)
-                      FROM project.journey_edge_observations
-                    """
-                )
-            ).one()
-        assert tuple(stamped) == (8, 8)
 
         # 4. Unknown words are refused.
         with pytest.raises(
@@ -336,6 +353,25 @@ def test_journey_01_creates_the_contract_tables_and_enforces_their_vocabularies(
         ):
             _insert_edge(engine, to_node=_NODE, outcome="to_node_unobserved")
 
+        # 5b. A JSON null is not a node or a trigger.
+        with pytest.raises(
+            IntegrityError, match="ck_journey_edge_observations_to_node_object"
+        ):
+            _insert_edge(engine, to_node=_JSON_NULL, outcome="changed")
+        with pytest.raises(
+            IntegrityError, match="ck_journey_edge_observations_from_node_object"
+        ):
+            _insert_edge(engine, from_node=_JSON_NULL)
+        with pytest.raises(
+            IntegrityError, match="ck_journey_edge_observations_trigger_object"
+        ):
+            _insert_edge(engine, trigger=_JSON_NULL)
+        # Nor is any other non-object JSON value.
+        with pytest.raises(
+            IntegrityError, match="ck_journey_edge_observations_from_node_object"
+        ):
+            _insert_edge(engine, from_node='["coord-runners"]')
+
         # 6. Frontier vocabularies; NULL declared_effect is "undeclared", allowed.
         for i, reason in enumerate(_REASONS):
             _insert_frontier(engine, fp=f"fp-reason-{i}", effect=None, reason=reason)
@@ -349,6 +385,14 @@ def test_journey_01_creates_the_contract_tables_and_enforces_their_vocabularies(
             )
         with pytest.raises(IntegrityError, match="ck_journey_frontier_reason"):
             _insert_frontier(engine, fp="fp-bad-reason", effect=None, reason="skipped")
+        with pytest.raises(IntegrityError, match="ck_journey_frontier_node_object"):
+            _insert_frontier(
+                engine,
+                fp="fp-null-node",
+                effect=None,
+                reason="not_yet_activated",
+                node=_JSON_NULL,
+            )
         # The key bounds the frontier: one row per (app, node, affordance).
         with pytest.raises(IntegrityError, match="journey_frontier_pkey"):
             _insert_frontier(
