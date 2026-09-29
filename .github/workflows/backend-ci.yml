@@ -710,12 +710,26 @@ jobs:
       # splitter enforces them on the selection path too (there is a test for
       # that), which matters for any OTHER caller - not for this workflow, where
       # the selection is only reached after the gate passed.
+      #
+      # `--durations` deals the files by MEASURED SECONDS rather than by test
+      # count (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget).
+      # Count balance put the alembic-harness files -- ~8% of the tests and
+      # ~75% of the seconds -- wherever LPT happened to drop them, so one shard
+      # ran at 2-4x its siblings. The map is committed (never cached: every
+      # shard must compute the SAME assignment from the SAME inputs) and is
+      # refreshed from the nightly's `shard-durations-proposed.json` artifact.
+      # An absent or corrupt map degrades to count weights, said on the
+      # splitter's verdict line; it cannot change which files run. Only THIS
+      # step takes the flag -- the collect step above is a pure collection
+      # check, and the splitter refuses `--durations` with `--count-only`.
       - name: Select this shard's test files
         run: |
           python ../scripts/ci/split_pytest_shards.py \
             --nodeids collected-nodeids.txt \
             --shards 6 \
             --shard ${{ matrix.shard }} \
+            --durations tests/shard-durations.json \
             --out shard-files.txt
 
       - name: Run tests with coverage
@@ -854,6 +868,22 @@ jobs:
           name: coverage-report-shard-${{ matrix.shard }}
           path: ./backend/htmlcov/
           retention-days: 30
+
+      # The per-test timings the shard deal is built from. The pytest step
+      # above already writes them (`--junitxml=junit-results.xml`); until this
+      # upload they were thrown away with the runner. `if: always()` because a
+      # shard with a failing test still measured every test it ran, and a
+      # shard-scoped name for the same duplicate-name reason as the coverage
+      # artifact above. The nightly `shard-durations-proposal` job below is the
+      # consumer; on a PR the six artifacts are simply there to download.
+      - name: Upload junit results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: junit-results-shard-${{ matrix.shard }}
+          path: ./backend/junit-results.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -1280,6 +1310,56 @@ jobs:
   # reading the PR, a saved query -- would silently lose its subject if the
   # name simply vanished when the job became a matrix. Moving the work while
   # keeping the name costs one ~20-second job.
+  # Keeps `backend/tests/shard-durations.json` from rotting (plan
+  # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget,
+  # Phase 2). On the nightly only, it turns the six shards' junit timings into
+  # a proposed replacement map and uploads it, so a refresh is a download and a
+  # reviewed commit. It writes nothing to the tree itself.
+  #
+  # It is deliberately NOT in `test-gate`'s `needs:` and nothing gates on it: a
+  # tuning-file proposal must never be able to red or hold the `Run Tests`
+  # check. `always()` so a nightly with one failing shard still proposes from
+  # the timings it has (a failing shard still wrote its junit file).
+  shard-durations-proposal:
+    name: Propose shard durations
+    needs: [test]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download the shards' junit results
+        uses: actions/download-artifact@v5
+        with:
+          pattern: junit-results-shard-*
+          path: junit
+
+      - name: Build shard-durations-proposed.json
+        run: |
+          found=$(find junit -name '*.xml' -type f | wc -l)
+          echo "junit files downloaded: ${found} (expected 6)"
+          if [ "${found}" != "6" ]; then
+            echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not 6, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
+          fi
+          python scripts/ci/refresh_shard_durations.py junit \
+            --root backend \
+            --out shard-durations-proposed.json
+
+      - name: Upload shard-durations-proposed.json
+        uses: actions/upload-artifact@v5
+        with:
+          name: shard-durations-proposed
+          path: shard-durations-proposed.json
+          retention-days: 30
+
   test-gate:
     name: Run Tests
     needs: [test]
