@@ -40,7 +40,8 @@ there), and the SAME four invalidation columns with the same types, so a bad
 run is withdrawn the same way (set ``invalidated_*``) and every read filters
 ``invalidated_at IS NULL``. The ``id`` default ``gen_random_uuid()`` is NEW
 here — ``co_occurrence_observations.id`` has no server default (its writer
-supplies the id) — so the producer's INSERT may omit ``id``. The graph is DERIVED on read (plan D1); nothing here is a graph.
+supplies the id) — so the producer's INSERT may omit ``id``. The graph is
+DERIVED on read (plan D1); nothing here is a graph.
 
 ``project.journey_frontier`` — one row per affordance that was SEEN on a node
 and never activated from it, keyed ``(app_id, node_key,
@@ -97,11 +98,10 @@ No ``observed_at``-only index for the retention job
 (``app.jobs.journey_edge_retention``): it runs hourly over a table measured at
 ~11 snapshot-equivalents per 30 days on the one box that reported (Phase 0 U5),
 so a b-tree maintained on every INSERT to speed an hourly scan is the worse
-trade. Revisit — add ``(observed_at)`` — when EITHER trigger fires: the
-runner's ``/apps/{app_id}/journey/health`` reports an edges-written count above
-1,000,000, or one retention pass takes longer than 60 s (the job logs
-``duration_seconds`` on every pass, so the second is observable in the
-backend log).
+trade. Revisit — add ``(observed_at)`` — when EITHER trigger fires in THIS
+database: the job's ``estimated_rows`` (``pg_class.reltuples``) exceeds
+1,000,000, or one retention pass takes longer than 60 s. Both are logged by the
+job on every pass, so both are observable in the backend log.
 
 ``project.journey_explorations`` is NOT created here — Phase 3 adds it with the
 explorer that writes it (no table without a writer).
