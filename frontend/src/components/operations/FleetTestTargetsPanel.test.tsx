@@ -174,6 +174,13 @@ describe("designationErrorText", () => {
     expect(designationErrorText(rejection("PUT", 409, body))).toBe(NOT_BOUND);
   });
 
+  it("shows the generic coord_failed message, not the raw JSON", () => {
+    const message =
+      "coord failed to change the designation (500). Retry; if it persists, check coord.";
+    const err = rejection("PUT", 500, envelope("coord_failed", message));
+    expect(designationErrorText(err)).toBe(message);
+  });
+
   it("does not promote the message of an unlisted error code", () => {
     const err = rejection("PUT", 404, envelope("not_found", "anything"));
     expect(designationErrorText(err)).toBe(err.message);

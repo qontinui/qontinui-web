@@ -82181,7 +82181,7 @@
     },
     "/api/v1/fleet/test-targets/{device_id}/{app_id}": {
       "delete": {
-        "description": "Remove a test-host designation through coord.\n\ncoord's DELETE is scoped to the caller's EFFECTIVE tenant and answers\n``200 {\"deleted\": false}`` for a row stamped with any other tenant \u2014 which\nis NOT a removal. So ``deleted: false`` is never taken as success on its\nown: the row is read back. Absent means the designation the operator asked\nto remove is gone (204, idempotent as before). Still present means it\nlives in another project \u2014 409 ``designation_in_other_project`` naming\nit, since reporting success there would leave the device's runner serving\na designation the operator believes is removed.",
+        "description": "Remove a test-host designation through coord.\n\ncoord's DELETE is scoped to the caller's EFFECTIVE tenant and answers\n``200 {\"deleted\": false}`` for a row stamped with any other tenant \u2014 which\nis NOT a removal. So ``deleted: false`` is never taken as success on its\nown: the row is read back. Absent means the designation the operator asked\nto remove is gone (204, idempotent as before). Still present means it\nlives in another project \u2014 409 ``designation_in_other_project`` naming\nit, since reporting success there would leave the device's runner serving\na designation the operator believes is removed \u2014 or, when it is still in\nthe selected project (a concurrent re-designation), 409\n``designation_not_removed``.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_delete",
         "parameters": [
           {
