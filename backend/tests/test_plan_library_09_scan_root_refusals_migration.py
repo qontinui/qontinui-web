@@ -183,6 +183,18 @@ def test_upgrade_upsert_downgrade_upgrade_round_trip() -> None:
         identity = _indexes(engine)["uq_plan_scan_root_refusals_identity"]
         assert "UNIQUE" in identity
         assert "COALESCE(organization_id" in identity
+        # pg_indexes also lists an INVALID index (a failed CONCURRENTLY
+        # build), which Postgres ignores as an ON CONFLICT target.
+        with engine.connect() as conn:
+            assert conn.execute(
+                text(
+                    "SELECT i.indisvalid FROM pg_index i "
+                    "JOIN pg_class c ON c.oid = i.indexrelid "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'agent' "
+                    "AND c.relname = 'uq_plan_scan_root_refusals_identity'"
+                )
+            ).scalar_one()
         assert _checks(engine) == {
             "ck_plan_scan_root_refusals_reason_length",
             "ck_plan_scan_root_refusals_count_positive",

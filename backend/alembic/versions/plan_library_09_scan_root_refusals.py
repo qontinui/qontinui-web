@@ -47,7 +47,16 @@ Downgrade
 Drops the table. What is lost is a diagnostic: the next refused report of each
 device recreates its row, with its count restarting at 1.
 
-Idempotency: every statement uses ``IF NOT EXISTS`` / ``IF EXISTS``.
+Idempotency: every statement uses ``IF NOT EXISTS`` / ``IF EXISTS``. One
+limit: the identity index is built ``CONCURRENTLY`` outside the migration
+transaction, so a build that fails after the table commits (a lock or
+statement timeout, a cancel) can leave an INVALID index that a re-run's
+``IF NOT EXISTS`` then skips. Postgres ignores an invalid index as an
+``ON CONFLICT`` target, so the refusal upsert would fail. Recovery:
+``DROP INDEX CONCURRENTLY agent.uq_plan_scan_root_refusals_identity`` and
+re-run. No ``indisvalid`` check is made here because coord's migration
+classifier rejects ``op.get_bind()``; the table is new and empty, so the
+build has nothing to wait on but other sessions' open transactions.
 """
 
 from collections.abc import Sequence
