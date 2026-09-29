@@ -82,6 +82,17 @@ _INDEXES = (
     "ix_operator_inputs_tenant_session_occurred_at",
 )
 
+# Each index's key columns, in order — parsed from ``pg_indexes.indexdef``.
+_EXPECTED_INDEX_COLUMNS: dict[str, tuple[str, ...]] = {
+    "uq_operator_inputs_idempotency_key": ("idempotency_key",),
+    "ix_operator_inputs_tenant_occurred_at": ("tenant_id", "occurred_at"),
+    "ix_operator_inputs_tenant_session_occurred_at": (
+        "tenant_id",
+        "session_id",
+        "occurred_at",
+    ),
+}
+
 # The column contract, EXACTLY: name -> (data_type, is_nullable). Adding a
 # column fails this test on purpose — read the revision's "The privacy rule"
 # section before changing this mapping.
@@ -141,6 +152,30 @@ def _columns(engine: Engine) -> dict[str, tuple[str, str]]:
     return {name: (dtype, nullable) for name, dtype, nullable in rows}
 
 
+def _index_columns(engine: Engine) -> dict[str, tuple[str, ...]]:
+    """``{index_name: key columns}`` for every index on ``coord.operator_inputs``.
+
+    The primary-key index is left out: it is pinned by the constraint check.
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT indexname, indexdef FROM pg_indexes
+                 WHERE schemaname = 'coord' AND tablename = :table
+                   AND indexname <> 'operator_inputs_pkey'
+                """
+            ),
+            {"table": _TABLE},
+        ).all()
+    parsed: dict[str, tuple[str, ...]] = {}
+    for name, indexdef in rows:
+        match = re.search(r"USING btree \(([^)]*)\)", indexdef)
+        assert match, f"unexpected index definition for {name}: {indexdef}"
+        parsed[name] = tuple(col.strip() for col in match.group(1).split(","))
+    return parsed
+
+
 def _constraint_types(engine: Engine) -> list[str]:
     """Every ``pg_constraint.contype`` on ``coord.operator_inputs``."""
     with engine.connect() as conn:
@@ -190,6 +225,9 @@ def test_coordinput_01_creates_a_content_free_store_and_enforces_the_dedup_key()
         assert table_exists(engine, "coord", _TABLE)
         for name in _INDEXES:
             assert index_exists(engine, name), f"missing index {name}"
+        # By NAME is not enough: an index with the right name over the wrong
+        # columns would pass the check above and serve no read. Pin the key.
+        assert _index_columns(engine) == _EXPECTED_INDEX_COLUMNS
 
         # ----------------------------------------------------------------
         # 3. The privacy pin — the column set is EXACTLY the contract.

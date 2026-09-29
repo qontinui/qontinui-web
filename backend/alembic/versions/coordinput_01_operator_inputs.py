@@ -94,9 +94,11 @@ Row grain — an EPISODE, never a keystroke
 One row per ``(tenant, session-or-resource, channel, 60-second bucket)``. A
 human typing a 400-character redirect produces one row, not 400. The bucket
 width is the RUNNER's ``session::operator_touch::BUCKET_WIDTH_SECS`` /
-``epoch_bucket()`` — the constant the demand store's emitter already uses — and
-coord mints no bucket of its own; there is one bucket width in the fleet, not
-two. Volume is therefore bounded by construction at ≤ 1 row per session per
+``epoch_bucket()``, as defined in the demand store's emitter
+(qontinui-runner#1680, still open when this revision was authored — it is not
+on runner ``main`` yet). The operator-input emitter imports that constant
+rather than defining a second one, and coord mints no bucket of its own; there
+is one bucket width in the fleet, not two. Volume is therefore bounded by construction at ≤ 1 row per session per
 channel per minute of actual human activity.
 
 Column contract — ``coord.operator_inputs``
@@ -150,6 +152,15 @@ route and its read door. The names must not drift from this list.
     bridge**, for the same reason there is no session bridge above. The read
     door reports ``operator_identity_coverage`` and breaks hours out per
     operator only where this is known.
+
+    **The id space is coord's, not qontinui-web's.** The value is
+    ``OperatorContext.operator_id``, which is ``coord.operators``' own primary
+    key (minted by coord's SSO upsert) — **NOT** qontinui-web's
+    ``auth.users.id``. qontinui-coord ``agent_registry.rs`` states in terms that
+    these are different id spaces. A web-side per-operator join must therefore
+    go through ``coord.operators``, never key this column on ``auth.users.id``:
+    such a join matches nothing, raises no error, and reads as "no operator
+    identity" — a silent zero, not a failure.
 
 ``channel TEXT NOT NULL``
     The door the input came through. Vocabulary at authoring time, closed at
