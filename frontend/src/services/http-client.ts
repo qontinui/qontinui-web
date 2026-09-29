@@ -49,11 +49,6 @@ const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
  * against the caller's coord memberships (the test's `_FORWARDED_TO_COORD` /
  * `_VALIDATED_LOCALLY`). WebSocket routes cannot carry the header at all and
  * are checked separately (they read the selection from a query param).
- *
- * `/api/v1/fleet/test-targets` is deliberately ABSENT: its PUT re-stamps
- * `coord.test_targets.tenant_id` with no `coord.tenant_devices` binding
- * check, so a selection the device is not bound to would hide the
- * designation from the device's runner. See the guard's `_EXCLUSIONS`.
  */
 const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
@@ -122,6 +117,15 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // Session repository — `get_tenant_id` / `require_coord_tenant_admin`
   // coord proxies; relaunch lands in the tenant the operator selected.
   "/api/v1/session-repository",
+  // Test-host designations — the PUT and DELETE proxy to coord's
+  // `/coord/trees/test-targets` writer behind `get_tenant_id`, and coord
+  // refuses a device the selected project has no `coord.tenant_devices`
+  // binding for (surfaced as a 409 naming the project). So the designation
+  // lands in the project the operator selected, or is refused — never
+  // stamped into a project whose runner poll cannot see it. The GET list is
+  // device-owner scoped and ignores the header. Plan
+  // 2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to.
+  "/api/v1/fleet/test-targets",
 ];
 
 function readActiveTenantId(): string | null {

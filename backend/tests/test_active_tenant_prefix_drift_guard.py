@@ -161,21 +161,6 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/workflows/{workflow_id}/dispatch": (
         "no dashboard caller; includes() cannot target it without workflow CRUD"
     ),
-    # The designation PUT stamps AND overwrites ``coord.test_targets.tenant_id``
-    # from ``get_tenant_id`` checking only device ownership and app existence,
-    # while coord's own writer requires a ``coord.tenant_devices`` binding and
-    # the runner poll returns only rows whose tenant is one of the device's
-    # bindings. With the header, an operator switched to a project the device
-    # is not bound to would re-stamp the row there and the designation would
-    # silently vanish from the device's runner. Follow-up: route the PUT
-    # through coord's binding-checked test-targets upsert, then add the prefix.
-    # Do NOT drop this entry without that backend fix: it is the only thing
-    # that fails if the prefix is re-added (the raw-read rule cannot see it).
-    "/api/v1/fleet/test-targets/{device_id}/{app_id}": (
-        "PUT re-stamps tenant_id with no coord.tenant_devices binding check; "
-        "follow-up: route it through coord's binding-checked upsert, then add "
-        "the prefix"
-    ),
 }
 
 # Modules whose raw header read is legitimate on a COVERED route: each
@@ -346,7 +331,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads/writes; only the designation PUT stamps a tenant",
+        "device-owner scoped reads and the project.apps config edit; only the "
+        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "binding-checked test-targets writer)",
         frozenset(
             {
                 "/api/v1/fleet/apps",
