@@ -190,6 +190,7 @@ def _call(
     coord_body: Any = None,
     headers: dict[str, str] | None = None,
     json: Any = None,
+    coord_raises: Exception | None = None,
 ) -> tuple[httpx.Response, AsyncMock, MagicMock]:
     """Drive one request; return (response, mocked httpx instance, ctor mock)."""
     from app.api.v1.endpoints import fleet_targets, operations
@@ -197,6 +198,9 @@ def _call(
     instance = AsyncMock()
     instance.post.return_value = _coord_response(coord_status, coord_body)
     instance.delete.return_value = _coord_response(coord_status, coord_body)
+    if coord_raises is not None:
+        instance.post.side_effect = coord_raises
+        instance.delete.side_effect = coord_raises
     instance.__aenter__ = AsyncMock(return_value=instance)
     instance.__aexit__ = AsyncMock(return_value=False)
     identity = AsyncMock(return_value=_identity(effective))
@@ -411,7 +415,9 @@ def test_delete_not_deleted_while_row_still_in_selected_project_is_a_409():
     )
 
     assert response.status_code == 409, response.text
-    assert "removed nothing" in response.json()["detail"]["message"]
+    detail = response.json()["detail"]
+    assert detail["error"] == "designation_not_removed"
+    assert "removed nothing" in detail["message"]
 
 
 def test_delete_not_deleted_and_verifiably_absent_is_a_204():
@@ -481,6 +487,9 @@ def test_put_row_in_another_project_is_refused_before_coord_is_called():
     assert detail["row_tenant_id"] == str(_OTHER)
     assert '"other-proj"' in detail["message"]
     assert 'designate it again in "Selected Project"' in detail["message"]
+    # The device may still be bound to the owning project: changing it there
+    # is offered too.
+    assert 'Switch to project "other-proj" to change it there' in detail["message"]
     ctor.assert_not_called()
     assert session.writes == []
 
@@ -562,3 +571,33 @@ def test_delete_not_deleted_row_in_non_member_project_names_no_tenant():
     assert "row_tenant_id" not in detail
     assert str(_FOREIGN) not in detail["message"]
     assert "Ask that project's operator" in detail["message"]
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+@pytest.mark.parametrize(
+    ("raised", "status", "detail_name"),
+    [
+        (httpx.ConnectError("refused"), 502, "COORD_UNREACHABLE_DETAIL"),
+        (httpx.ReadTimeout("slow"), 504, "COORD_TIMEOUT_DETAIL"),
+    ],
+)
+def test_proxy_transport_failures_pass_through_unchanged(
+    method: str, raised: Exception, status: int, detail_name: str
+):
+    """The proxy helpers' own unreachable/timeout 5xx are web's text, not
+    coord's, so the 5xx scrub keeps them verbatim — matched on the constants
+    ``operations`` exports and raises, not on a copy of the literal."""
+    from app.api.v1.endpoints import operations
+
+    session = _FakeSession(device=_device())
+    response, _, _ = _call(
+        session,
+        method,
+        effective=_SELECTED,
+        coord_raises=raised,
+        json={"auto_fresh": True} if method == "PUT" else None,
+    )
+
+    assert response.status_code == status, response.text
+    assert response.json()["detail"] == getattr(operations, detail_name)
+    assert session.writes == []

@@ -64,6 +64,17 @@ describe("fleet designation refusals", () => {
     );
   });
 
+  it.each([
+    ["designation_not_removed", "coord removed nothing: still recorded"],
+    ["coord_failed", "coord failed to change the designation (500)."],
+    ["designation_in_other_project", 'recorded under project "Home"'],
+  ])("unwraps the %s message", async (code, message) => {
+    fetchMock.mockResolvedValue(jsonResponse(409, { error: code, message }));
+    await expect(designateTestTarget("dev-1", "web", false)).rejects.toThrow(
+      message
+    );
+  });
+
   it("keeps the fallback for an envelope whose code is not a designation refusal", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(500, { error: "internal_error", message: "boom" })

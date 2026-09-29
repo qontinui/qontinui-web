@@ -79,12 +79,19 @@ export const DESIGNATION_REFUSAL_CODES: ReadonlySet<string> = new Set([
   // PUT: the selected project has no `coord.tenant_devices` binding for the
   // device, so its runner would never see the designation.
   "device_not_bound_to_project",
-  // DELETE: coord removed nothing because the row lives in another project.
+  // PUT or DELETE: the (device, app) row is stamped with another project, so
+  // the PUT refuses to change it and the DELETE removed nothing.
   "designation_in_other_project",
+  // DELETE: coord removed nothing although the row is in the selected
+  // project (a concurrent re-designation).
+  "designation_not_removed",
   // PUT: coord accepted the write but the row could not be read back.
   "designation_not_visible",
   // PUT: any other coord JSON refusal, re-worded by the backend.
   "coord_refused",
+  // PUT or DELETE: coord answered 5xx. The backend replaces coord's text
+  // (which can carry SQL context) with its own generic message and status.
+  "coord_failed",
 ]);
 
 /**

@@ -44,6 +44,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.operations import (
+    COORD_TIMEOUT_DETAIL,
+    COORD_UNREACHABLE_DETAIL,
     _proxy_coord_delete,
     _proxy_coord_post,
     get_tenant_id,
@@ -312,11 +314,20 @@ async def _other_project_conflict(
     what = f"The designation of device {device.name!r} for app '{app_id}'"
     verb = "changed" if redesignate else "removed"
     then = f", then designate it again in {selected}" if redesignate else ""
-    if owner is not None:
+    if owner is not None and redesignate:
+        # The device may still be bound to the owning project, where changing
+        # the row in place is exactly what the operator may want — offer that
+        # too, but keep refusing here.
         message = (
             f"{what} is recorded under project {owner}, not the selected "
             f"project {selected}, so it was not {verb}. Switch to project "
-            f"{owner} and remove it there{then}."
+            f"{owner} to change it there, or remove it there{then}."
+        )
+    elif owner is not None:
+        message = (
+            f"{what} is recorded under project {owner}, not the selected "
+            f"project {selected}, so it was not {verb}. Switch to project "
+            f"{owner} and remove it there."
         )
     else:
         message = (
@@ -336,10 +347,9 @@ async def _other_project_conflict(
 
 
 # The two failures ``operations``' proxy helpers raise themselves (not coord's
-# body), safe to show verbatim.
-_PROXY_TRANSPORT_ERRORS = frozenset(
-    {"coord is not reachable", "timeout waiting for coord"}
-)
+# body), safe to show verbatim. Shared constants, so a reworded helper message
+# cannot silently turn them into a generic ``coord_failed``.
+_PROXY_TRANSPORT_ERRORS = frozenset({COORD_UNREACHABLE_DETAIL, COORD_TIMEOUT_DETAIL})
 
 
 def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
@@ -366,7 +376,7 @@ def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
             detail={
                 "error": "coord_failed",
                 "message": (
-                    "coord failed to record the designation "
+                    "coord failed to change the designation "
                     f"({exc.status_code}). Retry; if it persists, check coord."
                 ),
             },
@@ -544,7 +554,9 @@ async def undesignate_test_target(
     to remove is gone (204, idempotent as before). Still present means it
     lives in another project — 409 ``designation_in_other_project`` naming
     it, since reporting success there would leave the device's runner serving
-    a designation the operator believes is removed.
+    a designation the operator believes is removed — or, when it is still in
+    the selected project (a concurrent re-designation), 409
+    ``designation_not_removed``.
     """
     device = await _owned_device(db, device_id, current_user.id)
 
@@ -576,7 +588,7 @@ async def undesignate_test_target(
     raise HTTPException(
         status_code=409,
         detail={
-            "error": "designation_in_other_project",
+            "error": "designation_not_removed",
             "message": (
                 f"coord removed nothing: the designation of device "
                 f"{device.name!r} for app '{app_id}' is still recorded under "
