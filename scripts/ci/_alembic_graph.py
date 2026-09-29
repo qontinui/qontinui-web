@@ -100,17 +100,21 @@ def parent_refs(down_rhs: str) -> list[str]:
     fork-root walk, the parent pin, :func:`repoint_sites` (via
     :func:`split_comment`), ``migrate.yml``'s DAG snapshot, and the migration
     tests that read their own parent at runtime — so they cannot disagree about
-    what a parent is. Comments are skipped (see ``_RHS_TOKEN_RE``). Replayed over all 611 revision files on ``ee23f9b28``
-    (2026-09-30) against the former ``\w[\w]*`` class read without comment
-    skipping: the ordered parent lists agree for every file, and the head set is
-    unchanged.
+    what a parent is. Comments are skipped (see ``_RHS_TOKEN_RE``).
+
+    Replayed over all 611 revision files on ``ee23f9b28`` (2026-09-30) against
+    the former ``\w[\w]*`` class read without comment skipping: the ordered
+    parent lists agree for every file, and the head set is unchanged.
     """
     return [m.group(1) for m in _RHS_TOKEN_RE.finditer(down_rhs) if m.group(1)]
 
 
 def split_comment(down_rhs: str) -> tuple[str, str, str]:
-    """``str.partition("#")`` over a right-hand side, except a ``#`` inside a
-    quoted id is part of the id: ``(value, "#" or "", comment)``."""
+    """``str.partition("#")`` over a ``down_revision`` right-hand side.
+
+    Except that a ``#`` inside a quoted id is part of the id, not a comment.
+    Returns ``(value, "#" or "", comment)``, the same shape as ``partition``.
+    """
     for m in _RHS_TOKEN_RE.finditer(down_rhs):
         if m.group(1) is None:
             return down_rhs[: m.start()], "#", down_rhs[m.start() + 1 :]
