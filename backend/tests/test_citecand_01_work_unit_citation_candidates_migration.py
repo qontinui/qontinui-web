@@ -489,6 +489,19 @@ def test_table_shape_and_both_partial_indexes() -> None:
             assert isinstance(indexdef, str)
             assert indexdef.startswith("CREATE INDEX"), indexdef
             assert f"{cols} WHERE (resolved_at IS NULL)" in indexdef, indexdef
+            # A CONCURRENTLY build that failed part-way leaves an INVALID index
+            # that IF NOT EXISTS would silently skip on re-run.
+            assert (
+                scalar(
+                    engine,
+                    "SELECT i.indisvalid FROM pg_index i JOIN pg_class c "
+                    "ON c.oid = i.indexrelid JOIN pg_namespace n "
+                    "ON n.oid = c.relnamespace WHERE n.nspname = :s AND c.relname = :i",
+                    s=_SCHEMA,
+                    i=index,
+                )
+                is True
+            ), f"{index} is not valid"
 
         assert (
             scalar(
