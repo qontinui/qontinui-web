@@ -74,6 +74,7 @@ import {
   errorWantsReread,
   labelOutcomeLabel,
   isLabelLevelRefusal,
+  labelMayStillRoute,
   labelLevelRefusalLine,
   labelRepoDisplay,
   labelsSpanHosts,
@@ -112,8 +113,17 @@ const PAGE_PATH = "/admin/coord/machine-maintenance";
 function ciFullyRestored(w: MaintenanceWindow): boolean {
   const c = w.levers.ci;
   if (c.inWindow === false) return true;
+  // Owed a restore: a failed or unknown restore, a removal still in flight,
+  // or one GitHub never answered (`labelMayStillRoute`'s in-flight arms — a
+  // removal that plainly FAILED left the label on, which after a close is
+  // the restored state, so it does not count against it).
   if (
-    c.labels.some((l) => l.outcome === "restore_failed" || l.outcome === null)
+    c.labels.some(
+      (l) =>
+        l.outcome === "restore_failed" ||
+        l.outcome === null ||
+        (labelMayStillRoute(l) && l.outcome !== "failed")
+    )
   )
     return false;
   return c.state === "released" || c.state === "nothing_to_delabel";
@@ -557,6 +567,17 @@ export default function MachineMaintenancePage() {
                 mirror={mirror}
               />
             )}
+            {readiness.read.state === "ok" &&
+              readiness.read.readiness.agent.detail && (
+                // The agent plane's own words (e.g. why it reads UNKNOWN,
+                // or a held lever's drain that is gone) — as coord sent them.
+                <p
+                  className="text-xs text-muted-foreground break-words"
+                  data-testid="coord-maintenance-agent-plane-detail"
+                >
+                  Agent plane: {readiness.read.readiness.agent.detail}
+                </p>
+              )}
             {deviceId !== "" ? (
               <SessionWindDown
                 deviceId={deviceId}

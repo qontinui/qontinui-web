@@ -932,6 +932,7 @@ async def _proxy_coord_get(
     forward_bearer: bool = False,
     headers: dict[str, str] | None = None,
     timeout: httpx.Timeout | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -986,6 +987,14 @@ async def _proxy_coord_get(
     :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None`` keeps the 5s
     fail-fast for every other proxy: coord answering a small JSON read slower
     than that means something is wrong, and that is worth surfacing.
+
+    ``structured_errors`` — hand coord's typed ≥400 JSON object through as the
+    ``detail`` (see :func:`_coord_error_detail`) instead of its text, so the
+    production error envelope carries coord's own ``error`` code at the top
+    level. Opt-in per route for the same reason as on ``_proxy_coord_post``:
+    it changes the wire shape of every error the route returns. The machine /
+    maintenance-window reads opt in because the page branches on coord's code
+    (``schema_pending`` is "unavailable", not a failure).
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1009,7 +1018,10 @@ async def _proxy_coord_get(
                 detail="timeout waiting for coord",
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     return resp.json()
 
 
@@ -5132,7 +5144,9 @@ async def get_fleet_machines(
     Passed through untouched. An empty ``ci_hosts`` means "no CI host linked",
     which the page renders as exactly that and never as "CI not paused".
     """
-    return await _proxy_coord_get("/coord/fleet/machines", tenant_id=tenant_id)
+    return await _proxy_coord_get(
+        "/coord/fleet/machines", tenant_id=tenant_id, structured_errors=True
+    )
 
 
 @router.get("/fleet/machines/{device_id}/ci-hosts")
@@ -5142,7 +5156,9 @@ async def get_machine_ci_hosts(
 ) -> Any:
     """Return the GitHub runner names declared to be this machine."""
     return await _proxy_coord_get(
-        f"/coord/fleet/machines/{device_id}/ci-hosts", tenant_id=tenant_id
+        f"/coord/fleet/machines/{device_id}/ci-hosts",
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -5226,7 +5242,10 @@ async def get_maintenance_windows(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     return await _proxy_coord_get(
-        "/coord/fleet/maintenance-window", params=params, tenant_id=tenant_id
+        "/coord/fleet/maintenance-window",
+        params=params,
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -5322,6 +5341,7 @@ async def get_maintenance_window_readiness(
     return await _proxy_coord_get(
         f"/coord/fleet/maintenance-window/{window_id}/readiness",
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 

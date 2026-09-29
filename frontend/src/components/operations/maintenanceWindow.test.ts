@@ -1641,3 +1641,71 @@ describe("coord's final contract — label rows and error codes", () => {
     }
   });
 });
+
+describe("error bodies as the browser receives them", () => {
+  it("reads coord's code from the production envelope", () => {
+    const e = describeMaintenanceError(
+      503,
+      JSON.stringify({
+        error: "schema_pending",
+        message: "m",
+        timestamp: 1,
+        path: "/x",
+      })
+    );
+    expect(e.code).toBe("schema_pending");
+    expect(e.message).toBe("m");
+  });
+
+  it("unwraps coord's error stringified into the envelope's message or FastAPI's detail", () => {
+    const inMessage = describeMaintenanceError(
+      503,
+      JSON.stringify({
+        error: "SERVICE_UNAVAILABLE",
+        message: JSON.stringify({
+          error: "schema_pending",
+          message: "not migrated",
+        }),
+      })
+    );
+    expect(inMessage.code).toBe("schema_pending");
+    expect(inMessage.message).toBe("not migrated");
+    const inDetail = describeMaintenanceError(
+      409,
+      JSON.stringify({
+        detail: JSON.stringify({ error: "window_busy", message: "busy" }),
+      })
+    );
+    expect(inDetail.code).toBe("window_busy");
+    // A message that is plain prose is left alone.
+    expect(
+      describeMaintenanceError(
+        500,
+        JSON.stringify({ error: "INTERNAL", message: "{oops" })
+      ).code
+    ).toBe("INTERNAL");
+  });
+
+  it("the label-level refusal summary on the lever carries its detail", () => {
+    const w = win({
+      levers: {
+        agent_work: { held: true, state: "held" },
+        ci: {
+          held: true,
+          state: "partial",
+          labels: [
+            {
+              label: "linux",
+              repo: "*",
+              outcome: "failed",
+              detail: "github_read_only_label",
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      deriveLeverStatus("ci", machine({ openWindow: w }), NOW).reason
+    ).toContain("label linux refused on all repos: github_read_only_label");
+  });
+});
