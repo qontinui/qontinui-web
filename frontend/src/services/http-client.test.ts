@@ -769,6 +769,13 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // scopes candidates to the active tenant.
     "https://api.test/api/v1/devices/resolve",
     "https://api.test/api/v1/dispatch/fresh-host?app_id=web&strategy=best_effort",
+    // Regression Tests: condition groups live in one project, so a missing
+    // entry shows (and edits) the home project's groups under another name.
+    "https://api.test/api/v1/conditions/groups",
+    // Listed in ACTIVE_TENANT_URL_PREFIXES long before they were tested here.
+    "https://api.test/api/v1/helper-tasks",
+    "https://api.test/api/v1/devices/pair-codes",
+    "https://api.test/api/v1/agent-registry",
   ];
 
   for (const url of SCOPED_URLS) {

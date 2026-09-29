@@ -62,6 +62,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // tenant's devices.
   "/api/v1/devices/resolve",
   "/api/v1/dispatch/fresh-host",
+  // Regression Tests (condition groups) — `backend/app/api/v1/endpoints/
+  // conditions.py` proxies every route to coord behind `Depends(get_tenant_id)`,
+  // and coord membership-checks the override (a non-member selection keeps the
+  // home tenant). Without it the page reads and writes the operator's home
+  // project whichever project is selected. Plan
+  // 2026-09-17-regression-tests-target-the-selected-project, Phase 1.
+  "/api/v1/conditions",
 ];
 
 function readActiveTenantId(): string | null {
