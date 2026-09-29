@@ -12,9 +12,11 @@ never reach; the runner prunes its own embedded database, and that prune is
 added in the runner half of the same Phase 1. Rows here are those that reach
 the web backend's Postgres — this job says nothing about a runner's ledger.
 
-Every pass logs ``duration_seconds``. The ledger deliberately has no
-``observed_at``-only index (see the ``journey_01_edge_ledger`` docstring); a
-pass exceeding 60 s is one of that decision's two named revisit triggers.
+Every pass logs ``duration_seconds`` and ``estimated_rows`` (the planner's
+``pg_class.reltuples`` for the table in THIS database; ``-1`` = never
+analyzed). The ledger deliberately has no ``observed_at``-only index (see the
+``journey_01_edge_ledger`` docstring); a pass over 60 s, or ``estimated_rows``
+above 1,000,000, is that decision's revisit trigger.
 
 ``project.journey_frontier`` needs no retention — its primary key
 ``(app_id, node_key, affordance_fingerprint)`` bounds it.
@@ -52,6 +54,12 @@ TABLE = "project.journey_edge_observations"
 RETENTION_CHUNK_ROWS = 1000
 
 _TABLE_PRESENT_SQL = text("SELECT to_regclass(:table) IS NOT NULL")
+
+# Planner estimate of the table's row count (no scan). -1 means never analyzed,
+# which the log reports as-is rather than as zero.
+_ROW_ESTIMATE_SQL = text(
+    "SELECT reltuples::bigint FROM pg_class WHERE oid = to_regclass(:table)"
+)
 
 # No ORDER BY: which expired rows go first is immaterial (they all go), and the
 # ledger carries no observed_at-only index to make an ordered scan cheap.
@@ -121,9 +129,12 @@ async def delete_journey_edges_older_than_retention(
         if chunk_deleted < RETENTION_CHUNK_ROWS:
             break
 
+    estimate = await db.execute(_ROW_ESTIMATE_SQL, {"table": TABLE})
+    estimated_rows = int(estimate.scalar_one())
     logger.info(
         "Cleaned up old journey edge observations",
         deleted_edges=deleted,
+        estimated_rows=estimated_rows,
         duration_seconds=round(time.monotonic() - started, 3),
         cutoff=cutoff.isoformat(),
         retention_days=retention_days,

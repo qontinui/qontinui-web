@@ -204,6 +204,7 @@ async def test_deletes_expired_edges_and_keeps_fresh_ones(ledger: AsyncSession):
     # revisiting the ledger's missing observed_at index.
     assert isinstance(report[0]["duration_seconds"], float)
     assert report[0]["duration_seconds"] >= 0
+    assert isinstance(report[0]["estimated_rows"], int)
 
 
 @pytest.mark.asyncio
