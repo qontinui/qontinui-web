@@ -884,9 +884,26 @@ export function labelMayStillRoute(l: LabelOutcome): boolean {
   );
 }
 
+/** A label-level refusal: coord's `repo: "*"`, naming no repo. */
+export function isLabelLevelRefusal(l: LabelOutcome): boolean {
+  return l.repo === "*";
+}
+
 /** `repo: "*"` is a label-level refusal naming no repo — "all repos". */
 export function labelRepoDisplay(l: LabelOutcome): string {
-  return l.repo === "*" ? "all repos" : l.repo;
+  return isLabelLevelRefusal(l) ? "all repos" : l.repo;
+}
+
+/**
+ * The line a label-level refusal gets of its own — it is not a repo, so it
+ * is never one of "N repos still route here":
+ * "Label `qontinui` was refused on all repos: <detail>".
+ */
+export function labelLevelRefusalLine(l: LabelOutcome): string {
+  return (
+    `Label \`${l.label}\` was refused on all repos: ` +
+    (l.detail ?? l.rawOutcome ?? "coord gave no detail")
+  );
 }
 
 /** How many repos may still route here after a delabel attempt. */
@@ -894,7 +911,12 @@ export function stillRoutingCount(labels: readonly LabelOutcome[]): number {
   // A repo whose outcome coord did not send in a form this build reads is
   // UNKNOWN, a removal in flight has not landed, and a removal GitHub never
   // answered is unconfirmed — each may still route here, so each counts.
-  return new Set(labels.filter(labelMayStillRoute).map((l) => l.repo)).size;
+  // A label-level refusal (`repo: "*"`) is not a repo; it gets its own line.
+  return new Set(
+    labels
+      .filter((l) => !isLabelLevelRefusal(l) && labelMayStillRoute(l))
+      .map((l) => l.repo)
+  ).size;
 }
 
 /** The distinct repos a label outcome list names, in order (never `*`). */
@@ -1093,6 +1115,14 @@ export function buildMaintenancePreview(
     }
     if (opened) {
       for (const l of opened.levers.ci.labels) {
+        if (isLabelLevelRefusal(l)) {
+          lines.push({
+            key: `label-${l.label}-all-${l.host ?? ""}`,
+            action: labelLevelRefusalLine(l),
+            target: l.host ?? "all repos",
+          });
+          continue;
+        }
         lines.push({
           key: `label-${l.label}-${l.repo}-${l.host ?? ""}`,
           action: `Label \`${l.label}\` — ${labelOutcomeLabel(l)}`,

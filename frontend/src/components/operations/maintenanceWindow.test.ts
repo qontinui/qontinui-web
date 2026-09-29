@@ -36,6 +36,7 @@ import {
   SCHEMA_PENDING_REASON,
   agentLeverStateWords,
   errorWantsReread,
+  labelLevelRefusalLine,
   labelOutcomeLabel,
   labelRepoDisplay,
   labelRepos,
@@ -1576,6 +1577,33 @@ describe("coord's final contract — label rows and error codes", () => {
     });
     expect(labelRepoDisplay(l)).toBe("all repos");
     expect(labelRepos([l])).toEqual([]);
+    // Not a repo: never one of "N repos still route here"…
+    expect(stillRoutingCount([l])).toBe(0);
+    // …but its own line, and it still keeps the lever partial.
+    expect(labelLevelRefusalLine(l)).toBe(
+      "Label `qontinui` was refused on all repos: github_read_only_label"
+    );
+    const w = win({
+      levers: {
+        agent_work: { held: true, state: "held" },
+        ci: {
+          held: true,
+          state: "partial",
+          labels: [
+            {
+              label: "qontinui",
+              repo: "*",
+              outcome: "failed",
+              detail: "github_read_only_label",
+            },
+          ],
+        },
+      },
+    });
+    const st = deriveLeverStatus("ci", machine({ openWindow: w }), NOW);
+    expect(st.kind).toBe("partial");
+    expect(st.reason).not.toContain("repos still route here");
+    expect(st.reason).toContain("label qontinui refused on all repos");
   });
 
   it("maps the new refusal codes to a next step", () => {

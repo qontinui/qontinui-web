@@ -41,6 +41,8 @@ import {
   drainLanesDetail,
   formatUntil,
   labelOutcomeLabel,
+  isLabelLevelRefusal,
+  labelLevelRefusalLine,
   labelRepoDisplay,
   labelsSpanHosts,
   errorWantsReread,
@@ -254,33 +256,47 @@ function LeverRow({
           className="space-y-0.5 text-[11px]"
           data-testid="coord-maintenance-lever-ci-labels"
         >
-          {labels.map((l) => (
-            <li
-              key={`${l.label}@${l.repo}@${l.host ?? ""}`}
-              className="break-words"
-              data-testid="coord-maintenance-lever-ci-label"
-              data-label-outcome={l.outcome ?? "unknown"}
-            >
-              <span className="font-mono break-all">{labelRepoDisplay(l)}</span>
-              {spanHosts && l.host && (
-                <>
-                  {" "}
-                  on{" "}
-                  <span
-                    className="font-mono break-all"
-                    data-testid="coord-maintenance-lever-ci-label-host"
-                  >
-                    {l.host}
-                  </span>
-                </>
-              )}{" "}
-              · label <span className="font-mono">{l.label}</span> —{" "}
-              {labelOutcomeLabel(l)}
-              {l.detail && labelOutcomeLabel(l) !== l.detail
-                ? ` (${l.detail})`
-                : ""}
-            </li>
-          ))}
+          {labels.map((l) =>
+            isLabelLevelRefusal(l) ? (
+              <li
+                key={`${l.label}@*@${l.host ?? ""}`}
+                className="break-words"
+                data-testid="coord-maintenance-lever-ci-label-refused-all"
+                data-label-outcome={l.outcome ?? "unknown"}
+              >
+                {labelLevelRefusalLine(l)}
+                {spanHosts && l.host ? ` (host ${l.host})` : ""}
+              </li>
+            ) : (
+              <li
+                key={`${l.label}@${l.repo}@${l.host ?? ""}`}
+                className="break-words"
+                data-testid="coord-maintenance-lever-ci-label"
+                data-label-outcome={l.outcome ?? "unknown"}
+              >
+                <span className="font-mono break-all">
+                  {labelRepoDisplay(l)}
+                </span>
+                {spanHosts && l.host && (
+                  <>
+                    {" "}
+                    on{" "}
+                    <span
+                      className="font-mono break-all"
+                      data-testid="coord-maintenance-lever-ci-label-host"
+                    >
+                      {l.host}
+                    </span>
+                  </>
+                )}{" "}
+                · label <span className="font-mono">{l.label}</span> —{" "}
+                {labelOutcomeLabel(l)}
+                {l.detail && labelOutcomeLabel(l) !== l.detail
+                  ? ` (${l.detail})`
+                  : ""}
+              </li>
+            )
+          )}
         </ul>
       )}
 

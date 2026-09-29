@@ -1405,18 +1405,22 @@ describe("/admin/coord/machine-maintenance — coord's final contract", () => {
     await waitFor(() =>
       expect(
         screen.getAllByTestId("coord-maintenance-lever-ci-label")
-      ).toHaveLength(3)
+      ).toHaveLength(2)
     );
     const rows = screen
       .getAllByTestId("coord-maintenance-lever-ci-label")
       .map((r) => r.textContent ?? "");
     expect(rows[0]).toContain("removal in progress");
     expect(rows[1]).toContain("outcome unknown; will be restored");
-    expect(rows[2]).toContain("all repos");
-    expect(rows[2]).toContain("github_read_only_label");
-    expect(screen.getByTestId("coord-maintenance-lever-ci")).toHaveTextContent(
-      "3 repos still route here"
+    // The label-level refusal is its own line, not a repo.
+    expect(
+      screen.getByTestId("coord-maintenance-lever-ci-label-refused-all")
+    ).toHaveTextContent(
+      "Label `linux` was refused on all repos: github_read_only_label"
     );
+    const lever = screen.getByTestId("coord-maintenance-lever-ci");
+    expect(lever).toHaveTextContent("2 repos still route here");
+    expect(lever).toHaveAttribute("data-lever-kind", "partial");
   });
 });
 
