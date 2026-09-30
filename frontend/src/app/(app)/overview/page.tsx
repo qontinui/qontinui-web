@@ -179,7 +179,8 @@ export default function OverviewSummaryPage() {
         )}
         <TrustTile
           tenantId={activeTenantId}
-          hold={tenantsLoading || tenantsError !== null}
+          hold={tenantsLoading}
+          tenantError={tenantsError}
         />
       </aside>
     </div>

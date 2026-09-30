@@ -177,4 +177,45 @@ describe("TrustTile", () => {
     );
     expect(el.textContent).toContain("52 landed");
   });
+
+  it("a failed project list renders could-not-look with that reason, not a skeleton", async () => {
+    render(
+      <TrustTile tenantId={null} hold={false} tenantError="HTTP 500: boom" />
+    );
+    const el = await settled("could_not_look");
+    expect(el.textContent).toContain("the list of projects couldn’t be loaded");
+    expect(el.textContent).toContain("HTTP 500: boom");
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
+  it("announces loading accessibly", () => {
+    http.get.mockReturnValue(new Promise(() => {}));
+    render(<TrustTile tenantId="t-1" hold={false} />);
+    const loading = document.querySelector(
+      '[data-ui-bridge-id="overview.summary.trust.loading"]'
+    );
+    expect(loading?.getAttribute("role")).toBe("status");
+    expect(loading?.getAttribute("aria-hidden")).toBeNull();
+    expect(loading?.textContent).toContain("Reading");
+  });
+
+  it("a full findings page says more may exist, and the list carries the superseded caveat", async () => {
+    serve(populated(), {
+      available: true,
+      count: 1,
+      limit: 1,
+      findings: [REFUTATION_FINDING],
+    });
+    renderTile();
+    const el = await settled("populated");
+    const caveat = await vi.waitFor(() => {
+      const c = el.querySelector(
+        '[data-ui-bridge-id="overview.summary.trust.refuted.caveat"]'
+      );
+      if (!c) throw new Error("no caveat yet");
+      return c;
+    });
+    expect(caveat.textContent).toContain("a later check");
+    expect(caveat.textContent).toContain("more may exist");
+  });
 });

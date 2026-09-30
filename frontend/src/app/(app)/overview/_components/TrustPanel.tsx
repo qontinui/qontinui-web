@@ -86,7 +86,10 @@ function RefutedSection({ count, list }: { count: number; list: RefutedList }) {
   return (
     <div className="mt-4" data-ui-bridge-id="overview.summary.trust.refuted">
       {list.status === "loading" && (
-        <Skeleton className="h-4 w-40" aria-hidden />
+        <div role="status">
+          <span className="sr-only">Reading refuted units…</span>
+          <Skeleton className="h-4 w-40" aria-hidden />
+        </div>
       )}
       {list.status === "error" && (
         <p className="text-sm text-muted-foreground">
@@ -125,11 +128,16 @@ function RefutedSection({ count, list }: { count: number; list: RefutedList }) {
                 </li>
               ))}
             </ul>
-            {list.truncated && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                More refutations exist than one read returns.
-              </p>
-            )}
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-ui-bridge-id="overview.summary.trust.refuted.caveat"
+            >
+              Listed from the findings store: a refutation a later check
+              overturned stays listed; the count above uses standing verdicts
+              only.
+              {list.truncated &&
+                " One read returned a full page, so more may exist."}
+            </p>
           </>
         ))}
     </div>
@@ -147,12 +155,13 @@ export function TrustPanel({
     return (
       <div
         className="space-y-3"
-        aria-hidden
+        role="status"
         data-ui-bridge-id="overview.summary.trust.loading"
       >
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-4/5" />
+        <span className="sr-only">Reading how much finished work held up…</span>
+        <Skeleton className="h-8 w-48" aria-hidden />
+        <Skeleton className="h-4 w-full" aria-hidden />
+        <Skeleton className="h-4 w-4/5" aria-hidden />
       </div>
     );
   }

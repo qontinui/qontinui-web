@@ -48,6 +48,7 @@ import {
   findingHref,
   interval,
   pct,
+  ratePct,
   refutedUnitsInWindow,
   unverifiableTotal,
   type PopulatedMetrics,
@@ -87,7 +88,7 @@ function KV({
 function calibrationCell(c: SeriesWeek["trust_calibration"]): string {
   if (c.value == null) return "–";
   const iv = interval(c);
-  return `${pct(c.value)}${iv ? ` ${iv}` : ""}`;
+  return `${ratePct(c.value, c)}${iv ? ` ${iv}` : ""}`;
 }
 
 function SeriesTable({ series }: { series: SeriesWeek[] }) {
@@ -201,7 +202,7 @@ function PopulatedBody({ m }: { m: PopulatedMetrics }) {
     {
       key: "held",
       label: "held up",
-      value: tc.value == null ? null : pct(tc.value),
+      value: tc.value == null ? null : ratePct(tc.value, tc),
       title: tc.reason ?? undefined,
     },
     { key: "n", label: "n", value: tc.n },
@@ -241,7 +242,7 @@ function PopulatedBody({ m }: { m: PopulatedMetrics }) {
           <KV k="Held up when independently checked">
             {tc.value == null
               ? `unknown — ${tc.reason ?? "no verdicts in window"}`
-              : `${pct(tc.value)} ${interval(tc) ?? ""} — ${tc.survived} survived, ${tc.refuted} refuted, n=${tc.n} of ${tc.population}`}
+              : `${ratePct(tc.value, tc)} ${interval(tc) ?? ""} — ${tc.survived} survived, ${tc.refuted} refuted, n=${tc.n} of ${tc.population}`}
           </KV>
           <KV k="Method">{tc.method}</KV>
           {tc.counts && <KV k="Counts">{tc.counts}</KV>}
@@ -337,8 +338,9 @@ export default function CoordVerificationPage() {
   const [windowId, setWindowId] = useState<WindowId>("28d");
   const { read, refuted, lastGood, reload } = useVerificationMetrics(
     activeTenantId,
-    loading || tenantsError !== null,
-    windowId
+    loading,
+    windowId,
+    tenantsError
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
   const health = useMemo(() => deriveVerificationHealth(view), [view]);
