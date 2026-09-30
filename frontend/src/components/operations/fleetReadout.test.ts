@@ -92,6 +92,36 @@ describe("isFaultToVisibilityPayload", () => {
     expect(isFaultToVisibilityPayload({ kinds: [], totals: null })).toBe(false);
     expect(isFaultToVisibilityPayload(null)).toBe(false);
   });
+
+  it("refuses a kinds[] row missing its percentile or counts", () => {
+    const { p90_secs: _p90, ...noP90 } = BODY.kinds[0];
+    expect(isFaultToVisibilityPayload({ ...BODY, kinds: [noP90] })).toBe(false);
+    expect(
+      isFaultToVisibilityPayload({ ...BODY, kinds: [{ kind: "x" }] })
+    ).toBe(false);
+    expect(
+      isFaultToVisibilityPayload({
+        ...BODY,
+        totals: { episodes_n: 1, onset_known_n: 0 },
+      })
+    ).toBe(false);
+  });
+
+  it("never prints a kind with no p90 as 0s", () => {
+    const b = faultToVisibilityBadge({
+      data: {
+        ...BODY,
+        kinds: [
+          { kind: "quiet", episodes_n: 3, onset_known_n: 0, p50_secs: null, p90_secs: null },
+          ...BODY.kinds,
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+    expect(b.title).not.toContain("quiet");
+    expect(b.title).not.toContain("0s");
+  });
 });
 
 describe("buildResolvabilityBadge", () => {

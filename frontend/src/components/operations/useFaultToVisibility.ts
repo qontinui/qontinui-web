@@ -71,13 +71,26 @@ export function isFaultToVisibilityPayload(
 ): body is FaultToVisibilityPayload {
   if (typeof body !== "object" || body === null) return false;
   const b = body as Record<string, unknown>;
-  const totals = b.totals as Record<string, unknown> | null | undefined;
   return (
     Array.isArray(b.kinds) &&
-    typeof totals === "object" &&
-    totals !== null &&
-    typeof totals.episodes_n === "number" &&
-    typeof totals.onset_known_n === "number"
+    b.kinds.every(
+      (k) =>
+        isRow(k) && typeof (k as Record<string, unknown>).kind === "string"
+    ) &&
+    isRow(b.totals)
+  );
+}
+
+/** A percentile row: counts are numbers, each percentile a number or `null`. */
+function isRow(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  const pct = (x: unknown) => x === null || typeof x === "number";
+  return (
+    typeof r.episodes_n === "number" &&
+    typeof r.onset_known_n === "number" &&
+    pct(r.p50_secs) &&
+    pct(r.p90_secs)
   );
 }
 

@@ -129,22 +129,47 @@ export interface DomainCostPayload {
   comparison_reason: string | null;
 }
 
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A cost block: an object whose every dimension is itself an object. */
+function isCostBlock(v: unknown): boolean {
+  return isObject(v) && Object.values(v).every(isObject);
+}
+
+function isDomain(v: unknown): boolean {
+  return isObject(v) && typeof v.name === "string" && isCostBlock(v.cost);
+}
+
 /**
- * Accept a body only when it carries what every reader dereferences: the
- * roster outcome (`domains` an array, or `null` beside a `roster_error`) and
- * the provenance. The proxy forwards whatever coord says, and a body of
- * another shape is a failed read — never an empty ledger.
+ * Accept a body only when it carries everything the section dereferences —
+ * the provenance, every domain's `name` and `cost` (each dimension an
+ * object), and a comparison with a string `verdict` over an object of
+ * `dimensions`. The proxy forwards whatever coord says, and a body of another
+ * shape — including a PARTIAL one — is a failed read, never an empty or
+ * half-rendered ledger.
  */
 export function isDomainCostPayload(body: unknown): body is DomainCostPayload {
-  if (typeof body !== "object" || body === null) return false;
-  const b = body as Record<string, unknown>;
-  const source = b.roster_source as Record<string, unknown> | null | undefined;
+  if (!isObject(body)) return false;
+  const { comparison, domains, shared } = body;
   return (
-    typeof b.computed_at === "string" &&
-    typeof source === "object" &&
-    source !== null &&
-    (Array.isArray(b.domains) || b.domains === null) &&
-    typeof b.unattributed_units_n === "number"
+    typeof body.computed_at === "string" &&
+    isObject(body.roster_source) &&
+    typeof body.unattributed_units_n === "number" &&
+    (domains === null || (Array.isArray(domains) && domains.every(isDomain))) &&
+    (comparison === null ||
+      comparison === undefined ||
+      (isObject(comparison) &&
+        typeof comparison.verdict === "string" &&
+        isObject(comparison.dimensions) &&
+        Object.values(comparison.dimensions).every(isObject))) &&
+    (shared === null ||
+      shared === undefined ||
+      (isObject(shared) && typeof shared.shared_unassigned_n === "number")) &&
+    (body.unmapped_areas === null ||
+      body.unmapped_areas === undefined ||
+      Array.isArray(body.unmapped_areas))
   );
 }
 

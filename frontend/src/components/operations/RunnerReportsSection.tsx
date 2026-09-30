@@ -177,11 +177,10 @@ export function RunnerReportsSection({
                 <p className="text-[11px] text-muted-foreground">
                   {GROUP_HEADING[group.kind]} ({group.rows.length})
                 </p>
-                <ul className="flex flex-wrap gap-1">
+                <ul className="flex flex-wrap items-center gap-1">
                   {group.rows.map((row) => (
                     <li
                       key={row.mechanism}
-                      className="contents"
                       data-capability-mechanism={row.mechanism}
                     >
                       <StatusBadge

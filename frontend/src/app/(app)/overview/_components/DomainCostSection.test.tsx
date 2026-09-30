@@ -69,6 +69,10 @@ describe("DomainCostSection — the three verdicts", () => {
     // Not informational: both domains attained a stage.
     expect(byUi(`${UI}.verdict-reason`)).not.toHaveTextContent("context, not a test");
     expect(byUi(`${UI}.ratio-work_units`)).toHaveTextContent("0.40");
+    // "Marginal" is stated on screen, with coord's own basis for it.
+    expect(byUi(`${UI}.marginal-basis`)).toHaveTextContent(
+      "Compared cost is marginal: marginal = domain-specific cost"
+    );
     expect(byUi(`${UI}.ratio-wall_clock_secs`)).toHaveTextContent("0.50");
 
     // One card per domain, titled, with its stage.
