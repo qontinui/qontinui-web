@@ -46,6 +46,8 @@ import {
   lastGoodReadPhrase,
   openDegradations,
   planeFreshnessPhrase,
+  planeWatcherNames,
+  decisionDomainLabel,
   withoutVerdictWords,
   planeLabel,
   remediationPhrase,
@@ -325,7 +327,7 @@ export function NeedsYouSection({
         >
           By kind of decision:{" "}
           {Object.entries(needs.byDomain)
-            .map(([domain, n]) => `${domain.replace(/_/g, " ")} ${n}`)
+            .map(([domain, n]) => `${decisionDomainLabel(domain)} ${n}`)
             .join(" · ")}
         </p>
       )}
@@ -643,13 +645,27 @@ export function DegradingSection({
             Watcher freshness per area: not served — unknown.
           </p>
         ) : (
-          <ul className="m-0 pl-0 list-none space-y-0.5">
-            {deg.planes.map((p) => (
-              <li key={p.plane} data-plane={p.plane}>
-                {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
-              </li>
-            ))}
-          </ul>
+          <>
+            {stale && (
+              <p
+                className="m-0"
+                data-testid="coord-home.degrading.planes.stale"
+              >
+                Watcher freshness {lastGoodReadPhrase(generatedAt)}:
+              </p>
+            )}
+            <ul className="m-0 pl-0 list-none space-y-0.5">
+              {deg.planes.map((p) => (
+                <li
+                  key={p.plane}
+                  data-plane={p.plane}
+                  title={planeWatcherNames(p) || undefined}
+                >
+                  {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </section>
@@ -802,7 +818,7 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
     body = (
       <p className="m-0 text-muted-foreground">
         The current initiative document could not be parsed:{" "}
-        {i.error ?? "no reason given"}.
+        {i.error ? withoutVerdictWords(i.error) : "no reason given"}.
       </p>
     );
   } else if (i.state !== "read") {
@@ -814,7 +830,8 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
   } else if (i.alignment === "no_live_initiative") {
     body = (
       <p className="m-0 text-muted-foreground">
-        No live initiative{i.reason ? ` — ${i.reason}` : ""}.
+        No live initiative
+        {i.reason ? ` — ${withoutVerdictWords(i.reason)}` : ""}.
       </p>
     );
   } else {
@@ -890,7 +907,11 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
           state={onTrack.state}
           testId="coord-home.on-track.not-read"
         >
-          {onTrack.error && <p className="m-0">Coord said: {onTrack.error}</p>}
+          {onTrack.error && (
+            <p className="m-0">
+              Coord said: {withoutVerdictWords(onTrack.error)}
+            </p>
+          )}
         </NotRead>
       ) : (
         <>
@@ -985,7 +1006,7 @@ export function CorrectSection({
           raw={
             correctness.reason ? (
               <span className="font-mono text-[10px] text-muted-foreground/60 break-all">
-                {correctness.reason}
+                {withoutVerdictWords(correctness.reason)}
               </span>
             ) : undefined
           }
