@@ -81,7 +81,11 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
         // caller outright. Keeping the last body on screen beside either would
         // show figures for a record coord just said is not (or no longer)
         // yours to see. Every other failure keeps it, labelled stale.
-        if (issue.kind === "not_found" || issue.kind === "forbidden") {
+        if (
+          issue.kind === "not_found" ||
+          issue.kind === "forbidden" ||
+          issue.kind === "tenant_not_resolved"
+        ) {
           setData(null);
           setFetchedAtMs(null);
         }

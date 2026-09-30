@@ -93,10 +93,10 @@ export interface NavLeaf {
   /**
    * Coord-tenant-admin-only — a tenant-scoped page whose backend read is
    * gated on `require_coord_tenant_admin` (so a plain member would get a 403
-   * page). Rendered for a coord tenant admin of the effective tenant or a
-   * superuser, via `isCoordAdminUser` — the same signal as
-   * `useAuth().isCoordAdmin`. Distinct from `operatorOnly`, which is
-   * `is_superuser` alone. See {@link navEntryVisibleTo}.
+   * page). Rendered for an admin of the ACTIVE tenant or a superuser, via
+   * `isActiveTenantCoordAdmin` — the question that gate asks. NOT
+   * `useAuth().isCoordAdmin`, which is a union across tenants. Distinct from
+   * `operatorOnly`, which is `is_superuser` alone. See {@link navEntryVisibleTo}.
    */
   coordAdminOnly?: boolean;
 }

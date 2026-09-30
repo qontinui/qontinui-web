@@ -86,7 +86,13 @@ export function ReadIssueBanner({
       data-issue={issue.kind}
     >
       <span className="font-semibold">
-        {issue.kind === "not_found" ? "Not found — " : "UNKNOWN — "}
+        {issue.kind === "not_found"
+          ? "Not found — "
+          : issue.kind === "forbidden"
+            ? "Admins only — "
+            : issue.kind === "tenant_not_resolved"
+              ? "No project — "
+              : "UNKNOWN — "}
       </span>
       {readIssueText(issue)}
       {retained && (

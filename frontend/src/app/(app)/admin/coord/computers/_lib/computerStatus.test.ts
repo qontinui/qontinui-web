@@ -35,6 +35,7 @@ import {
   isSchemaPendingBody,
   laneFreshness,
   normalizeComputer,
+  readIssueHeadline,
   readIssueText,
   readLaneField,
   readingText,
@@ -529,13 +530,58 @@ describe("last_event: absent is unknown, null is none", () => {
 });
 
 describe("a 403 is its own answer", () => {
-  it("classifies not_coord_tenant_admin as forbidden, not a generic error", () => {
-    const issue = classifyComputersError(
+  it("classifies not_coord_tenant_admin as forbidden, in both body shapes", () => {
+    // The app's error middleware shape, and a bare FastAPI detail.
+    const shaped = classifyComputersError(
+      rejection(403, '{"error":"FORBIDDEN","message":"not_coord_tenant_admin"}')
+    );
+    const bare = classifyComputersError(
       rejection(403, '{"detail":"not_coord_tenant_admin"}')
     );
-    expect(issue.kind).toBe("forbidden");
-    expect(readIssueText(issue)).toBe(
-      "Only a coord tenant admin may read computers (they carry CI-runner and access facts), so this page cannot show them to you."
+    expect(shaped.kind).toBe("forbidden");
+    expect(bare.kind).toBe("forbidden");
+    expect(readIssueText(shaped)).toBe(
+      "Only an admin of the selected project (coord tenant) may read computers — they carry CI-runner and access facts — so this page cannot show them to you."
     );
+    expect(readIssueHeadline(shaped, "Computers")).toBe(
+      "Coord tenant admins only"
+    );
+  });
+
+  it("gives tenant_not_resolved its own text, not the admin-only one", () => {
+    const issue = classifyComputersError(
+      rejection(403, '{"error":"FORBIDDEN","message":"tenant_not_resolved"}')
+    );
+    expect(issue.kind).toBe("tenant_not_resolved");
+    expect(readIssueHeadline(issue, "Computers")).toBe(
+      "No project resolved for this read"
+    );
+  });
+
+  it("does not explain an unrelated 403 as the admin gate", () => {
+    const issue = classifyComputersError(
+      rejection(403, '{"error":"FORBIDDEN","message":"csrf_rejected"}')
+    );
+    expect(issue.kind).toBe("error");
+  });
+
+  it("headlines a refusal as a refusal on both strips, never as 'did not answer'", () => {
+    const list = deriveComputersHealth({
+      rows: [],
+      loaded: false,
+      issue: { kind: "forbidden" },
+      unattributed: null,
+    });
+    expect(list.headline).toBe("Coord tenant admins only");
+    const detail = deriveComputerDetailHealth({
+      computer: null,
+      freshness: null,
+      status: null,
+      issue: { kind: "forbidden" },
+      services: null,
+      events: null,
+      divergence: null,
+    });
+    expect(detail.headline).toBe("Coord tenant admins only");
   });
 });

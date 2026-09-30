@@ -249,6 +249,7 @@ export type ComputersReadIssue =
   | { kind: "deadline"; budgetMs: number | null }
   | { kind: "not_found" }
   | { kind: "forbidden" }
+  | { kind: "tenant_not_resolved" }
   | { kind: "error"; message: string };
 
 function parseObject(text: string | null): Record<string, unknown> | null {
@@ -310,7 +311,19 @@ export function classifyComputersError(
   ) {
     return { kind: "not_found" };
   }
-  if (status === 403) return { kind: "forbidden" };
+  // The web gate's two 403 codes, read from whichever key carries them: the
+  // app's error middleware puts an HTTPException's string detail in
+  // `message` (`{"error":"FORBIDDEN","message":"not_coord_tenant_admin"}`),
+  // and a bare FastAPI app puts it in `detail`. Any OTHER 403 is not the admin
+  // gate and must not be explained as one, so it stays a plain error.
+  if (status === 403) {
+    const code = [body?.message, body?.detail, body?.error].find(
+      (v): v is string =>
+        v === "not_coord_tenant_admin" || v === "tenant_not_resolved"
+    );
+    if (code === "not_coord_tenant_admin") return { kind: "forbidden" };
+    if (code === "tenant_not_resolved") return { kind: "tenant_not_resolved" };
+  }
   const verdict = classifyCoordError(status, bodyText);
   switch (verdict.kind) {
     case "deadline":
@@ -324,6 +337,27 @@ export function classifyComputersError(
         kind: "error",
         message: err instanceof Error ? err.message : String(err),
       };
+  }
+}
+
+/**
+ * The strip headline for a read with no body to show. A refusal is not
+ * silence: "coord did not answer" would be false about a 403, which IS an
+ * answer, and would send the reader looking for an outage.
+ */
+export function readIssueHeadline(
+  issue: ComputersReadIssue,
+  subject: string
+): string {
+  switch (issue.kind) {
+    case "forbidden":
+      return "Coord tenant admins only";
+    case "tenant_not_resolved":
+      return "No project resolved for this read";
+    case "not_found":
+      return "No such computer in this tenant";
+    default:
+      return `${subject} unknown — coord did not answer this read`;
   }
 }
 
@@ -341,7 +375,9 @@ export function readIssueText(issue: ComputersReadIssue): string {
     case "not_found":
       return "Coord holds no computer with this id in your tenant.";
     case "forbidden":
-      return "Only a coord tenant admin may read computers (they carry CI-runner and access facts), so this page cannot show them to you.";
+      return "Only an admin of the selected project (coord tenant) may read computers — they carry CI-runner and access facts — so this page cannot show them to you.";
+    case "tenant_not_resolved":
+      return "Coord could not resolve which project (tenant) you are acting in, so it did not read any computers. Select a project, or check that your account belongs to one.";
     case "error":
       return `Could not read computers from coord (${issue.message}) — UNKNOWN, not empty.`;
   }
@@ -1095,7 +1131,7 @@ export function deriveComputersHealth(input: {
     return issue
       ? {
           level: "amber",
-          headline: "Computers unknown — coord did not answer this read",
+          headline: readIssueHeadline(issue, "Computers"),
           detail: readIssueText(issue),
           badges: dashBadges,
         }
@@ -1237,7 +1273,7 @@ export function deriveComputerDetailHealth(input: {
     return {
       level: "amber",
       headline: issue
-        ? "This computer is unknown — coord did not answer this read"
+        ? readIssueHeadline(issue, "This computer")
         : "Reading computer…",
       detail: issue ? readIssueText(issue) : undefined,
       badges: [],

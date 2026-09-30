@@ -109,9 +109,33 @@ vi.mock("next/navigation", () => ({
 // this page mounts no `AuthProvider`. Stubbed to an admin so the control that
 // Phase 4b adds is the one under test; the non-admin arm is asserted in
 // `components/operations/DeviceDrainControl.test.tsx`.
-const authState = { isCoordAdmin: true };
+const authState = {
+  isCoordAdmin: true,
+  user: { is_superuser: false, coord_is_admin: true } as {
+    is_superuser: boolean;
+    coord_is_admin: boolean;
+  },
+};
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+  useAuth: () => ({
+    isCoordAdmin: authState.isCoordAdmin,
+    user: authState.user,
+  }),
+}));
+
+// The Computers link reads admin IN THE ACTIVE TENANT from the tenant list.
+const tenantState: {
+  tenants: { id: string; slug: string; name: string; roles?: string[] }[];
+  activeTenantId: string | null;
+} = {
+  tenants: [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }],
+  activeTenantId: "t-a",
+};
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({
+    tenants: tenantState.tenants,
+    activeTenantId: tenantState.activeTenantId,
+  }),
 }));
 
 // Toasts are a drain write's only other output; nothing here asserts on them,
@@ -367,7 +391,7 @@ describe("/admin/coord/devops", () => {
     expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
   });
 
-  it("links to Computers for a coord admin only — both computer reads are admin-gated", async () => {
+  it("links to Computers only for an admin of the ACTIVE tenant — the proxies' gate", async () => {
     mockRoutes({
       devices: [coordDevice("d-1", "msi", "healthy")],
       runners: [runner("msi")],
@@ -382,7 +406,13 @@ describe("/admin/coord/devops", () => {
     ).toBe("/admin/coord/computers");
     unmount();
 
-    authState.isCoordAdmin = false;
+    // Admin of A with B active: the union (`coord_is_admin`) is still true,
+    // but the gate checks B's roles, so no link.
+    tenantState.tenants = [
+      { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      { id: "t-b", slug: "b", name: "B", roles: ["developer"] },
+    ];
+    tenantState.activeTenantId = "t-b";
     try {
       render(<CoordDevOpsPage />);
       await waitFor(() =>
@@ -392,7 +422,10 @@ describe("/admin/coord/devops", () => {
         screen.queryByTestId("coord-devops-computers-link")
       ).not.toBeInTheDocument();
     } finally {
-      authState.isCoordAdmin = true;
+      tenantState.tenants = [
+        { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      ];
+      tenantState.activeTenantId = "t-a";
     }
   });
 
