@@ -62,6 +62,25 @@ class CoordServiceAccountDisabledError(RuntimeError):
     feature is off (COORD_ADMIN_SECRET unset). Surfaced as HTTP 503."""
 
 
+class CoordServiceTokenError(RuntimeError):
+    """Coord did not give the web backend its OWN service token.
+
+    Raised by :meth:`CoordServiceAccountClient._mint` when
+    ``POST /coord/auth/service-token`` answers anything but a usable
+    ``200 {"token", "exp"}``. ``status`` is coord's HTTP status — a refusal
+    (the admin secret was not accepted), a 5xx, or a ``200`` whose body is
+    not the contract. A transport failure is not this error: it propagates
+    as the ``httpx`` exception it is.
+
+    A ``RuntimeError`` subclass, which is what this failure raised before it
+    had a type, so the startup fail-fast and the refresh loop are unchanged.
+    """
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 class CoordServiceAccountClient:
     def __init__(
         self,
@@ -84,7 +103,12 @@ class CoordServiceAccountClient:
     # -- token lifecycle ------------------------------------------------
 
     async def _mint(self) -> None:
-        """Obtain a fresh service token from coord. Raises on failure."""
+        """Obtain a fresh service token from coord.
+
+        Raises :class:`CoordServiceTokenError` when coord answers anything
+        but a usable token, and the ``httpx`` error when it cannot be
+        reached. The cached token is replaced only by a whole, usable answer.
+        """
         assert self._admin_secret is not None
         async with httpx.AsyncClient(timeout=10.0) as c:
             resp = await c.post(
@@ -96,12 +120,28 @@ class CoordServiceAccountClient:
                 },
             )
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"coord service-token mint failed: {resp.status_code} {resp.text[:200]}"
+            raise CoordServiceTokenError(
+                f"coord service-token mint failed: {resp.status_code} {resp.text[:200]}",
+                status=resp.status_code,
             )
-        body = resp.json()
-        self._token = body["token"]
-        self._exp = int(body["exp"])
+        try:
+            body = resp.json()
+            token = body["token"]
+            exp = int(body["exp"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            # Not JSON, not an object, no token, or an ``exp`` that is not a
+            # number of seconds (``int(float("inf"))`` overflows).
+            raise CoordServiceTokenError(
+                f"coord service-token mint answered an unusable body: {exc!r}",
+                status=resp.status_code,
+            ) from exc
+        if not isinstance(token, str) or not token:
+            raise CoordServiceTokenError(
+                "coord service-token mint answered no token string",
+                status=resp.status_code,
+            )
+        self._token = token
+        self._exp = exp
         logger.info(
             "coord_service_account_token_minted",
             sub=body.get("sub"),
@@ -119,6 +159,20 @@ class CoordServiceAccountClient:
                 await self._mint()
             assert self._token is not None
             return self._token
+
+    async def _drop_token(self, stale: str) -> None:
+        """Forget the cached service token ``stale`` — coord refused it.
+
+        :meth:`_ensure_token` re-mints only inside the refresh buffer, so a
+        token coord stopped accepting early (a coord restart with new signing
+        keys) would otherwise be presented until it expired. Taken under the
+        lock, and only while ``stale`` is still the cached token: a caller
+        that lost the race to a concurrent re-mint keeps the fresh one.
+        """
+        async with self._lock:
+            if self._token == stale:
+                self._token = None
+                self._exp = 0
 
     async def _refresh_loop(self) -> None:
         """Background: sleep until ~5 min before expiry (jittered), then
@@ -217,7 +271,7 @@ class CoordServiceAccountClient:
     # -- acting-user mint (background device resolve) --------------------
 
     async def mint_acting_user_token(
-        self, user_id: str, tenant_id: str | None = None
+        self, user_id: str, *, timeout: httpx.Timeout
     ) -> tuple[int, object]:
         """Mint a short-lived Service token that ACTS FOR ``user_id``.
 
@@ -230,29 +284,46 @@ class CoordServiceAccountClient:
 
         The user is named in the BODY, which is what the door reads. No
         ``X-Qontinui-User-Id`` header is sent: on this door it is not an
-        identity, and sending it would only suggest it was. ``tenant_id`` is
-        sent only when given; without it coord mints when the user's paired
-        devices sit in exactly one tenant and refuses ``409 tenant_ambiguous``
-        when they span several — web never guesses one.
+        identity, and sending it would only suggest it was. No tenant is sent
+        either: coord resolves the user's tenant itself and answers ``409
+        tenant_ambiguous`` only when it cannot — web never names one.
 
         Nothing is cached: every call is a fresh mint for the user it names,
         so one user's token can never be handed to another.
+
+        A ``401`` means coord no longer accepts our SERVICE token (a coord
+        restart with new signing keys, well before the token's ``exp``). The
+        cached service token is dropped, a fresh one obtained, and the mint
+        retried exactly once; a second ``401`` is returned as it is.
+
+        ``timeout`` is the caller's budget for each request to this door; it
+        is required so the caller's two coord calls share one budget.
 
         Returns ``(status_code, body)``. ``body`` is coord's parsed JSON, or
         ``None`` when the answer is not JSON — never a wrapped text body, so
         an ``error`` code read from it is always coord's own. Raises
         :class:`CoordServiceAccountDisabledError` (via ``_ensure_token``) when
-        the feature is off (COORD_ADMIN_SECRET unset).
+        the feature is off (COORD_ADMIN_SECRET unset), and
+        :class:`CoordServiceTokenError` when coord will not give us our own
+        service token.
         """
         token = await self._ensure_token()
-        payload: dict[str, str] = {"user_id": user_id}
-        if tenant_id is not None:
-            payload["tenant_id"] = tenant_id
-        async with httpx.AsyncClient(timeout=10.0) as c:
+        status, body = await self._post_acting_user_mint(token, user_id, timeout)
+        if status == 401:
+            logger.warning("coord_service_account_token_refused_reminting")
+            await self._drop_token(token)
+            token = await self._ensure_token()
+            status, body = await self._post_acting_user_mint(token, user_id, timeout)
+        return status, body
+
+    async def _post_acting_user_mint(
+        self, token: str, user_id: str, timeout: httpx.Timeout
+    ) -> tuple[int, object]:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             resp = await c.post(
                 f"{self._coord_url}/coord/auth/service-acting-user-token",
                 headers={"Authorization": f"Bearer {token}"},
-                json=payload,
+                json={"user_id": user_id},
             )
         try:
             body: object = resp.json()

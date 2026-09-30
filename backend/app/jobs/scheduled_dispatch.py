@@ -297,6 +297,8 @@ async def fire_scheduled_run(
                 scheduled_run_id=scheduled_run_id,
                 status_code=err.status_code,
                 code=err.code,
+                error=row.last_error,
+                **_coord_refusal_fields(err),
             )
             # No re-raise: the next cron window is the retry. But carry the
             # dispatcher's own status/code out so an interactive caller (run-now)
@@ -327,6 +329,27 @@ async def fire_scheduled_run(
             "execution_id": result.execution_id,
             "runner_id": str(result.runner_id),
         }
+
+
+def _coord_refusal_fields(err: DispatchError) -> dict[str, Any]:
+    """Coord's own reason, error code and HTTP status for a refused auto-pick.
+
+    ``err.code`` is the dispatcher's code, and for every way coord's resolver
+    was not answered it is the same ``device_resolver_unavailable``. What
+    tells an operator WHICH (``refused`` / ``tenant_ambiguous`` / 409, say)
+    is in the resolver outcome the refusal carries. Empty for any other
+    failure.
+    """
+    if not isinstance(err.detail, dict):
+        return {}
+    outcome = err.detail.get("resolver_outcome")
+    if not isinstance(outcome, dict) or outcome.get("outcome") != "unavailable":
+        return {}
+    return {
+        "resolver_reason": outcome.get("reason"),
+        "coord_code": outcome.get("code"),
+        "coord_status": outcome.get("status"),
+    }
 
 
 def _format_dispatch_error(err: DispatchError) -> str:

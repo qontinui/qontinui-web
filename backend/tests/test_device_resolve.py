@@ -17,9 +17,12 @@ Plan ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 3.
   asked with it. A failed mint is a typed refusal and the resolver is then
   not asked (plan
   ``2026-09-23-runner-selector-follow-ups-drain-aware-background-dispatch-and-typed-instances``
-  Phase 1).
+  Phase 1). A refusal carries coord's own error code and HTTP status to
+  the operator; a stale web service token is re-minted once; and on a
+  split-coord box nothing is minted at all.
 
-Coord is mocked at ``httpx.AsyncClient``; no live coord is needed.
+Coord is mocked at each module's own ``httpx.AsyncClient``; no live coord is
+needed.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.jobs import scheduled_dispatch
 from app.schemas.device_resolve import (
     DeviceResolveRequest,
@@ -45,7 +49,11 @@ from app.schemas.device_resolve import (
     ResolvedOutcome,
     UnavailableOutcome,
 )
-from app.services import coord_device_resolve, workflow_dispatcher
+from app.services import (
+    coord_device_resolve,
+    coord_service_account,
+    workflow_dispatcher,
+)
 from app.services.coord_device_resolve import CoordCaller, resolve_device
 from app.services.coord_service_account import CoordServiceAccountClient
 from app.services.workflow_dispatcher import (
@@ -73,6 +81,43 @@ pytestmark = pytest.mark.asyncio(loop_scope="function")
 # ---------------------------------------------------------------------------
 
 
+def _fake_client(route: Callable[[str, Any, Any, Any], httpx.Response]) -> type:
+    """An ``httpx.AsyncClient`` stand-in whose every ``post`` goes to
+    ``route(url, json, headers, timeout)``."""
+
+    class _FakeClient:
+        def __init__(self, *a: Any, timeout: Any = None, **kw: Any) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *a: Any) -> bool:
+            return False
+
+        async def post(
+            self, url: str, *, json: Any = None, headers: Any = None
+        ) -> httpx.Response:
+            return route(url, json, headers, self.timeout)
+
+    return _FakeClient
+
+
+class _HttpxWith:
+    """ONE module's ``httpx`` with only ``AsyncClient`` replaced.
+
+    Installed as that module's ``httpx`` name, so the real ``httpx`` — and
+    every other module's client — is untouched, and a test can tell which
+    module's client reached which door.
+    """
+
+    def __init__(self, client: type) -> None:
+        self.AsyncClient = client
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(httpx, name)
+
+
 class _Coord:
     """Stands in for coord: records every request, answers from a script."""
 
@@ -91,27 +136,20 @@ class _Coord:
         self.calls: list[dict[str, Any]] = []
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        coord = self
+        """Be the resolver: the only coord door an interactive caller asks."""
+        monkeypatch.setattr(
+            coord_device_resolve, "httpx", _HttpxWith(_fake_client(self.respond))
+        )
 
-        class _FakeClient:
-            def __init__(self, *a: Any, **kw: Any) -> None:
-                pass
+    def respond(
+        self, url: str, json: Any, headers: Any, timeout: Any = None
+    ) -> httpx.Response:
+        self.calls.append(
+            {"url": url, "json": json, "headers": headers, "timeout": timeout}
+        )
+        return self.reply(url, json)
 
-            async def __aenter__(self) -> _FakeClient:
-                return self
-
-            async def __aexit__(self, *a: Any) -> bool:
-                return False
-
-            async def post(
-                self, url: str, *, json: Any = None, headers: Any = None
-            ) -> httpx.Response:
-                return coord.respond(url, json, headers)
-
-        monkeypatch.setattr(coord_device_resolve.httpx, "AsyncClient", _FakeClient)
-
-    def respond(self, url: str, json: Any, headers: Any) -> httpx.Response:
-        self.calls.append({"url": url, "json": json, "headers": headers})
+    def reply(self, url: str, json: Any) -> httpx.Response:
         if self.raise_exc is not None:
             raise self.raise_exc
         request = httpx.Request("POST", url)
@@ -119,6 +157,19 @@ class _Coord:
             return httpx.Response(self.status, text=self.text, request=request)
         body = self.body(json) if callable(self.body) else self.body
         return httpx.Response(self.status, json=body, request=request)
+
+
+class _InTurn(_Coord):
+    """A door that answers from each of ``answers`` in turn; the last repeats."""
+
+    def __init__(self, *answers: _Coord) -> None:
+        super().__init__()
+        self.answers = answers
+
+    def reply(self, url: str, json: Any) -> httpx.Response:
+        # ``respond`` has already recorded this call.
+        nth = min(len(self.calls), len(self.answers)) - 1
+        return self.answers[nth].reply(url, json)
 
 
 def _placeable(**kw: Any) -> DeviceResolveRequest:
@@ -739,6 +790,11 @@ def _resolved_body(device_id: UUID) -> dict[str, Any]:
     }
 
 
+def _service_token(token: str = SERVICE_TOKEN) -> dict[str, Any]:
+    """Coord's 200 from web's own service-token door."""
+    return {"token": token, "sub": "service:web", "exp": int(time.time()) + 4 * 3600}
+
+
 class _Doors:
     """Coord's three doors a background resolve crosses, each scripted.
 
@@ -746,7 +802,16 @@ class _Doors:
     acting-user mint, ``resolve`` the device resolver. Every request is
     recorded on the door it reached, so a test can prove which were (and
     were not) asked, and with what bearer.
+
+    The two mints are reachable only through ``coord_service_account``'s
+    client and the resolver only through ``coord_device_resolve``'s: a
+    request from the wrong module fails the test.
+
+    ``device_url`` is ``COORD_DEVICE_URL``; ``COORD_URL`` is
+    ``http://coord.test``. The default (unset) is a single-coord box.
     """
+
+    COORD_URL = "http://coord.test"
 
     def __init__(
         self,
@@ -755,51 +820,52 @@ class _Doors:
         resolve: _Coord | None = None,
         service_token: _Coord | None = None,
         admin_secret: str | None = "s3cret",
+        device_url: str | None = None,
     ) -> None:
         self.mint = mint or _Coord(body=_minted)
         self.resolve = resolve or _Coord(body=_resolved_body(DEVICE_B))
-        self.service_token = service_token or _Coord(
-            body={
-                "token": SERVICE_TOKEN,
-                "sub": "service:web",
-                "exp": int(time.time()) + 4 * 3600,
-            }
-        )
+        self.service_token = service_token or _Coord(body=_service_token())
         self.admin_secret = admin_secret
+        self.device_url = device_url
+
+    @staticmethod
+    def _router(
+        doors: dict[str, _Coord],
+    ) -> Callable[[str, Any, Any, Any], httpx.Response]:
+        def route(url: str, json: Any, headers: Any, timeout: Any) -> httpx.Response:
+            for path, door in doors.items():
+                if url.endswith(path):
+                    return door.respond(url, json, headers, timeout)
+            raise AssertionError(f"unexpected coord url from this module: {url}")
+
+        return route
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        doors = self
-
-        class _FakeClient:
-            def __init__(self, *a: Any, **kw: Any) -> None:
-                pass
-
-            async def __aenter__(self) -> _FakeClient:
-                return self
-
-            async def __aexit__(self, *a: Any) -> bool:
-                return False
-
-            async def post(
-                self, url: str, *, json: Any = None, headers: Any = None
-            ) -> httpx.Response:
-                for path, door in (
-                    (SERVICE_TOKEN_PATH, doors.service_token),
-                    (MINT_PATH, doors.mint),
-                    (RESOLVE_PATH, doors.resolve),
-                ):
-                    if url.endswith(path):
-                        return door.respond(url, json, headers)
-                raise AssertionError(f"unexpected coord url: {url}")
-
-        monkeypatch.setattr(coord_device_resolve.httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(settings, "COORD_URL", self.COORD_URL)
+        monkeypatch.setattr(settings, "COORD_DEVICE_URL", self.device_url)
+        monkeypatch.setattr(
+            coord_service_account,
+            "httpx",
+            _HttpxWith(
+                _fake_client(
+                    self._router(
+                        {SERVICE_TOKEN_PATH: self.service_token, MINT_PATH: self.mint}
+                    )
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            coord_device_resolve,
+            "httpx",
+            _HttpxWith(_fake_client(self._router({RESOLVE_PATH: self.resolve}))),
+        )
         # A fresh, ENABLED service account per test: the process singleton is
         # off here (no COORD_ADMIN_SECRET) and would hold a token across tests.
         monkeypatch.setattr(
             coord_device_resolve,
             "coord_service_account",
             CoordServiceAccountClient(
-                coord_url="http://coord.test",
+                coord_url=self.COORD_URL,
                 admin_secret=self.admin_secret,
                 service_name="web",
             ),
@@ -831,6 +897,9 @@ async def test_a_background_resolve_mints_for_its_user_and_forwards_that_token(
     (call,) = doors.resolve.calls
     assert call["headers"] == {"Authorization": f"Bearer {_acting_token(USER)}"}
     _assert_no_user_id_sent(call)
+    # One 5 s budget for both calls: a coord that answers nothing costs a
+    # scheduled row about 10 s, not the mint's old 10 s plus the resolver's 5.
+    assert mint["timeout"] == call["timeout"] == httpx.Timeout(5.0)
 
 
 async def test_a_scheduled_auto_pick_asks_coord_as_the_schedule_owner(
@@ -886,15 +955,6 @@ async def test_the_mint_names_each_owner_and_no_token_is_reused_across_users(
     assert len(doors.service_token.calls) == 1
 
 
-_NO_PAIRED_DEVICE_OUTCOME = {
-    "outcome": "no_capable_device",
-    "missing": [],
-    "online_devices": 0,
-    "pin_released_reason": None,
-    "pin_released_detail": None,
-}
-
-
 def _unavailable_dump(
     reason: str, status: int | None = None, code: str | None = None
 ) -> dict[str, Any]:
@@ -908,16 +968,57 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         _unavailable_dump("no_credential"),
         "device_resolver_unavailable",
     ),
+    # Web's OWN service token could not be had: the status is coord's answer
+    # at that door, and only a 5xx is coord's fault.
     (
         "service_token_refused",
         lambda: _Doors(service_token=_Coord(403, {"error": "forbidden"})),
-        _unavailable_dump("no_credential"),
+        _unavailable_dump("no_credential", 403),
+        "device_resolver_unavailable",
+    ),
+    (
+        "service_token_5xx",
+        lambda: _Doors(service_token=_Coord(503, text="<html>bad gateway</html>")),
+        _unavailable_dump("upstream_error", 503),
+        "device_resolver_unavailable",
+    ),
+    (
+        "service_token_connect_error",
+        lambda: _Doors(service_token=_Coord(raise_exc=httpx.ConnectError("refused"))),
+        _unavailable_dump("coord_unreachable"),
         "device_resolver_unavailable",
     ),
     (
         "service_token_malformed",
         lambda: _Doors(service_token=_Coord(200, {"sub": "service:web"})),
-        _unavailable_dump("no_credential"),
+        _unavailable_dump("no_credential", 200),
+        "device_resolver_unavailable",
+    ),
+    (
+        "service_token_empty_string",
+        lambda: _Doors(service_token=_Coord(200, _service_token(""))),
+        _unavailable_dump("no_credential", 200),
+        "device_resolver_unavailable",
+    ),
+    (
+        "service_token_non_json",
+        lambda: _Doors(service_token=_Coord(200, text="not json")),
+        _unavailable_dump("no_credential", 200),
+        "device_resolver_unavailable",
+    ),
+    (
+        "service_token_exp_not_a_number",
+        lambda: _Doors(service_token=_Coord(200, {"token": "t", "exp": "soon"})),
+        _unavailable_dump("no_credential", 200),
+        "device_resolver_unavailable",
+    ),
+    (
+        # ``int(float("inf"))`` is an OverflowError, not a ValueError.
+        "service_token_exp_infinite",
+        lambda: _Doors(
+            service_token=_Coord(200, text='{"token": "t", "exp": Infinity}')
+        ),
+        _unavailable_dump("no_credential", 200),
         "device_resolver_unavailable",
     ),
     (
@@ -938,7 +1039,7 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         _unavailable_dump("misconfigured"),
         "device_resolver_unavailable",
     ),
-    # A coord build without the mint door.
+    # A coord build without the mint door: a 404/405 carrying NO error code.
     (
         "404_not_deployed",
         lambda: _Doors(mint=_Coord(404, text="Not Found")),
@@ -946,8 +1047,8 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         "device_resolver_unavailable",
     ),
     (
-        "404_other_code_not_deployed",
-        lambda: _Doors(mint=_Coord(404, {"error": "not_found"})),
+        "404_json_without_a_code_not_deployed",
+        lambda: _Doors(mint=_Coord(404, {"detail": "Not Found"})),
         _unavailable_dump("not_deployed", 404),
         "device_resolver_unavailable",
     ),
@@ -957,12 +1058,35 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         _unavailable_dump("not_deployed", 405),
         "device_resolver_unavailable",
     ),
-    # Coord's own answer about the user: not UNKNOWN, and not a missing door.
+    # A 404/405 that DOES carry a code is coord answering, not a missing
+    # door: the code is kept.
+    (
+        "404_with_a_code_is_refused",
+        lambda: _Doors(mint=_Coord(404, {"error": "user_not_found"})),
+        _unavailable_dump("refused", 404, "user_not_found"),
+        "device_resolver_unavailable",
+    ),
+    (
+        "405_with_a_code_is_refused",
+        lambda: _Doors(mint=_Coord(405, {"error": "method_not_allowed"})),
+        _unavailable_dump("refused", 405, "method_not_allowed"),
+        "device_resolver_unavailable",
+    ),
+    # Coord's own answer about the user. It keeps coord's code rather than
+    # becoming ``no_capable_device``, which the resolver also answers for a
+    # user whose paired runners are merely offline.
     (
         "404_user_has_no_paired_device",
         lambda: _Doors(mint=_Coord(404, {"error": "user_has_no_paired_device"})),
-        _NO_PAIRED_DEVICE_OUTCOME,
-        "no_healthy_runner",
+        _unavailable_dump("refused", 404, "user_has_no_paired_device"),
+        "no_paired_runner",
+    ),
+    # Still refused after the one retry with a fresh service token.
+    (
+        "401_twice",
+        lambda: _Doors(mint=_Coord(401, {"error": "invalid_token"})),
+        _unavailable_dump("refused", 401, "invalid_token"),
+        "device_resolver_unavailable",
     ),
     (
         "409_tenant_ambiguous",
@@ -1015,6 +1139,12 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         "device_resolver_unavailable",
     ),
     (
+        "200_empty_string_token",
+        lambda: _Doors(mint=_Coord(200, {"token": ""})),
+        _unavailable_dump("malformed_response", 200),
+        "device_resolver_unavailable",
+    ),
+    (
         "200_non_json",
         lambda: _Doors(mint=_Coord(200, text="not json")),
         _unavailable_dump("malformed_response", 200),
@@ -1042,7 +1172,12 @@ async def test_a_failed_mint_is_a_refusal_and_the_resolver_is_not_asked(
     assert doors.resolve.calls == []
 
     # And in the dispatcher it is a refusal — never a web-side pick, even
-    # with an owned device sitting there (``_RefusingDb`` fails on any query).
+    # with an owned device sitting there: DEVICE_A is USER's and would be
+    # returned if asked for by id, and ``_RefusingDb`` fails on any query.
+    async def _by_id(db: Any, runner_id: UUID) -> SimpleNamespace | None:
+        return {DEVICE_A: _device(DEVICE_A)}.get(runner_id)
+
+    monkeypatch.setattr(workflow_dispatcher, "_get_runner_by_id", _by_id)
     picked = await _pick_auto_runner(
         cast(AsyncSession, _RefusingDb()),
         USER,
@@ -1053,6 +1188,192 @@ async def test_a_failed_mint_is_a_refusal_and_the_resolver_is_not_asked(
     assert picked.code == refusal_code
     assert picked.to_dispatch_error().status_code == 503
     assert doors.resolve.calls == []
+
+
+async def test_a_401_at_the_mint_drops_the_service_token_and_retries_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coord restarted with new keys: the cached service token is hours from
+    ``exp`` but no longer accepted. One fresh service token, one retry."""
+    doors = _Doors(
+        service_token=_InTurn(
+            _Coord(body=_service_token("stale-service-token")),
+            _Coord(body=_service_token("fresh-service-token")),
+        ),
+        mint=_InTurn(_Coord(401, {"error": "invalid_token"}), _Coord(body=_minted)),
+    )
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert isinstance(out, ResolvedOutcome) and out.device_id == DEVICE_B
+    assert len(doors.service_token.calls) == 2
+    assert [c["headers"]["Authorization"] for c in doors.mint.calls] == [
+        "Bearer stale-service-token",
+        "Bearer fresh-service-token",
+    ]
+    (call,) = doors.resolve.calls
+    assert call["headers"]["Authorization"] == f"Bearer {_acting_token(USER)}"
+
+    # The fresh token is kept: the next resolve mints with it, first time.
+    await resolve_device(_placeable(), CoordCaller.background_for(USER))
+    assert len(doors.service_token.calls) == 2
+    assert doors.mint.calls[2]["headers"] == {
+        "Authorization": "Bearer fresh-service-token"
+    }
+
+
+async def test_a_second_401_at_the_mint_is_refused_and_not_retried_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doors = _Doors(
+        service_token=_InTurn(
+            _Coord(body=_service_token("stale-service-token")),
+            _Coord(body=_service_token("fresh-service-token")),
+        ),
+        mint=_Coord(401, {"error": "invalid_token"}),
+    )
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="refused", status=401, code="invalid_token")
+    # Exactly one retry: two asks of the mint, two service tokens, no more.
+    assert [c["headers"]["Authorization"] for c in doors.mint.calls] == [
+        "Bearer stale-service-token",
+        "Bearer fresh-service-token",
+    ]
+    assert len(doors.service_token.calls) == 2
+    assert doors.resolve.calls == []
+
+
+async def test_a_401_whose_fresh_service_token_is_refused_is_no_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doors = _Doors(
+        service_token=_InTurn(
+            _Coord(body=_service_token("stale-service-token")),
+            _Coord(401, {"error": "bad_admin_secret"}),
+        ),
+        mint=_Coord(401, {"error": "invalid_token"}),
+    )
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="no_credential", status=401)
+    assert len(doors.mint.calls) == 1
+    assert doors.resolve.calls == []
+
+
+async def test_a_split_coord_box_refuses_a_background_caller_without_minting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mint is at ``COORD_URL`` and the resolver at ``COORD_DEVICE_URL``:
+    two coords, two signing keys. Nothing is minted and neither is asked."""
+    doors = _Doors(device_url="http://device-coord.test")
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="misconfigured")
+    assert doors.service_token.calls == []
+    assert doors.mint.calls == []
+    assert doors.resolve.calls == []
+
+    picked = await _pick_auto_runner(
+        cast(AsyncSession, _RefusingDb()),
+        USER,
+        CoordCaller.background_for(USER),
+        required_capabilities=[],
+    )
+    assert isinstance(picked, AutoPickRefusal)
+    assert picked.code == "device_resolver_unavailable"
+    assert "(misconfigured)" in picked.message
+    assert "retry" not in picked.message
+    assert doors.mint.calls == []
+
+
+async def test_a_redundant_device_url_is_not_a_split_and_mints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``COORD_DEVICE_URL`` spelled the same as ``COORD_URL`` is one coord."""
+    doors = _Doors(device_url=f"{_Doors.COORD_URL}/")
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert isinstance(out, ResolvedOutcome)
+    assert len(doors.mint.calls) == 1
+    (call,) = doors.resolve.calls
+    assert call["url"] == f"{_Doors.COORD_URL}{RESOLVE_PATH}"
+
+
+async def test_a_split_coord_box_still_forwards_an_interactive_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The split refusal is about the MINT. A request's own bearer was not
+    minted here, so it is forwarded to the device coord as before."""
+    doors = _Doors(device_url="http://device-coord.test")
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CALLER)
+
+    assert isinstance(out, ResolvedOutcome)
+    (call,) = doors.resolve.calls
+    assert call["url"] == f"http://device-coord.test{RESOLVE_PATH}"
+    assert call["headers"]["Authorization"] == f"Bearer {BEARER}"
+    assert doors.mint.calls == []
+
+
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (
+            UnavailableOutcome(reason="refused", status=409, code="tenant_ambiguous"),
+            "Coord refused to resolve a runner (refused: tenant_ambiguous, HTTP "
+            "409), so none is picked automatically. The refusal is coord's own; "
+            "choose a runner explicitly.",
+        ),
+        (
+            UnavailableOutcome(reason="refused", status=403),
+            "Coord refused to resolve a runner (refused, HTTP 403), so none is "
+            "picked automatically. The refusal is coord's own; choose a runner "
+            "explicitly.",
+        ),
+        (
+            UnavailableOutcome(reason="upstream_error", status=500, code="boom"),
+            "Coord's device resolver could not be asked (upstream_error: boom, "
+            "HTTP 500), so no runner is picked automatically. Choose a runner "
+            "explicitly, or retry.",
+        ),
+        (
+            UnavailableOutcome(reason="coord_unreachable"),
+            "Coord's device resolver could not be asked (coord_unreachable), so "
+            "no runner is picked automatically. Choose a runner explicitly, or "
+            "retry.",
+        ),
+        (
+            UnavailableOutcome(reason="not_deployed", status=404),
+            "Coord's device resolver could not be asked (not_deployed, HTTP "
+            "404), so no runner is picked automatically. Choose a runner "
+            "explicitly.",
+        ),
+    ],
+    ids=["refused_with_code", "refused_no_code", "5xx", "unreachable", "not_deployed"],
+)
+async def test_an_unavailable_refusal_says_what_coord_said(
+    monkeypatch: pytest.MonkeyPatch, outcome: UnavailableOutcome, message: str
+) -> None:
+    """Coord's code and HTTP status are in the message, and "retry" is
+    advised only for what a later attempt can clear by itself."""
+    _install(monkeypatch, _Resolver(outcome), {})
+    picked = await _pick_auto_runner(
+        cast(AsyncSession, _RefusingDb()), USER, CALLER, required_capabilities=[]
+    )
+    assert isinstance(picked, AutoPickRefusal)
+    assert picked.code == "device_resolver_unavailable"
+    assert picked.message == message
 
 
 async def test_a_bearerless_interactive_caller_is_refused_and_never_mints(
@@ -1109,7 +1430,7 @@ async def test_an_interactive_caller_forwards_its_own_bearer_and_never_mints(
         "interactive_with_user",
     ],
 )
-def test_a_caller_is_background_with_a_user_or_interactive_never_a_mix(
+async def test_a_caller_is_background_with_a_user_or_interactive_never_a_mix(
     kwargs: dict[str, Any],
 ) -> None:
     with pytest.raises(ValueError):
@@ -1235,3 +1556,164 @@ async def test_a_scheduled_run_whose_mint_fails_is_refused_not_dispatched(
     assert row.last_execution_id is None
     assert "not_deployed" in row.last_error
     assert doors.resolve.calls == []
+
+
+async def test_a_refused_mint_reaches_last_error_and_the_log_with_coords_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``409 tenant_ambiguous``: the operator reads coord's code and status
+    in ``last_error`` and the run-now response, and the warning log carries
+    them as fields. Nothing tells them to retry."""
+    doors = _Doors(
+        mint=_Coord(409, {"error": "tenant_ambiguous", "tenant_ids": ["a", "b"]})
+    )
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    log = MagicMock()
+    monkeypatch.setattr(scheduled_dispatch, "logger", log)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object())
+    )
+
+    assert row.last_status == "failed"
+    assert row.last_error == (
+        "[503 device_resolver_unavailable] Coord refused to resolve a runner "
+        "(refused: tenant_ambiguous, HTTP 409), so none is picked "
+        "automatically. The refusal is coord's own; choose a runner explicitly."
+    )
+    assert "retry" not in row.last_error
+    # What the run-now endpoint answers with.
+    assert result["error"] == row.last_error
+    assert result["status_code"] == 503
+    log.warning.assert_called_once_with(
+        "scheduled_run_dispatch_failed",
+        scheduled_run_id=str(row.id),
+        status_code=503,
+        code="device_resolver_unavailable",
+        error=row.last_error,
+        resolver_reason="refused",
+        coord_code="tenant_ambiguous",
+        coord_status=409,
+    )
+    assert doors.resolve.calls == []
+
+
+async def test_a_schedule_whose_owner_has_no_paired_runner_says_to_pair_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Not "start a runner so it connects": the owner has none to start."""
+    doors = _Doors(mint=_Coord(404, {"error": "user_has_no_paired_device"}))
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object())
+    )
+
+    assert result["status"] == "failed"
+    assert result["code"] == "no_paired_runner"
+    assert row.last_error == (
+        "[503 no_paired_runner] The user this run is for has no paired runner "
+        "(refused: user_has_no_paired_device, HTTP 404). Pair a runner with "
+        "that account."
+    )
+    assert "Start a runner" not in row.last_error
+    assert doors.resolve.calls == []
+
+
+async def test_a_genuine_no_capable_device_answer_keeps_its_own_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The resolver's ``no_capable_device`` with nothing online is about
+    paired runners that are not connected — a different fact from the mint's
+    ``user_has_no_paired_device``, and it keeps the start-a-runner advice."""
+    doors = _Doors(
+        resolve=_Coord(
+            body={
+                "outcome": "no_capable_device",
+                "missing": [],
+                "online_devices": 0,
+                "pin_released_reason": None,
+                "pin_released_detail": None,
+            }
+        )
+    )
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object())
+    )
+
+    assert result["code"] == "no_healthy_runner"
+    assert row.last_error == (
+        "[503 no_healthy_runner] No online runner of yours can run this. "
+        "Start a runner so it connects, then retry."
+    )
+
+
+class _Sockets:
+    """The runner WebSocket manager: every runner is connected, and each
+    dispatch sent is recorded."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[UUID, dict[str, Any]]] = []
+
+    def is_connected(self, device_id: UUID) -> bool:
+        return True
+
+    async def send_dispatch(self, device_id: UUID, payload: dict[str, Any]) -> bool:
+        self.sent.append((device_id, payload))
+        return True
+
+
+async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole path: mint for the owner, coord names DEVICE_B, and the
+    workflow goes out over that runner's WebSocket."""
+    doors = _Doors(resolve=_Coord(body=_resolved_body(DEVICE_B)))
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    runner = _device(DEVICE_B)
+    runner.ws_session_id = "ws-session"
+    sockets = _Sockets()
+
+    async def _by_id(db: Any, runner_id: UUID) -> SimpleNamespace | None:
+        return {DEVICE_B: runner}.get(runner_id)
+
+    async def _redis() -> object:
+        return object()
+
+    async def _manager(redis: Any) -> _Sockets:
+        return sockets
+
+    monkeypatch.setattr(workflow_dispatcher, "_get_runner_by_id", _by_id)
+    monkeypatch.setattr(workflow_dispatcher, "get_redis", _redis)
+    monkeypatch.setattr(workflow_dispatcher, "get_runner_websocket_manager", _manager)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object())
+    )
+
+    ((sent_to, payload),) = sockets.sent
+    assert sent_to == DEVICE_B
+    assert payload == {
+        "run_id": result["execution_id"],
+        "workflow_id": str(row.workflow_id),
+        "parent_task_run_id": None,
+    }
+    assert result == {
+        "status": "dispatched",
+        "execution_id": payload["run_id"],
+        "runner_id": str(DEVICE_B),
+    }
+    assert row.last_status == "dispatched"
+    assert row.last_execution_id == payload["run_id"]
+    assert row.last_error is None
+    assert row.last_fired_at is not None
+    # Coord named the runner, asked AS the schedule's owner.
+    assert [c["json"] for c in doors.mint.calls] == [{"user_id": str(USER)}]
+    (call,) = doors.resolve.calls
+    assert call["headers"]["Authorization"] == f"Bearer {_acting_token(USER)}"

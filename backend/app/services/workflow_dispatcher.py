@@ -42,7 +42,11 @@ from app.schemas.device_resolve import (
     UnavailableOutcome,
 )
 from app.schemas.workflow_dispatch import WorkflowDispatchResponse
-from app.services.coord_device_resolve import CoordCaller, resolve_device
+from app.services.coord_device_resolve import (
+    NO_PAIRED_DEVICE_CODE,
+    CoordCaller,
+    resolve_device,
+)
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
@@ -76,8 +80,9 @@ class DispatchError(Exception):
 
     ``status_code`` is the HTTP status the endpoint should surface. ``code``
     is a short machine-readable string (``"no_healthy_runner"``,
-    ``"runner_offline"``, ...). ``detail`` is the full detail body the
-    endpoint historically attaches to ``HTTPException(detail=...)``.
+    ``"no_paired_runner"``, ``"runner_offline"``, ...). ``detail`` is the
+    full detail body the endpoint historically attaches to
+    ``HTTPException(detail=...)``.
     """
 
     status_code: int
@@ -124,18 +129,64 @@ class AutoPickRefusal:
         return DispatchError(status_code=503, code=self.code, detail=detail)
 
 
-def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
-    """The typed refusal for every resolver answer that is not a device."""
-    if isinstance(outcome, UnavailableOutcome):
+# The ``unavailable`` reasons a later attempt can clear by itself. The rest
+# are a refusal, a missing credential or a deployment fault: retrying as-is
+# gets the same answer, so the message does not advise it.
+_TRANSIENT_UNAVAILABLE = frozenset({"coord_unreachable", "upstream_error"})
+
+
+def _unavailable_cause(outcome: UnavailableOutcome) -> str:
+    """``reason[: coord's code][, HTTP status]`` — all coord said, and no more."""
+    cause: str = outcome.reason
+    if outcome.code:
+        cause += f": {outcome.code}"
+    if outcome.status is not None:
+        cause += f", HTTP {outcome.status}"
+    return cause
+
+
+def _unavailable_refusal(outcome: UnavailableOutcome) -> AutoPickRefusal:
+    """The refusal for a resolver that named nothing because it was not
+    answered. Coord's own code and HTTP status are in the message, so they
+    reach the run-now response and a schedule's ``last_error``."""
+    cause = _unavailable_cause(outcome)
+    if outcome.reason == "refused" and outcome.code == NO_PAIRED_DEVICE_CODE:
+        # Only a background caller's mint answers this, so the user is a
+        # schedule's owner. It is coord's fact about the user, not about
+        # which runners are online: starting one does not help, pairing does.
         return AutoPickRefusal(
-            code="device_resolver_unavailable",
+            code="no_paired_runner",
             message=(
-                "Coord's device resolver could not be asked "
-                f"({outcome.reason}), so no runner is picked automatically. "
-                "Choose a runner explicitly, or retry."
+                f"The user this run is for has no paired runner ({cause}). "
+                "Pair a runner with that account."
             ),
             outcome=outcome,
         )
+    if outcome.reason == "refused":
+        message = (
+            f"Coord refused to resolve a runner ({cause}), so none is picked "
+            "automatically. The refusal is coord's own; choose a runner "
+            "explicitly."
+        )
+    else:
+        advice = (
+            "Choose a runner explicitly, or retry."
+            if outcome.reason in _TRANSIENT_UNAVAILABLE
+            else "Choose a runner explicitly."
+        )
+        message = (
+            f"Coord's device resolver could not be asked ({cause}), so no "
+            f"runner is picked automatically. {advice}"
+        )
+    return AutoPickRefusal(
+        code="device_resolver_unavailable", message=message, outcome=outcome
+    )
+
+
+def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
+    """The typed refusal for every resolver answer that is not a device."""
+    if isinstance(outcome, UnavailableOutcome):
+        return _unavailable_refusal(outcome)
     if isinstance(outcome, DrainUnreadableOutcome):
         return AutoPickRefusal(
             code="drain_unreadable",
