@@ -10,7 +10,8 @@ still constructed OUTSIDE it, as a free-text sentence only:
   local subclass — ``RefusalHTTPException`` excepted) whose ``detail`` is a
   bare string: a literal, an f-string, a ``+``/``%`` concatenation or a
   ``"...".format(...)``;
-* a ``JSONResponse`` with a literal status of 400 or more whose ``content`` is
+* a ``JSONResponse`` whose status is 400 or more — an int literal or a
+  ``status.HTTP_4xx_*``/``HTTP_5xx_*`` constant — and whose ``content`` is
   a dict literal carrying a bare-string ``"detail"`` and NO ``refusal`` key
   (a route that returns its body by hand nests the envelope there — see
   ``app.core.refusal``).
@@ -20,9 +21,15 @@ added — build it with ``refusal_error`` instead. Below it, a conversion
 landed and the baseline is stale — lower :data:`BASELINE` to the new count in
 the same change, so the floor it guards moves down with it.
 
-Detection is syntactic (``ast``), so a string held in a variable and passed as
-``detail=name`` is not counted: the ratchet measures the grep-detectable
-shape the plan names, and says so rather than claiming more.
+Detection is syntactic (``ast``), and says so rather than claiming more. NOT
+counted: a string held in a variable and passed as ``detail=name``; a
+``content`` built in a variable; a computed status; an exception class
+imported under an alias, or a subclass whose name does not end in
+``HTTPException``.
+
+The baseline is exact, so a PR that lands between another's measurement and
+its merge and changes the count turns this red on ``main`` until one of them
+re-measures. That is the ratchet working, not flaking.
 """
 
 from __future__ import annotations
@@ -31,10 +38,10 @@ import ast
 from collections import Counter
 from pathlib import Path
 
-#: The exact count on the head that introduced this ratchet (846 before the
+#: The exact count on the head that introduced this ratchet (849 before the
 #: D2 conversions on the same change). Lower it when a conversion lands;
 #: never raise it.
-BASELINE = 808
+BASELINE = 811
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
@@ -82,6 +89,26 @@ def _is_bare_http_exception(call: ast.Call) -> bool:
     return detail is not None and _is_bare_string(detail)
 
 
+def _status_value(node: ast.AST | None) -> int | None:
+    """The status a ``status_code=`` argument names: an int literal, or a
+    ``status.HTTP_503_SERVICE_UNAVAILABLE``-style constant (read from its
+    name, so no import is needed). ``None`` when it is computed."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return node.value
+    name = (
+        node.attr
+        if isinstance(node, ast.Attribute)
+        else node.id
+        if isinstance(node, ast.Name)
+        else None
+    )
+    if name and name.startswith("HTTP_"):
+        digits = name.split("_")[1]
+        if digits.isdigit():
+            return int(digits)
+    return None
+
+
 def _is_refusal_key(key: ast.AST | None) -> bool:
     """``REFUSAL_KEY`` or the literal ``"refusal"``: the body carries the
     typed envelope, so it is not a free-text refusal."""
@@ -93,12 +120,8 @@ def _is_refusal_key(key: ast.AST | None) -> bool:
 def _is_bare_json_error(call: ast.Call) -> bool:
     if _callee_name(call) != "JSONResponse":
         return False
-    status = _kwarg(call, "status_code")
-    if not (
-        isinstance(status, ast.Constant)
-        and isinstance(status.value, int)
-        and status.value >= 400
-    ):
+    status = _status_value(_kwarg(call, "status_code"))
+    if status is None or status < 400:
         return False
     content = _kwarg(call, "content")
     if not isinstance(content, ast.Dict):
@@ -167,8 +190,9 @@ HTTPException(status_code=400, detail="%s" % x)
 HTTPException(status_code=400, detail="{}".format(x))
 exceptions.HTTPException(status_code=401, detail="no")
 JSONResponse(status_code=503, content={"detail": "down", "id": 1})
+JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": "x"})
 """
-    assert _count_source(source, tmp_path) == 8
+    assert _count_source(source, tmp_path) == 9
 
 
 def test_detector_ignores_structured_and_refusal_shapes(tmp_path: Path) -> None:
@@ -179,7 +203,8 @@ msg = "held in a variable"
 HTTPException(status_code=409, detail={"error": "E", "message": "m"})
 HTTPException(status_code=502, detail=msg)
 HTTPException(status_code=502)
-RefusalHTTPException(502, refusal, message="x", error_code="E")
+RefusalHTTPException(502, refusal, error_code="E")
+JSONResponse(status_code=status.HTTP_200_OK, content={"detail": "fine"})
 JSONResponse(status_code=200, content={"detail": "fine"})
 JSONResponse(status_code=404, content={"error": "E"})
 JSONResponse(status_code=503, content={"detail": "down", REFUSAL_KEY: {}})

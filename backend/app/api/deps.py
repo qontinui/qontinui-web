@@ -201,13 +201,18 @@ def _token_rejection_refusal(exc: Exception, message: str) -> HTTPException:
     """The 401 for a device token that failed verification, with the next
     action each failure actually calls for.
 
+    * expired → ``retry_later``: device tokens are short-lived and the
+      runner re-mints them on its own, so an expired one is ordinary
+      lifecycle. Re-pairing would be a heavy, wrong remedy.
+    * not yet valid → ``set_setting`` the system clock: the token is fine,
+      the clocks disagree.
     * foreign issuer → ``report_defect``: this backend and the caller trust
       different key sets, which is a deployment wiring fault, not something
       the holder of the token can fix.
-    * not yet valid → ``set_setting`` the system clock: the token is fine,
-      the clocks disagree.
-    * expired, or any other verification failure → ``pair_device``: the
-      device needs a fresh credential.
+    * any other verification failure → ``report_defect``. This arm is the
+      residue ``describe_token_rejection`` refuses to name (a malformed token,
+      an unusable key, a missing ``kid``); its own docs record that pointing
+      readers at pairing state for it was wrong, so this does not either.
     """
     from app.services.coord_jwks import (
         CoordTokenExpiredError,
@@ -215,19 +220,20 @@ def _token_rejection_refusal(exc: Exception, message: str) -> HTTPException:
         CoordTokenNotYetValidError,
     )
 
-    kind = NextActionKind.pair_device
     target: str | None = None
     if isinstance(exc, CoordTokenForeignIssuerError):
         discriminator = "foreign_issuer"
         kind = NextActionKind.report_defect
     elif isinstance(exc, CoordTokenExpiredError):
         discriminator = "expired"
+        kind = NextActionKind.retry_later
     elif isinstance(exc, CoordTokenNotYetValidError):
         discriminator = "not_yet_valid"
         kind = NextActionKind.set_setting
         target = "system clock"
     else:
         discriminator = "failed_verification"
+        kind = NextActionKind.report_defect
     return refusal_error(
         status.HTTP_401_UNAUTHORIZED,
         RefusalCode.credential_rejected,
@@ -325,7 +331,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     if not user.is_active:
         raise refusal_error(
             status.HTTP_401_UNAUTHORIZED,
-            RefusalCode.permission_denied,
+            RefusalCode.credential_rejected,
             NextActionKind.none_terminal,
             "User is not active.",
             discriminator="paired_user_inactive",
