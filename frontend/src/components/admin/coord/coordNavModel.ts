@@ -14,6 +14,7 @@
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
+ *             Verification /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
  *             History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
@@ -316,6 +317,19 @@ export const GROUPS: NavGroup[] = [
         label: "Operator Touches",
         icon: Hand,
         testId: "coord-nav-operator-touches",
+      },
+      {
+        // Beside Findings, because a refutation IS a finding: this page is the
+        // drill-down behind the overview's "Can I trust 'done'?" tile — trust
+        // calibration and independent-verification coverage over one shipped
+        // population, with their unknowns, the checker lane and a 12-week
+        // series. Plan
+        // `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+        // Phase 5.
+        href: "/admin/coord/verification",
+        label: "Verification",
+        icon: BadgeCheck,
+        testId: "coord-nav-verification",
       },
       {
         href: "/admin/coord/agents",
