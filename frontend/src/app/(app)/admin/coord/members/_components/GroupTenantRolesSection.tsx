@@ -39,9 +39,13 @@ import {
   type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
 import type { CoordMemberRole } from "@/lib/api/operations/coordMembers";
-import { operationsErrorMessage } from "@/lib/api/operations/base";
+import {
+  operationsErrorMessage,
+  operationsErrorReading,
+} from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { CollapsiblePanel } from "@/components/console";
+import { BackendErrorMessage, CollapsiblePanel } from "@/components/console";
 import {
   groupNameProblem,
   requireRows,
@@ -71,7 +75,7 @@ export function GroupTenantRolesSection({
 }) {
   const [rows, setRows] = useState<GroupTenantRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Add-mapping form state.
@@ -116,7 +120,7 @@ export function GroupTenantRolesSection({
       );
     } catch (err) {
       log.warn("load group-tenant-roles failed", err);
-      setError(operationsErrorMessage(err));
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -391,7 +395,8 @@ export function GroupTenantRolesSection({
           </div>
         ) : error ? (
           <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
+            <AlertTriangle className="h-4 w-4" />{" "}
+            <BackendErrorMessage error={error} />
           </p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">No mappings yet.</p>
