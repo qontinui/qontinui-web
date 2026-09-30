@@ -55,7 +55,8 @@ export default function OverviewSummaryPage() {
   // Phase 8). Its own read, held on the same project gate as the intent read.
   const domainCost = useDomainCost(
     activeTenantId,
-    tenantsLoading || tenantsError !== null
+    tenantsLoading || tenantsError !== null,
+    tenantsError
   );
   const actions = {
     canEdit,

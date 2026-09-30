@@ -45,7 +45,13 @@ export interface UseDomainCostResult {
 
 export function useDomainCost(
   tenantId: string | null,
-  hold: boolean
+  hold: boolean,
+  /**
+   * Why the read is held when it will NOT resolve by waiting — the project
+   * list failed. Surfaced as the read's error, so the section says why it has
+   * nothing rather than "not read yet" forever.
+   */
+  holdReason: string | null = null
 ): UseDomainCostResult {
   const [data, setData] = useState<DomainCostPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,5 +103,13 @@ export function useDomainCost(
     supersedeOnChange: true,
   });
 
+  if (hold && holdReason !== null) {
+    return {
+      data: null,
+      loading: false,
+      error: `project list unavailable: ${holdReason}`,
+      refresh,
+    };
+  }
   return { data, loading, error, refresh };
 }
