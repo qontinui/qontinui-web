@@ -103,11 +103,12 @@ class UnavailableOutcome(BaseModel):
                                service account is off or was not given its
                                own token (``status`` is coord's answer to
                                that, if it answered).
-    - ``coord_unreachable``  — a request to coord got no HTTP answer: a
-                               connect error, a timeout, or a connection
-                               reset or broken mid-request (any ``httpx``
-                               error other than a bad URL or an unsendable
-                               header). One failed request is enough.
+    - ``coord_unreachable``  — a request to coord got no usable HTTP
+                               answer: a connect error, a timeout, or a
+                               connection reset or broken mid-request (any
+                               ``httpx`` error other than a bad URL or an
+                               unsendable header). One failed request is
+                               enough.
     - ``not_deployed``       — coord answered 404/405 from its router
                                fallback (``code`` is ``no_such_route`` or
                                ``method_not_allowed``), or with no ``error``

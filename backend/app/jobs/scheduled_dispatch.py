@@ -29,6 +29,9 @@ same sweep is recorded ``failed`` — saying so — without asking coord again.
 One such row is not enough (a single failed request is ``coord_unreachable``
 too), and a row coord answers in between starts the count over. Rows that
 name a runner do not ask coord: they still fire, and neither count nor reset.
+A coord that fails intermittently — never twice in a row — is deliberately
+still asked for every row: the sweep pays those timeouts rather than skip a
+row a working coord would have answered.
 
 The ``run-now`` endpoint calls :func:`fire_scheduled_run` directly to fire a single
 row immediately, bypassing the poll (and with no sweep state: it always asks).
@@ -113,6 +116,13 @@ class SweepState:
     a ``target="auto"`` row that failed before coord was asked (its workflow
     is gone, or web has no credential or configuration to ask with).
 
+    A ``target="auto"`` row whose dispatch raised anything that is not a
+    ``DispatchError`` sets the count back to zero as well. Such a fire says
+    nothing about whether coord can be reached — the exception may have come
+    before coord was asked or after it answered — and the sweep errs toward
+    asking again: a stale count would let a later row be skipped unasked
+    although coord answered in between.
+
     It is one sweep's knowledge and no more: :func:`poll_and_dispatch_due`
     makes a new one each time, so the next sweep asks coord afresh.
     """
@@ -129,7 +139,11 @@ class SweepState:
         if contact == "unreachable":
             self.unreachable_in_a_row += 1
         elif contact == "answered":
-            self.unreachable_in_a_row = 0
+            self.reset()
+
+    def reset(self) -> None:
+        """Start the count over: the next ``target="auto"`` row asks coord."""
+        self.unreachable_in_a_row = 0
 
 
 def _disable_for_bad_cron(row: ScheduledWorkflowRun, err: Exception) -> None:
@@ -309,6 +323,10 @@ async def fire_scheduled_run(
     before its own outcome is committed, so a failing commit does not make
     the next row find it out again. A row that names its runner tells the
     sweep nothing. A single fire (run-now) passes none and always asks coord.
+
+    Any other exception from the dispatch is re-raised unchanged; for a
+    ``target="auto"`` row it first sets the sweep's count of consecutive
+    unreachable rows back to zero, so the next such row asks coord.
     """
     run_uuid = UUID(scheduled_run_id)
     session_maker = async_sessionmaker(
@@ -429,6 +447,13 @@ async def fire_scheduled_run(
                 **refusal,
             )
             return failed
+        except Exception:
+            if sweep is not None and target == "auto":
+                # Not a refusal the dispatcher made, so it proves nothing
+                # about coord being unreachable — and coord may well have
+                # answered before it was raised. Err toward asking again.
+                sweep.reset()
+            raise
 
         if sweep is not None and target == "auto":
             # Coord named the runner this went to. Noted before the commit,

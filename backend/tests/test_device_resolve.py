@@ -2241,6 +2241,162 @@ async def test_the_sweep_is_told_before_the_rows_outcome_is_committed(
     assert sweep.coord_unreachable
 
 
+async def test_a_resolved_row_resets_the_count_before_its_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The success path tells the sweep too, and before the commit: coord
+    named a runner, so a commit that then fails does not leave the earlier
+    unreachable row counting against the next one."""
+    doors = _Doors()
+    doors.install(monkeypatch)
+    sockets = _connect_runner(monkeypatch, DEVICE_B)
+    row = _schedule_row(USER)
+    _wire_db(monkeypatch, _CommitFails(row))
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=1)
+
+    with pytest.raises(RuntimeError, match="the database went away"):
+        await scheduled_dispatch.fire_scheduled_run(
+            str(row.id), engine=cast(Any, object()), sweep=sweep
+        )
+
+    # Coord answered and the workflow went out; only the record was lost.
+    assert len(doors.resolve.calls) == 1
+    assert [sent_to for sent_to, _ in sockets.sent] == [DEVICE_B]
+    assert sweep.unreachable_in_a_row == 0
+
+
+async def test_an_unexpected_dispatch_error_starts_the_count_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coord times out, answers, times out, answers — and each row coord
+    answered then dies on something that is no ``DispatchError`` (Redis is
+    down), AFTER the resolver named its runner. That is never two unreachable
+    rows in a row, so the fourth row must still ask coord: a count left
+    standing by the second row would have skipped it unasked."""
+    unreachable = _Coord(raise_exc=httpx.ReadTimeout("one slow request"))
+    doors = _Doors(
+        mint=_InTurn(
+            unreachable, _Coord(body=_minted), unreachable, _Coord(body=_minted)
+        )
+    )
+    doors.install(monkeypatch)
+    sockets = _connect_runner(monkeypatch, DEVICE_B)
+
+    async def _no_redis() -> object:
+        raise ConnectionError("redis is down")
+
+    monkeypatch.setattr(workflow_dispatcher, "get_redis", _no_redis)
+    rows = [_schedule_row(USER) for _ in range(4)]
+
+    stats = await _sweep(monkeypatch, *rows)
+
+    assert stats == {"due": 4, "dispatched": 0, "failed": 4, "skipped": 0}
+    assert len(doors.mint.calls) == 4
+    # Coord's resolver answered the second and the fourth row.
+    assert len(doors.resolve.calls) == 2
+    assert sockets.sent == []
+    assert rows[0].last_error == rows[2].last_error == UNREACHABLE
+    # The unexpected error is re-raised as it is: the fire records nothing.
+    for row in (rows[1], rows[3]):
+        assert row.last_status is None
+        assert row.last_error is None
+
+
+async def test_an_unexpected_dispatch_error_is_re_raised_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doors = _Doors()
+    doors.install(monkeypatch)
+    _connect_runner(monkeypatch, DEVICE_B)
+    boom = ConnectionError("redis is down")
+
+    async def _no_redis() -> object:
+        raise boom
+
+    monkeypatch.setattr(workflow_dispatcher, "get_redis", _no_redis)
+    row = _schedule(monkeypatch, USER)
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=1)
+
+    with pytest.raises(ConnectionError) as raised:
+        await scheduled_dispatch.fire_scheduled_run(
+            str(row.id), engine=cast(Any, object()), sweep=sweep
+        )
+
+    assert raised.value is boom
+    assert sweep.unreachable_in_a_row == 0
+
+
+def _unavailable_error(reason: str, status: int | None = None) -> DispatchError:
+    """The dispatcher's refusal of an auto-pick the resolver left unanswered."""
+    return AutoPickRefusal(
+        code="device_resolver_unavailable",
+        message="Coord's device resolver could not be asked.",
+        outcome=UnavailableOutcome.model_validate({"reason": reason, "status": status}),
+    ).to_dispatch_error()
+
+
+@pytest.mark.parametrize(
+    ("err", "contact"),
+    [
+        # Refused before the pick: coord was never asked.
+        (
+            DispatchError(
+                status_code=404, code="workflow_not_found", detail="Workflow not found"
+            ),
+            "not_asked",
+        ),
+        (_unavailable_error("misconfigured"), "not_asked"),
+        # Web had no service credential to ask with ...
+        (_unavailable_error("no_credential"), "not_asked"),
+        # ... unless coord itself refused web's service token: an answer.
+        (_unavailable_error("no_credential", 401), "answered"),
+        (_unavailable_error("no_credential", 403), "answered"),
+        (_unavailable_error("coord_unreachable"), "unreachable"),
+        (_unavailable_error("refused", 409), "answered"),
+        (_unavailable_error("upstream_error", 503), "answered"),
+        (_unavailable_error("not_deployed", 404), "answered"),
+        # A runner coord named, which the dispatch then could not reach.
+        (
+            DispatchError(
+                status_code=503,
+                code="runner_offline",
+                detail={"code": "runner_offline"},
+            ),
+            "answered",
+        ),
+    ],
+    ids=[
+        "workflow_not_found",
+        "misconfigured",
+        "no_credential_unasked",
+        "no_credential_401",
+        "no_credential_403",
+        "coord_unreachable",
+        "refused",
+        "upstream_error",
+        "not_deployed",
+        "runner_offline",
+    ],
+)
+def test_what_a_refused_auto_dispatch_says_about_reaching_coord(
+    err: DispatchError, contact: str
+) -> None:
+    """Which refusals count toward the short-circuit (``unreachable``), which
+    start the count over (``answered``), and which do neither."""
+    assert scheduled_dispatch._coord_contact(err) == contact
+    before = 1
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=before)
+    sweep.note(scheduled_dispatch._coord_contact(err))
+    assert (
+        sweep.unreachable_in_a_row
+        == {
+            "unreachable": before + 1,
+            "answered": 0,
+            "not_asked": before,
+        }[contact]
+    )
+
+
 @pytest.mark.parametrize(
     "mint",
     [
