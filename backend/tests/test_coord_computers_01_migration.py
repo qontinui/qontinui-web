@@ -333,15 +333,20 @@ _LOCK_BOTH = (
     "LOCK TABLE coord.devices, coord.device_resource_samples IN ACCESS EXCLUSIVE MODE"
 )
 
-# ANY reference to either existing table (ALTER, COMMENT ON, CREATE/DROP INDEX
-# ... ON, a JOIN in a data step): each one takes a lock, so none may precede the
-# up-front LOCK TABLE. The LOCK TABLE literal itself is masked out before the
+# ANY statement that locks either existing table must follow the up-front LOCK
+# TABLE. Two spellings reach them: the table name itself (ALTER TABLE, COMMENT
+# ON, CREATE INDEX ... ON, a JOIN in a data step), and the name of an index ON
+# one of them (DROP INDEX names only the index, yet takes ACCESS EXCLUSIVE on
+# its parent table). The LOCK TABLE literal itself is masked out before the
 # search.
-_EXISTING_TABLE_REF = re.compile(r"coord\.(devices|device_resource_samples)\b")
+_EXISTING_TABLE_REF = re.compile(
+    r"coord\.(devices|device_resource_samples)\b"
+    r"|coord\.(ix_devices_computer_id|ix_device_resource_samples_computer_sampled)\b"
+)
 
 
 def _function_sql(name: str) -> str:
-    """Every string literal in the named function body, concatenated in order."""
+    """Every string literal in the named function body (docstring excluded), in order."""
     source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
         encoding="utf-8"
     )
@@ -351,10 +356,21 @@ def _function_sql(name: str) -> str:
         for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == name
     )
+    # The docstring is prose, not SQL: leave it out so it can neither satisfy
+    # nor trip the ordering checks.
+    body = func.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
     # ast.walk is breadth-first, so order the literals by source position.
     positioned = sorted(
         (node.lineno, node.col_offset, node.value)
-        for node in ast.walk(func)
+        for stmt in body
+        for node in ast.walk(stmt)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     )
     assert positioned, f"{name} has no SQL literals"
