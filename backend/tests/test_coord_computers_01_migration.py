@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -81,6 +82,39 @@ _INDEXES = (
     "ix_devices_computer_id",
     "ix_device_resource_samples_computer_sampled",
 )
+
+_SAMPLE_INDEX = "ix_device_resource_samples_computer_sampled"
+
+# Every NON-constraint index, by exact ``pg_get_indexdef``: key columns, sort
+# direction and partial predicate. A same-named index over the wrong key would
+# pass an existence check and serve no read.
+_EXPECTED_INDEXDEFS: dict[str, str] = {
+    "ix_computers_parent_computer_id": (
+        "CREATE INDEX ix_computers_parent_computer_id ON coord.computers "
+        "USING btree (parent_computer_id) WHERE (parent_computer_id IS NOT NULL)"
+    ),
+    "ix_computer_services_runner_name": (
+        "CREATE INDEX ix_computer_services_runner_name ON coord.computer_services "
+        "USING btree (runner_name) WHERE (runner_name IS NOT NULL)"
+    ),
+    "ix_computer_events_computer_observed": (
+        "CREATE INDEX ix_computer_events_computer_observed ON coord.computer_events "
+        "USING btree (computer_id, observed_at DESC)"
+    ),
+    "ix_computer_events_observed_at": (
+        "CREATE INDEX ix_computer_events_observed_at ON coord.computer_events "
+        "USING btree (observed_at)"
+    ),
+    "ix_devices_computer_id": (
+        "CREATE INDEX ix_devices_computer_id ON coord.devices "
+        "USING btree (computer_id) WHERE (computer_id IS NOT NULL)"
+    ),
+    _SAMPLE_INDEX: (
+        "CREATE INDEX ix_device_resource_samples_computer_sampled "
+        "ON coord.device_resource_samples "
+        "USING btree (computer_id, sampled_at DESC) WHERE (computer_id IS NOT NULL)"
+    ),
+}
 
 _EXPECTED_COMPUTER_COLUMNS: dict[str, tuple[str, str]] = {
     "computer_id": ("uuid", "NO"),
@@ -209,11 +243,38 @@ def _insert_computer(
     return uuid.UUID(str(minted))
 
 
-def _refused(engine: Engine, sql: str, **params: object) -> None:
-    """Assert the statement is refused by an integrity (CHECK / UNIQUE / NOT NULL) rule."""
-    with pytest.raises(IntegrityError):
+def _refused(engine: Engine, constraint: str, sql: str, **params: object) -> None:
+    """Assert the statement is refused by exactly the named constraint.
+
+    Asserting only ``IntegrityError`` would let an unrelated violation (a NOT
+    NULL, a different CHECK) stand in for the rule under test.
+    """
+    with pytest.raises(IntegrityError) as refused:
         with engine.begin() as conn:
             conn.execute(text(sql), params)
+    diag = getattr(refused.value.orig, "diag", None)
+    assert diag is not None, f"no diagnostics on {refused.value!r}"
+    assert diag.constraint_name == constraint, (
+        f"refused by {diag.constraint_name!r}, expected {constraint!r}"
+    )
+
+
+def _indexdefs(engine: Engine) -> dict[str, tuple[bool, str]]:
+    """``{index_name: (indisvalid, pg_get_indexdef)}`` for the expected indexes."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.relname, i.indisvalid, pg_get_indexdef(i.indexrelid)
+                  FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = ANY(:names)
+                """
+            ),
+            {"names": list(_EXPECTED_INDEXDEFS)},
+        ).all()
+    return {name: (valid, indexdef) for name, valid, indexdef in rows}
 
 
 def _assert_absent(engine: Engine) -> None:
@@ -261,17 +322,10 @@ def _assert_shape(engine: Engine) -> None:
                 """
             )
         ).scalar_one()
-        valid = conn.execute(
-            text(
-                """
-                SELECT bool_and(i.indisvalid) FROM pg_index i
-                  JOIN pg_class c ON c.oid = i.indexrelid
-                 WHERE c.relname = 'ix_device_resource_samples_computer_sampled'
-                """
-            )
-        ).scalar_one()
     assert sample_fks == 0, "the hot sample table must carry no FK"
-    assert valid is True, "the concurrent sample index must be VALID"
+    assert _indexdefs(engine) == {
+        name: (True, indexdef) for name, indexdef in _EXPECTED_INDEXDEFS.items()
+    }, "every index must exist, be VALID, and match its exact definition"
 
 
 @pytest.mark.skipif(
@@ -307,19 +361,21 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             "g" * 64,
             "4c4c4544-0042-3510-8052-b4c04f4e4d32",  # a raw machine id
         ):
-            _refused(engine, insert_computer, h=bad)
+            _refused(engine, "ck_computers_identity_hash", insert_computer, h=bad)
 
         host = _insert_computer(engine, _HASH_A)
-        _refused(engine, insert_computer, h=_HASH_A)  # UNIQUE identity_hash
+        _refused(engine, "uq_computers_identity_hash", insert_computer, h=_HASH_A)
 
         # -- kind CHECKs on all three tables. ---------------------------------
         _refused(
             engine,
+            "ck_computers_kind",
             "INSERT INTO coord.computers (identity_hash, kind) VALUES (:h, 'machine')",
             h=_HASH_C,
         )
         _refused(
             engine,
+            "ck_computer_services_kind",
             """
             INSERT INTO coord.computer_services (computer_id, unit, kind, observed_at)
             VALUES (:c, 'x.service', 'systemd', :at)
@@ -329,6 +385,7 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
         )
         _refused(
             engine,
+            "ck_computer_events_kind",
             """
             INSERT INTO coord.computer_events
                 (computer_id, client_event_id, kind, observed_at)
@@ -372,7 +429,9 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
                 (computer_id, client_event_id, kind, observed_at)
             VALUES (:c, 'oom:boot-1:17', 'oom_kill', :at)
         """
-        _refused(engine, insert_event, c=host, at=_NOW)
+        _refused(
+            engine, "uq_computer_events_client_event", insert_event, c=host, at=_NOW
+        )
         with engine.begin() as conn:
             absorbed = conn.execute(
                 text(
@@ -455,3 +514,44 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
         _assert_absent(engine)
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
+        _assert_invalid_sample_index_is_rebuilt(engine, root, url, device)
+
+
+def _assert_invalid_sample_index_is_rebuilt(
+    engine: Engine, root: Path, url: str, device: uuid.UUID
+) -> None:
+    """A retry after a failed concurrent build replaces the INVALID leftover.
+
+    Simulates the partial failure the migration guards against: the DDL has
+    committed, the concurrent sample-index build died and left an INVALID index
+    under the right NAME (but, here, the wrong definition), and the version was
+    never stamped. ``IF NOT EXISTS`` alone would keep that index forever; the
+    upgrade must drop and rebuild it.
+    """
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text(f"DROP INDEX coord.{_SAMPLE_INDEX}"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO coord.device_resource_samples (device_id, lane, source)
+                VALUES (:d, 'host', 'runner'), (:d, 'host', 'runner')
+                """
+            ),
+            {"d": device},
+        )
+        # Two rows share device_id, so this UNIQUE build fails and leaves an
+        # INVALID index behind under the migration index name.
+        with pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX CONCURRENTLY {_SAMPLE_INDEX} "
+                    "ON coord.device_resource_samples (device_id)"
+                )
+            )
+    leftover = _indexdefs(engine)[_SAMPLE_INDEX]
+    assert leftover[0] is False, "the simulated failed build must leave INVALID"
+
+    run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+    run_alembic(root, url, "upgrade", _REVISION_ID)
+    _assert_shape(engine)
