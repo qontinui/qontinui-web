@@ -9,10 +9,14 @@ on are pinned here rather than in prose:
   no reason is refused" and "a survived row with a reason is refused" are two
   different claims;
 * the closed vocabularies refuse an unknown value;
+* ``effective_rate_bp`` is refused outside 1..10000, and a ``disjoint`` claim
+  with an empty ``author_sessions`` is refused (``unknown`` with one is legal);
 * the idempotency key collides on a retried write even when
   ``plan_content_sha256`` is NULL (``NULLS NOT DISTINCT``);
 * the ``ON DELETE CASCADE`` back to ``coord.work_units``;
-* up -> down -> up leaves no residue.
+* up -> down -> up leaves no residue;
+* re-executing ``upgrade()`` over an already-applied schema (stamp back to the
+  parent, upgrade again) errors on nothing and changes no row, index or CHECK.
 
 **The parent revision is READ from the revision, never pinned** (the
 ``phaseatt_01`` convention): ``down_revision`` is re-pointed at the merged head
@@ -63,6 +67,17 @@ _CK_VERDICT = "work_unit_verifications_verdict_check"
 _CK_REASON = "work_unit_verifications_unverifiable_reason_check"
 _CK_AUTHOR_RESOLUTION = "work_unit_verifications_author_resolution_check"
 _CK_SELECTION = "work_unit_verifications_selection_check"
+_CK_RATE = "work_unit_verifications_effective_rate_bp_check"
+_CK_DISJOINT_AUTHORS = "work_unit_verifications_disjoint_needs_authors_check"
+_ALL_CHECKS = (
+    _CK_IFF,
+    _CK_VERDICT,
+    _CK_REASON,
+    _CK_AUTHOR_RESOLUTION,
+    _CK_SELECTION,
+    _CK_RATE,
+    _CK_DISJOINT_AUTHORS,
+)
 
 _TENANT = uuid.UUID("00000000-0000-4000-8000-000000000001")
 
@@ -228,6 +243,24 @@ def test_closed_vocabularies_refuse_unknown_values() -> None:
 
 
 @_needs_pg
+def test_rate_range_and_disjoint_needs_a_non_empty_author_set() -> None:
+    with ephemeral_database(admin_database_url(), "wuverif01_rng") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        unit = _seed_work_unit(engine, "wuverif-rng")
+
+        # Both bounds are legal.
+        _insert(engine, _row(unit, effective_rate_bp=1))
+        _insert(engine, _row(unit, effective_rate_bp=10000))
+        for bad in (-5, 0, 10001):
+            _refused_by(engine, _row(unit, effective_rate_bp=bad), _CK_RATE)
+
+        # disjoint from nobody is vacuous; unknown with no authors is honest.
+        _refused_by(engine, _row(unit, author_sessions=[]), _CK_DISJOINT_AUTHORS)
+        _insert(engine, _row(unit, author_sessions=[], author_resolution="unknown"))
+        assert _count(engine, unit) == 3
+
+
+@_needs_pg
 def test_idempotency_key_collides_even_with_a_null_plan_sha() -> None:
     with ephemeral_database(admin_database_url(), "wuverif01_idem") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
@@ -328,3 +361,51 @@ def test_up_down_up_leaves_no_residue() -> None:
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
+
+
+def _check_names(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'coord.work_unit_verifications'::regclass "
+                "AND contype = 'c'"
+            )
+        ).all()
+    return {r[0] for r in rows}
+
+
+@_needs_pg
+def test_re_executing_upgrade_over_an_applied_schema_is_a_no_op() -> None:
+    parent = _declared_parent()
+    with ephemeral_database(admin_database_url(), "wuverif01_rerun") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        unit = _seed_work_unit(engine, "wuverif-rerun")
+        kept = _insert(engine, _row(unit, verdict="refuted"))
+        checks_before = _check_names(engine)
+        assert set(_ALL_CHECKS) <= checks_before
+
+        # Stamp back WITHOUT running downgrade(), so the next upgrade genuinely
+        # re-executes this revision's upgrade() body over the live table.
+        run_alembic(backend_root(), db_url, "stamp", parent)
+        assert scalar(engine, "SELECT version_num FROM alembic_version") == parent
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        assert scalar(engine, "SELECT version_num FROM alembic_version") == _REVISION_ID
+
+        assert _count(engine, unit) == 1
+        assert (
+            scalar(
+                engine,
+                f"SELECT verdict FROM coord.{_TABLE} WHERE id = :id",
+                id=kept,
+            )
+            == "refuted"
+        )
+        for index in _INDEXES:
+            assert index_exists(engine, index, _SCHEMA), index
+        assert _check_names(engine) == checks_before
+        # The CHECKs still bite after the re-run.
+        _refused_by(engine, _row(unit, effective_rate_bp=0), _CK_RATE)

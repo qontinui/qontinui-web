@@ -49,6 +49,14 @@ Design notes
 * Closed vocabularies are DB CHECKs (verdict, unverifiable_reason,
   author_resolution, selection). Widening one is a web migration ordered ahead
   of the coord deploy that writes the new value.
+* **``effective_rate_bp`` is CHECKed to 1..10000.** A calibration reader
+  re-weights sampled rows by it, so a zero or negative rate would divide by
+  zero or flip a sign rather than fail loudly.
+* **A ``disjoint`` claim needs a non-empty ``author_sessions``.** Disjointness
+  from an empty set is vacuous — every claim has at least one landed commit, so
+  an empty author set means authorship was NOT resolved, which is ``unknown``.
+  The CHECK (``author_resolution = 'unknown' OR cardinality(author_sessions) >
+  0``) keeps an unresolved claim from being recorded as independence.
 
 Idempotency / authorship posture
 ================================
@@ -155,7 +163,14 @@ def upgrade() -> None:
             CONSTRAINT work_unit_verifications_author_resolution_check
                 CHECK (author_resolution IN ('disjoint', 'unknown')),
             CONSTRAINT work_unit_verifications_selection_check
-                CHECK (selection IN ('sampled', 'surge', 'requested', 'recheck'))
+                CHECK (selection IN ('sampled', 'surge', 'requested', 'recheck')),
+            CONSTRAINT work_unit_verifications_effective_rate_bp_check
+                CHECK (effective_rate_bp BETWEEN 1 AND 10000),
+            CONSTRAINT work_unit_verifications_disjoint_needs_authors_check
+                CHECK (
+                    author_resolution = 'unknown'
+                    OR cardinality(author_sessions) > 0
+                )
         )
         """
     )
@@ -225,8 +240,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Reverse: indexes first, then the table (its CHECKs and FKs go with it).
 
-    Index names are schema-qualified: ``DROP INDEX`` does not resolve through
-    ``search_path`` the way a table reference does.
+    Index names are schema-qualified so the drop is explicit about which
+    schema it touches rather than depending on ``search_path``.
     """
     op.execute("DROP INDEX IF EXISTS coord.idx_work_unit_verifications_live_refuted")
     op.execute("DROP INDEX IF EXISTS coord.idx_work_unit_verifications_unit_created")
