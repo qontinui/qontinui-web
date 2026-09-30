@@ -98544,6 +98544,28 @@
         ]
       }
     },
+    "/api/v1/operations/project-state": {
+      "get": {
+        "description": "Return coord's project-state synthesis for the operator's tenant.\n\nPlan\n``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``\nPhase 4. A plain pass-through of coord's operator route\n``GET /coord/project-state`` \u2014 the same shared core that serves the\n``coord_project_state`` MCP tool and its device/agent twin\n``GET /coord/agent-project-state``, so the page and every agent read one\nanswer. No composition and no reshaping here: ``/admin/coord/home`` and\nthe ``/overview`` progress panel render coord's bytes.\n\nThe wire, as coord serves it (``schema: 1``): ``generated_at``,\n``tenant_id``, ``scope`` (``\"operator\"``, the one built scope), and four\nblocks \u2014 ``on_track``, ``correctness``, ``needs_me``, ``degradations`` \u2014\neach carrying a ``state`` in ``read | could_not_read | stale |\nnot_implemented | unknown`` that is DISTINCT from its counts. **A block\nwhose state is not ``read`` carries no counts**, and a caller must render\nit as unknown rather than as zero (``[policy: silent-empty-is-unknown]``).\n``does_not_know`` lists every source the door read, with ``state``,\n``as_of``, ``freshness_bound_secs``, rows considered / excluded and why.\n\n``on_track.totals`` is ``{row_count, classes}`` over a closed,\nexhaustive-with-zeros class set (``shipped``, ``in_flight``,\n``stalled``, ``blocked_on_dependency``, ``waiting_on_gate``,\n``not_started``, ``closed_other``, ``off_vocabulary``, ``unset``) whose\nsum coord asserts equals ``row_count``. ``stalled`` is a MECHANICAL\nabsence-of-recorded-change class (``stall_rule`` /\n``stall_window_secs`` ride the wire); it is not a verdict and the page\ndoes not render the word.\n\nDeclares no ``response_model``, so nothing here filters a field coord\nadds. This docstring is what FastAPI renders into the committed,\ndrift-gated OpenAPI snapshots, so it is this repo's contract of record\nfor the route.",
+        "operationId": "api_v1_operations_project_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Project State Api V1 Operations Project State Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Project State",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
       "post": {
         "description": "Set a PR's GitHub draft state (operator release valve).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``\n(plan 2026-07-23-operator-set-pr-draft-state). The body is ``{\"draft\": bool}``:\n``false`` marks the PR ready-for-review (releasing it to the merge train),\n``true`` converts it back to draft (the documented hold mechanism).\n\nAuth mirrors the gate-action stack (approve/reject): the operator's Cognito\nbearer is forwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=`` \u2192\nfleet-auth P2/D6) and coord derives the tenant + validates repo authority\nserver-side. Releasing a draft-required (security-surface) PR is an operator\njudgment, so this is operator-authed \u2014 never an agent JWT.\n\nOnly the ``draft`` boolean is forwarded; any other keys the client sends are\ndropped so the wire body to coord is exactly its ``{\"draft\": bool}`` contract.\ncoord's status codes + ``{\"error\", \"message\"}`` bodies pass through verbatim\nvia ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant\n/ pr_not_found, 429 rate_limited, 503 github_app_unconfigured,\n502 github_draft_state_failed, 500 internal).",
