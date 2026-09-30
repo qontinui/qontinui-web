@@ -427,4 +427,38 @@ describe("RegisteredDevicesList credential panel", () => {
       await within(panel).findByTestId("device-authenticate-button")
     ).toBeInTheDocument();
   });
+
+  it("offers Authenticate for a live device whose machine key alone is revoked", async () => {
+    statusRows = new Map([
+      [
+        "box-a",
+        statusRow(
+          DEVICE_A,
+          "box-a",
+          { ok: true, posture: "live" },
+          new Date().toISOString()
+        ),
+      ],
+    ]);
+    getRunnersMock.mockResolvedValue([device(DEVICE_A, "box-a")]);
+    overviewMock.mockResolvedValue({
+      devices: [
+        overviewRow(DEVICE_A, {
+          machine_key: {
+            present: true,
+            expires_at: null,
+            revoked_at: "2026-09-29T00:00:00Z",
+          },
+          credential_revoked_at: null,
+        }),
+      ],
+    });
+
+    renderList();
+    const panel = await panelFor(DEVICE_A);
+    expect(postureOf(panel)).toHaveAttribute("data-posture-kind", "live");
+    expect(
+      await within(panel).findByTestId("device-authenticate-button")
+    ).toBeInTheDocument();
+  });
 });
