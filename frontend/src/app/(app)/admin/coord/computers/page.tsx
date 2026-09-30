@@ -45,6 +45,7 @@ import {
 import {
   COMPUTER_PALETTE,
   buildComputerRows,
+  ciRunnerStatusText,
   computerHref,
   computerName,
   deriveComputersHealth,
@@ -83,11 +84,8 @@ function ComputerRow({
       onToggle={onToggle}
       attention={status.attention}
       identity={
-        <span
-          className="font-mono text-[11px]"
-          title={computer.kind ?? "kind not reported"}
-        >
-          {computer.kind ?? "unknown"}
+        <span className="font-mono text-[11px]" title={computer.kind}>
+          {computer.kind}
         </span>
       }
       label={
@@ -139,11 +137,9 @@ function ComputerRow({
               data-testid="coord-computer-last-event"
             >
               Last event:{" "}
-              {computer.lastEvent === undefined
-                ? "unknown (coord did not report one)"
-                : computer.lastEvent === null
-                  ? "none in the retention window"
-                  : `${eventLabel(computer.lastEvent.kind)}${eventSubject(computer.lastEvent) ? ` (${eventSubject(computer.lastEvent)})` : ""}, ${relativeTime(computer.lastEvent.observed_at)}`}
+              {computer.lastEvent === null
+                ? "none in the retention window"
+                : `${eventLabel(computer.lastEvent.kind)}${eventSubject(computer.lastEvent) ? ` (${eventSubject(computer.lastEvent)})` : ""}, ${relativeTime(computer.lastEvent.observed_at)}`}
               {" · "}
               Devices: {computer.devices?.length ?? "unknown"} · CI runners:{" "}
               {computer.ciRunners?.length ?? "unknown"}
@@ -186,7 +182,8 @@ function UnattributedRunners({
         className="text-sm text-muted-foreground italic"
         data-testid="coord-computers-unattributed-unknown"
       >
-        Coord did not say which CI runners are unattributed — unknown, not none.
+        Coord could not read the CI registrar, so which runners are unattributed
+        is unknown — not none.
       </p>
     );
   }
@@ -216,7 +213,7 @@ function UnattributedRunners({
             {r.repo ?? "repo not reported"}
           </span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {r.status ?? "status unknown"}
+            {ciRunnerStatusText(r)}
           </span>
         </li>
       ))}
@@ -241,11 +238,12 @@ export default function CoordComputersPage() {
     [read.data, read.fetchedAtMs, nowMs]
   );
   const loaded = read.data !== null;
-  const unattributed: CiRunnerWire[] | null = Array.isArray(
-    read.data?.unattributed_ci_runners
-  )
-    ? read.data.unattributed_ci_runners
-    : null;
+  // `registrar_read_ok: false` = coord's registrar read failed, so the
+  // (empty) unattributed list it sent beside it is UNKNOWN, not "none".
+  const unattributed: CiRunnerWire[] | null =
+    read.data?.registrar_read_ok === false
+      ? null
+      : (read.data?.unattributed_ci_runners ?? null);
   const health = useMemo(
     () =>
       deriveComputersHealth({

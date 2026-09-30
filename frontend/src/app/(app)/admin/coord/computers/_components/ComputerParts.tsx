@@ -26,7 +26,7 @@ import {
   laneFreshness,
   laneKey,
   laneMemoryUsed,
-  pressureRatio,
+  lanePressureRatio,
   readIssueText,
   readLaneField,
   readingText,
@@ -289,7 +289,7 @@ export function LaneTable({
               nowMs
             );
             const stale = fr.kind !== "fresh";
-            const ratio = pressureRatio(lane.pressure);
+            const ratio = lanePressureRatio(lane);
             const tone: RowTone = stale
               ? "unknown"
               : (HEADROOM_TONE[lane.headroom ?? ""] ?? "unknown");

@@ -22,15 +22,14 @@
  *    cannot measure renders `not supported`** (and `unavailable` as such).
  *    `null` is never `0`.
  *
- * ## Why the reader is tolerant of two spellings in a few places
+ * ## The wire is coord's, exactly
  *
- * Coord's Phase 3 is being built in parallel from the same contract, and the
- * contract names some groups by meaning rather than by key ("identity",
- * "capacity", "latest sample rollup per lane"). Where a group can plausibly be
- * nested or flat, {@link normalizeComputer} reads both — once, here — so a
- * layout choice on the coord side degrades to nothing rather than to a page of
- * `unknown`s. Every OTHER field is read by exactly the contract's name, and a
- * field this build does not know is simply not rendered.
+ * The types below mirror `qontinui-coord/crates/coord/src/computers.rs`
+ * (`ComputerSummary`, `LaneRollup`, `ComputerDetail`, `list_body`) field for
+ * field, with no alternate spellings. Coord computes every freshness verdict
+ * (`freshness.state`, each lane's `freshness.state`, `samples_state`); this
+ * module never upgrades one, and only ever makes it WORSE by adding the time
+ * since this page's read landed to coord's frozen `age_secs`.
  *
  * Everything below is pure and unit-tested (`computerStatus.test.ts`).
  */
@@ -65,172 +64,243 @@ export const SAMPLE_CADENCE_SECS = 30;
 export const SAMPLE_STALE_AFTER_SECS = 3 * SAMPLE_CADENCE_SECS;
 
 // ---------------------------------------------------------------------------
-// Wire types — every field optional: an absent one is UNKNOWN, not a default
+// Wire types — EXACTLY what coord's `computers.rs` serializes
+// (`ComputerSummary`, `LaneRollup`, `ComputerDetail`, `list_body`,
+// `detail_body`). Nullable where coord's field is an `Option`; a string where
+// coord's is an enum, so a newer coord's word reads UNKNOWN, not a parse error.
 // ---------------------------------------------------------------------------
 
 /** Per-axis measurement status the publisher reports (contract §2). */
 export type AxisMeasurement = "measured" | "not_supported" | "unavailable";
 
+/** Coord's `Freshness` (a computer's report). `state`: fresh | stale | unknown. */
 export interface ComputerFreshnessWire {
-  last_report_at?: string | null;
-  age_secs?: number | null;
-  /** `fresh | stale | unknown` — typed as a string so a newer coord's word reads UNKNOWN, not a parse failure. */
-  state?: string | null;
+  last_report_at: string;
+  age_secs: number;
+  state: string;
+  stale_after_secs: number;
 }
 
+/** Coord's `LaneFreshness` (one lane's newest sample). */
+export interface LaneFreshnessWire {
+  age_secs: number;
+  state: string;
+  stale_after_secs: number;
+}
+
+/** Coord's capacity object — every member nullable (never reported = UNKNOWN). */
 export interface ComputerCapacityWire {
-  cpu_cores?: number | null;
-  memory_total_bytes?: number | null;
-  swap_total_bytes?: number | null;
-  disk_total_bytes?: number | null;
-  gpus?: unknown;
+  cpu_cores: number | null;
+  memory_total_bytes: number | null;
+  swap_total_bytes: number | null;
+  disk_total_bytes: number | null;
+  gpus: unknown;
 }
 
-export interface ComputerIdentityWire {
-  hostname?: string | null;
-  kind?: string | null;
-  os?: string | null;
-  os_version?: string | null;
-  kernel?: string | null;
-  arch?: string | null;
-  boot_id?: string | null;
-  booted_at?: string | null;
-  parent_computer_id?: string | null;
-  identity_conflict_at?: string | null;
-}
-
+/** `device_resource_samples::lane_pressure` — the lane rollup's OBJECT form. */
 export interface LanePressureWire {
   ratio: number;
-  basis?: string | null;
+  basis: string;
 }
 
-/** The latest sample rollup for one lane (contract §4: pressure/headroom, load, psi, swap). */
+/** Coord's `LaneRollup`: the newest sample of one `(device, lane, lane_instance)`, flat. */
 export interface ComputerLaneWire {
-  lane?: string | null;
-  lane_instance?: string | null;
-  sampled_at?: string | null;
-  age_secs?: number | null;
-  pressure?: LanePressureWire | number | null;
-  headroom?: string | null;
-  load_1m?: number | null;
-  load_5m?: number | null;
-  load_15m?: number | null;
-  psi_memory_some_avg10?: number | null;
-  psi_memory_some_avg60?: number | null;
-  psi_memory_full_avg10?: number | null;
-  psi_memory_full_avg60?: number | null;
-  psi_cpu_some_avg10?: number | null;
-  psi_cpu_some_avg60?: number | null;
-  psi_cpu_full_avg10?: number | null;
-  psi_cpu_full_avg60?: number | null;
-  psi_io_some_avg10?: number | null;
-  psi_io_some_avg60?: number | null;
-  psi_io_full_avg10?: number | null;
-  psi_io_full_avg60?: number | null;
-  mem_total_bytes?: number | null;
-  mem_available_bytes?: number | null;
-  swap_total_bytes?: number | null;
-  swap_used_bytes?: number | null;
-  disk_total_bytes?: number | null;
-  disk_free_bytes?: number | null;
-  oom_kill_total?: number | null;
-  measured?: Record<string, string> | null;
+  lane: string;
+  lane_instance: string | null;
+  device_id: string;
+  sampled_at: string;
+  age_secs: number;
+  freshness: LaneFreshnessWire;
+  cpu_cores: number | null;
+  load_1m: number | null;
+  load_5m: number | null;
+  load_15m: number | null;
+  mem_total_bytes: number | null;
+  mem_available_bytes: number | null;
+  swap_total_bytes: number | null;
+  swap_used_bytes: number | null;
+  swap_ratio: number | null;
+  disk_total_bytes: number | null;
+  disk_free_bytes: number | null;
+  pressure: LanePressureWire | null;
+  /** ok | warn | breach | unknown — the ENFORCED admission verdict. */
+  headroom: string;
+  psi_memory_some_avg10: number | null;
+  psi_memory_some_avg60: number | null;
+  psi_memory_full_avg10: number | null;
+  psi_memory_full_avg60: number | null;
+  psi_cpu_some_avg10: number | null;
+  psi_cpu_some_avg60: number | null;
+  psi_cpu_full_avg10: number | null;
+  psi_cpu_full_avg60: number | null;
+  psi_io_some_avg10: number | null;
+  psi_io_some_avg60: number | null;
+  psi_io_full_avg10: number | null;
+  psi_io_full_avg60: number | null;
+  oom_kill_total: number | null;
+  boot_id: string | null;
+  measured: Record<string, string> | null;
 }
 
+/** Coord's `DeviceRef`. */
 export interface ComputerDeviceWire {
   device_id: string;
-  hostname?: string | null;
-  kind?: string | null;
-  capabilities?: string[] | null;
+  hostname: string | null;
+  role: string | null;
+  capabilities: unknown;
+  state: string | null;
+  last_seen_at: string | null;
 }
 
+/** Coord's `CiRunnerRef` — a registrar row, joined to a reported unit when one matched. */
 export interface CiRunnerWire {
-  runner_name?: string | null;
-  repo?: string | null;
-  status?: string | null;
-  busy?: boolean | null;
-  labels?: string[] | null;
-  host_key?: string | null;
+  device_id: string;
+  hostname: string;
+  runner_name: string | null;
+  host_key: string;
+  repo: string | null;
+  ci_runner_status: string | null;
+  last_seen_at: string | null;
+  /** Inside the registrar freshness window — only then is `ci_runner_status` an opinion. */
+  registrar_fresh: boolean;
+  service_unit: string | null;
+  service_active_state: string | null;
 }
 
+/** Coord's `EventRow`. */
 export interface ComputerEventWire {
-  event_id?: string | null;
+  event_id: string;
   kind: string;
   observed_at: string;
-  detail?: Record<string, unknown> | null;
+  recorded_at: string;
+  detail: unknown;
 }
 
+/** Coord's `ServiceRow`: the reported unit, flattened, plus `observed_at` and `down`. */
 export interface ComputerServiceWire {
   unit: string;
-  kind?: string | null;
-  active_state?: string | null;
-  sub_state?: string | null;
-  result?: string | null;
-  restart_policy?: string | null;
-  oom_policy?: string | null;
-  memory_max?: number | null;
-  memory_peak?: number | null;
-  n_restarts?: number | null;
-  state_changed_at?: string | null;
-  observed_at?: string | null;
-  runner_name?: string | null;
-  repo?: string | null;
+  kind: string;
+  active_state: string | null;
+  sub_state: string | null;
+  result: string | null;
+  restart_policy: string | null;
+  oom_policy: string | null;
+  memory_max: number | null;
+  memory_peak: number | null;
+  n_restarts: number | null;
+  state_changed_at: string | null;
+  runner_name: string | null;
+  repo: string | null;
+  observed_at: string;
+  /** `failed` or `inactive` — coord's one "down" predicate (`service_is_down`). */
+  down: boolean;
 }
 
+/** Coord's `HistoryPoint`. `pressure` here is the bare NUMBER ratio. */
 export interface HistoryPointWire {
   sampled_at: string;
-  pressure?: LanePressureWire | number | null;
-  psi_memory_some_avg60?: number | null;
+  load_1m: number | null;
+  load_5m: number | null;
+  load_15m: number | null;
+  mem_available_bytes: number | null;
+  swap_ratio: number | null;
+  pressure: number | null;
+  psi_memory_some_avg60: number | null;
+  psi_cpu_some_avg60: number | null;
+  psi_io_some_avg60: number | null;
 }
 
+/** Coord's `HistorySeries` (oldest point first, last 6 h). */
 export interface LaneHistoryWire {
-  lane?: string | null;
-  lane_instance?: string | null;
-  points?: HistoryPointWire[] | null;
+  device_id: string;
+  lane: string;
+  lane_instance: string | null;
+  points: HistoryPointWire[];
 }
 
-/** One reported-vs-registrar disagreement. The contract fixes no inner shape, so it is rendered key by key. */
-export type DivergenceWire = Record<string, unknown>;
+/** Coord's `Divergence`: a reported unit state the registrar's GitHub view disagrees with. */
+export interface DivergenceWire {
+  /** reported_down_registrar_online | reported_up_registrar_offline */
+  kind: string;
+  unit: string;
+  runner_name: string;
+  reported_active_state: string | null;
+  registrar_status: string | null;
+  registrar_device_id: string;
+}
 
-export interface ComputerSummaryWire extends ComputerIdentityWire {
+/** Coord's `ComputerSummary`. */
+export interface ComputerSummaryWire {
   computer_id: string;
-  identity?: ComputerIdentityWire | null;
-  capacity?: ComputerCapacityWire | null;
-  cpu_cores?: number | null;
-  memory_total_bytes?: number | null;
-  swap_total_bytes?: number | null;
-  disk_total_bytes?: number | null;
-  gpus?: unknown;
-  access?: Record<string, unknown> | null;
-  freshness?: ComputerFreshnessWire | null;
-  lanes?: ComputerLaneWire[] | null;
-  latest_samples?: ComputerLaneWire[] | null;
-  services_failed?: number | null;
-  last_event?: ComputerEventWire | null;
-  devices?: ComputerDeviceWire[] | null;
-  ci_runners?: CiRunnerWire[] | null;
+  kind: string;
+  parent_computer_id: string | null;
+  identity_hash_prefix: string;
+  hostname: string | null;
+  os: string | null;
+  os_version: string | null;
+  kernel: string | null;
+  arch: string | null;
+  capacity: ComputerCapacityWire;
+  boot_id: string | null;
+  booted_at: string | null;
+  access: unknown;
+  identity_conflict_at: string | null;
+  first_seen_at: string;
+  freshness: ComputerFreshnessWire;
+  lanes: ComputerLaneWire[];
+  /** Worst lane freshness: `unknown` with no lane in the lookback, `stale` if any lane is. */
+  samples_state: string;
+  sample_stale_after_secs: number;
+  /** `false` = no service row was ever stored — `services_failed: 0` is then UNKNOWN. */
+  services_reported: boolean;
+  services_total: number;
+  services_failed: number;
+  last_event: ComputerEventWire | null;
+  devices: ComputerDeviceWire[];
+  ci_runners: CiRunnerWire[];
+  drill_down: string;
+}
+
+/** Coord's `AgentSessionCount`. */
+export interface AgentSessionCountWire {
+  device_id: string;
+  open_sessions: number;
 }
 
 export interface ComputerWorkloadsWire {
-  devices?: ComputerDeviceWire[] | null;
-  agent_sessions?: Record<string, unknown>[] | null;
-  ci_runners?: CiRunnerWire[] | null;
+  devices: ComputerDeviceWire[];
+  ci_runners: CiRunnerWire[];
+  /** `null` = coord's session read failed — UNKNOWN, never "no sessions". */
+  agent_sessions: AgentSessionCountWire[] | null;
 }
 
+export interface StalenessRulesWire {
+  report_stale_after_secs: number;
+  sample_stale_after_secs: number;
+}
+
+/** Coord's `detail_body`. */
 export interface ComputerDetailWire extends ComputerSummaryWire {
-  services?: ComputerServiceWire[] | null;
-  events?: ComputerEventWire[] | null;
-  history?: LaneHistoryWire[] | null;
-  sample_history?: LaneHistoryWire[] | null;
-  workloads?: ComputerWorkloadsWire | null;
-  divergence?: DivergenceWire[] | null;
+  services: ComputerServiceWire[];
+  events: ComputerEventWire[];
+  events_window_days: number;
+  history: LaneHistoryWire[];
+  history_truncated: boolean;
+  workloads: ComputerWorkloadsWire;
+  divergence: DivergenceWire[];
+  schema_pending: boolean;
+  staleness: StalenessRulesWire;
 }
 
+/** Coord's `list_body` (the HTTP route answers schema-pending with a 503 instead). */
 export interface ComputersListWire {
-  computers?: ComputerSummaryWire[] | null;
-  unattributed_ci_runners?: CiRunnerWire[] | null;
-  schema_pending?: boolean | null;
-  state?: string | null;
+  computers: ComputerSummaryWire[] | null;
+  count: number | null;
+  unattributed_ci_runners: CiRunnerWire[] | null;
+  /** `false` = the registrar read failed: every `ci_runners` and the unattributed list are UNKNOWN. */
+  registrar_read_ok?: boolean;
+  schema_pending: boolean;
+  staleness: StalenessRulesWire;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,17 +337,15 @@ function parseObject(text: string | null): Record<string, unknown> | null {
 /**
  * Coord's `schema_pending` answer: the qontinui-web migration that creates
  * `coord.computers` has not reached the database coord reads (served policy
- * `alembic-sole-authorship` orders it first). Accepted as an error code on any
- * status, or as a 200 body flag — coord's handler may take either shape.
+ * `alembic-sole-authorship` orders it first). Coord's HTTP routes answer it as
+ * 503 `{"error":"schema_pending","code":"computers_schema_pending"}`; its
+ * `list_body` (which the MCP tool also serves) carries `schema_pending: true`
+ * on the body itself. Both shapes are coord's own.
  */
 export function isSchemaPendingBody(body: unknown): boolean {
   if (typeof body !== "object" || body === null) return false;
   const b = body as Record<string, unknown>;
-  return (
-    b.error === "schema_pending" ||
-    b.state === "schema_pending" ||
-    b.schema_pending === true
-  );
+  return b.error === "schema_pending" || b.schema_pending === true;
 }
 
 /**
@@ -288,11 +356,7 @@ export function isSchemaPendingBody(body: unknown): boolean {
  * these codes (an empty body, the web's own `{"error":"NOT_FOUND"}`) reads as
  * route-unavailable, which is the UNKNOWN side — the safe side to err on.
  */
-const COMPUTER_NOT_FOUND_CODES = new Set([
-  "computer_not_found",
-  "computer_not_found_in_tenant_scope",
-  "not_found_in_tenant_scope",
-]);
+const COMPUTER_NOT_FOUND_CODES = new Set(["computer_not_found"]);
 
 /** Classify an `httpClient` rejection from either computer read. Pure. */
 export function classifyComputersError(
@@ -384,7 +448,7 @@ export function readIssueText(issue: ComputersReadIssue): string {
 }
 
 // ---------------------------------------------------------------------------
-// Normalization — the two-spelling tolerance lives here and nowhere else
+// Normalization — coord's summary into what the pages render
 // ---------------------------------------------------------------------------
 
 export interface Capacity {
@@ -397,8 +461,9 @@ export interface Capacity {
 
 export interface NormalizedComputer {
   computerId: string;
+  identityHashPrefix: string;
   hostname: string | null;
-  kind: string | null;
+  kind: string;
   os: string | null;
   osVersion: string | null;
   kernel: string | null;
@@ -407,56 +472,62 @@ export interface NormalizedComputer {
   parentComputerId: string | null;
   identityConflictAt: string | null;
   capacity: Capacity;
-  freshness: ComputerFreshnessWire | null;
+  freshness: ComputerFreshnessWire;
   lanes: ComputerLaneWire[];
-  /** The contract's `services_failed`. `null` = coord did not say — UNKNOWN, not 0. */
-  servicesFailed: number | null;
+  /** Coord's `samples_state` — the worst lane freshness (unknown with no lane). */
+  samplesState: string;
   /**
-   * `undefined` = coord's answer carried no `last_event` key (UNKNOWN);
-   * `null` = coord said there is none in the retention window.
+   * Down units (failed or inactive). `null` when `services_reported` is
+   * false: coord then sends `services_failed: 0`, and that zero is UNKNOWN.
    */
-  lastEvent: ComputerEventWire | null | undefined;
-  /** `null` = coord sent no list — UNKNOWN, never "no devices". */
-  devices: ComputerDeviceWire[] | null;
+  servicesFailed: number | null;
+  servicesTotal: number | null;
+  /** `null` = coord holds no event in its retention window. */
+  lastEvent: ComputerEventWire | null;
+  devices: ComputerDeviceWire[];
+  /** `null` = the registrar read failed (`registrar_read_ok: false`) — UNKNOWN. */
   ciRunners: CiRunnerWire[] | null;
+  drillDown: string;
 }
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null;
 const str = (v: unknown): string | null =>
   typeof v === "string" && v.length > 0 ? v : null;
-const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
-export function normalizeComputer(c: ComputerSummaryWire): NormalizedComputer {
-  const id = c.identity ?? {};
-  const cap = c.capacity ?? {};
-  const pick = <K extends keyof ComputerIdentityWire>(k: K) =>
-    str(id[k]) ?? str(c[k]);
+export function normalizeComputer(
+  c: ComputerSummaryWire,
+  options: { registrarReadOk?: boolean } = {}
+): NormalizedComputer {
+  const reported = c.services_reported === true;
   return {
     computerId: c.computer_id,
-    hostname: pick("hostname"),
-    kind: pick("kind"),
-    os: pick("os"),
-    osVersion: pick("os_version"),
-    kernel: pick("kernel"),
-    arch: pick("arch"),
-    bootedAt: pick("booted_at"),
-    parentComputerId: pick("parent_computer_id"),
-    identityConflictAt: pick("identity_conflict_at"),
+    identityHashPrefix: c.identity_hash_prefix,
+    hostname: str(c.hostname),
+    kind: c.kind,
+    os: str(c.os),
+    osVersion: str(c.os_version),
+    kernel: str(c.kernel),
+    arch: str(c.arch),
+    bootedAt: str(c.booted_at),
+    parentComputerId: str(c.parent_computer_id),
+    identityConflictAt: str(c.identity_conflict_at),
     capacity: {
-      cpuCores: num(cap.cpu_cores) ?? num(c.cpu_cores),
-      memoryTotalBytes:
-        num(cap.memory_total_bytes) ?? num(c.memory_total_bytes),
-      swapTotalBytes: num(cap.swap_total_bytes) ?? num(c.swap_total_bytes),
-      diskTotalBytes: num(cap.disk_total_bytes) ?? num(c.disk_total_bytes),
-      gpus: cap.gpus ?? c.gpus ?? null,
+      cpuCores: num(c.capacity.cpu_cores),
+      memoryTotalBytes: num(c.capacity.memory_total_bytes),
+      swapTotalBytes: num(c.capacity.swap_total_bytes),
+      diskTotalBytes: num(c.capacity.disk_total_bytes),
+      gpus: c.capacity.gpus ?? null,
     },
-    freshness: c.freshness ?? null,
-    lanes: arr<ComputerLaneWire>(c.lanes ?? c.latest_samples),
-    servicesFailed: num(c.services_failed),
-    lastEvent: "last_event" in c ? (c.last_event ?? null) : undefined,
-    devices: Array.isArray(c.devices) ? c.devices : null,
-    ciRunners: Array.isArray(c.ci_runners) ? c.ci_runners : null,
+    freshness: c.freshness,
+    lanes: c.lanes,
+    samplesState: c.samples_state,
+    servicesFailed: reported ? c.services_failed : null,
+    servicesTotal: reported ? c.services_total : null,
+    lastEvent: c.last_event,
+    devices: c.devices,
+    ciRunners: options.registrarReadOk === false ? null : c.ci_runners,
+    drillDown: c.drill_down,
   };
 }
 
@@ -522,6 +593,7 @@ export function computerFreshness(
 ): FreshnessReading {
   const ageSecs = f ? ageFrom(f.age_secs, fetchedAtMs, nowMs) : null;
   const word = f?.state ?? null;
+  const staleAfter = num(f?.stale_after_secs) ?? COMPUTER_STALE_AFTER_SECS;
   const unknown = (reason: string): FreshnessReading => ({
     kind: "unknown",
     ageSecs,
@@ -534,18 +606,15 @@ export function computerFreshness(
       "Coord has no report from this computer it can date — nothing it shows is a current measurement."
     );
   }
-  if (
-    word === "stale" ||
-    (ageSecs !== null && ageSecs > COMPUTER_STALE_AFTER_SECS)
-  ) {
+  if (word === "stale" || (ageSecs !== null && ageSecs > staleAfter)) {
     return {
       kind: "stale",
       ageSecs,
       label: "STALE",
-      reason: `Last report ${formatAge(ageSecs)} — older than ${COMPUTER_STALE_AFTER_SECS / 60} min (3 × the ${COMPUTER_REPORT_CADENCE_SECS / 60} min report cadence). Figures below are the last known, not current.`,
+      reason: `Last report ${formatAge(ageSecs)} — older than ${Math.round(staleAfter / 60)} min (3 × the ${COMPUTER_REPORT_CADENCE_SECS / 60} min report cadence). Figures below are the last known, not current.`,
     };
   }
-  if (word !== "fresh" && word !== null) {
+  if (word !== "fresh") {
     return unknown(
       `Coord reported a freshness this page does not recognise ("${word}").`
     );
@@ -564,9 +633,10 @@ export function computerFreshness(
 }
 
 /**
- * A lane's own sample freshness — samples run on a 30 s cadence, not 300 s, so
- * a lane can be stale inside a fresh computer. A stale COMPUTER makes every
- * lane stale too: nothing it last reported is current.
+ * A lane's own sample freshness — coord's `lane.freshness.state`, never
+ * upgraded, aged by the time since this page's read. Samples run on a 30 s
+ * cadence, not 300 s, so a lane can be stale inside a fresh computer; a stale
+ * COMPUTER makes every lane stale too: nothing it last reported is current.
  */
 export function laneFreshness(
   lane: ComputerLaneWire,
@@ -574,21 +644,33 @@ export function laneFreshness(
   fetchedAtMs: number | null,
   nowMs: number
 ): FreshnessReading {
-  const ageSecs = ageFrom(lane.age_secs, fetchedAtMs, nowMs);
-  if (ageSecs === null) {
+  const f = lane.freshness;
+  const ageSecs = ageFrom(f?.age_secs ?? lane.age_secs, fetchedAtMs, nowMs);
+  const staleAfter = num(f?.stale_after_secs) ?? SAMPLE_STALE_AFTER_SECS;
+  const word = f?.state ?? null;
+  if (ageSecs === null || word === "unknown") {
     return {
       kind: "unknown",
       ageSecs,
       label: "UNKNOWN",
-      reason: "No sample age for this lane — its figures cannot be dated.",
+      reason:
+        "Coord cannot date this lane's sample — its figures are not a current measurement.",
     };
   }
-  if (computer.kind !== "fresh" || ageSecs > SAMPLE_STALE_AFTER_SECS) {
+  if (computer.kind !== "fresh" || word === "stale" || ageSecs > staleAfter) {
     return {
       kind: "stale",
       ageSecs,
       label: "STALE",
-      reason: `Last sample ${formatAge(ageSecs)} — older than ${SAMPLE_STALE_AFTER_SECS} s (3 × the ${SAMPLE_CADENCE_SECS} s sample cadence), or the computer itself is not fresh. Last known, not current.`,
+      reason: `Last sample ${formatAge(ageSecs)} — older than ${staleAfter} s (3 × the ${SAMPLE_CADENCE_SECS} s sample cadence), or the computer itself is not fresh. Last known, not current.`,
+    };
+  }
+  if (word !== "fresh") {
+    return {
+      kind: "unknown",
+      ageSecs,
+      label: "UNKNOWN",
+      reason: `Coord reported a lane freshness this page does not recognise ("${word ?? "none"}").`,
     };
   }
   return {
@@ -660,13 +742,9 @@ export function readingText(
   }
 }
 
-/** A lane's pressure ratio, from either the object or the bare-number spelling. */
-export function pressureRatio(
-  p: LanePressureWire | number | null | undefined
-): number | null {
-  if (typeof p === "number") return num(p);
-  if (p && typeof p === "object") return num(p.ratio);
-  return null;
+/** A lane rollup's pressure ratio. Coord's lane `pressure` is `{ratio, basis}`; `null` = no opinion. */
+export function lanePressureRatio(lane: ComputerLaneWire): number | null {
+  return lane.pressure ? num(lane.pressure.ratio) : null;
 }
 
 /** `used / total (pct)`, or a word — never a fabricated ratio from a missing side. */
@@ -696,9 +774,11 @@ export function laneDiskUsed(lane: ComputerLaneWire): number | null {
 export function historyPoints(
   series: LaneHistoryWire | undefined
 ): { sampled_at: string; pressure: number | null }[] {
-  return arr<HistoryPointWire>(series?.points).map((p) => ({
+  // A history point's `pressure` is the bare NUMBER ratio (coord's
+  // `HistoryPoint`), unlike the lane rollup's object.
+  return (series?.points ?? []).map((p) => ({
     sampled_at: p.sampled_at,
-    pressure: pressureRatio(p.pressure),
+    pressure: num(p.pressure),
   }));
 }
 
@@ -711,23 +791,26 @@ export function laneName(lane: {
   return lane.lane_instance ? `${base} (${lane.lane_instance})` : base;
 }
 
+/**
+ * A lane's identity: `(device_id, lane, lane_instance)`. Coord keys both the
+ * rollup and the history by the publishing device too — two runners on one
+ * computer publish two `host` lanes, and joining history on lane alone would
+ * draw one runner's series beside the other's reading.
+ */
 export function laneKey(lane: {
-  lane?: string | null;
-  lane_instance?: string | null;
+  device_id: string;
+  lane: string;
+  lane_instance: string | null;
 }): string {
-  return `${lane.lane ?? "unknown"}:${lane.lane_instance ?? ""}`;
+  return `${lane.device_id}:${lane.lane}:${lane.lane_instance ?? ""}`;
 }
 
-/** Map each lane to its history series by `(lane, lane_instance)`. */
+/** Map each lane to its history series by {@link laneKey}. */
 export function historyByLane(
   detail: ComputerDetailWire | null
 ): Map<string, LaneHistoryWire> {
   const m = new Map<string, LaneHistoryWire>();
-  for (const s of arr<LaneHistoryWire>(
-    detail?.history ?? detail?.sample_history
-  )) {
-    m.set(laneKey(s), s);
-  }
+  for (const s of detail?.history ?? []) m.set(laneKey(s), s);
   return m;
 }
 
@@ -869,14 +952,14 @@ export function computerStatus(
     const lastKnown =
       c.servicesFailed === null
         ? ""
-        : ` Last known: ${c.servicesFailed} failed service${c.servicesFailed === 1 ? "" : "s"}.`;
+        : ` Last known: ${c.servicesFailed} service${c.servicesFailed === 1 ? "" : "s"} down.`;
     return make("stale", "stale", `${freshness.reason}${lastKnown}`);
   }
   if (c.servicesFailed !== null && c.servicesFailed > 0) {
     return make(
       "service_failed",
-      `${c.servicesFailed} service${c.servicesFailed === 1 ? "" : "s"} failed`,
-      "A watched service is in the failed state and its restart policy will not bring it back."
+      `${c.servicesFailed} service${c.servicesFailed === 1 ? "" : "s"} down`,
+      "A watched service is failed or inactive (coord's one `down` predicate — a stopped Restart=no runner reads inactive, not failed), and nothing will bring it back by itself."
     );
   }
   const atFloor = (l: ComputerLaneWire) =>
@@ -910,53 +993,59 @@ export function computerStatus(
           : "")
     );
   }
+  // Coord's own fold over the lanes. With no lane in its lookback it reads
+  // `unknown` — there is then no lane row above to be stale, and "healthy"
+  // would claim a usage nobody measured.
+  if (c.samplesState !== "fresh") {
+    return make(
+      "lane_stale",
+      c.samplesState === "stale" ? "samples stale" : "samples unknown",
+      c.samplesState === "stale"
+        ? "Coord reports this computer's samples as stale — current usage is unknown."
+        : "Coord has no resource sample from this computer in its lookback — current usage is unknown, not idle."
+    );
+  }
   if (c.servicesFailed === null) {
     return make(
       "services_unknown",
       "services unknown",
-      "The computer reports, but coord has no service count for it — a failed service here would not show."
+      "The computer reports, but it has never reported its watched services (services_reported: false) — a down service here would not show."
     );
   }
   return make("healthy", "healthy", freshness.reason);
 }
 
-/** A watched service's state, bucketed. */
-export type ServiceKind =
-  | "active"
-  | "transitioning"
-  | "inactive"
-  | "failed"
-  | "unknown";
+/** A watched service's state, bucketed. `down` is coord's `down` flag (failed or inactive). */
+export type ServiceKind = "active" | "transitioning" | "down" | "unknown";
 
 /**
- * - `failed` — AUTHOR: systemd gave up on it (the `Result=oom-kill` unit).
+ * - `down` — AUTHOR: coord's `down` flag (`service_is_down`: failed, or
+ *   inactive — a stopped `Restart=no` runner reads inactive, not failed). The
+ *   same predicate coord's `services_failed` count and its
+ *   `machine_service_failed` alert use, so the row, the count and the alert
+ *   cannot disagree.
  * - `transitioning` — WAITING: activating / deactivating / reloading clears
  *   itself one way or the other.
- * - `inactive` — WAITING: a stopped unit may be deliberate or may be the
- *   fault; we do not know which, and coord's `machine_service_failed` alert
- *   is what times it out (> 5 min), not this page.
- * - `unknown` — WAITING: no state, or the computer is stale so the last state
- *   is not current.
+ * - `unknown` — WAITING: an unrecognised state, or the computer is not fresh
+ *   so the last state is not current.
  * - `active` — none.
  */
 export const SERVICE_ATTENTION_BY_KIND = {
   active: "none",
   transitioning: "waiting",
-  inactive: "waiting",
-  failed: "author",
+  down: "author",
   unknown: "waiting",
 } satisfies AttentionMap<ServiceKind>;
 
 export const SERVICE_BADGE_CLASS: Record<ServiceKind, string> = {
   active: FRESH_GREEN,
   transitioning: WAITING_AMBER,
-  inactive: WAITING_AMBER,
-  failed: AUTHOR_RED,
+  down: AUTHOR_RED,
   unknown: UNKNOWN_AMBER,
 };
 
 export const SERVICE_AUTHOR_GLYPH_KINDS: ReadonlySet<ServiceKind> =
-  new Set<ServiceKind>(["failed"]);
+  new Set<ServiceKind>(["down"]);
 
 export const SERVICE_PALETTE: StatusPalette<ServiceKind> = {
   badgeClass: SERVICE_BADGE_CLASS,
@@ -990,21 +1079,19 @@ export function serviceStatus(
       attention: SERVICE_ATTENTION_BY_KIND.unknown,
     };
   }
-  const kind: ServiceKind =
-    state === "active"
+  // Coord's `down` decides, never a second reading of `active_state`.
+  const kind: ServiceKind = s.down
+    ? "down"
+    : state === "active"
       ? "active"
-      : state === "failed"
-        ? "failed"
-        : state === "inactive"
-          ? "inactive"
-          : state === "activating" ||
-              state === "deactivating" ||
-              state === "reloading"
-            ? "transitioning"
-            : "unknown";
+      : state === "activating" ||
+          state === "deactivating" ||
+          state === "reloading"
+        ? "transitioning"
+        : "unknown";
   const reason =
-    kind === "failed"
-      ? `Failed${result ? ` (result: ${result})` : ""}.`
+    kind === "down"
+      ? `${state === "inactive" ? "Stopped" : "Failed"}${result ? ` (result: ${result})` : ""}.`
       : kind === "unknown"
         ? state
           ? `Unrecognised state "${state}".`
@@ -1044,18 +1131,36 @@ export function eventLabel(kind: string): string {
   return EVENT_KIND_LABEL[kind] ?? kind;
 }
 
-/** The event's subject — the unit or victim it names, if any. */
+/**
+ * The event's subject — the unit it names (`unit` on a service transition,
+ * `victim_unit` on an OOM kill), or the hostname coord stamps on an identity
+ * conflict. `detail` is runner-authored JSON, so it is read field by field.
+ */
 export function eventSubject(e: ComputerEventWire): string | null {
-  const d = e.detail ?? {};
-  return (
-    str(d.unit) ??
-    str(d.victim_unit) ??
-    str(d.victim) ??
-    str(d.process) ??
-    str(d.reason) ??
-    null
-  );
+  const d =
+    typeof e.detail === "object" && e.detail !== null
+      ? (e.detail as Record<string, unknown>)
+      : {};
+  return str(d.unit) ?? str(d.victim_unit) ?? str(d.hostname) ?? null;
 }
+
+/**
+ * A registrar row's status, labelled by whether it is an opinion: coord marks
+ * a row outside the registrar freshness window `registrar_fresh: false`, and
+ * its status is then the last one GitHub reported, not the current one.
+ */
+export function ciRunnerStatusText(r: CiRunnerWire): string {
+  const status = r.ci_runner_status ?? "status unknown";
+  return r.registrar_fresh ? status : `last known: ${status} (registrar stale)`;
+}
+
+/** Operator words for coord's divergence kinds; the wire kind rides in the title. */
+export const DIVERGENCE_KIND_LABEL: Record<string, string> = {
+  reported_down_registrar_online:
+    "the computer reports the runner down; GitHub lists it online",
+  reported_up_registrar_offline:
+    "the computer reports the runner up; GitHub lists it offline",
+};
 
 /** Newest first, whatever order the wire used; unparseable times sink. */
 export function orderEvents(
@@ -1099,8 +1204,9 @@ export function buildComputerRows(
   fetchedAtMs: number | null,
   nowMs: number
 ): ComputerRowModel[] {
-  return arr<ComputerSummaryWire>(list?.computers).map((raw) => {
-    const computer = normalizeComputer(raw);
+  const registrarReadOk = list?.registrar_read_ok;
+  return (list?.computers ?? []).map((raw) => {
+    const computer = normalizeComputer(raw, { registrarReadOk });
     const freshness = computerFreshness(computer.freshness, fetchedAtMs, nowMs);
     return {
       computer,
@@ -1280,9 +1386,7 @@ export function deriveComputerDetailHealth(input: {
     };
   }
   const failedServices =
-    services === null
-      ? null
-      : services.filter((s) => s.active_state === "failed").length;
+    services === null ? null : services.filter((s) => s.down).length;
   const level: ComputersHealth["level"] =
     status.attention === "author"
       ? "red"
@@ -1305,7 +1409,7 @@ export function deriveComputerDetailHealth(input: {
       },
       {
         key: "services",
-        label: `failed services ${failedServices ?? DASH}`,
+        label: `services down ${failedServices ?? DASH}`,
         tone:
           failedServices !== null &&
           failedServices > 0 &&

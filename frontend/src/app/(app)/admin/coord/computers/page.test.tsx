@@ -35,6 +35,13 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { get: (...a: unknown[]) => httpGet(...a) },
 }));
 
+import {
+  computerFx,
+  detailFx,
+  laneFx,
+  listFx,
+  serviceFx,
+} from "./__fixtures__/coordComputers";
 import CoordComputersPage from "./page";
 import CoordComputerDetailPage from "./[computerId]/page";
 
@@ -44,39 +51,8 @@ function rejection(status: number, body: string): Error {
   );
 }
 
-const nowIso = () => new Date(Date.now() - 30_000).toISOString();
-
-function freshComputer(over: Record<string, unknown> = {}) {
-  return {
-    computer_id: COMPUTER_ID,
-    hostname: "merytshost",
-    kind: "host",
-    os: "linux",
-    cpu_cores: 48,
-    memory_total_bytes: 64 * 1024 ** 3,
-    swap_total_bytes: null,
-    freshness: { last_report_at: nowIso(), age_secs: 30, state: "fresh" },
-    services_failed: 0,
-    lanes: [
-      {
-        lane: "host",
-        sampled_at: nowIso(),
-        age_secs: 10,
-        headroom: "ok",
-        pressure: { ratio: 0.42, basis: "swap" },
-        load_1m: 1.5,
-        load_5m: null,
-        load_15m: 7,
-        psi_memory_some_avg60: 3.25,
-        measured: { load_15m: "not_supported" },
-      },
-    ],
-    devices: [],
-    ci_runners: [],
-    ...over,
-  };
-}
-
+// Every body below is shaped by `__fixtures__/coordComputers.ts`, which
+// mirrors coord's `computers.rs` serialization field for field.
 beforeEach(() => {
   httpGet.mockReset();
 });
@@ -100,36 +76,28 @@ describe("/admin/coord/computers", () => {
     );
   });
 
-  it("renders a 503 schema_pending the same way", async () => {
-    httpGet.mockRejectedValue(rejection(503, '{"error":"schema_pending"}'));
+  it("renders coord's 503 schema_pending the same way", async () => {
+    httpGet.mockRejectedValue(
+      rejection(
+        503,
+        '{"error":"schema_pending","code":"computers_schema_pending","missing":"coord.computers"}'
+      )
+    );
     render(<CoordComputersPage />);
     const banner = await screen.findByTestId("coord-computers-unknown-banner");
     expect(banner.getAttribute("data-issue")).toBe("schema_pending");
-  });
-
-  it("renders a 2xx schema_pending body as UNKNOWN rather than an empty list", async () => {
-    httpGet.mockResolvedValue({ schema_pending: true, computers: [] });
-    render(<CoordComputersPage />);
-    const banner = await screen.findByTestId("coord-computers-unknown-banner");
-    expect(banner.getAttribute("data-issue")).toBe("schema_pending");
-    expect(screen.queryByTestId("coord-computers-list-empty")).toBeNull();
   });
 
   it("renders a stale computer as STALE, never as healthy", async () => {
-    httpGet.mockResolvedValue({
-      computers: [
-        freshComputer({
+    httpGet.mockResolvedValue(
+      listFx([
+        computerFx({
           hostname: "msi-wsl",
           services_failed: 1,
-          freshness: {
-            last_report_at: "2026-09-30T01:00:00Z",
-            age_secs: 9000,
-            state: "stale",
-          },
+          report_age_secs: 9000,
         }),
-      ],
-      unattributed_ci_runners: [],
-    });
+      ])
+    );
     render(<CoordComputersPage />);
     const row = await screen.findByTestId("coord-computer-row");
     expect(
@@ -150,10 +118,7 @@ describe("/admin/coord/computers", () => {
     // Only the interval and the clock are faked: testing-library's own
     // polling runs on real setTimeout.
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
-    httpGet.mockResolvedValueOnce({
-      computers: [freshComputer()],
-      unattributed_ci_runners: [],
-    });
+    httpGet.mockResolvedValueOnce(listFx([computerFx()]));
     httpGet.mockRejectedValue(
       rejection(504, '{"detail":"timeout waiting for coord"}')
     );
@@ -176,8 +141,8 @@ describe("/admin/coord/computers", () => {
       screen.getByTestId("coord-computers-unattributed-none").textContent
     ).toContain("at the last good read");
 
-    // 900 s later with no good read, the frozen `age_secs: 30` has aged past
-    // 3 × the report cadence, and the row says so without any new data.
+    // 900 s later with no good read, coord's frozen `age_secs: 30` has aged
+    // past its 900 s window, and the row says so without any new data.
     await act(async () => {
       vi.advanceTimersByTime(900_000);
     });
@@ -193,33 +158,73 @@ describe("/admin/coord/computers", () => {
   });
 
   it("lists unattributed CI runners instead of dropping them", async () => {
-    httpGet.mockResolvedValue({
-      computers: [freshComputer()],
-      unattributed_ci_runners: [
-        { runner_name: "orphan-1", repo: "qontinui-web" },
-      ],
-    });
+    httpGet.mockResolvedValue(
+      listFx([computerFx()], {
+        unattributed_ci_runners: [
+          {
+            device_id: "aaaaaaaa-0000-4000-8000-000000000001",
+            hostname: "gh-runner-orphan-1@qontinui/qontinui-web",
+            runner_name: "orphan-1",
+            host_key: "orphan-1",
+            repo: "qontinui/qontinui-web",
+            ci_runner_status: "offline",
+            last_seen_at: null,
+            registrar_fresh: true,
+            service_unit: null,
+            service_active_state: null,
+          },
+        ],
+      })
+    );
     render(<CoordComputersPage />);
     const rows = await screen.findAllByTestId(
       "coord-computers-unattributed-row"
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].textContent).toContain("orphan-1");
+    expect(rows[0].textContent).toContain("offline");
     expect(
       screen.getByTestId("coord-computers-unattributed-badge").textContent
     ).toBe("unattributed CI runners 1");
+  });
+
+  it("reads coord's `registrar_read_ok: false` as unattributed UNKNOWN, not none", async () => {
+    httpGet.mockResolvedValue(
+      listFx([computerFx()], { registrar_read_ok: false })
+    );
+    render(<CoordComputersPage />);
+    expect(
+      await screen.findByTestId("coord-computers-unattributed-unknown")
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("coord-computers-unattributed-none")
+    ).toBeNull();
+    expect(
+      screen.getByTestId("coord-computers-unattributed-badge").textContent
+    ).toBe("unattributed CI runners –");
   });
 });
 
 describe("/admin/coord/computers/[computerId]", () => {
   it("renders unknown and not-supported readings as words in the lane table", async () => {
-    httpGet.mockResolvedValue({
-      ...freshComputer(),
-      services: [],
-      events: [],
-      history: [],
-      divergence: [],
-    });
+    httpGet.mockResolvedValue(
+      detailFx({
+        lanes: [
+          laneFx({
+            load_1m: 1.5,
+            load_5m: null,
+            load_15m: 7,
+            psi_memory_some_avg60: 3.25,
+            psi_cpu_some_avg60: null,
+            psi_io_some_avg60: null,
+            swap_total_bytes: null,
+            swap_used_bytes: null,
+            swap_ratio: null,
+            measured: { load_15m: "not_supported" },
+          }),
+        ],
+      })
+    );
     render(<CoordComputerDetailPage />);
     const load = await screen.findByTestId("coord-computer-lane-load");
     expect(load.textContent).toBe("1.50 / unknown / not supported");
@@ -229,34 +234,23 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(
       screen.getByTestId("coord-computer-lane-freshness").textContent
     ).toBe("fresh");
-    // `swap_total_bytes: null` and no swap sample: unknown, never 0 B.
+    // No swap total and no swap sample: unknown, never 0 B.
     expect(screen.getByTestId("coord-computer-lane-swap").textContent).toBe(
       "unknown"
+    );
+    // Coord's lane `pressure` is the {ratio, basis} object.
+    expect(screen.getByTestId("coord-computer-lane-pressure").textContent).toBe(
+      "13% · ok"
     );
   });
 
   it("shows a stale computer's lanes as last known and its services as `last known: …`", async () => {
-    httpGet.mockResolvedValue({
-      ...freshComputer({
-        freshness: {
-          last_report_at: "2026-09-30T01:00:00Z",
-          age_secs: 9000,
-          state: "stale",
-        },
-      }),
-      services: [
-        {
-          unit: "actions.runner.qontinui-web.merytshost-1.service",
-          kind: "gh_actions_runner",
-          active_state: "failed",
-          result: "oom-kill",
-          oom_policy: "continue",
-        },
-      ],
-      events: [],
-      history: [],
-      divergence: [],
-    });
+    httpGet.mockResolvedValue(
+      detailFx({
+        report_age_secs: 9000,
+        services: [serviceFx({ active_state: "failed", result: "oom-kill" })],
+      })
+    );
     render(<CoordComputerDetailPage />);
     const status = await screen.findByTestId("coord-computer-service-status");
     expect(status.getAttribute("data-status")).toBe("unknown");
@@ -267,39 +261,71 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.getByTestId("coord-computer-lane-last-known")).toBeTruthy();
   });
 
-  it("renders a fresh failed unit red, with its OOM policy in the detail", async () => {
-    httpGet.mockResolvedValue({
-      ...freshComputer({ services_failed: 1 }),
-      services: [
-        {
-          unit: "actions.runner.qontinui-web.merytshost-1.service",
-          kind: "gh_actions_runner",
-          active_state: "failed",
-          result: "oom-kill",
-          oom_policy: "continue",
-          memory_peak: null,
-        },
-      ],
-      events: [],
-      history: [],
-      divergence: [],
-    });
+  it("renders a fresh down unit red, with its OOM policy in the detail", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({
+        services_failed: 1,
+        services: [
+          serviceFx({
+            active_state: "failed",
+            result: "oom-kill",
+            memory_peak: null,
+          }),
+        ],
+      })
+    );
     render(<CoordComputerDetailPage />);
     const status = await screen.findByTestId("coord-computer-service-status");
-    expect(status.getAttribute("data-status")).toBe("failed");
+    expect(status.getAttribute("data-status")).toBe("down");
     expect(status.textContent).toBe("✕ failed");
   });
 
-  it("clears the retained lanes and services when a later read says computer_not_found", async () => {
-    httpGet.mockResolvedValueOnce({
-      ...freshComputer(),
-      services: [
-        { unit: "a.service", kind: "other_watched", active_state: "active" },
-      ],
-      events: [],
-      history: [],
-      divergence: [],
+  it("names the divergence in operator words", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({
+        divergence: [
+          {
+            kind: "reported_down_registrar_online",
+            unit: "actions.runner.qontinui-web.merytshost-1.service",
+            runner_name: "merytshost-1",
+            reported_active_state: "failed",
+            registrar_status: "idle",
+            registrar_device_id: "aaaaaaaa-0000-4000-8000-000000000001",
+          },
+        ],
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const row = await screen.findByTestId("coord-computer-divergence-row");
+    expect(row.textContent).toContain(
+      "the computer reports the runner down; GitHub lists it online"
+    );
+    expect(row.textContent).toContain("reported failed, registrar idle");
+  });
+
+  it("sums coord's per-device open sessions, and reads null as unknown", async () => {
+    httpGet.mockResolvedValue(detailFx());
+    const { unmount } = render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-agent-sessions")).textContent
+    ).toBe("2 open agent sessions across 1 device on this computer.");
+    unmount();
+
+    const d = detailFx();
+    httpGet.mockResolvedValue({
+      ...d,
+      workloads: { ...d.workloads, agent_sessions: null },
     });
+    render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-agent-sessions")).textContent
+    ).toBe(
+      "Coord could not read agent sessions for this computer — unknown, not none."
+    );
+  });
+
+  it("clears the retained lanes and services when a later read says computer_not_found", async () => {
+    httpGet.mockResolvedValueOnce(detailFx());
     httpGet.mockRejectedValue(rejection(404, '{"error":"computer_not_found"}'));
     render(<CoordComputerDetailPage />);
     expect(await screen.findByTestId("coord-computer-lanes")).toBeTruthy();
@@ -332,38 +358,5 @@ describe("/admin/coord/computers/[computerId]", () => {
     const unknown = await screen.findByTestId("coord-computer-unknown-banner");
     expect(unknown.getAttribute("data-issue")).toBe("route_unavailable");
     expect(unknown.textContent).toContain("UNKNOWN — ");
-  });
-
-  it("renders omitted device and CI-runner lists as unknown, not as none attached", async () => {
-    const body: Record<string, unknown> = {
-      ...freshComputer(),
-      services: [],
-      events: [],
-      divergence: [],
-    };
-    delete body.devices;
-    delete body.ci_runners;
-    httpGet.mockResolvedValue(body);
-    render(<CoordComputerDetailPage />);
-    expect(
-      await screen.findByTestId("coord-computer-devices-unknown")
-    ).toBeTruthy();
-    expect(
-      screen.getByTestId("coord-computer-ci-runners-unknown")
-    ).toBeTruthy();
-    expect(screen.queryByTestId("coord-computer-devices-none")).toBeNull();
-  });
-
-  it("renders an omitted service list as unknown, not as no services", async () => {
-    httpGet.mockResolvedValue({
-      ...freshComputer(),
-      events: [],
-      divergence: [],
-    });
-    render(<CoordComputerDetailPage />);
-    expect(
-      await screen.findByTestId("coord-computer-services-unknown")
-    ).toBeTruthy();
-    expect(screen.queryByTestId("coord-computer-services-none")).toBeNull();
   });
 });
