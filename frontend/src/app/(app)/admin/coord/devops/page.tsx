@@ -424,6 +424,29 @@ export default function CoordDevOpsPage() {
         . This list is not a count of your machines.
       </p>
 
+      {/* The computer as a record (plan
+          `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
+          Phase 5). The rows below are coord DEVICES — one physical box can be
+          several of them — while the Computers page groups them under the
+          machine they run on, with its services, events and capacity. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="coord-devops-computers-note"
+      >
+        One computer can host several of the device rows below. For each
+        computer&apos;s capacity, usage per lane, watched services (CI runners
+        included), and event history, open{" "}
+        <Link
+          href="/admin/coord/computers"
+          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          data-testid="coord-devops-computers-link"
+        >
+          Computers
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+        .
+      </p>
+
       {/* 1. Machines — coord's device liveness merged INTO the machine list,
           not beside it. `health` is what makes this the one list on the page:
           a coord device with no runner inventory gets a row whose runner-side

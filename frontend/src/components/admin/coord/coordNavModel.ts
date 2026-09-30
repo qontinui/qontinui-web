@@ -52,6 +52,7 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  HardDrive,
   History as HistoryIcon,
   Inbox,
   KeyRound,
@@ -423,6 +424,20 @@ export const GROUPS: NavGroup[] = [
         label: "Overview",
         icon: Gauge,
         testId: "coord-nav-devops-overview",
+      },
+      {
+        // Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-
+        // and-coord-has-no-resource-model` Phase 5: the computer as a record —
+        // capacity, usage per lane, watched services, events, workloads. Beside
+        // Overview because Overview's machine rows link into it. Operator-only
+        // in the menu like every other Dev Ops member, which keeps resolved Q3
+        // ("a member sees exactly Overview here") intact; the page itself is
+        // not gated, and a member reaches it from Overview's link.
+        href: "/admin/coord/computers",
+        label: "Computers",
+        icon: HardDrive,
+        testId: "coord-nav-computers",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/trees",

@@ -5719,6 +5719,65 @@ async def get_fleet_worktree_slots(
     )
 
 
+# ---- Computers (the physical/virtual machine as a coord entity) -----------
+#
+# Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-
+# coord-has-no-resource-model` Phase 5. Backs `/admin/coord/computers` and its
+# `[computerId]` drill-down. The coord-side reads are that plan's Phase 3.2
+# (`GET /coord/computers`, `GET /coord/computers/:computer_id`), tenant-scoped
+# by coord through `coord.tenant_devices -> coord.devices.computer_id`.
+#
+# **Passthrough, not the generic helpers.** Both reads carry load-bearing
+# refusal and absence states the console renders specifically: a 404 from a
+# coord that predates Phase 3 (route not deployed), a 404 for a computer
+# outside the caller's tenant, and a `schema_pending` answer while the
+# qontinui-web migration has not reached the database coord reads. All three
+# must reach the browser with coord's status and JSON body intact — wrapped in
+# `HTTPException(detail=resp.text)` they collapse into one opaque error string
+# and the page can no longer render them as UNKNOWN rather than as a failure.
+#
+# **Honesty (plan §3.5).** Coord computes `freshness.state` and never
+# synthesises a sample, a service row or a capacity figure. This proxy adds no
+# defaults and zero-fills nothing: a computer with no measured PSI axis stays
+# `null`/`not_supported`, and an upstream failure stays an error (502/504/
+# coord's status) rather than an empty computer list.
+
+
+@router.get("/computers")
+async def get_computers(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
+
+    The fleet list: per computer its identity (no raw OS ids), capacity,
+    ``freshness {last_report_at, age_secs, state}``, the latest sample
+    rollup per lane, ``services_failed``, ``last_event``, ``devices[]`` and
+    ``ci_runners[]``, plus ``unattributed_ci_runners`` at list level.
+    Response shape is coord-authored and passed through untouched.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/computers", tenant_id=tenant_id
+    )
+
+
+@router.get("/computers/{computer_id}")
+async def get_computer(
+    computer_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).
+
+    One computer's whole answer to "how is this machine": the list fields
+    plus ``services[]``, ``events`` (7 d, newest first), per-lane sample
+    ``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``
+    is validated as a UUID here so a malformed id is a 422 at the web edge
+    and never reaches coord as an arbitrary path segment.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", f"/coord/computers/{computer_id}", tenant_id=tenant_id
+    )
+
+
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
 #
 # These endpoints are added now so the Wave-3 frontend (decision queue
