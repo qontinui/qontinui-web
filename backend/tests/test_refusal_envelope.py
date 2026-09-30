@@ -3,11 +3,21 @@ refusal's ``NextActionKind``.
 
 Plan ``2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists``,
 Phases D1/D2 (web backend). The D2 conversions were chosen by SERVED
-frequency — 30 days of ``http_request`` events in the production web log group,
-with coord's own route observer excluded — which put the dual-auth 401s
-(``/plan-library`` alone: ~42k), the coord-proxy 502/504s
-(``/operations/pr-merge/prs``: ~14k) and the runner-proxy relay's 503 first.
-Each converted site has a test below asserting the kind it names.
+frequency, measured 2026-09-30 with CloudWatch Logs Insights over the 30 days
+of log group ``/ecs/qontinui-staging/web`` (production)::
+
+    filter event = "http_request" and status_code >= 400
+      and ip_address != "52.87.90.79"          # coord's route observer
+    | stats count(*) as n by method, path, status_code | sort n desc
+
+That put the dual-auth 401s first (``GET /plan-library`` 39,582 +
+``POST`` 2,903), then the coord-proxy 504s (``/operations/pr-merge/prs``
+14,053, ``/operations/fleet/volumes`` 4,947, ...) and the runner-proxy
+relay's 503 (``.../prepaid-balance`` 2,290). The warning-level events over 7
+days agreed (``no_auth_token_found``, ``cognito_token_invalid``,
+``runner_proxy_relay_not_connected``, ``device_token_rejected``,
+``coord_identity_mismatch``). Each converted site has a test below asserting
+the kind it names.
 """
 
 from __future__ import annotations
@@ -207,10 +217,10 @@ def _token_error(name: str) -> Exception:
 @pytest.mark.parametrize(
     ("error", "kind", "discriminator"),
     [
-        ("CoordTokenExpiredError", "pair_device", "expired"),
+        ("CoordTokenExpiredError", "retry_later", "expired"),
         ("CoordTokenNotYetValidError", "set_setting", "not_yet_valid"),
         ("CoordTokenForeignIssuerError", "report_defect", "foreign_issuer"),
-        ("CoordTokenInvalidError", "pair_device", "failed_verification"),
+        ("CoordTokenInvalidError", "report_defect", "failed_verification"),
     ],
 )
 async def test_rejected_device_token_names_the_next_action(
@@ -296,7 +306,7 @@ def _session_returning(user: Any) -> Any:
         (None, ("credential_rejected", "pair_device", "paired_user_absent")),
         (
             SimpleNamespace(is_active=False),
-            ("permission_denied", "none_terminal", "paired_user_inactive"),
+            ("credential_rejected", "none_terminal", "paired_user_inactive"),
         ),
     ],
 )
@@ -459,7 +469,7 @@ async def test_coord_proxy_read_transport_failures(
         (
             httpx.ReadTimeout("slow", request=_REQ),
             504,
-            ("upstream_timeout", "retry_later", "coord_timeout"),
+            ("upstream_timeout", "retry_later", "coord_write_timeout"),
         ),
         (
             httpx.RemoteProtocolError("cut", request=_REQ),
@@ -475,6 +485,45 @@ async def test_coord_proxy_write_transport_failures(
         await operations._proxy_coord_write("put", "/x", {}, headers=None)
     assert info.value.status_code == status
     assert _kind(info.value) == expected
+    # A write that may have landed never says a bare "retry": the re-read is
+    # named, and only the connect failure (nothing sent) omits it.
+    target = info.value.refusal.next_action.target
+    if expected[2] == "coord_unreachable":
+        assert target is None
+    else:
+        assert target == operations._REREAD_BEFORE_RETRY
+
+
+class _Answering:
+    """An ``httpx.AsyncClient`` stand-in answering every request with ``resp``."""
+
+    def __init__(self, resp: httpx.Response) -> None:
+        self._resp = resp
+
+    async def __aenter__(self) -> _Answering:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def _answer(self, *args: object, **kwargs: object) -> httpx.Response:
+        return self._resp
+
+    put = patch = _answer
+
+
+@pytest.mark.asyncio
+async def test_coord_write_answered_with_non_json_is_unknown_not_a_timeout() -> None:
+    resp = httpx.Response(200, content=b"<html>ok</html>", request=_REQ)
+    with (
+        patch.object(operations.httpx, "AsyncClient", lambda *a, **k: _Answering(resp)),
+        pytest.raises(HTTPException) as info,
+    ):
+        await operations._proxy_coord_write("patch", "/x", {}, headers=None)
+    assert info.value.status_code == 504
+    assert _kind(info.value) == ("unknown", "retry_later", "answer_not_json")
+    assert info.value.refusal.next_action.target == operations._REREAD_BEFORE_RETRY
+    assert "may have been applied" in info.value.detail
 
 
 @pytest.mark.asyncio
@@ -493,5 +542,13 @@ async def test_coord_proxy_post_and_delete_transport_failures() -> None:
     assert _kind(delete_info.value) == (
         "upstream_timeout",
         "retry_later",
-        "coord_timeout",
+        "coord_write_timeout",
     )
+
+
+@pytest.mark.asyncio
+async def test_coord_read_timeout_carries_no_reread_target() -> None:
+    timeout = httpx.ReadTimeout("slow", request=_REQ)
+    with _client_raising(timeout), pytest.raises(HTTPException) as info:
+        await operations._proxy_coord_get("/x")
+    assert info.value.refusal.next_action.target is None

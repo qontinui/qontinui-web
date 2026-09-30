@@ -698,6 +698,35 @@ async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_relay_device_lookup_failure_is_a_500_that_says_report_defect(
+    monkeypatch,
+):
+    """An unexpected lookup error is OUR fault: the 500 keeps its ``detail``
+    and its envelope says so (``report_defect``) rather than inviting a retry
+    or a re-pair that cannot help."""
+
+    async def _boom(device_id, *, bearer, user_id):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device, "get_device_routing", _boom, raising=True
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 500
+    body = _body(response)
+    assert body["detail"] == "device lookup failed"
+    assert body["refusal"]["code"] == "internal_error"
+    assert body["refusal"]["discriminator"] == "device_lookup_failed"
+    assert body["refusal"]["next_action"] == {"kind": "report_defect"}
+
+
+@pytest.mark.asyncio
 async def test_relay_malformed_device_id_maps_400(monkeypatch):
     dispatch = AsyncMock()
     _install_manager(monkeypatch, dispatch=dispatch)

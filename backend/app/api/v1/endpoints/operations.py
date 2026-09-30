@@ -953,30 +953,49 @@ def _coord_unreachable(
 
 def _coord_timeout(
     exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+    *,
+    write: bool,
 ) -> RefusalHTTPException:
-    """The 504 for a timeout: coord may have acted, so the reader retries
-    LATER — after re-reading, for a write — rather than immediately."""
+    """The 504 for a timeout: coord may have acted.
+
+    ``write`` decides what "retry later" means. A timed-out READ is safe to
+    repeat. A timed-out WRITE may already have been applied, so a blind retry
+    can apply it twice: its next action names the re-read that must come
+    first, and its discriminator lets a reader refuse to render a bare Retry
+    button for it.
+    """
     return refusal_error(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
         "timeout waiting for coord",
-        discriminator="coord_timeout",
+        discriminator="coord_write_timeout" if write else "coord_timeout",
+        target=_REREAD_BEFORE_RETRY if write else None,
         glossary_terms=[GlossaryTerm.coord],
         exc_type=exc_type,
     )
 
 
-def _coord_answer_lost(detail: str) -> RefusalHTTPException:
-    """The 504 for a write whose answer did not arrive intact — a transport
-    error after the request was sent, or a 2xx body that is not JSON. The
-    change may have been applied; only a re-read can tell."""
+#: The ``next_action.target`` of every refusal whose write may have landed.
+_REREAD_BEFORE_RETRY = "re-read the current state before retrying"
+
+
+def _coord_answer_lost(detail: str, *, not_json: bool) -> RefusalHTTPException:
+    """The 504 for a write whose answer did not arrive intact. The change may
+    have been applied; only a re-read can tell.
+
+    Two causes, told apart by ``code``: a transport error after the request
+    was sent is ``upstream_timeout`` (``answer_lost``); a 2xx whose body is
+    not JSON is an answer this backend cannot classify, so ``unknown``
+    (``answer_not_json``) rather than a timeout it was not.
+    """
     return refusal_error(
         504,
-        RefusalCode.upstream_timeout,
+        RefusalCode.unknown if not_json else RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
         detail,
-        discriminator="answer_lost",
+        discriminator="answer_not_json" if not_json else "answer_lost",
+        target=_REREAD_BEFORE_RETRY,
         glossary_terms=[GlossaryTerm.coord],
     )
 
@@ -1058,7 +1077,7 @@ async def _proxy_coord_get(
         except httpx.ConnectError as exc:
             raise _coord_unreachable(CoordTransportUnavailable) from exc
         except httpx.TimeoutException as exc:
-            raise _coord_timeout(CoordTransportUnavailable) from exc
+            raise _coord_timeout(CoordTransportUnavailable, write=False) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -1391,12 +1410,13 @@ async def _proxy_coord_write(
             raise _coord_unreachable()
         except httpx.TimeoutException as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise _coord_timeout() from exc
+            raise _coord_timeout(write=True) from exc
         except httpx.HTTPError as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise _coord_answer_lost(
                 f"coord's answer was lost in transit ({type(exc).__name__}); "
-                "the change may have been applied"
+                "the change may have been applied",
+                not_json=False,
             ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
@@ -1415,7 +1435,8 @@ async def _proxy_coord_write(
         )
         raise _coord_answer_lost(
             f"coord answered {resp.status_code} with a body that is not "
-            "JSON; the change may have been applied"
+            "JSON; the change may have been applied",
+            not_json=True,
         ) from exc
 
 
@@ -1549,7 +1570,7 @@ async def post_github_clone_credential(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -1599,7 +1620,7 @@ async def _proxy_coord_verbatim(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=method.upper() != "GET")
     try:
         content = resp.json()
     except ValueError:
@@ -2406,7 +2427,7 @@ async def post_pr_merge_onboarding_connect_state(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -2541,7 +2562,7 @@ async def post_pr_merge_onboarding_claim(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2623,7 +2644,7 @@ async def post_pr_merge_onboarding_enroll(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2693,7 +2714,7 @@ async def post_pr_merge_onboarding_restore_repo(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -3012,7 +3033,7 @@ async def _proxy_coord_passthrough(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=method != "GET")
     try:
         payload: Any = resp.json()
     except ValueError:
@@ -3284,7 +3305,7 @@ async def _proxy_coord_post(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -6069,7 +6090,7 @@ async def _proxy_coord_delete(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout()
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -6626,7 +6647,7 @@ async def get_device_status(
     except httpx.ConnectError as exc:
         raise _coord_unreachable() from exc
     except httpx.TimeoutException as exc:
-        raise _coord_timeout() from exc
+        raise _coord_timeout(write=False) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
@@ -8525,7 +8546,7 @@ async def get_coord_session_restore_record(
     except httpx.ConnectError:
         raise _coord_unreachable()
     except httpx.TimeoutException:
-        raise _coord_timeout()
+        raise _coord_timeout(write=False)
 
     return {
         "session_id": str(session_id),
