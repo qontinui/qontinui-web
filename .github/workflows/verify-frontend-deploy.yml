@@ -90,6 +90,9 @@ jobs:
       # comes back empty, and the marker silently loses the one fact that tells
       # a job-budget timeout apart from an external cancel.
       actions: read
+      # OIDC: configure-aws-credentials assumes the read-only
+      # qontinui-web-verify-frontend role with this job's GitHub token.
+      id-token: write
 
     env:
       # The deployment Vercel just promoted, used ONLY for logging + the
@@ -148,25 +151,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      # AWS creds are reused from the same secrets deploy-web.yml uses, so the
-      # Vercel token CAN come from SSM (eu-central-1) — consistent with the
-      # backend, no extra GH secret — IF such a param is provisioned. The
-      # resolve-token step below probes SSM first, then falls back to
-      # secrets.VERCEL_TOKEN. Configuring creds is harmless if SSM has no token.
+      # AWS access is the scoped qontinui-web-verify-frontend role, assumed via
+      # GitHub OIDC (no stored AWS key). It can read exactly three eu-central-1
+      # SSM params — /qontinui/vercel/token and /qontinui/spec-ci/auth-* — so
+      # the Vercel token comes from SSM, consistent with the backend, no extra
+      # GH secret. The resolve-token step below probes SSM first, then falls
+      # back to secrets.VERCEL_TOKEN.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
+          role-session-name: verify-frontend-${{ github.run_id }}
           aws-region: ${{ env.SSM_REGION }}
 
       # Resolve the Vercel token. PREFERENCE ORDER:
       #   1. SSM SecureString /qontinui/vercel/token (eu-central-1) — the
       #      autonomous-work vault, consistent with the backend smoke's
-      #      SSM-sourced creds. As of authoring NO such param exists (the
-      #      /qontinui/ inventory has operator*, spec-ci/auth-*, ui-bridge,
-      #      upstash, web/device-bridge-redis-url — no vercel/*), so this branch
-      #      is dormant until the operator provisions it.
+      #      SSM-sourced creds. The param exists (confirmed 2026-09-30 via
+      #      `aws ssm describe-parameters`; it did not when this was authored).
       #   2. secrets.VERCEL_TOKEN — the fallback the operator must provision
       #      until/unless the SSM param is created.
       # A missing token is a HARNESS error (token_missing=1) handled by the
