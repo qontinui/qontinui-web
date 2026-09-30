@@ -487,6 +487,55 @@ class TestPendingRedeem:
         assert resp.json()["detail"]["code"] == code
         claim.assert_not_called()
 
+    @pytest.mark.parametrize(
+        ("overrides", "code"),
+        [
+            # A pre-provenance push token: device-typed, but sub is a push
+            # session and there is no user. Not "bootstrap", still refused.
+            (
+                {"sub": "push:session-123", "user_id": None, "mint_provenance": None},
+                "device_token_shape_refused",
+            ),
+            ({"user_id": None}, "device_token_shape_refused"),
+            ({"user_id": None, "mint_provenance": None}, "device_token_shape_refused"),
+            ({"sub": "device:someone-else"}, "device_token_shape_refused"),
+            ({"mint_provenance": "agent_allocate"}, "device_token_provenance_refused"),
+            ({"mint_provenance": "unknown"}, "device_token_provenance_refused"),
+        ],
+    )
+    def test_token_not_shaped_like_a_paired_device_is_403(
+        self, overrides: dict[str, Any], code: str
+    ) -> None:
+        device_id = uuid4()
+        coord = _Coord()
+        with coord.installed(), self._state(pending=_code_row(device_id)) as claim:
+            resp = self._get(
+                device_id, coord.token(device_id, expired_ago_s=_DAY_S, **overrides)
+            )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == code
+        claim.assert_not_called()
+
+    def test_pre_provenance_paired_shape_is_admitted(self) -> None:
+        """A token minted before ``mint_provenance`` existed, in the exact
+        ``issue_device`` shape, may still collect (inside the grace)."""
+        device_id = uuid4()
+        coord = _Coord()
+        with coord.installed(), self._state(pending=_code_row(device_id)):
+            resp = self._get(
+                device_id,
+                coord.token(device_id, expired_ago_s=_DAY_S, mint_provenance=None),
+            )
+        assert resp.status_code == 200, resp.text
+
+    def test_delivered_code_is_never_cached(self) -> None:
+        device_id = uuid4()
+        coord = _Coord()
+        with coord.installed(), self._state(pending=_code_row(device_id)):
+            resp = self._get(device_id, coord.token(device_id))
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["cache-control"] == "no-store"
+
     def test_revoked_device_is_403(self) -> None:
         device_id = uuid4()
         coord = _Coord()
@@ -880,7 +929,9 @@ class TestPairCliKeepsAUsableKey:
         assert kwargs["refuse_if_usable_beyond"] == timedelta(days=7)
         assert kwargs["refuse_if_revoked"] is True
 
-    def test_revoked_device_gets_no_key(self) -> None:
+    def test_revoked_device_is_refused_at_the_door(self) -> None:
+        """pair-cli refuses a revoked device itself — before coord mints it a
+        JWT — rather than trusting coord to."""
         device_id = uuid4()
         with (
             self._coord_pair_cli(device_id),
@@ -889,11 +940,13 @@ class TestPairCliKeepsAUsableKey:
                 "get_credential_revoked_at",
                 AsyncMock(return_value=datetime.now(UTC)),
             ),
+            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
             patch.object(dmk_crud, "mint", AsyncMock()) as mint,
         ):
             resp = self._post(device_id)
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["device_machine_key"] is None
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_revoked"
+        coord.assert_not_called()
         mint.assert_not_called()
 
 
@@ -1380,7 +1433,7 @@ class TestFailClosedEdges:
         assert resp.status_code == 404, resp.text
         mint.assert_not_called()
 
-    def test_pair_cli_unreadable_deny_mints_no_key(self) -> None:
+    def test_pair_cli_unreadable_deny_refuses(self) -> None:
         device_id = uuid4()
         helper = TestPairCliKeepsAUsableKey()
         with (
@@ -1390,9 +1443,97 @@ class TestFailClosedEdges:
                 "get_credential_revoked_at",
                 AsyncMock(side_effect=RuntimeError("db down")),
             ),
+            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
             patch.object(dmk_crud, "mint", AsyncMock()) as mint,
         ):
             resp = helper._post(device_id)
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["device_machine_key"] is None
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_state_unavailable"
+        coord.assert_not_called()
         mint.assert_not_called()
+
+    def test_pair_confirm_refuses_a_revoked_device(self) -> None:
+        device_id = uuid4()
+        with (
+            patch.object(coord_service_account, "_admin_secret", "test-secret"),
+            patch(
+                f"{_DEVICES_MODULE}.get_coord_identity",
+                AsyncMock(return_value=_identity(uuid4())),
+            ),
+            patch.object(
+                device_crud,
+                "get_credential_revoked_at",
+                AsyncMock(return_value=datetime.now(UTC)),
+            ),
+            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
+        ):
+            resp = TestClient(_app()).post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": "s" * 32, "device_id": str(device_id)},
+            )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_revoked"
+        coord.assert_not_called()
+
+    def test_owner_mint_loses_the_race_to_a_concurrent_revoke(self) -> None:
+        """The deny read passed, but the key was revoked before the locked
+        re-read in ``dmk_crud.mint``: the mint refuses instead of rotating."""
+        device_id, tenant = uuid4(), uuid4()
+        with (
+            _operator(
+                tenants=(tenant,), owned_rows={device_id: _row(device_id, tenant)}
+            ),
+            patch.object(
+                device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                dmk_crud,
+                "mint",
+                AsyncMock(side_effect=dmk_crud.DeviceMachineKeyRevokedError(device_id)),
+            ) as mint,
+        ):
+            resp = TestClient(_app()).post(
+                f"{API_PREFIX}/{device_id}/machine-credential/mint"
+            )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_revoked"
+        assert mint.call_args.kwargs["refuse_if_revoked"] is True
+
+    def test_redeem_withholds_a_jwt_coord_minted_for_another_device(self) -> None:
+        from app.api.deps import get_async_db
+        from app.api.v1.endpoints.pair_codes import router
+
+        bound, other = uuid4(), uuid4()
+        code = _code_row(bound)
+        code.delivered_at = datetime.now(UTC)
+        coord_resp = MagicMock(spec=httpx.Response)
+        coord_resp.status_code = 201
+        coord_resp.json.return_value = {"device_id": str(other), "token": "jwt"}
+        coord_resp.text = ""
+        app = FastAPI()
+        app.dependency_overrides[get_async_db] = _fake_db
+        app.include_router(router, prefix=f"{API_PREFIX}/pair-codes")
+        with (
+            patch.object(
+                pair_code_crud, "get_redeemable", AsyncMock(return_value=code)
+            ),
+            patch.object(
+                device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
+            patch(
+                "app.api.v1.endpoints.pair_codes.post_to_coord",
+                AsyncMock(return_value=coord_resp),
+            ),
+            patch("app.api.v1.endpoints.pair_codes.coord_service_account") as bridge,
+            patch.object(pair_code_crud, "mark_redeemed", AsyncMock()) as consumed,
+        ):
+            bridge.enabled = True
+            bridge._headers = AsyncMock(return_value={})
+            resp = TestClient(app).post(
+                f"{API_PREFIX}/pair-codes/{code.code}/redeem",
+                json={"device_id": str(bound), "hostname": "h"},
+            )
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_mismatch"
+        assert "jwt" not in resp.text
+        consumed.assert_not_called()
