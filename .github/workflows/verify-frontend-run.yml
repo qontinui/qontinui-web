@@ -1,137 +1,248 @@
-name: Spec CI
+name: Verify Frontend Deploy (run)
 
-# Spec CI replaces Playwright E2E as the on-PR merge gate. The full Playwright
-# E2E suite (e2e-tests.yml, frontend-tests) runs on main/develop pushes and
-# nightly — not on PRs and not on coord's merge-candidate* candidate refs, both
-# of which are gated by Spec CI + the backend E2E job instead. (A PR that
-# changes a `tests/e2e/**/*.spec.ts` file also gets those files run on the
-# same stack — e2e-tests.yml `frontend-e2e-changed-specs`, advisory.)
+# Post-deploy behavioral smoke for the qontinui-web FRONTEND + auto-rollback.
 #
-# HERMETIC since 2026-06-04: the entire stack — Postgres, Redis, the FastAPI
-# backend, a run-local token issuer — boots inside this job. The previous
-# posture crawled the LIVE prod API (api.qontinui.io), so any prod 502/timeout
-# blip red'd this required check (~1-in-3 during blips; see
-# plans/2026-06-03-unbypassable-autonomous-merge-gates.md Phase 2b: a required
-# check must depend only on inputs the PR author controls). `--include-write`
-# transitions also wrote to prod as ci-bot; hermetically they write to the
-# throwaway CI database. Real-Cognito + real-prod integration stays covered
-# post-deploy by verify-frontend-run.yml's public + authed smokes.
+# The frontend has no GitHub Actions deploy workflow: it auto-deploys via
+# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`). Vercel
+# emits a GitHub `deployment_status` event when a deploy reaches a terminal
+# state; for a successful PRODUCTION deploy that event carries the new prod URL
+# in `environment_url` and `environment: Production`. We hang a behavioral
+# smoke off that event — the frontend half of replacing the removed manual
+# deploy gate (the backend half is the behavioral smoke + circuit-breaker
+# rollback in deploy-web.yml).
 #
-# Pipeline:
-#   1. Boot Postgres (pgvector) + Redis services; install backend deps;
-#      `alembic upgrade heads` (real schema, byte-identical to prod's chain).
-#   2. Mint a run-local RS256 id token + JWKS (scripts/spec_ci_local_idp.py),
-#      serve the JWKS via `python -m http.server`, and point the backend's
-#      COGNITO_ISSUER at it — the backend verifies the token through its REAL
-#      verifier (signature/iss/aud/exp) and JIT-provisions the ci-bot user
-#      (app/services/cognito_provision.py). No auth code is stubbed.
-#   3. Boot the FastAPI backend (uvicorn) against the CI database.
-#   4. Install deps + build the frontend; `next start` with BACKEND_URL
-#      pointing at the local backend.
-#   5. Run the Playwright-driven Spec-CI executor against every IR spec under
-#      `frontend/specs/pages/`. The executor seeds the injected token as the
-#      auth cookie, then for each spec navigates to its route, injects the
-#      IR, drives transitions via ui-bridge-auto's in-browser executor, and
-#      records pass/fail. Specs are authored against an EMPTY account
-#      (structure + empty states), so the fresh CI database matches their
-#      authored baseline by construction.
-#   6. Gate: fail iff minMatchRate < 0.8 OR transitionPassRate < 1.0
-#      OR any spec errored.
+# What the smoke checks: it drives a headless Chromium over the app's PUBLIC
+# routes on the freshly-deployed prod URL and asserts the SAME run-level
+# invariant Spec CI enforces — ZERO critical browser console errors and ZERO
+# same-origin HTTP-5xx responses — by importing the exact policy modules Spec
+# CI uses (frontend/tests/spec-ci/console-policy.ts +
+# server-error-policy.ts). It is NOT a re-implementation of the gate: the
+# classifier (`classifyConsole`) and the 5xx scope (`isSameOriginServerError`)
+# are reused verbatim.
 #
-# Why not run the qontinui-runner in CI? Spec-CI's only dependency on the
-# runner in dev is the multi-tenant Spec API for file storage; in CI the
-# IR specs are in the repo and ui-bridge-auto runs natively in the
-# browser. Skipping the runner removes the Tauri+xvfb burden.
+# Why a public-route smoke and not `run-spec-ci.ts --base-url <prod>` directly:
+# run-spec-ci.ts DOES accept `--base-url`, but its structural spec lane needs
+# `window.__qontinuiSpecCi__` (a BUILD-TIME surface gated by
+# NEXT_PUBLIC_ENABLE_SPEC_CI, ABSENT from the production bundle) and a
+# same-origin /api auth proxy + a shared ci-bot login. Against the real prod
+# bundle every spec would error and the authed crawl would session-lose,
+# producing a guaranteed false-red. So we reuse run-spec-ci.ts's CONTRACT (the
+# console + 5xx policy modules + its exit-code convention: 0 = clean, 1 =
+# finding) over the unauthenticated public surface, which renders without that
+# build-time hook or a login. The public route list is the authoritative
+# allow-list from frontend/src/middleware.ts (PUBLIC_PATHS + PUBLIC_PREFIXES).
 #
-# No `concurrency:` block: the old serialization existed only because runs
-# shared the rate-limited (10/min) ci-bot auth endpoint. Hermetic runs share
-# nothing — they can overlap freely.
+# A SECOND, deeper smoke runs AFTER the public-route smoke: the AUTHED smoke
+# (verify-deploy-authed-smoke.ts). It logs in as ci-bot via the prod API,
+# seeds the Bearer/sessionStorage auth surface the app actually boots from,
+# and crawls the AUTHENTICATED routes asserting per-route landmarks + no
+# bounce to /login. This catches authed regressions (e.g. a session teardown)
+# that the public crawl structurally cannot see. A missing ci-bot credential
+# is a HARNESS/SKIP condition (never a rollback). See the step docs below.
+#
+# Auto-rollback: on a GENUINE smoke failure (EITHER the public-route smoke OR
+# the authed smoke found a console error, a same-origin 5xx, a bounce to
+# /login, or a missing authed landmark) we re-point the Production alias to the
+# prior READY Production deployment via `vercel promote`. A HARNESS error (no
+# token, couldn't find a prior deployment, couldn't reach the Vercel API, or
+# the authed smoke could not obtain ci-bot creds) fails/skips WITHOUT rolling
+# back — we never roll back a possibly-fine deploy because our own tooling or a
+# missing credential broke.
+#
+# WHY THIS FILE IS SEPARATE FROM verify-frontend-deploy.yml (plan
+# 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share, review
+# finding S1). GitHub runs a `deployment_status` workflow from the DEPLOYMENT'S
+# commit, and Vercel deploys (and reports) every commit it builds -- branch and
+# preview commits included -- by SHA. A job holding AWS credentials on that
+# trigger would therefore run whatever copy of the file sits at that commit, so
+# the OIDC role could only be trusted at ANY ref, and anyone able to get a
+# commit deployed could read the Vercel token and the ci-bot login out of SSM.
+#
+# So the split is:
+#   * verify-frontend-deploy.yml (`deployment_status`) holds NO AWS access and
+#     NO secrets. It applies the cheap success/vercel[bot]/Production gate and
+#     dispatches THIS workflow on `main` with the deployment id.
+#   * THIS workflow (`workflow_dispatch`, always run from main) trusts none of
+#     its inputs: the `validate` job re-reads the deployment from the GitHub
+#     API with the job token and re-checks creator, environment, latest status
+#     and that main contains the deployed SHA. Only if every check passes does
+#     the `verify` job run, and only a run of THIS file at refs/heads/main can
+#     assume qontinui-web-verify-frontend (see
+#     .github/aws-iam/qontinui-web-verify-frontend.trust.json).
 
 on:
-  pull_request:
-    branches: [main, develop]
-  push:
-    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
-    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). Spec CI
-    # is a required merge gate, so it must run on candidate refs or the proposal
-    # hangs in awaiting-ci. Validation-only (hermetic stack); no deploy.
-    branches:
-      - main
-      - develop
-      - 'merge-candidate/**'
-      - 'merge-candidate-spec/**'
-      - 'merge-candidate-batch/**'
   workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: >-
+          GitHub deployment id to verify. The ONLY input read, and it is not
+          trusted: everything else (URL, SHA, environment, creator, state) is
+          re-read from the GitHub API and re-validated.
+        required: true
+        type: string
+
+# Concurrency lives on the `verify` job below, keyed on the VALIDATED URL, so an
+# unvalidated dispatch can neither join nor block a real verify's group.
 
 jobs:
-  spec-ci:
-    name: Spec CI
+  # Re-validates the dispatched deployment against the GitHub API. Any failed
+  # check ends this job GREEN with a ::notice:: and ok=false, which skips
+  # `verify` -- a refused dispatch is not a red run. Holds no AWS access.
+  validate:
+    name: Validate dispatched deployment
     runs-on: ubuntu-latest
-    # 25 → 35 on hermeticization: the job now also installs backend deps and
-    # boots PG/Redis/uvicorn (~5-8 min). No torch in requirements.txt — the
-    # heavy-ML disk concerns from backend-ci's poetry path don't apply here.
-    timeout-minutes: 35
-
-    services:
-      postgres:
-        # pgvector-bundled PG16 — same image backend-ci uses; alembic
-        # migrations materialize Vector columns and need the extension.
-        image: pgvector/pgvector:pg16
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+      deployment_id: ${{ steps.check.outputs.deployment_id }}
+      environment_url: ${{ steps.check.outputs.environment_url }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - name: Re-validate deployment from the GitHub API
+        id: check
         env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
+          GH_TOKEN: ${{ github.token }}
+          INPUT_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        run: |
+          set -uo pipefail
+          refuse() {
+            # The message can quote API-sourced strings (creator, environment,
+            # URL). Flatten CR/LF so none can start a workflow command line.
+            local msg="${1//$'\n'/ }"
+            msg="${msg//$'\r'/ }"
+            echo "::notice title=verify-frontend-run refused this dispatch::${msg} Nothing was smoked, no AWS role was assumed."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          # 1. Only a run of the main-branch copy of this file may proceed.
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            refuse "Dispatched on '${GITHUB_REF}', not refs/heads/main."
+          fi
+
+          # 2. The id is interpolated into an API path: digits only.
+          id="${INPUT_DEPLOYMENT_ID}"
+          if [ -z "$id" ] || [ -n "${id//[0-9]/}" ]; then
+            refuse "deployment_id '${id}' is not a positive integer."
+          fi
+
+          # 3. The deployment itself, from the API -- never from inputs.
+          if ! dep=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}" 2>/dev/null); then
+            refuse "Deployment ${id} could not be read from the GitHub API."
+          fi
+          creator=$(jq -r '.creator.login // ""' <<<"$dep")
+          environment=$(jq -r '.environment // ""' <<<"$dep")
+          sha=$(jq -r '.sha // ""' <<<"$dep")
+          if [ "$creator" != "vercel[bot]" ]; then
+            refuse "Deployment ${id} was created by '${creator}', not vercel[bot]."
+          fi
+          case "$environment" in
+            Production|production) ;;
+            *) refuse "Deployment ${id} targets environment '${environment}', not Production." ;;
+          esac
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            refuse "Deployment ${id} carries no valid commit SHA ('${sha}')."
+          fi
+
+          # 4. Its LATEST status must be success (statuses list newest-first).
+          #    A deploy that a newer one has since marked inactive is skipped:
+          #    the newer deployment's own run verifies the same public URL.
+          if ! st=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses?per_page=1" --jq '.[0] // {}' 2>/dev/null); then
+            refuse "Statuses of deployment ${id} could not be read."
+          fi
+          state=$(jq -r '.state // ""' <<<"$st")
+          url=$(jq -r '.environment_url // .target_url // ""' <<<"$st")
+          if [ "$state" != "success" ]; then
+            refuse "Latest status of deployment ${id} is '${state}', not success."
+          fi
+          if ! [[ "$url" =~ ^https://[A-Za-z0-9.-]+(/[^[:space:]]*)?$ ]]; then
+            refuse "Deployment ${id} reports no usable https environment_url ('${url}')."
+          fi
+
+          # 5. main must CONTAIN the deployed SHA. compare/<sha>...main is
+          #    `identical` (main is that commit) or `ahead` (main descends from
+          #    it); `behind` / `diverged` mean a branch or fork commit.
+          if ! rel=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq '.status' 2>/dev/null); then
+            refuse "Could not compare ${sha} against main."
+          fi
+          case "$rel" in
+            identical|ahead) ;;
+            *) refuse "Deployed SHA ${sha} is not on main (compare status '${rel}')." ;;
+          esac
+
+          echo "Validated deployment ${id}: ${environment} by ${creator}, sha ${sha}, url ${url}"
+          {
+            echo "ok=true"
+            echo "deployment_id=${id}"
+            echo "environment_url=${url}"
+            echo "sha=${sha}"
+          } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Smoke new prod frontend + auto-rollback
+    needs: validate
+    # Runs only for a deployment `validate` accepted: a successful Vercel
+    # PRODUCTION deploy (creator vercel[bot], environment Production/production)
+    # whose SHA is on main. The creator gate is decisive: a GitHub-Actions job
+    # that declares `environment: production` (the backend deploy-web.yml /
+    # migrate.yml) creates deployments whose creator is the workflow actor and
+    # whose environment_url is a github.com Actions job URL -- NOT a deployable
+    # surface; smoking that fired spurious rollbacks before this gate existed.
+    if: needs.validate.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    # One verify per prod URL. Cancel-in-progress is OFF: a rollback mid-flight
+    # (promote requested, alias re-point not yet settled) must not be
+    # interrupted. Keyed on the VALIDATED URL, never on a dispatch input.
+    concurrency:
+      group: verify-frontend-deploy-${{ needs.validate.outputs.environment_url }}
+      cancel-in-progress: false
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: read
+      # For the "Page on frontend rollback" step (auto-filed de-duped issue —
+      # the one channel that emails repo watchers; see migrate.yml's sibling).
+      issues: write
+      # LOAD-BEARING for the infrastructure-timeout marker below. Declaring ANY
+      # `permissions:` block sets every scope not listed here to `none`, and the
+      # marker's arm 2 calls `GET /repos/{}/actions/runs/{}` to read
+      # `run_started_at`. Without `actions: read` that call 403s, `elapsed_min`
+      # comes back empty, and the marker silently loses the one fact that tells
+      # a job-budget timeout apart from an external cancel.
+      actions: read
+      # OIDC: configure-aws-credentials assumes the read-only
+      # qontinui-web-verify-frontend role with this job's GitHub token.
+      id-token: write
 
     env:
-      # Path A (same-origin): the browser uses RELATIVE API URLs (empty
-      # NEXT_PUBLIC_API_URL) so calls hit the Next.js /api proxy on
-      # localhost:3001 — keeping auth cookies same-origin. The proxy forwards
-      # to the run-local backend via the server-only BACKEND_URL.
-      NEXT_PUBLIC_API_URL: ""
-      BACKEND_URL: http://localhost:8000
-      QONTINUI_API_BASE_URL: http://localhost:8000
-      # Shared by the migrate/boot steps below. Plain-postgres scheme; the
-      # backend + alembic env handle async-driver conversion (same contract
-      # as e2e-tests.yml's frontend-tests job).
-      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-      SECRET_KEY: spec-ci-secret-key-for-ci-only-minimum-32-chars-long
-      ENVIRONMENT: development
-      STORAGE_BACKEND: local
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      REDIS_ENABLED: "true"
-      # Run-local token issuer (hermetic auth). The backend's Cognito
-      # verifier trusts whatever issuer is configured and fetches
-      # <issuer>/.well-known/jwks.json — both run on this VM. The
-      # spec_ci_local_idp.py step below mints QONTINUI_TEST_ID_TOKEN
-      # against this issuer; run-spec-ci.ts seeds it as the auth cookie.
-      COGNITO_USER_POOL_ID: spec-ci-local-pool
-      COGNITO_ISSUER: http://127.0.0.1:8770
-      COGNITO_ALLOWED_AUDIENCES: spec-ci-local
-      # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production
-      # builds (no env var set) get nothing on window.__qontinuiSpecCi__.
-      NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
-      # Build-time flag: mounts the in-browser CommandRelayListener in the
-      # prod `next start` bundle so /control/* actions dispatch in-process.
-      # Required for transition specs to execute element actions; no-op for
-      # the current structural (transition-free) specs.
-      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+      # The validated deployment (from the `validate` job, read off the GitHub
+      # API -- never a dispatch input), used ONLY for logging + the rollback
+      # target capture (the prior deployment) -- NOT as the smoke target. For a
+      # vercel[bot] Production deploy this is the `*.vercel.app` deployment URL.
+      NEW_PROD_URL: ${{ needs.validate.outputs.environment_url }}
+      # The deployed commit (validated to be on main). Stands in for GITHUB_SHA,
+      # which under workflow_dispatch is main's tip rather than the deployment.
+      DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
+      DEPLOYMENT_ID: ${{ needs.validate.outputs.deployment_id }}
+      # The PUBLIC production surface the smokes actually crawl. We do NOT smoke
+      # NEW_PROD_URL: raw `*.vercel.app` deployment URLs sit behind Vercel
+      # Deployment Protection (HTTP 401 + a FedCM "Vercel authentication" wall),
+      # so crawling them only sees the protection page, never the app, and fails
+      # every deploy. By the time this event fires, Vercel has re-pointed the
+      # prod alias to the new deployment, so the public domain serves the new
+      # code. Overridable if the public prod domain ever changes.
+      PROD_PUBLIC_URL: https://qontinui.io
+      # The production backend API base the authed smoke logs ci-bot into. The
+      # prod frontend talks to api.qontinui.io; overridable via repo/env config
+      # if the API host ever moves.
+      PROD_API_BASE: https://api.qontinui.io
+      # SSM (the autonomous-work vault) lives in eu-central-1, separate from any
+      # deploy region. Used IF a Vercel-token param is provisioned there, and
+      # for the ci-bot creds the authed smoke reads (/qontinui/spec-ci/auth-*).
+      SSM_REGION: eu-central-1
 
     steps:
       # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
@@ -156,158 +267,14 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - name: Checkout qontinui-web
+      # Checks out the DEPLOYED commit, as the deployment_status run did (its
+      # GITHUB_SHA was the deployment SHA), so the smoke scripts match the code
+      # being smoked. `validate` has already proven main contains this SHA, so
+      # it is trusted code; this workflow file itself always runs from main.
+      - name: Check out qontinui-web
         uses: actions/checkout@v5
-
-      # ── Backend stack (hermetic) ─────────────────────────────────────────
-
-      # backend/pyproject.toml has path deps on ../../qontinui-schemas and
-      # ../../qontinui; qontinui-cloud-control is installed editable. Same
-      # clone set as e2e-tests.yml's backend-tests job.
-      - name: Clone backend Python sibling deps
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for spec in \
-            "qontinui/qontinui-schemas" \
-            "qontinui/qontinui" \
-            "qontinui/qontinui-cloud-control" \
-          ; do
-            repo_name="${spec#*/}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
-          done
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      # Mirrors e2e-tests.yml's backend-tests install verbatim — including
-      # the no-cache-dir editable schemas install (pip's wheel cache
-      # otherwise DOWNGRADES schemas to a stale cached version) and
-      # `--no-deps` on the backend itself (prevents re-resolving the
-      # editable schemas we just installed).
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install --no-cache-dir -e ../../qontinui-schemas
-          if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
-          pip install -e ../../qontinui-cloud-control
-
-      - name: Install postgresql-client
-        id: apt_psql
-        # ONLY the apt-get call lives in this step, and it is the entire reason
-        # for the bound: it reaches an external mirror at job time and is the
-        # same unbounded-stall exposure as the Playwright step (plan
-        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
-        # The psql/DDL that used to share this step now runs UNBOUNDED below.
-        # It HAD to move: under `bash -e` a psql failure set this step's
-        # `.outcome` to `failure` exactly like an apt timeout, so the
-        # infrastructure marker could not tell a mirror stall from the author's
-        # own schema breaking -- and told them their breakage was infrastructure.
-        # The `command -v psql` guard means apt normally never runs at all on
-        # `ubuntu-latest`, which ships psql. That is exactly why the DDL could
-        # not stay here: an arm keyed on this step's failure would have been
-        # describing a call that did not happen.
-        # Measured apt+psql across green runs of all 7 sites: p50 0-16s, p90
-        # <=91s, max 106s (migration-reversal). The bound now covers apt ALONE,
-        # so 5 min is p90 + ~3.5 min of headroom over a strictly smaller job.
-        timeout-minutes: 5
-        run: |
-          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
-
-      # Some alembic migrations reference the `runner` schema, created in dev
-      # by init-scripts/ which service containers don't run. Same carve-out
-      # as e2e-tests.yml.
-      - name: Create runner schema
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
-        env:
-          PGPASSWORD: test_password
-        run: |
-          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
-
-      # LOAD-BEARING BACKSTOP — do NOT add a `paths:` filter or a job-level `if:`
-      # that would stop this from running on every PR. migration-reversal.yml's
-      # head guard treats a non-zero `alembic heads` as skip-and-pass (a stacked
-      # PR whose down_revision lives on an unlanded parent is the chain-
-      # consolidation gate's problem, not a reversibility problem). That guard is
-      # deliberately NOT narrowed by matching alembic's error prose, because a
-      # wording change upstream would turn it into a false red on exactly the PRs
-      # it exists to let through. The classes it therefore does not catch —
-      # migration SyntaxError/ImportError, graph cycles, duplicate revision ids —
-      # are caught HERE instead. Filtering this step un-backstops that decision.
-      - name: Run database migrations
-        working-directory: ./backend
-        run: alembic upgrade heads
-
-      # Run-local token issuer: generate an ephemeral RSA keypair + JWKS,
-      # serve the JWKS at COGNITO_ISSUER, and mint the ci-bot id token the
-      # executor will seed as its auth cookie. The backend JIT-provisions
-      # the ci-bot auth.users row on the token's first authenticated request
-      # — no user seeding step needed.
-      - name: Mint local id token + serve JWKS
-        working-directory: ./backend
-        run: |
-          set -euo pipefail
-          TOKEN=$(python scripts/spec_ci_local_idp.py \
-            --issuer "$COGNITO_ISSUER" \
-            --audience spec-ci-local \
-            --email spec-ci-bot@no-reply.qontinui.io \
-            --out-dir /tmp/spec-ci-idp)
-          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          (cd /tmp/spec-ci-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
-          for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
-              echo "local JWKS up after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
-
-      - name: Start backend (uvicorn)
-        working-directory: ./backend
-        run: |
-          set -euo pipefail
-          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
-          echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 60); do
-            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health | grep -q "^200$"; then
-              echo "backend up after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-          curl -s -o /dev/null -w "backend status: %{http_code}\n" http://127.0.0.1:8000/health
-
-      # Mirror prod ci-bot's privileges: the admin-surface specs (/admin,
-      # /admin/region-analysis, /admin/coord/agents/…) are superuser-gated
-      # (admin/architecture/page.tsx + admin/region-analysis/page.tsx redirect
-      # non-superusers) and were authored against the superuser ci-bot. The
-      # curl JIT-provisions the auth.users row (+ personal org) through the
-      # real token path; the UPDATE then elevates it. Deliberately a DB-side
-      # step, NOT a token claim — a token must never be able to grant
-      # superuser (cognito_provision.py hardcodes is_superuser=False).
-      - name: Provision + elevate ci-bot (superuser parity with prod)
-        env:
-          PGPASSWORD: test_password
-        run: |
-          set -euo pipefail
-          curl -fsS -H "Authorization: Bearer $QONTINUI_TEST_ID_TOKEN" \
-            http://127.0.0.1:8000/api/v1/auth/users/me > /dev/null
-          psql -h localhost -U test_user -d test_db -c \
-            "UPDATE auth.users SET is_superuser = true WHERE email = 'spec-ci-bot@no-reply.qontinui.io';"
-
-      # ── Frontend ─────────────────────────────────────────────────────────
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -316,12 +283,128 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      # @qontinui/* packages (shared-types, ui-bridge, ui-bridge-auto,
-      # design-tokens, navigation, workflow-utils, workflow-ui) are
-      # published to npm — frontend/package.json declares them with
-      # version ranges, not link: paths. No sibling clone needed; npm
-      # pulls published artifacts. The dev-link overlay
-      # (qontinui-claude-config/scripts/dev-link.ps1) is dev-only.
+      # AWS access is the scoped qontinui-web-verify-frontend role, assumed via
+      # GitHub OIDC (no stored AWS key). It can read exactly three eu-central-1
+      # SSM params — /qontinui/vercel/token and /qontinui/spec-ci/auth-* — so
+      # the Vercel token comes from SSM, consistent with the backend, no extra
+      # GH secret. The resolve-token step below probes SSM first, then falls
+      # back to secrets.VERCEL_TOKEN.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
+          role-session-name: verify-frontend-${{ github.run_id }}
+          aws-region: ${{ env.SSM_REGION }}
+
+      # Resolve the Vercel token. PREFERENCE ORDER:
+      #   1. SSM SecureString /qontinui/vercel/token (eu-central-1) — the
+      #      autonomous-work vault, consistent with the backend smoke's
+      #      SSM-sourced creds. The param exists (confirmed 2026-09-30 via
+      #      `aws ssm describe-parameters`; it did not when this was authored).
+      #   2. secrets.VERCEL_TOKEN — the fallback the operator must provision
+      #      until/unless the SSM param is created.
+      # A missing token is a HARNESS error (token_missing=1) handled by the
+      # smoke gate below — NOT a smoke failure, so it never triggers a rollback.
+      # The token is written to GITHUB_ENV (masked) and never echoed.
+      - name: Resolve Vercel token
+        id: token
+        run: |
+          set -uo pipefail
+          TOKEN=""
+          # Try SSM first (best-effort; a ParameterNotFound / AccessDenied is
+          # not fatal here — we fall through to the GH secret).
+          if SSM_VAL=$(aws ssm get-parameter \
+                --name /qontinui/vercel/token \
+                --with-decryption --region "${SSM_REGION}" \
+                --query Parameter.Value --output text 2>/dev/null); then
+            if [ -n "$SSM_VAL" ] && [ "$SSM_VAL" != "None" ]; then
+              TOKEN="$SSM_VAL"
+              echo "Vercel token source: SSM /qontinui/vercel/token"
+            fi
+          fi
+          # Fall back to the GH secret.
+          if [ -z "$TOKEN" ]; then
+            TOKEN="${{ secrets.VERCEL_TOKEN }}"
+            if [ -n "$TOKEN" ]; then
+              echo "Vercel token source: secrets.VERCEL_TOKEN"
+            fi
+          fi
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::No Vercel token found (neither SSM /qontinui/vercel/token nor secrets.VERCEL_TOKEN). The smoke will run but rollback is impossible — provision one."
+            echo "token_missing=1" >> "$GITHUB_OUTPUT"
+          else
+            # Mask + export without printing the value.
+            echo "::add-mask::$TOKEN"
+            echo "VERCEL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+            echo "token_missing=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Capture the PRIOR READY Production deployment (the last-known-good
+      # rollback target) BEFORE smoking, so it reflects the deploy that was live
+      # immediately before this one. `vercel ls --prod` lists production
+      # deployments newest-first; the just-deployed one is index 0 (matches
+      # NEW_PROD_URL), the prior READY one is the rollback target.
+      #
+      # This is HARNESS work: if no token, or the API can't be reached, or no
+      # prior READY deployment exists (e.g. the very first prod deploy), we
+      # record prior_found=0. The smoke still runs (a broken frontend should
+      # still fail loudly), but the rollback step is skipped — failing the job
+      # WITHOUT rolling back, since there is nothing safe to roll back to.
+      - name: Capture prior Production deployment (rollback target)
+        id: prior
+        if: steps.token.outputs.token_missing == '0'
+        run: |
+          set -uo pipefail
+          # `npx --yes` auto-installs vercel@latest without an interactive
+          # prompt. `vercel ls --prod` prints production deployments newest-first;
+          # we parse the *.vercel.app deployment URLs from the listing.
+          # --scope qontinui pins the team: CI's fresh checkout has no `.vercel`
+          # link, so without it the listing defaults to the token's scope. The
+          # provisioned token is team-scoped (so this is currently redundant)
+          # but pinning keeps it robust to a future full-account token. Slug
+          # confirmed via `vercel teams ls`.
+          if ! npx --yes vercel@latest ls --prod --scope qontinui --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
+            echo "::warning::could not list Vercel production deployments (harness):"
+            sed -e 's/[A-Za-z0-9._-]*'"$VERCEL_TOKEN"'[A-Za-z0-9._-]*/[redacted]/g' vercel_ls.err || true
+            echo "prior_found=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Extract production deployment URLs, newest-first. The CLI's human
+          # table prints the deployment URL in column 1; we keep only lines that
+          # name a *.vercel.app deployment URL, preserving newest-first order.
+          grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app[^[:space:]]*' vercel_ls.txt > urls.txt || true
+          # The freshly-deployed URL is the newest (first line of urls.txt); the
+          # PRIOR (rollback target) is the next distinct deployment URL below it.
+          # We skip by POSITION (line 0 = the deploy we just made) rather than by
+          # string-matching NEW_PROD_URL, because NEW_PROD_URL may be a custom
+          # domain alias rather than the *.vercel.app deployment URL the listing
+          # prints — a string match would then never find index 0.
+          PRIOR=""
+          while IFS= read -r u; do
+            u="${u%/}"
+            [ -z "$u" ] && continue
+            # Skip the just-deployed URL (and the alias form, if NEW_PROD_URL is
+            # a custom domain rather than the *.vercel.app deployment URL the
+            # very-newest line will simply be the new deploy → skip index 0).
+            if [ -z "$PRIOR" ]; then
+              # First line = newest = the deploy we just made. Skip it.
+              PRIOR="__skip__"
+              continue
+            fi
+            if [ "$PRIOR" = "__skip__" ]; then
+              PRIOR="$u"
+              break
+            fi
+          done < urls.txt
+          if [ -z "$PRIOR" ] || [ "$PRIOR" = "__skip__" ]; then
+            echo "::warning::no prior READY Production deployment found — cannot auto-rollback (first prod deploy?)."
+            echo "prior_found=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "Prior (last-known-good) Production deployment = $PRIOR"
+            echo "prior_deployment=$PRIOR" >> "$GITHUB_OUTPUT"
+            echo "prior_found=1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install frontend deps
         working-directory: ./frontend
         run: npm ci
@@ -531,23 +614,24 @@ jobs:
         # first `Downloading ` CDN banner, and the parsed halves were cross-checked
         # against the jobs API step times to +/-1s.
         #
-        # The apt half over 16 green Spec CI runs (2026-08-18 -> 08-20):
-        # p50 12.7s, p90 88.2s, max 205.4s (run 32250167820, whose log reads
-        # `Fetched 21.1 MB in 2min 47s (126 kB/s)` - a degraded mirror that
-        # happened to finish).
+        # The apt half over 14 green runs (2026-08-08 -> 08-20): p50 13.0s,
+        # p90 71.9s, max 228.2s (run 32252290821, `Fetched 21.1 MB in 3min 26s
+        # (102 kB/s)`). The heaviest tail of the five chromium sites, and the
+        # split shows it is entirely apt's.
         #
-        # 7, not the fused step's 5. That 5 was sized against an older 12-run
-        # sample whose max was 47s; this 16-run window says the max is 205s, so
-        # 5 min would have been only 1.5x the worst observed SUCCESS - inside
-        # the range where a bound becomes a new flake source (the plan's own
-        # Risk 3). 7 min is 2.0x that max and p90 + ~5.5 min, and it still
-        # converts the observed 33-minute stall into a 7-minute failure well
-        # inside this job's 35-minute budget.
+        # 6, and it cannot be more generous. This job's own cap is
+        # `timeout-minutes: 15` with 3-5 min of preamble (checkout, npm ci, the
+        # deployment lookups) before this step starts, so 6 + the CDN half's 2
+        # still leaves the step bounds firing strictly BEFORE the job cap. An
+        # inert step bound - one the job cap always beats - is worse than none,
+        # because the job then concludes `cancelled` with no failing step, the
+        # exact rendering this plan exists to remove. 6 min is 1.6x the worst
+        # observed apt success and p90 + ~4.8 min.
         #
         # These are PRE-cache numbers. With the font .debs restored, a healthy run
         # should collapse toward the `apt-get update`-only floor, so the bound is
         # conservative by construction - it is sized for the MISS.
-        timeout-minutes: 7
+        timeout-minutes: 6
         working-directory: ./frontend
         run: npx playwright install-deps chromium
 
@@ -637,123 +721,252 @@ jobs:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
 
-      # Playwright's browser binaries aren't part of the npm install.
-      # Install Chromium only — the spec-ci executor doesn't need
-      # Firefox/WebKit.
       - name: Install Playwright Chromium (CDN)
-        # The CDN half over the same 16 runs: p50 9.2s, p90 10.1s, max 10.5s.
-        # 2 min is ~11x the observed max. Across all 178 halves measured for
-        # this split the CDN maximum ANYWHERE was 38.7s, which is what
-        # exonerates cdn.playwright.dev as a stall site - the whole tail lives
-        # in the apt half.
+        # The CDN half over the same 14 runs: p50 9.4s, p90 10.6s, max 18.9s.
+        # 2 min is ~6x the observed max and leaves the larger share of the job
+        # cap to the apt half, which is the half that actually stalls.
         timeout-minutes: 2
         working-directory: ./frontend
         run: npx playwright install chromium
 
-      - name: Build frontend
+      # The behavioral smoke runs the committed
+      # frontend/tests/spec-ci/verify-deploy-smoke.ts — it imports the SAME
+      # policy modules run-spec-ci.ts uses (./console-policy,
+      # ./server-error-policy), reusing the gate contract verbatim, and drives
+      # Chromium over the public routes on the PUBLIC prod domain
+      # (SMOKE_BASE_URL = PROD_PUBLIC_URL), never the protection-walled
+      # deployment URL.
+      #
+      # Exit-code contract for THIS step (read by the gate + rollback steps):
+      #   0  -> smoke clean
+      #   1  -> GENUINE smoke failure (console error / same-origin 5xx found)
+      #   2  -> HARNESS error (couldn't reach the public prod URL at all / launch
+      #         failure). A harness error must NOT roll back.
+      - name: Post-deploy behavioral smoke (public routes)
+        id: smoke
         working-directory: ./frontend
-        run: npm run build
-
-      # `next start` serves the production build — faster + more representative
-      # of the user-facing app than `next dev`. The background-task pattern
-      # mirrors what backend-tests.yml does for the FastAPI server.
-      - name: Start frontend (next start)
-        working-directory: ./frontend
+        env:
+          SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
         run: |
-          npx next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
-          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -qE "^(200|307)$"; then
-              echo "frontend up after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-          curl -s -o /dev/null -w "frontend status: %{http_code}\n" http://localhost:3001/login
+          set -uo pipefail
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "::error::PROD_PUBLIC_URL is empty — nothing to smoke (harness)."
+            exit 2
+          fi
+          echo "Smoking public prod surface: $SMOKE_BASE_URL (deployment: ${NEW_PROD_URL:-unknown})"
+          set +e
+          npx tsx tests/spec-ci/verify-deploy-smoke.ts
+          rc=$?
+          set -e
+          echo "smoke exit code: $rc"
+          if [ "$rc" = "2" ]; then
+            echo "::error::frontend post-deploy smoke could not run (harness error) — NOT rolling back."
+            echo "harness_error=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          exit "$rc"
 
-      - name: Run Spec CI
+      # The DEEP authed smoke runs the committed
+      # frontend/tests/spec-ci/verify-deploy-authed-smoke.ts. It reads the
+      # shared ci-bot credentials from SSM (/qontinui/spec-ci/auth-email +
+      # auth-password, eu-central-1 — the same creds Spec CI's login harness
+      # uses), logs in against PROD_API_BASE, seeds the Bearer/sessionStorage
+      # auth surface the app boots from, and crawls the AUTHENTICATED routes
+      # asserting per-route landmarks + no /login bounce. This catches authed
+      # regressions the public crawl structurally cannot (e.g. a session
+      # teardown).
+      #
+      # Exit-code contract for the SCRIPT (verify-deploy-authed-smoke.ts):
+      #   0  -> all authed routes stayed authed + landmarks present + clean
+      #   1  -> GENUINE finding (bounce to /login, missing landmark, console
+      #         error, or same-origin 5xx) — eligible for rollback.
+      #   2  -> HARNESS (no env/creds, login failed, or could not reach ANY
+      #         authed route). A harness error must NOT roll back.
+      #
+      # This step itself:
+      #   * If the SSM creds read fails -> ::warning:: + authed_skipped=1, exit 0
+      #     (a creds/harness gap is NOT a deploy failure — never roll back).
+      #   * rc==2 -> ::error:: + authed_harness=1 + exit 1 (no rollback).
+      #   * else  -> exit $rc (0 clean, 1 = genuine finding -> rollback gate).
+      # Creds are exported to the script's env and NEVER echoed.
+      - name: Post-deploy authed smoke
+        id: authed_smoke
         working-directory: ./frontend
-        # GH_TOKEN lets the Phase 0 flake-diagnostics take a `gh run list
-        # --status in_progress` snapshot at run start (overlapping Spec CI runs
-        # — the H1/H2 concurrency signal). Best-effort: if gh/token is absent
-        # the snapshot degrades to available:false and the run is unaffected.
+        env:
+          SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
+          PROD_API_BASE: ${{ env.PROD_API_BASE }}
+          SSM_REGION: ${{ env.SSM_REGION }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "::error::PROD_PUBLIC_URL is empty — nothing to authed-smoke (harness)."
+            echo "authed_harness=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          # Read the shared ci-bot creds from SSM (best-effort). A read failure
+          # is a creds/harness GAP, not a deploy regression — skip without
+          # rolling back.
+          set +e
+          AUTH_EMAIL=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-email \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text 2>/dev/null)
+          email_rc=$?
+          AUTH_PASSWORD=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-password \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text 2>/dev/null)
+          pw_rc=$?
+          set -e
+          if [ "$email_rc" != "0" ] || [ "$pw_rc" != "0" ] \
+             || [ -z "$AUTH_EMAIL" ] || [ "$AUTH_EMAIL" = "None" ] \
+             || [ -z "$AUTH_PASSWORD" ] || [ "$AUTH_PASSWORD" = "None" ]; then
+            echo "::warning::could not read ci-bot creds from SSM (/qontinui/spec-ci/auth-email|auth-password) — skipping the authed smoke. This is a creds/harness gap, NOT a deploy failure; not rolling back."
+            echo "authed_skipped=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Mask so a script error can never leak them into the log.
+          echo "::add-mask::$AUTH_EMAIL"
+          echo "::add-mask::$AUTH_PASSWORD"
+          export QONTINUI_TEST_AUTO_LOGIN_EMAIL="$AUTH_EMAIL"
+          export QONTINUI_TEST_AUTO_LOGIN_PASSWORD="$AUTH_PASSWORD"
+          echo "Authed-smoking public prod surface: $SMOKE_BASE_URL (API: $PROD_API_BASE; deployment: ${NEW_PROD_URL:-unknown})"
+          set +e
+          npx tsx tests/spec-ci/verify-deploy-authed-smoke.ts
+          rc=$?
+          set -e
+          echo "authed smoke exit code: $rc"
+          if [ "$rc" = "2" ]; then
+            echo "::error::frontend post-deploy AUTHED smoke could not run (harness error) — NOT rolling back."
+            echo "authed_harness=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          exit "$rc"
+
+      # Auto-rollback — fires ONLY when a GENUINE behavioral finding was made by
+      # EITHER smoke:
+      #   * the public-route smoke concluded 'failure' AND it was not a harness
+      #     error (harness_error != 1), OR
+      #   * the authed smoke concluded 'failure' AND it was neither a harness
+      #     error (authed_harness != 1) NOR a creds skip (authed_skipped != 1),
+      # AND in both cases a token is present and a prior READY deployment was
+      # captured. A build/install/harness/creds failure leaves the new deploy
+      # live and this step correctly skips (failing the job without a rollback).
+      # Re-points the Production alias to the last-known-good deployment via
+      # `vercel promote`.
+      - name: Auto-rollback on behavioral smoke failure
+        if: >-
+          failure() &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1')) &&
+          steps.token.outputs.token_missing == '0' &&
+          steps.prior.outputs.prior_found == '1'
+        run: |
+          set -uo pipefail
+          PRIOR="${{ steps.prior.outputs.prior_deployment }}"
+          if [ -z "$PRIOR" ]; then
+            echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
+            exit 1
+          fi
+          echo "Behavioral smoke failed — rolling back Production alias to last-known-good: $PRIOR"
+          # --scope qontinui: pin the team (same rationale as the ls above).
+          npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"
+          echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
+          exit 1
+
+      # If a smoke failed behaviorally but we could NOT roll back (no token or
+      # no prior deployment), say so loudly — the bad deploy is still live.
+      - name: Flag un-rollable behavioral failure
+        if: >-
+          failure() &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1')) &&
+          (steps.token.outputs.token_missing == '1' ||
+           steps.prior.outputs.prior_found != '1')
+        run: |
+          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
+          exit 1
+
+      # ── Page on frontend rollback / un-rollable failure (best-effort) ─────
+      # A behavioral smoke failure here either auto-rolls-back the Production
+      # alias or leaves a bad deploy live — both page-worthy, yet historically
+      # only turned the run red. That is exactly how the stale /build/workflows
+      # landmark silently reverted EVERY prod frontend deploy from 2026-06-09
+      # (#551) until #553 fixed it — main kept "deploying" while prod stayed
+      # pinned to an old build. Mirrors migrate.yml's "Page on migration
+      # failure": loud annotation + a de-duped auto-filed GitHub issue (the one
+      # channel that emails repo watchers). Fires on any GENUINE behavioral
+      # finding (same predicate as the rollback gate, minus rollability — the
+      # un-rollable case is MORE urgent, not less). Best-effort:
+      # `continue-on-error` + trailing `exit 0` so a paging hiccup never masks
+      # the underlying red run.
+      - name: Page on frontend rollback / un-rollable failure
+        if: >-
+          failure() &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1'))
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          npx tsx tests/spec-ci/run-spec-ci.ts \
-            --base-url http://localhost:3001 \
-            --api-base http://localhost:8000 \
-            --include-write \
-            --output spec-ci-report.json
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="$(printf '%s' "${DEPLOY_SHA}" | cut -c1-9)"
 
-      - name: Tear down frontend + backend
-        if: always()
-        run: |
-          if [ -n "${FRONTEND_PID:-}" ]; then
-            kill "$FRONTEND_PID" 2>/dev/null || true
-          fi
-          if [ -n "${BACKEND_PID:-}" ]; then
-            kill "$BACKEND_PID" 2>/dev/null || true
+          if [ "${{ steps.token.outputs.token_missing }}" = "0" ] && \
+             [ "${{ steps.prior.outputs.prior_found }}" = "1" ]; then
+            STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
+          else
+            STATE="Auto-rollback was NOT possible — the failing deploy is STILL LIVE on prod."
           fi
 
-      - name: Upload Spec CI report
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: spec-ci-report
-          path: frontend/spec-ci-report.json
-          retention-days: 30
+          echo "::error::FRONTEND DEPLOY SMOKE FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA}. ${STATE} MANUAL ATTENTION REQUIRED: ${RUN_URL}"
 
-      - name: Upload frontend + backend logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: stack-logs
-          path: |
-            frontend/frontend.log
-            backend/backend.log
-          retention-days: 7
+          TITLE="verify-frontend-deploy FAILED: prod frontend rolled back or bad deploy live"
+          BODY="Frontend post-deploy behavioral smoke failed.
 
-      # Summarize for the PR check page.
-      - name: Summarize
-        if: always()
-        run: |
-          if [ -f frontend/spec-ci-report.json ]; then
-            echo "## Spec CI Summary" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '
-              "- specs: \(.specCount)",
-              "- full_match: \(.summary.fullMatch)",
-              "- partial_match: \(.summary.partialMatch)",
-              "- no_match: \(.summary.noMatch)",
-              "- error: \(.summary.error)",
-              "- minMatchRate: \(.summary.minMatchRate)",
-              "- meanMatchRate: \(.summary.meanMatchRate)",
-              "- transitionPassRate: \(.summary.transitionPassRate)",
-              "- consoleErrors: \(.summary.consoleErrors.total)",
-              "- serverErrors: \(.summary.serverErrors.total)",
-              "- apiAssertionPassRate: \(.summary.apiAssertionPassRate)",
-              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))\(if .crawl.sessionLost then " — SESSION-LOST mid-crawl (\(.crawl.sessionLostRoutes) routes bounced to /login; environmental auth/rate-limit, re-run)" else "" end)",
-              "- diagnostics (Phase 0): \(.diagnostics.totalResponses) responses, \(.diagnostics.notableResponses | length) notable (5xx/4xx-not-401), auth{login=\(.diagnostics.auth.loginAttempts) refresh=\(.diagnostics.auth.refreshRotations) 429=\(.diagnostics.auth.authEndpoint429s)}, concurrency \(if .diagnostics.concurrencyAtStart.available then "\(.diagnostics.concurrencyAtStart.inProgressRuns | length) overlapping run(s)" else "unavailable (\(.diagnostics.concurrencyAtStart.reason))" end), runId \(.diagnostics.run.githubRunId) attempt \(.diagnostics.run.githubRunAttempt)"
-            ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Notable responses (Phase 0 diagnostics — same-origin 5xx / 4xx-not-401):" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.diagnostics.notableResponses[]? | "- [\(.method) \(.status)] \(.url)\(if (.headers["x-amzn-trace-id"] // "") != "" then " trace=\(.headers["x-amzn-trace-id"])" else "" end)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select(.matchOutcome != "full_match") | "- \(.specId) (\(.matchOutcome), matchRate=\(.matchRate))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with critical console errors:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.consoleErrors // []) | length > 0) | .specId as $s | .consoleErrors[] | "- \($s) [\(.level)] \(.text)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with same-origin HTTP-5xx:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.serverErrors // []) | length > 0) | .specId as $s | .serverErrors[] | "- \($s) [\(.method) \(.status)] \(.url)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with failing API assertions:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.apiAssertions // []) | length > 0) | .specId as $s | .apiAssertions[] | select(.passed == false) | "- \($s) [\(.endpoint)] \(.error // (.assertionResults[] | select(.passed == false) | .reason))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Crawl routes with GATING findings (NEW, post-waiver):" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.crawl.routes[]? | select(((.unwaivedConsoleErrors // []) | length > 0) or ((.unwaivedServerErrors // []) | length > 0) or (.healthFail == true)) | .route as $r | ((.unwaivedConsoleErrors[]? | "- \($r) console [\(.level)] \(.text)"), (.unwaivedServerErrors[]? | "- \($r) server [\(.method) \(.status)] \(.url)"), (if .healthFail then "- \($r) health: navigation failed (\(.error))" else empty end))' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
+          - **Repo:** ${GITHUB_REPOSITORY}
+          - **Run:** ${RUN_URL}
+          - **Head SHA:** ${DEPLOY_SHA}
+          - **State:** ${STATE}
+
+          Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
+
+          _Auto-filed by .github/workflows/verify-frontend-run.yml (dispatched by verify-frontend-deploy.yml); closes manually once a verify run is green._"
+
+          gh label create frontend-deploy-rollback \
+            --repo "${GITHUB_REPOSITORY}" \
+            --description "Auto-filed: verify-frontend-deploy smoke failed (rollback or bad deploy live)" \
+            --color B60205 --force || true
+
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label frontend-deploy-rollback \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty' || true)
+
+          if [ -n "${EXISTING}" ]; then
+            echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
+            gh issue comment "${EXISTING}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body "Still failing: ${RUN_URL} (head ${DEPLOY_SHA}). ${STATE}" \
+              || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TITLE}" \
+              --label frontend-deploy-rollback \
+              --body "${BODY}" \
+              || echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
           fi
+          exit 0
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -805,9 +1018,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
           # declared at this job's `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '35'
+          JOB_TIMEOUT_MINUTES: '15'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
+            this workflow declares `concurrency: cancel-in-progress: false`, so GitHub never auto-supersedes it - an external cancel here came from a human
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
@@ -825,7 +1038,6 @@ jobs:
           # bundle that 404s on cdn.playwright.dev.
           APT_STEP_OUTCOMES: |
             Install Playwright Chromium system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
-            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
         run: |
           set -uo pipefail
 

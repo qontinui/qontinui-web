@@ -9,10 +9,8 @@
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {
                 "StringEquals": {
+                    "token.actions.githubusercontent.com:sub": "repo:qontinui/qontinui-web:ref:refs/heads/main:job_workflow_ref:qontinui/qontinui-web/.github/workflows/verify-frontend-run.yml@refs/heads/main",
                     "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-                },
-                "StringLike": {
-                    "token.actions.githubusercontent.com:sub": "repo:qontinui/qontinui-web:*:job_workflow_ref:qontinui/qontinui-web/.github/workflows/verify-frontend-deploy.yml@*"
                 }
             }
         }

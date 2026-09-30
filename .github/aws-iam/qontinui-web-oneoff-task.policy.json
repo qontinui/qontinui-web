@@ -7,7 +7,10 @@
             "Action": [
                 "ecs:RunTask"
             ],
-            "Resource": "arn:aws:ecs:us-east-1:047719635665:task-definition/qontinui-staging-web:*",
+            "Resource": [
+                "arn:aws:ecs:us-east-1:047719635665:task-definition/qontinui-staging-web:*",
+                "arn:aws:ecs:us-east-1:047719635665:task-definition/qontinui-staging-web"
+            ],
             "Condition": {
                 "ArnEquals": {
                     "ecs:cluster": "arn:aws:ecs:us-east-1:047719635665:cluster/qontinui-staging"

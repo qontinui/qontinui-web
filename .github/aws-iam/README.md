@@ -12,9 +12,14 @@ truth: edit a file here, then apply it.
 |---|---|---|
 | `deploy-web.yml` / `deploy` | `qontinui-web-deploy` | 7200 s |
 | `migrate.yml` / `migrate` | `qontinui-web-migrate` | 3600 s |
-| `verify-frontend-deploy.yml` / `verify` | `qontinui-web-verify-frontend` | 3600 s |
+| `verify-frontend-run.yml` / `verify` (dispatched by `verify-frontend-deploy.yml`) | `qontinui-web-verify-frontend` | 3600 s |
 | `db-credential-drift.yml` / `drift-check` | `qontinui-web-db-drift` | 3600 s |
 | `oneoff-seed-claude-accounts.yml` / `seed` | `qontinui-web-oneoff-task` | 3600 s |
+
+Session is the session length the workflow requests
+(`role-duration-seconds`), which the role's `--max-session-duration` must
+allow: `deploy` requests 7200 s, every other job takes the action's 3600 s
+default.
 
 ## The subject each role trusts
 
@@ -30,12 +35,32 @@ Each role trusts only its own workflow file. The `production`-environment jobs
 casing) and `@refs/heads/main`. **Reverting the customization to the default
 template breaks every role here.**
 
-`verify-frontend-deploy` runs on `deployment_status` events that Vercel
-creates by commit SHA, so its ref is not stable. Its role is therefore pinned
-to the workflow path with any ref, and holds only three eu-central-1 SSM reads.
-Residual: anyone who can push a branch to this repo can run a modified copy of
-that workflow file and read those three parameters. That is strictly narrower
-than the admin key the workflow used before.
+The frontend verify is split in two because of how `deployment_status`
+works. GitHub runs a `deployment_status` workflow from the deployment's
+commit, and Vercel creates deployments by SHA for every commit it builds,
+branch and preview commits included. A role trusted from that trigger would
+have to trust any ref, so anyone who could get a commit deployed could run
+a modified copy and read the Vercel token and the ci-bot login.
+
+- `verify-frontend-deploy.yml` (`deployment_status`) holds no AWS access and
+  no secrets. Its token has only `actions: write`, which it uses to dispatch
+  `verify-frontend-run.yml` on `main` with the deployment id.
+- `verify-frontend-run.yml` (`workflow_dispatch`) does not trust that id.
+  Its `validate` job re-reads the deployment from the GitHub API and checks
+  five things: the run is on `refs/heads/main`, the creator is `vercel[bot]`,
+  the environment is Production, the latest status is `success`, and `main`
+  contains the deployed SHA. It takes the URL and SHA from the API, not from
+  the inputs. If any check fails, the run ends green with a notice. Only
+  then does the `verify` job assume `qontinui-web-verify-frontend`, whose
+  trust is pinned to this file at `refs/heads/main`.
+
+So a branch or fork deployment can still run a modified trigger file. The
+most it can do is dispatch the main-branch run for some deployment id, or do
+what a `push`-triggered workflow on that branch could already do with the
+job token. The main-branch run then smokes only a validated production
+deployment of a commit on `main`, and it can roll back only to the prior
+production deployment. The branch copy never holds the role, the SSM
+parameters or the Vercel token.
 
 ## Apply / recreate
 
@@ -45,9 +70,13 @@ aws iam update-assume-role-policy --role-name <role> \
 aws iam put-role-policy --role-name <role> \
   --policy-name <role without the qontinui- prefix>-least-privilege \
   --policy-document file://.github/aws-iam/<role>.policy.json
-# from scratch:
+# from scratch (prerequisite: the account's GitHub OIDC provider,
+# arn:aws:iam::047719635665:oidc-provider/token.actions.githubusercontent.com,
+# with client id / audience sts.amazonaws.com; every trust file names it):
 # aws iam create-role --role-name <role> --max-session-duration <see table> \
 #   --assume-role-policy-document file://.github/aws-iam/<role>.trust.json
+# then run the put-role-policy command above. create-role attaches no
+# permissions, so the role can do nothing until that step runs.
 ```
 
 Adding an AWS call to a workflow means adding it to that role's policy first.
