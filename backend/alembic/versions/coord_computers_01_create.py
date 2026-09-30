@@ -85,10 +85,18 @@ columns with no default are a catalogue update, no rewrite); a 3s
 of the hot sample table. The sample-table index is built ``CONCURRENTLY`` inside
 ``autocommit_block()`` (the posture of ``twin_10_served_bundle_target_columns``),
 repairing an INVALID leftover of a failed earlier build. ``coord.devices`` is
-small, so its index is built in-transaction. The sample-table ALTER runs first
-and the ``coord.devices`` ALTER last, immediately before the autocommit block
-commits, so the ``coord.devices`` ACCESS EXCLUSIVE lock is held for the
-shortest time and the two tables are always locked in the same order.
+small, so its index is built in-transaction.
+
+Lock order. Both ``upgrade()`` and ``downgrade()`` begin their transactional
+part with ONE statement, ``LOCK TABLE coord.devices,
+coord.device_resource_samples IN ACCESS EXCLUSIVE MODE``, which takes the two
+locks in the order coord readers take them: the placement and dispatch reads
+join ``coord.devices`` to ``coord.device_resource_samples``
+(qontinui-coord ``crates/coord/src/agent_placement.rs`` and
+``crates/coord/src/build_dispatcher.rs``), locking devices before samples. A
+migration that altered samples first and devices second would take the reverse
+order and can deadlock against such a reader (reproduced on pg16). With both
+locks held up front, the ALTERs that follow may run in any order.
 
 ``CREATE INDEX CONCURRENTLY`` waits for every transaction that could still see
 the table to finish (a virtualxid wait), so a long-running transaction elsewhere
@@ -98,9 +106,9 @@ table while it waits, and a killed build leaves an INVALID index the retry
 repairs.
 
 Merge-train classification: this revision does not take the coord merge-train
-migration classifier fast path. Its raw SQL (new tables, a non-concurrent
-``CREATE INDEX`` on a new table, ALTERs on existing tables) takes the escalate
-path, the same as ``coordinput_01_operator_inputs``. Every SQL string is still
+migration classifier fast path: its non-concurrent ``CREATE INDEX`` statements
+(on the new tables and on ``coord.devices``) take the escalate path, the same
+as ``coordinput_01_operator_inputs``. Every SQL string is still
 a static literal, so the classifier can read each statement.
 """
 
@@ -284,9 +292,14 @@ def upgrade() -> None:
         """
     )
 
-    # 5 then 4. Attach existing tables, samples first and devices last. Fail
-    # fast on the lock rather than queue.
+    # 4 and 5. Attach existing tables. Fail fast on the lock rather than queue,
+    # and take both locks in ONE statement in the coord reader order (devices
+    # then samples) so no reader join can deadlock against the ALTERs below.
     op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(
+        "LOCK TABLE coord.devices, coord.device_resource_samples "
+        "IN ACCESS EXCLUSIVE MODE"
+    )
     op.execute(
         """
         ALTER TABLE coord.device_resource_samples
@@ -372,6 +385,11 @@ def downgrade() -> None:
     """Exact reverse of upgrade. Data lost: every computer, service, event, and
     every sample attribution and new sample axis; none can be rebuilt."""
     op.execute("SET LOCAL lock_timeout = '3s'")
+    # Both locks first, in the coord reader order (devices then samples).
+    op.execute(
+        "LOCK TABLE coord.devices, coord.device_resource_samples "
+        "IN ACCESS EXCLUSIVE MODE"
+    )
     # Plain, in-transaction: the column drop below would take the index with it
     # anyway, and a concurrent drop would commit on its own and wait unbounded.
     op.execute("DROP INDEX IF EXISTS coord.ix_device_resource_samples_computer_sampled")
