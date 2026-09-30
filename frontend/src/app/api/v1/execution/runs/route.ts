@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 
 /**
@@ -9,11 +10,6 @@ import { cookies } from "next/headers";
  *
  * Required because Next.js rewrites don't forward cookies to the backend.
  */
-
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
 
 async function getAccessToken(request: NextRequest): Promise<string | null> {
   // Get the access token from cookie (preferred) or Authorization header (fallback)
@@ -43,7 +39,9 @@ export async function GET(request: NextRequest) {
     // Forward query parameters
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const backendUrl = `${BACKEND_URL}/api/v1/execution/runs${queryString ? `?${queryString}` : ""}`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}/api/v1/execution/runs${queryString ? `?${queryString}` : ""}`;
 
     const response = await fetch(backendUrl, {
       method: "GET",
@@ -79,7 +77,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const backendUrl = `${BACKEND_URL}/api/v1/execution/runs`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}/api/v1/execution/runs`;
 
     const response = await fetch(backendUrl, {
       method: "POST",

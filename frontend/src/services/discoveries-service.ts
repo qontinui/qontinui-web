@@ -52,7 +52,7 @@ export class DiscoveriesService {
    * Accept a discovery with optional notes
    */
   async acceptDiscovery(id: string, notes?: string): Promise<Discovery> {
-    return this.httpClient.post<Discovery>(`${this.baseUrl}/${id}/accept`, {
+    return this.httpClient.put<Discovery>(`${this.baseUrl}/${id}/accept`, {
       user_notes: notes,
     });
   }
@@ -61,7 +61,7 @@ export class DiscoveriesService {
    * Reject a discovery with optional notes
    */
   async rejectDiscovery(id: string, notes?: string): Promise<Discovery> {
-    return this.httpClient.post<Discovery>(`${this.baseUrl}/${id}/reject`, {
+    return this.httpClient.put<Discovery>(`${this.baseUrl}/${id}/reject`, {
       user_notes: notes,
     });
   }

@@ -47,13 +47,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from app.models.plan_scan_root import PlanScanRootObservation
+from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.schemas.plan_library_scan_roots import ScanRootSourceRollup
 from app.services.plan_scan_root_health import (
     COVERAGE_NOT_COMPUTED_DETAIL,
     COVERAGE_NOT_REQUESTED_DETAIL,
     FRESH_WITHIN_SECS,
     NO_OBSERVATION_DETAIL,
+    RETIRE_AFTER_SECS,
+    all_retired_detail,
+    is_retired,
     render_row,
     scan_roots_health,
     scan_roots_read_failed,
@@ -564,3 +567,334 @@ class TestCoverageRequestedDetail:
         health = scan_roots_health([], now=NOW, captured=None, coverage_requested=False)
         assert health.coverage == []
         assert health.coverage_detail == COVERAGE_NOT_REQUESTED_DETAIL
+
+
+# ===========================================================================
+# Phase 1 of 2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune
+# — a refused device is alive, not silent
+# ===========================================================================
+
+
+def _refusal(
+    device_id: UUID,
+    *,
+    last_ago: timedelta = timedelta(seconds=30),
+    first_ago: timedelta | None = None,
+    count: int = 1,
+    reason: str = "body.observed_at: value_error",
+) -> PlanScanRootRefusal:
+    return PlanScanRootRefusal(
+        device_id=device_id,
+        organization_id=None,
+        first_refused_at=NOW - (first_ago if first_ago is not None else last_ago),
+        last_refused_at=NOW - last_ago,
+        last_refused_reason=reason,
+        refused_count=count,
+    )
+
+
+class TestRefusedVerdict:
+    """Precedence: ``refused`` > ``observation_stale`` > ``reading_superseded``
+    > ``ref_stale``.
+
+    Mutation-proved: moving the ``refused`` arm below ``observation_stale`` in
+    ``render_row`` fails
+    ``test_a_device_refused_for_50_minutes_reads_refused_not_stale``; dropping
+    the ``not fresh`` term fails
+    ``test_a_fresh_reading_keeps_its_verdict_even_after_a_newer_refusal``.
+    """
+
+    def test_a_device_refused_for_50_minutes_reads_refused_not_stale(self) -> None:
+        # Its last good reading is 50 minutes old; it has been refused ever
+        # since, most recently 30 s ago.
+        reading = _obs(received_at=NOW - timedelta(minutes=50))
+        refusal = _refusal(
+            reading.device_id, first_ago=timedelta(minutes=49), count=196
+        )
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.state == "unknown"
+        assert row.detail is not None
+        assert row.detail.startswith(
+            "refused: body.observed_at: value_error, last attempt 30 s ago "
+            "(196 refused since "
+        )
+        # What the device last got stored is still served, unchanged.
+        assert row.reported_state == "measured"
+        assert row.behind == 254
+        assert row.observation_fresh is False
+        assert (row.refused_count, row.refused_age_secs) == (196, 30)
+        assert row.last_refused_reason == "body.observed_at: value_error"
+        assert row.last_refused_at == NOW - timedelta(seconds=30)
+
+    def test_refused_outranks_a_superseded_and_a_floor_verdict(self) -> None:
+        reading = _obs(
+            received_at=NOW - timedelta(hours=2),
+            last_report_applied=False,
+            last_report_observed_at=NOW - timedelta(hours=8),
+            behind=0,
+            counts_are_floors=True,
+            ref_age_secs=None,
+        )
+        row = render_row(reading, now=NOW, refusal=_refusal(reading.device_id))
+        assert row.detail is not None and row.detail.startswith("refused:")
+
+    def test_a_fresh_reading_keeps_its_verdict_beside_a_refusal(self) -> None:
+        """A good reading AFTER the refusal is what the device says now."""
+        reading = _obs(received_at=NOW - timedelta(seconds=10))
+        refusal = _refusal(reading.device_id, last_ago=timedelta(minutes=5))
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.state == "measured"
+        assert row.detail is None
+        assert row.refused_count == 1
+        assert row.refused_age_secs == 300
+
+    def test_a_fresh_reading_keeps_its_verdict_even_after_a_newer_refusal(
+        self,
+    ) -> None:
+        """A fresh reading stands; the refusal is shown beside it, not over it."""
+        reading = _obs(received_at=NOW - timedelta(minutes=10))
+        refusal = _refusal(reading.device_id, last_ago=timedelta(seconds=5))
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.state == "measured"
+        assert row.refused_age_secs == 5
+
+    def test_a_refusal_older_than_the_last_reading_is_not_called_its_last_report(
+        self,
+    ) -> None:
+        """Refused 10 days ago, then a good report 5 days ago: the LAST report
+        was accepted, so the stale detail must not say it was refused.
+
+        Mutation-proved: dropping the ``last_refused_at > received_at`` test in
+        ``_last_refusal_clause`` fails this test.
+        """
+        reading = _obs(received_at=NOW - timedelta(days=5))
+        refusal = _refusal(reading.device_id, last_ago=timedelta(days=10), count=3)
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "its last report was REFUSED" not in row.detail
+        assert (
+            "; it was last refused 864000 s ago (body.observed_at: value_error; "
+            "3 refused since "
+        ) in row.detail
+        assert row.detail.endswith(", not after its last stored reading")
+
+    def test_a_refusal_at_the_same_instant_as_the_reading_is_not_after_it(
+        self,
+    ) -> None:
+        """Equal server stamps cannot be ordered, so the stale clause does not
+        claim the refusal was the last report. (The ``refused`` arm cannot
+        fire in a tie by construction: it needs a stale reading and a fresh
+        refusal, which equal stamps cannot both be.)"""
+        at = NOW - timedelta(hours=2)
+        reading = _obs(received_at=at)
+        refusal = _refusal(reading.device_id, last_ago=timedelta(hours=2))
+        assert refusal.last_refused_at == reading.received_at
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "its last report was REFUSED" not in row.detail
+        assert row.detail.endswith(", not after its last stored reading")
+
+    def test_a_stale_refusal_falls_back_to_observation_stale_naming_it(
+        self,
+    ) -> None:
+        reading = _obs(received_at=NOW - timedelta(hours=3))
+        refusal = _refusal(reading.device_id, last_ago=timedelta(hours=2), count=4)
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.state == "unknown"
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "REFUSED 7200 s ago (body.observed_at: value_error; 4 refused" in (
+            row.detail
+        )
+
+    def test_a_refusal_older_than_the_reading_does_not_read_refused(self) -> None:
+        """The refusal must be the LATEST contact; an older one is history."""
+        reading = _obs(received_at=NOW - timedelta(seconds=FRESH_WITHIN_SECS + 60))
+        refusal = _refusal(
+            reading.device_id, last_ago=timedelta(seconds=FRESH_WITHIN_SECS + 120)
+        )
+        row = render_row(reading, now=NOW, refusal=refusal)
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+
+    def test_no_refusal_serves_null_refusal_fields_not_zero(self) -> None:
+        row = render_row(_obs(), now=NOW)
+        assert row.last_refused_at is None
+        assert row.last_refused_reason is None
+        assert row.refused_count is None
+        assert row.refused_age_secs is None
+        assert row.retired is False
+
+
+class TestRefusalOnlyDevice:
+    """A device refused on its FIRST report has no reading row at all."""
+
+    def test_it_renders_from_the_refusal_with_every_reading_field_null(
+        self,
+    ) -> None:
+        device = uuid4()
+        health = scan_roots_health([], now=NOW, refusals=[_refusal(device)])
+        assert health.state == "reported"
+        assert (health.count, health.fresh_count) == (1, 0)
+        [row] = health.rows
+        assert row.device_id == device
+        assert row.state == "unknown"
+        assert row.detail is not None and row.detail.startswith("refused: ")
+        for name in (
+            "reported_state",
+            "reported_detail",
+            "source_repo",
+            "behind",
+            "ahead",
+            "counts_are_floors",
+            "observed_at",
+            "received_at",
+            "last_report_applied",
+            "last_report_observed_at",
+            "observed_skew_secs",
+            "observation_age_secs",
+        ):
+            assert getattr(row, name) is None, name
+        assert row.observation_fresh is False
+        assert row.refused_count == 1
+
+    def test_a_stale_refusal_only_device_reads_observation_stale(self) -> None:
+        health = scan_roots_health(
+            [], now=NOW, refusals=[_refusal(uuid4(), last_ago=timedelta(hours=1))]
+        )
+        [row] = health.rows
+        assert row.detail is not None
+        assert row.detail.startswith(
+            "observation_stale: no reading has ever been stored for this device"
+        )
+        assert "REFUSED 3600 s ago" in row.detail
+
+    def test_it_is_served_but_feeds_no_rollup(self) -> None:
+        """A refusal-only device has no reading, so it names no scan source.
+
+        Folding it into the ``null`` group would describe it as a reading that
+        named none — a device that never had a reading at all. It stays in
+        ``rows`` / ``count``, where its own ``refused:`` detail explains it.
+
+        Mutation-proved: feeding ``rollup_by_source_repo`` every live row
+        instead of the live READINGS fails this test.
+        """
+        refused = uuid4()
+        reading = _obs()
+        health = scan_roots_health([reading], now=NOW, refusals=[_refusal(refused)])
+        assert health.count == 2
+        assert {r.device_id for r in health.rows} == {reading.device_id, refused}
+        assert [r.source_repo for r in health.by_source_repo] == [SOURCE]
+        [rollup] = health.by_source_repo
+        assert rollup.device_count == 1
+        assert refused not in rollup.unmeasured_device_ids
+        assert rollup.comparable_count == 1
+
+    def test_only_refusal_only_devices_serve_rows_and_no_rollup(self) -> None:
+        health = scan_roots_health([], now=NOW, refusals=[_refusal(uuid4())])
+        assert health.state == "reported"
+        assert health.count == 1
+        assert health.by_source_repo == []
+
+    def test_a_refusal_joins_its_own_devices_reading_not_a_new_row(self) -> None:
+        reading = _obs()
+        health = scan_roots_health(
+            [reading], now=NOW, refusals=[_refusal(reading.device_id)]
+        )
+        assert health.count == 1
+        assert health.rows[0].refused_count == 1
+
+
+# ===========================================================================
+# Phase 2 — a device silent for 30 days is retired, never deleted
+# ===========================================================================
+
+
+class TestRetirement:
+    """Mutation-proved: ``>=`` for ``>`` in ``is_retired`` fails
+    ``test_the_boundary_is_inclusive_of_the_window``; dropping the
+    ``last_refused_at`` arm of ``last_contact_at`` fails
+    ``test_a_recent_refusal_keeps_a_31_day_old_reading_alive``."""
+
+    def test_the_window_is_30_days(self) -> None:
+        assert RETIRE_AFTER_SECS == 30 * 86_400
+
+    def test_the_boundary_is_inclusive_of_the_window(self) -> None:
+        at = _obs(received_at=NOW - timedelta(seconds=RETIRE_AFTER_SECS))
+        past = _obs(received_at=NOW - timedelta(seconds=RETIRE_AFTER_SECS + 1))
+        assert is_retired(at, None, now=NOW) is False
+        assert is_retired(past, None, now=NOW) is True
+
+    def test_a_31_day_old_row_is_left_out_and_counted(self) -> None:
+        old = _obs(received_at=NOW - timedelta(days=31))
+        live = _obs()
+        health = scan_roots_health([live, old], now=NOW)
+        assert [r.device_id for r in health.rows] == [live.device_id]
+        assert (health.count, health.retired_count) == (1, 1)
+        assert health.retire_after_secs == RETIRE_AFTER_SECS
+        [rollup] = health.by_source_repo
+        assert rollup.device_count == 1
+        assert old.device_id not in rollup.unmeasured_device_ids
+
+    def test_include_retired_serves_it_marked_but_keeps_it_out_of_the_rollup(
+        self,
+    ) -> None:
+        old = _obs(received_at=NOW - timedelta(days=31))
+        live = _obs()
+        health = scan_roots_health([live, old], now=NOW, include_retired=True)
+        by_device = {r.device_id: r for r in health.rows}
+        assert by_device[old.device_id].retired is True
+        assert by_device[live.device_id].retired is False
+        assert (health.count, health.retired_count) == (2, 1)
+        [rollup] = health.by_source_repo
+        assert rollup.device_count == 1
+
+    def test_rows_inside_the_window_are_unaffected(self) -> None:
+        inside = _obs(received_at=NOW - timedelta(days=29))
+        health = scan_roots_health([inside], now=NOW)
+        assert [r.device_id for r in health.rows] == [inside.device_id]
+        assert health.retired_count == 0
+        assert health.rows[0].retired is False
+
+    def test_a_recent_refusal_keeps_a_31_day_old_reading_alive(self) -> None:
+        """The clock is ``max(received_at, last_refused_at)``: a device refused
+        on every report for a month is alive, and Phase 1 exists to show it."""
+        old = _obs(received_at=NOW - timedelta(days=31))
+        refusal = _refusal(old.device_id, last_ago=timedelta(days=1))
+        assert is_retired(old, refusal, now=NOW) is False
+        health = scan_roots_health([old], now=NOW, refusals=[refusal])
+        assert health.retired_count == 0
+        [row] = health.rows
+        assert row.retired is False
+        assert row.detail is not None
+        assert row.detail.startswith("observation_stale:")
+        assert "REFUSED 86400 s ago" in row.detail
+
+    def test_a_long_silent_refusal_only_device_is_retired_too(self) -> None:
+        refusal = _refusal(uuid4(), last_ago=timedelta(days=40))
+        health = scan_roots_health([], now=NOW, refusals=[refusal])
+        assert health.retired_count == 1
+        assert health.rows == []
+
+    def test_all_retired_is_unknown_naming_how_many_not_no_observation(
+        self,
+    ) -> None:
+        health = scan_roots_health(
+            [
+                _obs(received_at=NOW - timedelta(days=31)),
+                _obs(received_at=NOW - timedelta(days=90)),
+            ],
+            now=NOW,
+        )
+        assert health.state == "unknown"
+        assert health.detail == all_retired_detail(2)
+        assert health.detail != NO_OBSERVATION_DETAIL
+        assert "every one of the 2 device(s)" in health.detail
+        assert (health.count, health.retired_count) == (0, 2)
+
+    def test_the_read_failed_block_carries_the_window(self) -> None:
+        failed = scan_roots_read_failed(RuntimeError("x"))
+        assert failed.retire_after_secs == RETIRE_AFTER_SECS
+        assert failed.retired_count == 0

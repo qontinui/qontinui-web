@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 
 /**
@@ -29,10 +30,8 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const backendUrl =
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8000";
+  const backendUrl = backendBaseOrResponse();
+  if (backendUrl instanceof NextResponse) return backendUrl;
 
   // Pass through query params
   const url = new URL(request.url);

@@ -61,11 +61,18 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud import overview_estimate as crud
-from app.models.overview import Estimate, EstimateRole, OverviewSettings, Phase
+from app.models.overview import (
+    Estimate,
+    EstimateRole,
+    OverviewSettings,
+    Page,
+    Phase,
+)
 from app.models.user import User as UserModel
 from app.overview import change_log
 from app.overview.permissions import (
@@ -132,6 +139,37 @@ async def _require_estimate(
         # information this tenant is not entitled to.
         raise HTTPException(status_code=404, detail="estimate_not_found")
     return row
+
+
+async def _require_source_document(
+    db: AsyncSession, tenant_id: UUID, page_id: UUID | None
+) -> None:
+    """An estimate's ``source_page_id`` names a DOCUMENT of this project (the
+    delivery plan it was built from) or nothing.
+
+    The column carries no FK (it predates ``overview.pages``), so this is the
+    check that keeps it honest: a wiki page, another project's document or an
+    unknown id is refused as the 422 it is, never stored as a dangling link.
+    """
+    if page_id is None:
+        return
+    found = (
+        await db.execute(
+            select(Page.id).where(
+                Page.id == page_id,
+                Page.tenant_id == tenant_id,
+                Page.kind == "document",
+            )
+        )
+    ).first()
+    if found is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "source_page_not_found",
+                "message": "An estimate's source must be a document in this project.",
+            },
+        )
 
 
 def _version_conflict(exc: crud.VersionConflict) -> HTTPException:
@@ -296,6 +334,7 @@ async def create_estimate(
     index would otherwise reject it.
     """
     tenant_id = access.tenant_id
+    await _require_source_document(db, tenant_id, payload.source_page_id)
     row = await crud.create_estimate(
         db,
         tenant_id=tenant_id,
@@ -348,6 +387,7 @@ async def patch_estimate(
     row = await _require_estimate(db, access.tenant_id, estimate_id, lock=True)
     before = EstimateSummary.model_validate(row)
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    await _require_source_document(db, access.tenant_id, changes.get("source_page_id"))
     try:
         row = await crud.update_estimate(
             db,

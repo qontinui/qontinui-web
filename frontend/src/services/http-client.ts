@@ -28,6 +28,32 @@ const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
  *
  * NOTE: the agent-sessions panel mounts under `/api/v1/admin/agent-sessions`
  * (the router's `/admin` prefix), not `/api/v1/agent-sessions`.
+ *
+ * This list is GUARDED. `backend/tests/test_active_tenant_prefix_drift_guard.py`
+ * walks the backend's live route table, traces which routes resolve the
+ * caller's tenant (its docstring says what the trace follows and how its gap
+ * is bounded), and fails unless an entry here covers each one (same
+ * `includes` rule as `isActiveTenantScopedUrl`) or the test's `_EXCLUSIONS`
+ * names it with a reason. So a new traced tenant-resolving family fails CI
+ * instead of silently serving the home project. Add the NARROWEST covering
+ * prefix — a family's
+ * whole mount can pull the header onto header-free siblings (`/api/v1/devices`
+ * would cover device CRUD).
+ *
+ * Exclusion rule: a route that reads this header WITHOUT coord's membership
+ * check (class c — e.g. `devenv.py` `_best_effort_tenant_id`, which writes the
+ * raw value onto an audit row) never gets a prefix here; sending it would turn
+ * an unvalidated client value into a trusted one. It goes in `_EXCLUSIONS`.
+ * The guard enforces this for covered routes: every raw header read on one
+ * must sit in a module that forwards the header to coord or validates it
+ * against the caller's coord memberships (the test's `_FORWARDED_TO_COORD` /
+ * `_VALIDATED_LOCALLY`). WebSocket routes cannot carry the header at all and
+ * are checked separately (they read the selection from a query param).
+ *
+ * `/api/v1/fleet/test-targets` is deliberately ABSENT: its PUT re-stamps
+ * `coord.test_targets.tenant_id` with no `coord.tenant_devices` binding
+ * check, so a selection the device is not bound to would hide the
+ * designation from the device's runner. See the guard's `_EXCLUSIONS`.
  */
 const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
@@ -62,6 +88,40 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // tenant's devices.
   "/api/v1/devices/resolve",
   "/api/v1/dispatch/fresh-host",
+  // Regression Tests (condition groups) — `backend/app/api/v1/endpoints/
+  // conditions.py` proxies every route to coord behind `Depends(get_tenant_id)`,
+  // and coord membership-checks the override (a non-member selection keeps the
+  // home tenant). Without it the page reads and writes the operator's home
+  // project whichever project is selected. Plan
+  // 2026-09-17-regression-tests-target-the-selected-project, Phase 1.
+  "/api/v1/conditions/",
+  // The families below were found by that plan's Phase 3 drift guard: each
+  // resolved the caller's tenant with no prefix covering it.
+  //
+  // Prompt-injection audit log — `prompt_injections.py` forwards the header
+  // to coord itself. Mounted at `/admin`, so the agent-sessions entry above
+  // does not cover it.
+  "/api/v1/admin/prompt-injections",
+  // Design policies — web-DB rows keyed on the tenant `get_tenant_id` /
+  // `require_coord_tenant_admin` return, which coord's `/me` resolves to the
+  // selected project for a member.
+  "/api/v1/design-policies",
+  // Digital twin — coord proxies behind `get_tenant_id` /
+  // `capture_caller_bearer`; coord membership-checks the override.
+  "/api/v1/digital-twin/",
+  // Memory store — the operator arm of `get_memory_tenant` scopes records by
+  // the tenant `get_coord_identity` resolves (device/service tokens carry
+  // their own tenant claim and are unaffected). No dashboard page calls it
+  // today — the coord memory page reads `/api/v1/operations/memory/list` —
+  // so this entry is for future callers, which then scope correctly.
+  "/api/v1/memory/",
+  // Plan library — the coord work-unit overlay resolves through
+  // `_soft_tenant_id` and forwards the header, so without it the overlay is
+  // the home project's while the page claims the selected one.
+  "/api/v1/plan-library",
+  // Session repository — `get_tenant_id` / `require_coord_tenant_admin`
+  // coord proxies; relaunch lands in the tenant the operator selected.
+  "/api/v1/session-repository",
 ];
 
 function readActiveTenantId(): string | null {
@@ -610,7 +670,12 @@ export class HttpClient {
     timeoutMs: number
   ): Promise<Response> {
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      // A FormData body gets no Content-Type here: the browser writes
+      // `multipart/form-data` with the boundary the body needs, and a JSON
+      // default would make every multipart upload unparseable.
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(options.headers as Record<string, string>),
     };
 

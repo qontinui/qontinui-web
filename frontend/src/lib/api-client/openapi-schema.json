@@ -5446,6 +5446,31 @@
         "title": "Body_upload_file_api_v1_files_upload_post",
         "type": "object"
       },
+      "Body_upload_file_api_v1_overview_files_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_file_api_v1_overview_files_post",
+        "type": "object"
+      },
       "Body_upload_image_api_v1_projects__project_id__images_upload_post": {
         "properties": {
           "file": {
@@ -8956,6 +8981,68 @@
           "repo"
         ],
         "title": "CloneCredentialRequest",
+        "type": "object"
+      },
+      "ClosedFieldVocabulary": {
+        "description": "The accepted set of one closed field on the plan-library write doors.",
+        "properties": {
+          "accepted_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted By",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "server_set": {
+            "default": false,
+            "title": "Server Set",
+            "type": "boolean"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/VocabularyTerm"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "written_as": {
+            "title": "Written As",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "written_as",
+          "accepted_by",
+          "values"
+        ],
+        "title": "ClosedFieldVocabulary",
         "type": "object"
       },
       "CodeExecutionRequest": {
@@ -23234,6 +23321,23 @@
         "title": "FileImportResult",
         "type": "object"
       },
+      "FileItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/FileRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "FileItem",
+        "type": "object"
+      },
       "FileListResponse": {
         "description": "Response for file listing.",
         "properties": {
@@ -23262,6 +23366,79 @@
           "total_size_bytes"
         ],
         "title": "FileListResponse",
+        "type": "object"
+      },
+      "FileRead": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_path": {
+            "title": "Download Path",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "uploaded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded By"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "page_id",
+          "uploaded_by",
+          "created_at",
+          "download_path"
+        ],
+        "title": "FileRead",
         "type": "object"
       },
       "FileUpdateRequest": {
@@ -23337,6 +23514,60 @@
           "message"
         ],
         "title": "FileUploadResponse",
+        "type": "object"
+      },
+      "FilesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/FileRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "FilesItem",
+        "type": "object"
+      },
+      "FilesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "FilesList",
         "type": "object"
       },
       "FindingCategoryConfigCreate": {
@@ -32959,6 +33190,546 @@
         "title": "PackageUpdate",
         "type": "object"
       },
+      "PageCreate": {
+        "properties": {
+          "body_md": {
+            "default": "",
+            "maxLength": 500000,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Related",
+            "type": "array"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "PageCreate",
+        "type": "object"
+      },
+      "PageItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PageRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PageItem",
+        "type": "object"
+      },
+      "PageRead": {
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "excerpt": {
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "body_md",
+          "excerpt",
+          "doc_number",
+          "doc_status",
+          "owner",
+          "related",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "PageRead",
+        "type": "object"
+      },
+      "PageRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "wiki"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title"
+        ],
+        "title": "PageRef",
+        "type": "object"
+      },
+      "PageUpdate": {
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "maxLength": 500000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "related": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "PageUpdate",
+        "type": "object"
+      },
+      "PageVersionList": {
+        "properties": {
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PageVersionSummary"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions",
+          "current_version"
+        ],
+        "title": "PageVersionList",
+        "type": "object"
+      },
+      "PageVersionRead": {
+        "properties": {
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "doc_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Number"
+          },
+          "doc_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by",
+          "body_md",
+          "doc_number",
+          "doc_status",
+          "owner"
+        ],
+        "title": "PageVersionRead",
+        "type": "object"
+      },
+      "PageVersionSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by"
+        ],
+        "title": "PageVersionSummary",
+        "type": "object"
+      },
+      "PagesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PageRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PagesItem",
+        "type": "object"
+      },
+      "PagesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PageRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "PagesList",
+        "type": "object"
+      },
       "PaginatedAnnotationsResponse": {
         "description": "Paginated annotations response",
         "properties": {
@@ -35117,6 +35888,36 @@
           "model_selector_vocabulary"
         ],
         "title": "PlanDifficultyResponse",
+        "type": "object"
+      },
+      "PlanLibraryVocabularyResponse": {
+        "description": "Every closed field the plan-library write doors accept, and how a\nwrong write through each door is corrected.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ClosedFieldVocabulary"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "write_doors": {
+            "items": {
+              "$ref": "#/components/schemas/WriteDoorCorrection"
+            },
+            "title": "Write Doors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fields",
+          "count",
+          "write_doors"
+        ],
+        "title": "PlanLibraryVocabularyResponse",
         "type": "object"
       },
       "PlanSlugCensus": {
@@ -38856,6 +39657,16 @@
             },
             "title": "Running Task Ids",
             "type": "array"
+          },
+          "ui_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -40575,6 +41386,16 @@
             },
             "title": "Running Task Ids",
             "type": "array"
+          },
+          "ui_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -41003,6 +41824,124 @@
           "reportedAt"
         ],
         "title": "RunnerUiError",
+        "type": "object"
+      },
+      "RunnerUiThread": {
+        "additionalProperties": true,
+        "description": "Native UI-thread liveness a runner reports about itself.\n\nPlan ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``.\n\nThe runner publishes this block on every heartbeat (``qontinui-runner``\n``src-tauri/src/heartbeat.rs``, ``HeartbeatUiThread``, introduced in\nrunner ``7d837703a`` \u2014\nthe single serializer for all three heartbeat sinks). Until this model the\nbackend dropped it at the door: ``RunnerHeartbeat`` is a plain\n``BaseModel``, so pydantic's default ``extra='ignore'`` discarded the key and\na wedged UI thread was never visible off-box.\n\n``derived_status`` collapses several faults into one word; this block is\nwhat separates them:\n\n* ``wedged is True`` \u2014 the 2026-08-19 failure (window frozen, X button dead)\n  which every other heartbeat field reports as healthy.\n* ``wedged is None`` vs ``False`` \u2014 the deliberate UNKNOWN / not-wedged\n  split. ``None`` means nothing was established (non-Windows, no window\n  handle cached yet, monitor stopped) and must NEVER render as \"not wedged\".\n* ``ping_delivery`` / ``false_death_suppressed`` \u2014 separate \"the UI is dead\"\n  from \"the runner could not reach it and is deliberately declining to\n  recreate it\", a suppression that can hold for hours while\n  ``derived_status`` reads ``errored`` throughout.\n\nEvery field is optional: a runner predating a field omits it, and absent is\nUNKNOWN. ``extra='allow'`` keeps keys a newer runner adds (e.g. the\npong-receive liveness of plan\n``2026-09-09-the-pong-receive-path-has-no-liveness-signal-so-fd-exhaustion-still-reads-as-ui-death``)\ninstead of dropping them at the door the way the whole block used to be.\nExtras arrive on an UNAUTHENTICATED route and are held in process memory,\nso they are bounded (see ``_bound_untrusted_input``): at most\n``MAX_EXTRA_KEYS`` scalar values, strings capped at ``MAX_EXTRA_STR``.\nAnything else is dropped, never rejected \u2014 a newer runner's unexpected\nkey must not cost it its whole heartbeat.\n\nThe wire keys are snake_case and read BY NAME. ``backend_relay.rs`` records\nthe incident where camelCase keys were silently dropped and\n``heartbeat_device`` fell back to writing a literal ``\"healthy\"`` every\n30 s; ``tests/test_dev_dashboard_ui_thread.py`` pins the ten-key snake_case\nshape the Rust test ``payload_carries_the_native_ui_thread_block`` pins on\nthe other side.",
+        "properties": {
+          "event_pong_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Pong Age Ms"
+          },
+          "events_undelivered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Undelivered"
+          },
+          "false_death_suppressed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Death Suppressed"
+          },
+          "last_ping_emit_fail_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ping Emit Fail Age Ms"
+          },
+          "last_ping_emit_ok_age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ping Emit Ok Age Ms"
+          },
+          "ping_delivery": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ping Delivery"
+          },
+          "ping_emit_failures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ping Emit Failures"
+          },
+          "probe_wedged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe Wedged"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "wedged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wedged"
+          }
+        },
+        "title": "RunnerUiThread",
         "type": "object"
       },
       "RuntimeData": {
@@ -41765,6 +42704,14 @@
             "title": "Fresh Within Secs",
             "type": "integer"
           },
+          "retire_after_secs": {
+            "title": "Retire After Secs",
+            "type": "integer"
+          },
+          "retired_count": {
+            "title": "Retired Count",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/ScanRootRow"
@@ -41785,6 +42732,8 @@
           "state",
           "detail",
           "fresh_within_secs",
+          "retire_after_secs",
+          "retired_count",
           "count",
           "fresh_count",
           "rows",
@@ -41989,7 +42938,7 @@
         "type": "object"
       },
       "ScanRootRow": {
-        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* a ``refused:`` detail when the device's latest contact within\n  ``fresh_within_secs`` was a REFUSED report (a 422) and no fresh reading\n  stands \u2014 including a device refused on its first-ever report, which has\n  no reading at all. The device is alive and being refused, which is not\n  what a silent one looks like;\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``), naming its last refusal when\n  it has one;\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``refused`` > ``observation_stale`` > ``reading_superseded``\n> ``ref_stale``. A FRESH reading keeps its own verdict even when a refusal\nfollowed it; the refusal fields are served beside it either way.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.\n\n**A refusal-only row** (a device whose every report was refused, so no\nreading was ever stored) carries ``null`` in every READING field \u2014\n``reported_state``, ``counts_are_floors``, ``observed_at``,\n``received_at``, ``last_report_applied``, ``last_report_observed_at``,\n``observed_skew_secs``, ``observation_age_secs`` and the reported values \u2014\nand ``observation_fresh: false``. ``null`` there is \"no reading exists\",\nnever a default.",
         "properties": {
           "ahead": {
             "anyOf": [
@@ -42014,8 +42963,15 @@
             "title": "Behind"
           },
           "counts_are_floors": {
-            "title": "Counts Are Floors",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Are Floors"
           },
           "default_ref": {
             "anyOf": [
@@ -42055,29 +43011,86 @@
             ],
             "title": "Head Sha"
           },
+          "last_refused_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused At"
+          },
+          "last_refused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refused Reason"
+          },
           "last_report_applied": {
-            "title": "Last Report Applied",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Applied"
           },
           "last_report_observed_at": {
-            "title": "Last Report Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report Observed At"
           },
           "observation_age_secs": {
-            "title": "Observation Age Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Secs"
           },
           "observation_fresh": {
             "title": "Observation Fresh",
             "type": "boolean"
           },
           "observed_at": {
-            "title": "Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
           },
           "observed_skew_secs": {
-            "title": "Observed Skew Secs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Skew Secs"
           },
           "plans_dir": {
             "anyOf": [
@@ -42091,8 +43104,15 @@
             "title": "Plans Dir"
           },
           "received_at": {
-            "title": "Received At",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
           },
           "ref_age_secs": {
             "anyOf": [
@@ -42115,6 +43135,28 @@
               }
             ],
             "title": "Ref Sha"
+          },
+          "refused_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Age Secs"
+          },
+          "refused_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused Count"
           },
           "repo_root": {
             "anyOf": [
@@ -42139,14 +43181,25 @@
             "title": "Reported Detail"
           },
           "reported_state": {
-            "enum": [
-              "measured",
-              "not_scanning",
-              "not_a_git_work_tree",
-              "unknown"
+            "anyOf": [
+              {
+                "enum": [
+                  "measured",
+                  "not_scanning",
+                  "not_a_git_work_tree",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Reported State",
-            "type": "string"
+            "title": "Reported State"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
           },
           "source_repo": {
             "anyOf": [
@@ -42192,7 +43245,12 @@
           "last_report_observed_at",
           "observed_skew_secs",
           "observation_age_secs",
-          "observation_fresh"
+          "observation_fresh",
+          "last_refused_at",
+          "last_refused_reason",
+          "refused_count",
+          "refused_age_secs",
+          "retired"
         ],
         "title": "ScanRootRow",
         "type": "object"
@@ -57325,6 +58383,25 @@
         "title": "VisualComparisonSummary",
         "type": "object"
       },
+      "VocabularyTerm": {
+        "description": "One accepted value and what writing it asserts.",
+        "properties": {
+          "meaning": {
+            "title": "Meaning",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "meaning"
+        ],
+        "title": "VocabularyTerm",
+        "type": "object"
+      },
       "WakeAlreadyOnlineResponse": {
         "properties": {
           "runner_id": {
@@ -59219,6 +60296,51 @@
           "toml"
         ],
         "title": "WriteConfigRequest",
+        "type": "object"
+      },
+      "WriteDoorCorrection": {
+        "description": "How a WRONG write through one plan-library door is corrected.\n\nRendered from ``app.core.evidence_posture.ROUTE_POSTURE`` \u2014 the same table\nthe posture test pins \u2014 so this cannot drift from what the build checks.",
+        "properties": {
+          "corrections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "posture": {
+            "enum": [
+              "read",
+              "ephemeral",
+              "evidence"
+            ],
+            "title": "Posture",
+            "type": "string"
+          },
+          "tracked_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tracked By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "posture",
+          "corrections",
+          "tracked_by"
+        ],
+        "title": "WriteDoorCorrection",
         "type": "object"
       },
       "WriteRecordResult": {
@@ -77699,7 +78821,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID.",
+        "description": "List workflow events for the authenticated user.\n\nReturns events in reverse chronological order. Supports filtering by\nevent type, device, and run ID. Telemetry event types (funnel events)\nare never returned.",
         "operationId": "api_v1_events_get",
         "parameters": [
           {
@@ -77975,7 +79097,7 @@
     },
     "/api/v1/events/unseen": {
       "get": {
-        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.",
+        "description": "List unseen workflow events for the authenticated user.\n\nUsed by mobile as a polling fallback when push notifications are unavailable.\nTelemetry event types (funnel events) are never returned, so they never\nmove the unread badge.",
         "operationId": "api_v1_events_unseen_get",
         "parameters": [
           {
@@ -81264,7 +82386,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {
@@ -86888,6 +88010,35 @@
         ]
       }
     },
+    "/api/v1/operations/claude-accounts/mine": {
+      "get": {
+        "description": "Return the Claude account roster for the CALLER's own devices (user-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage/mine`` \u2014 plan\n``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``\nPhase 2. \"My accounts\" is a fact about the PERSON, not about a tenant: the\nroster is every account reported by every device the logged-in user owns\n(``coord.devices.user_id`` with ``capability_user_paired = true``),\nwhichever tenant \u2014 if any \u2014 each device is currently paired to. So this\nroute deliberately resolves NO tenant: ``get_tenant_id`` is not a\ndependency, and a caller whose tenant cannot be resolved still gets their\nown roster. The tenant-scoped :func:`get_claude_accounts` is untouched and\nremains the tenant-admin view of the whole tenant's devices.\n\n**Web never tells coord who is asking.** Coord derives the caller's\n``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``\nover the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded \u2014\na client-supplied user id would be a new, weaker trust boundary. Web's only\njob is to capture and forward the bearer (``forward_bearer=True``, since\nthere is no ``tenant_id`` to trigger it); ``current_user`` exists solely to\nrequire a logged-in session before anything reaches coord.\n\nResponse envelope \u2014 :func:`get_claude_accounts`'s ``accounts`` rows, with\nthe same two provisioning flags::\n\n    {\n      \"accounts\": [ { \"device_id\": \"<uuid>\", \"account_label\": \".claude-gmail\", ... } ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,\nprovider)`` \u2014 a tenant fact, not a per-person account fact \u2014 so they stay\non the tenant feed, and coord's ``/mine`` emits none.\n\nThe flags follow the same absence-is-not-zero contract as the tenant route:\nbare ``.get()`` with no default, so a flag coord omits surfaces as ``None``\n(unknown) and is never defaulted to ``true``. ``accounts: []`` with both\nflags ``true`` means genuinely no paired device of this user has reported.\n\nCoord's refusals propagate with coord's STATUS through\n:func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so\na client can tell them apart rather than reading a generic 500:\n\n- ``403 user_not_resolved`` \u2014 the bearer maps to no ``auth.users`` row;\n- ``403 user_email_ambiguous`` \u2014 more than one ``auth.users`` row matches,\n  so nothing can pick the right one;\n- ``500 user_lookup_failed`` \u2014 the identity bridge itself errored;\n- ``500 usage_read_failed`` \u2014 the roster read errored.\n\n**Where a client finds coord's code.** ``detail`` is coord's raw body as a\nSTRING, so the app's shared ``http_exception_handler``\n(``app/middleware/error_handler.py``) renders it with web's GENERIC code\nfor the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and\ncoord's body, as JSON text, in ``message``. For example a coord 403\n``user_email_ambiguous`` arrives as (``message`` is a STRING whose content\nis coord's body ``{\"error\":\"user_email_ambiguous\"}``)::\n\n    {\"error\": \"FORBIDDEN\",\n     \"message\": <string: {\"error\":\"user_email_ambiguous\"}>,\n     \"timestamp\": <float>, \"path\": \"<request url>\"}\n\nSo coord's code is ``JSON.parse(body.message).error`` \u2014 never\n``body.error``, which only ever names the HTTP status class.\n\nA ``502`` is web's own verdict that coord broke the contract: a body that\nis not a JSON object, or an ``accounts`` that is not a list. Neither is\ncoerced to an empty roster, which would be indistinguishable from \"no\npaired device of this user has reported\".",
+        "operationId": "api_v1_operations_claude_accounts_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get My Claude Accounts Api V1 Operations Claude Accounts Mine Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get My Claude Accounts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/claude-sessions": {
       "post": {
         "description": "Receive Claude Code session report from a machine.",
@@ -88998,17 +90149,17 @@
         ]
       }
     },
-    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
+    "/api/v1/operations/coord/prompt-document-proposals/{policy_proposal_id}/approve": {
       "post": {
         "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts\nTHAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``\nitself from the operator context the request already carries \u2014 so sending it\nfrom here is not a redundant belt-and-braces, it is a hard ``400``:\n``invalid body: unknown field `decided_by`, expected `decision_note```.\nThat is what this endpoint did until 2026-09-04, which made **every** approve\nand reject click fail. Do not reintroduce it: identity is coord's to derive,\nexactly as it is on the agent-notifications door.\n\nCoord's 4xx (already decided, stale ``base_version``, unknown id) passes\nthrough verbatim \u2014 including the 404 you get before coord's Phase 5 deploy,\nwhich must stay visible rather than silently no-op.",
-        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_policy_proposal_id_approve_post",
         "parameters": [
           {
             "in": "path",
-            "name": "proposal_id",
+            "name": "policy_proposal_id",
             "required": true,
             "schema": {
-              "title": "Proposal Id",
+              "title": "Policy Proposal Id",
               "type": "string"
             }
           }
@@ -89036,7 +90187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Approve Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Approve Post"
+                  "title": "Response Approve Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Policy Proposal Id  Approve Post"
                 }
               }
             },
@@ -89064,17 +90215,17 @@
         ]
       }
     },
-    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
+    "/api/v1/operations/coord/prompt-document-proposals/{policy_proposal_id}/reject": {
       "post": {
         "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction as :func:`approve_prompt_document_proposal`, and the\nsame reason for it: ``decision_note`` is the only field coord's\n``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the\noperator context. Sending it is a ``400``, not a courtesy.",
-        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_policy_proposal_id_reject_post",
         "parameters": [
           {
             "in": "path",
-            "name": "proposal_id",
+            "name": "policy_proposal_id",
             "required": true,
             "schema": {
-              "title": "Proposal Id",
+              "title": "Policy Proposal Id",
               "type": "string"
             }
           }
@@ -89102,7 +90253,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Reject Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Reject Post"
+                  "title": "Response Reject Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Policy Proposal Id  Reject Post"
                 }
               }
             },
@@ -95146,7 +96297,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/doctor": {
       "get": {
-        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /\nprofile_present / merge_enabled / config_yaml / bootstrap_pr /\nci_workflow / ruleset_bypass`` and ``status`` in\n``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
+        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /\nrepo_archived / profile_present / merge_enabled / config_yaml /\nbootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /\nconfig_yml_current`` (ids are stable and append-only, but NOT positional\n-- key on ``id``, never on index) and ``status`` in\n``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of\nthem passing: ``tenant_mapped / repo_enrolled / profile_present /\nmerge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``\n(``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and\n``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
         "operationId": "api_v1_operations_pr_merge_onboarding_doctor_get",
         "parameters": [
           {
@@ -98945,6 +100096,255 @@
         ]
       }
     },
+    "/api/v1/overview/files": {
+      "get": {
+        "operationId": "api_v1_overview_files_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      },
+      "post": {
+        "description": "Upload one file, optionally attached to a document. See the module\ndocstring for what is checked; every refusal names why.",
+        "operationId": "api_v1_overview_files_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_api_v1_overview_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Upload File",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/files/{file_id}/content": {
+      "get": {
+        "description": "The file's bytes, for any member of the project. See the module\ndocstring for why this is not a presigned URL.",
+        "operationId": "api_v1_overview_files_file_id_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inline",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Inline",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Download File",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/files/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_files_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_files_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Files",
+        "tags": [
+          "overview",
+          "overview:files"
+        ]
+      }
+    },
     "/api/v1/overview/intent-documents": {
       "get": {
         "operationId": "api_v1_overview_intent_documents_get",
@@ -99152,6 +100552,500 @@
         "tags": [
           "overview",
           "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/pages": {
+      "get": {
+        "operationId": "api_v1_overview_pages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_pages_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/backlinks": {
+      "get": {
+        "description": "Pages that link here \u2014 by wiki link or as a related document.",
+        "operationId": "api_v1_overview_pages_page_id_backlinks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PageRef"
+                  },
+                  "title": "Response Page Backlinks Api V1 Overview Pages  Page Id  Backlinks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Page Backlinks",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions": {
+      "get": {
+        "description": "Every version of a page, newest first. Readable by any member.",
+        "operationId": "api_v1_overview_pages_page_id_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageVersionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Page Versions",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions/{version}": {
+      "get": {
+        "operationId": "api_v1_overview_pages_page_id_versions_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Page Version",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{page_id}/versions/{version}/revert": {
+      "post": {
+        "description": "Restore an earlier version by writing it as a NEW version.\n\nSame contract as any write: ``If-Match`` names the version the reader saw,\nand a page that has moved on is a 409 carrying the server's copy. The\nrelated-documents list is not versioned (it is a link set, not content)\nand is left as it is.",
+        "operationId": "api_v1_overview_pages_page_id_versions_version_revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Revert Page",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/pages/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_pages_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_pages_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_pages_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Pages",
+        "tags": [
+          "overview",
+          "overview:pages"
         ]
       }
     },
@@ -100238,7 +102132,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``; a device whose latest contact within the window was a\nREFUSED report reads ``refused:`` first of all. The device's own values\nstay in ``reported_state`` / ``reported_detail``. An organization with no\nrows answers ``state: \"unknown\"``, never an empty \"all current\".\n\nA device silent \u2014 no reading and no refused report \u2014 for more than\n``retire_after_secs`` (30 days) is RETIRED: left out of ``rows``,\n``by_source_repo`` and ``coverage``, and counted in ``retired_count``.\n``include_retired=true`` serves those rows too, marked ``retired: true``.\nNothing is deleted; a retired device's next report brings it back.\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "parameters": [
           {
@@ -100250,6 +102144,18 @@
               "default": true,
               "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
               "title": "Coverage",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also serve RETIRED devices' rows (silent \u2014 no reading and no refused report \u2014 for more than retire_after_secs), each marked retired: true. They still feed neither by_source_repo nor coverage. Default false: they are left out and counted in retired_count.",
+              "title": "Include Retired",
               "type": "boolean"
             }
           }
@@ -100290,7 +102196,7 @@
         ]
       },
       "post": {
-        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.\n\nA REFUSED report (any 422 on the body) is recorded before it is answered:\nthe device's refusal row in ``agent.plan_scan_root_refusals`` is upserted\nand committed \u2014 its stored reading, if any, is not touched \u2014 and the 422\nbody is the same as FastAPI's own validation would produce. An operator\nsession is still a 403 first, from the dependency.",
         "operationId": "api_v1_plan_library_scan_roots_post",
         "requestBody": {
           "content": {
@@ -100346,6 +102252,36 @@
           }
         ],
         "summary": "A device reports its latest plan-scan-source reading (upsert)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/vocabulary": {
+      "get": {
+        "description": "Read this BEFORE writing: the accepted values of every closed field on\n``POST /plan-library``, ``POST /plan-library/{id}/edges`` and\n``POST /plan-library/scan-roots``, what each\nvalue asserts, and \u2014 per write door \u2014 how a wrong write is corrected.\n\nPhase 3 of plan\n``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.\nThree wrong ``supersedes`` edges were written in one day by agents that\ncould not read the relation vocabulary before writing, on a store where a\nrecorded edge cannot be retracted. Every value is derived from the schema\n``Literal``s (never retyped) and every correction sentence from\n``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.\n\nSame admission as the write doors it describes\n(:func:`~app.api.deps.get_audit_actor_user`: a Cognito user OR a coord\ndevice JWT), so an agent holding only the runner's device token can read\nit. The payload is the same for every caller; the principal is resolved\nonly to refuse an anonymous one.",
+        "operationId": "api_v1_plan_library_vocabulary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLibraryVocabularyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every closed field the write doors accept, and how a wrong write is corrected",
         "tags": [
           "plan-library"
         ]
