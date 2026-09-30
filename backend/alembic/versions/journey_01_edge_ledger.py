@@ -127,12 +127,13 @@ additive-safe:
 ``IF NOT EXISTS`` on the tables is a fleet decision that OVERRIDES this
 revision's earlier choice of a plain ``CREATE`` (which would have refused a
 pre-existing same-named table of unknown shape): the classifier requires the
-guard, and the cost is that such a table would be adopted silently. The
-migration test pins the exact shape after upgrade, which is where a foreign
-table would show up. Likewise a CONCURRENTLY build that failed part-way leaves
-an INVALID index that ``IF NOT EXISTS`` keeps on a re-run; over a table created
-empty moments earlier that needs a crash mid-build, and the test pins both
-indexes by definition.
+guard, and the cost is that such a table would be adopted silently. That risk
+is ACCEPTED, and nothing detects it in a real database: the migration test runs
+only against a fresh ephemeral one. Likewise a CONCURRENTLY build that failed
+part-way leaves an INVALID index that ``IF NOT EXISTS`` keeps on a re-run; over
+a table created empty moments earlier that needs a crash mid-build. CI asserts
+both indexes are VALID (``pg_index.indisvalid``) after upgrade; production has
+no such check.
 
 Order: both tables first (in alembic's transaction), then the index block, which
 commits that transaction and builds the indexes in autocommit. A failure in the
