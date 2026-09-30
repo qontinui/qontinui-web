@@ -48,6 +48,8 @@ import {
   openDegradations,
   planeFreshnessPhrase,
   planeWatcherNames,
+  attributedText,
+  initiativeAttributionPhrase,
   decisionDomainLabel,
   withoutVerdictWords,
   planeLabel,
@@ -208,7 +210,13 @@ function NeedsYouRow({
       status={
         <HomeBadge
           kind="needs_you"
-          label={hasRecommendation ? "decide" : "open question"}
+          label={
+            item.source === "operator_gate"
+              ? "approval"
+              : hasRecommendation
+                ? "decide"
+                : "open question"
+          }
         />
       }
       reason={needsYouReason(item)}
@@ -338,9 +346,20 @@ export function NeedsYouSection({
         <p
           className="m-0 text-xs text-muted-foreground"
           data-testid="coord-home.needs-you.retirement"
+          data-retirement="unsupported"
         >
           This list may contain questions whose condition has already resolved:
           coord cannot retire them on this database.
+        </p>
+      )}
+      {read && needs.retirement === "unknown" && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid="coord-home.needs-you.retirement"
+          data-retirement="unknown"
+        >
+          Whether withdrawn questions are filtered out is not known yet, so this
+          list may contain questions whose condition has already resolved.
         </p>
       )}
       {read ? (
@@ -844,9 +863,7 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
           Status {i.status ?? "unknown"}
           {i.starts ? ` · from ${i.starts}` : ""} · ends {i.ends ?? "unknown"} ·{" "}
           <span data-testid="coord-home.on-track.initiative.alignment">
-            {i.alignment === "unknown" || i.alignment === null
-              ? "work attributed to it: not yet attributable"
-              : `alignment: ${i.alignment}`}
+            {initiativeAttributionPhrase(i)}
           </span>
         </p>
         {i.inScope === null ? (
@@ -859,9 +876,32 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
             data-testid="coord-home.on-track.initiative.in-scope"
           >
             {i.inScope.map((item, idx) => (
-              <li key={item.key ?? idx}>{item.text}</li>
+              <li key={item.key ?? idx}>
+                {item.text}
+                {item.units && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    — {attributedText(item.units)}
+                  </span>
+                )}
+              </li>
             ))}
           </ul>
+        )}
+        {i.unattributed && (
+          <p
+            className="m-0 text-xs text-muted-foreground"
+            data-testid="coord-home.on-track.initiative.unattributed"
+          >
+            Not linked to any in-scope item: {attributedText(i.unattributed)}.
+          </p>
+        )}
+        {i.unknownKey && (i.unknownKey.total ?? 0) > 0 && (
+          <p className="m-0 text-xs text-muted-foreground">
+            Linked to an item this initiative does not list (
+            {i.unknownKey.keys.join(", ") || "keys not served"}):{" "}
+            {attributedText(i.unknownKey)}.
+          </p>
         )}
       </div>
     );

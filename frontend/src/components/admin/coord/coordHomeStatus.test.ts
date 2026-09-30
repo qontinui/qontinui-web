@@ -30,6 +30,7 @@ import {
   planeFreshnessPhrase,
   watcherReasonWords,
   decisionDomainLabel,
+  initiativeAttributionPhrase,
   parseProjectState,
   unitClassLabel,
   type BlockState,
@@ -499,5 +500,112 @@ describe("round-2 review — R8 for watchers and domains, honest red headline", 
     );
     expect(watcherReasonWords(null, "weird")).toBe("state unknown");
     expect(watcherReasonWords(null, null)).toBe("state unknown");
+  });
+});
+
+describe("coord needs_me wire at 4907c36ff", () => {
+  it.each([
+    ["supported", "supported"],
+    ["unsupported", "unsupported"],
+    ["unknown", "unknown"],
+    [undefined, "unknown"],
+    ["maybe", "unknown"],
+  ])(
+    "reads retirement %p as %p — never supported unless coord says so",
+    (raw, want) => {
+      const view = parseProjectState({
+        needs_me: { state: "read", total: 0, items: [], retirement: raw },
+      })!;
+      expect(view.needsMe.retirement).toBe(want);
+    }
+  );
+
+  it("reads a gate item as coord serves it", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        omitted: 0,
+        by_domain: { operator_gate: 1 },
+        items: [
+          {
+            source: "operator_gate",
+            id: "0b5e…",
+            fork: "Deploy gate — coord build_sha is an ancestor",
+            options: ["mark met", "reject"],
+            recommendation: null,
+            if_overturned: null,
+            shape: "open_question",
+            blocking: { work_unit_slug: "2026-09-20-x", plan_phase: "Phase 4" },
+            answer_at: "/admin/coord/gates",
+          },
+        ],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.options).toEqual(["mark met", "reject"]);
+    expect(item.answerAt).toBe("/admin/coord/gates");
+    expect(item.blocking).toEqual({
+      workUnitSlug: "2026-09-20-x",
+      planPhase: "Phase 4",
+    });
+  });
+
+  it("labels coord's reserved by_domain buckets", () => {
+    expect(decisionDomainLabel("operator_gate")).toBe("operator approval gate");
+    expect(decisionDomainLabel("unscanned")).toBe("not yet scanned");
+    expect(decisionDomainLabel("unclassified")).toBe("unclassified");
+  });
+
+  it("reads initiative attribution only when alignment is read", () => {
+    const linked = parseProjectState({
+      on_track: {
+        state: "read",
+        initiative: {
+          state: "read",
+          alignment: "read",
+          in_scope: [
+            {
+              text: "a",
+              key: "a",
+              units: { total: 3, in_flight: 1, shipped: 1 },
+            },
+            {
+              text: "b",
+              key: "b",
+              units: { total: 0, in_flight: 0, shipped: 0 },
+            },
+          ],
+          unattributed: { total: 1, in_flight: 1, shipped: 0 },
+          unknown_key: { total: 0, in_flight: 0, shipped: 0, keys: [] },
+        },
+      },
+    })!.onTrack.initiative!;
+    expect(linked.inScope![0].units).toEqual({
+      total: 3,
+      inFlight: 1,
+      shipped: 1,
+    });
+    expect(linked.unattributed).toEqual({ total: 1, inFlight: 1, shipped: 0 });
+    expect(initiativeAttributionPhrase(linked)).toBe(
+      "work attributed to it: 1 in flight"
+    );
+
+    const unlinked = parseProjectState({
+      on_track: {
+        state: "read",
+        initiative: {
+          state: "read",
+          alignment: "unknown",
+          in_scope: [
+            { text: "a", key: "a", units: null, reason: "no_declared_link" },
+          ],
+        },
+      },
+    })!.onTrack.initiative!;
+    expect(unlinked.inScope![0].units).toBeNull();
+    expect(initiativeAttributionPhrase(unlinked)).toBe(
+      "work attributed to it: not yet attributable"
+    );
   });
 });

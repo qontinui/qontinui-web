@@ -515,6 +515,126 @@ describe("/admin/coord/home", () => {
     }
   );
 
+  it.each([
+    ["unknown", /not known yet/],
+    [undefined, /not known yet/],
+    ["unsupported", /coord cannot retire them/],
+  ])(
+    "renders retirement %p honestly, never as supported",
+    async (retirement, text) => {
+      await renderWith(
+        doorBody({
+          needs_me: {
+            state: "read",
+            total: 0,
+            omitted: 0,
+            items: [],
+            retirement,
+          },
+        })
+      );
+      expect(
+        screen.getByTestId("coord-home.needs-you.retirement")
+      ).toHaveTextContent(text);
+    }
+  );
+
+  it("says nothing about retirement when coord says it is supported", async () => {
+    await renderWith(
+      doorBody({
+        needs_me: {
+          state: "read",
+          total: 0,
+          omitted: 0,
+          items: [],
+          retirement: "supported",
+        },
+      })
+    );
+    expect(
+      screen.queryByTestId("coord-home.needs-you.retirement")
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a gate item as an approval, answered on the gates page", async () => {
+    await renderWith(
+      doorBody({
+        needs_me: {
+          state: "read",
+          total: 1,
+          omitted: 0,
+          retirement: "supported",
+          by_domain: { operator_gate: 1 },
+          items: [
+            {
+              source: "operator_gate",
+              id: "g-1",
+              fork: "Deploy gate — build is an ancestor",
+              options: ["mark met", "reject"],
+              recommendation: null,
+              if_overturned: null,
+              shape: "open_question",
+              blocking: {
+                work_unit_slug: "2026-09-20-x",
+                plan_phase: "Phase 4",
+              },
+              answer_at: "/admin/coord/gates",
+            },
+          ],
+        },
+      })
+    );
+    const needs = screen.getByTestId("coord-home.needs-you");
+    expect(needs).toHaveTextContent("approval");
+    expect(
+      screen.getByTestId("coord-home.needs-you.by-domain")
+    ).toHaveTextContent("operator approval gate 1");
+    fireEvent.click(screen.getByText("Deploy gate — build is an ancestor"));
+    expect(needs).toHaveTextContent("Options: mark met · reject");
+    expect(needs).toHaveTextContent("Blocks: 2026-09-20-x, phase Phase 4");
+    expect(screen.getByTestId("coord-home.needs-you.answer")).toHaveAttribute(
+      "href",
+      "/admin/coord/gates"
+    );
+  });
+
+  it("shows initiative attribution when coord's alignment is read", async () => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "read",
+          totals: { row_count: 11, classes: CLASSES },
+          groups: [],
+          initiative: {
+            state: "read",
+            status: "live",
+            ends: "2026-10-31",
+            alignment: "read",
+            in_scope: [
+              {
+                text: "remote runner session access",
+                key: "remote-runner",
+                units: { total: 3, in_flight: 2, shipped: 1 },
+              },
+            ],
+            unattributed: { total: 4, in_flight: 1, shipped: 3 },
+          },
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative.alignment")
+    ).toHaveTextContent("work attributed to it: 2 in flight");
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative.in-scope")
+    ).toHaveTextContent(
+      "remote runner session access — 3 units, 2 in flight, 1 shipped"
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative.unattributed")
+    ).toHaveTextContent("4 units, 1 in flight, 3 shipped");
+  });
+
   it("says unknown, not 'No work units', when a read on_track serves no groups", async () => {
     await renderWith(
       doorBody({

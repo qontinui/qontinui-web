@@ -293,9 +293,33 @@ function parseGroup(raw: unknown): RepoGroup | null {
   };
 }
 
+/** Work attributed to an initiative item (or a bucket), as coord counts it. */
+export interface AttributedUnits {
+  total: number | null;
+  inFlight: number | null;
+  shipped: number | null;
+}
+
+function parseAttributed(raw: unknown): AttributedUnits | null {
+  const o = obj(raw);
+  return o
+    ? {
+        total: num(o.total),
+        inFlight: num(o.in_flight),
+        shipped: num(o.shipped),
+      }
+    : null;
+}
+
 export interface InitiativeItem {
   text: string;
   key: string | null;
+  /**
+   * Units whose `metadata.initiative_item` equals this item's key — served
+   * only when coord's alignment is `read`; null otherwise (not attributable
+   * yet), never a zero.
+   */
+  units: AttributedUnits | null;
 }
 
 export interface InitiativeView {
@@ -308,7 +332,37 @@ export interface InitiativeView {
   alignment: string | null;
   reason: string | null;
   inScope: InitiativeItem[] | null;
+  /** Units carrying no initiative link; null = not counted. */
+  unattributed: AttributedUnits | null;
+  /** Units whose link names no in-scope item, with those keys. */
+  unknownKey: (AttributedUnits & { keys: string[] }) | null;
   error: string | null;
+}
+
+/** "N units, X in flight, Y shipped" — each unknown part a dash. */
+export function attributedText(u: AttributedUnits): string {
+  const n = (v: number | null) => (v === null ? "–" : String(v));
+  return `${n(u.total)} unit${u.total === 1 ? "" : "s"}, ${n(u.inFlight)} in flight, ${n(u.shipped)} shipped`;
+}
+
+/**
+ * How much in-flight work is attributed to the initiative (plan question 8).
+ * Only an alignment of `read` carries counts; `unknown` (no declared link, or
+ * the unit read failed) is "not yet attributable", never a zero.
+ */
+export function initiativeAttributionPhrase(i: InitiativeView): string {
+  if (i.alignment !== "read") {
+    return i.alignment === "unknown" || i.alignment === null
+      ? "work attributed to it: not yet attributable"
+      : "work attributed to it: unknown";
+  }
+  const items = i.inScope ?? [];
+  const parts = items.map((it) => it.units?.inFlight ?? null);
+  if (items.length === 0 || parts.some((p) => p === null)) {
+    return "work attributed to it: counts not served — unknown";
+  }
+  const inFlight = (parts as number[]).reduce((a, b) => a + b, 0);
+  return `work attributed to it: ${inFlight} in flight`;
 }
 
 function parseInitiative(raw: unknown): InitiativeView | null {
@@ -328,12 +382,28 @@ function parseInitiative(raw: unknown): InitiativeView | null {
     inScope: inScopeRaw
       ? inScopeRaw.flatMap((i): InitiativeItem[] => {
           // coord serves `{text, key, units, reason}`; a bare string is read too
-          if (typeof i === "string") return [{ text: i, key: null }];
+          if (typeof i === "string")
+            return [{ text: i, key: null, units: null }];
           const r = obj(i);
           const text = r ? str(r.text) : null;
-          return text ? [{ text, key: str(r!.key) }] : [];
+          return r && text
+            ? [{ text, key: str(r.key), units: parseAttributed(r.units) }]
+            : [];
         })
       : null,
+    unattributed: parseAttributed(o.unattributed),
+    unknownKey: (() => {
+      const u = obj(o.unknown_key);
+      const base = parseAttributed(u);
+      return u && base
+        ? {
+            ...base,
+            keys: (arr(u.keys) ?? []).filter(
+              (k): k is string => typeof k === "string"
+            ),
+          }
+        : null;
+    })(),
     error: typeof o.error === "string" ? o.error : null,
   };
 }
@@ -420,7 +490,9 @@ export interface NeedsMeView {
   byDomain: Readonly<Record<string, number>> | null;
   /**
    * Whether coord can retire a question whose premise died. `unsupported`
-   * means the list may hold questions whose condition already resolved.
+   * means the list may hold questions whose condition already resolved;
+   * `unknown` (coord's schema-readiness probe has not yet looked, or the field
+   * was not served) is NEVER read as supported.
    */
   retirement: "supported" | "unsupported" | "unknown";
   error: string | null;
@@ -732,6 +804,8 @@ const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
   implementation: "implementation",
   policy_gap: "policy gap",
   unclassified: "unclassified",
+  operator_gate: "operator approval gate",
+  unscanned: "not yet scanned",
 };
 
 export function decisionDomainLabel(domain: string): string {
