@@ -102,9 +102,10 @@
         "on_track.initiative.state",
         "on_track.initiative.in_scope",
         "on_track.initiative.ends",
-        "on_track.initiative.alignment"
+        "on_track.initiative.alignment",
+        "on_track.initiative.in_scope[].units.in_flight"
       ],
-      "answer": "The initiative's in-scope items verbatim, its end date, and the attributed work — which reads 'not yet attributable' while on_track.initiative.alignment is 'unknown' (no declared link yet); that wording is a correct answer ONLY in that case.",
+      "answer": "The initiative's in-scope items verbatim and its end date; and the attributed in-flight work — when on_track.initiative.alignment is 'read', the in-flight count summed over in_scope[].units (each item's units shown beside it), and when it is 'unknown' the words 'not yet attributable', which are a correct answer ONLY in that case.",
       "unknown_is_an_answer_only_when": "on_track.initiative.state != \"read\" || on_track.initiative.alignment == \"unknown\""
     },
     {
