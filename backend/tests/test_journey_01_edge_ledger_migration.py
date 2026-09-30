@@ -342,6 +342,20 @@ def test_journey_01_creates_the_contract_tables_and_enforces_their_vocabularies(
             _index_defs(engine, _EDGES, exclude="journey_edge_observations_pkey")
             == _EXPECTED_EDGE_INDEXES
         )
+        # indexdef reads the same for an INVALID index (a CONCURRENTLY build
+        # that failed part-way), so validity is asserted separately.
+        with engine.connect() as conn:
+            all_valid = conn.execute(
+                text(
+                    """
+                    SELECT bool_and(i.indisvalid) FROM pg_index i
+                      JOIN pg_class c ON c.oid = i.indexrelid
+                     WHERE c.relname = ANY(:names)
+                    """
+                ),
+                {"names": list(_EXPECTED_EDGE_INDEXES)},
+            ).scalar_one()
+        assert all_valid is True
         # The frontier carries no index but its primary key.
         assert _index_defs(engine, _FRONTIER, exclude="journey_frontier_pkey") == {}
         assert _primary_key(engine, f"project.{_EDGES}") == ["id"]
