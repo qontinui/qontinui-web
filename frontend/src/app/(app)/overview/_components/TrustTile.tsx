@@ -16,11 +16,19 @@ import { TrustPanel, type RefutedList } from "./TrustPanel";
 export function TrustTile({
   tenantId,
   hold,
+  tenantError = null,
 }: {
   tenantId: string | null;
   hold: boolean;
+  /** The project list failed: render "could not look", not a skeleton. */
+  tenantError?: string | null;
 }) {
-  const { read, refuted, lastGood } = useVerificationMetrics(tenantId, hold);
+  const { read, refuted, lastGood } = useVerificationMetrics(
+    tenantId,
+    hold,
+    undefined,
+    tenantError
+  );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
 
   const windowFrom =

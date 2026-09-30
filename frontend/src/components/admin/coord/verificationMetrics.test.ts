@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   NO_VERIFICATIONS_TEXT,
   couldNotLookReason,
+  interval,
+  ratePct,
   deriveTrustView,
   deriveVerificationHealth,
   laneView,
@@ -203,5 +205,54 @@ describe("deriveVerificationHealth", () => {
     const h = deriveVerificationHealth(dg);
     expect(h.level).toBe("amber");
     expect(h.headline).toBe("Could not look");
+  });
+});
+
+describe("review round 1", () => {
+  it("never shows 100% with a refutation, nor 0% with a survivor", () => {
+    expect(ratePct(0.996, { survived: 249, refuted: 1 })).toBe("≥99%");
+    expect(ratePct(1, { survived: 20, refuted: 0 })).toBe("100%");
+    expect(ratePct(0.004, { survived: 1, refuted: 249 })).toBe("≤1%");
+    expect(ratePct(0, { survived: 0, refuted: 5 })).toBe("0%");
+    expect(
+      interval({ ci95_low: 0.97, ci95_high: 0.998, survived: 249, refuted: 1 })
+    ).toBe("(97–99)");
+    expect(
+      interval({ ci95_low: 0.001, ci95_high: 0.02, survived: 1, refuted: 249 })
+    ).toBe("(1–2)");
+    const m = populated({
+      trust_calibration: {
+        ...populated().trust_calibration,
+        value: 0.996,
+        ci95_high: 0.999,
+        survived: 249,
+        refuted: 1,
+        n: 250,
+      },
+    });
+    const v = deriveTrustView({ status: "ok", metrics: m }, null, NOW);
+    if (v.state !== "populated") throw new Error(v.state);
+    expect(v.throughputLine).not.toContain("100");
+    expect(v.throughputLine).toContain("≥99% held up");
+  });
+
+  it("a body without a readable window is could-not-look, not a render throw", () => {
+    const { window: _w, ...noWindow } = populated();
+    expect(() => parseVerificationMetrics(noWindow)).toThrow(/window/);
+    expect(() =>
+      parseVerificationMetrics({ ...populated(), window: { days: 28 } })
+    ).toThrow(/window/);
+  });
+
+  it("keeps only findings whose topic is exactly verification-refuted", () => {
+    const untopiced = { ...REFUTATION_FINDING, finding_id: "n", topic: null };
+    const other = { ...REFUTATION_FINDING, finding_id: "o", topic: "other" };
+    const units = refutedUnitsInWindow(
+      [REFUTATION_FINDING, untopiced, other],
+      "2026-09-02T12:00:00Z"
+    );
+    expect(units.map((u) => u.findingId)).toEqual([
+      REFUTATION_FINDING.finding_id,
+    ]);
   });
 });
