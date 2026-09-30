@@ -52,8 +52,13 @@ export function ScheduledTasksPanel() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : labels.failed);
     } finally {
-      inFlight.current.delete(taskId);
-      await refetch();
+      // Released only once the list reflects the action, so a deleted row
+      // still on screen cannot be deleted again.
+      try {
+        await refetch();
+      } finally {
+        inFlight.current.delete(taskId);
+      }
     }
   };
 
