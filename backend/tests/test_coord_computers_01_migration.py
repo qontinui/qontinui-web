@@ -333,11 +333,11 @@ _LOCK_BOTH = (
     "LOCK TABLE coord.devices, coord.device_resource_samples IN ACCESS EXCLUSIVE MODE"
 )
 
-# The first statement in each direction that touches an existing table.
-_EXISTING_TABLE_TOUCH = re.compile(
-    r"ALTER TABLE coord\.(devices|device_resource_samples)\b"
-    r"|DROP INDEX IF EXISTS coord\.ix_device"
-)
+# ANY reference to either existing table (ALTER, COMMENT ON, CREATE/DROP INDEX
+# ... ON, a JOIN in a data step): each one takes a lock, so none may precede the
+# up-front LOCK TABLE. The LOCK TABLE literal itself is masked out before the
+# search.
+_EXISTING_TABLE_REF = re.compile(r"coord\.(devices|device_resource_samples)\b")
 
 
 def _function_sql(name: str) -> str:
@@ -375,12 +375,14 @@ def test_coord_computers_01_locks_devices_then_samples_before_any_alter(
     sql = _function_sql(direction)
     lock_at = sql.find(_LOCK_BOTH)
     assert lock_at >= 0, f"{direction} must run: {_LOCK_BOTH}"
-    first_touch = _EXISTING_TABLE_TOUCH.search(sql)
-    assert first_touch is not None, f"{direction} touches no existing table?"
-    assert lock_at < first_touch.start(), (
-        f"{direction} touches {first_touch.group(0)!r} before taking both locks"
+    masked = sql[:lock_at] + " " * len(_LOCK_BOTH) + sql[lock_at + len(_LOCK_BOTH) :]
+    first_ref = _EXISTING_TABLE_REF.search(masked)
+    assert first_ref is not None, f"{direction} references no existing table?"
+    assert lock_at < first_ref.start(), (
+        f"{direction} references {first_ref.group(0)!r} before taking both locks"
     )
-    assert sql.find("SET LOCAL lock_timeout = '3s'") < lock_at, (
+    timeout_at = sql.find("SET LOCAL lock_timeout = '3s'")
+    assert 0 <= timeout_at < lock_at, (
         f"{direction} must bound the lock wait before LOCK TABLE"
     )
 
