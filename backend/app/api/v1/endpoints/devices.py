@@ -130,9 +130,13 @@ SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
 #: Phase 2, "the anchor").
 PENDING_REDEEM_EXPIRED_GRACE = timedelta(days=30)
 
-#: The ``mint_provenance`` of a device token minted ANONYMOUSLY. It proves
-#: nothing about which box holds it, so it can never collect a code.
-_BOOTSTRAP_MINT_PROVENANCE = "bootstrap"
+#: The only ``mint_provenance`` a pending-redeem token may carry: coord's
+#: ``issue_device`` (pairing, device refresh, service-mint) stamps it. ABSENT is
+#: also admitted, but only for the exact ``issue_device`` claim shape — a token
+#: minted before provenance existed (2026-09-17) and still inside the 30-day
+#: grace. "Not bootstrap" is NOT the test: coord's own ``Claims`` docs name it
+#: the laundering path (a pre-provenance push token is ``sub_type=device`` too).
+_PAIRED_MINT_PROVENANCE = "paired"
 
 _DEVICE_SUB_TYPE = "device"
 
@@ -798,6 +802,7 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
 async def pair_confirm(
     *,
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairConfirmRequest,
 ) -> Any:
@@ -842,6 +847,12 @@ async def pair_confirm(
     # (coord resolves tenant from the pair-start flow it stored); the call
     # is kept purely as the linked-operator gate.
     await get_coord_identity(request)
+
+    # A device an operator revoked is re-armed only by authorize-redeem —
+    # never by re-pairing it. Enforced here rather than trusted to coord.
+    confirm_device = _as_uuid(payload.device_id)
+    if confirm_device is not None:
+        await refuse_if_credential_revoked(db, confirm_device, door="pair_confirm")
 
     # The credential coord verifies is in the HEADERS: the web service
     # token + `X-Qontinui-User-Id` (arm B). The body carries no identity —
@@ -1015,6 +1026,10 @@ async def pair_cli(
                 "device pairing unavailable."
             ),
         )
+
+    # A device an operator revoked is re-armed only by authorize-redeem —
+    # never by re-pairing it. Enforced here rather than trusted to coord.
+    await refuse_if_credential_revoked(db, payload.device_id, door="pair_cli")
 
     caller_token = _extract_caller_token(request)
     if not caller_token:
@@ -1336,8 +1351,8 @@ async def authorize_redeem(
             },
         )
 
-    # Mint before the other writes: its (vanishingly rare, ~30-bit) collision
-    # retry rolls the session back, which must not discard them.
+    # Mint first so ``except_code`` below can name the new code. Its collision
+    # retry uses a SAVEPOINT, so the row lock above survives it.
     code_row = await pair_code_crud.mint_pair_code(
         db,
         tenant_id=tenant_id,
@@ -1384,8 +1399,10 @@ async def _verify_poll_token(
       ``device_token_invalid``
     * ``sub_type`` not ``device`` (agent, service, capability grant) → 403
       ``not_a_device_principal``
-    * ``mint_provenance`` ``bootstrap`` (anonymously minted) → 403
+    * ``mint_provenance`` present and not ``paired`` → 403
       ``device_token_provenance_refused``
+    * not the ``issue_device`` shape (``sub != "device:<path id>"`` or no
+      ``user_id`` — e.g. a push token) → 403 ``device_token_shape_refused``
     * ``device_id`` claim missing/malformed → 401 ``device_token_invalid``;
       not the path → 403 ``device_mismatch``
     """
@@ -1433,11 +1450,12 @@ async def _verify_poll_token(
             "not_a_device_principal",
             "This route accepts only a device token.",
         )
-    if claims.get("mint_provenance") == _BOOTSTRAP_MINT_PROVENANCE:
+    provenance = claims.get("mint_provenance")
+    if provenance is not None and provenance != _PAIRED_MINT_PROVENANCE:
         raise _poll_refusal(
             status.HTTP_403_FORBIDDEN,
             "device_token_provenance_refused",
-            "An anonymously minted token does not prove a device.",
+            "Only a pairing-issued device token proves a device.",
         )
     token_device = _as_uuid(claims.get("device_id"))
     if token_device is None:
@@ -1452,6 +1470,20 @@ async def _verify_poll_token(
             "device_mismatch",
             "The device token does not match this device.",
         )
+    # The exact shape coord's ``issue_device`` mints (qontinui-coord
+    # ``jwt.rs``): ``sub = "device:<device_id>"`` and a user. A push token
+    # (``sub = "push:<session>"``, no user) or any other device-typed token
+    # without that shape proves no paired device, whatever its provenance.
+    if (
+        claims.get("sub") != f"device:{device_id}"
+        or _as_uuid(claims.get("user_id")) is None
+    ):
+        raise _poll_refusal(
+            status.HTTP_403_FORBIDDEN,
+            "device_token_shape_refused",
+            "Only a pairing-issued device token (device subject with a user) "
+            "proves a device.",
+        )
     return claims
 
 
@@ -1463,6 +1495,7 @@ async def _verify_poll_token(
 async def pending_redeem(
     *,
     device_id: UUID,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     credentials: HTTPAuthorizationCredentials | None = Depends(_poll_bearer_scheme),
 ) -> Any:
@@ -1485,8 +1518,13 @@ async def pending_redeem(
 
     row = await pair_code_crud.claim_undelivered_for_device(db, device_id)
     if row is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+            headers={"Cache-Control": "no-store"},
+        )
     await db.commit()
+    # The body is a one-time credential: no cache may keep it.
+    response.headers["Cache-Control"] = "no-store"
     logger.info(
         "pending_redeem_delivered",
         device_id=str(device_id),
@@ -1728,13 +1766,30 @@ async def mint_device_machine_credential(
 
     await refuse_if_credential_revoked(db, device_id, door="mint")
 
-    return await _mint_machine_credential(
-        db,
-        device_id=device_id,
-        owner_user_id=current_user.id,
-        tenant_id=tenant_id,
-        via="user_bearer",
-    )
+    # ``refuse_if_revoked`` closes the race with a concurrent revoke: the revoke
+    # commits the key revocation and the device deny together, and
+    # ``dmk_crud.mint`` re-reads the key under ``FOR UPDATE``, so a mint that
+    # passed the deny check above still cannot rotate over a revoked key.
+    try:
+        return await _mint_machine_credential(
+            db,
+            device_id=device_id,
+            owner_user_id=current_user.id,
+            tenant_id=tenant_id,
+            via="user_bearer",
+            refuse_if_revoked=True,
+        )
+    except dmk_crud.DeviceMachineKeyRevokedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_credential_revoked",
+                "message": (
+                    "This device's credentials were revoked. Only an "
+                    "operator's Authenticate (authorize-redeem) re-arms it."
+                ),
+            },
+        ) from exc
 
 
 @router.post(
