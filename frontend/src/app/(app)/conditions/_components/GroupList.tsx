@@ -26,8 +26,11 @@ import {
   Play,
   Plus,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { useConditions } from "../_hooks/useConditions";
+import { useActiveProjectName } from "../_hooks/useActiveProjectName";
+import { runnerHintText, useRunnerHint } from "../_hooks/runnerAvailability";
 import { GroupEditorDialog } from "./GroupEditorDialog";
 import { ConditionList } from "./ConditionList";
 import { RunHistory } from "./RunHistory";
@@ -60,6 +63,11 @@ export function GroupList() {
     listRuns,
     getRun,
   } = useConditions();
+  const projectName = useActiveProjectName();
+  const runnerHint = useRunnerHint();
+  const runnerHintMessage = runnerHint
+    ? runnerHintText(runnerHint, projectName)
+    : null;
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<ConditionGroup | null>(null);
@@ -160,6 +168,20 @@ export function GroupList() {
 
   return (
     <div className="space-y-4">
+      {runnerHintMessage && groups.length > 0 && (
+        // Advisory only: coord's device pick stays the authority, so Run is
+        // never disabled on this.
+        <p
+          id="conditions-runner-hint"
+          role="status"
+          data-testid="conditions-runner-hint"
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+        >
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>{runnerHintMessage}</span>
+        </p>
+      )}
+
       <div className="flex justify-end">
         <Button onClick={openCreate} data-testid="new-group">
           <Plus className="size-4" />
@@ -170,9 +192,25 @@ export function GroupList() {
       {groups.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <ListChecks className="mx-auto size-8 text-muted-foreground" />
-          <p className="mt-3 text-sm text-muted-foreground">
-            No condition groups yet — create one to start accumulating
-            regression checks.
+          <p
+            className="mt-3 text-sm text-muted-foreground"
+            data-testid="conditions-empty"
+          >
+            {projectName ? (
+              <>
+                No condition groups in{" "}
+                <span className="font-medium text-foreground">
+                  {projectName}
+                </span>{" "}
+                yet — create one to start accumulating regression checks.
+              </>
+            ) : (
+              "No condition groups in this project yet — create one to start accumulating regression checks."
+            )}
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+            Each group belongs to one project. Groups created in another project
+            appear when you switch to it in the sidebar.
           </p>
           <Button variant="outline" className="mt-3" onClick={openCreate}>
             <Plus className="size-4" />
@@ -252,8 +290,14 @@ export function GroupList() {
                     onClick={() => void handleRunNow(group.group_id)}
                     disabled={saving || !group.enabled}
                     title={
-                      group.enabled ? "Run now" : "Enable the group to run it"
+                      group.enabled
+                        ? (runnerHintMessage ?? "Run now")
+                        : "Enable the group to run it"
                     }
+                    aria-describedby={
+                      runnerHintMessage ? "conditions-runner-hint" : undefined
+                    }
+                    data-testid="run-group"
                   >
                     <Play className="size-4" />
                     Run now
