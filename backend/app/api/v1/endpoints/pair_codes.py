@@ -285,6 +285,24 @@ async def redeem_pair_code_endpoint(
             detail="Coord pair-cli returned malformed device_id.",
         ) from exc
 
+    # Defence in depth: a bound code must yield a JWT for its own device. If
+    # coord answered for any other, withhold the token and leave the code
+    # unconsumed.
+    if row.bound_device_id is not None and coord_device_id != row.bound_device_id:
+        logger.error(
+            "pair_code_redeem_coord_device_mismatch",
+            code_prefix=code_upper[:2],
+            bound_device_id=str(row.bound_device_id),
+            coord_device_id=str(coord_device_id),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "coord_device_mismatch",
+                "message": "Coord paired a different device than the code is bound to.",
+            },
+        )
+
     # All-clear — mark the code redeemed. The row lock from
     # get_redeemable() guarantees this is the single successful
     # consume; concurrent attempts will have failed at that gate.

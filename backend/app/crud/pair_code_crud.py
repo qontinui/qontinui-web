@@ -133,31 +133,32 @@ async def mint_pair_code(
             expires_at=now + ttl,
             bound_device_id=bound_device_id,
         )
-        db.add(row)
         try:
-            await db.flush()
-            await db.refresh(row)
-            logger.info(
-                "pair_code_minted",
-                tenant_id=str(tenant_id),
-                issued_by=str(issued_by_user_id),
-                code_prefix=code[:2],
-                expires_at=row.expires_at.isoformat(),
-                bound_device_id=str(bound_device_id) if bound_device_id else None,
-            )
-            return row
+            # A SAVEPOINT, so a PK collision undoes only this insert. A
+            # full-session rollback here would also discard the caller's
+            # earlier writes and release its row locks (authorize-redeem holds
+            # the device row FOR UPDATE across this call).
+            async with db.begin_nested():
+                db.add(row)
+                await db.flush()
         except IntegrityError as exc:
-            # Collision on the PK — rare but possible. Rollback the
-            # implicit nested savepoint AsyncSession opens for the
-            # flush and try again with a fresh code.
             last_exc = exc
-            await db.rollback()
             logger.warning(
                 "pair_code_collision_retry",
                 attempt=attempt,
                 tenant_id=str(tenant_id),
             )
             continue
+        await db.refresh(row)
+        logger.info(
+            "pair_code_minted",
+            tenant_id=str(tenant_id),
+            issued_by=str(issued_by_user_id),
+            code_prefix=code[:2],
+            expires_at=row.expires_at.isoformat(),
+            bound_device_id=str(bound_device_id) if bound_device_id else None,
+        )
+        return row
 
     raise RuntimeError(
         f"failed to mint pair code after {MAX_MINT_RETRIES} attempts: {last_exc}"
