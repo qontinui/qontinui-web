@@ -100,7 +100,12 @@ TAB's bound grant (authorized like input, attachment left alone — a PTY that
 closes is retired by ``terminal_exit``), and a FRESH grant for a session this
 socket never attached to (verified, claimed, listened for, and ALWAYS released
 when the round trip settles). An end the target does not answer within
-``PENDING_END_TTL_SECONDS`` is answered ``end_reply_timeout``.
+``PENDING_END_TTL_SECONDS`` is answered ``end_reply_timeout``; one whose
+target's relay socket dies, or whose return route is lost, is answered at once
+``target_not_connected`` / ``listener_lost``. All three arrive as a
+``remote_terminal_error`` and mean the outcome is UNKNOWN. While a fresh-grant
+end is in flight every other frame naming that grant — detach included — is
+refused ``end_already_pending``, and the expiry sweep leaves it alone.
 
 Forward direction is replica-local
 ----------------------------------
@@ -1769,10 +1774,17 @@ class RemoteTerminalRelay:
             return
 
         named = msg.get("terminal_id")
-        if not await self._forward_end(
-            session, msg, att, terminal_id=named if isinstance(named, str) else None
+        if (
+            not await self._forward_end(
+                session, msg, att, terminal_id=named if isinstance(named, str) else None
+            )
+            and session.grants.get(jti) is att
         ):
-            # Nothing is in flight, so nothing will settle it later.
+            # Nothing is in flight, so nothing will settle it later. Dropped
+            # only while it is still OURS: a ``runner_disconnected`` or listener
+            # loss during the forward's await may already have evicted it, and
+            # a second drop would delete the claim key unconditionally — by
+            # then possibly a new claim on this jti from another socket.
             await self._drop_attachment(session, att)
 
     async def _forward_end(
@@ -1896,19 +1908,89 @@ class RemoteTerminalRelay:
             forwarded_request_id=minted,
             ttl_seconds=PENDING_END_TTL_SECONDS,
         )
+        await self._answer_end_and_release(
+            session,
+            entry,
+            self._end_error_payload(
+                entry,
+                code=CODE_END_TIMEOUT,
+                message="target did not answer the end request in time; "
+                "its outcome is unknown",
+            ),
+        )
+
+    @staticmethod
+    def _end_error_payload(
+        entry: _PendingEnd, *, code: str, message: str
+    ) -> dict[str, Any]:
+        """The ``remote_terminal_error`` a relay-settled end is answered with."""
         payload: dict[str, Any] = {
             "type": "remote_terminal_error",
             "grant_jti": entry.grant_jti,
-            "code": CODE_END_TIMEOUT,
-            "message": "target did not answer the end request in time; "
-            "its outcome is unknown",
+            "code": code,
+            "message": message,
         }
         if entry.source_request_id is not None:
             payload["request_id"] = entry.source_request_id
         if entry.terminal_id is not None:
             payload["terminal_id"] = entry.terminal_id
-        await self._send_to_source(session, payload)
-        await self._release_end_only(session, entry)
+        return payload
+
+    async def _answer_end_and_release(
+        self, session: _SourceSession, entry: _PendingEnd, payload: dict[str, Any]
+    ) -> None:
+        """Send a settled end's answer, then release it — the release ALWAYS runs.
+
+        ``_send_to_source`` swallows only the benign "socket already gone"
+        exceptions; anything else propagates. Were the release sequenced after
+        it rather than in ``finally``, such a send would leave a fresh-grant
+        end's ``end_only`` attachment and its Redis claim held to grant expiry,
+        and every later end of that grant refused ``end_already_pending``.
+        """
+        try:
+            await self._send_to_source(session, payload)
+        finally:
+            await self._release_end_only(session, entry)
+
+    async def _settle_pending_ends_on_target(
+        self,
+        session: _SourceSession,
+        target_device_id: str,
+        *,
+        code: str,
+        message: str,
+    ) -> int:
+        """Answer every end in flight to ``target_device_id`` NOW; return how many.
+
+        For the two conditions under which no reply can arrive — the target's
+        relay socket died (``runner_disconnected``) or this socket's return
+        route did (listener lost). Waiting out ``PENDING_END_TTL_SECONDS`` would
+        only delay the same UNKNOWN verdict by 75 s. Covers open-tab ends too,
+        which ``_evict`` deliberately leaves in ``pending_end``.
+        """
+        settled = 0
+        for rid, entry in list(session.pending_end.items()):
+            if entry.target_device_id != target_device_id:
+                continue
+            if session.pending_end.pop(rid, None) is None:
+                continue
+            self._cancel_end_timer(session, rid)
+            settled += 1
+            logger.info(
+                "remote_terminal_end_settled_by_relay",
+                source_device_id=session.device_id,
+                target_device_id=target_device_id,
+                grant_jti=entry.grant_jti,
+                request_id=entry.source_request_id,
+                forwarded_request_id=rid,
+                code=code,
+            )
+            await self._answer_end_and_release(
+                session,
+                entry,
+                self._end_error_payload(entry, code=code, message=message),
+            )
+        return settled
 
     def _pop_pending_end(
         self, session: _SourceSession, wire_request_id: Any, target_device_id: str
@@ -1993,6 +2075,21 @@ class RemoteTerminalRelay:
                 "no attachment registered for this grant on this socket",
                 request_id=request_id,
                 grant_jti=grant_jti if isinstance(grant_jti, str) else None,
+                terminal_id=terminal_id,
+            )
+            return None
+        if att.end_only:
+            # A fresh-grant end of this grant is in flight. Refused BEFORE the
+            # expiry arm and for every door — detach included, which admits on
+            # the grant alone: dropping this attachment would silently cancel
+            # the pending end and discard the target's ``terminal_ended``. It
+            # settles by reply, refusal or TTL; nothing else may end it.
+            await self._refuse(
+                session,
+                CODE_END_PENDING,
+                "an end for this grant is still awaiting the target's answer",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
                 terminal_id=terminal_id,
             )
             return None
@@ -2326,10 +2423,17 @@ class RemoteTerminalRelay:
         listener and the runner's ``terminal_subscribe`` for the socket's
         lifetime. Runs at the top of both frame paths.
         """
+        # An ``end_only`` attachment whose end is still in flight is NOT reaped:
+        # evicting it would answer ``grant_expired`` and sweep the pending end,
+        # dropping the target's real ``terminal_ended``. Its reply, a target
+        # refusal or the end's own TTL settles it — and releases the claim.
+        ending = {e.grant_jti for e in session.pending_end.values() if e.end_only}
         expired = [
             att
             for att in session.grants.values()
-            if att.grant_jti != except_jti and att.expired()
+            if att.grant_jti != except_jti
+            and att.expired()
+            and not (att.end_only and att.grant_jti in ending)
         ]
         for att in expired:
             logger.info(
@@ -2520,7 +2624,17 @@ class RemoteTerminalRelay:
         The entry is already popped, so ``_drop_attachment``'s own
         ``_stop_listener`` is a no-op here and the runner-side unsubscribe
         (matched to this listener's subscribe) is sent explicitly.
+
+        Ends in flight to that target are answered FIRST, typed
+        ``listener_lost``: their reply can no longer reach this socket, so
+        waiting out the end TTL would only delay the same UNKNOWN verdict.
         """
+        await self._settle_pending_ends_on_target(
+            session,
+            target_device_id,
+            code=CODE_LISTENER_LOST,
+            message="return route to the target was lost; the end's outcome is unknown",
+        )
         for att in list(session.grants.values()):
             if att.target_device_id != target_device_id:
                 continue
@@ -2967,17 +3081,30 @@ class RemoteTerminalRelay:
         output firehose switched ON for every terminal it owns, so each failed
         attach permanently ratcheted the load that kills the next socket.
 
+        Ends in flight to that target — open-tab ones included, which outlive
+        their attachment on purpose — are answered FIRST with the same code,
+        rather than left to the 75 s end TTL: no reply can come from a socket
+        that is gone. A fresh-grant end's attachment is released by that
+        settlement, so it is not evicted a second time below.
+
         Returns False when this socket holds nothing on that target — the
         frame is a device-wide notice every watcher sees, and one that settles
-        none of our attachments is not ours.
+        none of our attachments or ends is not ours.
         """
+        ends = await self._settle_pending_ends_on_target(
+            session,
+            target_device_id,
+            code=CODE_TARGET_NOT_CONNECTED,
+            message="target device's relay socket disconnected; "
+            "the end's outcome is unknown",
+        )
         doomed = [
             att
             for att in session.grants.values()
             if att.target_device_id == target_device_id
         ]
         if not doomed:
-            return False
+            return ends > 0
         logger.info(
             "remote_terminal_target_disconnected",
             source_device_id=session.device_id,
@@ -3085,7 +3212,7 @@ class RemoteTerminalRelay:
             value = frame.get(key)
             if isinstance(value, str) and value:
                 payload[key] = value[:cap]
-        await self._send_to_source(session, payload)
+        await self._answer_end_and_release(session, entry, payload)
         logger.info(
             "remote_terminal_ended_routed",
             source_device_id=session.device_id,
@@ -3094,7 +3221,6 @@ class RemoteTerminalRelay:
             outcome=outcome,
             fresh_grant=entry.end_only,
         )
-        await self._release_end_only(session, entry)
         return True
 
     async def _route_input_ack(
@@ -3414,8 +3540,9 @@ class RemoteTerminalRelay:
         exactly as it was. A fresh-grant end is released, whatever the code.
         """
         terminal_id = entry.terminal_id or frame.get("terminal_id")
-        await self._send_to_source(
+        await self._answer_end_and_release(
             session,
+            entry,
             self._target_error_payload(
                 frame,
                 grant_jti=entry.grant_jti,
@@ -3423,7 +3550,6 @@ class RemoteTerminalRelay:
                 terminal_id=terminal_id,
             ),
         )
-        await self._release_end_only(session, entry)
         return True
 
     async def _route_target_error(
