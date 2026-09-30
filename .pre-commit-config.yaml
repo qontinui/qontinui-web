@@ -74,7 +74,9 @@ repos:
         name: ESLint (frontend)
         entry: bash -c 'args=(); for f in "$@"; do args+=("${f#frontend/}"); done; cd frontend && npx eslint --no-warn-ignored "${args[@]}"' --
         language: system
-        files: ^frontend/.*\.(js|jsx|ts|tsx)$
+        # .mjs included: next.config.mjs, config/ and scripts/ carry the
+        # no-dev-stack-fallback rule too (the tail of `npm run lint`).
+        files: ^frontend/.*\.(js|mjs|jsx|ts|tsx)$
         types_or: [javascript, jsx, ts, tsx]
 
       - id: tsc-typecheck
