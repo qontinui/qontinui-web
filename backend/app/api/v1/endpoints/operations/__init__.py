@@ -4879,9 +4879,13 @@ async def get_project_state(
     ``tenant_id``, ``scope`` (``"operator"``, the one built scope), and four
     blocks — ``on_track``, ``correctness``, ``needs_me``, ``degradations`` —
     each carrying a ``state`` in ``read | could_not_read | stale |
-    not_implemented | unknown`` that is DISTINCT from its counts. **A block
-    whose state is not ``read`` carries no counts**, and a caller must render
-    it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``).
+    not_implemented | unknown`` that is DISTINCT from its counts. A block
+    whose state is not ``read`` carries no counts, and a caller must render
+    it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)
+    — with ONE exception: a ``stale`` ``degradations`` block still carries its
+    ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
+    stays true behind a lagging watcher. Those rows are real but are not known
+    to be all of them, so no count may be taken from them.
     ``does_not_know`` lists every source the door read, with ``state``,
     ``as_of``, ``freshness_bound_secs``, rows considered / excluded and why.
 

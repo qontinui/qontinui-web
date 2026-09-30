@@ -43,7 +43,7 @@ export default function CoordHomePage() {
   const { view, hasRead, stale, lastError, refresh } = useProjectState();
   const { tenants } = useTenant();
   const [correctOpen, setCorrectOpen] = useState(false);
-  const strip = useMemo(() => deriveHomeStrip(view), [view]);
+  const strip = useMemo(() => deriveHomeStrip(view, { stale }), [view, stale]);
   const shown = view ?? NOTHING_READ;
   const tenantName =
     (view?.tenantId && tenants.find((t) => t.id === view.tenantId)?.name) ||
@@ -76,8 +76,16 @@ export default function CoordHomePage() {
             : "Reading coord's project state…"}
         </p>
       )}
-      <NeedsYouSection needs={shown.needsMe} />
-      <DegradingSection deg={shown.degradations} />
+      <NeedsYouSection
+        needs={shown.needsMe}
+        stale={stale}
+        generatedAt={shown.generatedAt}
+      />
+      <DegradingSection
+        deg={shown.degradations}
+        stale={stale}
+        generatedAt={shown.generatedAt}
+      />
       <OnTrackSection onTrack={shown.onTrack} />
       <CorrectSection
         correctness={shown.correctness}

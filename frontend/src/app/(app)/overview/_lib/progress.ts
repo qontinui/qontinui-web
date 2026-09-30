@@ -31,6 +31,29 @@
  * not-started unit whose dependencies are met from one that is merely planned,
  * and rendering a bucket with no source would be a fabricated zero.
  *
+ * ## This is a BEHAVIOUR CHANGE, not a like-for-like swap
+ *
+ * The count this replaced bucketed by the console's status TONE
+ * (`describePlanStatus`), which reads more spellings than the door's
+ * eight-word vocabulary does. So for the same corpus the two can differ:
+ *
+ * - `archived` was a closed tone (counted toward nothing); the door has no
+ *   `archived` word, so such a unit reads `off_vocabulary` → Status unknown.
+ * - `partial` and `in-progress` were active (In progress), and
+ *   `vetted_unattested` was pending (Planned); the door reads each as
+ *   `off_vocabulary` → Status unknown unless and until coord classifies those
+ *   spellings itself (in flight at authoring). Status unknown stays in the
+ *   total, so this can lower the done share but never raise it.
+ * - A status with padding or mixed case (`"  Shipped "`) was normalised
+ *   client-side; the door classifies the stored value as it is.
+ * - Merge-shepherd bookkeeping units (`shepherd-*`) were excluded client-side
+ *   by slug. The door now excludes them itself and says how many in
+ *   `totals.excluded.merge_shepherd_bookkeeping` (and in its `does_not_know`
+ *   `work_units` row); the panel's caveat line states that count when it is
+ *   above zero. A door predating that exclusion counts them as
+ *   `off_vocabulary` → Status unknown.
+ * - The old count was bounded by a 500-row page; the door's is not.
+ *
  * ## Unknown is not zero
  *
  * When the door's `on_track` block is anything but `read`, there are no counts
@@ -101,6 +124,8 @@ export interface Progress {
   total: number;
   /** Most recently finished units, newest first; null = could not be read. */
   recentlyFinished: RecentlyFinished | null;
+  /** Bookkeeping units the door left out of every count; null = not stated. */
+  excludedBookkeeping: number | null;
 }
 
 export type ProgressReading =
@@ -146,6 +171,7 @@ export function progressFromOnTrack(
       counts,
       total: Object.values(counts).reduce((a, b) => a + b, 0),
       recentlyFinished,
+      excludedBookkeeping: onTrack.excludedBookkeeping,
     },
   };
 }
