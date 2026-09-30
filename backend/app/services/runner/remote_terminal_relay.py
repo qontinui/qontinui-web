@@ -1847,7 +1847,11 @@ class RemoteTerminalRelay:
             )
             sent = False
         if not sent:
-            session.pending_end.pop(minted, None)
+            if session.pending_end.pop(minted, None) is None:
+                # Already settled while the send was in flight (a
+                # ``runner_disconnected`` answered it): the source has its one
+                # answer, so a second refusal would only be noise it must drop.
+                return False
             await self._refuse(
                 session,
                 CODE_TARGET_NOT_CONNECTED,

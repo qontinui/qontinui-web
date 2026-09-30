@@ -6553,3 +6553,7 @@ async def test_failed_fresh_forward_never_drops_a_claim_it_no_longer_owns(
     session = relay._sessions[id(ws)]
     assert session.grants == {}
     assert session.pending_end == {}
+    # The disconnect already answered the end; the failed send must not add a
+    # second answer under the same request id.
+    answers = [f for f in ws.sent if f.get("request_id") == "req-end-1"]
+    assert len(answers) == 1, answers
