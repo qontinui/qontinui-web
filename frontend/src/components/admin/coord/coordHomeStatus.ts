@@ -22,9 +22,10 @@
  * ## Every block's `state` is the gate
  *
  * Coord serves `state ∈ {read, could_not_read, stale, not_implemented,
- * unknown}` on every block, DISTINCT from its counts, and a block that is not
- * `read` carries no counts. The parser below holds the same line on this side
- * of the wire:
+ * unknown}` on every block, DISTINCT from its counts. A block that is not
+ * `read` carries no counts — with ONE exception: a `stale` degradations block
+ * still carries its `open` / `declared` / `recently_cleared` ROWS (below). The
+ * parser holds the same line on this side of the wire:
  *
  * - counts are taken ONLY from a `read` block — a count on any other state is
  *   dropped, never trusted;
@@ -34,8 +35,17 @@
  *
  * The one deliberate exception is degradation ROWS on a `stale` block: coord
  * serves them because *"a positive fact survives a stale watcher"*. Their rows
- * render (they are true), but the block's COUNT badge does not, because the
- * rows are not known to be all of them.
+ * render (they are true), but no COUNT is shown for them — not the strip badge
+ * and not the recently-cleared tally — because the rows are not known to be
+ * all of them.
+ *
+ * ## A failed latest poll forces amber (style guide R6)
+ *
+ * The page keeps the last good view when a poll fails, and
+ * {@link deriveHomeStrip} is told so (`stale`): the strip is then amber at the
+ * least, its headline says the reading is "at the last good read (T)", and the
+ * two calm empty states ("Nothing needs you", "Nothing is degrading") are
+ * worded in the past tense at T rather than as a present fact.
  *
  * ## R8 — no internal vocabulary on the primary surface
  *
@@ -65,6 +75,7 @@ import {
   type Attention,
 } from "@/components/console/attention";
 import type { HealthStripLevel } from "@/components/console/HealthStrip";
+import { absoluteTime } from "@/components/console/time";
 import type { StatusPalette } from "@/components/console/statusRow";
 import {
   AUTHOR_RED,
@@ -198,6 +209,18 @@ export function unitClassLabel(
   }
 }
 
+/**
+ * R8 for coord's own free text (an `exclusion_reason`, a `headline_reason`):
+ * those sentences are written for agents and may name the `stalled` class by
+ * its wire key. The page words that class as the measurement it is, so the
+ * word is replaced here, in the one place every such sentence passes through.
+ */
+export function withoutVerdictWords(text: string): string {
+  return text
+    .replace(/\bjudged stalled\b/gi, "judged as having no recorded change")
+    .replace(/\bstalled\b/gi, "without recorded change");
+}
+
 function parseClassCounts(raw: unknown): ClassCounts {
   const o = obj(raw);
   const out = {} as Record<UnitClass, number | null>;
@@ -327,6 +350,11 @@ export interface OnTrackView {
   stallWindowSecs: number | null;
   /** In-progress units with no recorded history (classed in flight). */
   historyNotRecorded: number | null;
+  /**
+   * Coord's own merge-shepherd bookkeeping units, left out of every count
+   * (`totals.excluded.merge_shepherd_bookkeeping`). Null = not stated.
+   */
+  excludedBookkeeping: number | null;
 }
 
 function parseOnTrack(raw: unknown): OnTrackView {
@@ -349,6 +377,9 @@ function parseOnTrack(raw: unknown): OnTrackView {
     initiative: parseInitiative(o.initiative),
     stallWindowSecs: num(o.stall_window_secs),
     historyNotRecorded: read ? num(o.history_not_recorded) : null,
+    excludedBookkeeping: totals
+      ? num(obj(totals.excluded)?.merge_shepherd_bookkeeping)
+      : null,
   };
 }
 
@@ -363,13 +394,16 @@ export interface NeedsMeItem {
   ageSecs: number | null;
   /** The decision being asked — the question text, or the gate's title. */
   fork: string | null;
-  options: string[];
+  /** The offered answers; `null` when coord served options this page cannot read. */
+  options: string[] | null;
   recommendation: string | null;
   ifOverturned: string | null;
   /** `fork_with_recommendation` | `open_question`, derived coord-side. */
   shape: string | null;
   /** The console page where the existing write door answers it. */
   answerAt: string | null;
+  /** What the decision blocks, when coord says. */
+  blocking: { workUnitSlug: string | null; planPhase: string | null } | null;
 }
 
 export interface NeedsMeView {
@@ -382,7 +416,58 @@ export interface NeedsMeView {
     withRecommendation: number | null;
     total: number | null;
   } | null;
+  /** Admitted decisions per decision domain; null = not served. */
+  byDomain: Readonly<Record<string, number>> | null;
+  /**
+   * Whether coord can retire a question whose premise died. `unsupported`
+   * means the list may hold questions whose condition already resolved.
+   */
+  retirement: "supported" | "unsupported" | "unknown";
   error: string | null;
+}
+
+/** One option: a bare string, or `{label, ...}`. Anything else is unreadable. */
+function optionLabel(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  const o = obj(v);
+  return o ? str(o.label) : null;
+}
+
+/**
+ * Coord's `options` is "an array of `{label, ...}` or bare strings", and may
+ * arrive as a single object. Absent → no options. Any entry this page cannot
+ * read makes the whole list `null` ("options not readable") rather than
+ * silently dropping it.
+ */
+export function parseOptions(raw: unknown): string[] | null {
+  if (raw === undefined || raw === null) return [];
+  const a = arr(raw);
+  if (a) {
+    const labels = a.map(optionLabel);
+    return labels.every((l): l is string => l !== null)
+      ? (labels as string[])
+      : null;
+  }
+  const o = obj(raw);
+  if (!o) return null;
+  const single = str(o.label);
+  if (single !== null) return [single];
+  const labels = Object.values(o).map(optionLabel);
+  return labels.length > 0 && labels.every((l) => l !== null)
+    ? (labels as string[])
+    : null;
+}
+
+function parseByDomain(raw: unknown): Record<string, number> | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(o)) {
+    const n = num(v);
+    if (n === null) return null;
+    out[k] = n;
+  }
+  return out;
 }
 
 function parseNeedsMe(raw: unknown): NeedsMeView {
@@ -406,13 +491,17 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
               askedAt: str(r.asked_at),
               ageSecs: num(r.age_secs),
               fork: str(r.fork),
-              options: (arr(r.options) ?? []).filter(
-                (x): x is string => typeof x === "string"
-              ),
+              options: parseOptions(r.options),
               recommendation: str(r.recommendation),
               ifOverturned: str(r.if_overturned),
               shape: str(r.shape),
               answerAt: str(r.answer_at),
+              blocking: obj(r.blocking)
+                ? {
+                    workUnitSlug: str(obj(r.blocking)!.work_unit_slug),
+                    planPhase: idString(obj(r.blocking)!.plan_phase),
+                  }
+                : null,
             },
           ];
         })
@@ -425,6 +514,11 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
           total: num(share.total),
         }
       : null,
+    byDomain: read ? parseByDomain(o.by_domain) : null,
+    retirement:
+      o.retirement === "supported" || o.retirement === "unsupported"
+        ? o.retirement
+        : "unknown",
     error: str(o.error),
   };
 }
@@ -509,6 +603,65 @@ function parseDegradationList(raw: unknown): DegradationView[] | null {
   });
 }
 
+export interface WatcherView {
+  name: string;
+  /** `fresh` | `stale` | `unknown` — coord's verdict. */
+  state: string;
+  asOf: string | null;
+  reason: string | null;
+}
+
+export interface PlaneView {
+  plane: string;
+  /** Every watcher feeding the plane is fresh; null = not stated. */
+  fresh: boolean | null;
+  watchers: WatcherView[];
+  detectionBoundSecs: number | null;
+}
+
+function parsePlanes(raw: unknown): PlaneView[] | null {
+  const o = obj(raw);
+  if (!o) return null;
+  return Object.entries(o).flatMap(([plane, v]): PlaneView[] => {
+    const p = obj(v);
+    if (!p) return [];
+    return [
+      {
+        plane,
+        fresh: bool(p.fresh),
+        watchers: (arr(p.watchers) ?? []).flatMap((w): WatcherView[] => {
+          const r = obj(w);
+          const name = r ? str(r.name) : null;
+          if (!r || !name) return [];
+          return [
+            {
+              name,
+              state: str(r.state) ?? "unknown",
+              asOf: str(r.as_of),
+              reason: str(r.reason),
+            },
+          ];
+        }),
+        detectionBoundSecs: num(p.detection_bound_secs),
+      },
+    ];
+  });
+}
+
+/** One plane's watcher freshness, in words. */
+export function planeFreshnessPhrase(p: PlaneView): string {
+  if (p.watchers.length === 0) {
+    return p.fresh === true
+      ? "read directly, no watcher"
+      : "no watcher reported";
+  }
+  if (p.fresh === true) return "every watcher fresh";
+  const notFresh = p.watchers.filter((w) => w.state !== "fresh");
+  return notFresh.length > 0
+    ? `not fresh: ${notFresh.map((w) => `${w.name} (${w.reason ?? w.state})`).join(", ")}`
+    : "freshness not stated";
+}
+
 export interface DegradationsView {
   state: BlockState;
   /** `degraded` | `none` | `unknown` — coord's own headline rule. */
@@ -518,6 +671,8 @@ export interface DegradationsView {
   open: DegradationView[] | null;
   declared: DegradationView[] | null;
   recentlyCleared: DegradationView[] | null;
+  /** Per-plane watcher freshness; null = not served. */
+  planes: PlaneView[] | null;
   error: string | null;
 }
 
@@ -535,6 +690,7 @@ function parseDegradations(raw: unknown): DegradationsView {
     recentlyCleared: rowsServed
       ? parseDegradationList(o.recently_cleared)
       : null,
+    planes: parsePlanes(o.planes),
     error: str(o.error),
   };
 }
@@ -715,15 +871,36 @@ function countText(n: number | null): string {
 }
 
 /** Open (non-declared) degradation rows. */
-export function openDegradations(d: DegradationsView): DegradationView[] {
-  return (d.open ?? []).filter((r) => !r.declared);
+export function openDegradations(
+  d: DegradationsView
+): DegradationView[] | null {
+  return d.open === null ? null : d.open.filter((r) => !r.declared);
+}
+
+/** How the page's last read went — the strip must know a poll failed. */
+export interface HomeStripReadState {
+  /**
+   * The latest poll did not replace `view` (style guide R6): the numbers are
+   * the last good read's, and the strip is amber at the least.
+   */
+  stale?: boolean;
+}
+
+/** "at the last good read (T)" — the qualifier a stale view carries. */
+export function lastGoodReadPhrase(generatedAt: string | null): string {
+  return `at the last good read (${absoluteTime(generatedAt)})`;
 }
 
 /**
  * The single derived headline (R1). Pure. `view === null` means no read ever
  * delivered a body: the strip then says it cannot tell and every badge is `–`.
+ * `read.stale` means the latest poll failed and `view` is the last good one:
+ * the strip is then never green, and says so in its headline.
  */
-export function deriveHomeStrip(view: ProjectStateView | null): HomeStrip {
+export function deriveHomeStrip(
+  view: ProjectStateView | null,
+  read: HomeStripReadState = {}
+): HomeStrip {
   if (!view) {
     return {
       level: "amber",
@@ -760,6 +937,7 @@ export function deriveHomeStrip(view: ProjectStateView | null): HomeStrip {
     };
   }
 
+  const stale = read.stale === true;
   const unread = blockStates(view).filter((b) => b.state !== "read");
   const unknownSources =
     view.doesNotKnow === null
@@ -768,17 +946,31 @@ export function deriveHomeStrip(view: ProjectStateView | null): HomeStrip {
 
   const needsRead = view.needsMe.state === "read";
   const needsTotal = needsRead ? view.needsMe.total : null;
+  const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
+  const needsSomething =
+    needsRead && ((needsTotal ?? 0) > 0 || needsListed > 0);
   const open = openDegradations(view.degradations);
+  const degRowsServed =
+    view.degradations.state === "read" || view.degradations.state === "stale";
   const degradedRead = view.degradations.state === "read";
   const stalled = view.onTrack.totals?.stalled ?? null;
 
   let attention: Attention = "none";
-  if (needsRead && (needsTotal ?? 0) > 0) {
-    attention = escalateAttention(attention, "author");
+  if (needsSomething) attention = escalateAttention(attention, "author");
+  if (open !== null && open.length > 0) {
+    attention = escalateAttention(attention, "waiting");
   }
-  if (open.length > 0) attention = escalateAttention(attention, "waiting");
-  // Ignorance floors at amber: never green over a block or source not read.
-  if (unread.length > 0 || unknownSources === null || unknownSources > 0) {
+  // Ignorance floors at amber: never green over a block or source not read,
+  // over a read block missing the number it exists to report, or over a view
+  // the latest poll failed to replace.
+  if (
+    unread.length > 0 ||
+    unknownSources === null ||
+    unknownSources > 0 ||
+    (needsRead && needsTotal === null) ||
+    (degRowsServed && open === null) ||
+    stale
+  ) {
     attention = escalateAttention(attention, "waiting");
   }
 
@@ -788,18 +980,31 @@ export function deriveHomeStrip(view: ProjectStateView | null): HomeStrip {
 
   let headline: string;
   if (attention === "author") {
-    const n = needsTotal ?? 0;
-    headline = `${n} ${n === 1 ? "decision needs" : "decisions need"} you`;
-  } else if (open.length > 0) {
+    headline =
+      needsTotal === null
+        ? "Decisions need you — how many is unknown"
+        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
+  } else if (open !== null && open.length > 0) {
     headline = "Something is degrading";
+  } else if (stale && unread.length === 0) {
+    headline = "Cannot tell now — the latest read failed";
   } else if (attention === "waiting") {
     headline = "Cannot tell — part of this view is not read";
   } else {
     headline = "Nothing needs you and nothing is degrading";
   }
+  if (stale) headline = `${headline}, ${lastGoodReadPhrase(view.generatedAt)}`;
 
   const detailParts: string[] = [];
   if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
+  if (needsRead && needsTotal === null) {
+    detailParts.push("Coord did not say how many decisions need you.");
+  }
+  if (degRowsServed && open === null) {
+    detailParts.push(
+      "Coord served no list of open degradations — cannot say whether any exist."
+    );
+  }
   if (unknownSources === null) {
     detailParts.push("Coord served no list of what it could not read.");
   } else if (unknownSources > 0) {
@@ -817,19 +1022,15 @@ export function deriveHomeStrip(view: ProjectStateView | null): HomeStrip {
       {
         key: "needs",
         label: `needs you ${countText(needsTotal)}`,
-        tone:
-          needsRead && (needsTotal ?? 0) > 0
-            ? "attention"
-            : needsRead
-              ? "default"
-              : "muted",
+        tone: needsSomething ? "attention" : needsRead ? "default" : "muted",
         testId: "coord-home.strip.needs-you",
       },
       {
         key: "degraded",
-        // Only a READ block's rows are known to be all of them.
-        label: `degraded ${countText(degradedRead ? open.length : null)}`,
-        tone: degradedRead ? "default" : "muted",
+        // Only a READ block's rows are known to be all of them, and only when
+        // the list was served at all.
+        label: `degraded ${countText(degradedRead && open !== null ? open.length : null)}`,
+        tone: degradedRead && open !== null ? "default" : "muted",
         testId: "coord-home.strip.degraded",
       },
       {

@@ -25,6 +25,8 @@ import {
   deriveHomeStrip,
   nothingNeedsYou,
   parseBlockState,
+  parseOptions,
+  withoutVerdictWords,
   parseProjectState,
   unitClassLabel,
   type BlockState,
@@ -283,5 +285,151 @@ describe("the surface's palette", () => {
     expect(
       paletteDisagreements(HOME_ATTENTION_BY_KIND, HOME_STATUS_PALETTE)
     ).toEqual([]);
+  });
+});
+
+describe("review fixes — the strip over a partly-known view", () => {
+  it("is not green when the latest poll failed over a calm last-good view (R6)", () => {
+    const view = parseProjectState(calmBody());
+    expect(deriveHomeStrip(view).level).toBe("green");
+    const strip = deriveHomeStrip(view, { stale: true });
+    expect(strip.level).toBe("amber");
+    expect(strip.headline).toMatch(/at the last good read \(/);
+  });
+
+  it("keeps red over a stale view, still qualified by the last good read", () => {
+    const body = calmBody();
+    body.needs_me = {
+      state: "read",
+      total: 1,
+      omitted: 0,
+      items: [{ id: "q" }],
+    };
+    const strip = deriveHomeStrip(parseProjectState(body), { stale: true });
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toMatch(/at the last good read/);
+  });
+
+  it("is not green and shows a dash when a read degradations block has no open list", () => {
+    const body = calmBody();
+    body.degradations = {
+      state: "read",
+      headline: "none",
+      declared: [],
+      recently_cleared: [],
+    };
+    const view = parseProjectState(body)!;
+    expect(view.degradations.open).toBeNull();
+    const strip = deriveHomeStrip(view);
+    expect(strip.level).toBe("amber");
+    expect(strip.badges.find((b) => b.key === "degraded")?.label).toBe(
+      "degraded –"
+    );
+  });
+
+  it("is not green when needs_me is read with no total", () => {
+    const body = calmBody();
+    body.needs_me = { state: "read", items: [] };
+    expect(deriveHomeStrip(parseProjectState(body)).level).toBe("amber");
+  });
+
+  it("is red when needs_me lists items even without a total", () => {
+    const body = calmBody();
+    body.needs_me = { state: "read", items: [{ id: "q-1", fork: "Pick" }] };
+    const strip = deriveHomeStrip(parseProjectState(body));
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toMatch(/how many is unknown/);
+  });
+});
+
+describe("review fixes — parsing", () => {
+  it("reads options as bare strings, {label} objects, or a single object", () => {
+    expect(parseOptions(["a", { label: "b", value: 2 }])).toEqual(["a", "b"]);
+    expect(parseOptions({ label: "only" })).toEqual(["only"]);
+    expect(parseOptions(undefined)).toEqual([]);
+  });
+
+  it("marks options unreadable rather than dropping an entry", () => {
+    expect(parseOptions(["a", { value: 1 }])).toBeNull();
+    expect(parseOptions(42)).toBeNull();
+  });
+
+  it("parses by_domain, retirement and blocking", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        by_domain: { repo_pull: 3, unclassified: 1 },
+        retirement: "unsupported",
+        items: [{ id: "q", blocking: { work_unit_slug: "s", plan_phase: 2 } }],
+      },
+    })!;
+    expect(view.needsMe.byDomain).toEqual({ repo_pull: 3, unclassified: 1 });
+    expect(view.needsMe.retirement).toBe("unsupported");
+    expect(view.needsMe.items?.[0].blocking).toEqual({
+      workUnitSlug: "s",
+      planPhase: "2",
+    });
+    expect(
+      parseProjectState({ needs_me: { state: "read" } })!.needsMe.retirement
+    ).toBe("unknown");
+  });
+
+  it("parses per-plane watcher freshness from degradations.planes", () => {
+    const view = parseProjectState({
+      degradations: {
+        state: "stale",
+        headline: "unknown",
+        open: [],
+        planes: {
+          merge_train: {
+            fresh: false,
+            watchers: [
+              {
+                name: "train_health",
+                state: "stale",
+                reason: "no_successful_tick",
+              },
+            ],
+            detection_bound_secs: 90,
+          },
+        },
+      },
+    })!;
+    expect(view.degradations.planes).toEqual([
+      {
+        plane: "merge_train",
+        fresh: false,
+        watchers: [
+          {
+            name: "train_health",
+            state: "stale",
+            asOf: null,
+            reason: "no_successful_tick",
+          },
+        ],
+        detectionBoundSecs: 90,
+      },
+    ]);
+  });
+
+  it("reads the bookkeeping exclusion from on_track totals", () => {
+    const view = parseProjectState({
+      on_track: {
+        state: "read",
+        totals: {
+          row_count: 1,
+          classes: CLASSES,
+          excluded: { merge_shepherd_bookkeeping: 7 },
+        },
+      },
+    })!;
+    expect(view.onTrack.excludedBookkeeping).toBe(7);
+  });
+
+  it("rewords coord free text that names the stalled class", () => {
+    const text =
+      "in_progress units with NO status-history row cannot be judged stalled; they are classed in_flight";
+    expect(withoutVerdictWords(text)).not.toMatch(/stalled/i);
   });
 });

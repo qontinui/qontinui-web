@@ -164,6 +164,17 @@ function doorBody(overrides: Record<string, unknown> = {}) {
     does_not_know: [
       { source: "work_units", state: "read", as_of: "2026-09-30T12:00:00Z" },
       {
+        // coord's own wording today names the class by its wire key; the
+        // page must not put that word on screen (R8).
+        source: "work_unit_status_history",
+        state: "read",
+        as_of: "2026-09-30T12:00:00Z",
+        rows_considered: 3,
+        rows_excluded: 1,
+        exclusion_reason:
+          "in_progress units with NO status-history row cannot be judged stalled; they are classed in_flight with history: not_recorded",
+      },
+      {
         source: "needs_me (agent_questions operator audience + operator gates)",
         state: "not_implemented",
         exclusion_reason: "plan Phase 3",
@@ -286,8 +297,155 @@ describe("/admin/coord/home", () => {
       "href",
       "/admin/coord/work-units/2026-09-01-old-plan"
     );
+    // …and with coord's exclusion reason that names the class expanded too.
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    fireEvent.click(within(dnk).getByText("work_unit_status_history"));
+    expect(dnk).toHaveTextContent("Why excluded:");
     expect(document.body.textContent ?? "").not.toMatch(/stalled/i);
     expect(onTrack).toHaveTextContent("no recorded change in 14 days");
+  });
+
+  it("goes amber when a later poll fails over a calm view, and words the empty states in the past", async () => {
+    await renderWith(
+      doorBody({
+        correctness: { state: "read", reason: null },
+        needs_me: { state: "read", total: 0, omitted: 0, items: [] },
+        degradations: {
+          state: "read",
+          headline: "none",
+          open: [],
+          declared: [],
+          recently_cleared: [],
+          planes: {},
+        },
+        does_not_know: [{ source: "work_units", state: "read" }],
+      })
+    );
+    const health = screen.getByTestId("coord-home.strip.health");
+    expect(health).toHaveAttribute("data-health-level", "green");
+    expect(screen.getByTestId("coord-home.needs-you.empty")).toHaveTextContent(
+      /^Nothing needs you$/
+    );
+
+    httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-home.refresh"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-home.strip.health")).toHaveAttribute(
+        "data-health-level",
+        "amber"
+      )
+    );
+    expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
+      /at the last good read/
+    );
+    expect(screen.getByTestId("coord-home.needs-you.empty")).toHaveTextContent(
+      /Nothing needed you at the last good read/
+    );
+    expect(screen.getByTestId("coord-home.degrading.empty")).toHaveTextContent(
+      /Nothing was degrading at the last good read/
+    );
+  });
+
+  it("says it cannot tell when a read degradations block serves no open list", async () => {
+    await renderWith(
+      doorBody({
+        degradations: { state: "read", headline: "none", recently_cleared: [] },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.degrading.no-list")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-home.degrading.empty")
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("coord-home.strip.degraded")).toHaveTextContent(
+      "degraded –"
+    );
+  });
+
+  it("does not give an exact cleared count on a stale block", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "stale",
+          headline: "unknown",
+          open: [],
+          recently_cleared: [{ id: "alert:3", plane: "disk" }],
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.degrading.cleared-count")
+    ).toHaveTextContent("–");
+  });
+
+  it("shows merge-train watcher freshness under Degrading", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "stale",
+          headline: "unknown",
+          open: [],
+          planes: {
+            merge_train: {
+              fresh: false,
+              watchers: [
+                {
+                  name: "train_health",
+                  state: "stale",
+                  reason: "no_successful_tick",
+                },
+              ],
+            },
+          },
+        },
+      })
+    );
+    expect(screen.getByTestId("coord-home.degrading.planes")).toHaveTextContent(
+      "merge train: not fresh: train_health (no_successful_tick)"
+    );
+  });
+
+  it("says unknown, not 'No work units', when a read on_track serves no groups", async () => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "read",
+          totals: { row_count: 11, classes: CLASSES },
+          stall_window_secs: 1_209_600,
+        },
+      })
+    );
+    const onTrack = screen.getByTestId("coord-home.on-track");
+    expect(onTrack).toHaveTextContent("no per-repo breakdown — unknown");
+    expect(onTrack).not.toHaveTextContent("No work units.");
+  });
+
+  it("flags unretirable questions and unreadable options", async () => {
+    await renderWith(
+      doorBody({
+        needs_me: {
+          state: "read",
+          total: 1,
+          omitted: 0,
+          retirement: "unsupported",
+          by_domain: { repo_pull: 1 },
+          items: [{ id: "q-9", fork: "Which way?", options: [{ value: 1 }] }],
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.needs-you.retirement")
+    ).toHaveTextContent(/condition has already resolved/);
+    expect(
+      screen.getByTestId("coord-home.needs-you.by-domain")
+    ).toHaveTextContent("repo pull 1");
+    fireEvent.click(screen.getByText("Which way?"));
+    expect(screen.getByTestId("coord-home.needs-you")).toHaveTextContent(
+      "Options: not readable"
+    );
   });
 
   it("renders the initiative's in-scope items verbatim, alignment not yet attributable", async () => {
@@ -333,9 +491,9 @@ describe("/admin/coord/home", () => {
   it("lists what the view does not know, with not-read sources marked", async () => {
     await renderWith(doorBody());
     const rows = screen.getAllByTestId("coord-home.does-not-know.row");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
-      "1 of 2 sources not read"
+      "1 of 3 sources not read"
     );
   });
 

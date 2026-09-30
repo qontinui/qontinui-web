@@ -43,7 +43,10 @@ import {
   durationText,
   needsYouReason,
   nothingNeedsYou,
+  lastGoodReadPhrase,
   openDegradations,
+  planeFreshnessPhrase,
+  withoutVerdictWords,
   planeLabel,
   remediationPhrase,
   stallWindowDays,
@@ -225,11 +228,34 @@ function NeedsYouRow({
               </span>
               {item.ifOverturned ?? "not stated"}
             </p>
-            {item.options.length > 0 && (
-              <p className="m-0 text-muted-foreground">
-                Options: {item.options.join(" · ")}
-              </p>
+            {item.options === null ? (
+              <p className="m-0 text-muted-foreground">Options: not readable</p>
+            ) : (
+              item.options.length > 0 && (
+                <p className="m-0 text-muted-foreground">
+                  Options: {item.options.join(" · ")}
+                </p>
+              )
             )}
+            {item.blocking &&
+              (item.blocking.workUnitSlug || item.blocking.planPhase) && (
+                <p className="m-0 text-muted-foreground">
+                  Blocks:{" "}
+                  {item.blocking.workUnitSlug ? (
+                    <Link
+                      href={`/admin/coord/work-units/${encodeURIComponent(item.blocking.workUnitSlug)}`}
+                      className="underline underline-offset-2"
+                    >
+                      {item.blocking.workUnitSlug}
+                    </Link>
+                  ) : (
+                    "a piece of work"
+                  )}
+                  {item.blocking.planPhase
+                    ? `, phase ${item.blocking.planPhase}`
+                    : ""}
+                </p>
+              )}
           </div>
         }
         actions={
@@ -257,7 +283,16 @@ function NeedsYouRow({
   );
 }
 
-export function NeedsYouSection({ needs }: { needs: NeedsMeView }) {
+export function NeedsYouSection({
+  needs,
+  stale = false,
+  generatedAt = null,
+}: {
+  needs: NeedsMeView;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale?: boolean;
+  generatedAt?: string | null;
+}) {
   const read = needs.state === "read";
   const served = needs.items?.length ?? 0;
   const header = read
@@ -283,10 +318,32 @@ export function NeedsYouSection({ needs }: { needs: NeedsMeView }) {
           {header}
         </span>
       </div>
+      {read && needs.byDomain && Object.keys(needs.byDomain).length > 0 && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid="coord-home.needs-you.by-domain"
+        >
+          By kind of decision:{" "}
+          {Object.entries(needs.byDomain)
+            .map(([domain, n]) => `${domain.replace(/_/g, " ")} ${n}`)
+            .join(" · ")}
+        </p>
+      )}
+      {read && needs.retirement === "unsupported" && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid="coord-home.needs-you.retirement"
+        >
+          This list may contain questions whose condition has already resolved:
+          coord cannot retire them on this database.
+        </p>
+      )}
       {read ? (
         nothingNeedsYou(needs) ? (
           <p className="m-0 text-sm" data-testid="coord-home.needs-you.empty">
-            Nothing needs you
+            {stale
+              ? `Nothing needed you ${lastGoodReadPhrase(generatedAt)}`
+              : "Nothing needs you"}
           </p>
         ) : served === 0 ? (
           <p className="m-0 text-sm text-muted-foreground">
@@ -423,7 +480,16 @@ function DegradationRow({
   );
 }
 
-export function DegradingSection({ deg }: { deg: DegradationsView }) {
+export function DegradingSection({
+  deg,
+  stale = false,
+  generatedAt = null,
+}: {
+  deg: DegradationsView;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale?: boolean;
+  generatedAt?: string | null;
+}) {
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -432,7 +498,7 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
   const cleared = deg.recentlyCleared ?? [];
   const rowsServed = deg.state === "read" || deg.state === "stale";
   const rows: { d: DegradationView; kind: "degrading" | "declared" }[] = [
-    ...open.map((d) => ({ d, kind: "degrading" as const })),
+    ...(open ?? []).map((d) => ({ d, kind: "degrading" as const })),
     ...declared.map((d) => ({ d, kind: "declared" as const })),
   ];
   return (
@@ -445,9 +511,11 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Degrading</h2>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {deg.state === "read"
-            ? `${open.length} open`
-            : BLOCK_STATE_PHRASE[deg.state]}
+          {deg.state !== "read"
+            ? BLOCK_STATE_PHRASE[deg.state]
+            : open === null
+              ? "– open"
+              : `${open.length} open`}
         </span>
       </div>
       {!rowsServed ? (
@@ -456,7 +524,9 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
           state={deg.state}
           testId="coord-home.degrading.not-read"
         >
-          {deg.error && <p className="m-0">Coord said: {deg.error}</p>}
+          {deg.error && (
+            <p className="m-0">Coord said: {withoutVerdictWords(deg.error)}</p>
+          )}
         </NotRead>
       ) : (
         <>
@@ -466,17 +536,31 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
               data-testid="coord-home.degrading.incomplete"
             >
               Incomplete view —{" "}
-              {deg.headlineReason ?? "a source feeding it was not fully read"}.
-              The rows below are real; there may be others.
+              {deg.headlineReason
+                ? withoutVerdictWords(deg.headlineReason)
+                : "a source feeding it was not fully read"}
+              . The rows below are real; there may be others.
+            </p>
+          )}
+          {open === null && (
+            <p
+              className="m-0 text-sm text-muted-foreground"
+              data-testid="coord-home.degrading.no-list"
+            >
+              Coord served no list of open degradations, so this view cannot say
+              whether any exist.
             </p>
           )}
           {rows.length === 0 ? (
-            deg.state === "read" && deg.headline === "none" ? (
+            open === null ? null : deg.state === "read" &&
+              deg.headline === "none" ? (
               <p
                 className="m-0 text-sm"
                 data-testid="coord-home.degrading.empty"
               >
-                Nothing is degrading
+                {stale
+                  ? `Nothing was degrading ${lastGoodReadPhrase(generatedAt)}`
+                  : "Nothing is degrading"}
               </p>
             ) : (
               <p className="m-0 text-sm text-muted-foreground">
@@ -507,7 +591,12 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
                   {
                     key: "cleared",
                     label: "last 24 h ",
-                    value: deg.recentlyCleared === null ? null : cleared.length,
+                    // Exact only on a read block: a stale block's rows are
+                    // not known to be all of them.
+                    value:
+                      deg.state === "read" && deg.recentlyCleared !== null
+                        ? cleared.length
+                        : null,
                     tone: "muted",
                   },
                 ]}
@@ -517,9 +606,15 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
             data-testid="coord-home.degrading.cleared"
             data-ui-bridge-id="coord-home.degrading.cleared"
           >
-            {cleared.length === 0 ? (
+            {deg.recentlyCleared === null ? (
               <p className="m-0 text-sm text-muted-foreground">
-                Nothing cleared in the last 24 hours.
+                Coord served no list of recently cleared degradations — unknown.
+              </p>
+            ) : cleared.length === 0 ? (
+              <p className="m-0 text-sm text-muted-foreground">
+                {deg.state === "read"
+                  ? "Nothing cleared in the last 24 hours."
+                  : "None served; this view is incomplete, so there may be some."}
               </p>
             ) : (
               <RecordList
@@ -538,6 +633,25 @@ export function DegradingSection({ deg }: { deg: DegradationsView }) {
           </CollapsiblePanel>
         </>
       )}
+      <div
+        className="space-y-0.5 text-xs text-muted-foreground"
+        data-testid="coord-home.degrading.planes"
+        data-ui-bridge-id="coord-home.degrading.planes"
+      >
+        {deg.planes === null ? (
+          <p className="m-0">
+            Watcher freshness per area: not served — unknown.
+          </p>
+        ) : (
+          <ul className="m-0 pl-0 list-none space-y-0.5">
+            {deg.planes.map((p) => (
+              <li key={p.plane} data-plane={p.plane}>
+                {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
@@ -795,7 +909,9 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
             itemKey={(g, i) => `${g.kind}:${g.key ?? "none"}:${i}`}
             empty={
               <p className="m-0 text-sm text-muted-foreground">
-                No work units.
+                {onTrack.groups === null
+                  ? "Coord served no per-repo breakdown — unknown."
+                  : "No work units."}
               </p>
             }
             renderRow={(g, ctx) => (
@@ -891,7 +1007,7 @@ function sourceReason(s: SourceCoverageView): string {
       : `bound ${durationText(s.freshnessBoundSecs)}`
   );
   parts.push(`excluded ${s.rowsExcluded ?? "–"}`);
-  if (s.error) parts.push(s.error);
+  if (s.error) parts.push(withoutVerdictWords(s.error));
   return parts.join(" · ");
 }
 
@@ -967,7 +1083,7 @@ export function DoesNotKnowSection({
                       {s.state === "read"
                         ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
                         : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error ? ` ${s.error}` : ""}
+                      {s.error ? ` ${withoutVerdictWords(s.error)}` : ""}
                     </p>
                     <p className="m-0 text-muted-foreground">
                       Freshness bound:{" "}
@@ -979,7 +1095,7 @@ export function DoesNotKnowSection({
                     </p>
                     {s.exclusionReason && (
                       <p className="m-0 text-muted-foreground">
-                        Why excluded: {s.exclusionReason}
+                        Why excluded: {withoutVerdictWords(s.exclusionReason)}
                       </p>
                     )}
                   </div>
