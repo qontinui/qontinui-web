@@ -81,15 +81,31 @@ describe("renderNextAction — the Rust dump", () => {
   });
 });
 
+/** Every `RefusalCode`, total over the generated union (a code added to the
+ * schemas without a row here is a type error). */
+const ALL_CODES: Record<RefusalCode, true> = {
+  workspace_root_unresolved: true,
+  sibling_checkout_absent: true,
+  endpoint_unresolved: true,
+  glossary_term_unknown: true,
+  authentication_required: true,
+  credential_rejected: true,
+  permission_denied: true,
+  not_found: true,
+  conflict: true,
+  invalid_request: true,
+  rate_limited: true,
+  quota_exceeded: true,
+  upstream_unavailable: true,
+  upstream_timeout: true,
+  device_not_connected: true,
+  service_unavailable: true,
+  internal_error: true,
+  unknown: true,
+};
+
 describe("renderRefusal — the Rust dump", () => {
   it("matches Refusal::render for every code × discriminator", () => {
-    const codes: Record<RefusalCode, true> = {
-      workspace_root_unresolved: true,
-      sibling_checkout_absent: true,
-      endpoint_unresolved: true,
-      glossary_term_unknown: true,
-      unknown: true,
-    };
     const seen = new Set<string>();
     for (const row of fixtures.refusal) {
       const decoded = decodeRefusal(row.refusal);
@@ -97,7 +113,7 @@ describe("renderRefusal — the Rust dump", () => {
       expect(renderRefusal(decoded!)).toBe(row.render);
       seen.add(row.refusal.code);
     }
-    expect([...seen].sort()).toEqual(Object.keys(codes).sort());
+    expect([...seen].sort()).toEqual(Object.keys(ALL_CODES).sort());
   });
 });
 
@@ -167,13 +183,7 @@ describe("render — the Rust unit tests, copied", () => {
   });
 
   it("never renders an empty sentence for any shape", () => {
-    const codes: RefusalCode[] = [
-      "workspace_root_unresolved",
-      "sibling_checkout_absent",
-      "endpoint_unresolved",
-      "glossary_term_unknown",
-      "unknown",
-    ];
+    const codes = Object.keys(ALL_CODES) as RefusalCode[];
     const kinds = [...new Set(fixtures.next_action.map((r) => r.kind))];
     for (const code of codes) {
       for (const kind of kinds) {

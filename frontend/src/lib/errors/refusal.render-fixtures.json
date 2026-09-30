@@ -1629,6 +1629,721 @@
   },
   {
    "refusal": {
+    "code": "authentication_required",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "This needs you to be signed in. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "authentication_required",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "This needs you to be signed in. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "authentication_required",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "This needs you to be signed in (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "authentication_required",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "This needs you to be signed in (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "credential_rejected",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The credential this request presented was not accepted. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "credential_rejected",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The credential this request presented was not accepted. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "credential_rejected",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The credential this request presented was not accepted (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "credential_rejected",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The credential this request presented was not accepted (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "permission_denied",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "You do not have permission to do this. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "permission_denied",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "You do not have permission to do this. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "permission_denied",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "You do not have permission to do this (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "permission_denied",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "You do not have permission to do this (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "not_found",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The requested item was not found. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "not_found",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The requested item was not found. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "not_found",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The requested item was not found (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "not_found",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The requested item was not found (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "conflict",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request conflicts with the current state. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "conflict",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request conflicts with the current state. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "conflict",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request conflicts with the current state (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "conflict",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request conflicts with the current state (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "invalid_request",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request was not valid. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "invalid_request",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request was not valid. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "invalid_request",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request was not valid (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "invalid_request",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The request was not valid (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "rate_limited",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "Too many requests were made. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "rate_limited",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "Too many requests were made. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "rate_limited",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "Too many requests were made (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "rate_limited",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "Too many requests were made (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "quota_exceeded",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A usage limit has been reached. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "quota_exceeded",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A usage limit has been reached. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "quota_exceeded",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A usage limit has been reached (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "quota_exceeded",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A usage limit has been reached (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_unavailable",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on could not be reached. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_unavailable",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on could not be reached. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_unavailable",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on could not be reached (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_unavailable",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on could not be reached (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_timeout",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on did not answer in time. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_timeout",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on did not answer in time. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_timeout",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on did not answer in time (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "upstream_timeout",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "A service this operation depends on did not answer in time (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "device_not_connected",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The device this operation needs is not connected. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "device_not_connected",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The device this operation needs is not connected. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "device_not_connected",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The device this operation needs is not connected (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "device_not_connected",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The device this operation needs is not connected (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "service_unavailable",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service handling this request is unavailable right now. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "service_unavailable",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service handling this request is unavailable right now. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "service_unavailable",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service handling this request is unavailable right now (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "service_unavailable",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service handling this request is unavailable right now (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "internal_error",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service hit an unexpected error. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "internal_error",
+    "discriminator": "",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service hit an unexpected error. Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "internal_error",
+    "discriminator": "backend",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service hit an unexpected error (backend). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
+    "code": "internal_error",
+    "discriminator": "a\nb \"c\"",
+    "glossary_terms": [],
+    "next_action": {
+     "kind": "set_setting",
+     "target": "workspace_root"
+    },
+    "observed_at": "2026-09-29T00:00:00Z",
+    "source": "runner"
+   },
+   "render": "The service hit an unexpected error (a b 'c'). Set the \"workspace_root\" setting, then try again."
+  },
+  {
+   "refusal": {
     "code": "unknown",
     "glossary_terms": [],
     "next_action": {

@@ -62,6 +62,22 @@ const HEADLINES: Readonly<Record<RefusalCode, string>> = {
   endpoint_unresolved:
     "The address of a service this operation needs is not configured",
   glossary_term_unknown: "That term is not in this version's glossary",
+  authentication_required: "This needs you to be signed in",
+  credential_rejected: "The credential this request presented was not accepted",
+  permission_denied: "You do not have permission to do this",
+  not_found: "The requested item was not found",
+  conflict: "The request conflicts with the current state",
+  invalid_request: "The request was not valid",
+  rate_limited: "Too many requests were made",
+  quota_exceeded: "A usage limit has been reached",
+  upstream_unavailable:
+    "A service this operation depends on could not be reached",
+  upstream_timeout:
+    "A service this operation depends on did not answer in time",
+  device_not_connected: "The device this operation needs is not connected",
+  service_unavailable:
+    "The service handling this request is unavailable right now",
+  internal_error: "The service hit an unexpected error",
   unknown:
     "The request was refused for a reason this version does not recognise",
 };
