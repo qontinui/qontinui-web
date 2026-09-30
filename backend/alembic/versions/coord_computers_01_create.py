@@ -107,9 +107,10 @@ repairs.
 
 Merge-train classification: this revision does not take the coord merge-train
 migration classifier fast path: its non-concurrent ``CREATE INDEX`` statements
-(on the new tables and on ``coord.devices``) take the escalate path, the same
-as ``coordinput_01_operator_inputs``. Every SQL string is still
-a static literal, so the classifier can read each statement.
+(on the new tables and on ``coord.devices``) and the up-front ``LOCK TABLE``
+take the escalate path, the same as ``coordinput_01_operator_inputs``. Every
+SQL string is still a static literal, so the classifier can read each
+statement.
 """
 
 from collections.abc import Sequence
