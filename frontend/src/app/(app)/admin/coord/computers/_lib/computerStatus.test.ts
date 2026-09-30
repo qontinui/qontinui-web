@@ -34,6 +34,7 @@ import {
   computerStatus,
   deriveComputerDetailHealth,
   deriveComputersHealth,
+  emptyLanesText,
   historyByLane,
   historyPoints,
   isSchemaPendingBody,
@@ -318,10 +319,25 @@ describe("computerStatus", () => {
     );
   });
 
-  it("uses coord's samples_state when there is no lane at all — usage unknown, not healthy", () => {
-    const s = status(computer({ lanes: [] }));
+  it("reads empty lanes with no sample ever as samples unknown — not healthy", () => {
+    const s = status(computer({ lanes: [], newest_sample_age_secs: null }));
     expect(s.kind).toBe("lane_stale");
     expect(s.label).toBe("samples unknown");
+  });
+
+  it("reads empty lanes with an old sample as samples STALE, naming the newest age", () => {
+    // Coord drops a lane silent > 30 min from `lanes` and folds to `stale`.
+    const c = computer({ lanes: [], newest_sample_age_secs: 2400 });
+    expect(c.samples_state).toBe("stale");
+    const s = status(c);
+    expect(s.kind).toBe("lane_stale");
+    expect(s.label).toBe("samples stale");
+    expect(s.reason).toBe(
+      "Coord reports this computer's samples as stale — newest 40m ago; current usage is unknown."
+    );
+    expect(emptyLanesText(normalizeComputer(c), NOW, NOW)).toBe(
+      "Samples stale, newest 40m ago — no lane has sampled in the last 30 min, so current usage is unknown (not idle)."
+    );
   });
 });
 

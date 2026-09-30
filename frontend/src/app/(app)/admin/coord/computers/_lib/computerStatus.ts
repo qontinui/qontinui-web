@@ -248,8 +248,14 @@ export interface ComputerSummaryWire {
   first_seen_at: string;
   freshness: ComputerFreshnessWire;
   lanes: ComputerLaneWire[];
-  /** Worst lane freshness: `unknown` with no lane in the lookback, `stale` if any lane is. */
+  /**
+   * Worst lane freshness: `stale` if any listed lane is, OR if no lane sampled
+   * inside coord's 30 min lane lookback while an older sample exists (then
+   * `lanes` is EMPTY); `unknown` only when the computer was never sampled.
+   */
   samples_state: string;
+  /** Age of the newest sample on this computer, any lane — `null` = never sampled (UNKNOWN). */
+  newest_sample_age_secs: number | null;
   sample_stale_after_secs: number;
   /** `false` = no service row was ever stored — `services_failed: 0` is then UNKNOWN. */
   services_reported: boolean;
@@ -474,8 +480,10 @@ export interface NormalizedComputer {
   capacity: Capacity;
   freshness: ComputerFreshnessWire;
   lanes: ComputerLaneWire[];
-  /** Coord's `samples_state` — the worst lane freshness (unknown with no lane). */
+  /** Coord's `samples_state` — the worst lane freshness. */
   samplesState: string;
+  /** Coord's `newest_sample_age_secs` — `null` = never sampled. */
+  newestSampleAgeSecs: number | null;
   /**
    * Down units (failed or inactive). `null` when `services_reported` is
    * false: coord then sends `services_failed: 0`, and that zero is UNKNOWN.
@@ -522,6 +530,7 @@ export function normalizeComputer(
     freshness: c.freshness,
     lanes: c.lanes,
     samplesState: c.samples_state,
+    newestSampleAgeSecs: num(c.newest_sample_age_secs),
     servicesFailed: reported ? c.services_failed : null,
     servicesTotal: reported ? c.services_total : null,
     lastEvent: c.last_event,
@@ -574,6 +583,36 @@ function ageFrom(
   // clock running behind makes an hour-old report "just now"), so an absent
   // `age_secs` reads UNKNOWN and the timestamp is shown only as a timestamp.
   return age === null ? null : age + elapsed;
+}
+
+/**
+ * The newest sample's age as of NOW — coord's `newest_sample_age_secs` aged by
+ * the time since the read, `null` when the computer was never sampled.
+ */
+export function newestSampleAge(
+  c: NormalizedComputer,
+  fetchedAtMs: number | null,
+  nowMs: number
+): number | null {
+  return ageFrom(c.newestSampleAgeSecs, fetchedAtMs, nowMs);
+}
+
+/**
+ * The sentence for a computer whose `lanes` coord sent EMPTY. Two different
+ * facts share that empty array, and coord's `samples_state` tells them apart:
+ * `stale` = every lane went silent past the 30 min lookback (so none is
+ * listed) but a sample exists, `unknown` = never sampled.
+ */
+export function emptyLanesText(
+  c: NormalizedComputer,
+  fetchedAtMs: number | null,
+  nowMs: number
+): string {
+  const age = newestSampleAge(c, fetchedAtMs, nowMs);
+  if (c.samplesState === "stale" && age !== null) {
+    return `Samples stale, newest ${formatAge(age)} — no lane has sampled in the last 30 min, so current usage is unknown (not idle).`;
+  }
+  return "No resource sample from this computer — usage is unknown, not idle.";
 }
 
 /**
@@ -1001,8 +1040,8 @@ export function computerStatus(
       "lane_stale",
       c.samplesState === "stale" ? "samples stale" : "samples unknown",
       c.samplesState === "stale"
-        ? "Coord reports this computer's samples as stale — current usage is unknown."
-        : "Coord has no resource sample from this computer in its lookback — current usage is unknown, not idle."
+        ? `Coord reports this computer's samples as stale — newest ${formatAge(newestSampleAge(c, clock.fetchedAtMs, clock.nowMs))}; current usage is unknown.`
+        : "Coord has never received a resource sample from this computer — current usage is unknown, not idle."
     );
   }
   if (c.servicesFailed === null) {
