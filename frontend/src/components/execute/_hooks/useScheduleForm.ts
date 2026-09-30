@@ -17,6 +17,7 @@ import {
   buildSchedule,
   buildConditions,
   buildWorkflowTask,
+  sameConditions,
 } from "../_types/schedule-editor";
 
 export function useScheduleForm(
@@ -158,9 +159,12 @@ export function useScheduleForm(
           task: buildWorkflowTask(workflowName, editingTask.task),
           skipIfCompleted,
           autoFixOnFailure,
-          // The runner reads `conditions: null` as "leave unchanged", so
-          // clearing the conditions a task had has to send an empty object.
-          conditions: conditions ?? (editingTask.conditions ? {} : null),
+          // Sent only when changed: the runner resets a waiting task's
+          // condition clock on any update that carries conditions. It reads
+          // `conditions: null` as "leave unchanged", so a clear sends `{}`.
+          conditions: sameConditions(conditions, editingTask.conditions)
+            ? undefined
+            : (conditions ?? {}),
         });
         toast.success("Schedule updated");
       } else {
