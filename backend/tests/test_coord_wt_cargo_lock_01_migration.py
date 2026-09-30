@@ -64,7 +64,7 @@ _REVISION_FILENAME = "coord_wt_cargo_lock_01_create.py"
 
 # Pinned as a literal, not read back from the module: the head this revision
 # was authored against. A moved head is re-pointed in the revision AND here.
-_PARENT_REVISION_ID = "sched_cond_01_scheduled_tasks_conditions"
+_PARENT_REVISION_ID = "coordinput_01_operator_inputs"
 
 _SCHEMA = "coord"
 _TABLE = "worktree_cargo_lock"
