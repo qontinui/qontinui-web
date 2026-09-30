@@ -171,7 +171,7 @@ export default function OverviewSummaryPage() {
           />
         )}
         {progress.state === "ready" && (
-          <ProgressPanel progress={progress.progress} />
+          <ProgressPanel reading={progress.reading} />
         )}
       </aside>
     </div>

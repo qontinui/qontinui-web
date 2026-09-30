@@ -1,6 +1,132 @@
 import { describe, expect, it } from "vitest";
-import { summarizeProgress, titleOf } from "./progress";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  BLOCK_STATES,
+  UNIT_CLASSES,
+  parseProjectState,
+  type OnTrackView,
+  type UnitClass,
+} from "@/components/admin/coord/coordHomeStatus";
+import {
+  CLASS_BUCKET,
+  PROGRESS_BUCKETS,
+  progressFromOnTrack,
+  recentlyFinishedFrom,
+  titleOf,
+} from "./progress";
+
+const zeros = (): Record<UnitClass, number> =>
+  Object.fromEntries(UNIT_CLASSES.map((c) => [c, 0])) as Record<
+    UnitClass,
+    number
+  >;
+
+function onTrack(
+  classes: Partial<Record<UnitClass, number>> | Record<string, unknown>,
+  state = "read"
+): OnTrackView {
+  const all = { ...zeros(), ...classes };
+  const rowCount = Object.values(all).reduce(
+    (a: number, b) => a + (typeof b === "number" ? b : 0),
+    0
+  );
+  return parseProjectState({
+    on_track: {
+      state,
+      totals: { row_count: rowCount, classes: all },
+      groups: [],
+    },
+  })!.onTrack;
+}
+
+describe("progressFromOnTrack — the door's classes in business words", () => {
+  it("maps every door class exactly as documented", () => {
+    expect(CLASS_BUCKET).toEqual({
+      shipped: "done",
+      in_flight: "in_progress",
+      stalled: "in_progress",
+      blocked_on_dependency: "blocked",
+      waiting_on_gate: "blocked",
+      not_started: "planned",
+      closed_other: null,
+      off_vocabulary: "unknown",
+      unset: "unknown",
+    });
+  });
+
+  it("buckets the door's totals", () => {
+    const r = progressFromOnTrack(
+      onTrack({
+        shipped: 4,
+        in_flight: 2,
+        stalled: 1,
+        blocked_on_dependency: 1,
+        waiting_on_gate: 2,
+        not_started: 3,
+        closed_other: 5,
+        off_vocabulary: 1,
+        unset: 1,
+      }),
+      null
+    );
+    expect(r.counted).toBe(true);
+    if (!r.counted) return;
+    expect(r.progress.counts).toEqual({
+      done: 4,
+      in_progress: 3,
+      blocked: 3,
+      planned: 3,
+      unknown: 2,
+    });
+    // Closed work will not be done and counts toward nothing.
+    expect(r.progress.total).toBe(15);
+  });
+
+  it("keeps unrecognised statuses in the total, so they cannot inflate done", () => {
+    const r = progressFromOnTrack(
+      onTrack({ shipped: 1, off_vocabulary: 2 }),
+      null
+    );
+    if (!r.counted) throw new Error("expected a count");
+    expect(r.progress.counts.unknown).toBe(2);
+    expect(r.progress.counts.done / r.progress.total).toBeCloseTo(1 / 3);
+  });
+
+  it("has no bucket the door cannot source (no 'Ready to start')", () => {
+    expect(PROGRESS_BUCKETS.map((b) => b.key)).toEqual([
+      "done",
+      "in_progress",
+      "blocked",
+      "planned",
+      "unknown",
+    ]);
+  });
+
+  it.each(BLOCK_STATES.filter((s) => s !== "read"))(
+    "shows NO counts when on_track is %s — unknown, never zeros",
+    (state) => {
+      const r = progressFromOnTrack(onTrack({ shipped: 3 }, state), null);
+      expect(r.counted).toBe(false);
+    }
+  );
+
+  it("treats a missing class as an uncounted reading, not a zero", () => {
+    const view = parseProjectState({
+      on_track: {
+        state: "read",
+        totals: { row_count: 3, classes: { shipped: 3 } },
+      },
+    })!.onTrack;
+    expect(progressFromOnTrack(view, null).counted).toBe(false);
+  });
+
+  it("passes the recently finished list through", () => {
+    const recent = { items: [], partial: false };
+    const r = progressFromOnTrack(onTrack({}), recent);
+    if (!r.counted) throw new Error("expected a count");
+    expect(r.progress.recentlyFinished).toBe(recent);
+  });
+});
 
 const row = (
   slug: string,
@@ -8,77 +134,9 @@ const row = (
   extra: Partial<CoordPlanRow> = {}
 ): CoordPlanRow => ({ slug, status, ...extra });
 
-const summarize = (rows: CoordPlanRow[]) =>
-  summarizeProgress(rows, { fetchLimit: 500 });
-
-describe("summarizeProgress", () => {
-  it("buckets by the console's status vocabulary", () => {
-    const p = summarize([
-      row("a", "shipped"),
-      row("b", "in_progress"),
-      row("c", "in-progress"),
-      row("d", "partial"),
-      row("e", "ready"),
-      row("f", "blocked"),
-      row("g", "draft"),
-      row("h", "vetted"),
-      row("i", "vetted_unattested"),
-    ]);
-    expect(p.counts).toEqual({
-      done: 1,
-      in_progress: 3,
-      ready: 1,
-      blocked: 1,
-      planned: 3,
-      unknown: 0,
-    });
-    expect(p.total).toBe(9);
-  });
-
-  it("does not count ready (dependencies met) as in progress", () => {
-    const p = summarize([row("a", "ready")]);
-    expect(p.counts.in_progress).toBe(0);
-    expect(p.counts.ready).toBe(1);
-  });
-
-  it("drops work that will not be done", () => {
-    const p = summarize([
-      row("a", "superseded"),
-      row("b", "obsolete"),
-      row("c", "archived"),
-      row("d", "shipped"),
-    ]);
-    expect(p.total).toBe(1);
-  });
-
-  it("keeps unrecognised statuses in the total, so they cannot inflate done", () => {
-    const p = summarize([
-      row("a", "shipped"),
-      row("b", "tier3_dispatched"),
-      row("c", ""),
-    ]);
-    expect(p.counts.unknown).toBe(2);
-    expect(p.total).toBe(3);
-    expect(p.counts.done / p.total).toBeCloseTo(1 / 3);
-  });
-
-  it("tolerates padded and mixed-case statuses", () => {
-    expect(summarize([row("a", "  Shipped ")]).counts.done).toBe(1);
-  });
-
-  it("drops merge-shepherd bookkeeping units even if the server kept them", () => {
-    const p = summarize([row("shepherd-pr-12", "draft"), row("x", "draft")]);
-    expect(p.total).toBe(1);
-  });
-
-  it("marks a full page as a lower bound", () => {
-    const rows = Array.from({ length: 3 }, (_, i) => row(`p${i}`, "draft"));
-    expect(summarizeProgress(rows, { fetchLimit: 3 }).truncated).toBe(true);
-    expect(summarizeProgress(rows, { fetchLimit: 4 }).truncated).toBe(false);
-  });
-
+describe("recentlyFinishedFrom", () => {
   it("lists the most recently finished work first, and only dated work", () => {
-    const p = summarizeProgress(
+    const r = recentlyFinishedFrom(
       [
         row("2026-01-01-old", "shipped", {
           title: "Old",
@@ -89,13 +147,29 @@ describe("summarizeProgress", () => {
           first_shipped_at: "2026-04-01T00:00:00Z",
         }),
         row("2026-03-02-undated", "shipped"),
-        row("2026-03-03-open", "in_progress", {
-          first_shipped_at: "2026-05-01T00:00:00Z",
-        }),
       ],
       { fetchLimit: 500, recent: 5 }
     );
-    expect(p.recentlyFinished.map((f) => f.title)).toEqual(["New", "Old"]);
+    expect(r.items.map((f) => f.title)).toEqual(["New", "Old"]);
+    expect(r.partial).toBe(false);
+  });
+
+  it("drops merge-shepherd bookkeeping units even if the server kept them", () => {
+    const r = recentlyFinishedFrom(
+      [
+        row("shepherd-pr-12", "shipped", {
+          first_shipped_at: "2026-01-01T00:00:00Z",
+        }),
+      ],
+      { fetchLimit: 500 }
+    );
+    expect(r.items).toEqual([]);
+  });
+
+  it("marks a full page as partial", () => {
+    const rows = Array.from({ length: 3 }, (_, i) => row(`p${i}`, "shipped"));
+    expect(recentlyFinishedFrom(rows, { fetchLimit: 3 }).partial).toBe(true);
+    expect(recentlyFinishedFrom(rows, { fetchLimit: 4 }).partial).toBe(false);
   });
 });
 
