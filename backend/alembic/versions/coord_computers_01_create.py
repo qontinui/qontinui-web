@@ -98,16 +98,42 @@ Lock posture
 ============
 
 The two ALTERs on existing tables take a brief ACCESS EXCLUSIVE lock (nullable
-columns with no default are a catalogue update, no rewrite); a 3s
-``lock_timeout`` makes them fail fast rather than queue in front of every reader
-of the hot sample table. The sample-table index is built ``CONCURRENTLY`` inside
+columns with no default are a catalogue update, no rewrite). ``SET LOCAL
+lock_timeout = '3s'`` is the FIRST statement of both ``upgrade()`` and
+``downgrade()`` and is never reset inside them, so every lock this revision
+requests fails fast rather than queueing in front of the readers of the hot
+sample table:
+
+* upgrade: ``CREATE TABLE coord.computers ... REFERENCES coord.tenants`` takes
+  SHARE ROW EXCLUSIVE on ``coord.tenants`` (it blocks tenant writes, not reads)
+  for the rest of the transaction;
+* downgrade: ``DROP TABLE coord.computers`` removes its FK triggers from
+  ``coord.tenants`` and so takes ACCESS EXCLUSIVE on ``coord.tenants`` while
+  ``coord.tenant_devices`` and ``coord.device_resource_samples`` are held.
+  Unbounded, that request waits for as long as any ``coord.tenants`` reader
+  runs, with both tables held (a 25 s stall was reproduced in review of
+  qontinui-web#1598).
+
+``lock_timeout`` is per lock request, not per statement. The two-table ``LOCK
+TABLE`` below is two requests, so the worst case for a reader queued on
+``coord.tenant_devices`` is about 2 x 3s: up to 3s while the migration waits for
+``coord.tenant_devices`` itself, then up to 3s holding it while it waits for
+``coord.device_resource_samples``. That is kept at the house 3s (as in
+``twin_10_served_bundle_target_columns``) rather than lowered: a lower bound
+buys a shorter worst case on a small binding table at the price of more
+spurious lock-timeout failures on a busy sample table, and a failed attempt is
+simply retried. In a multi-revision downgrade run the 3s bound also covers the
+revisions downgraded after this one in the same transaction, which then fail
+fast rather than hang.
+
+The sample-table index is built ``CONCURRENTLY`` inside
 ``autocommit_block()`` (the posture of ``twin_10_served_bundle_target_columns``),
 repairing an INVALID leftover of a failed earlier build. ``coord.tenant_devices``
 is one row per binding, so its index is built in-transaction.
 ``coord.devices`` is not touched at all.
 
-Lock order. Both ``upgrade()`` and ``downgrade()`` begin their transactional
-part with ONE statement, ``LOCK TABLE coord.tenant_devices,
+Lock order. Before touching either existing table, both ``upgrade()`` and
+``downgrade()`` run ONE statement, ``LOCK TABLE coord.tenant_devices,
 coord.device_resource_samples IN ACCESS EXCLUSIVE MODE``, which takes the two
 locks in the order coord readers take them. The placement and CI-dispatch
 reads are single statements of the shape ``FROM coord.devices d JOIN
@@ -118,8 +144,8 @@ coord.device_resource_samples ...)`` — qontinui-coord
 ``newest_sample_pressure_lateral_sql``) — and PostgreSQL locks a statement
 relations in range-table order: devices, then tenant_devices, then samples. A
 migration that took samples before tenant_devices could deadlock against such
-a reader (the samples-before-devices shape was reproduced on pg16 against an
-earlier draft). ``coord.devices`` is deliberately NOT locked: this revision
+a reader (review of an earlier draft in qontinui-web#1598 found that shape).
+``coord.devices`` is deliberately NOT locked: this revision
 does not alter it, and a reader that holds it only waits on tables this
 revision already holds, which is a wait, not a cycle. With both locks held up
 front, the ALTERs that follow may run in any order.
@@ -176,6 +202,9 @@ def _index_is_invalid(index_name: str) -> bool:
 
 def upgrade() -> None:
     """Create the three computer tables; attach tenant bindings and samples to them."""
+    # First statement: every lock this revision takes is bounded, including the
+    # SHARE ROW EXCLUSIVE lock the computers FK takes on coord.tenants below.
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
 
     # 1. The machine itself.
@@ -326,11 +355,10 @@ def upgrade() -> None:
         """
     )
 
-    # 4 and 5. Attach existing tables. Fail fast on the lock rather than queue,
-    # and take both locks in ONE statement in the coord reader order
+    # 4 and 5. Attach existing tables, under the lock_timeout set at the top.
+    # Take both locks in ONE statement in the coord reader order
     # (tenant_devices then samples) so no reader join can deadlock against the
     # ALTERs below.
-    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "LOCK TABLE coord.tenant_devices, coord.device_resource_samples "
         "IN ACCESS EXCLUSIVE MODE"
@@ -473,7 +501,10 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS coord.ix_tenant_devices_computer_id")
     # Dropping the column drops fk_tenant_devices_computer with it.
     op.execute("ALTER TABLE coord.tenant_devices DROP COLUMN IF EXISTS computer_id")
-    op.execute("SET LOCAL lock_timeout = DEFAULT")
+    # No reset of lock_timeout: dropping coord.computers below removes its FK
+    # triggers from coord.tenants and so takes ACCESS EXCLUSIVE on coord.tenants
+    # while tenant_devices and samples are still held. That lock must stay
+    # bounded too.
     op.execute("DROP INDEX IF EXISTS coord.ix_computer_events_observed_at")
     op.execute("DROP INDEX IF EXISTS coord.ix_computer_events_computer_observed")
     op.execute("DROP TABLE IF EXISTS coord.computer_events")
