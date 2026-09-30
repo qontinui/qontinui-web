@@ -406,6 +406,9 @@ describe("/admin/coord/home", () => {
     expect(screen.getByTestId("coord-home.degrading.planes")).toHaveTextContent(
       "merge train: 1 of 1 watcher not fresh — has not completed a run"
     );
+    expect(
+      screen.getByTestId("coord-home.degrading.planes")
+    ).not.toHaveTextContent("train_health");
   });
 
   it("words watcher freshness at the last good read when a poll failed", async () => {
@@ -440,6 +443,77 @@ describe("/admin/coord/home", () => {
     const line = screen.getByText(/merge train: its watcher is fresh/);
     expect(line).toHaveAttribute("title", "train_health: fresh");
   });
+
+  it("never prints '1 shown of 0' when coord's total is below what it listed", async () => {
+    await renderWith(
+      doorBody({
+        needs_me: {
+          state: "read",
+          total: 0,
+          omitted: 0,
+          items: [{ id: "q-1", fork: "Pick one" }],
+        },
+      })
+    );
+    expect(screen.getByTestId("coord-home.needs-you.count")).toHaveTextContent(
+      "1 shown of an unknown number"
+    );
+    expect(screen.getByTestId("coord-home.strip.needs-you")).toHaveTextContent(
+      "needs you –"
+    );
+  });
+
+  it.each([
+    [
+      "on_track error + initiative error",
+      {
+        on_track: {
+          state: "could_not_read",
+          error: "the work_units sub-read stalled",
+          initiative: {
+            state: "unparseable",
+            error: "frontmatter parser stalled on line 3",
+          },
+        },
+      },
+    ],
+    [
+      "initiative reason",
+      {
+        on_track: {
+          state: "could_not_read",
+          initiative: {
+            state: "read",
+            alignment: "no_live_initiative",
+            reason: "the initiative is stalled pending review",
+          },
+        },
+      },
+    ],
+  ])(
+    "keeps 'stalled' out of coord free text: %s, and the correctness reason",
+    async (_label, overrides) => {
+      await renderWith(
+        doorBody({
+          ...overrides,
+          correctness: {
+            state: "unknown",
+            reason: "verification source stalled",
+          },
+        })
+      );
+      fireEvent.click(
+        screen.getByText("Not measured — no trust-calibration source")
+      );
+      expect(screen.getByTestId("coord-home.correct")).toHaveTextContent(
+        "verification source without recorded change"
+      );
+      expect(screen.getByTestId("coord-home.on-track")).toHaveTextContent(
+        /without recorded change/
+      );
+      expect(document.body.textContent ?? "").not.toMatch(/stalled/i);
+    }
+  );
 
   it("says unknown, not 'No work units', when a read on_track serves no groups", async () => {
     await renderWith(

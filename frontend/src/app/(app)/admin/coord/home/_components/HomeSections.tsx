@@ -42,6 +42,7 @@ import {
   UNIT_CLASSES,
   durationText,
   needsYouReason,
+  needsDisplayCount,
   nothingNeedsYou,
   lastGoodReadPhrase,
   openDegradations,
@@ -297,8 +298,10 @@ export function NeedsYouSection({
 }) {
   const read = needs.state === "read";
   const served = needs.items?.length ?? 0;
+  // One displayable count, shared with the strip: never "1 shown of 0".
+  const count = needsDisplayCount(needs);
   const header = read
-    ? `${served} shown of ${needs.total ?? "an unknown number"}${
+    ? `${served} shown of ${count ?? "an unknown number"}${
         needs.omitted !== null && needs.omitted > 0
           ? ` · ${needs.omitted} not shown`
           : ""
@@ -349,8 +352,8 @@ export function NeedsYouSection({
           </p>
         ) : served === 0 ? (
           <p className="m-0 text-sm text-muted-foreground">
-            Coord counted {needs.total ?? "an unknown number of"} decisions for
-            you but served none of them; open{" "}
+            Coord counted {count ?? "an unknown number of"} decisions for you
+            but served none of them; open{" "}
             <Link href="/admin/coord/questions" className="underline">
               Questions
             </Link>

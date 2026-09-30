@@ -485,5 +485,19 @@ describe("round-2 review — R8 for watchers and domains, honest red headline", 
     const strip = deriveHomeStrip(parseProjectState(body));
     expect(strip.level).toBe("red");
     expect(strip.headline).toBe("Decisions need you — how many is unknown");
+    const badge = strip.badges.find((b) => b.key === "needs")!;
+    expect(badge.label).toBe("needs you –");
+    expect(strip.badges.map((b) => b.label).join(" ")).not.toMatch(
+      /needs you 0/
+    );
+  });
+
+  it("words a watcher by its state when coord gives no reason", () => {
+    expect(watcherReasonWords(null, "stale")).toBe("stale");
+    expect(watcherReasonWords("no_successful_tick", "stale")).toBe(
+      "has not completed a run"
+    );
+    expect(watcherReasonWords(null, "weird")).toBe("state unknown");
+    expect(watcherReasonWords(null, null)).toBe("state unknown");
   });
 });
