@@ -26,6 +26,11 @@ on:
       # _CONTRACT_FILES; it asserts every entry appears in BOTH filters.
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
+      # The ACTIVE_TENANT_URL_PREFIXES allowlist that
+      # tests/test_active_tenant_prefix_drift_guard.py parses: a frontend-only
+      # PR that drops a prefix must run the guard that catches it. The module
+      # asserts this entry appears in BOTH filters.
+      - 'frontend/src/services/http-client.ts'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -83,6 +88,7 @@ on:
       # See the pull_request filter above.
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
+      - 'frontend/src/services/http-client.ts'
       - 'scripts/ci/**'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'

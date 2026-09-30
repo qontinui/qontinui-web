@@ -68,6 +68,55 @@ export interface FreshnessRow {
   updated_at: string;
 }
 
+/**
+ * Refusal codes `backend/app/api/v1/endpoints/fleet_targets.py` raises on a
+ * test-host designation write. Their `message` is prose the backend wrote for
+ * an operator (e.g. which project the device is not bound to, and how to fix
+ * it). Plan
+ * `2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to`.
+ */
+export const DESIGNATION_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  // PUT: the selected project has no `coord.tenant_devices` binding for the
+  // device, so its runner would never see the designation.
+  "device_not_bound_to_project",
+  // PUT or DELETE: the (device, app) row is stamped with another project, so
+  // the PUT refuses to change it and the DELETE removed nothing.
+  "designation_in_other_project",
+  // DELETE: coord removed nothing although the row is in the selected
+  // project (a concurrent re-designation).
+  "designation_not_removed",
+  // PUT: coord accepted the write but the row could not be read back.
+  "designation_not_visible",
+  // PUT: any other coord JSON refusal, re-worded by the backend.
+  "coord_refused",
+  // PUT or DELETE: coord answered 5xx. The backend replaces coord's text
+  // (which can carry SQL context) with its own generic message and status.
+  "coord_failed",
+]);
+
+/**
+ * The operator-facing message of a designation refusal body, or `null`.
+ *
+ * The production backend answers with a typed envelope — `{"error": "<code>",
+ * "message": "<prose>", ...}` at the TOP level (`app/middleware/error_handler.py`
+ * splices a dict detail carrying `error` into it); a bare FastAPI app nests the
+ * same dict under `detail`. Both are read. Only the codes above are unwrapped,
+ * so an unrelated body never has its text promoted to a message.
+ */
+export function designationRefusalMessage(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (
+    typeof record.error === "string" &&
+    DESIGNATION_REFUSAL_CODES.has(record.error) &&
+    typeof record.message === "string" &&
+    record.message.length > 0
+  ) {
+    return record.message;
+  }
+  return "detail" in record ? designationRefusalMessage(record.detail) : null;
+}
+
 async function handleResponse<T>(
   response: Response,
   fallback: string
@@ -75,7 +124,10 @@ async function handleResponse<T>(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => ({}));
     let message = fallback;
-    if (typeof body === "object" && body !== null && "detail" in body) {
+    const refusal = designationRefusalMessage(body);
+    if (refusal) {
+      message = refusal;
+    } else if (typeof body === "object" && body !== null && "detail" in body) {
       const detail = (body as { detail: unknown }).detail;
       if (typeof detail === "string") {
         message = detail;

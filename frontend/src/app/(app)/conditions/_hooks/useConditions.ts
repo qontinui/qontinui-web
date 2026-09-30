@@ -14,6 +14,7 @@ import type {
   ConditionUpdate,
   RunTriggerResponse,
 } from "../types";
+import { describeRunFailure } from "./runFailure";
 
 const API = "/api/v1/conditions";
 
@@ -245,7 +246,8 @@ export function useConditions() {
       );
       return res;
     } catch (err) {
-      toast.error(errMsg(err, "Failed to start run"));
+      // A registry veto (409) is a policy answer, not a fault — name it.
+      toast.error(describeRunFailure(err));
       return null;
     } finally {
       setSaving(false);
