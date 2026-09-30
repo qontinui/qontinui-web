@@ -8983,6 +8983,68 @@
         "title": "CloneCredentialRequest",
         "type": "object"
       },
+      "ClosedFieldVocabulary": {
+        "description": "The accepted set of one closed field on the plan-library write doors.",
+        "properties": {
+          "accepted_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted By",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "server_set": {
+            "default": false,
+            "title": "Server Set",
+            "type": "boolean"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/VocabularyTerm"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "written_as": {
+            "title": "Written As",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "written_as",
+          "accepted_by",
+          "values"
+        ],
+        "title": "ClosedFieldVocabulary",
+        "type": "object"
+      },
       "CodeExecutionRequest": {
         "description": "Request to execute Python code.",
         "properties": {
@@ -35851,6 +35913,36 @@
         "title": "PlanDifficultyResponse",
         "type": "object"
       },
+      "PlanLibraryVocabularyResponse": {
+        "description": "Every closed field the plan-library write doors accept, and how a\nwrong write through each door is corrected.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ClosedFieldVocabulary"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "write_doors": {
+            "items": {
+              "$ref": "#/components/schemas/WriteDoorCorrection"
+            },
+            "title": "Write Doors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fields",
+          "count",
+          "write_doors"
+        ],
+        "title": "PlanLibraryVocabularyResponse",
+        "type": "object"
+      },
       "PlanSlugCensus": {
         "additionalProperties": false,
         "description": "One side's plan-stem listing, as the device that scans enumerated it.\n\nThis is the denominator the plan corpus has never had. Every shipped\ncapture surface counts a numerator; none owns a denominator, so the fleet\nhas never been able to answer *\"of the plans that exist, how many did the\ncorpus capture?\"* \u2014 and the naive answers computed off a single git ref\nhave read 76.5% and 101.8% for the same corpus. The set the device\nenumerated, carried per ``source`` and joined by ``source_repo``, is what\nmakes the answer a SET DIFFERENCE instead.\n\nRead the module docstring for the four rules (digest, the withheld-set\nheartbeat, the truncation floor, and absent-never-empty) and why each is a\n422 rather than a coerced value.",
@@ -58383,6 +58475,25 @@
         "title": "VisualComparisonSummary",
         "type": "object"
       },
+      "VocabularyTerm": {
+        "description": "One accepted value and what writing it asserts.",
+        "properties": {
+          "meaning": {
+            "title": "Meaning",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "meaning"
+        ],
+        "title": "VocabularyTerm",
+        "type": "object"
+      },
       "WakeAlreadyOnlineResponse": {
         "properties": {
           "runner_id": {
@@ -60285,6 +60396,51 @@
           "toml"
         ],
         "title": "WriteConfigRequest",
+        "type": "object"
+      },
+      "WriteDoorCorrection": {
+        "description": "How a WRONG write through one plan-library door is corrected.\n\nRendered from ``app.core.evidence_posture.ROUTE_POSTURE`` \u2014 the same table\nthe posture test pins \u2014 so this cannot drift from what the build checks.",
+        "properties": {
+          "corrections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "posture": {
+            "enum": [
+              "read",
+              "ephemeral",
+              "evidence"
+            ],
+            "title": "Posture",
+            "type": "string"
+          },
+          "tracked_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tracked By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "posture",
+          "corrections",
+          "tracked_by"
+        ],
+        "title": "WriteDoorCorrection",
         "type": "object"
       },
       "WriteRecordResult": {
@@ -102178,6 +102334,36 @@
           }
         ],
         "summary": "A device reports its latest plan-scan-source reading (upsert)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/vocabulary": {
+      "get": {
+        "description": "Read this BEFORE writing: the accepted values of every closed field on\n``POST /plan-library``, ``POST /plan-library/{id}/edges`` and\n``POST /plan-library/scan-roots``, what each\nvalue asserts, and \u2014 per write door \u2014 how a wrong write is corrected.\n\nPhase 3 of plan\n``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.\nThree wrong ``supersedes`` edges were written in one day by agents that\ncould not read the relation vocabulary before writing, on a store where a\nrecorded edge cannot be retracted. Every value is derived from the schema\n``Literal``s (never retyped) and every correction sentence from\n``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.\n\nSame admission as the write doors it describes\n(:func:`~app.api.deps.get_audit_actor_user`: a Cognito user OR a coord\ndevice JWT), so an agent holding only the runner's device token can read\nit. The payload is the same for every caller; the principal is resolved\nonly to refuse an anonymous one.",
+        "operationId": "api_v1_plan_library_vocabulary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLibraryVocabularyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every closed field the write doors accept, and how a wrong write is corrected",
         "tags": [
           "plan-library"
         ]
