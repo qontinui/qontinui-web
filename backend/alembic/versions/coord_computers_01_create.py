@@ -32,15 +32,28 @@ Identifier: ``computer``, never ``machine`` — ``machine_id`` already means a
 What this migration does
 ========================
 
-1. Creates ``coord.computers``: one row per physical or virtual machine, keyed
-   by coord-minted ``computer_id`` and identified by ``identity_hash`` — the
-   lowercase hex HMAC-SHA256 of the raw OS machine id under the fixed key
-   ``qontinui-computer-identity-v1``, so no raw machine id is ever stored. The
-   CHECK pins the 64-lowercase-hex shape, so a raw id (or an uppercase digest,
-   which would silently mint a second row for the same machine) is refused.
-   ``kind`` is CHECKed to ``host | wsl_guest | container | vm``;
-   ``parent_computer_id`` links a WSL guest to its Windows host and is SET NULL
-   when the host row goes.
+1. Creates ``coord.computers``: one row per machine PER TENANT (contract
+   amendment A1), keyed by coord-minted ``computer_id`` and identified within
+   its tenant by ``identity_hash`` — the lowercase hex HMAC-SHA256 of the raw OS
+   machine id under the fixed key ``qontinui-computer-identity-v1``, so no raw
+   machine id is ever stored. The CHECK pins the 64-lowercase-hex shape, so a
+   raw id (or an uppercase digest, which would silently mint a second row for
+   the same machine) is refused. ``kind`` is CHECKed to
+   ``host | wsl_guest | container | vm``.
+
+   Tenant scoping is enforced by the SCHEMA, not only by coord. The HMAC key
+   is public, so a globally unique ``identity_hash`` would make one row shared
+   by every tenant with a device on that machine: a cross-tenant read of its
+   services, events and access details, and a cross-tenant overwrite. So
+   ``tenant_id`` is NOT NULL (FK to ``coord.tenants``, cascading like
+   ``coord.tenant_devices``), uniqueness is ``(tenant_id, identity_hash)`` —
+   the same box seen by two tenants is two rows — and
+   ``UNIQUE (tenant_id, computer_id)`` is the target of every composite FK
+   below. ``parent_computer_id`` links a WSL guest to its Windows host through
+   ``(tenant_id, parent_computer_id)``, so a parent in another tenant is
+   refused, and deleting the host sets only ``parent_computer_id`` to NULL
+   (the column-list ``ON DELETE SET NULL (col)`` form, PostgreSQL 15+;
+   production is RDS PostgreSQL 16.13 per ``docs/architecture/database-schema.md``).
 2. Creates ``coord.computer_services``: the LATEST snapshot of each watched
    service unit (GitHub Actions runner services, the runner itself, other
    watched units), PK ``(computer_id, unit)``, cascading with the computer.
@@ -53,9 +66,14 @@ What this migration does
    retry relies on: the reporter mints a stable ``client_event_id`` per event
    and coord inserts ``ON CONFLICT DO NOTHING``. Retention (30 days) is enforced
    by coord, served by ``ix_computer_events_observed_at``.
-4. Adds ``coord.devices.computer_id`` (FK, SET NULL, indexed): which computer a
-   runner install runs on. Written by coord at report time from the device
-   that posted the report (``attach_device``).
+4. Adds ``coord.tenant_devices.computer_id``: which computer a runner install
+   runs on, recorded on the tenant BINDING row rather than on
+   ``coord.devices`` (a device row is shared across tenants; a computer row is
+   not). The FK is composite, ``(tenant_id, computer_id)`` to
+   ``coord.computers (tenant_id, computer_id)``, so a binding can only point
+   at a computer of its own tenant; deleting the computer sets only
+   ``computer_id`` to NULL. Written by coord at report time from the device
+   that posted the report (``attach_device``). Partially indexed.
 5. Adds to ``coord.device_resource_samples``: ``computer_id`` (NO FK — a hot
    append-only table whose best-effort insert must never fail on referential
    bookkeeping; indexed partially and CONCURRENTLY), ``load_5m`` / ``load_15m``
@@ -70,7 +88,7 @@ No backfill — NULL is UNKNOWN
 =============================
 
 Every new column on an existing table is nullable with no default, and this
-revision writes no rows. A hand-mapped backfill of ``devices.computer_id`` would
+revision writes no rows. A hand-mapped backfill of ``tenant_devices.computer_id`` would
 publish tenant hostnames in an open-source tree and would have no
 ``identity_hash`` to key on (nothing reports one until Phase 2). Coord attaches
 the column at report time instead. Consumers read NULL as UNKNOWN — never as
@@ -84,19 +102,27 @@ columns with no default are a catalogue update, no rewrite); a 3s
 ``lock_timeout`` makes them fail fast rather than queue in front of every reader
 of the hot sample table. The sample-table index is built ``CONCURRENTLY`` inside
 ``autocommit_block()`` (the posture of ``twin_10_served_bundle_target_columns``),
-repairing an INVALID leftover of a failed earlier build. ``coord.devices`` is
-small, so its index is built in-transaction.
+repairing an INVALID leftover of a failed earlier build. ``coord.tenant_devices``
+is one row per binding, so its index is built in-transaction.
+``coord.devices`` is not touched at all.
 
 Lock order. Both ``upgrade()`` and ``downgrade()`` begin their transactional
-part with ONE statement, ``LOCK TABLE coord.devices,
+part with ONE statement, ``LOCK TABLE coord.tenant_devices,
 coord.device_resource_samples IN ACCESS EXCLUSIVE MODE``, which takes the two
-locks in the order coord readers take them: the placement and dispatch reads
-join ``coord.devices`` to ``coord.device_resource_samples``
-(qontinui-coord ``crates/coord/src/agent_placement.rs`` and
-``crates/coord/src/build_dispatcher.rs``), locking devices before samples. A
-migration that altered samples first and devices second would take the reverse
-order and can deadlock against such a reader (reproduced on pg16). With both
-locks held up front, the ALTERs that follow may run in any order.
+locks in the order coord readers take them. The placement and CI-dispatch
+reads are single statements of the shape ``FROM coord.devices d JOIN
+coord.tenant_devices td ... LEFT JOIN LATERAL (... FROM
+coord.device_resource_samples ...)`` — qontinui-coord
+``crates/coord/src/agent_placement.rs`` (``candidate_sql``) and
+``crates/coord/src/ci_dispatch.rs`` (``select_ci_node_sql`` with
+``newest_sample_pressure_lateral_sql``) — and PostgreSQL locks a statement
+relations in range-table order: devices, then tenant_devices, then samples. A
+migration that took samples before tenant_devices could deadlock against such
+a reader (the samples-before-devices shape was reproduced on pg16 against an
+earlier draft). ``coord.devices`` is deliberately NOT locked: this revision
+does not alter it, and a reader that holds it only waits on tables this
+revision already holds, which is a wait, not a cycle. With both locks held up
+front, the ALTERs that follow may run in any order.
 
 ``CREATE INDEX CONCURRENTLY`` waits for every transaction that could still see
 the table to finish (a virtualxid wait), so a long-running transaction elsewhere
@@ -107,7 +133,7 @@ repairs.
 
 Merge-train classification: this revision does not take the coord merge-train
 migration classifier fast path: its non-concurrent ``CREATE INDEX`` statements
-(on the new tables and on ``coord.devices``) and the up-front ``LOCK TABLE``
+(on the new tables and on ``coord.tenant_devices``) and the up-front ``LOCK TABLE``
 take the escalate path, the same as ``coordinput_01_operator_inputs``. Every
 SQL string is still a static literal, so the classifier can read each
 statement.
@@ -149,7 +175,7 @@ def _index_is_invalid(index_name: str) -> bool:
 
 
 def upgrade() -> None:
-    """Create the three computer tables and attach devices and samples to them."""
+    """Create the three computer tables; attach tenant bindings and samples to them."""
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
 
     # 1. The machine itself.
@@ -157,6 +183,7 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS coord.computers (
             computer_id           UUID        NOT NULL DEFAULT gen_random_uuid(),
+            tenant_id             UUID        NOT NULL,
             identity_hash         TEXT        NOT NULL,
             kind                  TEXT        NOT NULL,
             parent_computer_id    UUID,
@@ -177,21 +204,27 @@ def upgrade() -> None:
             first_seen_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             last_report_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT computers_pkey PRIMARY KEY (computer_id),
-            CONSTRAINT uq_computers_identity_hash UNIQUE (identity_hash),
+            CONSTRAINT uq_computers_tenant_identity_hash
+                UNIQUE (tenant_id, identity_hash),
+            CONSTRAINT uq_computers_tenant_computer UNIQUE (tenant_id, computer_id),
             CONSTRAINT ck_computers_identity_hash
                 CHECK (identity_hash ~ '^[0-9a-f]{64}$'),
             CONSTRAINT ck_computers_kind
                 CHECK (kind IN ('host', 'wsl_guest', 'container', 'vm')),
+            CONSTRAINT fk_computers_tenant_id
+                FOREIGN KEY (tenant_id)
+                REFERENCES coord.tenants (tenant_id) ON DELETE CASCADE,
             CONSTRAINT fk_computers_parent_computer_id
-                FOREIGN KEY (parent_computer_id)
-                REFERENCES coord.computers (computer_id) ON DELETE SET NULL
+                FOREIGN KEY (tenant_id, parent_computer_id)
+                REFERENCES coord.computers (tenant_id, computer_id)
+                ON DELETE SET NULL (parent_computer_id)
         )
         """
     )
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS ix_computers_parent_computer_id
-            ON coord.computers (parent_computer_id)
+            ON coord.computers (tenant_id, parent_computer_id)
             WHERE parent_computer_id IS NOT NULL
         """
     )
@@ -271,7 +304,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.computers IS
-            'One row per physical or virtual machine. identity_hash is the lowercase hex HMAC-SHA256 of the raw OS machine id under the key qontinui-computer-identity-v1; the raw id is never stored. Written by coord POST /coord/computers/report. Plan 2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model.'
+            'One row per machine PER TENANT: the same box seen by two tenants is two rows, each fed only by that tenant reporters. identity_hash is the lowercase hex HMAC-SHA256 of the raw OS machine id under the key qontinui-computer-identity-v1; the raw id is never stored. Written by coord POST /coord/computers/report. Plan 2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model.'
         """
     )
     op.execute(
@@ -294,11 +327,12 @@ def upgrade() -> None:
     )
 
     # 4 and 5. Attach existing tables. Fail fast on the lock rather than queue,
-    # and take both locks in ONE statement in the coord reader order (devices
-    # then samples) so no reader join can deadlock against the ALTERs below.
+    # and take both locks in ONE statement in the coord reader order
+    # (tenant_devices then samples) so no reader join can deadlock against the
+    # ALTERs below.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
-        "LOCK TABLE coord.devices, coord.device_resource_samples "
+        "LOCK TABLE coord.tenant_devices, coord.device_resource_samples "
         "IN ACCESS EXCLUSIVE MODE"
     )
     op.execute(
@@ -327,7 +361,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.device_resource_samples.computer_id IS
-            'The computer this sample was measured on, stamped by coord from coord.devices.computer_id of the posting device. NULL = UNKNOWN (device not yet attached). Deliberately no FK: hot append-only table.'
+            'The computer this sample was measured on, stamped by coord from coord.tenant_devices.computer_id of the (sample tenant, posting device) binding. NULL = UNKNOWN (device not yet attached). Deliberately no FK: hot append-only table.'
         """
     )
     op.execute(
@@ -344,23 +378,42 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        ALTER TABLE coord.devices
+        ALTER TABLE coord.tenant_devices
             ADD COLUMN IF NOT EXISTS computer_id UUID
-                CONSTRAINT fk_devices_computer_id
-                REFERENCES coord.computers (computer_id) ON DELETE SET NULL
+        """
+    )
+    # ADD CONSTRAINT has no IF NOT EXISTS; guard it so a retry after a failed
+    # concurrent index build (the DDL above already committed) re-runs cleanly.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                 WHERE conname = 'fk_tenant_devices_computer'
+                   AND conrelid = 'coord.tenant_devices'::regclass
+            ) THEN
+                ALTER TABLE coord.tenant_devices
+                    ADD CONSTRAINT fk_tenant_devices_computer
+                    FOREIGN KEY (tenant_id, computer_id)
+                    REFERENCES coord.computers (tenant_id, computer_id)
+                    ON DELETE SET NULL (computer_id);
+            END IF;
+        END
+        $$
         """
     )
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS ix_devices_computer_id
-            ON coord.devices (computer_id)
+        CREATE INDEX IF NOT EXISTS ix_tenant_devices_computer_id
+            ON coord.tenant_devices (computer_id)
             WHERE computer_id IS NOT NULL
         """
     )
     op.execute(
         """
-        COMMENT ON COLUMN coord.devices.computer_id IS
-            'The computer this runner install runs on, attached by coord at report time from the posting device. NULL = UNKNOWN (not yet reported), never no computer.'
+        COMMENT ON COLUMN coord.tenant_devices.computer_id IS
+            'The computer this runner install runs on, within this binding tenant, attached by coord at report time from the posting device. The composite FK keeps it inside the tenant. NULL = UNKNOWN (not yet reported), never no computer.'
         """
     )
 
@@ -386,9 +439,9 @@ def downgrade() -> None:
     """Exact reverse of upgrade. Data lost: every computer, service, event, and
     every sample attribution and new sample axis; none can be rebuilt."""
     op.execute("SET LOCAL lock_timeout = '3s'")
-    # Both locks first, in the coord reader order (devices then samples).
+    # Both locks first, in the coord reader order (tenant_devices then samples).
     op.execute(
-        "LOCK TABLE coord.devices, coord.device_resource_samples "
+        "LOCK TABLE coord.tenant_devices, coord.device_resource_samples "
         "IN ACCESS EXCLUSIVE MODE"
     )
     # Plain, in-transaction: the column drop below would take the index with it
@@ -417,9 +470,9 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS computer_id
         """
     )
-    op.execute("DROP INDEX IF EXISTS coord.ix_devices_computer_id")
-    # Dropping the column drops fk_devices_computer_id with it.
-    op.execute("ALTER TABLE coord.devices DROP COLUMN IF EXISTS computer_id")
+    op.execute("DROP INDEX IF EXISTS coord.ix_tenant_devices_computer_id")
+    # Dropping the column drops fk_tenant_devices_computer with it.
+    op.execute("ALTER TABLE coord.tenant_devices DROP COLUMN IF EXISTS computer_id")
     op.execute("SET LOCAL lock_timeout = DEFAULT")
     op.execute("DROP INDEX IF EXISTS coord.ix_computer_events_observed_at")
     op.execute("DROP INDEX IF EXISTS coord.ix_computer_events_computer_observed")

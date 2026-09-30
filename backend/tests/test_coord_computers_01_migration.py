@@ -5,22 +5,31 @@ empty database. The contracts pinned here are the ones coord's report route and
 read door rely on, each a way the machine model could be quietly wrong:
 
 1. **Shape** — the three tables, their indexes, and the new columns on
-   ``coord.devices`` / ``coord.device_resource_samples`` exist after upgrade
+   ``coord.tenant_devices`` / ``coord.device_resource_samples`` exist after upgrade
    with the contracted types (``load_5m`` / ``load_15m`` match ``load_1m``), and
    are gone after downgrade; a second upgrade re-applies cleanly.
 2. **identity_hash CHECK** — only 64 lowercase hex characters. A raw machine id
    must never be storable, and an uppercase digest would mint a second row for
    the same machine.
 3. **kind CHECKs** on all three tables refuse words outside the contract.
-4. **FK behaviour** — deleting a computer cascades its services and events,
-   and SETs NULL on a WSL guest's ``parent_computer_id`` and on
-   ``coord.devices.computer_id``. ``device_resource_samples.computer_id``
+4. **Tenant isolation (contract amendment A1)** — ``identity_hash`` is unique
+   per tenant, so the same box in two tenants is two rows; a parent, and a
+   binding computer, must be in the row own tenant (composite FKs); deleting
+   a tenant cascades its computers; ``coord.devices`` gains no column.
+5. **FK behaviour** — deleting a computer cascades its services and events,
+   and SETs NULL on ONLY the pointer column of a WSL guest
+   (``parent_computer_id``) and of a tenant binding (``computer_id``);
+   ``tenant_id`` survives. ``device_resource_samples.computer_id``
    carries NO FK (hot append-only table): a sample naming an unknown computer
    still inserts.
-5. **Dedup** — ``(computer_id, client_event_id)`` is unique, so a report retry
+6. **Dedup** — ``(computer_id, client_event_id)`` is unique, so a report retry
    collapses to one event; the same client id on another computer is distinct.
-6. **NULL is UNKNOWN** — new sample columns are nullable with no default, so an
+7. **NULL is UNKNOWN** — new sample columns are nullable with no default, so an
    old publisher writes NULL, never 0.
+8. **Retry** — a failed concurrent sample-index build (INVALID index, version
+   unstamped) is repaired by re-running the upgrade.
+9. **Lock order** — each direction locks tenant_devices then samples in one
+   statement before touching either (a static check of the revision source).
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -74,13 +83,14 @@ _PARENT_REVISION_ID = _parent_revision_id()
 _TABLES = ("computers", "computer_services", "computer_events")
 
 _INDEXES = (
-    "uq_computers_identity_hash",
+    "uq_computers_tenant_identity_hash",
+    "uq_computers_tenant_computer",
     "ix_computers_parent_computer_id",
     "ix_computer_services_runner_name",
     "uq_computer_events_client_event",
     "ix_computer_events_computer_observed",
     "ix_computer_events_observed_at",
-    "ix_devices_computer_id",
+    "ix_tenant_devices_computer_id",
     "ix_device_resource_samples_computer_sampled",
 )
 
@@ -92,7 +102,8 @@ _SAMPLE_INDEX = "ix_device_resource_samples_computer_sampled"
 _EXPECTED_INDEXDEFS: dict[str, str] = {
     "ix_computers_parent_computer_id": (
         "CREATE INDEX ix_computers_parent_computer_id ON coord.computers "
-        "USING btree (parent_computer_id) WHERE (parent_computer_id IS NOT NULL)"
+        "USING btree (tenant_id, parent_computer_id) "
+        "WHERE (parent_computer_id IS NOT NULL)"
     ),
     "ix_computer_services_runner_name": (
         "CREATE INDEX ix_computer_services_runner_name ON coord.computer_services "
@@ -106,8 +117,8 @@ _EXPECTED_INDEXDEFS: dict[str, str] = {
         "CREATE INDEX ix_computer_events_observed_at ON coord.computer_events "
         "USING btree (observed_at)"
     ),
-    "ix_devices_computer_id": (
-        "CREATE INDEX ix_devices_computer_id ON coord.devices "
+    "ix_tenant_devices_computer_id": (
+        "CREATE INDEX ix_tenant_devices_computer_id ON coord.tenant_devices "
         "USING btree (computer_id) WHERE (computer_id IS NOT NULL)"
     ),
     _SAMPLE_INDEX: (
@@ -119,6 +130,7 @@ _EXPECTED_INDEXDEFS: dict[str, str] = {
 
 _EXPECTED_COMPUTER_COLUMNS: dict[str, tuple[str, str]] = {
     "computer_id": ("uuid", "NO"),
+    "tenant_id": ("uuid", "NO"),
     "identity_hash": ("text", "NO"),
     "kind": ("text", "NO"),
     "parent_computer_id": ("uuid", "YES"),
@@ -223,8 +235,44 @@ def _fk_delete_rule(engine: Engine, constraint: str) -> str | None:
         ).scalar()
 
 
+def _set_null_columns(engine: Engine, constraint: str) -> list[str] | None:
+    """Columns named by ``ON DELETE SET NULL (cols)``; None when the FK names none."""
+    with engine.connect() as conn:
+        cols = conn.execute(
+            text(
+                """
+                SELECT array_agg(a.attname::text ORDER BY a.attname)
+                  FROM pg_constraint c
+                  JOIN pg_namespace n ON n.oid = c.connamespace
+                  JOIN pg_attribute a
+                    ON a.attrelid = c.conrelid AND a.attnum = ANY(c.confdelsetcols)
+                 WHERE n.nspname = 'coord' AND c.conname = :name
+                """
+            ),
+            {"name": constraint},
+        ).scalar()
+    return list(cols) if cols is not None else None
+
+
+def _insert_tenant(engine: Engine, label: str) -> uuid.UUID:
+    """Insert a coord.tenants row and return its id."""
+    tenant = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO coord.tenants (tenant_id, slug, display_name)
+                VALUES (:t, :slug, :label)
+                """
+            ),
+            {"t": tenant, "slug": f"cc01-{label}-{tenant.hex[:8]}", "label": label},
+        )
+    return tenant
+
+
 def _insert_computer(
     engine: Engine,
+    tenant: uuid.UUID,
     identity_hash: str,
     kind: str = "host",
     parent: uuid.UUID | None = None,
@@ -234,11 +282,12 @@ def _insert_computer(
         minted = conn.execute(
             text(
                 """
-                INSERT INTO coord.computers (identity_hash, kind, parent_computer_id)
-                VALUES (:h, :k, :p) RETURNING computer_id
+                INSERT INTO coord.computers
+                    (tenant_id, identity_hash, kind, parent_computer_id)
+                VALUES (:t, :h, :k, :p) RETURNING computer_id
                 """
             ),
-            {"h": identity_hash, "k": kind, "p": parent},
+            {"t": tenant, "h": identity_hash, "k": kind, "p": parent},
         ).scalar_one()
     # psycopg2 hands a uuid column back as text unless a UUID type is bound.
     return uuid.UUID(str(minted))
@@ -283,6 +332,7 @@ def _assert_absent(engine: Engine) -> None:
         assert not table_exists(engine, "coord", table), f"coord.{table} present"
     for name in _INDEXES:
         assert not index_exists(engine, name), f"index {name} present"
+    assert column_info(engine, "tenant_devices", "computer_id") is None
     assert column_info(engine, "devices", "computer_id") is None
     for column in _EXPECTED_SAMPLE_COLUMNS:
         assert column_info(engine, "device_resource_samples", column) is None, (
@@ -299,7 +349,14 @@ def _assert_shape(engine: Engine) -> None:
     assert _columns(engine, "computer_services") == _EXPECTED_SERVICE_COLUMNS
     assert _columns(engine, "computer_events") == _EXPECTED_EVENT_COLUMNS
 
-    assert column_info(engine, "devices", "computer_id") == ("uuid", "YES", None)
+    assert column_info(engine, "tenant_devices", "computer_id") == (
+        "uuid",
+        "YES",
+        None,
+    )
+    # Amendment A1: the device link lives on the tenant binding, never on the
+    # cross-tenant coord.devices row.
+    assert column_info(engine, "devices", "computer_id") is None
     load_1m = column_info(engine, "device_resource_samples", "load_1m")
     assert load_1m is not None and load_1m[0] == "real"
     for column, dtype in _EXPECTED_SAMPLE_COLUMNS.items():
@@ -309,10 +366,17 @@ def _assert_shape(engine: Engine) -> None:
             None,
         ), f"device_resource_samples.{column} must be nullable {dtype}, no default"
 
+    assert _fk_delete_rule(engine, "fk_computers_tenant_id") == "c"
     assert _fk_delete_rule(engine, "fk_computers_parent_computer_id") == "n"
     assert _fk_delete_rule(engine, "fk_computer_services_computer_id") == "c"
     assert _fk_delete_rule(engine, "fk_computer_events_computer_id") == "c"
-    assert _fk_delete_rule(engine, "fk_devices_computer_id") == "n"
+    assert _fk_delete_rule(engine, "fk_tenant_devices_computer") == "n"
+    # Composite FKs must null ONLY the pointer column, never tenant_id (which is
+    # NOT NULL on computers and part of the primary key on tenant_devices).
+    assert _set_null_columns(engine, "fk_computers_parent_computer_id") == [
+        "parent_computer_id"
+    ]
+    assert _set_null_columns(engine, "fk_tenant_devices_computer") == ["computer_id"]
     with engine.connect() as conn:
         sample_fks = conn.execute(
             text(
@@ -330,7 +394,8 @@ def _assert_shape(engine: Engine) -> None:
 
 
 _LOCK_BOTH = (
-    "LOCK TABLE coord.devices, coord.device_resource_samples IN ACCESS EXCLUSIVE MODE"
+    "LOCK TABLE coord.tenant_devices, coord.device_resource_samples "
+    "IN ACCESS EXCLUSIVE MODE"
 )
 
 # ANY statement that locks either existing table must follow the up-front LOCK
@@ -340,8 +405,9 @@ _LOCK_BOTH = (
 # its parent table). The LOCK TABLE literal itself is masked out before the
 # search.
 _EXISTING_TABLE_REF = re.compile(
-    r"coord\.(devices|device_resource_samples)\b"
-    r"|coord\.(ix_devices_computer_id|ix_device_resource_samples_computer_sampled)\b"
+    r"coord\.(tenant_devices|device_resource_samples)\b"
+    r"|coord\.(ix_tenant_devices_computer_id"
+    r"|ix_device_resource_samples_computer_sampled)\b"
 )
 
 
@@ -378,17 +444,21 @@ def _function_sql(name: str) -> str:
 
 
 @pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
-def test_coord_computers_01_locks_devices_then_samples_before_any_alter(
+def test_coord_computers_01_locks_tenant_devices_then_samples_before_any_alter(
     direction: str,
 ) -> None:
     """Both tables are locked up front, in the coord reader join order.
 
-    coord placement and dispatch reads join coord.devices to
-    coord.device_resource_samples (devices first). A migration that locked
-    samples first would deadlock against them, so each direction must take both
-    locks in ONE statement, devices first, before touching either table.
+    coord placement and CI-dispatch reads join coord.devices to
+    coord.tenant_devices to coord.device_resource_samples, in that order. A
+    migration that locked samples first would deadlock against them, so each
+    direction must take both locks in ONE statement, tenant_devices first,
+    before touching either table. coord.devices is not touched at all.
     """
     sql = _function_sql(direction)
+    assert re.search(r"coord\.devices\b", sql) is None, (
+        f"{direction} must not touch coord.devices (amendment A1)"
+    )
     lock_at = sql.find(_LOCK_BOTH)
     assert lock_at >= 0, f"{direction} must run: {_LOCK_BOTH}"
     masked = sql[:lock_at] + " " * len(_LOCK_BOTH) + sql[lock_at + len(_LOCK_BOTH) :]
@@ -412,7 +482,7 @@ def test_coord_computers_01_locks_devices_then_samples_before_any_alter(
     ),
 )
 def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
-    """Shape, CHECKs, FK rules, the dedup key, honest NULLs, and reversal."""
+    """Shape, CHECKs, tenant isolation, FK rules, dedup, honest NULLs, reversal."""
     root = backend_root()
 
     with ephemeral_database(admin_database_url(), "coordcomputers01_test") as (
@@ -425,9 +495,13 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
 
+        tenant_a = _insert_tenant(engine, "a")
+        tenant_b = _insert_tenant(engine, "b")
+
         # -- identity_hash CHECK: exactly 64 lowercase hex characters. --------
         insert_computer = (
-            "INSERT INTO coord.computers (identity_hash, kind) VALUES (:h, 'host')"
+            "INSERT INTO coord.computers (tenant_id, identity_hash, kind) "
+            "VALUES (:t, :h, 'host')"
         )
         for bad in (
             "A" * 64,  # uppercase: would mint a second row for one machine
@@ -436,16 +510,43 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             "g" * 64,
             "4c4c4544-0042-3510-8052-b4c04f4e4d32",  # a raw machine id
         ):
-            _refused(engine, "ck_computers_identity_hash", insert_computer, h=bad)
+            _refused(
+                engine, "ck_computers_identity_hash", insert_computer, t=tenant_a, h=bad
+            )
 
-        host = _insert_computer(engine, _HASH_A)
-        _refused(engine, "uq_computers_identity_hash", insert_computer, h=_HASH_A)
+        # -- tenant isolation: identity is unique PER TENANT. -----------------
+        host = _insert_computer(engine, tenant_a, _HASH_A)
+        _refused(
+            engine,
+            "uq_computers_tenant_identity_hash",
+            insert_computer,
+            t=tenant_a,
+            h=_HASH_A,
+        )
+        # The same physical box seen by another tenant is that tenant's own row.
+        host_b = _insert_computer(engine, tenant_b, _HASH_A)
+        assert host_b != host
+        # A computer with no tenant, or an unknown tenant, is refused.
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO coord.computers (identity_hash, kind) "
+                        "VALUES (:h, 'host')"
+                    ),
+                    {"h": _HASH_C},
+                )
+        _refused(
+            engine, "fk_computers_tenant_id", insert_computer, t=uuid.uuid4(), h=_HASH_C
+        )
 
         # -- kind CHECKs on all three tables. ---------------------------------
         _refused(
             engine,
             "ck_computers_kind",
-            "INSERT INTO coord.computers (identity_hash, kind) VALUES (:h, 'machine')",
+            "INSERT INTO coord.computers (tenant_id, identity_hash, kind) "
+            "VALUES (:t, :h, 'machine')",
+            t=tenant_a,
             h=_HASH_C,
         )
         _refused(
@@ -470,7 +571,23 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             at=_NOW,
         )
 
-        guest = _insert_computer(engine, _HASH_B, kind="wsl_guest", parent=host)
+        # -- a parent must be in the SAME tenant. -----------------------------
+        _refused(
+            engine,
+            "fk_computers_parent_computer_id",
+            """
+            INSERT INTO coord.computers
+                (tenant_id, identity_hash, kind, parent_computer_id)
+            VALUES (:t, :h, 'wsl_guest', :p)
+            """,
+            t=tenant_b,
+            h=_HASH_B,
+            p=host,
+        )
+        guest = _insert_computer(
+            engine, tenant_a, _HASH_B, kind="wsl_guest", parent=host
+        )
+
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -519,29 +636,52 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             # The same client id on a DIFFERENT computer is a distinct event.
             conn.execute(text(insert_event), {"c": guest, "at": _NOW})
 
-        # -- devices attach; samples carry no FK and NULL means UNKNOWN. ------
-        tenant = uuid.uuid4()
+        # -- tenant bindings attach, within their own tenant only. ------------
         device = uuid.uuid4()
         with engine.begin() as conn:
             conn.execute(
                 text(
                     """
-                    INSERT INTO coord.tenants (tenant_id, slug, display_name)
-                    VALUES (:t, :slug, 'computers test')
+                    INSERT INTO coord.devices (device_id, name, hostname, tenant_id)
+                    VALUES (:d, 'runner', 'box', :t)
                     """
                 ),
-                {"t": tenant, "slug": f"cc01-{tenant.hex[:8]}"},
+                {"d": device, "t": tenant_a},
             )
             conn.execute(
                 text(
                     """
-                    INSERT INTO coord.devices
-                        (device_id, name, hostname, tenant_id, computer_id)
-                    VALUES (:d, 'runner', 'box', :t, :c)
+                    INSERT INTO coord.tenant_devices (tenant_id, device_id, computer_id)
+                    VALUES (:ta, :d, :c), (:tb, :d, NULL)
                     """
                 ),
-                {"d": device, "t": tenant, "c": host},
+                {"ta": tenant_a, "tb": tenant_b, "d": device, "c": host},
             )
+        # Tenant B binding of the same device may not point at tenant A box.
+        _refused(
+            engine,
+            "fk_tenant_devices_computer",
+            """
+            UPDATE coord.tenant_devices SET computer_id = :c
+             WHERE tenant_id = :tb AND device_id = :d
+            """,
+            c=host,
+            tb=tenant_b,
+            d=device,
+        )
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE coord.tenant_devices SET computer_id = :c
+                     WHERE tenant_id = :tb AND device_id = :d
+                    """
+                ),
+                {"c": host_b, "tb": tenant_b, "d": device},
+            )
+
+        # -- samples carry no FK, and NULL means UNKNOWN. ---------------------
+        with engine.begin() as conn:
             conn.execute(
                 text(
                     """
@@ -564,7 +704,7 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             ).one()
         assert tuple(unknown) == (None, None, None, None, None)
 
-        # -- deleting the host: cascade children, SET NULL references. --------
+        # -- deleting tenant A host: cascade children, SET NULL pointers only.
         with engine.begin() as conn:
             conn.execute(
                 text("DELETE FROM coord.computers WHERE computer_id = :c"), {"c": host}
@@ -577,12 +717,40 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
                       (SELECT COUNT(*) FROM coord.computer_events WHERE computer_id = :h),
                       (SELECT COUNT(*) FROM coord.computer_events WHERE computer_id = :g),
                       (SELECT parent_computer_id FROM coord.computers WHERE computer_id = :g),
-                      (SELECT computer_id FROM coord.devices WHERE device_id = :d)
+                      (SELECT tenant_id FROM coord.computers WHERE computer_id = :g),
+                      (SELECT computer_id FROM coord.tenant_devices
+                        WHERE tenant_id = :ta AND device_id = :d),
+                      (SELECT computer_id FROM coord.tenant_devices
+                        WHERE tenant_id = :tb AND device_id = :d)
                     """
                 ),
-                {"h": host, "g": guest, "d": device},
+                {"h": host, "g": guest, "d": device, "ta": tenant_a, "tb": tenant_b},
             ).one()
-        assert tuple(remaining) == (0, 0, 1, None, None)
+        # Tenant B row for the same box, and its binding, are untouched.
+        assert tuple(str(v) if isinstance(v, uuid.UUID) else v for v in remaining) == (
+            0,
+            0,
+            1,
+            None,
+            str(tenant_a),
+            None,
+            str(host_b),
+        )
+
+        # -- deleting a tenant cascades its computers. ------------------------
+        with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM coord.tenant_devices WHERE tenant_id = :t"),
+                {"t": tenant_b},
+            )
+            conn.execute(
+                text("DELETE FROM coord.tenants WHERE tenant_id = :t"), {"t": tenant_b}
+            )
+            left = conn.execute(
+                text("SELECT COUNT(*) FROM coord.computers WHERE tenant_id = :t"),
+                {"t": tenant_b},
+            ).scalar_one()
+        assert left == 0
 
         # -- reversal, then re-apply. -----------------------------------------
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
