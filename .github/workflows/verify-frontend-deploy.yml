@@ -13,11 +13,14 @@ name: Verify Frontend Deploy
 # whatever this file says at that commit is what runs. That is why this file
 # holds NO AWS access and NO secrets (plan
 # 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share, review
-# finding S1): a modified copy on a branch can at most dispatch the main-branch
-# run workflow for some deployment id, and that run re-validates the id against
-# the GitHub API (creator vercel[bot], Production environment, latest status
-# success, SHA contained in main) before it does anything. Only the main-branch
-# run can assume the qontinui-web-verify-frontend role.
+# finding S1). Only the main-branch run workflow can assume the
+# qontinui-web-verify-frontend role, and it re-validates the deployment id
+# against the GitHub API (creator vercel[bot], Production environment, latest
+# status success, SHA contained in main) before it does anything. A modified
+# copy of THIS file at a deployed commit still runs in the base repo's context
+# (it can reference repo-level secrets and request token scopes), so this repo
+# keeps no abusable secret at repo level and relies on Vercel Git Fork
+# Protection for fork commits -- see .github/aws-iam/README.md.
 
 on:
   deployment_status

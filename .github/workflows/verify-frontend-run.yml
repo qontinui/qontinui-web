@@ -154,7 +154,7 @@ jobs:
             refuse "Statuses of deployment ${id} could not be read."
           fi
           state=$(jq -r '.state // ""' <<<"$st")
-          url=$(jq -r '.environment_url // .target_url // ""' <<<"$st")
+          url=$(jq -r '(.environment_url | select(. != null and . != "")) // .target_url // ""' <<<"$st")
           if [ "$state" != "success" ]; then
             refuse "Latest status of deployment ${id} is '${state}', not success."
           fi
