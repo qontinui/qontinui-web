@@ -33513,12 +33513,33 @@
         "type": "object"
       },
       "PairConfirmResponse": {
-        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>``.",
+        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>`` -- or, when\n``collect`` is true (multi-tenant flow), to\n``callback?state=<state>&token_id=<device_id>&collect=1`` with NO token,\nso no tenant credential ever rides a URL.",
         "properties": {
+          "collect": {
+            "default": false,
+            "description": "True when coord ran a multi-tenant (collect-mode) flow. The page then redirects the runner's callback WITHOUT a token param; the runner collects the per-tenant tokens from coord's pair-collect with its PKCE-style verifier.",
+            "title": "Collect",
+            "type": "boolean"
+          },
           "device_id": {
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PairConfirmTenantResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-tenant outcome of a collect-mode flow. Never carries tokens.",
+            "title": "Results"
           },
           "state": {
             "description": "Echoed pairing-flow nonce.",
@@ -33526,17 +33547,55 @@
             "type": "string"
           },
           "token": {
-            "description": "Coord-issued device-token JWT.",
-            "title": "Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord-issued device-token JWT. Always present in the legacy single-tenant flow; optional in collect mode, where the runner fetches every tenant's token itself over pair-collect.",
+            "title": "Token"
           }
         },
         "required": [
           "device_id",
-          "token",
           "state"
         ],
         "title": "PairConfirmResponse",
+        "type": "object"
+      },
+      "PairConfirmTenantResult": {
+        "description": "One tenant's outcome in a collect-mode (multi-tenant) pairing.\n\nMirrors coord's ``pair-complete`` ``results[]`` entry. Deliberately has no\ntoken field: the tokens reach the runner only over coord's\n``pair-collect``, never through the browser.",
+        "properties": {
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "status": {
+            "description": "\"minted\" or \"skipped\" (coord's vocabulary, passed through).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status"
+        ],
+        "title": "PairConfirmTenantResult",
         "type": "object"
       },
       "PathElement": {

@@ -179,3 +179,102 @@ class TestPairConfirmSendsCoordArmB:
 
         assert resp.status_code == 403
         instance.post.assert_not_called()
+
+
+_TENANT_A = str(uuid4())
+_TENANT_B = str(uuid4())
+
+
+class TestPairConfirmCollectMode:
+    """Multi-tenant (collect-mode) flow: coord answers ``collect: true`` plus
+    per-tenant ``results``; the runner fetches the tokens itself over
+    pair-collect, so web relays the outcomes and never a per-tenant token."""
+
+    def _post(self, client: TestClient, coord_body: dict) -> tuple:
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data=coord_body)
+            _configure_mock_client(MockClient, instance)
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+        return resp, instance
+
+    def test_legacy_shape_reports_collect_false_and_no_results(
+        self, client: TestClient
+    ) -> None:
+        resp, _ = self._post(client, _COORD_OK)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["collect"] is False
+        assert resp.json()["results"] is None
+        assert resp.json()["token"] == "device-token-jwt"
+
+    def test_collect_mode_passes_results_through_without_tokens(
+        self, client: TestClient
+    ) -> None:
+        coord_body = {
+            **_COORD_OK,
+            "collect": True,
+            "results": [
+                # A token smuggled into an entry must NOT reach the browser.
+                {"tenant_id": _TENANT_A, "status": "minted", "token": "leak"},
+                {
+                    "tenant_id": _TENANT_B,
+                    "status": "skipped",
+                    "skipped_reason": "not_a_member",
+                },
+            ],
+        }
+        resp, instance = self._post(client, coord_body)
+
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["collect"] is True
+        assert data["results"] == [
+            {"tenant_id": _TENANT_A, "status": "minted", "skipped_reason": None},
+            {
+                "tenant_id": _TENANT_B,
+                "status": "skipped",
+                "skipped_reason": "not_a_member",
+            },
+        ]
+        assert "leak" not in resp.text
+        # The first tenant's token coord still returns (for an un-upgraded web)
+        # is withheld from the browser in collect mode.
+        assert data["token"] is None
+        assert "device-token-jwt" not in resp.text
+        # The request body to coord is unchanged in collect mode.
+        assert instance.post.call_args.kwargs["json"] == {
+            "state": _STATE,
+            "device_id": _DEVICE_ID,
+        }
+
+    def test_collect_mode_does_not_require_a_token(self, client: TestClient) -> None:
+        coord_body = {
+            "device_id": _DEVICE_ID,
+            "collect": True,
+            "results": [{"tenant_id": _TENANT_A, "status": "minted"}],
+        }
+        resp, _ = self._post(client, coord_body)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["token"] is None
+        assert resp.json()["collect"] is True
+
+    def test_legacy_mode_still_requires_a_token(self, client: TestClient) -> None:
+        resp, _ = self._post(client, {"device_id": _DEVICE_ID})
+        assert resp.status_code == 502
+        assert "missing device_id/token" in resp.text
+
+    def test_malformed_results_are_a_502(self, client: TestClient) -> None:
+        resp, _ = self._post(
+            client,
+            {
+                "device_id": _DEVICE_ID,
+                "collect": True,
+                "results": [{"status": "minted"}],
+            },
+        )
+        assert resp.status_code == 502
+        assert "malformed results" in resp.text
