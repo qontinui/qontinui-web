@@ -920,6 +920,18 @@ export function GatesTable({
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
+                          {/* Archived chip — with "Show archived gates" on,
+                              the page mixes live gates with retention-archived
+                              history; this says which row is which. */}
+                          {g.archived_at && (
+                            <Badge
+                              variant="outline"
+                              title={`archived ${formatAbsolute(g.archived_at)}`}
+                              data-testid="gates-archived"
+                            >
+                              archived
+                            </Badge>
+                          )}
                           {g.muted && <Badge variant="secondary">muted</Badge>}
                           {g.snoozed_until && (
                             <Badge
