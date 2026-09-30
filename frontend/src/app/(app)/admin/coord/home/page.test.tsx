@@ -594,6 +594,10 @@ describe("/admin/coord/home", () => {
       screen.getByTestId("coord-home.needs-you.by-domain")
     ).toHaveTextContent("operator approval gate 1");
     fireEvent.click(screen.getByText("Deploy gate — build is an ancestor"));
+    const expanded = within(needs).getByTestId("coord-home.needs-you.row");
+    expect(expanded).not.toHaveTextContent("open question");
+    expect(expanded).toHaveTextContent("Recommended: none given");
+    expect(expanded).not.toHaveTextContent("Recommended: approval");
     expect(needs).toHaveTextContent("Options: mark met · reject");
     expect(needs).toHaveTextContent("Blocks: 2026-09-20-x, phase Phase 4");
     expect(screen.getByTestId("coord-home.needs-you.answer")).toHaveAttribute(
@@ -656,6 +660,36 @@ describe("/admin/coord/home", () => {
     expect(
       screen.getByTestId("coord-home.on-track.initiative.unknown-key")
     ).toHaveTextContent("– units");
+  });
+
+  it.each([
+    [{}, true],
+    [{ total: 0, in_flight: 0, shipped: 0, keys: [] }, false],
+  ])("renders the unknown-key line for %j: %s", async (unknownKey, shown) => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "read",
+          totals: { row_count: 11, classes: CLASSES },
+          groups: [],
+          initiative: {
+            state: "read",
+            alignment: "read",
+            in_scope: [],
+            unknown_key: unknownKey,
+          },
+        },
+      })
+    );
+    const line = screen.queryByTestId(
+      "coord-home.on-track.initiative.unknown-key"
+    );
+    if (shown) {
+      expect(line).toHaveTextContent("– units, – in flight, – shipped");
+      expect(line).toHaveTextContent("keys not served");
+    } else {
+      expect(line).toBeNull();
+    }
   });
 
   it("shows initiative attribution when coord's alignment is read", async () => {

@@ -231,7 +231,9 @@ function NeedsYouRow({
           <div className="space-y-1">
             <p className="m-0">
               <span className="text-muted-foreground">Recommended: </span>
-              {needsYouReason(item)}
+              {/* The detail states the recommendation plainly; the row's
+                  collapsed reason (needsYouReason) carries the label. */}
+              {item.recommendation ?? "none given"}
             </p>
             <p className="m-0">
               <span className="text-muted-foreground">
