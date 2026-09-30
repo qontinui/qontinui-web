@@ -26,6 +26,7 @@ import {
   laneFreshness,
   laneKey,
   laneMemoryUsed,
+  emptyLanesText,
   lanePressureRatio,
   readIssueText,
   readLaneField,
@@ -236,12 +237,18 @@ export function LaneTable({
   showSparkline: boolean;
 }) {
   if (computer.lanes.length === 0) {
+    // Coord drops a lane silent > 30 min from `lanes`, so an empty array is
+    // either "all lanes went silent" (samples_state stale, with the newest
+    // sample's age) or "never sampled" — never an idle machine.
+    const stale = computer.samplesState === "stale";
     return (
       <p
         className="text-sm text-muted-foreground italic"
-        data-testid="coord-computer-lanes-unknown"
+        data-testid={
+          stale ? "coord-computer-lanes-stale" : "coord-computer-lanes-unknown"
+        }
       >
-        No resource sample from this computer — usage is unknown, not idle.
+        {emptyLanesText(computer, fetchedAtMs, nowMs)}
       </p>
     );
   }

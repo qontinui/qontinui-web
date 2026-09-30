@@ -82,6 +82,15 @@ export function computerFx(
   const { report_age_secs, ...rest } = over;
   const age = report_age_secs ?? 30;
   const lanes = rest.lanes ?? [laneFx({}, nowMs)];
+  // Coord's newest-sample probe has no window: with lanes it is the youngest
+  // lane's age; with none, a test says (via `newest_sample_age_secs`) whether
+  // the computer was ever sampled.
+  const newest =
+    rest.newest_sample_age_secs !== undefined
+      ? rest.newest_sample_age_secs
+      : lanes.length > 0
+        ? Math.min(...lanes.map((l) => l.age_secs))
+        : null;
   return {
     computer_id: COMPUTER_ID,
     kind: "host",
@@ -111,12 +120,16 @@ export function computerFx(
       stale_after_secs: 900,
     },
     lanes,
+    // Coord's `fold_sample_state`.
     samples_state:
       lanes.length === 0
-        ? "unknown"
+        ? newest === null
+          ? "unknown"
+          : "stale"
         : lanes.every((l) => l.freshness.state === "fresh")
           ? "fresh"
           : "stale",
+    newest_sample_age_secs: newest,
     sample_stale_after_secs: 90,
     services_reported: true,
     services_total: 3,
@@ -133,7 +146,7 @@ export function computerFx(
       },
     ],
     ci_runners: [],
-    drill_down: "coord_query_computers name=merytshost",
+    drill_down: `coord_query_computers name=${rest.computer_id ?? COMPUTER_ID}`,
     ...rest,
   };
 }

@@ -244,6 +244,19 @@ describe("/admin/coord/computers/[computerId]", () => {
     );
   });
 
+  it("renders all-lanes-silent as samples stale with the newest age, never an empty table", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({ lanes: [], newest_sample_age_secs: 2400 })
+    );
+    render(<CoordComputerDetailPage />);
+    const note = await screen.findByTestId("coord-computer-lanes-stale");
+    expect(note.textContent).toBe(
+      "Samples stale, newest 40m ago — no lane has sampled in the last 30 min, so current usage is unknown (not idle)."
+    );
+    expect(screen.queryByTestId("coord-computer-lanes")).toBeNull();
+    expect(screen.queryByTestId("coord-computer-lanes-unknown")).toBeNull();
+  });
+
   it("shows a stale computer's lanes as last known and its services as `last known: …`", async () => {
     httpGet.mockResolvedValue(
       detailFx({
