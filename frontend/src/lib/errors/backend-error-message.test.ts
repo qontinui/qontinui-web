@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
+  BackendError,
+  backendError,
   backendErrorMessage,
   bounded,
   MAX_CAUSE_LENGTH,
   MAX_SENTENCE_LENGTH,
   messageFromErrorBody,
   plainSentence,
+  readErrorBody,
 } from "./backend-error-message";
 
 /**
@@ -216,5 +219,124 @@ describe("backendErrorMessage", () => {
     const result = await backendErrorMessage(long, MAX_CAUSE_LENGTH);
     expect(result.length).toBe(MAX_CAUSE_LENGTH + 1);
     expect(result.endsWith("…")).toBe(true);
+  });
+});
+
+/**
+ * The next-action contract (plan
+ * `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists`,
+ * D3). The envelope arrives NESTED as `body.refusal` beside the pre-contract
+ * `error`/`code`/`detail`, which stay for older readers.
+ */
+describe("readErrorBody — the Refusal envelope", () => {
+  const AT = "2026-09-29T00:00:00Z";
+  const refusal = {
+    code: "workspace_root_unresolved",
+    next_action: { kind: "set_setting", target: "workspace_root" },
+    glossary_terms: ["tenant"],
+    detail: "raw detail is not rendered",
+    observed_at: AT,
+    source: "web_backend",
+  };
+  // `Refusal::render()` for the envelope above — copied from the Rust test
+  // `render_is_the_table_projection`.
+  const RENDERED =
+    'No workspace folder could be found for this operation. Set the "workspace_root" setting, then try again.';
+
+  it("reads body.refusal and renders Refusal::render()'s sentence", () => {
+    const body = JSON.stringify({
+      error: "workspace_root_unresolved",
+      detail: "an older reader shows this",
+      refusal,
+    });
+    const reading = readErrorBody(body, 409);
+    expect(reading.kind).toBe("refusal");
+    expect(reading.sentence).toBe(RENDERED);
+    expect(messageFromErrorBody(body, 409)).toBe(RENDERED);
+  });
+
+  it("reads body.detail.refusal (a dict detail wrapped by FastAPI)", () => {
+    const body = JSON.stringify({ detail: { error: "x", refusal } });
+    expect(readErrorBody(body, 409).sentence).toBe(RENDERED);
+  });
+
+  it("reads a top-level envelope carrying both code and next_action", () => {
+    expect(readErrorBody(JSON.stringify(refusal), 409).sentence).toBe(RENDERED);
+  });
+
+  it("reads an envelope nested in a relayed body string", () => {
+    const body = JSON.stringify({
+      message: JSON.stringify({ error: "x", refusal }),
+    });
+    expect(readErrorBody(body, 502).sentence).toBe(RENDERED);
+  });
+
+  it("prefers body.refusal over a top-level envelope-shaped body", () => {
+    const body = JSON.stringify({
+      ...refusal,
+      code: "unknown",
+      refusal,
+    });
+    expect(readErrorBody(body, 409).sentence).toBe(RENDERED);
+  });
+
+  it("does NOT treat a string next_action as the envelope", () => {
+    // `endpoint-unresolved.ts`'s pre-contract 503 body.
+    const body = JSON.stringify({
+      code: "endpoint_unresolved",
+      endpoint: "backend",
+      env_var: "BACKEND_URL",
+      error: "This deployment is misconfigured.",
+      next_action: "Set BACKEND_URL to the base URL of the backend API.",
+    });
+    const reading = readErrorBody(body, 503);
+    expect(reading).toEqual({
+      kind: "unstructured",
+      sentence: "This deployment is misconfigured.",
+    });
+  });
+
+  it("falls back to today's reading when body.refusal does not decode", () => {
+    const body = JSON.stringify({
+      error: "not_admin_in_target_tenant",
+      refusal: { code: "unknown", next_action: { kind: "none_terminal" } },
+    });
+    expect(readErrorBody(body, 403)).toEqual({
+      kind: "unstructured",
+      sentence: "not_admin_in_target_tenant",
+    });
+  });
+
+  it("classifies every pre-contract body as unstructured, with today's sentence", () => {
+    for (const [text, status, sentence] of [
+      ["{}", 500, "HTTP 500"],
+      ["Bad gateway", 502, "Bad gateway"],
+      [JSON.stringify({ detail: "nope" }), 400, "nope"],
+      [JSON.stringify({ error: "e", message: "m" }), 409, "m"],
+    ] as const) {
+      expect(readErrorBody(text, status)).toEqual({
+        kind: "unstructured",
+        sentence,
+      });
+    }
+  });
+
+  it("bounds the rendered sentence by the caller's limit", () => {
+    const body = JSON.stringify({ refusal });
+    const s = readErrorBody(body, 409, 20).sentence;
+    expect(s.length).toBeLessThanOrEqual(21);
+    expect(s.endsWith("\u2026")).toBe(true);
+  });
+
+  it("backendError carries the reading and keeps err.message the sentence", async () => {
+    const res = new Response(JSON.stringify({ error: "x", refusal }), {
+      status: 409,
+    });
+    const err = await backendError(res);
+    expect(err).toBeInstanceOf(BackendError);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe(RENDERED);
+    expect(err.status).toBe(409);
+    expect(err.reading.kind).toBe("refusal");
   });
 });
