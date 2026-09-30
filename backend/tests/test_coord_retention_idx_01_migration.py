@@ -19,8 +19,9 @@ What is asserted
    NO ``repo`` — is an ordered index scan on the new ``created_at`` index with
    no Sort node. The pre-existing ``(repo, created_at DESC)`` index cannot
    deliver that order, which is why this index exists.
-4. The per-test newest-row probe on ``test_coverage_map`` (the sweep's
-   latest-per-key guard, and qontinui-coord ``credibility_scorer.rs``'s read)
+4. The per-test newest-row probe on ``test_coverage_map`` (qontinui-coord
+   ``credibility_scorer.rs``'s read; the sweep's guard is a GROUP BY aggregate
+   that does not require this index)
    is an ordered index scan on the new composite with no Sort node.
 5. The ``indisvalid`` guard refuses a leftover INVALID index that
    ``IF NOT EXISTS`` would otherwise skip (driven by marking a pre-built index
@@ -176,7 +177,7 @@ def test_coord_retention_idx_01_and_test_results_autovac_01() -> None:
             output = refused.stdout + refused.stderr
             assert (
                 "is INVALID" in output
-                and f"DROP INDEX coord.{_IDX_LEDGER_CREATED}" in output
+                and f"DROP INDEX CONCURRENTLY coord.{_IDX_LEDGER_CREATED}" in output
             ), (
                 "the revision must refuse an INVALID leftover and name the recovery; "
                 f"got:\n{output}"

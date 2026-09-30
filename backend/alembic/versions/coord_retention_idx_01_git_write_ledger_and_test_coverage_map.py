@@ -36,8 +36,14 @@ What each index serves
 2. ``test_coverage_map (repo, test_id, observed_at DESC)``. The table is keyed
    ``(repo, head_sha, test_id)`` and its sweep keeps the LATEST row per
    ``(repo, test_id)`` regardless of age (a test whose newest coverage row is old
-   must not lose its only coverage record). That guard is a per-key "newest row"
-   probe, and so is the pre-existing read at qontinui-coord
+   must not lose its only coverage record). That guard is NOT a per-key probe:
+   coord's ``prune_latest_per_key_sql`` renders a single-column preference as
+   one ``GROUP BY (repo, test_id)`` ``max(observed_at)`` aggregate per batch,
+   and its own doc says it needs no index beyond the age column. This index
+   only lets the planner compute that aggregate index-only (a
+   ``GroupAggregate`` over it) when it judges that cheaper; the sweep does not
+   depend on it for correctness or for its timeout. What it DOES serve exactly
+   is the pre-existing per-test read at qontinui-coord
    ``credibility_scorer.rs:516``::
 
        SELECT ... FROM coord.test_coverage_map
@@ -49,7 +55,7 @@ What each index serves
    ``idx_test_coverage_map_repo_head`` can deliver the ordered per-test probe
    without fetching and sorting every row of the repo.
    With ``repo`` and ``test_id`` bound by equality in the leading positions and
-   ``observed_at DESC`` trailing, each probe is one index descent.
+   ``observed_at DESC`` trailing, that read is one index descent.
    The batch's own ``ORDER BY observed_at LIMIT`` rides the pre-existing
    ``idx_test_coverage_map_observed_at`` (``runtests_effect_tables_01``)
    unchanged.
@@ -71,7 +77,7 @@ path) leaves an INVALID index of the same name that ``IF NOT EXISTS`` then
 SKIPS — a false success that would let the coord sweep deploy against an index
 the planner will never use. So each CREATE is followed by an explicit
 ``indisvalid`` check that RAISES, naming the index and the recovery
-(``DROP INDEX`` it plainly, re-run). Do not re-dispatch the migrator while a
+(``DROP INDEX CONCURRENTLY`` it, re-run). Do not re-dispatch the migrator while a
 first task may still be running: the second would skip the still-building
 (invalid) index and trip that check — harmless, but a red for nothing.
 
@@ -130,7 +136,8 @@ def _require_valid(index_name: str) -> None:
         raise RuntimeError(
             f"coord.{index_name} is {state} after CREATE INDEX CONCURRENTLY IF NOT EXISTS "
             "— a killed concurrent build left it (IF NOT EXISTS skipped it). "
-            f"Run `DROP INDEX coord.{index_name}` plainly and re-run this revision."
+            f"Run `DROP INDEX CONCURRENTLY coord.{index_name}` and re-run this revision "
+            "(a plain DROP INDEX takes ACCESS EXCLUSIVE on the hot table)."
         )
 
 

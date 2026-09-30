@@ -22,8 +22,11 @@ Lock
 ``CREATE INDEX CONCURRENTLY`` take. It does not block reads or INSERT/UPDATE/
 DELETE, and it rewrites nothing, so it is instant and safe on the live table
 under continuous CI ingest. (It waits behind a running autovacuum or a
-concurrent index build on the table, and briefly queues writers behind itself
-only while it waits for that lock.) No ``autocommit_block`` is needed: unlike
+concurrent index build on the table. Writers never queue behind it, even while
+it waits — SHARE UPDATE EXCLUSIVE does not conflict with ROW EXCLUSIVE; only
+SHARE-or-stronger lockers, i.e. DDL, would. An ordinary autovacuum yields to
+the waiter; an anti-wraparound one does not, and the migrator sets no
+``lock_timeout``.) No ``autocommit_block`` is needed: unlike
 CONCURRENTLY, it is legal inside the migration transaction.
 
 Rationale
@@ -37,8 +40,8 @@ at 4M deletes/day, one vacuum every ~3 days. Until a vacuum runs, the space the
 sweep frees is NOT reusable, so ~2M rows/day of ingest keeps extending the heap
 instead of filling the holes, and the table never gets smaller in practice.
 
-``0.01`` / ``10000`` puts the trigger at ~0.6M dead tuples — about every
-four sweeps' worth of deletes at full capacity — so freed pages are marked
+``0.01`` / ``10000`` puts the trigger at ~0.65M dead tuples — about two
+thirds of one full-capacity sweep's 1M deletes — so freed pages are marked
 reusable within hours. The ``10000`` floor keeps a near-empty table (CI fresh
 databases, a much smaller future steady state) from vacuuming on every handful
 of deletes. This does not shrink the file (only ``VACUUM FULL`` / ``pg_repack``
