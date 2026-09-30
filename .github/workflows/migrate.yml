@@ -54,12 +54,12 @@ on:
         required: false
         default: ""
       # How long the migrator step waits for the task to STOP before it reports
-      # outcome UNKNOWN (integer seconds, 1..1080; anything else -> 900). For a
+      # outcome UNKNOWN (integer seconds, 1..960; anything else -> 900). For a
       # known-slow apply, and for exercising the UNKNOWN path: a tiny value
       # expires while Fargate is still provisioning, and the idempotent migrator
       # then finishes as a no-op at head.
       wait_deadline_secs:
-        description: "Seconds to wait for the migrator task to stop before reporting outcome UNKNOWN (1..1080; empty = 900)"
+        description: "Seconds to wait for the migrator task to stop before reporting outcome UNKNOWN (1..960; empty = 900)"
         required: false
         default: ""
 
@@ -87,7 +87,7 @@ jobs:
     # A deliberate number, not the green-run formula: 40 green runs are p50 2.70 /
     # p90 3.44 / max 4.88 min, but they are mostly no-op runs at head. A run that
     # applies real DDL spends up to the migrator step's full wait deadline (900 s
-    # by default, 1080 s max via the wait_deadline_secs input) on top of build (~3)
+    # by default, 960 s max via the wait_deadline_secs input) on top of build (~3)
     # + task start (~1) + reporting. A timeout CANCELS the job, and `failure()` is
     # false for a cancelled job, so a cap below that path would skip the
     # migration-failure page. 25 covers the worst path with headroom — the cap and
@@ -426,11 +426,13 @@ jobs:
           set -uo pipefail
 
           DEADLINE=900
-          if [[ "${WAIT_DEADLINE_INPUT:-}" =~ ^[0-9]{1,4}$ ]] \
-            && [ "${WAIT_DEADLINE_INPUT}" -ge 1 ] && [ "${WAIT_DEADLINE_INPUT}" -le 1080 ]; then
+          # No leading zero: bash arithmetic reads `0900` as (invalid) octal
+          # and would abort this step before it writes any output.
+          if [[ "${WAIT_DEADLINE_INPUT:-}" =~ ^[1-9][0-9]{0,3}$ ]] \
+            && [ "${WAIT_DEADLINE_INPUT}" -le 960 ]; then
             DEADLINE="${WAIT_DEADLINE_INPUT}"
           elif [ -n "${WAIT_DEADLINE_INPUT:-}" ]; then
-            echo "::warning::wait_deadline_secs is not an integer in 1..1080; using ${DEADLINE}"
+            echo "::warning::wait_deadline_secs is not an integer in 1..960; using ${DEADLINE}"
           fi
           echo "Waiting up to ${DEADLINE}s for ${TASK_ARN} to stop"
 
@@ -442,12 +444,17 @@ jobs:
             # A failed describe (throttling, a network blip) is logged and the
             # poll continues — it is not an outcome. stderr is kept apart so a
             # CLI warning on a SUCCESSFUL call cannot corrupt the JSON.
-            if DESC=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" \
-                  --tasks "${TASK_ARN}" --query 'tasks[0]' --output json 2>"$DESCRIBE_ERR"); then
-              STATUS=$(printf '%s' "$DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin) or {}; print(t.get("lastStatus") or "UNKNOWN")' 2>/dev/null) || STATUS="UNPARSEABLE"
+            # Per-call timeouts: the AWS CLI defaults (60 s connect + 60 s read,
+            # plus retries) would let one slow call run past the job cap.
+            if RESP=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" \
+                  --tasks "${TASK_ARN}" --output json \
+                  --cli-connect-timeout 10 --cli-read-timeout 20 2>"$DESCRIBE_ERR"); then
+              # lastStatus, or ECS's own failure reason (e.g. MISSING) when it
+              # returns no task.
+              STATUS=$(printf '%s' "$RESP" | python3 -c 'import sys,json; r=json.load(sys.stdin); t=(r.get("tasks") or [None])[0]; f=(r.get("failures") or [{}])[0]; print((t or {}).get("lastStatus") or ("ECS_" + f["reason"] if f.get("reason") else "NO_STATUS"))' 2>/dev/null) || STATUS="UNPARSEABLE"
               LAST_STATUS="$STATUS"
               if [ "$STATUS" = "STOPPED" ]; then
-                TASK_DESC="$DESC"
+                TASK_DESC=$(printf '%s' "$RESP" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["tasks"][0]))')
                 break
               fi
             else
@@ -495,7 +502,8 @@ jobs:
             --log-stream-name "migrator/migrator/${TASK_ID}" \
             --limit 100 \
             --query 'events[].message' \
-            --output text 2>/dev/null \
+            --output text \
+            --cli-connect-timeout 10 --cli-read-timeout 20 2>/dev/null \
             || echo "(log stream not yet flushed)"
 
           case "$OUTCOME" in
@@ -605,8 +613,10 @@ jobs:
       #   unknown — the task was still running at the wait deadline; it may
       #             still succeed, so this is NOT an apply failure
       #   failed  — the task stopped with a non-zero / null exit: apply failed
-      #   (empty) — the job failed BEFORE the migrator ran (build / push /
-      #             task-def / run-task); this run did not touch the schema
+      #   (empty) — no outcome recorded. With no task ARN the job failed
+      #             BEFORE the migrator ran (build / push / task-def /
+      #             run-task) and did not touch the schema; WITH one, the task
+      #             started and its fate is UNKNOWN
       # One open issue collects runs of every class, so its title is
       # outcome-neutral and each comment carries the class.
       - name: Page on migration failure
@@ -619,6 +629,7 @@ jobs:
           EXIT_CODE: ${{ steps.migrator.outputs.exit_code }}
           STOP_REASON: ${{ steps.migrator.outputs.stop_reason }}
           WAITED_SECS: ${{ steps.migrator.outputs.waited_secs }}
+          TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-9)"
@@ -635,9 +646,17 @@ jobs:
               echo "::error::MIGRATION APPLY FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA} (exit ${EXIT_CODE}) — the staging RDS schema may be BEHIND the authored alembic head. Coord-proxied pages (e.g. /commits) degrade to 503 schema_migration_pending until this is fixed forward. MANUAL INTERVENTION REQUIRED: ${RUN_URL}"
               ;;
             *)
-              CLASS="failed BEFORE the migrator ran"
-              DETAIL="migrate.yml failed before the migrator task ran (build / push / task-def / run-task). This run did not touch the schema; if the authored head is ahead of the database, the schema is still behind."
-              echo "::error::migrate.yml FAILED BEFORE THE MIGRATOR RAN on ${GITHUB_REPOSITORY}@${SHORT_SHA} — this run did not touch the schema. ${RUN_URL}"
+              if [ -n "${TASK_ARN}" ]; then
+                # The task WAS started, but the migrator step recorded no
+                # outcome (it aborted early). Its fate is unknown.
+                CLASS="migration outcome UNKNOWN (not recorded)"
+                DETAIL="The migrator task ${TASK_ARN##*/} was started, but this run recorded no outcome for it. It may still be running and may succeed — this is NOT a confirmed failed apply. Check the task / its log stream; the next migrate run reports the true state."
+                echo "::error::MIGRATION OUTCOME NOT RECORDED on ${GITHUB_REPOSITORY}@${SHORT_SHA} — the migrator task was started but its outcome was not captured. Check the task before intervening: ${RUN_URL}"
+              else
+                CLASS="failed BEFORE the migrator ran"
+                DETAIL="migrate.yml failed before the migrator task ran (build / push / task-def / run-task). This run did not touch the schema; if the authored head is ahead of the database, the schema is still behind."
+                echo "::error::migrate.yml FAILED BEFORE THE MIGRATOR RAN on ${GITHUB_REPOSITORY}@${SHORT_SHA} — this run did not touch the schema. ${RUN_URL}"
+              fi
               ;;
           esac
 
@@ -656,7 +675,7 @@ jobs:
           # Ensure the label exists (idempotent), then de-dupe into one issue.
           gh label create migration-failure \
             --repo "${GITHUB_REPOSITORY}" \
-            --description "Auto-filed: migrate.yml apply failed" \
+            --description "Auto-filed: migrate.yml did not confirm a clean apply" \
             --color B60205 --force || true
 
           EXISTING=$(gh issue list \
