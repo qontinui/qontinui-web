@@ -335,6 +335,16 @@ function CiRunnerList({ runners }: { runners: CiRunnerWire[] }) {
   );
 }
 
+/** The registrar read failed (or coord did not say it succeeded): UNKNOWN, not none. */
+function RegistrarUnknown({ what, testId }: { what: string; testId: string }) {
+  return (
+    <p className="text-sm text-muted-foreground italic" data-testid={testId}>
+      Coord did not confirm a successful CI registrar read for this computer, so{" "}
+      {what} is unknown — not none.
+    </p>
+  );
+}
+
 function DivergenceList({ entries }: { entries: DivergenceWire[] }) {
   if (entries.length === 0) {
     return (
@@ -342,7 +352,7 @@ function DivergenceList({ entries }: { entries: DivergenceWire[] }) {
         className="text-sm text-muted-foreground"
         data-testid="coord-computer-divergence-none"
       >
-        The computer&apos;s report and the CI registrar agree.
+        No disagreement found among fresh registrar rows.
       </p>
     );
   }
@@ -443,6 +453,14 @@ export default function CoordComputerDetailPage() {
       ? null
       : agentSessions.reduce((n, a) => n + a.open_sessions, 0);
   const fresh = freshness?.kind === "fresh";
+  // Only an explicit `true` makes the CI-runner and divergence lists a
+  // measurement; `false` (the read failed) and absent are both UNKNOWN.
+  const registrarReadOk = detail?.registrar_read_ok === true;
+  const servicesReported = detail?.services_reported === true;
+  const devicesWithSessions =
+    agentSessions === null
+      ? null
+      : agentSessions.filter((a) => a.open_sessions > 0).length;
 
   return (
     <div
@@ -536,11 +554,14 @@ export default function CoordComputerDetailPage() {
                 : "This computer's report is not fresh — every state below is what it last reported, not what it is doing now."
             }
           >
-            {services === null ? (
-              <Unstated
-                what="service list"
-                testId="coord-computer-services-unknown"
-              />
+            {services === null || !servicesReported ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-computer-services-unknown"
+              >
+                This computer has never reported its watched services, so
+                whether any is down is unknown — not none.
+              </p>
             ) : (
               <RecordList
                 items={services}
@@ -619,9 +640,9 @@ export default function CoordComputerDetailPage() {
             <h3 className="text-xs font-medium text-muted-foreground m-0">
               CI runners
             </h3>
-            {workloadRunners === null ? (
-              <Unstated
-                what="CI runner list"
+            {workloadRunners === null || !registrarReadOk ? (
+              <RegistrarUnknown
+                what="which CI runners run here"
                 testId="coord-computer-ci-runners-unknown"
               />
             ) : (
@@ -636,7 +657,7 @@ export default function CoordComputerDetailPage() {
             >
               {agentSessions === null
                 ? "Coord could not read agent sessions for this computer — unknown, not none."
-                : `${openSessions} open agent session${openSessions === 1 ? "" : "s"} across ${agentSessions.length} device${agentSessions.length === 1 ? "" : "s"} on this computer.`}
+                : `${openSessions} open agent session${openSessions === 1 ? "" : "s"} across ${devicesWithSessions} device${devicesWithSessions === 1 ? "" : "s"} with sessions, of ${workloadDevices?.length ?? "an unknown number of"} coord device${workloadDevices?.length === 1 ? "" : "s"} on this computer.`}
             </p>
           </Section>
 
@@ -645,9 +666,9 @@ export default function CoordComputerDetailPage() {
             testId="coord-computer-divergence-section"
             note="Where the computer's own report and the CI registrar (or a declared CI host) disagree. The computer's report is the one coord trusts; the disagreement is shown, not resolved."
           >
-            {divergence === null ? (
-              <Unstated
-                what="divergence list"
+            {divergence === null || !registrarReadOk ? (
+              <RegistrarUnknown
+                what="whether the registrar disagrees with this computer"
                 testId="coord-computer-divergence-unknown"
               />
             ) : (

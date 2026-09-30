@@ -195,12 +195,24 @@ export function detailFx(
   over: Partial<ComputerDetailWire> & { report_age_secs?: number } = {},
   nowMs = Date.now()
 ): ComputerDetailWire {
-  const summary = computerFx(over, nowMs);
   const { report_age_secs: _age, ...rest } = over;
   void _age;
+  // Coord derives the three service counts from the stored rows; a fixture
+  // that set them independently could describe a body coord never sends.
+  const services = rest.services ?? [serviceFx()];
+  const reported = rest.services_reported ?? true;
+  const summary = computerFx(
+    {
+      ...over,
+      services_reported: reported,
+      services_total: reported ? services.length : 0,
+      services_failed: reported ? services.filter((s) => s.down).length : 0,
+    },
+    nowMs
+  );
   return {
     ...summary,
-    services: [serviceFx()],
+    services: reported ? services : [],
     events: [],
     events_window_days: 7,
     history: [],
@@ -211,8 +223,13 @@ export function detailFx(
       agent_sessions: [{ device_id: DEVICE_ID, open_sessions: 2 }],
     },
     divergence: [],
+    registrar_read_ok: true,
     schema_pending: false,
     staleness: STALENESS,
     ...rest,
+    // Re-assert the derived fields over `rest`.
+    services_reported: summary.services_reported,
+    services_total: summary.services_total,
+    services_failed: summary.services_failed,
   };
 }

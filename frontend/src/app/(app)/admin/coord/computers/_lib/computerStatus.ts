@@ -294,6 +294,13 @@ export interface ComputerDetailWire extends ComputerSummaryWire {
   history_truncated: boolean;
   workloads: ComputerWorkloadsWire;
   divergence: DivergenceWire[];
+  /**
+   * `false` = coord's registrar read failed: `ci_runners`, `workloads.ci_runners`
+   * and `divergence` are then UNKNOWN, not empty. Absent (a coord predating
+   * the field) is read the same way — an empty divergence list is only a
+   * measurement when the registrar read is known to have succeeded.
+   */
+  registrar_read_ok?: boolean;
   schema_pending: boolean;
   staleness: StalenessRulesWire;
 }
@@ -899,6 +906,7 @@ export type ComputerKind =
   | "services_unknown"
   | "under_pressure"
   | "lane_stale"
+  | "headroom_unknown"
   | "service_failed"
   | "identity_conflict"
   | "stale"
@@ -916,6 +924,9 @@ export type ComputerKind =
  * - `under_pressure` — WAITING. A FRESH lane's admission guard is at its
  *   floor; it clears itself when the load does, and the dispatcher already
  *   steps back. A stale lane's last headroom never counts: it is not current.
+ * - `headroom_unknown` — WAITING, the ignorance floor: a FRESH lane whose
+ *   admission verdict coord could not grade (`headroom: unknown`), so "no
+ *   lane refusing work" cannot be claimed for it.
  * - `lane_stale` — WAITING, the ignorance floor for one axis: the computer
  *   reports but a lane's samples are stale or undatable, so its current
  *   pressure is unknown. The reason names the lane (and its last-known
@@ -931,6 +942,7 @@ export const COMPUTER_ATTENTION_BY_KIND = {
   services_unknown: "waiting",
   under_pressure: "waiting",
   lane_stale: "waiting",
+  headroom_unknown: "waiting",
   service_failed: "author",
   identity_conflict: "author",
   stale: "waiting",
@@ -942,6 +954,7 @@ export const COMPUTER_BADGE_CLASS: Record<ComputerKind, string> = {
   services_unknown: UNKNOWN_AMBER,
   under_pressure: WAITING_AMBER,
   lane_stale: UNKNOWN_AMBER,
+  headroom_unknown: UNKNOWN_AMBER,
   service_failed: AUTHOR_RED,
   identity_conflict: AUTHOR_RED,
   stale: UNKNOWN_AMBER,
@@ -1030,6 +1043,20 @@ export function computerStatus(
         (lastAtFloor.length > 0
           ? ` Last known: ${lastAtFloor.map((l) => `${laneName(l)} ${l.headroom}`).join(", ")} — not current.`
           : "")
+    );
+  }
+  // A fresh lane coord could not grade: `headroom` is outside the verdict
+  // vocabulary (coord's `unknown`, or a word this build does not know). Its
+  // admission state is not measured, so "healthy" would claim it.
+  const graded = new Set(["ok", "warn", "breach"]);
+  const ungraded = laneState
+    .filter((s) => s.fresh && !graded.has(s.lane.headroom))
+    .map((s) => s.lane);
+  if (ungraded.length > 0) {
+    return make(
+      "headroom_unknown",
+      "admission unknown",
+      `Coord could not grade admission headroom for lane ${ungraded.map(laneName).join(", ")}, so whether it is refusing work is unknown.`
     );
   }
   // Coord's own fold over the lanes. With no lane in its lookback it reads
@@ -1292,7 +1319,10 @@ export function deriveComputersHealth(input: {
   const conflicts = count("identity_conflict");
   const stale = count("stale");
   const unknown =
-    count("unknown") + count("services_unknown") + count("lane_stale");
+    count("unknown") +
+    count("services_unknown") +
+    count("lane_stale") +
+    count("headroom_unknown");
   const pressure = count("under_pressure");
   const badges: ComputersHealth["badges"] = [
     {
@@ -1305,9 +1335,10 @@ export function deriveComputersHealth(input: {
   if (failed > 0) {
     badges.push({
       key: "failed",
-      label: `services failed ${failed}`,
+      label: `services down ${failed}`,
       tone: "attention",
-      title: "Computers with at least one watched service in the failed state.",
+      title:
+        "Computers with at least one watched service down (failed or inactive — coord's `down`).",
       "data-testid": "coord-computers-failed-badge",
     });
   }
@@ -1424,8 +1455,11 @@ export function deriveComputerDetailHealth(input: {
       badges: [],
     };
   }
+  // `services_reported: false` makes the (empty) list UNKNOWN, not "none down".
   const failedServices =
-    services === null ? null : services.filter((s) => s.down).length;
+    services === null || computer.servicesFailed === null
+      ? null
+      : services.filter((s) => s.down).length;
   const level: ComputersHealth["level"] =
     status.attention === "author"
       ? "red"
@@ -1456,11 +1490,11 @@ export function deriveComputerDetailHealth(input: {
             ? "attention"
             : "muted",
         title:
-          services === null
-            ? "Coord sent no service list — unknown, not none."
+          failedServices === null
+            ? "This computer has never reported its watched services — unknown, not none."
             : freshness.kind === "fresh"
-              ? "Watched units in the failed state now."
-              : "Watched units that were failed at the last report — not current.",
+              ? "Watched units down now (failed or inactive)."
+              : "Watched units that were down at the last report — not current.",
         "data-testid": "coord-computer-health-services",
       },
       {
