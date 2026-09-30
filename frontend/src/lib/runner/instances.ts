@@ -9,8 +9,9 @@
  *
  * The runtime checks that stay exist because the row is JSON that nothing
  * validates on arrival. A backend that predates the field omits it: `null` =
- * not reported (UNKNOWN), never "no instances". And an entry with no string
- * `instanceKey` cannot be named, so it is dropped rather than rendered.
+ * not reported (UNKNOWN), never "no instances". An entry with no string
+ * `instanceKey` cannot be named, so it is dropped rather than rendered. A
+ * `port` that is not a number is left out of the description.
  *
  * Display only: nothing here addresses a secondary instance.
  */
@@ -39,7 +40,7 @@ export function describeRunnerInstances(runner: Runner): string | null {
   const instances = readRunnerInstances(runner);
   if (instances === null || instances.length === 0) return null;
   const parts = instances.map((i) =>
-    i.port == null ? i.instanceKey : `${i.instanceKey} :${i.port}`
+    typeof i.port === "number" ? `${i.instanceKey} :${i.port}` : i.instanceKey
   );
   const count =
     instances.length === 1 ? "1 instance" : `${instances.length} instances`;

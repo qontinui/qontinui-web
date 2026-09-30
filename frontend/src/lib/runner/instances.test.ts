@@ -4,8 +4,9 @@
  * Phase 3).
  *
  * The field is typed, but the row is JSON nothing validates on arrival, so
- * the one case the type cannot express — a backend that omits the field — is
- * pinned here: it reads as `null` (not reported), never as "no instances".
+ * the cases the type cannot express are pinned here: a backend that omits the
+ * field reads as `null` (not reported), never as "no instances"; an entry with
+ * no string `instanceKey` is dropped; a non-number `port` is left out.
  */
 
 import type { Runner } from "@qontinui/shared-types";
@@ -77,6 +78,23 @@ describe("readRunnerInstances", () => {
     );
     expect(readRunnerInstances(row)).toEqual([PRIMARY]);
     expect(describeRunnerInstances(row)).toBe("1 instance: primary :9876");
+  });
+});
+
+describe("describeRunnerInstances with a port that is not a number", () => {
+  it("names the instance by its key alone", () => {
+    const row: Runner = JSON.parse(
+      JSON.stringify({
+        ...runner([PRIMARY]),
+        instances: [
+          { ...PRIMARY, port: "9876" },
+          { ...SECONDARY, port: {} },
+        ],
+      })
+    );
+    expect(describeRunnerInstances(row)).toBe(
+      "2 instances: primary, runner:abc"
+    );
   });
 });
 
