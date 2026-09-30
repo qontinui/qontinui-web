@@ -23,8 +23,10 @@ Plan ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 3.
 * A coord build WITHOUT a door answers from its router fallback (``404
   no_such_route`` / ``405 method_not_allowed``): that is ``not_deployed``,
   never ``refused``.
-* A due-rows sweep that finds coord unreachable once does not ask it again
-  for the ``target="auto"`` rows behind that one.
+* A due-rows sweep in which two consecutive ``target="auto"`` rows could not
+  reach coord does not ask it again for the ``target="auto"`` rows behind
+  them. One such row is not enough, a row coord answers starts the count
+  over, and a row that names its runner neither counts nor resets.
 
 Coord is mocked at each module's own ``httpx.AsyncClient``; no live coord is
 needed.
@@ -2033,13 +2035,14 @@ async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
 
 
 # ---------------------------------------------------------------------------
-# The due-rows sweep: one unreachable coord is found out once
+# The due-rows sweep: two consecutive unreachable rows end the asking
 # ---------------------------------------------------------------------------
 
 NOT_ATTEMPTED = (
-    "[503 coord_unreachable_in_sweep] Coord was unreachable earlier in this "
-    "sweep, so this run was not attempted and coord was not asked again for "
-    "it. The next scheduled window is the retry."
+    "[503 coord_unreachable_in_sweep] Coord could not be reached for 2 "
+    "consecutive automatic runs earlier in this sweep, so this run was not "
+    "attempted and coord was not asked again for it. The next scheduled "
+    "window is the retry."
 )
 
 
@@ -2067,67 +2070,175 @@ async def _sweep(
     return await scheduled_dispatch.poll_and_dispatch_due(engine=cast(Any, object()))
 
 
-async def test_a_sweep_stops_asking_an_unreachable_coord_after_the_first_row(
+UNREACHABLE = (
+    "[503 device_resolver_unavailable] Coord's device resolver could not "
+    "be asked (coord_unreachable), so no runner is picked automatically. "
+    "Choose a runner explicitly, or retry."
+)
+
+
+async def test_a_sweep_stops_asking_after_two_consecutive_unreachable_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A black-holed coord costs the sweep ONE row's timeouts. Every later
+    """A black-holed coord costs the sweep TWO rows' timeouts. Every later
     ``target="auto"`` row is recorded failed — saying why — with no coord
-    call; a row that names its runner asks coord nothing and still goes."""
+    call. A row that names its runner asks coord nothing and still goes; one
+    fired BETWEEN the two unreachable rows neither resets the count (the
+    third auto row would then have asked) nor adds to it (the second auto
+    row would then not have)."""
     doors = _Doors(mint=_Coord(raise_exc=httpx.ConnectTimeout("black hole")))
     doors.install(monkeypatch)
     sockets = _connect_runner(monkeypatch, DEVICE_B)
     first = _schedule_row(USER)
-    second = _schedule_row(OTHER_USER)
     pinned = _schedule_row(USER, target=str(DEVICE_B))
+    second = _schedule_row(OTHER_USER)
+    third = _schedule_row(USER)
+    also_pinned = _schedule_row(USER, target=str(DEVICE_B))
     last = _schedule_row(USER)
 
-    stats = await _sweep(monkeypatch, first, second, pinned, last)
+    stats = await _sweep(monkeypatch, first, pinned, second, third, also_pinned, last)
 
-    assert stats == {"due": 4, "dispatched": 1, "failed": 3, "skipped": 0}
-    # Only the first row reached coord, and only its mint door.
-    assert [c["json"] for c in doors.mint.calls] == [{"user_id": str(USER)}]
+    assert stats == {"due": 6, "dispatched": 2, "failed": 4, "skipped": 0}
+    # Exactly the first two auto rows reached coord, and only its mint door.
+    assert [c["json"] for c in doors.mint.calls] == [
+        {"user_id": str(USER)},
+        {"user_id": str(OTHER_USER)},
+    ]
     assert len(doors.service_token.calls) == 1
     assert doors.resolve.calls == []
 
-    assert first.last_status == "failed"
-    assert first.last_error == (
-        "[503 device_resolver_unavailable] Coord's device resolver could not "
-        "be asked (coord_unreachable), so no runner is picked automatically. "
-        "Choose a runner explicitly, or retry."
-    )
-    for row in (second, last):
+    for row in (first, second):
+        assert row.last_status == "failed"
+        assert row.last_error == UNREACHABLE
+    for row in (third, last):
         assert row.last_status == "failed"
         assert row.last_error == NOT_ATTEMPTED
         assert row.last_fired_at is not None
         assert row.last_execution_id is None
 
-    # The explicit-target row, fired AFTER coord was found unreachable.
-    ((sent_to, payload),) = sockets.sent
-    assert sent_to == DEVICE_B
-    assert payload["workflow_id"] == str(pinned.workflow_id)
-    assert pinned.last_status == "dispatched"
-    assert pinned.last_execution_id == payload["run_id"]
-    assert pinned.last_error is None
+    # The explicit-target rows: one fired between the two unreachable rows,
+    # one AFTER the sweep stopped asking coord.
+    assert [sent_to for sent_to, _ in sockets.sent] == [DEVICE_B, DEVICE_B]
+    for row, (_, payload) in zip((pinned, also_pinned), sockets.sent, strict=True):
+        assert payload["workflow_id"] == str(row.workflow_id)
+        assert row.last_status == "dispatched"
+        assert row.last_execution_id == payload["run_id"]
+        assert row.last_error is None
 
-    # Each sweep finds out for itself: the next one asks coord again, once.
-    await _sweep(monkeypatch, _schedule_row(USER), _schedule_row(USER))
-    assert len(doors.mint.calls) == 2
+    # Each sweep finds out for itself: the next one asks coord again, twice.
+    fresh = [_schedule_row(USER) for _ in range(3)]
+    await _sweep(monkeypatch, *fresh)
+    assert len(doors.mint.calls) == 4
+    assert [row.last_error for row in fresh] == [
+        UNREACHABLE,
+        UNREACHABLE,
+        NOT_ATTEMPTED,
+    ]
 
 
 async def test_a_sweep_short_circuits_on_an_unreachable_resolver_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The mint answered and the RESOLVER timed out: the same outcome."""
+    """The mint answered and the RESOLVER timed out, twice running: the same
+    outcome."""
     doors = _Doors(resolve=_Coord(raise_exc=httpx.ReadTimeout("slow")))
     doors.install(monkeypatch)
-    first, second = _schedule_row(USER), _schedule_row(USER)
+    first, second, third = (_schedule_row(USER) for _ in range(3))
 
-    stats = await _sweep(monkeypatch, first, second)
+    stats = await _sweep(monkeypatch, first, second, third)
 
-    assert stats == {"due": 2, "dispatched": 0, "failed": 2, "skipped": 0}
-    assert len(doors.mint.calls) == 1
-    assert len(doors.resolve.calls) == 1
-    assert second.last_error == NOT_ATTEMPTED
+    assert stats == {"due": 3, "dispatched": 0, "failed": 3, "skipped": 0}
+    assert len(doors.mint.calls) == 2
+    assert len(doors.resolve.calls) == 2
+    assert first.last_error == second.last_error == UNREACHABLE
+    assert third.last_error == NOT_ATTEMPTED
+
+
+@pytest.mark.parametrize(
+    ("answer", "answered_status"),
+    [
+        (_Coord(body=_minted), "dispatched"),
+        (
+            _Coord(409, {"error": "tenant_ambiguous", "tenant_ids": ["a", "b"]}),
+            "failed",
+        ),
+        (_Coord(503, text="<html>bad gateway</html>"), "failed"),
+        (_Coord(404, _no_such_route(MINT_PATH)), "failed"),
+    ],
+    ids=["resolved", "refused", "upstream_error", "not_deployed"],
+)
+async def test_one_unreachable_row_then_an_answered_row_does_not_short_circuit(
+    monkeypatch: pytest.MonkeyPatch, answer: _Coord, answered_status: str
+) -> None:
+    """One failed request is ``coord_unreachable`` too, so one such row
+    stops nothing — and a row coord ANSWERS, whatever the answer, starts the
+    count over: unreachable, answered, unreachable is never two in a row,
+    and the fourth row is asked."""
+    unreachable = _Coord(raise_exc=httpx.ReadTimeout("one slow request"))
+    doors = _Doors(mint=_InTurn(unreachable, answer, unreachable, answer))
+    doors.install(monkeypatch)
+    _connect_runner(monkeypatch, DEVICE_B)
+    rows = [_schedule_row(USER) for _ in range(4)]
+
+    await _sweep(monkeypatch, *rows)
+
+    assert len(doors.mint.calls) == 4
+    assert [row.last_status for row in rows] == [
+        "failed",
+        answered_status,
+        "failed",
+        answered_status,
+    ]
+    assert rows[0].last_error == rows[2].last_error == UNREACHABLE
+    for row in (rows[1], rows[3]):
+        assert row.last_error != NOT_ATTEMPTED
+        assert "coord_unreachable" not in (row.last_error or "")
+
+
+async def test_a_row_that_could_not_ask_coord_neither_counts_nor_resets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``target="auto"`` row on a backend with no service credential asks
+    coord nothing: it says nothing about whether coord can be reached."""
+    doors = _Doors(admin_secret=None)
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=1)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object()), sweep=sweep
+    )
+
+    assert result["code"] == "device_resolver_unavailable"
+    assert "(no_credential)" in row.last_error
+    assert doors.service_token.calls == doors.mint.calls == doors.resolve.calls == []
+    assert sweep.unreachable_in_a_row == 1
+    assert not sweep.coord_unreachable
+
+
+class _CommitFails(_ScheduleDb):
+    async def commit(self) -> None:
+        raise RuntimeError("the database went away")
+
+
+async def test_the_sweep_is_told_before_the_rows_outcome_is_committed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A commit that fails loses the row's record, not what the row learned:
+    the next auto row must not pay the same timeouts to find it out again."""
+    doors = _Doors(mint=_Coord(raise_exc=httpx.ConnectTimeout("black hole")))
+    doors.install(monkeypatch)
+    row = _schedule_row(USER)
+    _wire_db(monkeypatch, _CommitFails(row))
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=1)
+
+    with pytest.raises(RuntimeError, match="the database went away"):
+        await scheduled_dispatch.fire_scheduled_run(
+            str(row.id), engine=cast(Any, object()), sweep=sweep
+        )
+
+    assert sweep.unreachable_in_a_row == 2
+    assert sweep.coord_unreachable
 
 
 @pytest.mark.parametrize(
@@ -2148,16 +2259,21 @@ async def test_a_sweep_keeps_asking_a_coord_that_answers(
     mint.calls.clear()
     doors = _Doors(mint=mint)
     doors.install(monkeypatch)
-    first, second = _schedule_row(USER), _schedule_row(OTHER_USER)
+    first, second, third = (
+        _schedule_row(USER),
+        _schedule_row(OTHER_USER),
+        _schedule_row(USER),
+    )
 
-    stats = await _sweep(monkeypatch, first, second)
+    stats = await _sweep(monkeypatch, first, second, third)
 
-    assert stats == {"due": 2, "dispatched": 0, "failed": 2, "skipped": 0}
+    assert stats == {"due": 3, "dispatched": 0, "failed": 3, "skipped": 0}
     assert [c["json"] for c in doors.mint.calls] == [
         {"user_id": str(USER)},
         {"user_id": str(OTHER_USER)},
+        {"user_id": str(USER)},
     ]
-    assert "sweep" not in second.last_error
+    assert "sweep" not in third.last_error
 
 
 async def test_a_fire_in_an_already_unreachable_sweep_is_not_attempted(
@@ -2168,7 +2284,7 @@ async def test_a_fire_in_an_already_unreachable_sweep_is_not_attempted(
     row = _schedule(monkeypatch, USER)
     log = MagicMock()
     monkeypatch.setattr(scheduled_dispatch, "logger", log)
-    sweep = scheduled_dispatch.SweepState(coord_unreachable=True)
+    sweep = scheduled_dispatch.SweepState(unreachable_in_a_row=2)
 
     result = await scheduled_dispatch.fire_scheduled_run(
         str(row.id), engine=cast(Any, object()), sweep=sweep
@@ -2190,23 +2306,25 @@ async def test_a_fire_in_an_already_unreachable_sweep_is_not_attempted(
     )
 
 
-async def test_run_now_always_asks_coord_whatever_an_earlier_fire_found(
+async def test_fire_scheduled_run_without_sweep_state_asks_coord_each_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A single fire carries no sweep state: nothing is remembered between
-    two of them, and an unreachable coord is asked each time."""
+    """``fire_scheduled_run`` called with no sweep state, which is how the
+    run-now endpoint calls it (the endpoint itself is not exercised here):
+    nothing is remembered between fires, and an unreachable coord is asked
+    each time — three times running, past the sweep's two."""
     doors = _Doors(mint=_Coord(raise_exc=httpx.ConnectError("refused")))
     doors.install(monkeypatch)
     row = _schedule(monkeypatch, USER)
 
-    for _ in range(2):
+    for _ in range(3):
         result = await scheduled_dispatch.fire_scheduled_run(
             str(row.id), engine=cast(Any, object())
         )
         assert result["code"] == "device_resolver_unavailable"
         assert "(coord_unreachable)" in row.last_error
 
-    assert len(doors.mint.calls) == 2
+    assert len(doors.mint.calls) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -2219,7 +2337,10 @@ class _LogRecorder:
 
     The app configures structlog with ``cache_logger_on_first_use=True``, so
     a ``structlog.testing.capture_logs`` block does not reliably see an
-    already-bound module logger; replacing the logger does."""
+    already-bound module logger; replacing the logger does. The price is
+    that nothing these modules log reaches the real logging pipeline while
+    it is installed, so a test using it checks the log CALLS and not the
+    rendered output."""
 
     def __init__(self) -> None:
         self.records: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
@@ -2239,6 +2360,9 @@ _LOGGING_MODULES = (
 )
 
 
+SERVICE_TOKEN_REFUSAL = "admin secret not accepted for this service"
+
+
 @pytest.mark.parametrize(
     ("make_doors", "status", "logged"),
     [
@@ -2255,21 +2379,36 @@ _LOGGING_MODULES = (
             "failed",
             "coord_service_account_token_refused_reminting",
         ),
+        (
+            # Web's own service-token door refuses the admin secret, with a
+            # body — which the refusal's log call quotes.
+            lambda: _Doors(service_token=_Coord(403, {"error": SERVICE_TOKEN_REFUSAL})),
+            "failed",
+            "device_resolve_service_token_unobtainable",
+        ),
     ],
-    ids=["success", "refused_by_the_resolver", "refused_at_the_mint"],
+    ids=[
+        "success",
+        "refused_by_the_resolver",
+        "refused_at_the_mint",
+        "service_token_refused_with_a_body",
+    ],
 )
-async def test_neither_token_is_ever_logged(
+async def test_no_credential_is_in_a_log_call_the_result_or_last_error(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    capsys: pytest.CaptureFixture[str],
     make_doors: Callable[[], _Doors],
     status: str,
     logged: str,
 ) -> None:
-    """The service token and the minted acting token are bearer credentials:
-    neither may appear in any log call's event or fields, nor in anything
-    written to the stdlib log or the process's output, nor in what the
-    schedule records."""
+    """The admin secret, the service token and the minted acting token are
+    credentials. What is checked, exactly: none of them appears in the event
+    or fields of any log call these four modules make (recorded by a stand-in
+    for each module's logger), in the dict ``fire_scheduled_run`` returns, or
+    in the row's ``last_error``.
+
+    What is NOT checked: the rendered log output. The modules' real loggers
+    are replaced, so nothing reaches the stdlib log, stdout or stderr from
+    them here, and an assertion on those would pass whatever was logged."""
     doors = make_doors()
     doors.install(monkeypatch)
     row = _schedule(monkeypatch, USER)
@@ -2278,26 +2417,30 @@ async def test_neither_token_is_ever_logged(
     for module in _LOGGING_MODULES:
         monkeypatch.setattr(module, "logger", log)
 
-    with caplog.at_level("DEBUG"):
-        result = await scheduled_dispatch.fire_scheduled_run(
-            str(row.id), engine=cast(Any, object())
-        )
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object())
+    )
 
     assert result["status"] == status
     # The recorder really is what these modules log to.
     assert logged in [args[0] for _, args, _ in log.records]
-    # Both credentials really were in play.
-    assert doors.mint.calls[0]["headers"]["Authorization"] == f"Bearer {SERVICE_TOKEN}"
+    # The credentials really were in play.
+    assert doors.service_token.calls[0]["headers"]["X-Coord-Admin-Secret"] == "s3cret"
+    if doors.mint.calls:
+        assert doors.mint.calls[0]["headers"]["Authorization"] == (
+            f"Bearer {SERVICE_TOKEN}"
+        )
     if doors.resolve.calls:
         assert doors.resolve.calls[0]["headers"]["Authorization"] == (
             f"Bearer {_acting_token(USER)}"
         )
 
-    captured = capsys.readouterr()
-    everything = "\n".join(
-        [repr(log.records), caplog.text, captured.out, captured.err, repr(result)]
-        + [repr(row.last_error)]
-    )
+    recorded = repr(log.records)
+    if logged == "device_resolve_service_token_unobtainable":
+        # The refusal's body IS logged, so the fields checked are not empty.
+        assert doors.mint.calls == []
+        assert SERVICE_TOKEN_REFUSAL in recorded
+    everything = "\n".join([recorded, repr(result), repr(row.last_error)])
     assert SERVICE_TOKEN not in everything
     assert "acting-token-for-" not in everything
     assert "s3cret" not in everything

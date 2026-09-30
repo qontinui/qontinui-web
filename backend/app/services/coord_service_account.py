@@ -275,18 +275,30 @@ class CoordServiceAccountClient:
     ) -> tuple[int, object]:
         """Mint a short-lived Service token that ACTS FOR ``user_id``.
 
-        Coord's ``POST /coord/auth/service-acting-user-token`` accepts our
-        service bearer and answers ``200 {"token", "acting_user", "tenant_id",
-        "jti", "exp"}``. That token, presented as the bearer to
+        The door is ``POST /coord/auth/service-acting-user-token``. Its
+        contract is that of the coord change that adds it (qontinui-coord,
+        plan
+        ``2026-09-23-runner-selector-follow-ups-drain-aware-background-dispatch-and-typed-instances``
+        Phase 1a): it accepts our service bearer and answers ``200 {"token",
+        "acting_user", "tenant_id", "jti", "exp"}``. A coord without that
+        change answers from its router fallback, which the caller reads as
+        ``not_deployed``. The token, presented as the bearer to
         ``POST /coord/devices/resolve``, resolves that user's paired devices —
         how a caller with no request behind it (a scheduled run) asks coord's
         resolver as the schedule's owner.
 
+        Not to be confused with coord's older
+        ``POST /coord/auth/acting-user-service-token``, where a device or
+        agent JWT exchanges for a token acting for its OWN bound user. Here
+        the trusted web service NAMES the user. The two paths differ only in
+        word order and are different doors: do not "fix" one to the other.
+
         The user is named in the BODY, which is what the door reads. No
         ``X-Qontinui-User-Id`` header is sent: on this door it is not an
         identity, and sending it would only suggest it was. No tenant is sent
-        either: coord resolves the user's tenant itself and answers ``409
-        tenant_ambiguous`` only when it cannot — web never names one.
+        either: by the same contract coord resolves the user's tenant itself
+        and answers ``409 tenant_ambiguous`` only when it cannot — web never
+        names one.
 
         Nothing is cached: every call is a fresh mint for the user it names,
         so one user's token can never be handed to another.

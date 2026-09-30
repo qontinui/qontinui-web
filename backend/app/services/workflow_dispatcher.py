@@ -1,7 +1,11 @@
 """Shared dispatcher service.
 
 Both the user-facing ``POST /api/v1/workflows/{id}/dispatch`` endpoint and
-the Celery task that fires on cron end up doing the same three things:
+a scheduled fire end up doing the same three things. A scheduled fire is
+:func:`app.jobs.scheduled_dispatch.fire_scheduled_run`, called for each due
+row by ``poll_and_dispatch_due`` — the in-process scheduler's
+``scheduled_dispatch`` task (``app/core/scheduler.py``, every 30 s) — and by
+the run-now endpoint for one row:
 
 1. Verify the workflow exists and the caller owns it.
 2. Resolve a target runner ("auto" → coord's capability-checked resolver,
@@ -11,7 +15,8 @@ the Celery task that fires on cron end up doing the same three things:
    :class:`RunnerWebSocketManager`). Every runner connects via WS.
 
 Error reporting uses :class:`DispatchError` — the endpoint maps it to
-``HTTPException``, the Celery task serialises it into ``last_error``.
+``HTTPException``, ``fire_scheduled_run`` serialises it into the schedule
+row's ``last_error``.
 """
 
 from __future__ import annotations

@@ -20,8 +20,11 @@ The bearer has two sources, one per kind of caller:
   from coord's ``POST /coord/auth/service-acting-user-token`` with the web
   backend's service credential (plan
   ``2026-09-23-runner-selector-follow-ups-drain-aware-background-dispatch-and-typed-instances``
-  Phase 1). The resolver then answers for that user's paired devices, with
-  the same capability, heartbeat and drain checks an interactive caller gets.
+  Phase 1). That door, and every answer of it named in this module, is the
+  contract of the coord change that adds it (qontinui-coord, Phase 1a of
+  that plan); a coord without the change reads ``not_deployed``, below. With
+  the token the resolver answers for that user's paired devices, with the
+  same capability, heartbeat and drain checks an interactive caller gets.
 
 Every failure to get coord's answer becomes a typed ``unavailable`` outcome —
 UNKNOWN — and never a pick: no caller of this module may substitute a
@@ -93,9 +96,12 @@ ROUTE_FALLBACK_CODES = frozenset({"no_such_route", "method_not_allowed"})
 verb on it, is not served by the running coord build."""
 
 NO_PAIRED_DEVICE_CODE = "user_has_no_paired_device"
-"""Coord's mint-door ``error`` string (a ``404``) for "this user owns no
-paired device at all". It reaches a caller as ``unavailable / refused``
-carrying it as ``code`` —
+"""The mint door's ``error`` string (a ``404``) for "this user owns no
+paired device at all", by the contract of the coord change that adds that
+door (qontinui-coord, plan
+``2026-09-23-runner-selector-follow-ups-drain-aware-background-dispatch-and-typed-instances``
+Phase 1a). It reaches a caller as ``unavailable / refused`` carrying it as
+``code`` —
 not as ``no_capable_device``, which is the resolver's answer about devices
 that ARE paired and would be indistinguishable from it."""
 
@@ -186,9 +192,10 @@ def _not_answered(status: int, code: str | None) -> UnavailableOutcome:
     if status >= 500:
         return _unavailable("upstream_error", status=status, code=code)
     if status >= 400:
-        # The mint's 404 user_has_no_paired_device, 409 tenant_ambiguous,
-        # 403 tenant_not_bound / not the trusted web service; the resolver's
-        # 400/401/403 — coord's ``error`` string says which.
+        # By the mint door's contract, its 404 user_has_no_paired_device,
+        # 409 tenant_ambiguous, 403 tenant_not_bound / not the trusted web
+        # service; the resolver's 400/401/403 — coord's ``error`` string
+        # says which.
         return _unavailable("refused", status=status, code=code)
     # A 2xx/3xx that is not the contract's 200.
     return _unavailable("malformed_response", status=status)
@@ -212,8 +219,10 @@ async def _mint_acting_bearer(user_id: UUID) -> str | UnavailableOutcome:
     """A fresh bearer acting for ``user_id``, or why there is none.
 
     Asks coord's ``POST /coord/auth/service-acting-user-token`` with the web
-    backend's service credential. Minted per call and never kept: the token
-    names one user, so holding it could only hand it to another.
+    backend's service credential — the door the coord change named in the
+    module docstring adds; a coord without it reads ``not_deployed`` here.
+    Minted per call and never kept: the token names one user, so holding it
+    could only hand it to another.
 
     Every failure is a typed ``unavailable`` outcome, and the caller must
     then NOT ask the resolver — a mint that failed is never an anonymous ask
