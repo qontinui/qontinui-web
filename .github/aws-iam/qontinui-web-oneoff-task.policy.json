@@ -1,0 +1,58 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "EcsRunWebOneOffTask",
+            "Effect": "Allow",
+            "Action": [
+                "ecs:RunTask"
+            ],
+            "Resource": "arn:aws:ecs:us-east-1:047719635665:task-definition/qontinui-staging-web:*",
+            "Condition": {
+                "ArnEquals": {
+                    "ecs:cluster": "arn:aws:ecs:us-east-1:047719635665:cluster/qontinui-staging"
+                }
+            }
+        },
+        {
+            "Sid": "EcsDescribeTasksInCluster",
+            "Effect": "Allow",
+            "Action": [
+                "ecs:DescribeTasks"
+            ],
+            "Resource": "arn:aws:ecs:us-east-1:047719635665:task/qontinui-staging/*",
+            "Condition": {
+                "ArnEquals": {
+                    "ecs:cluster": "arn:aws:ecs:us-east-1:047719635665:cluster/qontinui-staging"
+                }
+            }
+        },
+        {
+            "Sid": "PassWebTaskRolesToEcs",
+            "Effect": "Allow",
+            "Action": [
+                "iam:PassRole"
+            ],
+            "Resource": [
+                "arn:aws:iam::047719635665:role/qontinui-staging-web-exec",
+                "arn:aws:iam::047719635665:role/qontinui-staging-web-task"
+            ],
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "ecs-tasks.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "ReadWebLogs",
+            "Effect": "Allow",
+            "Action": [
+                "logs:GetLogEvents"
+            ],
+            "Resource": [
+                "arn:aws:logs:us-east-1:047719635665:log-group:/ecs/qontinui-staging/web",
+                "arn:aws:logs:us-east-1:047719635665:log-group:/ecs/qontinui-staging/web:*"
+            ]
+        }
+    ]
+}
