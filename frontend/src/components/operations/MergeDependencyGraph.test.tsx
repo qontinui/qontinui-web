@@ -190,7 +190,9 @@ describe("graph proxy errors", () => {
   it("reads the refusal spliced to the top level (production envelope)", () => {
     const envelope = {
       ...refusal,
-      message: String(refusal),
+      // production writes Python's str(dict) of the detail here
+      message:
+        "{'error': 'repo_not_in_caller_tenant', 'caller_tenant_id': '11111111-1111-1111-1111-111111111111', 'repo': 'other-org/other-repo'}",
       timestamp: 0,
       path: "/x",
     };
