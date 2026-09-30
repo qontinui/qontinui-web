@@ -1,7 +1,7 @@
 """coord.work_unit_citation_candidates — inferred PR references, never citations
 
 Revision ID: citecand_01
-Revises: sched_cond_01_scheduled_tasks_conditions
+Revises: coordinput_01_operator_inputs
 Create Date: 2026-09-29
 
 Phase 1 of plan
@@ -195,10 +195,10 @@ read reports the table ``present`` in production, not when this PR merges.
 ``down_revision``
 =================
 
-Authored against qontinui-web ``origin/main`` ``ee23f9b28``, where
-``scripts/ci/count_alembic_heads.py`` scanned 611 revisions and reported
-exactly ONE head, ``sched_cond_01_scheduled_tasks_conditions`` — this
-revision's parent. Re-point it at the merged head at land time if the chain has
+Authored against qontinui-web ``origin/main`` ``ee23f9b28`` (parent then
+``sched_cond_01_scheduled_tasks_conditions``); re-pointed 2026-09-30 after
+``coordinput_01_operator_inputs`` landed, the single head
+``scripts/ci/count_alembic_heads.py`` then reported over 612 revisions. Re-point it at the merged head at land time if the chain has
 moved (edit the token below AND the ``Revises:`` line above).
 """
 
@@ -208,7 +208,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "citecand_01"
-down_revision: str | Sequence[str] | None = "sched_cond_01_scheduled_tasks_conditions"
+down_revision: str | Sequence[str] | None = "coordinput_01_operator_inputs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
