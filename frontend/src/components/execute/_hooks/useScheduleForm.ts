@@ -50,8 +50,11 @@ export function useScheduleForm(
 
   const { data: workflows, isLoading: workflowsLoading } =
     useUnifiedWorkflows();
-  const { mutate: createTask, refusal: createRefusal } =
-    useCreateScheduledTask();
+  // This form only creates Workflow tasks, which drive the GUI of the machine
+  // they fire on: machine-bound, like running the Execute queue.
+  const { mutate: createTask, refusal: createRefusal } = useCreateScheduledTask(
+    { workClass: "machine_bound" }
+  );
   // Only CREATING places new work; updating an existing task is not refused.
   const saveRefusal = isEditing ? null : (createRefusal?.message ?? null);
 

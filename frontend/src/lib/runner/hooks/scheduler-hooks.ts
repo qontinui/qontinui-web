@@ -5,6 +5,7 @@ import type { RunnerTarget } from "../target";
 import {
   useDispatchRunnerTarget,
   useRunnerTarget,
+  type NewWorkOptions,
 } from "@/contexts/active-runner-context";
 import type {
   ScheduledTask,
@@ -69,10 +70,12 @@ export function useTaskHistory(taskId: string | null) {
  * Create a new scheduled task — NEW work placed on a runner (it will fire
  * there), so it goes only to the explicit choice or coord's resolved pick.
  * `refusal` is coord's outcome when it may not be placed. Editing / deleting
- * an EXISTING task stays on the read target, where that task lives.
+ * an EXISTING task stays on the read target, where that task lives. A task
+ * that drives one machine's screen (a Workflow) passes
+ * `workClass: "machine_bound"`, so a refused pick is never re-targeted.
  */
-export function useCreateScheduledTask() {
-  const { target, refusal } = useDispatchRunnerTarget();
+export function useCreateScheduledTask(options: NewWorkOptions = {}) {
+  const { target, refusal } = useDispatchRunnerTarget(options);
   return {
     ...useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
       target,

@@ -104,6 +104,10 @@ vi.mock("@/components/execute/SequenceBuilderPanel", () => ({
   ),
 }));
 
+vi.mock("@/components/execute/ScheduledTasksPanel", () => ({
+  ScheduledTasksPanel: () => <div data-testid="scheduled-panel" />,
+}));
+
 import ExecutePage from "./page";
 
 beforeEach(() => {
@@ -160,5 +164,24 @@ describe("Execute page Run goes only where NEW work may go", () => {
     expect(state.options).toContainEqual({ workClass: "machine_bound" });
     expect(state.options).not.toContainEqual(undefined);
     expect(screen.getByTestId("run-on").textContent).toBe("machine_bound");
+  });
+});
+
+describe("Execute page Scheduled tab", () => {
+  it("switches from the queue to the runner's scheduled tasks and back", () => {
+    state.dispatch = {
+      target: { kind: "runner", runner: { id: DESK }, locality: "unknown" },
+      runnerId: DESK,
+      refusal: null,
+      notice: null,
+    };
+    render(<ExecutePage />);
+    expect(screen.queryByTestId("scheduled-panel")).toBeNull();
+    fireEvent.click(screen.getByTestId("execute-tab-scheduled"));
+    expect(screen.getByTestId("scheduled-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("run")).toBeNull();
+    fireEvent.click(screen.getByTestId("execute-tab-queue"));
+    expect(screen.queryByTestId("scheduled-panel")).toBeNull();
+    expect(screen.getByTestId("run")).toBeInTheDocument();
   });
 });
