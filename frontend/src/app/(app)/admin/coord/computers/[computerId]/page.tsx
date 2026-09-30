@@ -39,7 +39,9 @@ import {
 } from "@/components/console";
 import { formatBytes } from "@/components/operations/fleetResources";
 import {
+  DIVERGENCE_KIND_LABEL,
   SERVICE_KIND_LABEL,
+  ciRunnerStatusText,
   SERVICE_PALETTE,
   computerFreshness,
   computerHref,
@@ -288,10 +290,7 @@ function DeviceList({ devices }: { devices: ComputerDeviceWire[] }) {
             {d.hostname ?? "unnamed device"}
           </span>
           <span className="text-xs text-muted-foreground truncate">
-            {d.kind ??
-              (d.capabilities?.length
-                ? d.capabilities.join(", ")
-                : "kind unknown")}
+            {[d.role ?? "role unknown", d.state ?? "state unknown"].join(" · ")}
           </span>
           <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
             {d.device_id}
@@ -328,8 +327,7 @@ function CiRunnerList({ runners }: { runners: CiRunnerWire[] }) {
             {r.repo ?? "repo not reported"}
           </span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {r.status ??
-              (r.busy == null ? "status unknown" : r.busy ? "busy" : "idle")}
+            {ciRunnerStatusText(r)}
           </span>
         </li>
       ))}
@@ -350,24 +348,22 @@ function DivergenceList({ entries }: { entries: DivergenceWire[] }) {
   }
   return (
     <ul className="space-y-1" data-testid="coord-computer-divergence">
-      {entries.map((entry, i) => (
+      {entries.map((entry) => (
         <li
-          key={i}
+          key={`${entry.unit}:${entry.registrar_device_id}`}
           className={`px-3 py-2 text-xs rounded-md border border-border bg-card/30 ${rowAccentClass({ attention: "waiting" })}`}
           data-testid="coord-computer-divergence-row"
         >
-          {Object.entries(entry).map(([k, v]) => (
-            <span key={k} className="mr-3">
-              <span className="text-muted-foreground">{k}: </span>
-              <span className="font-mono">
-                {v === null || v === undefined
-                  ? "unknown"
-                  : typeof v === "object"
-                    ? JSON.stringify(v)
-                    : String(v)}
-              </span>
-            </span>
-          ))}
+          <span className="font-mono">{entry.runner_name}</span>
+          <span className="text-muted-foreground" title={entry.kind}>
+            {" — "}
+            {DIVERGENCE_KIND_LABEL[entry.kind] ?? entry.kind}
+          </span>
+          <span className="block text-muted-foreground">
+            unit {entry.unit}: reported{" "}
+            {entry.reported_active_state ?? "unknown"}, registrar{" "}
+            {entry.registrar_status ?? "unknown"}
+          </span>
         </li>
       ))}
     </ul>
@@ -438,11 +434,14 @@ export default function CoordComputerDetailPage() {
       }),
     [computer, freshness, status, read.issue, services, events, divergence]
   );
-  const workloadDevices =
-    listOrNull(detail?.workloads?.devices) ?? computer?.devices ?? null;
-  const workloadRunners =
-    listOrNull(detail?.workloads?.ci_runners) ?? computer?.ciRunners ?? null;
+  const workloadDevices = listOrNull(detail?.workloads?.devices);
+  const workloadRunners = listOrNull(detail?.workloads?.ci_runners);
+  // `null` is coord's own answer when its session read failed — UNKNOWN.
   const agentSessions = listOrNull(detail?.workloads?.agent_sessions);
+  const openSessions =
+    agentSessions === null
+      ? null
+      : agentSessions.reduce((n, a) => n + a.open_sessions, 0);
   const fresh = freshness?.kind === "fresh";
 
   return (
@@ -480,7 +479,7 @@ export default function CoordComputerDetailPage() {
             data-testid="coord-computer-identity"
           >
             {[
-              computer.kind ?? "kind unknown",
+              computer.kind,
               [computer.os, computer.osVersion].filter(Boolean).join(" ") ||
                 "OS unknown",
               computer.kernel ?? "kernel unknown",
@@ -636,8 +635,8 @@ export default function CoordComputerDetailPage() {
               data-testid="coord-computer-agent-sessions"
             >
               {agentSessions === null
-                ? "Coord did not report agent sessions for this computer — unknown."
-                : `${agentSessions.length} agent session${agentSessions.length === 1 ? "" : "s"} on this computer.`}
+                ? "Coord could not read agent sessions for this computer — unknown, not none."
+                : `${openSessions} open agent session${openSessions === 1 ? "" : "s"} across ${agentSessions.length} device${agentSessions.length === 1 ? "" : "s"} on this computer.`}
             </p>
           </Section>
 
