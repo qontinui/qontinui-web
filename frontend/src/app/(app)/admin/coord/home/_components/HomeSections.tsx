@@ -231,7 +231,7 @@ function NeedsYouRow({
           <div className="space-y-1">
             <p className="m-0">
               <span className="text-muted-foreground">Recommended: </span>
-              {item.recommendation ?? "open question — no recommendation"}
+              {needsYouReason(item)}
             </p>
             <p className="m-0">
               <span className="text-muted-foreground">
@@ -896,13 +896,19 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
             Not linked to any in-scope item: {attributedText(i.unattributed)}.
           </p>
         )}
-        {i.unknownKey && (i.unknownKey.total ?? 0) > 0 && (
-          <p className="m-0 text-xs text-muted-foreground">
-            Linked to an item this initiative does not list (
-            {i.unknownKey.keys.join(", ") || "keys not served"}):{" "}
-            {attributedText(i.unknownKey)}.
-          </p>
-        )}
+        {i.unknownKey &&
+          (i.unknownKey.total === null ||
+            i.unknownKey.total > 0 ||
+            i.unknownKey.keys.length > 0) && (
+            <p
+              className="m-0 text-xs text-muted-foreground"
+              data-testid="coord-home.on-track.initiative.unknown-key"
+            >
+              Linked to an item this initiative does not list (
+              {i.unknownKey.keys.join(", ") || "keys not served"}):{" "}
+              {attributedText(i.unknownKey)}.
+            </p>
+          )}
       </div>
     );
   }
