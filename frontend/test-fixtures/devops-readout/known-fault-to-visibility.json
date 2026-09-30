@@ -1,0 +1,26 @@
+{
+  "window": "30d",
+  "computed_at": "2026-09-30T10:00:00Z",
+  "kinds": [
+    {
+      "kind": "runner_wedged",
+      "episodes_n": 10,
+      "onset_known_n": 6,
+      "p50_secs": 600,
+      "p90_secs": 4380
+    },
+    {
+      "kind": "device_partitioned",
+      "episodes_n": 30,
+      "onset_known_n": 6,
+      "p50_secs": 120,
+      "p90_secs": 900
+    }
+  ],
+  "totals": {
+    "episodes_n": 40,
+    "onset_known_n": 12,
+    "p50_secs": 300,
+    "p90_secs": 4380
+  }
+}
