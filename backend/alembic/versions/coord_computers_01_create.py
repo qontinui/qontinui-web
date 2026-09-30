@@ -85,10 +85,23 @@ columns with no default are a catalogue update, no rewrite); a 3s
 of the hot sample table. The sample-table index is built ``CONCURRENTLY`` inside
 ``autocommit_block()`` (the posture of ``twin_10_served_bundle_target_columns``),
 repairing an INVALID leftover of a failed earlier build. ``coord.devices`` is
-small, so its index is built in-transaction.
+small, so its index is built in-transaction. The sample-table ALTER runs first
+and the ``coord.devices`` ALTER last, immediately before the autocommit block
+commits, so the ``coord.devices`` ACCESS EXCLUSIVE lock is held for the
+shortest time and the two tables are always locked in the same order.
 
-Every SQL string is a static literal: the coord merge-train migration classifier
-extracts literals from each execute call and treats a call with none as dynamic.
+``CREATE INDEX CONCURRENTLY`` waits for every transaction that could still see
+the table to finish (a virtualxid wait), so a long-running transaction elsewhere
+can make this step wait with it. That is a stalled migration, not an outage:
+the concurrent build takes no lock that blocks readers or writers of the sample
+table while it waits, and a killed build leaves an INVALID index the retry
+repairs.
+
+Merge-train classification: this revision does not take the coord merge-train
+migration classifier fast path. Its raw SQL (new tables, a non-concurrent
+``CREATE INDEX`` on a new table, ALTERs on existing tables) takes the escalate
+path, the same as ``coordinput_01_operator_inputs``. Every SQL string is still
+a static literal, so the classifier can read each statement.
 """
 
 from collections.abc import Sequence
@@ -271,23 +284,9 @@ def upgrade() -> None:
         """
     )
 
-    # 4 and 5. Attach existing tables. Fail fast on the lock rather than queue.
+    # 5 then 4. Attach existing tables, samples first and devices last. Fail
+    # fast on the lock rather than queue.
     op.execute("SET LOCAL lock_timeout = '3s'")
-    op.execute(
-        """
-        ALTER TABLE coord.devices
-            ADD COLUMN IF NOT EXISTS computer_id UUID
-                CONSTRAINT fk_devices_computer_id
-                REFERENCES coord.computers (computer_id) ON DELETE SET NULL
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS ix_devices_computer_id
-            ON coord.devices (computer_id)
-            WHERE computer_id IS NOT NULL
-        """
-    )
     op.execute(
         """
         ALTER TABLE coord.device_resource_samples
@@ -329,8 +328,27 @@ def upgrade() -> None:
             'Per-axis provenance: axis name (load_1m, load_5m, load_15m, psi_memory, psi_cpu, psi_io, oom_kill_total, boot_id) to measured, not_supported or unavailable. NULL = the publisher predates the field; every axis is then UNKNOWN.'
         """
     )
-    # Hand the next revision in this transaction the lock bound it expects.
-    op.execute("SET LOCAL lock_timeout = DEFAULT")
+    op.execute(
+        """
+        ALTER TABLE coord.devices
+            ADD COLUMN IF NOT EXISTS computer_id UUID
+                CONSTRAINT fk_devices_computer_id
+                REFERENCES coord.computers (computer_id) ON DELETE SET NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_devices_computer_id
+            ON coord.devices (computer_id)
+            WHERE computer_id IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.devices.computer_id IS
+            'The computer this runner install runs on, attached by coord at report time from the posting device. NULL = UNKNOWN (not yet reported), never no computer.'
+        """
+    )
 
     # The sample-table index, CONCURRENTLY: autocommit_block commits the ALTERs
     # above first, so their lock is gone before the build scans the table.
@@ -353,12 +371,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Exact reverse of upgrade. Data lost: every computer, service, event, and
     every sample attribution and new sample axis; none can be rebuilt."""
-    with op.get_context().autocommit_block():
-        op.execute(
-            "DROP INDEX CONCURRENTLY IF EXISTS "
-            "coord.ix_device_resource_samples_computer_sampled"
-        )
     op.execute("SET LOCAL lock_timeout = '3s'")
+    # Plain, in-transaction: the column drop below would take the index with it
+    # anyway, and a concurrent drop would commit on its own and wait unbounded.
+    op.execute("DROP INDEX IF EXISTS coord.ix_device_resource_samples_computer_sampled")
     op.execute(
         """
         ALTER TABLE coord.device_resource_samples
