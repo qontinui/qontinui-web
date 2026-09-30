@@ -18,8 +18,18 @@ skips that window rather than re-firing it.
 the next cron window is the retry). The caller advances ``next_fire_at``
 regardless of dispatch outcome.
 
+**One unreachable coord does not stall the sweep.** A ``target="auto"`` row
+asks coord which runner to use, and a coord that answers nothing costs that
+row its request timeouts. The rows are fired one at a time under the sweep's
+600 s cap, each with ``next_fire_at`` already advanced, so rows the sweep
+never reached would record nothing at all. The sweep therefore carries a
+:class:`SweepState`: once one row is refused because coord could not be
+reached, every later ``target="auto"`` row in that same sweep is recorded
+``failed`` — saying so — without asking coord again. Rows that name a runner
+do not ask coord and still fire.
+
 The ``run-now`` endpoint calls :func:`fire_scheduled_run` directly to fire a single
-row immediately, bypassing the poll.
+row immediately, bypassing the poll (and with no sweep state: it always asks).
 
 Both entry points take an optional ``engine`` keyword. Production leaves it unset
 and gets the process-global pooled engine; tests pass their own engine so the
@@ -47,6 +57,7 @@ sweep runs against the test database **without** rebinding
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -65,6 +76,28 @@ from app.services.workflow_dispatcher import (
 )
 
 logger = structlog.get_logger(__name__)
+
+COORD_UNREACHABLE_IN_SWEEP_CODE = "coord_unreachable_in_sweep"
+"""The ``code`` of a ``target="auto"`` row a sweep did not attempt because
+coord could not be reached for an earlier row of that same sweep."""
+
+
+@dataclass
+class SweepState:
+    """What one due-rows sweep has learned, shared by the rows it fires.
+
+    ``coord_unreachable`` is set by the first row of the sweep that is
+    refused because coord could not be reached (the resolver outcome
+    ``unavailable`` / ``coord_unreachable`` — a connect error or a timeout at
+    any of the coord requests an automatic pick makes). Every
+    ``target="auto"`` row fired with the same state afterwards is recorded
+    ``failed`` without asking coord again.
+
+    It is one sweep's knowledge and no more: :func:`poll_and_dispatch_due`
+    makes a new one each time, so the next sweep asks coord afresh.
+    """
+
+    coord_unreachable: bool = False
 
 
 def _disable_for_bad_cron(row: ScheduledWorkflowRun, err: Exception) -> None:
@@ -195,10 +228,17 @@ async def poll_and_dispatch_due(
     # disabled in the window between the poll's commit above and its fire below
     # is a benign race, not a dispatch failure. Folding it into `failed` would
     # contaminate the very metric an operator alerts on.
+    #
+    # One `SweepState` for the whole batch: a coord that cannot be reached is
+    # found out once, by the first `target="auto"` row that asks it, and not
+    # again by every auto row behind it.
     stats = {"due": len(claimed), "dispatched": 0, "failed": 0, "skipped": 0}
+    sweep = SweepState()
     for run_id in claimed:
         try:
-            result_dict = await fire_scheduled_run(run_id, engine=resolved_engine)
+            result_dict = await fire_scheduled_run(
+                run_id, engine=resolved_engine, sweep=sweep
+            )
         except Exception:  # noqa: BLE001 - defensive; core is already guarded
             stats["failed"] += 1
             logger.exception(
@@ -219,13 +259,22 @@ async def poll_and_dispatch_due(
 
 
 async def fire_scheduled_run(
-    scheduled_run_id: str, *, engine: AsyncEngine | None = None
+    scheduled_run_id: str,
+    *,
+    engine: AsyncEngine | None = None,
+    sweep: SweepState | None = None,
 ) -> dict[str, Any]:
     """Fire one scheduled run by id. Records the outcome on the row.
 
     Opens its own committed session over ``engine``, defaulting to the shared
     pooled engine. On ``DispatchError`` it records ``failed`` + ``last_error``
     and returns a status dict — it does NOT re-raise.
+
+    ``sweep`` is the due-rows sweep this fire belongs to, if any. A
+    ``target="auto"`` row is not attempted when coord was already found
+    unreachable in that sweep (it is recorded ``failed``, saying so), and a
+    row refused because coord could not be reached marks the sweep. A single
+    fire (run-now) passes none and always asks coord.
     """
     run_uuid = UUID(scheduled_run_id)
     session_maker = async_sessionmaker(
@@ -270,6 +319,33 @@ async def fire_scheduled_run(
                 return {"status": "failed", "reason": "invalid_target"}
 
         fired_at: datetime = utc_now()
+        if target == "auto" and sweep is not None and sweep.coord_unreachable:
+            # Coord did not answer an earlier row of this sweep. Asking again
+            # would spend this row's coord timeouts to learn the same thing,
+            # and enough such rows would run the sweep into its cap before
+            # the rows behind them recorded anything.
+            row.last_fired_at = fired_at
+            row.last_status = "failed"
+            row.last_error = (
+                f"[503 {COORD_UNREACHABLE_IN_SWEEP_CODE}] Coord was unreachable "
+                "earlier in this sweep, so this run was not attempted and coord "
+                "was not asked again for it. The next scheduled window is the "
+                "retry."
+            )
+            await db.commit()
+            logger.warning(
+                "scheduled_run_not_attempted_coord_unreachable_in_sweep",
+                scheduled_run_id=scheduled_run_id,
+                error=row.last_error,
+            )
+            return {
+                "status": "failed",
+                "reason": COORD_UNREACHABLE_IN_SWEEP_CODE,
+                "status_code": 503,
+                "code": COORD_UNREACHABLE_IN_SWEEP_CODE,
+                "error": row.last_error,
+            }
+
         try:
             result = await dispatch_workflow_to_runner(
                 db,
@@ -292,13 +368,18 @@ async def fire_scheduled_run(
             # ``detail`` can be a dict or a string; serialise consistently.
             row.last_error = _format_dispatch_error(err)
             await db.commit()
+            refusal = _coord_refusal_fields(err)
+            if sweep is not None and refusal.get("resolver_reason") == (
+                "coord_unreachable"
+            ):
+                sweep.coord_unreachable = True
             logger.warning(
                 "scheduled_run_dispatch_failed",
                 scheduled_run_id=scheduled_run_id,
                 status_code=err.status_code,
                 code=err.code,
                 error=row.last_error,
-                **_coord_refusal_fields(err),
+                **refusal,
             )
             # No re-raise: the next cron window is the retry. But carry the
             # dispatcher's own status/code out so an interactive caller (run-now)
@@ -332,7 +413,8 @@ async def fire_scheduled_run(
 
 
 def _coord_refusal_fields(err: DispatchError) -> dict[str, Any]:
-    """Coord's own reason, error code and HTTP status for a refused auto-pick.
+    """Coord's own reason, ``error`` string and HTTP status for a refused
+    auto-pick.
 
     ``err.code`` is the dispatcher's code, and for every way coord's resolver
     was not answered it is the same ``device_resolver_unavailable``. What

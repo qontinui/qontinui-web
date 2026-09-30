@@ -97,23 +97,27 @@ class UnavailableOutcome(BaseModel):
     """The resolver was not answered — UNKNOWN, never a pick.
 
     - ``no_credential``      — nothing to ask coord AS: an interactive
-                               request with no bearer, or a background caller
+                               request with no bearer (or one that cannot be
+                               sent as a header), or a background caller
                                (a scheduled run) on a backend whose coord
                                service account is off or was not given its
                                own token (``status`` is coord's answer to
                                that, if it answered).
     - ``coord_unreachable``  — connect error or timeout.
-    - ``not_deployed``       — coord answered 404/405 with no error code: the
-                               door (the resolver, or the mint a background
-                               caller needs first) is not on the running
-                               coord build yet.
+    - ``not_deployed``       — coord answered 404/405 from its router
+                               fallback (``code`` is ``no_such_route`` or
+                               ``method_not_allowed``), or with no ``error``
+                               string at all: the door (the resolver, or the
+                               mint a background caller needs first) is not
+                               on the running coord build yet.
     - ``refused``            — coord refused the principal (401/403), the body
                                (400), or a background caller's mint (e.g. ``409
                                tenant_ambiguous``, ``403 tenant_not_bound``,
                                ``404 user_has_no_paired_device``); ``code``
-                               carries coord's error code.
+                               carries coord's ``error`` string.
     - ``upstream_error``     — coord answered 5xx.
-    - ``malformed_response`` — a 200 that is not the contract.
+    - ``malformed_response`` — a 200 that is not the contract, including a
+                               minted token that cannot be sent as a bearer.
     - ``misconfigured``      — the coord base URL is unset or not a URL, or a
                                background caller is on a split-coord box
                                (``COORD_DEVICE_URL`` differs from
@@ -124,7 +128,11 @@ class UnavailableOutcome(BaseModel):
     outcome: Literal["unavailable"] = "unavailable"
     reason: UnavailableReason
     status: int | None = Field(default=None, description="Coord's HTTP status, if any.")
-    code: str | None = Field(default=None, description="Coord's error code, if any.")
+    code: str | None = Field(
+        default=None,
+        description="Coord's `error` string, if its body carried one. Usually "
+        "a machine-readable code; coord sometimes puts prose there.",
+    )
 
 
 CoordResolveOutcome = Annotated[

@@ -17,9 +17,14 @@ Plan ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 3.
   asked with it. A failed mint is a typed refusal and the resolver is then
   not asked (plan
   ``2026-09-23-runner-selector-follow-ups-drain-aware-background-dispatch-and-typed-instances``
-  Phase 1). A refusal carries coord's own error code and HTTP status to
-  the operator; a stale web service token is re-minted once; and on a
+  Phase 1). A refusal carries coord's own ``error`` string and HTTP status
+  to the operator; a stale web service token is re-minted once; and on a
   split-coord box nothing is minted at all.
+* A coord build WITHOUT a door answers from its router fallback (``404
+  no_such_route`` / ``405 method_not_allowed``): that is ``not_deployed``,
+  never ``refused``.
+* A due-rows sweep that finds coord unreachable once does not ask it again
+  for the ``target="auto"`` rows behind that one.
 
 Coord is mocked at each module's own ``httpx.AsyncClient``; no live coord is
 needed.
@@ -27,6 +32,8 @@ needed.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import time
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -81,9 +88,10 @@ pytestmark = pytest.mark.asyncio(loop_scope="function")
 # ---------------------------------------------------------------------------
 
 
-def _fake_client(route: Callable[[str, Any, Any, Any], httpx.Response]) -> type:
+def _fake_client(route: Callable[[str, Any, Any, Any], Any]) -> type:
     """An ``httpx.AsyncClient`` stand-in whose every ``post`` goes to
-    ``route(url, json, headers, timeout)``."""
+    ``route(url, json, headers, timeout)``. A route may answer with the
+    response or with an awaitable of it (a door that holds its callers)."""
 
     class _FakeClient:
         def __init__(self, *a: Any, timeout: Any = None, **kw: Any) -> None:
@@ -98,7 +106,10 @@ def _fake_client(route: Callable[[str, Any, Any, Any], httpx.Response]) -> type:
         async def post(
             self, url: str, *, json: Any = None, headers: Any = None
         ) -> httpx.Response:
-            return route(url, json, headers, self.timeout)
+            answer = route(url, json, headers, self.timeout)
+            if inspect.isawaitable(answer):
+                answer = await answer
+            return cast(httpx.Response, answer)
 
     return _FakeClient
 
@@ -170,6 +181,43 @@ class _InTurn(_Coord):
         # ``respond`` has already recorded this call.
         nth = min(len(self.calls), len(self.answers)) - 1
         return self.answers[nth].reply(url, json)
+
+
+def _no_such_route(path: str) -> dict[str, Any]:
+    """The body of coord's router fallback for a path the running build does
+    not serve (qontinui-coord ``doors.rs`` ``no_such_route``), sent ``404``."""
+    return {
+        "error": "no_such_route",
+        "method": "POST",
+        "path": path,
+        "message": (
+            "no route is registered at this path. This is a statement about "
+            "the PATH, not about your credential and not about the "
+            "capability: read did_you_mean, or enumerate the catalog."
+        ),
+        "did_you_mean": [
+            {"method": "GET", "path": "/coord/devices", "admits": "device|agent"}
+        ],
+        "catalog": _CATALOG_POINTER,
+    }
+
+
+def _method_not_allowed(path: str) -> dict[str, Any]:
+    """The body of coord's method-not-allowed fallback (``doors.rs``
+    ``method_not_allowed``), sent ``405``: the path exists, ``POST`` does not."""
+    return {
+        "error": "method_not_allowed",
+        "method": "POST",
+        "path": path,
+        "allowed": [{"method": "GET", "path": path, "admits": "device|agent"}],
+        "catalog": _CATALOG_POINTER,
+    }
+
+
+_CATALOG_POINTER = {
+    "http": "GET /coord/agent-doors (device|agent JWT; ?prefix=&resource=)",
+    "mcp": 'coord_can(action="list_doors", prefix?, resource?)',
+}
 
 
 def _placeable(**kw: Any) -> DeviceResolveRequest:
@@ -297,9 +345,43 @@ async def test_no_bearer_is_unavailable_and_coord_is_not_asked(
             None,
         ),
         (_Coord(raise_exc=httpx.ReadTimeout("slow")), "coord_unreachable", None, None),
-        # A coord build without the door: the route does not exist.
+        # A coord build without the door answers from its router fallback.
+        (
+            _Coord(404, _no_such_route("/coord/devices/resolve")),
+            "not_deployed",
+            404,
+            "no_such_route",
+        ),
+        (
+            _Coord(405, _method_not_allowed("/coord/devices/resolve")),
+            "not_deployed",
+            405,
+            "method_not_allowed",
+        ),
+        # Something in front of coord answered: no ``error`` string at all.
         (_Coord(404, text="Not Found"), "not_deployed", 404, None),
         (_Coord(405, text=""), "not_deployed", 405, None),
+        # Any OTHER string on a 404/405 is the door itself answering.
+        (
+            _Coord(404, {"error": "device_not_found"}),
+            "refused",
+            404,
+            "device_not_found",
+        ),
+        (_Coord(405, {"error": "read_only"}), "refused", 405, "read_only"),
+        # An interactive caller's bearer that cannot be written as a header.
+        (
+            _Coord(raise_exc=UnicodeEncodeError("ascii", "tök", 1, 2, "not ascii")),
+            "no_credential",
+            None,
+            None,
+        ),
+        (
+            _Coord(raise_exc=httpx.LocalProtocolError("illegal header value")),
+            "no_credential",
+            None,
+            None,
+        ),
         (
             _Coord(500, {"error": "device_resolve_failed"}),
             "upstream_error",
@@ -325,8 +407,14 @@ async def test_no_bearer_is_unavailable_and_coord_is_not_asked(
     ids=[
         "connect_error",
         "timeout",
-        "404_not_deployed",
-        "405_not_deployed",
+        "404_no_such_route_not_deployed",
+        "405_method_not_allowed_not_deployed",
+        "404_no_error_string_not_deployed",
+        "405_no_error_string_not_deployed",
+        "404_other_string_refused",
+        "405_other_string_refused",
+        "unencodable_bearer",
+        "illegal_header_value",
         "500",
         "503_html",
         "403",
@@ -453,6 +541,25 @@ def test_endpoint_forwards_the_cookie_bearer(
 
 
 def test_endpoint_answers_unavailable_with_200_before_coord_deploys(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Coord's real answer for a door its build does not have."""
+    _Coord(404, _no_such_route("/coord/devices/resolve")).install(monkeypatch)
+    resp = client.post(
+        "/api/v1/devices/resolve",
+        json={"required_capabilities": [], "work_class": "placeable"},
+        headers={"Authorization": f"Bearer {BEARER}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "outcome": "unavailable",
+        "reason": "not_deployed",
+        "status": 404,
+        "code": "no_such_route",
+    }
+
+
+def test_endpoint_answers_unavailable_for_a_404_with_no_error_string(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
     _Coord(404, text="Not Found").install(monkeypatch)
@@ -897,9 +1004,13 @@ async def test_a_background_resolve_mints_for_its_user_and_forwards_that_token(
     (call,) = doors.resolve.calls
     assert call["headers"] == {"Authorization": f"Bearer {_acting_token(USER)}"}
     _assert_no_user_id_sent(call)
-    # One 5 s budget for both calls: a coord that answers nothing costs a
-    # scheduled row about 10 s, not the mint's old 10 s plus the resolver's 5.
+    # The mint request and the resolve request are each made with their own
+    # ``httpx.Timeout(5.0)``: 5 s for each phase of that one request, not a
+    # total shared between the two. Web's service-token mint is not given
+    # it and keeps its own 10 s.
     assert mint["timeout"] == call["timeout"] == httpx.Timeout(5.0)
+    (service_token,) = doors.service_token.calls
+    assert service_token["timeout"] == 10.0
 
 
 async def test_a_scheduled_auto_pick_asks_coord_as_the_schedule_owner(
@@ -1039,7 +1150,36 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         _unavailable_dump("misconfigured"),
         "device_resolver_unavailable",
     ),
-    # A coord build without the mint door: a 404/405 carrying NO error code.
+    # Web's service token (or admin secret) cannot be written as a header.
+    (
+        "unencodable_service_credential",
+        lambda: _Doors(
+            mint=_Coord(raise_exc=UnicodeEncodeError("ascii", "tök", 1, 2, "no"))
+        ),
+        _unavailable_dump("no_credential"),
+        "device_resolver_unavailable",
+    ),
+    (
+        "illegal_header_value",
+        lambda: _Doors(mint=_Coord(raise_exc=httpx.LocalProtocolError("illegal"))),
+        _unavailable_dump("no_credential"),
+        "device_resolver_unavailable",
+    ),
+    # A coord build without the mint door answers from its router fallback:
+    # ``not_deployed``, with coord's ``error`` string kept.
+    (
+        "404_no_such_route_not_deployed",
+        lambda: _Doors(mint=_Coord(404, _no_such_route(MINT_PATH))),
+        _unavailable_dump("not_deployed", 404, "no_such_route"),
+        "device_resolver_unavailable",
+    ),
+    (
+        "405_method_not_allowed_not_deployed",
+        lambda: _Doors(mint=_Coord(405, _method_not_allowed(MINT_PATH))),
+        _unavailable_dump("not_deployed", 405, "method_not_allowed"),
+        "device_resolver_unavailable",
+    ),
+    # And so does a 404/405 carrying NO ``error`` string at all.
     (
         "404_not_deployed",
         lambda: _Doors(mint=_Coord(404, text="Not Found")),
@@ -1058,18 +1198,18 @@ _MINT_FAILURES: list[tuple[str, Callable[[], _Doors], dict[str, Any], str]] = [
         _unavailable_dump("not_deployed", 405),
         "device_resolver_unavailable",
     ),
-    # A 404/405 that DOES carry a code is coord answering, not a missing
-    # door: the code is kept.
+    # A 404/405 carrying any OTHER ``error`` string is the door answering,
+    # not a missing door: ``refused``, and the string is kept.
     (
-        "404_with_a_code_is_refused",
+        "404_with_another_string_is_refused",
         lambda: _Doors(mint=_Coord(404, {"error": "user_not_found"})),
         _unavailable_dump("refused", 404, "user_not_found"),
         "device_resolver_unavailable",
     ),
     (
-        "405_with_a_code_is_refused",
-        lambda: _Doors(mint=_Coord(405, {"error": "method_not_allowed"})),
-        _unavailable_dump("refused", 405, "method_not_allowed"),
+        "405_with_another_string_is_refused",
+        lambda: _Doors(mint=_Coord(405, {"error": "minting_is_paused"})),
+        _unavailable_dump("refused", 405, "minting_is_paused"),
         "device_resolver_unavailable",
     ),
     # Coord's own answer about the user. It keeps coord's code rather than
@@ -1359,8 +1499,21 @@ async def test_a_split_coord_box_still_forwards_an_interactive_bearer(
             "404), so no runner is picked automatically. Choose a runner "
             "explicitly.",
         ),
+        (
+            UnavailableOutcome(reason="not_deployed", status=404, code="no_such_route"),
+            "Coord's device resolver could not be asked (not_deployed: "
+            "no_such_route, HTTP 404), so no runner is picked automatically. "
+            "Choose a runner explicitly.",
+        ),
     ],
-    ids=["refused_with_code", "refused_no_code", "5xx", "unreachable", "not_deployed"],
+    ids=[
+        "refused_with_code",
+        "refused_no_code",
+        "5xx",
+        "unreachable",
+        "not_deployed",
+        "not_deployed_route_fallback",
+    ],
 )
 async def test_an_unavailable_refusal_says_what_coord_said(
     monkeypatch: pytest.MonkeyPatch, outcome: UnavailableOutcome, message: str
@@ -1414,27 +1567,170 @@ async def test_an_interactive_caller_forwards_its_own_bearer_and_never_mints(
     assert doors.resolve.calls[0]["headers"]["Authorization"] == f"Bearer {BEARER}"
 
 
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        # The retired bearerless shape: background, but for nobody.
-        {"bearer": None, "background": True},
-        {"bearer": BEARER, "background": True, "acting_user_id": USER},
-        {"bearer": BEARER, "acting_user_id": USER},
-        {"bearer": None, "acting_user_id": USER},
-    ],
-    ids=[
-        "background_for_nobody",
-        "background_with_bearer",
-        "interactive_with_bearer_and_user",
-        "interactive_with_user",
-    ],
-)
-async def test_a_caller_is_background_with_a_user_or_interactive_never_a_mix(
-    kwargs: dict[str, Any],
-) -> None:
+async def test_a_caller_names_an_acting_user_or_carries_a_bearer_never_both() -> None:
+    """Naming an acting user IS being background — there is no second flag
+    to disagree with it — and such a caller carries no bearer."""
     with pytest.raises(ValueError):
-        CoordCaller(**kwargs)
+        CoordCaller(bearer=BEARER, acting_user_id=USER)
+    with pytest.raises(ValueError):
+        CoordCaller(bearer="", acting_user_id=USER)
+    # The retired flag is gone, not merely ignored.
+    with pytest.raises(TypeError):
+        CoordCaller(bearer=None, background=True)  # type: ignore[call-arg]
+
+    assert CoordCaller.background_for(USER) == CoordCaller(
+        bearer=None, acting_user_id=USER
+    )
+    assert CoordCaller(bearer=None).acting_user_id is None
+
+
+async def test_a_minted_token_that_cannot_be_sent_is_malformed_not_a_raise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REAL httpx at the resolver: coord's mint answered ``200`` with a token
+    that is not ASCII, which ``httpx`` cannot write as a header
+    (``UnicodeEncodeError``, a ``ValueError``). It fails before any connect,
+    and ``resolve_device`` answers typed instead of raising."""
+    doors = _Doors(mint=_Coord(body={"token": "tökén-for-the-owner"}))
+    doors.install(monkeypatch)
+    monkeypatch.setattr(coord_device_resolve, "httpx", httpx)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="malformed_response")
+    assert len(doors.mint.calls) == 1
+
+    picked = await _pick_auto_runner(
+        cast(AsyncSession, _RefusingDb()),
+        USER,
+        CoordCaller.background_for(USER),
+        required_capabilities=[],
+    )
+    assert isinstance(picked, AutoPickRefusal)
+    assert picked.code == "device_resolver_unavailable"
+    assert "(malformed_response)" in picked.message
+
+
+async def test_an_interactive_bearer_that_cannot_be_sent_is_no_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REAL httpx again: the request's own bearer is not ASCII."""
+    doors = _Doors()
+    doors.install(monkeypatch)
+    monkeypatch.setattr(coord_device_resolve, "httpx", httpx)
+
+    out = await resolve_device(_placeable(), CoordCaller(bearer="tökén"))
+
+    assert out == UnavailableOutcome(reason="no_credential")
+    assert doors.mint.calls == []
+
+
+async def test_an_illegal_header_value_for_a_minted_token_is_malformed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``httpx.LocalProtocolError`` is a transport error by class, but it is
+    OUR request that was illegal: not ``coord_unreachable``."""
+    doors = _Doors(
+        resolve=_Coord(raise_exc=httpx.LocalProtocolError("illegal header value"))
+    )
+    doors.install(monkeypatch)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="malformed_response")
+
+
+def _boom(*a: Any, **kw: Any) -> Any:
+    raise RuntimeError("configuration unreadable")
+
+
+@pytest.mark.parametrize("broken", ["coord_device_split_active", "coord_device_base"])
+async def test_a_config_fault_for_a_background_caller_is_misconfigured_unminted(
+    monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """Either configuration read failing is ``misconfigured`` — the split
+    check exactly like the base lookup — and no coord door is asked."""
+    doors = _Doors()
+    doors.install(monkeypatch)
+    monkeypatch.setattr(coord_device_resolve, broken, _boom)
+
+    out = await resolve_device(_placeable(), CoordCaller.background_for(USER))
+
+    assert out == UnavailableOutcome(reason="misconfigured")
+    assert doors.service_token.calls == []
+    assert doors.mint.calls == []
+    assert doors.resolve.calls == []
+
+
+class _RefusesTheStaleTokenOnceAllHoldIt(_Coord):
+    """The mint door after coord restarted with new keys. It refuses the
+    stale service token ``401`` — but answers no caller until ``callers`` of
+    them are all waiting with it, so every one holds the SAME stale token
+    when the refusals land. Any other service token is accepted."""
+
+    def __init__(self, callers: int, stale: str) -> None:
+        super().__init__()
+        self.callers = callers
+        self.stale = stale
+        self.holding_stale = 0
+        self.all_arrived = asyncio.Event()
+
+    async def respond(  # type: ignore[override]
+        self, url: str, json: Any, headers: Any, timeout: Any = None
+    ) -> httpx.Response:
+        self.calls.append(
+            {"url": url, "json": json, "headers": headers, "timeout": timeout}
+        )
+        request = httpx.Request("POST", url)
+        if headers["Authorization"] != f"Bearer {self.stale}":
+            return httpx.Response(200, json=_minted(json), request=request)
+        self.holding_stale += 1
+        if self.holding_stale == self.callers:
+            self.all_arrived.set()
+        await self.all_arrived.wait()
+        return httpx.Response(401, json={"error": "invalid_token"}, request=request)
+
+
+async def test_callers_sharing_a_stale_service_token_re_mint_it_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eight scheduled rows all hold the stale service token when coord
+    refuses it. The first to come back drops it and mints a fresh one; the
+    rest find a token that is no longer the one they were refused with, keep
+    it, and retry with it. One re-mint, and every caller is answered."""
+    users = [uuid4() for _ in range(8)]
+    doors = _Doors(
+        service_token=_InTurn(
+            _Coord(body=_service_token("stale-service-token")),
+            _Coord(body=_service_token("fresh-service-token")),
+            # A third mint would be a caller dropping the FRESH token.
+            _Coord(body=_service_token("a-token-too-many")),
+        ),
+        mint=_RefusesTheStaleTokenOnceAllHoldIt(len(users), "stale-service-token"),
+    )
+    doors.install(monkeypatch)
+
+    outs = await asyncio.wait_for(
+        asyncio.gather(
+            *(
+                resolve_device(_placeable(), CoordCaller.background_for(user))
+                for user in users
+            )
+        ),
+        timeout=10,
+    )
+
+    assert all(isinstance(out, ResolvedOutcome) for out in outs), outs
+    # The first mint of the stale token, and exactly one re-mint.
+    assert len(doors.service_token.calls) == 2
+    bearers = [c["headers"]["Authorization"] for c in doors.mint.calls]
+    assert bearers.count("Bearer stale-service-token") == len(users)
+    assert bearers.count("Bearer fresh-service-token") == len(users)
+    assert len(bearers) == 2 * len(users)
+    # Each caller asked the resolver as the token minted for ITS user.
+    assert sorted(c["headers"]["Authorization"] for c in doors.resolve.calls) == sorted(
+        f"Bearer {_acting_token(user)}" for user in users
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1443,12 +1739,12 @@ async def test_a_caller_is_background_with_a_user_or_interactive_never_a_mix(
 
 
 class _ScheduleDb:
-    """The session ``fire_scheduled_run`` opens: ``get`` returns the one row
-    and ``commit`` is counted. Any other query fails the test — after the
-    row is read, nothing but coord may choose the runner."""
+    """The session ``fire_scheduled_run`` opens: ``get`` returns the row with
+    that id and ``commit`` is counted. Any other query fails the test —
+    after the row is read, nothing but coord may choose the runner."""
 
-    def __init__(self, row: SimpleNamespace) -> None:
-        self.row = row
+    def __init__(self, *rows: SimpleNamespace) -> None:
+        self.rows = {row.id: row for row in rows}
         self.commits = 0
 
     async def __aenter__(self) -> _ScheduleDb:
@@ -1457,8 +1753,8 @@ class _ScheduleDb:
     async def __aexit__(self, *a: Any) -> bool:
         return False
 
-    async def get(self, model: Any, ident: Any) -> SimpleNamespace:
-        return self.row
+    async def get(self, model: Any, ident: Any) -> SimpleNamespace | None:
+        return self.rows.get(ident)
 
     async def commit(self) -> None:
         self.commits += 1
@@ -1467,25 +1763,36 @@ class _ScheduleDb:
         raise AssertionError("no web-side device query may run here")
 
 
-def _schedule(monkeypatch: pytest.MonkeyPatch, owner: UUID) -> SimpleNamespace:
-    """An enabled ``target="auto"`` schedule owned by ``owner``, wired into
-    ``fire_scheduled_run`` in place of a database."""
-    row = SimpleNamespace(
+def _schedule_row(owner: UUID, target: str = "auto") -> SimpleNamespace:
+    """An enabled schedule owned by ``owner``, due every minute."""
+    return SimpleNamespace(
         id=uuid4(),
         user_id=owner,
         workflow_id=uuid4(),
         enabled=True,
-        target="auto",
+        target=target,
+        cron_expression="* * * * *",
+        next_fire_at=None,
         last_fired_at=None,
         last_status=None,
         last_error=None,
         last_execution_id=None,
     )
-    db = _ScheduleDb(row)
+
+
+def _wire_db(monkeypatch: pytest.MonkeyPatch, db: _ScheduleDb) -> None:
+    """Put ``db`` in place of every session ``scheduled_dispatch`` opens."""
     monkeypatch.setattr(
         scheduled_dispatch, "async_sessionmaker", lambda *a, **kw: lambda: db
     )
     _own_workflow(monkeypatch)
+
+
+def _schedule(monkeypatch: pytest.MonkeyPatch, owner: UUID) -> SimpleNamespace:
+    """An enabled ``target="auto"`` schedule owned by ``owner``, wired into
+    ``fire_scheduled_run`` in place of a database."""
+    row = _schedule_row(owner)
+    _wire_db(monkeypatch, _ScheduleDb(row))
     return row
 
 
@@ -1668,20 +1975,14 @@ class _Sockets:
         return True
 
 
-async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The whole path: mint for the owner, coord names DEVICE_B, and the
-    workflow goes out over that runner's WebSocket."""
-    doors = _Doors(resolve=_Coord(body=_resolved_body(DEVICE_B)))
-    doors.install(monkeypatch)
-    row = _schedule(monkeypatch, USER)
-    runner = _device(DEVICE_B)
+def _connect_runner(monkeypatch: pytest.MonkeyPatch, device_id: UUID) -> _Sockets:
+    """``device_id`` is USER's runner, connected over its WebSocket here."""
+    runner = _device(device_id)
     runner.ws_session_id = "ws-session"
     sockets = _Sockets()
 
     async def _by_id(db: Any, runner_id: UUID) -> SimpleNamespace | None:
-        return {DEVICE_B: runner}.get(runner_id)
+        return {device_id: runner}.get(runner_id)
 
     async def _redis() -> object:
         return object()
@@ -1692,6 +1993,18 @@ async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
     monkeypatch.setattr(workflow_dispatcher, "_get_runner_by_id", _by_id)
     monkeypatch.setattr(workflow_dispatcher, "get_redis", _redis)
     monkeypatch.setattr(workflow_dispatcher, "get_runner_websocket_manager", _manager)
+    return sockets
+
+
+async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole path: mint for the owner, coord names DEVICE_B, and the
+    workflow goes out over that runner's WebSocket."""
+    doors = _Doors(resolve=_Coord(body=_resolved_body(DEVICE_B)))
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    sockets = _connect_runner(monkeypatch, DEVICE_B)
 
     result = await scheduled_dispatch.fire_scheduled_run(
         str(row.id), engine=cast(Any, object())
@@ -1717,3 +2030,331 @@ async def test_a_scheduled_run_is_dispatched_to_the_runner_coord_names(
     assert [c["json"] for c in doors.mint.calls] == [{"user_id": str(USER)}]
     (call,) = doors.resolve.calls
     assert call["headers"]["Authorization"] == f"Bearer {_acting_token(USER)}"
+
+
+# ---------------------------------------------------------------------------
+# The due-rows sweep: one unreachable coord is found out once
+# ---------------------------------------------------------------------------
+
+NOT_ATTEMPTED = (
+    "[503 coord_unreachable_in_sweep] Coord was unreachable earlier in this "
+    "sweep, so this run was not attempted and coord was not asked again for "
+    "it. The next scheduled window is the retry."
+)
+
+
+class _SweepDb(_ScheduleDb):
+    """Every session one ``poll_and_dispatch_due`` opens. Its first query is
+    the anchor pass (nothing to anchor), its second the claim, which returns
+    every row as due. A third query fails the test."""
+
+    def __init__(self, *rows: SimpleNamespace) -> None:
+        super().__init__(*rows)
+        self.queries = 0
+
+    async def execute(self, *a: Any, **kw: Any) -> Any:
+        self.queries += 1
+        if self.queries > 2:
+            raise AssertionError("no web-side device query may run here")
+        found = [] if self.queries == 1 else list(self.rows.values())
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: found))
+
+
+async def _sweep(
+    monkeypatch: pytest.MonkeyPatch, *rows: SimpleNamespace
+) -> dict[str, int]:
+    _wire_db(monkeypatch, _SweepDb(*rows))
+    return await scheduled_dispatch.poll_and_dispatch_due(engine=cast(Any, object()))
+
+
+async def test_a_sweep_stops_asking_an_unreachable_coord_after_the_first_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A black-holed coord costs the sweep ONE row's timeouts. Every later
+    ``target="auto"`` row is recorded failed — saying why — with no coord
+    call; a row that names its runner asks coord nothing and still goes."""
+    doors = _Doors(mint=_Coord(raise_exc=httpx.ConnectTimeout("black hole")))
+    doors.install(monkeypatch)
+    sockets = _connect_runner(monkeypatch, DEVICE_B)
+    first = _schedule_row(USER)
+    second = _schedule_row(OTHER_USER)
+    pinned = _schedule_row(USER, target=str(DEVICE_B))
+    last = _schedule_row(USER)
+
+    stats = await _sweep(monkeypatch, first, second, pinned, last)
+
+    assert stats == {"due": 4, "dispatched": 1, "failed": 3, "skipped": 0}
+    # Only the first row reached coord, and only its mint door.
+    assert [c["json"] for c in doors.mint.calls] == [{"user_id": str(USER)}]
+    assert len(doors.service_token.calls) == 1
+    assert doors.resolve.calls == []
+
+    assert first.last_status == "failed"
+    assert first.last_error == (
+        "[503 device_resolver_unavailable] Coord's device resolver could not "
+        "be asked (coord_unreachable), so no runner is picked automatically. "
+        "Choose a runner explicitly, or retry."
+    )
+    for row in (second, last):
+        assert row.last_status == "failed"
+        assert row.last_error == NOT_ATTEMPTED
+        assert row.last_fired_at is not None
+        assert row.last_execution_id is None
+
+    # The explicit-target row, fired AFTER coord was found unreachable.
+    ((sent_to, payload),) = sockets.sent
+    assert sent_to == DEVICE_B
+    assert payload["workflow_id"] == str(pinned.workflow_id)
+    assert pinned.last_status == "dispatched"
+    assert pinned.last_execution_id == payload["run_id"]
+    assert pinned.last_error is None
+
+    # Each sweep finds out for itself: the next one asks coord again, once.
+    await _sweep(monkeypatch, _schedule_row(USER), _schedule_row(USER))
+    assert len(doors.mint.calls) == 2
+
+
+async def test_a_sweep_short_circuits_on_an_unreachable_resolver_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mint answered and the RESOLVER timed out: the same outcome."""
+    doors = _Doors(resolve=_Coord(raise_exc=httpx.ReadTimeout("slow")))
+    doors.install(monkeypatch)
+    first, second = _schedule_row(USER), _schedule_row(USER)
+
+    stats = await _sweep(monkeypatch, first, second)
+
+    assert stats == {"due": 2, "dispatched": 0, "failed": 2, "skipped": 0}
+    assert len(doors.mint.calls) == 1
+    assert len(doors.resolve.calls) == 1
+    assert second.last_error == NOT_ATTEMPTED
+
+
+@pytest.mark.parametrize(
+    "mint",
+    [
+        _Coord(409, {"error": "tenant_ambiguous", "tenant_ids": ["a", "b"]}),
+        _Coord(503, text="<html>bad gateway</html>"),
+        _Coord(404, _no_such_route(MINT_PATH)),
+    ],
+    ids=["refused", "upstream_error", "not_deployed"],
+)
+async def test_a_sweep_keeps_asking_a_coord_that_answers(
+    monkeypatch: pytest.MonkeyPatch, mint: _Coord
+) -> None:
+    """Only ``coord_unreachable`` short-circuits. A coord that ANSWERS — a
+    refusal about one owner, a 5xx, a missing door — is asked for each row:
+    the answer is about that row and costs no timeout."""
+    mint.calls.clear()
+    doors = _Doors(mint=mint)
+    doors.install(monkeypatch)
+    first, second = _schedule_row(USER), _schedule_row(OTHER_USER)
+
+    stats = await _sweep(monkeypatch, first, second)
+
+    assert stats == {"due": 2, "dispatched": 0, "failed": 2, "skipped": 0}
+    assert [c["json"] for c in doors.mint.calls] == [
+        {"user_id": str(USER)},
+        {"user_id": str(OTHER_USER)},
+    ]
+    assert "sweep" not in second.last_error
+
+
+async def test_a_fire_in_an_already_unreachable_sweep_is_not_attempted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doors = _Doors()
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    log = MagicMock()
+    monkeypatch.setattr(scheduled_dispatch, "logger", log)
+    sweep = scheduled_dispatch.SweepState(coord_unreachable=True)
+
+    result = await scheduled_dispatch.fire_scheduled_run(
+        str(row.id), engine=cast(Any, object()), sweep=sweep
+    )
+
+    assert result == {
+        "status": "failed",
+        "reason": "coord_unreachable_in_sweep",
+        "status_code": 503,
+        "code": "coord_unreachable_in_sweep",
+        "error": NOT_ATTEMPTED,
+    }
+    assert row.last_status == "failed" and row.last_error == NOT_ATTEMPTED
+    assert doors.service_token.calls == doors.mint.calls == doors.resolve.calls == []
+    log.warning.assert_called_once_with(
+        "scheduled_run_not_attempted_coord_unreachable_in_sweep",
+        scheduled_run_id=str(row.id),
+        error=NOT_ATTEMPTED,
+    )
+
+
+async def test_run_now_always_asks_coord_whatever_an_earlier_fire_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single fire carries no sweep state: nothing is remembered between
+    two of them, and an unreachable coord is asked each time."""
+    doors = _Doors(mint=_Coord(raise_exc=httpx.ConnectError("refused")))
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+
+    for _ in range(2):
+        result = await scheduled_dispatch.fire_scheduled_run(
+            str(row.id), engine=cast(Any, object())
+        )
+        assert result["code"] == "device_resolver_unavailable"
+        assert "(coord_unreachable)" in row.last_error
+
+    assert len(doors.mint.calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# No token in the logs
+# ---------------------------------------------------------------------------
+
+
+class _LogRecorder:
+    """Stands in for a module's structlog logger and keeps every call.
+
+    The app configures structlog with ``cache_logger_on_first_use=True``, so
+    a ``structlog.testing.capture_logs`` block does not reliably see an
+    already-bound module logger; replacing the logger does."""
+
+    def __init__(self) -> None:
+        self.records: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def __getattr__(self, level: str) -> Callable[..., None]:
+        def _log(*args: Any, **fields: Any) -> None:
+            self.records.append((level, args, fields))
+
+        return _log
+
+
+_LOGGING_MODULES = (
+    coord_device_resolve,
+    coord_service_account,
+    workflow_dispatcher,
+    scheduled_dispatch,
+)
+
+
+@pytest.mark.parametrize(
+    ("make_doors", "status", "logged"),
+    [
+        (lambda: _Doors(), "dispatched", "scheduled_run_dispatched"),
+        (
+            # The mint answered, so an acting token exists when coord refuses.
+            lambda: _Doors(resolve=_Coord(403, {"error": "principal_not_accepted"})),
+            "failed",
+            "scheduled_run_dispatch_failed",
+        ),
+        (
+            # The service token is refused, dropped and re-minted on the way.
+            lambda: _Doors(mint=_Coord(401, {"error": "invalid_token"})),
+            "failed",
+            "coord_service_account_token_refused_reminting",
+        ),
+    ],
+    ids=["success", "refused_by_the_resolver", "refused_at_the_mint"],
+)
+async def test_neither_token_is_ever_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    make_doors: Callable[[], _Doors],
+    status: str,
+    logged: str,
+) -> None:
+    """The service token and the minted acting token are bearer credentials:
+    neither may appear in any log call's event or fields, nor in anything
+    written to the stdlib log or the process's output, nor in what the
+    schedule records."""
+    doors = make_doors()
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+    _connect_runner(monkeypatch, DEVICE_B)
+    log = _LogRecorder()
+    for module in _LOGGING_MODULES:
+        monkeypatch.setattr(module, "logger", log)
+
+    with caplog.at_level("DEBUG"):
+        result = await scheduled_dispatch.fire_scheduled_run(
+            str(row.id), engine=cast(Any, object())
+        )
+
+    assert result["status"] == status
+    # The recorder really is what these modules log to.
+    assert logged in [args[0] for _, args, _ in log.records]
+    # Both credentials really were in play.
+    assert doors.mint.calls[0]["headers"]["Authorization"] == f"Bearer {SERVICE_TOKEN}"
+    if doors.resolve.calls:
+        assert doors.resolve.calls[0]["headers"]["Authorization"] == (
+            f"Bearer {_acting_token(USER)}"
+        )
+
+    captured = capsys.readouterr()
+    everything = "\n".join(
+        [repr(log.records), caplog.text, captured.out, captured.err, repr(result)]
+        + [repr(row.last_error)]
+    )
+    assert SERVICE_TOKEN not in everything
+    assert "acting-token-for-" not in everything
+    assert "s3cret" not in everything
+
+
+# ---------------------------------------------------------------------------
+# The run-now endpoint: POST /api/v1/scheduled-runs/{id}/run-now
+# ---------------------------------------------------------------------------
+
+
+def test_run_now_answers_a_refused_auto_run_with_coords_own_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Over HTTP: a refused ``target="auto"`` run is the dispatcher's 503,
+    and its body carries coord's ``error`` string and HTTP status."""
+    from app.api.deps import get_async_db, get_current_active_user_async
+    from app.api.v1.endpoints import scheduled_runs
+
+    doors = _Doors(
+        mint=_Coord(409, {"error": "tenant_ambiguous", "tenant_ids": ["a", "b"]})
+    )
+    doors.install(monkeypatch)
+    row = _schedule(monkeypatch, USER)
+
+    async def _owned_run(db: Any, user_id: UUID, run_id: UUID) -> Any:
+        return row if (user_id, run_id) == (USER, row.id) else None
+
+    async def _no_db() -> Any:
+        yield object()
+
+    monkeypatch.setattr(scheduled_runs.crud, "get_scheduled_run", _owned_run)
+    app = FastAPI()
+    user = MagicMock()
+    user.id = USER
+    user.is_active = True
+    app.dependency_overrides[get_current_active_user_async] = lambda: user
+    app.dependency_overrides[get_async_db] = _no_db
+    app.include_router(scheduled_runs.router, prefix="/api/v1/scheduled-runs")
+
+    resp = TestClient(app).post(f"/api/v1/scheduled-runs/{row.id}/run-now")
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": (
+            "[503 device_resolver_unavailable] Coord refused to resolve a "
+            "runner (refused: tenant_ambiguous, HTTP 409), so none is picked "
+            "automatically. The refusal is coord's own; choose a runner "
+            "explicitly."
+        )
+    }
+    assert row.last_status == "failed"
+    assert [c["json"] for c in doors.mint.calls] == [{"user_id": str(USER)}]
+    assert doors.resolve.calls == []
+
+    # A run that is not this user's is a 404 and nothing is fired.
+    assert (
+        TestClient(app).post(f"/api/v1/scheduled-runs/{uuid4()}/run-now").status_code
+        == 404
+    )
+    assert len(doors.mint.calls) == 1

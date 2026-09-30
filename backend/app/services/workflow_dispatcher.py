@@ -136,7 +136,7 @@ _TRANSIENT_UNAVAILABLE = frozenset({"coord_unreachable", "upstream_error"})
 
 
 def _unavailable_cause(outcome: UnavailableOutcome) -> str:
-    """``reason[: coord's code][, HTTP status]`` — all coord said, and no more."""
+    """``reason[: coord's error string][, HTTP status]`` — all coord said."""
     cause: str = outcome.reason
     if outcome.code:
         cause += f": {outcome.code}"
@@ -147,8 +147,9 @@ def _unavailable_cause(outcome: UnavailableOutcome) -> str:
 
 def _unavailable_refusal(outcome: UnavailableOutcome) -> AutoPickRefusal:
     """The refusal for a resolver that named nothing because it was not
-    answered. Coord's own code and HTTP status are in the message, so they
-    reach the run-now response and a schedule's ``last_error``."""
+    answered. Coord's own ``error`` string and HTTP status are in the
+    message, so they reach the run-now response and a schedule's
+    ``last_error``."""
     cause = _unavailable_cause(outcome)
     if outcome.reason == "refused" and outcome.code == NO_PAIRED_DEVICE_CODE:
         # Only a background caller's mint answers this, so the user is a

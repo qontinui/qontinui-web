@@ -296,12 +296,16 @@ class CoordServiceAccountClient:
         cached service token is dropped, a fresh one obtained, and the mint
         retried exactly once; a second ``401`` is returned as it is.
 
-        ``timeout`` is the caller's budget for each request to this door; it
-        is required so the caller's two coord calls share one budget.
+        ``timeout`` is the ``httpx`` timeout given to EACH request to this
+        door (the first, and the one retry): a bound on each phase of that
+        request, not a total across them and not shared with anything the
+        caller does next. It is required so the caller states it rather than
+        inheriting a default. A service-token mint this call triggers
+        (:meth:`_mint`) is not covered by it and keeps its own 10 s timeout.
 
         Returns ``(status_code, body)``. ``body`` is coord's parsed JSON, or
         ``None`` when the answer is not JSON — never a wrapped text body, so
-        an ``error`` code read from it is always coord's own. Raises
+        an ``error`` string read from it is always coord's own. Raises
         :class:`CoordServiceAccountDisabledError` (via ``_ensure_token``) when
         the feature is off (COORD_ADMIN_SECRET unset), and
         :class:`CoordServiceTokenError` when coord will not give us our own
