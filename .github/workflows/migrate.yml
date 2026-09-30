@@ -422,6 +422,11 @@ jobs:
         env:
           TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
           WAIT_DEADLINE_INPUT: ${{ inputs.wait_deadline_secs }}
+          # The per-call --cli-*-timeout flags bound ONE attempt; the CLI's
+          # default retries could still stack several. Two attempts max keeps
+          # the deadline + tail inside the job cap.
+          AWS_MAX_ATTEMPTS: "2"
+          AWS_RETRY_MODE: standard
         run: |
           set -uo pipefail
 
@@ -454,7 +459,7 @@ jobs:
               STATUS=$(printf '%s' "$RESP" | python3 -c 'import sys,json; r=json.load(sys.stdin); t=(r.get("tasks") or [None])[0]; f=(r.get("failures") or [{}])[0]; print((t or {}).get("lastStatus") or ("ECS_" + f["reason"] if f.get("reason") else "NO_STATUS"))' 2>/dev/null) || STATUS="UNPARSEABLE"
               LAST_STATUS="$STATUS"
               if [ "$STATUS" = "STOPPED" ]; then
-                TASK_DESC=$(printf '%s' "$RESP" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["tasks"][0]))')
+                TASK_DESC=$(printf '%s' "$RESP" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["tasks"][0]))' 2>/dev/null) || TASK_DESC=""  # unreadable -> outcome unknown, never a false "failed"
                 break
               fi
             else
