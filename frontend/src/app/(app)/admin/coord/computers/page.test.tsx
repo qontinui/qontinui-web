@@ -13,11 +13,15 @@
  * 4. **A never-measured field renders `unknown`; `not_supported` renders as
  *    such** — in the rendered lane table, not only in the helper.
  * 5. **A detail 404 carrying `computer_not_found` says "Not found"**, while a
- *    bare 404 says UNKNOWN.
+ *    bare 404 says UNKNOWN — and a not-found AFTER a good read clears the
+ *    retained lanes and services rather than showing them beside it.
+ * 6. **A failed refresh keeps the rows, says so, and lets them go stale**:
+ *    after 900 s with no good read, a computer coord last called fresh reads
+ *    STALE by itself.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 const COMPUTER_ID = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
 
@@ -75,6 +79,10 @@ function freshComputer(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   httpGet.mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("/admin/coord/computers", () => {
@@ -136,6 +144,52 @@ describe("/admin/coord/computers", () => {
       "stale 1"
     );
     expect(screen.queryByTestId("coord-computers-failed-badge")).toBeNull();
+  });
+
+  it("keeps the rows after a failed refresh, says so, and lets them go stale after 900 s", async () => {
+    // Only the interval and the clock are faked: testing-library's own
+    // polling runs on real setTimeout.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    httpGet.mockResolvedValueOnce({
+      computers: [freshComputer()],
+      unattributed_ci_runners: [],
+    });
+    httpGet.mockRejectedValue(
+      rejection(504, '{"detail":"timeout waiting for coord"}')
+    );
+    render(<CoordComputersPage />);
+    const row = await screen.findByTestId("coord-computer-row");
+    expect(
+      within(row).getByTestId("coord-computer-freshness").textContent
+    ).toBe("fresh");
+
+    // The next poll (30 s) fails: the row stays, a banner says the read failed.
+    await act(async () => {
+      vi.advanceTimersByTime(31_000);
+    });
+    const banner = await screen.findByTestId("coord-computers-unknown-banner");
+    expect(banner.textContent).toContain(
+      "The figures below are from the last good read and are not current."
+    );
+    expect(screen.getAllByTestId("coord-computer-row")).toHaveLength(1);
+    expect(
+      screen.getByTestId("coord-computers-unattributed-none").textContent
+    ).toContain("at the last good read");
+
+    // 900 s later with no good read, the frozen `age_secs: 30` has aged past
+    // 3 × the report cadence, and the row says so without any new data.
+    await act(async () => {
+      vi.advanceTimersByTime(900_000);
+    });
+    const staleRow = screen.getByTestId("coord-computer-row");
+    expect(
+      within(staleRow).getByTestId("coord-computer-freshness").textContent
+    ).toBe("STALE");
+    expect(
+      within(staleRow)
+        .getByTestId("coord-computer-status")
+        .getAttribute("data-status")
+    ).toBe("stale");
   });
 
   it("lists unattributed CI runners instead of dropping them", async () => {
@@ -234,6 +288,35 @@ describe("/admin/coord/computers/[computerId]", () => {
     const status = await screen.findByTestId("coord-computer-service-status");
     expect(status.getAttribute("data-status")).toBe("failed");
     expect(status.textContent).toBe("✕ failed");
+  });
+
+  it("clears the retained lanes and services when a later read says computer_not_found", async () => {
+    httpGet.mockResolvedValueOnce({
+      ...freshComputer(),
+      services: [
+        { unit: "a.service", kind: "other_watched", active_state: "active" },
+      ],
+      events: [],
+      history: [],
+      divergence: [],
+    });
+    httpGet.mockRejectedValue(rejection(404, '{"error":"computer_not_found"}'));
+    render(<CoordComputerDetailPage />);
+    expect(await screen.findByTestId("coord-computer-lanes")).toBeTruthy();
+    expect(screen.getAllByTestId("coord-computer-service-row")).toHaveLength(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-computer-refresh"));
+    });
+    const banner = await screen.findByTestId("coord-computer-unknown-banner");
+    expect(banner.getAttribute("data-issue")).toBe("not_found");
+    expect(screen.queryByTestId("coord-computer-lanes")).toBeNull();
+    expect(screen.queryAllByTestId("coord-computer-service-row")).toHaveLength(
+      0
+    );
+    expect(screen.getByTestId("coord-computer-health").textContent).toContain(
+      "No such computer in this tenant"
+    );
   });
 
   it("says Not found for coord's computer_not_found, and UNKNOWN for a bare 404", async () => {

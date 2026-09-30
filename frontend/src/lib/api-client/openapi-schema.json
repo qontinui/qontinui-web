@@ -88156,6 +88156,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get Computers",
         "tags": [
           "operations"
@@ -88198,6 +88203,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get Computer",
         "tags": [
           "operations"

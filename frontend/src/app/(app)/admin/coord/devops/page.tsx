@@ -133,6 +133,7 @@ import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusSt
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
+import { useAuth } from "@/contexts/auth-context";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
@@ -141,6 +142,7 @@ const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
 export default function CoordDevOpsPage() {
   const fleet = useFleetHealth();
+  const { isCoordAdmin } = useAuth();
   const router = useRouter();
   const navigate = useCallback((href: string) => router.push(href), [router]);
   // The CI-capacity join (Phase 2). One read, owned here, passed down —
@@ -428,24 +430,30 @@ export default function CoordDevOpsPage() {
           `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
           Phase 5). The rows below are coord DEVICES — one physical box can be
           several of them — while the Computers page groups them under the
-          machine they run on, with its services, events and capacity. */}
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid="coord-devops-computers-note"
-      >
-        One computer can host several of the device rows below. For each
-        computer&apos;s capacity, usage per lane, watched services (CI runners
-        included), and event history, open{" "}
-        <Link
-          href="/admin/coord/computers"
-          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
-          data-testid="coord-devops-computers-link"
+          machine they run on, with its services, events and capacity.
+          Shown to a coord tenant admin only: both computer reads are gated on
+          `require_coord_tenant_admin` (they carry the registrar's CI-runner
+          rows and access facts), so a member following this link would get a
+          403 page instead of an answer. */}
+      {isCoordAdmin && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-devops-computers-note"
         >
-          Computers
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-        .
-      </p>
+          One computer can host several of the device rows below. For each
+          computer&apos;s capacity, usage per lane, watched services (CI runners
+          included), and event history, open{" "}
+          <Link
+            href="/admin/coord/computers"
+            className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+            data-testid="coord-devops-computers-link"
+          >
+            Computers
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+          .
+        </p>
+      )}
 
       {/* 1. Machines — coord's device liveness merged INTO the machine list,
           not beside it. `health` is what makes this the one list on the page:

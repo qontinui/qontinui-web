@@ -13,7 +13,8 @@
  * Single-flight with no retries (`COORD_DASHBOARD_POLL_OPTIONS`): the next
  * tick is the retry, exactly as every other coord-proxied Dev Ops poll.
  *
- * **A failed read keeps the last body.** Dropping it would render the fleet as
+ * **A failed read keeps the last body** — except `not_found` and
+ * `forbidden`, which clear it (see the catch below). Dropping it would render the fleet as
  * absent, which is a different — and equally wrong — claim from stale. What
  * keeps the page honest during an outage is `fetchedAtMs`, stamped only on
  * success: `computerStatus.ts` ages every freshness verdict by the time since
@@ -74,7 +75,17 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
         setIssue(null);
       } catch (e) {
         if (!isCurrent()) return;
-        setIssue(classifyComputersError(e, { detail }));
+        const issue = classifyComputersError(e, { detail });
+        // Two answers SUPERSEDE the retained body rather than aging it: coord
+        // saying this computer is not in the tenant, and coord refusing the
+        // caller outright. Keeping the last body on screen beside either would
+        // show figures for a record coord just said is not (or no longer)
+        // yours to see. Every other failure keeps it, labelled stale.
+        if (issue.kind === "not_found" || issue.kind === "forbidden") {
+          setData(null);
+          setFetchedAtMs(null);
+        }
+        setIssue(issue);
       } finally {
         if (isCurrent()) setLoading(false);
       }

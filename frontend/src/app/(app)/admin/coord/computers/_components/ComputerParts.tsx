@@ -209,9 +209,10 @@ const load = (v: number) => v.toFixed(2);
 /**
  * Capacity vs usage per lane. One row per `(lane, lane_instance)`.
  *
- * **A stale lane's figures are not shown as current**: the row is dimmed, its
- * freshness badge says STALE, and every figure reads under a "last known"
- * header cell, so nothing on a stale row can be read as "now".
+ * **A stale lane's figures are not shown as current**: the row is dimmed
+ * (`opacity-60`), its freshness badge in the "sample" column says STALE (or
+ * UNKNOWN), and a "last known, <age>" note sits beside that badge — so
+ * nothing on a stale row reads as "now".
  */
 export function LaneTable({
   computer,
@@ -341,16 +342,19 @@ export function LaneTable({
                 >
                   {usageText(
                     laneMemoryUsed(lane),
-                    lane.mem_total_bytes ?? computer.capacity.memoryTotalBytes
+                    lane.mem_total_bytes ?? null
                   )}
                 </Cell>
                 <Cell
                   testId="coord-computer-lane-swap"
                   muted={lane.swap_used_bytes == null}
                 >
+                  {/* The lane's OWN swap total only: the computer's capacity figure
+                      is a different box's (a WSL guest's swap is not the
+                      host's), so dividing by it would fabricate a ratio. */}
                   {usageText(
                     lane.swap_used_bytes ?? null,
-                    lane.swap_total_bytes ?? computer.capacity.swapTotalBytes
+                    lane.swap_total_bytes ?? null
                   )}
                 </Cell>
                 <Cell
