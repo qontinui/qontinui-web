@@ -106,8 +106,9 @@ class AutoPickRefusal:
     """Coord's resolver named no device for an automatic pick — and why.
 
     ``code`` is stable and machine-readable; ``outcome`` is the resolver's own
-    answer. A refusal is never "pick something else": the old web-side
-    heartbeat ordering is gone, so an UNKNOWN resolver means no auto-pick.
+    answer. A refusal is never "pick something else": there is no web-side
+    ordering, for interactive or background callers, so an UNKNOWN resolver
+    means no auto-pick.
     """
 
     code: str
@@ -203,59 +204,6 @@ async def _owned_device(
     return device
 
 
-async def _pick_auto_runner_without_caller_credential(
-    db: AsyncSession, user_id: UUID
-) -> Device | AutoPickRefusal:
-    """Web-side auto-pick for a caller that carries NO user bearer.
-
-    WHY THIS EXISTS: coord's resolver (``POST /coord/devices/resolve``) is
-    asked AS the caller, from the caller's own bearer. A scheduled or other
-    background dispatch has no request behind it and therefore no bearer, so
-    coord's door cannot be asked for it. Rather than refuse every scheduled
-    ``target="auto"`` run, this path keeps the pre-Phase-3 ordering for that
-    one population.
-
-    WHAT IT IS NOT: it is NOT capability-checked and NOT drain-aware — the
-    checks coord's resolver applies are absent here. It applies the D3 user
-    scope (``Device.user_id == user_id`` AND ``capability_user_paired``) and
-    the previous health rules only: WS-connected + healthy first, then
-    heartbeat-fresh + healthy.
-
-    It is to be REPLACED by a service-credential path that lets a background
-    job ask coord's resolver on the schedule owner's behalf (follow-up; plan
-    ``2026-09-20-runner-selector-drives-a-transport-not-a-target``). It is
-    reachable only from :func:`_pick_auto_runner` for an explicitly
-    background caller (``caller.background``, e.g. ``NO_CALLER``) — an
-    interactive caller never gets here, with or without a bearer.
-    """
-    query = (
-        select(Device)
-        .where(
-            Device.user_id == user_id,
-            Device.capability_user_paired.is_(True),
-        )
-        .order_by(
-            Device.ws_session_id.is_not(None).desc(),
-            Device.last_heartbeat.desc().nullslast(),
-        )
-    )
-    result = await db.execute(query)
-    for device in result.scalars().all():
-        if device.ws_session_id is not None and device.derived_status == "healthy":
-            return device
-        if _is_healthy(device) and device.derived_status == "healthy":
-            return device
-    return AutoPickRefusal(
-        code="no_healthy_runner",
-        message=(
-            "No healthy runner is available. Start a runner with valid web "
-            "credentials so it connects to the unified WebSocket channel, "
-            "then retry."
-        ),
-        outcome=UnavailableOutcome(reason="no_credential"),
-    )
-
-
 async def _pick_auto_runner(
     db: AsyncSession,
     user_id: UUID,
@@ -272,18 +220,18 @@ async def _pick_auto_runner(
     ``gates.rs`` ``pick_online_device_for_tenant``).
 
     Anything but ``resolved`` is an :class:`AutoPickRefusal` — including an
-    UNKNOWN resolver. There is deliberately no web-side fallback ordering for
-    a caller that HAS a bearer.
+    UNKNOWN resolver. There is deliberately no web-side ordering to fall back
+    on, for any caller: coord is the only thing that names a runner here.
 
-    The one exception is an explicitly BACKGROUND caller (a scheduled fire,
-    ``NO_CALLER``): it has no request and so no bearer, coord's door cannot
-    be asked for it, and it goes to
-    :func:`_pick_auto_runner_without_caller_credential` — see its docstring.
-    An interactive caller that arrives without a bearer is NOT background:
-    coord answers ``unavailable / no_credential`` and the pick is refused.
+    That holds for a BACKGROUND caller too (a scheduled fire,
+    ``CoordCaller.background_for(owner)``). It has no request and so no
+    bearer of its own; :func:`resolve_device` mints one acting for the user
+    the caller names and asks the same door, so a scheduled run gets the same
+    capability and drain checks as an interactive one. When that mint fails
+    the pick is refused like any other UNKNOWN. An interactive caller that
+    arrives without a bearer is NOT background: it is refused
+    ``unavailable / no_credential`` and nothing is minted for it.
     """
-    if caller.background:
-        return await _pick_auto_runner_without_caller_credential(db, user_id)
     outcome = await resolve_device(
         DeviceResolveRequest(
             required_capabilities=required_capabilities, work_class="placeable"
@@ -405,10 +353,11 @@ async def dispatch_workflow_to_runner(
         user_id: The caller's user id. Scoping for ownership checks.
         workflow_id: Workflow to dispatch.
         target: Either the literal string ``"auto"`` or a runner UUID.
-        caller: The credential coord's device resolver is asked AS (for
-            ``"auto"``). ``NO_CALLER`` (a scheduled run) cannot ask coord, so
-            ``"auto"`` uses the web-side
-            :func:`_pick_auto_runner_without_caller_credential` instead.
+        caller: Who coord's device resolver is asked AS (for ``"auto"``):
+            the request's own bearer, or — for a scheduled run, which has no
+            request — ``CoordCaller.background_for(owner)``, for which a
+            bearer acting for the schedule's owner is minted from coord.
+            Either way coord names the runner or the dispatch is refused.
         parent_task_run_id: Optional opaque string forwarded to the runner.
 
     Raises:

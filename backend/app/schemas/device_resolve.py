@@ -96,13 +96,18 @@ UnavailableReason = Literal[
 class UnavailableOutcome(BaseModel):
     """The resolver was not answered — UNKNOWN, never a pick.
 
-    - ``no_credential``      — no caller bearer to forward (e.g. a scheduled
-                               job with no request behind it).
+    - ``no_credential``      — nothing to ask coord AS: an interactive
+                               request with no bearer, or a background caller
+                               (a scheduled run) on a backend whose coord
+                               service account is off or cannot get its token.
     - ``coord_unreachable``  — connect error or timeout.
-    - ``not_deployed``       — coord answered 404/405: the door is not on the
-                               running coord build yet.
-    - ``refused``            — coord refused the principal (401/403) or the
-                               body (400); ``code`` carries coord's error code.
+    - ``not_deployed``       — coord answered 404/405: the door (the resolver,
+                               or the mint a background caller needs first) is
+                               not on the running coord build yet.
+    - ``refused``            — coord refused the principal (401/403), the body
+                               (400), or a background caller's mint (e.g. ``409
+                               tenant_ambiguous``, ``403 tenant_not_bound``);
+                               ``code`` carries coord's error code.
     - ``upstream_error``     — coord answered 5xx.
     - ``malformed_response`` — a 200 that is not the contract.
     - ``misconfigured``      — the coord base URL is unset or not a URL.

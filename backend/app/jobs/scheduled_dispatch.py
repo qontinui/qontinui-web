@@ -58,7 +58,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
-from app.services.coord_device_resolve import NO_CALLER
+from app.services.coord_device_resolve import CoordCaller
 from app.services.workflow_dispatcher import (
     DispatchError,
     dispatch_workflow_to_runner,
@@ -276,13 +276,14 @@ async def fire_scheduled_run(
                 user_id=row.user_id,
                 workflow_id=row.workflow_id,
                 target=target,
-                # A scheduled fire has no caller bearer, so coord's device
-                # resolver cannot be asked AS the user: ``target="auto"``
-                # takes the web-side
-                # ``_pick_auto_runner_without_caller_credential`` (user-scoped,
-                # health-ordered, NOT capability-checked) until a
-                # service-credential path replaces it.
-                caller=NO_CALLER,
+                # A scheduled fire has no request and so no caller bearer.
+                # It names the schedule's owner instead: for ``target="auto"``
+                # a bearer acting for that user is minted from coord, and
+                # coord's device resolver — capability-checked and
+                # drain-aware — names the runner. There is no web-side pick:
+                # a failed mint or an unanswered resolver is a refused
+                # dispatch, recorded in ``last_error``.
+                caller=CoordCaller.background_for(row.user_id),
                 parent_task_run_id=None,
             )
         except DispatchError as err:

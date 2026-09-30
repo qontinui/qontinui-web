@@ -8,7 +8,10 @@ pairing (`app/api/v1/endpoints/devices.py`, `app/api/v1/endpoints/pair_codes.py`
 to authenticate to coord's device-identity surface — forwarding the
 authenticated end-user as `X-Qontinui-User-Id` so coord can
 dual-identity-audit (`service_principal` = our sub, `acting_user` = the
-human).
+human). It is also how a background job asks coord's device resolver on a
+user's behalf: `mint_acting_user_token` exchanges the service bearer for a
+short-lived token acting for one named user
+(`app/services/coord_device_resolve.py`).
 
 Auth-bridge contract (Option 3, locked + tested coord-side at
 `strategy-phase-1-coord`): coord issues, web refetches <4h. The
@@ -210,6 +213,52 @@ class CoordServiceAccountClient:
             acting_user_id,
             json_body=None,
         )
+
+    # -- acting-user mint (background device resolve) --------------------
+
+    async def mint_acting_user_token(
+        self, user_id: str, tenant_id: str | None = None
+    ) -> tuple[int, object]:
+        """Mint a short-lived Service token that ACTS FOR ``user_id``.
+
+        Coord's ``POST /coord/auth/service-acting-user-token`` accepts our
+        service bearer and answers ``200 {"token", "acting_user", "tenant_id",
+        "jti", "exp"}``. That token, presented as the bearer to
+        ``POST /coord/devices/resolve``, resolves that user's paired devices —
+        how a caller with no request behind it (a scheduled run) asks coord's
+        resolver as the schedule's owner.
+
+        The user is named in the BODY, which is what the door reads. No
+        ``X-Qontinui-User-Id`` header is sent: on this door it is not an
+        identity, and sending it would only suggest it was. ``tenant_id`` is
+        sent only when given; without it coord mints when the user's paired
+        devices sit in exactly one tenant and refuses ``409 tenant_ambiguous``
+        when they span several — web never guesses one.
+
+        Nothing is cached: every call is a fresh mint for the user it names,
+        so one user's token can never be handed to another.
+
+        Returns ``(status_code, body)``. ``body`` is coord's parsed JSON, or
+        ``None`` when the answer is not JSON — never a wrapped text body, so
+        an ``error`` code read from it is always coord's own. Raises
+        :class:`CoordServiceAccountDisabledError` (via ``_ensure_token``) when
+        the feature is off (COORD_ADMIN_SECRET unset).
+        """
+        token = await self._ensure_token()
+        payload: dict[str, str] = {"user_id": user_id}
+        if tenant_id is not None:
+            payload["tenant_id"] = tenant_id
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.post(
+                f"{self._coord_url}/coord/auth/service-acting-user-token",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = None
+        return resp.status_code, body
 
 
 # Process-wide singleton, wired in app startup.
