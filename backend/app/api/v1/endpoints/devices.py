@@ -29,6 +29,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 from qontinui_schemas.generated.per_type.runner import (
     Runner as RunnerWire,
@@ -70,6 +71,7 @@ from app.schemas.device import (
     PairCliResponse,
     PairConfirmRequest,
     PairConfirmResponse,
+    PairConfirmTenantResult,
 )
 from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
@@ -782,11 +784,41 @@ async def pair_confirm(
 
     coord_device_id = coord_body.get("device_id")
     coord_token = coord_body.get("token")
-    if not coord_device_id or not coord_token:
+    # Collect mode (multi-tenant flow): coord minted one token per tenant and
+    # holds them for the runner's pair-collect. The browser gets only the
+    # per-tenant outcomes, so a token is not required here — and the page
+    # never puts one in the callback URL.
+    collect = coord_body.get("collect") is True
+    if not coord_device_id or (not collect and not coord_token):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Coord pair-complete response missing device_id/token.",
         )
+
+    results: list[PairConfirmTenantResult] | None = None
+    if collect:
+        raw_results = coord_body.get("results")
+        if raw_results is not None and not isinstance(raw_results, list):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coord pair-complete returned malformed results.",
+            )
+        try:
+            # Rebuild each entry from the three named fields only, so a token
+            # coord might ever add to an entry cannot reach the browser.
+            results = [
+                PairConfirmTenantResult(
+                    tenant_id=entry.get("tenant_id"),
+                    status=entry.get("status"),
+                    skipped_reason=entry.get("skipped_reason"),
+                )
+                for entry in (raw_results or [])
+            ]
+        except (ValidationError, AttributeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coord pair-complete returned malformed results.",
+            ) from exc
 
     try:
         device_uuid = UUID(str(coord_device_id))
@@ -800,11 +832,17 @@ async def pair_confirm(
         "pair_confirm_completed",
         user_id=str(current_user.id),
         device_id=str(device_uuid),
+        collect=collect,
+        tenants=len(results) if results is not None else None,
     )
     return PairConfirmResponse(
         device_id=device_uuid,
-        token=str(coord_token),
+        # Collect mode: the browser never needs a token (the runner collects all
+        # of them over pair-collect), so none is returned to it at all.
+        token=None if collect else str(coord_token),
         state=payload.state,
+        collect=collect,
+        results=results,
     )
 
 
