@@ -67,6 +67,17 @@ describe("readRunnerInstances", () => {
       SECONDARY,
     ]);
   });
+
+  it("drops an entry that has no string instanceKey", () => {
+    const row: Runner = JSON.parse(
+      JSON.stringify({
+        ...runner([PRIMARY]),
+        instances: [null, { port: 9877 }, PRIMARY],
+      })
+    );
+    expect(readRunnerInstances(row)).toEqual([PRIMARY]);
+    expect(describeRunnerInstances(row)).toBe("1 instance: primary :9876");
+  });
 });
 
 describe("describeRunnerInstances", () => {

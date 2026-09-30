@@ -7,9 +7,10 @@
  * `Runner.instances` is typed by `@qontinui/shared-types` (1.1.0 and later),
  * so the entries are read as that type.
  *
- * One runtime check stays: the row is JSON that nothing validates on arrival,
- * and a backend that predates the field omits it. `null` = not reported
- * (UNKNOWN), never "no instances".
+ * The runtime checks that stay exist because the row is JSON that nothing
+ * validates on arrival. A backend that predates the field omits it: `null` =
+ * not reported (UNKNOWN), never "no instances". And an entry with no string
+ * `instanceKey` cannot be named, so it is dropped rather than rendered.
  *
  * Display only: nothing here addresses a secondary instance.
  */
@@ -25,9 +26,12 @@ import type { Runner } from "@qontinui/shared-types";
  */
 export type RunnerInstance = Runner["instances"][number];
 
-/** The runner's reported instances, or null when the row carries none. */
+/** The runner's reported instances, or null when the row does not report the field. */
 export function readRunnerInstances(runner: Runner): RunnerInstance[] | null {
-  return Array.isArray(runner.instances) ? runner.instances : null;
+  if (!Array.isArray(runner.instances)) return null;
+  return runner.instances.filter(
+    (i: RunnerInstance | null | undefined) => typeof i?.instanceKey === "string"
+  );
 }
 
 /** "2 instances: primary :9876, runner:abc :9877" — or null when unreported. */
