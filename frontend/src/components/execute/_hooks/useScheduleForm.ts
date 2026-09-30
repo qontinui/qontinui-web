@@ -16,6 +16,7 @@ import {
   toDateTimeLocal,
   buildSchedule,
   buildConditions,
+  buildWorkflowTask,
 } from "../_types/schedule-editor";
 
 export function useScheduleForm(
@@ -60,8 +61,8 @@ export function useScheduleForm(
       setName(editingTask.name);
       setDescription(editingTask.description || "");
       setScheduleType(getScheduleType(editingTask.schedule));
-      setAutoFixOnFailure(editingTask.auto_fix_on_failure);
-      setSkipIfCompleted(editingTask.skip_if_completed);
+      setAutoFixOnFailure(editingTask.autoFixOnFailure);
+      setSkipIfCompleted(editingTask.skipIfCompleted);
 
       if (editingTask.schedule.type === "Once") {
         setOnceDateTime(toDateTimeLocal(editingTask.schedule.value));
@@ -79,12 +80,12 @@ export function useScheduleForm(
 
       if (editingTask.conditions) {
         const hasConditions =
-          editingTask.conditions.require_idle?.enabled ||
-          (editingTask.conditions.timeout_minutes &&
-            editingTask.conditions.timeout_minutes > 0);
+          editingTask.conditions.requireIdle?.enabled ||
+          (editingTask.conditions.timeoutMinutes &&
+            editingTask.conditions.timeoutMinutes > 0);
         setShowConditions(!!hasConditions);
-        setRequireIdle(editingTask.conditions.require_idle?.enabled || false);
-        setTimeoutMinutes(editingTask.conditions.timeout_minutes || 0);
+        setRequireIdle(editingTask.conditions.requireIdle?.enabled || false);
+        setTimeoutMinutes(editingTask.conditions.timeoutMinutes || 0);
       } else {
         setShowConditions(false);
         setRequireIdle(false);
@@ -145,7 +146,8 @@ export function useScheduleForm(
       const conditions = buildConditions(
         showConditions,
         requireIdle,
-        timeoutMinutes
+        timeoutMinutes,
+        editingTask?.conditions
       );
 
       if (isEditing && editingTask) {
@@ -153,10 +155,12 @@ export function useScheduleForm(
           name: name.trim(),
           description: description.trim() || null,
           schedule,
-          task: { task_type: "Workflow", workflow_name: workflowName },
-          skip_if_completed: skipIfCompleted,
-          auto_fix_on_failure: autoFixOnFailure,
-          conditions: conditions || null,
+          task: buildWorkflowTask(workflowName, editingTask.task),
+          skipIfCompleted,
+          autoFixOnFailure,
+          // The runner reads `conditions: null` as "leave unchanged", so
+          // clearing the conditions a task had has to send an empty object.
+          conditions: conditions ?? (editingTask.conditions ? {} : null),
         });
         toast.success("Schedule updated");
       } else {
@@ -165,8 +169,8 @@ export function useScheduleForm(
           description: description.trim() || undefined,
           schedule,
           task: { task_type: "Workflow", workflow_name: workflowName },
-          skip_if_completed: skipIfCompleted,
-          auto_fix_on_failure: autoFixOnFailure,
+          skipIfCompleted,
+          autoFixOnFailure,
           conditions,
         });
         toast.success("Schedule created");
