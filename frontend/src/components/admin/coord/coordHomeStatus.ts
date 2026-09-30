@@ -538,6 +538,18 @@ export function nothingNeedsYou(needs: NeedsMeView): boolean {
   );
 }
 
+/**
+ * The one displayable count of decisions waiting on the operator: the served
+ * total, but ONLY when it is at least what was listed. A missing total, or a
+ * total below the listed items, is not a count to print — it is `null`
+ * (rendered "–" / "an unknown number"), never a misleading "0".
+ */
+export function needsDisplayCount(needs: NeedsMeView): number | null {
+  if (needs.state !== "read") return null;
+  const listed = needs.items?.length ?? 0;
+  return needs.total !== null && needs.total >= listed ? needs.total : null;
+}
+
 /** A needs-you row's `reason`: the recommendation, or the literal label. */
 export function needsYouReason(item: NeedsMeItem): string {
   return item.recommendation ?? "open question — no recommendation";
@@ -649,7 +661,6 @@ function parsePlanes(raw: unknown): PlaneView[] | null {
   });
 }
 
-/** One plane's watcher freshness, in words. */
 /** Coord's watcher-freshness reason tokens, in plain words (R8). */
 const WATCHER_REASON_WORDS: Readonly<Record<string, string>> = {
   no_successful_tick: "has not completed a run",
@@ -659,9 +670,26 @@ const WATCHER_REASON_WORDS: Readonly<Record<string, string>> = {
   no_heartbeat_row: "has never reported",
 };
 
-/** One watcher's reason in plain words; an unknown token is "state unknown". */
-export function watcherReasonWords(reason: string | null): string {
-  return (reason && WATCHER_REASON_WORDS[reason]) || "state unknown";
+/** Coord's watcher states, in plain words, for when no reason is given. */
+const WATCHER_STATE_WORDS: Readonly<Record<string, string>> = {
+  stale: "stale",
+  fresh: "fresh",
+};
+
+/**
+ * One watcher's reason in plain words. A known reason token wins; with none,
+ * the watcher's own state is worded (`stale` ⇒ "stale"); "state unknown" only
+ * when neither is known.
+ */
+export function watcherReasonWords(
+  reason: string | null,
+  state: string | null = null
+): string {
+  return (
+    (reason && WATCHER_REASON_WORDS[reason]) ||
+    (state && WATCHER_STATE_WORDS[state]) ||
+    "state unknown"
+  );
 }
 
 /**
@@ -683,7 +711,7 @@ export function planeFreshnessPhrase(p: PlaneView): string {
   const notFresh = p.watchers.filter((w) => w.state !== "fresh");
   if (notFresh.length === 0) return "freshness not stated";
   const reasons = [
-    ...new Set(notFresh.map((w) => watcherReasonWords(w.reason))),
+    ...new Set(notFresh.map((w) => watcherReasonWords(w.reason, w.state))),
   ];
   const noun = p.watchers.length === 1 ? "watcher" : "watchers";
   return `${notFresh.length} of ${p.watchers.length} ${noun} not fresh — ${reasons.join("; ")}`;
@@ -993,7 +1021,8 @@ export function deriveHomeStrip(
       : view.doesNotKnow.filter((s) => s.state !== "read").length;
 
   const needsRead = view.needsMe.state === "read";
-  const needsTotal = needsRead ? view.needsMe.total : null;
+  // The displayable count: null when absent OR contradicted by the list.
+  const needsTotal = needsDisplayCount(view.needsMe);
   const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
   const needsSomething =
     needsRead && ((needsTotal ?? 0) > 0 || needsListed > 0);
@@ -1031,7 +1060,7 @@ export function deriveHomeStrip(
     headline =
       // Never "0 decisions need you" beside listed items: a total that is
       // absent, or smaller than what was listed, is not a count to print.
-      needsTotal === null || needsTotal < needsListed
+      needsTotal === null
         ? "Decisions need you — how many is unknown"
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
   } else if (open !== null && open.length > 0) {
@@ -1048,7 +1077,9 @@ export function deriveHomeStrip(
   const detailParts: string[] = [];
   if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
   if (needsRead && needsTotal === null) {
-    detailParts.push("Coord did not say how many decisions need you.");
+    detailParts.push(
+      "Coord gave no usable count of the decisions that need you."
+    );
   }
   if (degRowsServed && open === null) {
     detailParts.push(
