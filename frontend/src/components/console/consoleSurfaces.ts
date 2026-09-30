@@ -236,6 +236,19 @@ import {
   CI_REPO_AUTHOR_GLYPH_KINDS,
   CI_REPO_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/ciDashboardStatus";
+import {
+  CAPABILITY_ATTENTION_BY_STATE,
+  CAPABILITY_AUTHOR_GLYPH_KINDS,
+  CAPABILITY_BADGE_CLASS,
+  WEDGE_ATTENTION_BY_STATE,
+  WEDGE_AUTHOR_GLYPH_KINDS,
+  WEDGE_BADGE_CLASS,
+} from "@/components/operations/runnerReportStatus";
+import {
+  DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+  DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS,
+  DOMAIN_COST_VERDICT_BADGE_CLASS,
+} from "@/components/operations/domainCostStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -528,6 +541,40 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: RUNNER_SESSION_BADGE_CLASS,
       authorGlyphKinds:
         RUNNER_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the operations ratchet's readout ------------------------------------
+  // Plan `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+  // Phase 8. Two tables on the Dev Ops machine rows — the runner's own
+  // capability verdicts (`unknown` amber by floor: a record coord aged, or a
+  // state this build has no label for) and its wedge incidents — and the
+  // domain cost verdict on the Overview.
+  {
+    surface: "runner capability (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: CAPABILITY_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: CAPABILITY_BADGE_CLASS,
+      authorGlyphKinds: CAPABILITY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "runner wedge incidents (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: WEDGE_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: WEDGE_BADGE_CLASS,
+      authorGlyphKinds: WEDGE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "domain cost verdict (/overview)",
+    module: "components/operations/domainCostStatus.ts",
+    attentionByKind: DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: DOMAIN_COST_VERDICT_BADGE_CLASS,
+      authorGlyphKinds:
+        DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the consolidated sessions console ------------------------------------
