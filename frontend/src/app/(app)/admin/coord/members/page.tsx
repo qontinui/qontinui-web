@@ -132,7 +132,6 @@ import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
 import {
   BackendErrorMessage,
   CollapsiblePanel,
-  GlossaryTerm,
   readingOf,
   RecordDetail,
   StatCluster,
@@ -923,9 +922,7 @@ function MembersTable({
                 <TableHead>Display name</TableHead>
                 <TableHead>Access</TableHead>
                 <TableHead>Last login</TableHead>
-                <TableHead className="text-right">
-                  Grant <GlossaryTerm id="tier">tier</GlossaryTerm>
-                </TableHead>
+                <TableHead className="text-right">Grant tier</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

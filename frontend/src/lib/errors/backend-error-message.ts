@@ -55,11 +55,22 @@ export function isBackendErrorReading(
   if (value === null || typeof value !== "object") return false;
   const v = value as { kind?: unknown; sentence?: unknown; refusal?: unknown };
   if (typeof v.sentence !== "string") return false;
+  if (v.kind === "unstructured") return true;
+  if (v.kind !== "refusal") return false;
+  // The fields the renderer reads, so a malformed reading is refused here
+  // rather than crashing a render.
+  const r = v.refusal as {
+    next_action?: unknown;
+    glossary_terms?: unknown;
+    unrecognised_glossary_terms?: unknown;
+  } | null;
   return (
-    v.kind === "unstructured" ||
-    (v.kind === "refusal" &&
-      v.refusal !== null &&
-      typeof v.refusal === "object")
+    r !== null &&
+    typeof r === "object" &&
+    r.next_action !== null &&
+    typeof r.next_action === "object" &&
+    Array.isArray(r.glossary_terms) &&
+    Array.isArray(r.unrecognised_glossary_terms)
   );
 }
 

@@ -53,7 +53,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BookOpen, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { GlossaryTerm } from "@/components/console";
 import {
   useDesignPolicies,
   type DesignPolicy,
@@ -215,9 +214,7 @@ export function DesignPoliciesSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>
-                  <GlossaryTerm id="policy">Policy</GlossaryTerm>
-                </TableHead>
+                <TableHead>Policy</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Enabled</TableHead>

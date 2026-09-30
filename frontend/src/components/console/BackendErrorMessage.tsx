@@ -36,7 +36,7 @@ import {
   MAX_CAUSE_LENGTH,
   type BackendErrorReading,
 } from "@/lib/errors/backend-error-message";
-import { quotable, type DecodedRefusal } from "@/lib/errors/refusal";
+import type { DecodedRefusal } from "@/lib/errors/refusal";
 import { cn } from "@/lib/utils";
 import { GlossaryTerm } from "./GlossaryTerm";
 
@@ -67,11 +67,15 @@ export function readingOf(error: unknown): BackendErrorReading {
  * protocol-relative `//host`) or an absolute `http(s)` URL; anything else — a
  * `javascript:` URL above all — is never made clickable. The sentence already
  * names the target, so an unlinkable one loses nothing but the click.
+ *
+ * Tabs and line breaks are removed first, because the browser's URL parser
+ * removes them too: `"/\t/evil.test"` would otherwise pass as an app path and
+ * resolve to the protocol-relative `//evil.test`.
  */
 export function linkableTarget(
   target: string | null
 ): { href: string; external: boolean } | null {
-  const t = target?.trim();
+  const t = target?.replace(/[\t\n\r]/g, "").trim();
   if (!t) return null;
   if (t.startsWith("/") && !t.startsWith("//") && !t.startsWith("/\\")) {
     return { href: t, external: false };
@@ -87,8 +91,13 @@ export function linkableTarget(
   return null;
 }
 
+/** What the last copy press did: nothing yet, copied, or refused (no
+ * clipboard on an insecure origin, or permission denied) — never a silent
+ * no-op. */
+type CopyState = "idle" | "copied" | "failed";
+
 function CopyCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>("idle");
   return (
     <span className="inline-flex items-center gap-1">
       <code
@@ -101,20 +110,34 @@ function CopyCommand({ command }: { command: string }) {
         type="button"
         className="inline-flex items-center rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Copy command"
-        title="Copy the command to the clipboard"
+        title={
+          state === "failed"
+            ? "Could not copy: the clipboard is not available here. Select the command instead."
+            : "Copy the command to the clipboard"
+        }
+        data-copy-state={state}
         onClick={() => {
-          void navigator.clipboard?.writeText(command).then(
-            () => setCopied(true),
-            () => setCopied(false)
+          if (!navigator.clipboard) {
+            setState("failed");
+            return;
+          }
+          navigator.clipboard.writeText(command).then(
+            () => setState("copied"),
+            () => setState("failed")
           );
         }}
       >
-        {copied ? (
+        {state === "copied" ? (
           <Check className="h-3 w-3" aria-hidden />
         ) : (
           <Copy className="h-3 w-3" aria-hidden />
         )}
       </button>
+      {state === "failed" && (
+        <span className="text-xs text-muted-foreground" role="status">
+          Copy failed — select the command.
+        </span>
+      )}
     </span>
   );
 }
@@ -145,10 +168,12 @@ function NextActionAffordance({ refusal }: { refusal: DecodedRefusal }) {
     );
   }
   if (kind === "run_command") {
-    // The same cleaning the sentence applies, so the copied text is exactly
-    // the command the sentence names.
-    const command = quotable(target);
-    if (command === null) return null;
+    // The producer's command AS SENT. `quotable` is a prose cleaner for the
+    // one-line sentence — it turns `"` into `'` and flattens line breaks,
+    // which changes what a shell does (`echo "$HOME"` would stop expanding).
+    // React escapes it in the `<code>`, so no cleaning is needed to show it.
+    if (target === null || target.trim() === "") return null;
+    const command = target;
     return (
       <span data-refusal-action="run_command">
         <CopyCommand command={command} />

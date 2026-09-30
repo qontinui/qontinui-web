@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { GLOSSARY } from "@qontinui/shared-types/glossary";
 
@@ -116,21 +116,54 @@ describe("BackendErrorMessage — structured", () => {
     ).toContain('Open "javascript:alert(1)"');
   });
 
-  it("offers a run_command as a copyable command, cleaned like the sentence", () => {
+  it("offers a run_command as a copyable command, exactly as sent", () => {
     const { container } = render(
       <BackendErrorMessage
         error={errorFor(
-          envelope({ kind: "run_command", target: 'echo "hi"\n x' })
+          envelope({ kind: "run_command", target: 'echo "$HOME"\n x' })
         )}
       />
     );
+    // The copied command is the producer's, not the sentence's cleaned
+    // prose: `"` -> `'` would stop the shell expanding `$HOME`.
     expect(container.querySelector("[data-refusal-command]")!.textContent).toBe(
-      "echo 'hi' x"
+      'echo "$HOME"\n x'
     );
     expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
     expect(
       container.querySelector("[data-refusal-sentence]")!.textContent
-    ).toContain(`Run the command "echo 'hi' x"`);
+    ).toContain(`Run the command "echo '$HOME' x"`);
+  });
+
+  it("says so when the clipboard is unavailable, rather than doing nothing", () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      render(
+        <BackendErrorMessage
+          error={errorFor(envelope({ kind: "run_command", target: "ls" }))}
+        />
+      );
+      const button = screen.getByRole("button", { name: "Copy command" });
+      fireEvent.click(button);
+      expect(button.getAttribute("data-copy-state")).toBe("failed");
+      expect(screen.getByRole("status").textContent).toMatch(/copy failed/i);
+    } finally {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else delete (navigator as { clipboard?: unknown }).clipboard;
+    }
+  });
+
+  it("offers no command for a blank run_command target", () => {
+    const { container } = render(
+      <BackendErrorMessage
+        error={errorFor(envelope({ kind: "run_command", target: "  " }))}
+      />
+    );
+    expect(container.querySelector("[data-refusal-action]")).toBeNull();
   });
 
   it("names glossary ids this build does not define instead of dropping them", () => {
@@ -207,6 +240,9 @@ describe("linkableTarget", () => {
       "  ",
       "//evil.test/x",
       "/\\evil.test",
+      // The browser's URL parser drops tabs and newlines: these are `//evil`.
+      "/\t/evil.test",
+      "/\n/evil.test",
       "javascript:alert(1)",
       "data:text/html,x",
       "settings",
