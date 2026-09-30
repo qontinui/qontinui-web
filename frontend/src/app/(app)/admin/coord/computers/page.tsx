@@ -139,9 +139,11 @@ function ComputerRow({
               data-testid="coord-computer-last-event"
             >
               Last event:{" "}
-              {computer.lastEvent
-                ? `${eventLabel(computer.lastEvent.kind)}${eventSubject(computer.lastEvent) ? ` (${eventSubject(computer.lastEvent)})` : ""}, ${relativeTime(computer.lastEvent.observed_at)}`
-                : "none reported in the retention window"}
+              {computer.lastEvent === undefined
+                ? "unknown (coord did not report one)"
+                : computer.lastEvent === null
+                  ? "none in the retention window"
+                  : `${eventLabel(computer.lastEvent.kind)}${eventSubject(computer.lastEvent) ? ` (${eventSubject(computer.lastEvent)})` : ""}, ${relativeTime(computer.lastEvent.observed_at)}`}
               {" · "}
               Devices: {computer.devices?.length ?? "unknown"} · CI runners:{" "}
               {computer.ciRunners?.length ?? "unknown"}
@@ -170,7 +172,14 @@ function ComputerRow({
   );
 }
 
-function UnattributedRunners({ runners }: { runners: CiRunnerWire[] | null }) {
+function UnattributedRunners({
+  runners,
+  retained,
+}: {
+  runners: CiRunnerWire[] | null;
+  /** The latest read failed; this is the last good read's answer. */
+  retained: boolean;
+}) {
   if (runners === null) {
     return (
       <p
@@ -187,7 +196,8 @@ function UnattributedRunners({ runners }: { runners: CiRunnerWire[] | null }) {
         className="text-sm text-muted-foreground"
         data-testid="coord-computers-unattributed-none"
       >
-        Every CI runner the registrar knows is claimed by a reporting computer.
+        Every CI runner the registrar knows is claimed by a reporting computer
+        {retained ? " at the last good read" : ""}.
       </p>
     );
   }
@@ -336,7 +346,10 @@ export default function CoordComputersPage() {
           they run on.
         </p>
         {loaded ? (
-          <UnattributedRunners runners={unattributed} />
+          <UnattributedRunners
+            runners={unattributed}
+            retained={read.issue !== null}
+          />
         ) : (
           <p
             className="text-sm text-muted-foreground italic"

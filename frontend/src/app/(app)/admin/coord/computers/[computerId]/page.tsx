@@ -376,7 +376,17 @@ function DivergenceList({ entries }: { entries: DivergenceWire[] }) {
 
 export default function CoordComputerDetailPage() {
   const params = useParams<{ computerId: string }>();
-  const computerId = decodeURIComponent(params?.computerId ?? "");
+  const rawId = params?.computerId ?? "";
+  // A malformed escape (`%E0%A4%A`) makes decodeURIComponent THROW, which would
+  // take the whole page down; the raw segment is then the best id we have, and
+  // the backend's UUID validation answers it.
+  const computerId = (() => {
+    try {
+      return decodeURIComponent(rawId);
+    } catch {
+      return rawId;
+    }
+  })();
   const read = useComputer(computerId);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -399,8 +409,14 @@ export default function CoordComputerDetailPage() {
     [computer, read.fetchedAtMs, nowMs]
   );
   const status = useMemo(
-    () => (computer && freshness ? computerStatus(computer, freshness) : null),
-    [computer, freshness]
+    () =>
+      computer && freshness
+        ? computerStatus(computer, freshness, {
+            fetchedAtMs: read.fetchedAtMs,
+            nowMs,
+          })
+        : null,
+    [computer, freshness, read.fetchedAtMs, nowMs]
   );
   const services = listOrNull(detail?.services);
   const events = useMemo(() => {
@@ -494,7 +510,7 @@ export default function CoordComputerDetailPage() {
         />
       )}
 
-      {computer && freshness && (
+      {computer && freshness && read.issue?.kind !== "not_found" && (
         <>
           <Section
             title="Capacity vs usage"

@@ -117,14 +117,24 @@ describe("computerFreshness", () => {
     ).toBe("unknown");
   });
 
-  it("dates a report from its timestamp when coord sent no age", () => {
+  it("never dates a report from its timestamp against this browser's clock — no age_secs is UNKNOWN", () => {
+    // A timestamp that reads "30 s ago" on this clock: a skewed browser clock
+    // would call it fresh. Without coord's own age, freshness is unknown.
     const r = computerFreshness(
-      { last_report_at: "2026-09-30T11:30:00Z", state: null },
+      { last_report_at: "2026-09-30T11:59:30Z", state: "fresh" },
       null,
       NOW
     );
-    expect(r.kind).toBe("stale");
-    expect(r.ageSecs).toBe(1800);
+    expect(r.kind).toBe("unknown");
+    expect(r.ageSecs).toBeNull();
+    // Coord's own `stale` still stands without an age.
+    expect(
+      computerFreshness(
+        { last_report_at: "2026-09-30T11:59:30Z", state: "stale" },
+        null,
+        NOW
+      ).kind
+    ).toBe("stale");
   });
 });
 
@@ -208,8 +218,50 @@ describe("usageText", () => {
 describe("computerStatus", () => {
   const status = (c: ComputerSummaryWire, fetchedAt = NOW) => {
     const n = normalizeComputer(c);
-    return computerStatus(n, computerFreshness(n.freshness, fetchedAt, NOW));
+    return computerStatus(n, computerFreshness(n.freshness, fetchedAt, NOW), {
+      fetchedAtMs: fetchedAt,
+      nowMs: NOW,
+    });
   };
+
+  it("counts pressure only on a FRESH lane", () => {
+    const s = status(
+      computer({ lanes: [{ lane: "host", age_secs: 10, headroom: "breach" }] })
+    );
+    expect(s.kind).toBe("under_pressure");
+    expect(s.reason).toBe(
+      "Lane host is at or below an admission floor, so coord is deferring or refusing work here until it recovers."
+    );
+  });
+
+  it("reads stale-only pressure as an amber stale lane, naming it — never as current pressure", () => {
+    const s = status(
+      computer({
+        lanes: [
+          { lane: "host", age_secs: 10, headroom: "ok" },
+          {
+            lane: "wsl",
+            lane_instance: "Ubuntu",
+            age_secs: 600,
+            headroom: "breach",
+          },
+        ],
+      })
+    );
+    expect(s.kind).toBe("lane_stale");
+    expect(s.attention).toBe("waiting");
+    expect(s.reason).toBe(
+      "The samples for lane wsl (Ubuntu) are stale or undatable, so current pressure there is unknown. Last known: wsl (Ubuntu) breach — not current."
+    );
+  });
+
+  it("does not call a computer healthy while one of its lanes cannot be dated", () => {
+    const s = status(computer({ lanes: [{ lane: "host", headroom: "ok" }] }));
+    expect(s.kind).toBe("lane_stale");
+    expect(s.reason).toBe(
+      "The samples for lane host are stale or undatable, so current pressure there is unknown."
+    );
+  });
 
   it("is healthy only when fresh, every service counted and none failed", () => {
     expect(status(computer()).kind).toBe("healthy");
@@ -434,7 +486,7 @@ describe("deriveComputerDetailHealth", () => {
     const h = deriveComputerDetailHealth({
       computer: n,
       freshness: f,
-      status: computerStatus(n, f),
+      status: computerStatus(n, f, { fetchedAtMs: NOW, nowMs: NOW }),
       issue: null,
       services: null,
       events: [],
@@ -444,5 +496,46 @@ describe("deriveComputerDetailHealth", () => {
     expect(labels).toContain("failed services –");
     expect(labels).toContain("divergence –");
     expect(labels).toContain("events 7d 0");
+  });
+});
+
+describe("not_found supersedes retained data", () => {
+  it("headlines not-found even when a computer from an earlier read is passed in", () => {
+    const n = normalizeComputer(computer({ services_failed: 2 }));
+    const f = computerFreshness(n.freshness, NOW, NOW);
+    const h = deriveComputerDetailHealth({
+      computer: n,
+      freshness: f,
+      status: computerStatus(n, f, { fetchedAtMs: NOW, nowMs: NOW }),
+      issue: { kind: "not_found" },
+      services: [],
+      events: [],
+      divergence: [],
+    });
+    expect(h.headline).toBe("No such computer in this tenant");
+    expect(h.level).toBe("amber");
+    expect(h.badges).toEqual([]);
+  });
+});
+
+describe("last_event: absent is unknown, null is none", () => {
+  it("keeps the two apart", () => {
+    const absent = computer();
+    expect(normalizeComputer(absent).lastEvent).toBeUndefined();
+    expect(
+      normalizeComputer(computer({ last_event: null })).lastEvent
+    ).toBeNull();
+  });
+});
+
+describe("a 403 is its own answer", () => {
+  it("classifies not_coord_tenant_admin as forbidden, not a generic error", () => {
+    const issue = classifyComputersError(
+      rejection(403, '{"detail":"not_coord_tenant_admin"}')
+    );
+    expect(issue.kind).toBe("forbidden");
+    expect(readIssueText(issue)).toBe(
+      "Only a coord tenant admin may read computers (they carry CI-runner and access facts), so this page cannot show them to you."
+    );
   });
 });

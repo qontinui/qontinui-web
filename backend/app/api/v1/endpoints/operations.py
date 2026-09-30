@@ -5736,6 +5736,13 @@ async def get_fleet_worktree_slots(
 # `HTTPException(detail=resp.text)` they collapse into one opaque error string
 # and the page can no longer render them as UNKNOWN rather than as a failure.
 #
+# **Admin-gated, like ``/fleet/ci-runners``.** Both payloads carry the
+# registrar's CI-runner rows (the same data ``get_fleet_ci_runners`` serves
+# only to a tenant admin) and each computer's ``access`` facts (tailnet name,
+# address, SSH user). A Developer-tier member must not read either through a
+# second, looser door, so both routes depend on ``require_coord_tenant_admin``
+# rather than ``get_tenant_id`` — a door is only as strict as its loosest twin.
+#
 # **Honesty (plan §3.5).** Coord computes `freshness.state` and never
 # synthesises a sample, a service row or a capacity figure. This proxy adds no
 # defaults and zero-fills nothing: a computer with no measured PSI axis stays
@@ -5745,7 +5752,7 @@ async def get_fleet_worktree_slots(
 
 @router.get("/computers")
 async def get_computers(
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> JSONResponse:
     """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
 
@@ -5763,7 +5770,7 @@ async def get_computers(
 @router.get("/computers/{computer_id}")
 async def get_computer(
     computer_id: UUID,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> JSONResponse:
     """Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).
 

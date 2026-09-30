@@ -367,6 +367,35 @@ describe("/admin/coord/devops", () => {
     expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
   });
 
+  it("links to Computers for a coord admin only — both computer reads are admin-gated", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    const { unmount } = render(<CoordDevOpsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-machines")).toBeInTheDocument()
+    );
+    expect(
+      screen.getByTestId("coord-devops-computers-link").getAttribute("href")
+    ).toBe("/admin/coord/computers");
+    unmount();
+
+    authState.isCoordAdmin = false;
+    try {
+      render(<CoordDevOpsPage />);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-devops-machines")).toBeInTheDocument()
+      );
+      expect(
+        screen.queryByTestId("coord-devops-computers-link")
+      ).not.toBeInTheDocument();
+    } finally {
+      authState.isCoordAdmin = true;
+    }
+  });
+
   it("joins coord's DeviceState onto the machine row", async () => {
     mockRoutes({
       devices: [coordDevice("d-1", "msi", "degraded")],

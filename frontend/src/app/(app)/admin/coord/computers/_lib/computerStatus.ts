@@ -248,6 +248,7 @@ export type ComputersReadIssue =
   | { kind: "route_disabled" }
   | { kind: "deadline"; budgetMs: number | null }
   | { kind: "not_found" }
+  | { kind: "forbidden" }
   | { kind: "error"; message: string };
 
 function parseObject(text: string | null): Record<string, unknown> | null {
@@ -309,6 +310,7 @@ export function classifyComputersError(
   ) {
     return { kind: "not_found" };
   }
+  if (status === 403) return { kind: "forbidden" };
   const verdict = classifyCoordError(status, bodyText);
   switch (verdict.kind) {
     case "deadline":
@@ -338,6 +340,8 @@ export function readIssueText(issue: ComputersReadIssue): string {
       return `Coord gave up on the computers read at ${issue.budgetMs === null ? "its budget" : `${issue.budgetMs} ms`}, so nothing was measured — UNKNOWN.`;
     case "not_found":
       return "Coord holds no computer with this id in your tenant.";
+    case "forbidden":
+      return "Only a coord tenant admin may read computers (they carry CI-runner and access facts), so this page cannot show them to you.";
     case "error":
       return `Could not read computers from coord (${issue.message}) — UNKNOWN, not empty.`;
   }
@@ -371,11 +375,14 @@ export interface NormalizedComputer {
   lanes: ComputerLaneWire[];
   /** The contract's `services_failed`. `null` = coord did not say — UNKNOWN, not 0. */
   servicesFailed: number | null;
-  lastEvent: ComputerEventWire | null;
+  /**
+   * `undefined` = coord's answer carried no `last_event` key (UNKNOWN);
+   * `null` = coord said there is none in the retention window.
+   */
+  lastEvent: ComputerEventWire | null | undefined;
   /** `null` = coord sent no list — UNKNOWN, never "no devices". */
   devices: ComputerDeviceWire[] | null;
   ciRunners: CiRunnerWire[] | null;
-  access: Record<string, unknown> | null;
 }
 
 const num = (v: unknown): number | null =>
@@ -411,10 +418,9 @@ export function normalizeComputer(c: ComputerSummaryWire): NormalizedComputer {
     freshness: c.freshness ?? null,
     lanes: arr<ComputerLaneWire>(c.lanes ?? c.latest_samples),
     servicesFailed: num(c.services_failed),
-    lastEvent: c.last_event ?? null,
+    lastEvent: "last_event" in c ? (c.last_event ?? null) : undefined,
     devices: Array.isArray(c.devices) ? c.devices : null,
     ciRunners: Array.isArray(c.ci_runners) ? c.ci_runners : null,
-    access: c.access ?? null,
   };
 }
 
@@ -444,7 +450,6 @@ export interface FreshnessReading {
 
 function ageFrom(
   ageSecs: number | null | undefined,
-  at: string | null | undefined,
   fetchedAtMs: number | null,
   nowMs: number
 ): number | null {
@@ -457,13 +462,11 @@ function ageFrom(
   const elapsed =
     fetchedAtMs === null ? 0 : Math.max(0, (nowMs - fetchedAtMs) / 1000);
   const age = num(ageSecs);
-  if (age !== null) return age + elapsed;
-  // No server-computed age: fall back to the timestamp against this clock.
-  // Clamped at 0 — a future stamp from a skewed publisher is "just now", never
-  // a negative age that reads as fresher than fresh.
-  const t = at ? Date.parse(at) : NaN;
-  if (Number.isFinite(t)) return Math.max(0, (nowMs - t) / 1000);
-  return null;
+  // No server-computed age is NO age. Dating the report's timestamp against
+  // this browser's clock would let a skewed clock manufacture freshness (a
+  // clock running behind makes an hour-old report "just now"), so an absent
+  // `age_secs` reads UNKNOWN and the timestamp is shown only as a timestamp.
+  return age === null ? null : age + elapsed;
 }
 
 /**
@@ -481,9 +484,7 @@ export function computerFreshness(
   fetchedAtMs: number | null,
   nowMs: number
 ): FreshnessReading {
-  const ageSecs = f
-    ? ageFrom(f.age_secs, f.last_report_at, fetchedAtMs, nowMs)
-    : null;
+  const ageSecs = f ? ageFrom(f.age_secs, fetchedAtMs, nowMs) : null;
   const word = f?.state ?? null;
   const unknown = (reason: string): FreshnessReading => ({
     kind: "unknown",
@@ -515,7 +516,7 @@ export function computerFreshness(
   }
   if (ageSecs === null) {
     return unknown(
-      "Coord gave no report time for this computer, so its freshness cannot be dated."
+      "Coord gave no report age for this computer, so its freshness cannot be dated."
     );
   }
   return {
@@ -537,13 +538,13 @@ export function laneFreshness(
   fetchedAtMs: number | null,
   nowMs: number
 ): FreshnessReading {
-  const ageSecs = ageFrom(lane.age_secs, lane.sampled_at, fetchedAtMs, nowMs);
+  const ageSecs = ageFrom(lane.age_secs, fetchedAtMs, nowMs);
   if (ageSecs === null) {
     return {
       kind: "unknown",
       ageSecs,
       label: "UNKNOWN",
-      reason: "No sample time for this lane — its figures cannot be dated.",
+      reason: "No sample age for this lane — its figures cannot be dated.",
     };
   }
   if (computer.kind !== "fresh" || ageSecs > SAMPLE_STALE_AFTER_SECS) {
@@ -665,6 +666,15 @@ export function historyPoints(
   }));
 }
 
+/** A lane's operator name: `host`, or `wsl (Ubuntu)` for an instance. */
+export function laneName(lane: {
+  lane?: string | null;
+  lane_instance?: string | null;
+}): string {
+  const base = lane.lane ?? "unknown lane";
+  return lane.lane_instance ? `${base} (${lane.lane_instance})` : base;
+}
+
 export function laneKey(lane: {
   lane?: string | null;
   lane_instance?: string | null;
@@ -730,6 +740,7 @@ export type ComputerKind =
   | "healthy"
   | "services_unknown"
   | "under_pressure"
+  | "lane_stale"
   | "service_failed"
   | "identity_conflict"
   | "stale"
@@ -744,8 +755,13 @@ export type ComputerKind =
  * - `identity_conflict` — AUTHOR. Two live reporters claim one identity
  *   (cloned VM, copied `/etc/machine-id`); coord refused to merge them, and
  *   only a person can say which box is which.
- * - `under_pressure` — WAITING. A lane's admission guard is at its floor; it
- *   clears itself when the load does, and the dispatcher already steps back.
+ * - `under_pressure` — WAITING. A FRESH lane's admission guard is at its
+ *   floor; it clears itself when the load does, and the dispatcher already
+ *   steps back. A stale lane's last headroom never counts: it is not current.
+ * - `lane_stale` — WAITING, the ignorance floor for one axis: the computer
+ *   reports but a lane's samples are stale or undatable, so its current
+ *   pressure is unknown. The reason names the lane (and its last-known
+ *   pressure, if that was at a floor).
  * - `stale` / `unknown` — WAITING, the ignorance floor.
  * - `services_unknown` — WAITING. The computer reports, but not its services,
  *   so "no failed service" cannot be claimed. Calm would claim it.
@@ -756,6 +772,7 @@ export const COMPUTER_ATTENTION_BY_KIND = {
   healthy: "none",
   services_unknown: "waiting",
   under_pressure: "waiting",
+  lane_stale: "waiting",
   service_failed: "author",
   identity_conflict: "author",
   stale: "waiting",
@@ -766,6 +783,7 @@ export const COMPUTER_BADGE_CLASS: Record<ComputerKind, string> = {
   healthy: FRESH_GREEN,
   services_unknown: UNKNOWN_AMBER,
   under_pressure: WAITING_AMBER,
+  lane_stale: UNKNOWN_AMBER,
   service_failed: AUTHOR_RED,
   identity_conflict: AUTHOR_RED,
   stale: UNKNOWN_AMBER,
@@ -788,7 +806,8 @@ export const COMPUTER_PALETTE: StatusPalette<ComputerKind> = {
  */
 export function computerStatus(
   c: NormalizedComputer,
-  freshness: FreshnessReading
+  freshness: FreshnessReading,
+  clock: { fetchedAtMs: number | null; nowMs: number }
 ): RowStatus<ComputerKind> {
   const make = (
     kind: ComputerKind,
@@ -824,11 +843,35 @@ export function computerStatus(
       "A watched service is in the failed state and its restart policy will not bring it back."
     );
   }
-  if (c.lanes.some((l) => l.headroom === "breach" || l.headroom === "warn")) {
+  const atFloor = (l: ComputerLaneWire) =>
+    l.headroom === "breach" || l.headroom === "warn";
+  const laneState = c.lanes.map((lane) => ({
+    lane,
+    fresh:
+      laneFreshness(lane, freshness, clock.fetchedAtMs, clock.nowMs).kind ===
+      "fresh",
+  }));
+  // Only a FRESH lane's headroom is a current fact. A stale lane that last
+  // read `breach` may have recovered an hour ago; counting it would headline
+  // pressure that is not there, and it is reported below as stale instead.
+  const pressured = laneState.filter((s) => s.fresh && atFloor(s.lane));
+  if (pressured.length > 0) {
     return make(
       "under_pressure",
       "under pressure",
-      "A lane is at or below an admission floor, so coord is deferring or refusing work here until it recovers."
+      `Lane ${pressured.map((s) => laneName(s.lane)).join(", ")} is at or below an admission floor, so coord is deferring or refusing work here until it recovers.`
+    );
+  }
+  const staleLanes = laneState.filter((s) => !s.fresh).map((s) => s.lane);
+  if (staleLanes.length > 0) {
+    const lastAtFloor = staleLanes.filter(atFloor);
+    return make(
+      "lane_stale",
+      "lane stale",
+      `The samples for lane ${staleLanes.map(laneName).join(", ")} are stale or undatable, so current pressure there is unknown.` +
+        (lastAtFloor.length > 0
+          ? ` Last known: ${lastAtFloor.map((l) => `${laneName(l)} ${l.headroom}`).join(", ")} — not current.`
+          : "")
     );
   }
   if (c.servicesFailed === null) {
@@ -1023,7 +1066,11 @@ export function buildComputerRows(
   return arr<ComputerSummaryWire>(list?.computers).map((raw) => {
     const computer = normalizeComputer(raw);
     const freshness = computerFreshness(computer.freshness, fetchedAtMs, nowMs);
-    return { computer, freshness, status: computerStatus(computer, freshness) };
+    return {
+      computer,
+      freshness,
+      status: computerStatus(computer, freshness, { fetchedAtMs, nowMs }),
+    };
   });
 }
 
@@ -1063,7 +1110,8 @@ export function deriveComputersHealth(input: {
   const failed = count("service_failed");
   const conflicts = count("identity_conflict");
   const stale = count("stale");
-  const unknown = count("unknown") + count("services_unknown");
+  const unknown =
+    count("unknown") + count("services_unknown") + count("lane_stale");
   const pressure = count("under_pressure");
   const badges: ComputersHealth["badges"] = [
     {
@@ -1174,13 +1222,22 @@ export function deriveComputerDetailHealth(input: {
 }): ComputersHealth {
   const { computer, freshness, status, issue, services, events, divergence } =
     input;
+  // Not-found is a MEASUREMENT that supersedes whatever an earlier read held:
+  // coord now says this computer is not in the tenant, so no retained figure
+  // may headline beside it.
+  if (issue?.kind === "not_found") {
+    return {
+      level: "amber",
+      headline: "No such computer in this tenant",
+      detail: readIssueText(issue),
+      badges: [],
+    };
+  }
   if (computer === null || status === null || freshness === null) {
     return {
       level: "amber",
       headline: issue
-        ? issue.kind === "not_found"
-          ? "No such computer in this tenant"
-          : "This computer is unknown — coord did not answer this read"
+        ? "This computer is unknown — coord did not answer this read"
         : "Reading computer…",
       detail: issue ? readIssueText(issue) : undefined,
       badges: [],

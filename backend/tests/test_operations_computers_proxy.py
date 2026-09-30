@@ -19,7 +19,12 @@ mocked ``httpx.AsyncClient``, so no live coord is needed. Properties pinned:
   because the page renders them as UNKNOWN rather than as a failure;
 * a transport failure is a 502, never a fabricated empty computer list;
 * a malformed ``computer_id`` stops at the web edge (422) and never reaches
-  coord as an arbitrary path segment.
+  coord as an arbitrary path segment;
+* both routes are gated on ``require_coord_tenant_admin`` — the payload carries
+  the registrar's CI-runner rows and each computer's ``access`` facts, which
+  ``/fleet/ci-runners`` already serves only to a tenant admin (see
+  ``test_operations_ci_runners_proxy.py``'s module doc for that posture). A
+  non-admin is refused BEFORE any coord call.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,7 +47,7 @@ TEST_BEARER = "test-cognito-access-token"
 def _build_test_app() -> FastAPI:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints import operations as operations_module
-    from app.api.v1.endpoints.operations import get_tenant_id
+    from app.api.v1.endpoints.operations import require_coord_tenant_admin
     from app.api.v1.endpoints.operations import router as operations_router
 
     test_app = FastAPI()
@@ -60,7 +65,7 @@ def _build_test_app() -> FastAPI:
         operations_module._caller_bearer.set(TEST_BEARER)
         return TEST_TENANT_ID
 
-    test_app.dependency_overrides[get_tenant_id] = _tenant_override
+    test_app.dependency_overrides[require_coord_tenant_admin] = _tenant_override
     test_app.include_router(operations_router, prefix=API_PREFIX)
     return test_app
 
@@ -226,4 +231,29 @@ class TestComputerDetailProxy:
             mock = _client_returning(MockClient, _mock_response(200, DETAIL_PAYLOAD))
             resp = auth_client.get(f"{API_PREFIX}/computers/not-a-uuid")
         assert resp.status_code == 422
+        mock.get.assert_not_called()
+
+
+class TestComputersAreAdminGated:
+    """Every other test overrides ``require_coord_tenant_admin`` to pass, so
+    without these, swapping it back to ``get_tenant_id`` would stay green:
+    the deny override below would then gate nothing and coord would be called.
+    """
+
+    @pytest.mark.parametrize("route", [LIST_ROUTE, DETAIL_ROUTE])
+    def test_non_admin_gets_403_before_any_coord_call(self, route: str):
+        from fastapi import HTTPException
+
+        from app.api.v1.endpoints.operations import require_coord_tenant_admin
+
+        def _deny() -> None:
+            raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
+
+        app = _build_test_app()
+        app.dependency_overrides[require_coord_tenant_admin] = _deny
+        with _patch_httpx() as MockClient:
+            mock = _client_returning(MockClient, _mock_response(200, LIST_PAYLOAD))
+            resp = TestClient(app).get(route)
+
+        assert resp.status_code == 403
         mock.get.assert_not_called()
