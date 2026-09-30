@@ -6,7 +6,9 @@
  * - the named cases are copied from the Rust unit tests in `refusal.rs`
  *   (`render_is_the_table_projection`, `retry_delays_are_humanised_and_capped`,
  *   `targets_are_quoted_as_one_clean_line`, and the decode tests);
- * - `refusal.render-fixtures.json` is a dump of `NextAction::render()` and
+ * - `refusal.render-fixtures.json` is the output of qontinui-schemas
+ *   `cargo run -q -p qontinui-types --example refusal_render_fixtures`: a dump
+ *   of `NextAction::render()` and
  *   `Refusal::render()` over every kind × target × delay shape and every code
  *   × discriminator, run against the Rust crate.
  *

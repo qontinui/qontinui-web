@@ -37,7 +37,6 @@ import {
 import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import {
   BackendErrorMessage,
-  GlossaryTerm,
   RecordDetail,
   StatCluster,
   StatusBadge,
@@ -243,9 +242,7 @@ export function MembersTable({
                 <TableHead>Display name</TableHead>
                 <TableHead>Access</TableHead>
                 <TableHead>Last login</TableHead>
-                <TableHead className="text-right">
-                  Grant <GlossaryTerm id="tier">tier</GlossaryTerm>
-                </TableHead>
+                <TableHead className="text-right">Grant tier</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
