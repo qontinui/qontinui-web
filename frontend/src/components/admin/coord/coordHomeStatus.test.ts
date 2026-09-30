@@ -27,6 +27,9 @@ import {
   parseBlockState,
   parseOptions,
   withoutVerdictWords,
+  planeFreshnessPhrase,
+  watcherReasonWords,
+  decisionDomainLabel,
   parseProjectState,
   unitClassLabel,
   type BlockState,
@@ -431,5 +434,56 @@ describe("review fixes — parsing", () => {
     const text =
       "in_progress units with NO status-history row cannot be judged stalled; they are classed in_flight";
     expect(withoutVerdictWords(text)).not.toMatch(/stalled/i);
+  });
+});
+
+describe("round-2 review — R8 for watchers and domains, honest red headline", () => {
+  it.each([
+    ["no_successful_tick", "has not completed a run"],
+    ["last_success_older_than_3x_interval", "last run is overdue"],
+    ["heartbeat_read_failed", "status could not be read"],
+    ["no_declared_interval", "no expected interval declared"],
+    ["something_new", "state unknown"],
+    [null, "state unknown"],
+  ])("words watcher reason %p as %p", (token, words) => {
+    expect(watcherReasonWords(token)).toBe(words);
+  });
+
+  it("keeps watcher names and reason tokens out of the plane sentence", () => {
+    const phrase = planeFreshnessPhrase({
+      plane: "merge_train",
+      fresh: false,
+      watchers: [
+        {
+          name: "train_health",
+          state: "stale",
+          asOf: null,
+          reason: "no_successful_tick",
+        },
+        { name: "pr_merge_tick", state: "fresh", asOf: null, reason: null },
+      ],
+      detectionBoundSecs: null,
+    });
+    expect(phrase).toBe("1 of 2 watchers not fresh — has not completed a run");
+    expect(phrase).not.toMatch(/_/);
+  });
+
+  it("labels known decision domains and spaces unknown ones", () => {
+    expect(decisionDomainLabel("repo_pull")).toBe("pulling a repository");
+    expect(decisionDomainLabel("pr_fix")).toBe("fixing a pull request");
+    expect(decisionDomainLabel("brand_new_domain")).toBe("brand new domain");
+  });
+
+  it("never prints '0 decisions' when items are listed", () => {
+    const body = calmBody();
+    body.needs_me = {
+      state: "read",
+      total: 0,
+      omitted: 0,
+      items: [{ id: "q-1", fork: "Pick" }],
+    };
+    const strip = deriveHomeStrip(parseProjectState(body));
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toBe("Decisions need you — how many is unknown");
   });
 });

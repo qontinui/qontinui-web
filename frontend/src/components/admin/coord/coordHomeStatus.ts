@@ -484,6 +484,7 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
           if (!r) return [];
           const id =
             str(r.id) ?? (typeof r.id === "number" ? String(r.id) : null);
+          const blocking = obj(r.blocking);
           return [
             {
               source: str(r.source),
@@ -496,10 +497,10 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
               ifOverturned: str(r.if_overturned),
               shape: str(r.shape),
               answerAt: str(r.answer_at),
-              blocking: obj(r.blocking)
+              blocking: blocking
                 ? {
-                    workUnitSlug: str(obj(r.blocking)!.work_unit_slug),
-                    planPhase: idString(obj(r.blocking)!.plan_phase),
+                    workUnitSlug: str(blocking.work_unit_slug),
+                    planPhase: idString(blocking.plan_phase),
                   }
                 : null,
             },
@@ -649,17 +650,64 @@ function parsePlanes(raw: unknown): PlaneView[] | null {
 }
 
 /** One plane's watcher freshness, in words. */
+/** Coord's watcher-freshness reason tokens, in plain words (R8). */
+const WATCHER_REASON_WORDS: Readonly<Record<string, string>> = {
+  no_successful_tick: "has not completed a run",
+  last_success_older_than_3x_interval: "last run is overdue",
+  heartbeat_read_failed: "status could not be read",
+  no_declared_interval: "no expected interval declared",
+  no_heartbeat_row: "has never reported",
+};
+
+/** One watcher's reason in plain words; an unknown token is "state unknown". */
+export function watcherReasonWords(reason: string | null): string {
+  return (reason && WATCHER_REASON_WORDS[reason]) || "state unknown";
+}
+
+/**
+ * One plane's watcher freshness, in words. Watcher names are internal
+ * vocabulary, so they are NOT in this sentence — see
+ * {@link planeWatcherNames}, which the page puts in a `title` only.
+ */
 export function planeFreshnessPhrase(p: PlaneView): string {
   if (p.watchers.length === 0) {
     return p.fresh === true
       ? "read directly, no watcher"
       : "no watcher reported";
   }
-  if (p.fresh === true) return "every watcher fresh";
+  if (p.fresh === true) {
+    return p.watchers.length === 1
+      ? "its watcher is fresh"
+      : "every watcher fresh";
+  }
   const notFresh = p.watchers.filter((w) => w.state !== "fresh");
-  return notFresh.length > 0
-    ? `not fresh: ${notFresh.map((w) => `${w.name} (${w.reason ?? w.state})`).join(", ")}`
-    : "freshness not stated";
+  if (notFresh.length === 0) return "freshness not stated";
+  const reasons = [
+    ...new Set(notFresh.map((w) => watcherReasonWords(w.reason))),
+  ];
+  const noun = p.watchers.length === 1 ? "watcher" : "watchers";
+  return `${notFresh.length} of ${p.watchers.length} ${noun} not fresh — ${reasons.join("; ")}`;
+}
+
+/** The raw watcher names behind a plane, for a `title` only. */
+export function planeWatcherNames(p: PlaneView): string {
+  return p.watchers
+    .map((w) => `${w.name}: ${w.state}${w.reason ? ` (${w.reason})` : ""}`)
+    .join(", ");
+}
+
+/** Human names for coord's decision domains; unknown keys are spaced. */
+const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
+  pr_fix: "fixing a pull request",
+  red_main_fix: "fixing a red main branch",
+  repo_pull: "pulling a repository",
+  implementation: "implementation",
+  policy_gap: "policy gap",
+  unclassified: "unclassified",
+};
+
+export function decisionDomainLabel(domain: string): string {
+  return DECISION_DOMAIN_LABEL[domain] ?? domain.replace(/_/g, " ");
 }
 
 export interface DegradationsView {
@@ -981,7 +1029,9 @@ export function deriveHomeStrip(
   let headline: string;
   if (attention === "author") {
     headline =
-      needsTotal === null
+      // Never "0 decisions need you" beside listed items: a total that is
+      // absent, or smaller than what was listed, is not a count to print.
+      needsTotal === null || needsTotal < needsListed
         ? "Decisions need you — how many is unknown"
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
   } else if (open !== null && open.length > 0) {

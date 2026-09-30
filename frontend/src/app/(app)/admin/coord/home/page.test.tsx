@@ -404,8 +404,41 @@ describe("/admin/coord/home", () => {
       })
     );
     expect(screen.getByTestId("coord-home.degrading.planes")).toHaveTextContent(
-      "merge train: not fresh: train_health (no_successful_tick)"
+      "merge train: 1 of 1 watcher not fresh — has not completed a run"
     );
+  });
+
+  it("words watcher freshness at the last good read when a poll failed", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "read",
+          headline: "none",
+          open: [],
+          recently_cleared: [],
+          planes: {
+            merge_train: {
+              fresh: true,
+              watchers: [{ name: "train_health", state: "fresh" }],
+            },
+          },
+        },
+      })
+    );
+    expect(
+      screen.queryByTestId("coord-home.degrading.planes.stale")
+    ).not.toBeInTheDocument();
+    httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-home.refresh"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-home.degrading.planes.stale")
+      ).toHaveTextContent(/Watcher freshness at the last good read/)
+    );
+    const line = screen.getByText(/merge train: its watcher is fresh/);
+    expect(line).toHaveAttribute("title", "train_health: fresh");
   });
 
   it("says unknown, not 'No work units', when a read on_track serves no groups", async () => {
@@ -441,7 +474,7 @@ describe("/admin/coord/home", () => {
     ).toHaveTextContent(/condition has already resolved/);
     expect(
       screen.getByTestId("coord-home.needs-you.by-domain")
-    ).toHaveTextContent("repo pull 1");
+    ).toHaveTextContent("pulling a repository 1");
     fireEvent.click(screen.getByText("Which way?"));
     expect(screen.getByTestId("coord-home.needs-you")).toHaveTextContent(
       "Options: not readable"
