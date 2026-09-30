@@ -99,12 +99,13 @@
       "block": "on_track",
       "region": "coord-home.on-track",
       "door_fields": [
+        "on_track.initiative.state",
         "on_track.initiative.in_scope",
         "on_track.initiative.ends",
         "on_track.initiative.alignment"
       ],
       "answer": "The initiative's in-scope items verbatim, its end date, and the attributed work — which reads 'not yet attributable' while on_track.initiative.alignment is 'unknown' (no declared link yet); that wording is a correct answer ONLY in that case.",
-      "unknown_is_an_answer_only_when": "on_track.state != \"read\" || on_track.initiative.state != \"read\" || on_track.initiative.alignment == \"unknown\""
+      "unknown_is_an_answer_only_when": "on_track.initiative.state != \"read\" || on_track.initiative.alignment == \"unknown\""
     },
     {
       "id": "q9",
@@ -126,9 +127,10 @@
       "region": "coord-home.degrading",
       "door_fields": [
         "degradations.open[?plane==\"merge_train\"]",
-        "degradations.planes.merge_train.fresh"
+        "degradations.planes.merge_train.fresh",
+        "degradations.planes.merge_train.watchers"
       ],
-      "answer": "Whether any merge-train degradation is open (a wedged train is one), matching degradations.open rows whose plane is merge_train; 'nothing is degrading' answers it only when degradations.headline is 'none'.",
+      "answer": "Whether any merge-train degradation is open (a wedged train is one), matching degradations.open rows whose plane is merge_train, AND whether the merge-train watchers are fresh (the 'merge train:' line under Degrading, matching degradations.planes.merge_train.fresh / watchers). 'Nothing is degrading' answers it only when degradations.headline is 'none' and the merge-train line reads every watcher fresh.",
       "unknown_is_an_answer_only_when": "degradations.state != \"read\""
     }
   ]

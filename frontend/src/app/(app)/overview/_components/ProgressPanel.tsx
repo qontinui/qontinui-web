@@ -107,7 +107,8 @@ export function ProgressPanel({ reading }: { reading: ProgressReading }) {
     );
   }
 
-  const { counts, total, recentlyFinished } = reading.progress;
+  const { counts, total, recentlyFinished, excludedBookkeeping } =
+    reading.progress;
   const listed = PROGRESS_BUCKETS.filter(
     (b) => ALWAYS_LISTED.has(b.key) || counts[b.key] > 0
   );
@@ -180,9 +181,12 @@ export function ProgressPanel({ reading }: { reading: ProgressReading }) {
         ))}
       </dl>
 
-      {counts.unknown > 0 && (
+      {(counts.unknown > 0 || (excludedBookkeeping ?? 0) > 0) && (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          {`${counts.unknown} piece${counts.unknown === 1 ? " of work has a status" : "s of work have a status"} this page doesn\u2019t recognise. ${counts.unknown === 1 ? "It counts" : "They count"} toward the total but not as done.`}
+          {counts.unknown > 0 &&
+            `${counts.unknown} piece${counts.unknown === 1 ? " of work has a status" : "s of work have a status"} this page doesn\u2019t recognise. ${counts.unknown === 1 ? "It counts" : "They count"} toward the total but not as done. `}
+          {(excludedBookkeeping ?? 0) > 0 &&
+            `${excludedBookkeeping} internal bookkeeping record${excludedBookkeeping === 1 ? " is" : "s are"} left out of these counts; ${excludedBookkeeping === 1 ? "it is" : "they are"} not project work.`}
         </p>
       )}
 

@@ -120,6 +120,23 @@ describe("progressFromOnTrack — the door's classes in business words", () => {
     expect(progressFromOnTrack(view, null).counted).toBe(false);
   });
 
+  it("carries the door's bookkeeping exclusion for the panel's caveat", () => {
+    const view = parseProjectState({
+      on_track: {
+        state: "read",
+        totals: {
+          row_count: 1,
+          classes: { ...zeros(), shipped: 1 },
+          excluded: { merge_shepherd_bookkeeping: 4 },
+        },
+      },
+    })!.onTrack;
+    const r = progressFromOnTrack(view, null);
+    if (!r.counted) throw new Error("expected a count");
+    expect(r.progress.excludedBookkeeping).toBe(4);
+    expect(r.progress.total).toBe(1);
+  });
+
   it("passes the recently finished list through", () => {
     const recent = { items: [], partial: false };
     const r = progressFromOnTrack(onTrack({}), recent);

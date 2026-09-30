@@ -87,6 +87,11 @@ describe("answerability.questions.json", () => {
       const cond = q.unknown_is_an_answer_only_when;
       if (q.block === "does_not_know") {
         expect(cond).toMatch(/does_not_know is absent/);
+      } else if (q.id === "q8") {
+        // The initiative is its own sub-read of on_track: q8 is answerable
+        // from it (and only it) whatever the unit counts' state.
+        expect(cond).toContain('on_track.initiative.state != "read"');
+        expect(cond).toContain('on_track.initiative.alignment == "unknown"');
       } else {
         expect(cond).toContain(`${q.block}.state != "read"`);
       }
