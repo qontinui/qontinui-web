@@ -438,6 +438,14 @@ async def test_relay_not_connected_503_body_carries_device_id_and_last_seen(
     assert body["ws_connected_at"] == "2026-08-27T09:20:00+00:00"
     assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
     assert isinstance(body["request_id"], str) and body["request_id"]
+    # D2: the typed envelope rides beside the unchanged fields. A runner the
+    # relay has seen before is expected back, so the next action is a retry.
+    refusal = body["refusal"]
+    assert refusal["code"] == "device_not_connected"
+    assert refusal["discriminator"] == "runner_not_connected"
+    assert refusal["next_action"] == {"kind": "retry_later"}
+    assert refusal["glossary_terms"] == ["runner", "device"]
+    assert refusal["detail"] == "runner not connected"
 
     # W-A: the branch is no longer silent, and the line carries the fields a
     # server-side debugger needs to find the device without the client.
@@ -530,6 +538,9 @@ async def test_relay_404_device_not_owned_is_logged(monkeypatch):
     assert body["detail"] == "device not found or not owned by caller"
     assert body["device_id"] == DEVICE_ID
     assert body["request_id"] == "req-404"
+    assert body["refusal"]["code"] == "not_found"
+    assert body["refusal"]["discriminator"] == "device_not_owned"
+    assert body["refusal"]["next_action"] == {"kind": "pair_device"}
 
     logged = rec.kw_for("runner_proxy_relay_device_not_owned")
     assert logged["device_id"] == DEVICE_ID
@@ -681,6 +692,9 @@ async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch
     body = _body(response)
     assert body["ws_connected_at"] is None
     assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
+    # Never registered: the runner has to be paired, not waited for.
+    assert body["refusal"]["discriminator"] == "runner_never_registered"
+    assert body["refusal"]["next_action"] == {"kind": "pair_device"}
 
 
 @pytest.mark.asyncio
