@@ -32,6 +32,12 @@ from uuid import UUID
 import structlog
 from fastapi import HTTPException, status
 
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    refusal_error,
+)
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -159,21 +165,78 @@ class DeviceTokenContext:
     def device_id(self) -> UUID:
         raw = self.claims.get("device_id")
         if not raw:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Device token missing device_id claim",
+            raise _device_credential_refusal(
+                "Device token missing device_id claim", "device_id_claim_missing"
             )
         try:
             return UUID(str(raw))
         except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Device token device_id malformed",
+            raise _device_credential_refusal(
+                "Device token device_id malformed", "device_id_claim_malformed"
             ) from exc
 
     @property
     def user_id(self) -> UUID:
         return self.user.id
+
+
+def _device_credential_refusal(message: str, discriminator: str) -> HTTPException:
+    """A 401 for a device credential that verified but cannot be used.
+
+    The claim set a device token must carry is minted at PAIRING, so the
+    reader's next step is to pair the device again — a retry with the same
+    token can only fail the same way.
+    """
+    return refusal_error(
+        status.HTTP_401_UNAUTHORIZED,
+        RefusalCode.credential_rejected,
+        NextActionKind.pair_device,
+        message,
+        discriminator=discriminator,
+        glossary_terms=[GlossaryTerm.device],
+    )
+
+
+def _token_rejection_refusal(exc: Exception, message: str) -> HTTPException:
+    """The 401 for a device token that failed verification, with the next
+    action each failure actually calls for.
+
+    * foreign issuer → ``report_defect``: this backend and the caller trust
+      different key sets, which is a deployment wiring fault, not something
+      the holder of the token can fix.
+    * not yet valid → ``set_setting`` the system clock: the token is fine,
+      the clocks disagree.
+    * expired, or any other verification failure → ``pair_device``: the
+      device needs a fresh credential.
+    """
+    from app.services.coord_jwks import (
+        CoordTokenExpiredError,
+        CoordTokenForeignIssuerError,
+        CoordTokenNotYetValidError,
+    )
+
+    kind = NextActionKind.pair_device
+    target: str | None = None
+    if isinstance(exc, CoordTokenForeignIssuerError):
+        discriminator = "foreign_issuer"
+        kind = NextActionKind.report_defect
+    elif isinstance(exc, CoordTokenExpiredError):
+        discriminator = "expired"
+    elif isinstance(exc, CoordTokenNotYetValidError):
+        discriminator = "not_yet_valid"
+        kind = NextActionKind.set_setting
+        target = "system clock"
+    else:
+        discriminator = "failed_verification"
+    return refusal_error(
+        status.HTTP_401_UNAUTHORIZED,
+        RefusalCode.credential_rejected,
+        kind,
+        message,
+        target=target,
+        discriminator=discriminator,
+        glossary_terms=[GlossaryTerm.device],
+    )
 
 
 async def _verify_device_jwt(token: str) -> tuple[dict, User]:
@@ -205,9 +268,13 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         # wrong about what to do next" gap the identity alarm below closed.
         # The shared field set carries it (``coord_url_setting``).
         logger.error("device_token_jwks_unavailable", **jwks_failure_log_fields(exc))
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Device authentication temporarily unavailable.",
+        raise refusal_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "Device authentication temporarily unavailable.",
+            discriminator="device_key_set_unreachable",
+            glossary_terms=[GlossaryTerm.device],
         ) from exc
     except CoordTokenInvalidError as exc:
         # Same honesty rule as the WS handshake: report which failure
@@ -232,24 +299,19 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
                 ),
                 **identity_mismatch_remedy_fields(),
             )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=describe_token_rejection(exc),
-        ) from exc
+        raise _token_rejection_refusal(exc, describe_token_rejection(exc)) from exc
 
     raw_user_id = claims.get("user_id")
     if not raw_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device token missing user_id claim.",
+        raise _device_credential_refusal(
+            "Device token missing user_id claim.", "user_id_claim_missing"
         )
 
     try:
         user_id = UUID(str(raw_user_id))
     except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device token user_id malformed.",
+        raise _device_credential_refusal(
+            "Device token user_id malformed.", "user_id_claim_malformed"
         ) from exc
 
     async with AsyncSessionLocal() as session:
@@ -259,14 +321,15 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         user = result.scalar_one_or_none()
 
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found.",
-        )
+        raise _device_credential_refusal("User not found.", "paired_user_absent")
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User is not active.",
+        raise refusal_error(
+            status.HTTP_401_UNAUTHORIZED,
+            RefusalCode.permission_denied,
+            NextActionKind.none_terminal,
+            "User is not active.",
+            discriminator="paired_user_inactive",
+            glossary_terms=[GlossaryTerm.device],
         )
 
     return claims, user
@@ -384,9 +447,12 @@ async def _resolve_actor_principal(
         _claims, device_user = await _verify_device_jwt(credentials.credentials)
         return ActorPrincipal(user=device_user, kind="device")
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required.",
+    raise refusal_error(
+        status.HTTP_401_UNAUTHORIZED,
+        RefusalCode.authentication_required,
+        NextActionKind.sign_in,
+        "Authentication required.",
+        discriminator="no_credential",
     )
 
 
@@ -447,14 +513,22 @@ async def get_reporting_device(
     test suites stub coord's JWKS at ``deps._verify_device_jwt``.
     """
     if user is not None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=DEVICE_ONLY_REFUSAL,
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.permission_denied,
+            NextActionKind.fix_request,
+            DEVICE_ONLY_REFUSAL,
+            discriminator="device_only_route",
+            glossary_terms=[GlossaryTerm.device],
         )
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device authentication required.",
+        raise refusal_error(
+            status.HTTP_401_UNAUTHORIZED,
+            RefusalCode.authentication_required,
+            NextActionKind.pair_device,
+            "Device authentication required.",
+            discriminator="no_device_credential",
+            glossary_terms=[GlossaryTerm.device],
         )
     claims, device_user = await _verify_device_jwt(credentials.credentials)
     context = DeviceTokenContext(claims=claims, user=device_user)
@@ -510,29 +584,37 @@ async def get_paired_device(
     it at ``deps._verify_device_jwt``.
     """
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device authentication required.",
+        raise refusal_error(
+            status.HTTP_401_UNAUTHORIZED,
+            RefusalCode.authentication_required,
+            NextActionKind.pair_device,
+            "Device authentication required.",
+            discriminator="no_device_credential",
+            glossary_terms=[GlossaryTerm.device],
         )
     claims, device_user = await _verify_device_jwt(credentials.credentials)
     if claims.get("sub_type") != DEVICE_SUB_TYPE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "not_a_device_principal",
-                "message": "This route accepts only a paired device token.",
-            },
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.permission_denied,
+            NextActionKind.pair_device,
+            "This route accepts only a paired device token.",
+            discriminator="not_a_device_principal",
+            glossary_terms=[GlossaryTerm.device],
+            error_code="not_a_device_principal",
         )
     if claims.get("mint_provenance") != PAIRED_MINT_PROVENANCE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "device_token_provenance_refused",
-                "message": (
-                    "This route accepts only a pairing-issued device token "
-                    "(mint_provenance=paired)."
-                ),
-            },
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.credential_rejected,
+            NextActionKind.pair_device,
+            (
+                "This route accepts only a pairing-issued device token "
+                "(mint_provenance=paired)."
+            ),
+            discriminator="device_token_provenance_refused",
+            glossary_terms=[GlossaryTerm.device],
+            error_code="device_token_provenance_refused",
         )
     context = DeviceTokenContext(
         claims=claims, user=device_user, token=credentials.credentials

@@ -586,7 +586,9 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"]["code"] == "device_token_provenance_refused"
+        # The refusal envelope is composed by the production handler, which
+        # this bare app does not register; the plain detail is the sentence.
+        assert "pairing-issued device token" in resp.json()["detail"]
         mock_mint.assert_not_called()
 
     @pytest.mark.parametrize("sub_type", ["agent", "attach_grant", "create_grant"])
@@ -601,7 +603,9 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"]["code"] == "not_a_device_principal"
+        assert resp.json()["detail"] == (
+            "This route accepts only a paired device token."
+        )
         mock_mint.assert_not_called()
 
     def test_coord_404_is_403_device_not_owned(self) -> None:

@@ -71,6 +71,13 @@ from app.api.deps import (
 )
 from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
 from app.models.machine_display_name import MachineDisplayName
@@ -902,7 +909,7 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-class CoordTransportUnavailable(HTTPException):
+class CoordTransportUnavailable(RefusalHTTPException):
     """The request to coord never completed — so its status is OURS, not coord's.
 
     :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
@@ -921,7 +928,57 @@ class CoordTransportUnavailable(HTTPException):
     retry loop, and covers any future transport conversion that uses it
     without a second edit. It is transparent to every other caller of the
     proxies: it IS an ``HTTPException``, with the same status and detail.
+
+    It is also a refusal (:class:`RefusalHTTPException`), built by
+    :func:`_coord_unreachable` / :func:`_coord_timeout` like every other
+    transport failure in this module.
     """
+
+
+def _coord_unreachable(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+) -> RefusalHTTPException:
+    """The 502 for a connect error: coord never saw the request, so nothing
+    changed and the same request later is safe."""
+    return refusal_error(
+        502,
+        RefusalCode.upstream_unavailable,
+        NextActionKind.retry_later,
+        "coord is not reachable",
+        discriminator="coord_unreachable",
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+def _coord_timeout(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+) -> RefusalHTTPException:
+    """The 504 for a timeout: coord may have acted, so the reader retries
+    LATER — after re-reading, for a write — rather than immediately."""
+    return refusal_error(
+        504,
+        RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        "timeout waiting for coord",
+        discriminator="coord_timeout",
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+def _coord_answer_lost(detail: str) -> RefusalHTTPException:
+    """The 504 for a write whose answer did not arrive intact — a transport
+    error after the request was sent, or a 2xx body that is not JSON. The
+    change may have been applied; only a re-read can tell."""
+    return refusal_error(
+        504,
+        RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        detail,
+        discriminator="answer_lost",
+        glossary_terms=[GlossaryTerm.coord],
+    )
 
 
 async def _proxy_coord_get(
@@ -999,15 +1056,9 @@ async def _proxy_coord_get(
         try:
             resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError as exc:
-            raise CoordTransportUnavailable(
-                status_code=502,
-                detail="coord is not reachable",
-            ) from exc
+            raise _coord_unreachable(CoordTransportUnavailable) from exc
         except httpx.TimeoutException as exc:
-            raise CoordTransportUnavailable(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout(CoordTransportUnavailable) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -1337,24 +1388,15 @@ async def _proxy_coord_write(
         try:
             resp = await send(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout() from exc
         except httpx.HTTPError as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail=(
-                    f"coord's answer was lost in transit ({type(exc).__name__}); "
-                    "the change may have been applied"
-                ),
+            raise _coord_answer_lost(
+                f"coord's answer was lost in transit ({type(exc).__name__}); "
+                "the change may have been applied"
             ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
@@ -1371,12 +1413,9 @@ async def _proxy_coord_write(
             # `getattr`: a log line on an error path must never raise itself.
             content_type=getattr(resp, "headers", {}).get("content-type"),
         )
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                f"coord answered {resp.status_code} with a body that is not "
-                "JSON; the change may have been applied"
-            ),
+        raise _coord_answer_lost(
+            f"coord answered {resp.status_code} with a body that is not "
+            "JSON; the change may have been applied"
         ) from exc
 
 
@@ -1508,9 +1547,9 @@ async def post_github_clone_credential(
         try:
             resp = await client.post(url, json={"repo": body.repo}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout()
     try:
         content = resp.json()
     except ValueError:
@@ -1558,9 +1597,9 @@ async def _proxy_coord_verbatim(
                 method, url, params=params, json=json_body, headers=headers
             )
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout()
     try:
         content = resp.json()
     except ValueError:
@@ -2365,15 +2404,9 @@ async def post_pr_merge_onboarding_connect_state(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     try:
         content = resp.json()
     except ValueError:
@@ -2506,15 +2539,9 @@ async def post_pr_merge_onboarding_claim(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2594,15 +2621,9 @@ async def post_pr_merge_onboarding_enroll(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2670,15 +2691,9 @@ async def post_pr_merge_onboarding_restore_repo(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     try:
         content = resp.json()
     except ValueError:
@@ -2995,9 +3010,9 @@ async def _proxy_coord_passthrough(
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout()
     try:
         payload: Any = resp.json()
     except ValueError:
@@ -3267,15 +3282,9 @@ async def _proxy_coord_post(
         try:
             resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -6133,15 +6142,9 @@ async def _proxy_coord_delete(
             else:
                 resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout()
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -6696,11 +6699,9 @@ async def get_device_status(
             tenant_id=tenant_id, since=since, headers=_tenant_headers(tenant_id)
         )
     except httpx.ConnectError as exc:
-        raise HTTPException(status_code=502, detail="coord is not reachable") from exc
+        raise _coord_unreachable() from exc
     except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504, detail="timeout waiting for coord"
-        ) from exc
+        raise _coord_timeout() from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
@@ -8597,9 +8598,9 @@ async def get_coord_session_restore_record(
                     elif line.startswith("data:"):
                         data_lines.append(line[5:].removeprefix(" "))
     except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="coord is not reachable")
+        raise _coord_unreachable()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="timeout waiting for coord")
+        raise _coord_timeout()
 
     return {
         "session_id": str(session_id),
