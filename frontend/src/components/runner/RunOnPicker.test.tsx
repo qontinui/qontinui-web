@@ -69,7 +69,7 @@ function runner(
   id: string,
   name: string,
   port: number,
-  extra: Record<string, unknown> = {}
+  extra: Partial<Runner> = {}
 ): Runner {
   return {
     id,
@@ -78,18 +78,40 @@ function runner(
     capabilities: [],
     createdAt: "2026-09-20T00:00:00Z",
     derivedStatus: "healthy",
+    instances: [],
     userId: "u1",
     wsConnected: true,
     ...extra,
-  } as unknown as Runner;
+  };
+}
+
+/**
+ * The row as a backend that predates `instances` serves it: the field is
+ * absent. Built through JSON, as the real row is, because the type cannot
+ * spell a row that omits a required field.
+ */
+function withoutInstances(row: Runner): Runner {
+  const wire: Partial<Runner> = { ...row };
+  delete wire.instances;
+  return JSON.parse(JSON.stringify(wire));
 }
 
 const DESK = runner(DESK_ID, "Desk runner", 9876);
 const LAPTOP = runner(LAPTOP_ID, "Laptop runner", 9876, {
   derivedStatus: "degraded",
   instances: [
-    { instanceKey: "primary", instanceRole: "primary", port: 9876 },
-    { instanceKey: "runner:abc", instanceRole: "secondary", port: 9877 },
+    {
+      instanceKey: "primary",
+      instanceRole: "primary",
+      port: 9876,
+      connectedAt: "2026-09-20T00:00:00Z",
+    },
+    {
+      instanceKey: "runner:abc",
+      instanceRole: "secondary",
+      port: 9877,
+      connectedAt: "2026-09-20T00:05:00Z",
+    },
   ],
 });
 
@@ -216,6 +238,13 @@ describe("RunOnPicker lists candidates with their MEASURED state", () => {
   });
 
   it("a runner row without `instances` (older backend) shows no instance line", async () => {
+    realtime.runners = [DESK, withoutInstances(LAPTOP)];
+    renderPicker("placeable");
+    const { items } = await openMenu();
+    expect(items[2]!.textContent).not.toMatch(/instance/);
+  });
+
+  it("a runner row reporting zero instances shows no instance line", async () => {
     realtime.runners = [DESK, runner(LAPTOP_ID, "Laptop runner", 9876)];
     renderPicker("placeable");
     const { items } = await openMenu();

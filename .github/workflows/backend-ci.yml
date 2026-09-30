@@ -70,7 +70,7 @@ on:
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
-      - '.github/workflows/verify-frontend-deploy.yml'
+      - '.github/workflows/verify-frontend-run.yml'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -100,7 +100,7 @@ on:
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
-      - '.github/workflows/verify-frontend-deploy.yml'
+      - '.github/workflows/verify-frontend-run.yml'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test

@@ -1,7 +1,7 @@
 /**
  * Post-deploy AUTHENTICATED behavioral smoke for the production frontend.
  *
- * Invoked by `.github/workflows/verify-frontend-deploy.yml` AFTER the shallow
+ * Invoked by `.github/workflows/verify-frontend-run.yml` AFTER the shallow
  * public-route smoke (verify-deploy-smoke.ts), this is the deep half: it
  * verifies the AUTHENTICATED prod surface so authed regressions (e.g. a
  * session teardown, a 401 cascade, a protected-route bounce) are caught — a
