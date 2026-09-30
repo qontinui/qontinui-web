@@ -464,10 +464,14 @@ def _local_imports(code: types.CodeType, package: str) -> Iterable[Any]:
             if current is None and name.startswith("app."):
                 try:
                     current = importlib.import_module(name)
-                except ImportError:
+                except ModuleNotFoundError as err:
                     # A deferred import of a module that does not exist
                     # (``app.services.admin_notification_service``) can
-                    # never run, so it reaches nothing.
+                    # never run, so it reaches nothing. Any OTHER import
+                    # failure inside an existing module is real breakage
+                    # and must not silently empty the trace.
+                    if err.name != name:
+                        raise
                     current = None
             if current is not None:
                 yield current
