@@ -110,15 +110,24 @@ sample table:
 * downgrade: ``DROP TABLE coord.computers`` removes its FK triggers from
   ``coord.tenants`` and so takes ACCESS EXCLUSIVE on ``coord.tenants`` while
   ``coord.tenant_devices`` and ``coord.device_resource_samples`` are held.
-  Unbounded, that request waits for as long as any ``coord.tenants`` reader
-  runs, with both tables held (a 25 s stall was reproduced in review of
-  qontinui-web#1598).
+  Without the bound that request would wait unbounded, with both tables held.
 
-``lock_timeout`` is per lock request, not per statement. The two-table ``LOCK
-TABLE`` below is two requests, so the worst case for a reader queued on
-``coord.tenant_devices`` is about 2 x 3s: up to 3s while the migration waits for
-``coord.tenant_devices`` itself, then up to 3s holding it while it waits for
-``coord.device_resource_samples``. That is kept at the house 3s (as in
+``lock_timeout`` is per lock request, not per statement, so the worst case for
+a reader queued on ``coord.tenant_devices`` is a sum of per-request bounds:
+
+* upgrade: about 2 x 3s. The two-table ``LOCK TABLE`` below is two requests:
+  up to 3s while the migration waits for ``coord.tenant_devices`` itself, then
+  up to 3s holding it while it waits for ``coord.device_resource_samples``.
+  Every later request in the transaction is on a table this revision just
+  created, which nothing else can hold.
+* downgrade: about (2 + 4) x 3s. After the same two requests it makes four
+  more while still holding both tables, each bounded by 3s: on
+  ``coord.computer_events``, ``coord.computer_services`` and
+  ``coord.computers`` (their index, FK and table drops) and on
+  ``coord.tenants``. Those extra waits happen only when coord readers of the
+  new tables, or of ``coord.tenants``, are in flight.
+
+That is kept at the house 3s (as in
 ``twin_10_served_bundle_target_columns``) rather than lowered: a lower bound
 buys a shorter worst case on a small binding table at the price of more
 spurious lock-timeout failures on a busy sample table, and a failed attempt is
