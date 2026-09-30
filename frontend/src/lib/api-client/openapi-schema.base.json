@@ -85978,6 +85978,68 @@
         ]
       }
     },
+    "/api/v1/operations/computers": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state}``, the latest sample\nrollup per lane, ``services_failed``, ``last_event``, ``devices[]`` and\n``ci_runners[]``, plus ``unattributed_ci_runners`` at list level.\nResponse shape is coord-authored and passed through untouched.",
+        "operationId": "api_v1_operations_computers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Computers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/computers/{computer_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).\n\nOne computer's whole answer to \"how is this machine\": the list fields\nplus ``services[]``, ``events`` (7 d, newest first), per-lane sample\n``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``\nis validated as a UUID here so a malformed id is a 422 at the web edge\nand never reaches coord as an arbitrary path segment.",
+        "operationId": "api_v1_operations_computers_computer_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "computer_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Computer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Computer",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/audit/recent": {
       "get": {
         "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",

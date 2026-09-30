@@ -100,6 +100,7 @@ describe("coordNavModel", () => {
     expect(memberLabels("devops")).toEqual(["Overview"]);
     expect(labels("devops")).toEqual([
       "Overview",
+      "Computers",
       "Trees",
       "Spawn",
       "Runner Drain",
