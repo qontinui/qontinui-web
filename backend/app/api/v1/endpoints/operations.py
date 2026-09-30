@@ -4677,8 +4677,10 @@ async def get_domain_cost(
     Proxies coord ``GET /coord/domain-cost`` (plan
     ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
     Phase 2), the read the ``/overview`` Intent section's "Domain cost" card
-    renders. Per domain in the roster (``qontinui-dev-notes/steering/
-    autonomy-domains.toml``) and for ``shared``, coord reports work units by
+    renders. Per domain in the tenant's autonomy-domain roster (a
+    ``steering/autonomy-domains.toml`` coord reads from its repo mirror,
+    named in the response's ``roster_source``) and for ``shared``, coord
+    reports work units by
     status class, wall-clock, PRs, sessions, operator touches and tokens, each
     in the ``{value, coverage_n, population_n, basis}`` shape; the marginal
     cost ratio ``R`` per dimension with its coverage floor; and a ``verdict``
