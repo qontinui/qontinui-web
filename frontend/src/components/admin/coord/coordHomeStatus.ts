@@ -624,7 +624,12 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
 
 /** A needs-you row's `reason`: the recommendation, or the literal label. */
 export function needsYouReason(item: NeedsMeItem): string {
-  return item.recommendation ?? "open question — no recommendation";
+  if (item.recommendation !== null) return item.recommendation;
+  // A gate is an approval, not a question: coord serves it with no
+  // recommendation, and calling it an "open question" would misname it.
+  return item.source === "operator_gate"
+    ? "approval — no recommendation"
+    : "open question — no recommendation";
 }
 
 // ---------------------------------------------------------------------------

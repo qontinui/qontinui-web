@@ -585,7 +585,11 @@ describe("/admin/coord/home", () => {
       })
     );
     const needs = screen.getByTestId("coord-home.needs-you");
-    expect(needs).toHaveTextContent("approval");
+    // Scoped to the gate's own row: the by-domain line also says "approval".
+    const row = within(needs).getByTestId("coord-home.needs-you.row");
+    const badge = row.querySelector("[data-status-kind]");
+    expect(badge?.textContent).toBe("✕ approval");
+    expect(row).not.toHaveTextContent("open question");
     expect(
       screen.getByTestId("coord-home.needs-you.by-domain")
     ).toHaveTextContent("operator approval gate 1");
@@ -596,6 +600,62 @@ describe("/admin/coord/home", () => {
       "href",
       "/admin/coord/gates"
     );
+  });
+
+  it("names work linked to an item the initiative does not list", async () => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "read",
+          totals: { row_count: 11, classes: CLASSES },
+          groups: [],
+          initiative: {
+            state: "read",
+            status: "live",
+            alignment: "read",
+            in_scope: [
+              {
+                text: "remote runner session access",
+                key: "remote-runner",
+                units: { total: 0, in_flight: 0, shipped: 0 },
+              },
+            ],
+            unknown_key: {
+              total: 2,
+              in_flight: 1,
+              shipped: 1,
+              keys: ["old-key"],
+            },
+          },
+        },
+      })
+    );
+    const line = screen.getByTestId(
+      "coord-home.on-track.initiative.unknown-key"
+    );
+    expect(line).toHaveTextContent("old-key");
+    expect(line).toHaveTextContent("2 units, 1 in flight, 1 shipped");
+  });
+
+  it("shows the unknown-key line when coord gives keys but no total", async () => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "read",
+          totals: { row_count: 11, classes: CLASSES },
+          groups: [],
+          initiative: {
+            state: "read",
+            alignment: "read",
+            in_scope: [],
+            unknown_key: { keys: ["old-key"] },
+          },
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative.unknown-key")
+    ).toHaveTextContent("– units");
   });
 
   it("shows initiative attribution when coord's alignment is read", async () => {
