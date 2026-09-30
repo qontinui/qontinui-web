@@ -31,6 +31,7 @@ import {
   watcherReasonWords,
   decisionDomainLabel,
   initiativeAttributionPhrase,
+  needsYouReason,
   parseProjectState,
   unitClassLabel,
   type BlockState,
@@ -543,6 +544,7 @@ describe("coord needs_me wire at 4907c36ff", () => {
       },
     })!;
     const item = view.needsMe.items![0];
+    expect(needsYouReason(item)).toBe("approval — no recommendation");
     expect(item.options).toEqual(["mark met", "reject"]);
     expect(item.answerAt).toBe("/admin/coord/gates");
     expect(item.blocking).toEqual({
@@ -587,6 +589,28 @@ describe("coord needs_me wire at 4907c36ff", () => {
       shipped: 1,
     });
     expect(linked.unattributed).toEqual({ total: 1, inFlight: 1, shipped: 0 });
+    expect(linked.unknownKey).toEqual({
+      total: 0,
+      inFlight: 0,
+      shipped: 0,
+      keys: [],
+    });
+    const withKeys = parseProjectState({
+      on_track: {
+        state: "read",
+        initiative: {
+          state: "read",
+          alignment: "read",
+          unknown_key: {
+            total: 2,
+            in_flight: 1,
+            shipped: 1,
+            keys: ["old-key", 7, null, "other-key"],
+          },
+        },
+      },
+    })!.onTrack.initiative!;
+    expect(withKeys.unknownKey?.keys).toEqual(["old-key", "other-key"]);
     expect(initiativeAttributionPhrase(linked)).toBe(
       "work attributed to it: 1 in flight"
     );
