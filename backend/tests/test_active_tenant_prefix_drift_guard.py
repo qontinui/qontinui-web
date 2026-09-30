@@ -134,6 +134,21 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/devices/pair-confirm": (
         "identity is a gate only; coord resolves the tenant from the pair flow"
     ),
+    # The operator credential controls (plan 2026-09-26-authenticate-and-
+    # perpetually-renew-a-specific-runner-from-qontinui-web) admit a device
+    # whose tenant is ANY of the caller's coord memberships
+    # (``identity.tenant_ids()``), never the selection: the Project selector
+    # must not hide, or refuse to authenticate/revoke, one of the caller's own
+    # runners. The tenant a bound code is minted in is the DEVICE's.
+    "/api/v1/devices/credential-overview": (
+        "scoped by the caller's full membership set, not the selection"
+    ),
+    "/api/v1/devices/{device_id}/authorize-redeem": (
+        "membership-set gate; the code's tenant is the device's own"
+    ),
+    "/api/v1/devices/{device_id}/machine-credential/revoke": (
+        "membership-set gate; revokes one device, scopes no rows"
+    ),
     # The helper-role grant POST does not forward the header, so it lands in
     # the caller's home tenant; the ``already_granted`` check must read that
     # same tenant. Sending the header would make the check and the write
@@ -293,6 +308,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/devices/{device_id}/machine-credential/exchange",
                 "/api/v1/devices/{device_id}/machine-credential/mint",
                 "/api/v1/devices/{device_id}/machine-credential/self-mint",
+                "/api/v1/devices/{device_id}/pending-redeem",
             }
         ),
     ),

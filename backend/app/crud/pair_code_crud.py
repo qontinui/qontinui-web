@@ -16,6 +16,11 @@ Provides:
   ``redeemed_by_device_id`` on a freshly-locked row.
 * :func:`sweep_expired_unredeemed` — periodic cleanup of unused expired
   codes (retention: 24h after expiry).
+* :func:`cancel_pending_for_device` / :func:`claim_undelivered_for_device` /
+  :func:`pending_for_devices` — the device-BOUND codes an operator's
+  ``authorize-redeem`` mints and the runner collects via ``/pending-redeem``
+  (plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-
+  from-qontinui-web`` Phase 2).
 
 The redeem path enforces single-use via the row lock — concurrent
 redeem attempts for the same code serialize on the row, and the second
@@ -30,7 +35,7 @@ from typing import Final
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import ColumnElement, delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,6 +61,13 @@ PAIR_CODE_LENGTH: Final[int] = 6
 # TTL for newly minted codes (kept in lockstep with the model's
 # server_default of ``now() + INTERVAL '5 minutes'``).
 PAIR_CODE_TTL: Final[timedelta] = timedelta(minutes=5)
+
+# TTL for a code an operator's ``authorize-redeem`` binds to one device. The
+# runner collects it by polling ``/pending-redeem`` once per refresher tick
+# (300 s), so 5 minutes could expire between two polls; 30 minutes covers
+# several ticks while still bounding how long an unanswered authorization
+# stays live.
+BOUND_PAIR_CODE_TTL: Final[timedelta] = timedelta(minutes=30)
 
 # After-expiry retention for the sweep job. Expired-unused rows linger
 # briefly so an operator's "wait, what code did I just see" question is
@@ -90,8 +102,13 @@ async def mint_pair_code(
     *,
     tenant_id: UUID,
     issued_by_user_id: UUID,
+    bound_device_id: UUID | None = None,
+    ttl: timedelta = PAIR_CODE_TTL,
 ) -> PairCode:
-    """Insert a fresh pair code with a 5-minute TTL.
+    """Insert a fresh pair code (default: unbound, 5-minute TTL).
+
+    ``bound_device_id`` restricts redemption to that one device (the
+    operator ``authorize-redeem`` path); ``ttl`` overrides the lifetime.
 
     Retries up to :data:`MAX_MINT_RETRIES` times on PK collision (almost
     never fires given the 30-bit entropy; the retry is defense against
@@ -113,7 +130,8 @@ async def mint_pair_code(
             tenant_id=tenant_id,
             issued_by_user_id=issued_by_user_id,
             created_at=now,
-            expires_at=now + PAIR_CODE_TTL,
+            expires_at=now + ttl,
+            bound_device_id=bound_device_id,
         )
         db.add(row)
         try:
@@ -125,6 +143,7 @@ async def mint_pair_code(
                 issued_by=str(issued_by_user_id),
                 code_prefix=code[:2],
                 expires_at=row.expires_at.isoformat(),
+                bound_device_id=str(bound_device_id) if bound_device_id else None,
             )
             return row
         except IntegrityError as exc:
@@ -201,6 +220,106 @@ async def mark_redeemed(
     await db.flush()
     await db.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Device-bound codes (operator authorize-redeem → runner pending-redeem poll)
+# ---------------------------------------------------------------------------
+
+
+def _pending_for_device(
+    device_id: UUID, now: datetime
+) -> tuple[ColumnElement[bool], ...]:
+    """The WHERE clause of "a still-redeemable code bound to ``device_id``"."""
+    return (
+        PairCode.bound_device_id == device_id,
+        PairCode.redeemed_at.is_(None),
+        PairCode.expires_at > now,
+    )
+
+
+async def cancel_pending_for_device(
+    db: AsyncSession, device_id: UUID, *, except_code: str | None = None
+) -> int:
+    """Expire every still-redeemable code bound to ``device_id``.
+
+    Used when a newer authorization supersedes an older one (``except_code``
+    names the new code, which must survive), and when an operator revokes the
+    device. The rows are EXPIRED (``expires_at = now``)
+    rather than deleted so the audit trail of who authorized what survives
+    until the normal sweep; an expired code already answers 410 at redeem and
+    is invisible to the poll. Returns the number of codes cancelled. Caller
+    commits.
+    """
+    now = datetime.now(UTC)
+    conditions = list(_pending_for_device(device_id, now))
+    if except_code is not None:
+        conditions.append(PairCode.code != except_code)
+    stmt = update(PairCode).where(*conditions).values(expires_at=now)
+    result = await db.execute(stmt)
+    cancelled = int(getattr(result, "rowcount", 0) or 0)
+    if cancelled:
+        logger.info(
+            "pair_code_bound_cancelled",
+            device_id=str(device_id),
+            count=cancelled,
+        )
+    return cancelled
+
+
+async def claim_undelivered_for_device(
+    db: AsyncSession, device_id: UUID
+) -> PairCode | None:
+    """Hand out ``device_id``'s pending bound code — AT MOST ONCE.
+
+    Locks the newest still-redeemable, not-yet-delivered bound code
+    (``FOR UPDATE``), stamps ``delivered_at`` and returns it. Two concurrent
+    polls serialize on the row lock; the second re-reads ``delivered_at`` and
+    gets ``None``. ``None`` also when nothing is pending. Caller commits.
+    """
+    now = datetime.now(UTC)
+    stmt = (
+        select(PairCode)
+        .where(*_pending_for_device(device_id, now), PairCode.delivered_at.is_(None))
+        .order_by(PairCode.created_at.desc())
+        .limit(1)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None or row.delivered_at is not None:
+        return None
+    row.delivered_at = now
+    await db.flush()
+    return row
+
+
+async def pending_for_devices(
+    db: AsyncSession, device_ids: list[UUID]
+) -> dict[UUID, PairCode]:
+    """The newest still-redeemable bound code per device, for the overview.
+
+    Delivered-but-unredeemed codes are included: the authorization is still
+    pending until the runner redeems it or it expires.
+    """
+    if not device_ids:
+        return {}
+    now = datetime.now(UTC)
+    stmt = (
+        select(PairCode)
+        .where(
+            PairCode.bound_device_id.in_(device_ids),
+            PairCode.redeemed_at.is_(None),
+            PairCode.expires_at > now,
+        )
+        .order_by(PairCode.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    out: dict[UUID, PairCode] = {}
+    for row in rows:
+        if row.bound_device_id is not None and row.bound_device_id not in out:
+            out[row.bound_device_id] = row
+    return out
 
 
 # ---------------------------------------------------------------------------
