@@ -10,8 +10,8 @@ import type {
 } from "@/lib/runner/types/scheduler";
 
 interface ScheduleHistoryDialogProps {
-  /** The task whose runs are shown; `null` closes the dialog. */
-  task: ScheduledTask | null;
+  /** The task whose runs are shown. Mount one dialog per task (keyed). */
+  task: ScheduledTask;
   onClose: () => void;
 }
 
@@ -58,9 +58,7 @@ export function ScheduleHistoryDialog({
   task,
   onClose,
 }: ScheduleHistoryDialogProps) {
-  const { data: history, isLoading, error } = useTaskHistory(task?.id ?? null);
-
-  if (!task) return null;
+  const { data: history, isLoading, error } = useTaskHistory(task.id);
 
   let body;
   if (isLoading && !history) {

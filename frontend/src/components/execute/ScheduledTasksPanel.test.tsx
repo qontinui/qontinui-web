@@ -4,6 +4,7 @@
  * did not answer is shown as a failure, never as "no scheduled tasks".
  */
 
+import { useRef } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
@@ -59,9 +60,14 @@ vi.mock("@/lib/runner/hooks/scheduler-hooks", () => ({
     error: null,
     refetch: state.refetchStatus,
   }),
-  useTaskHistory: (id: string | null) => {
+  // Like useRunnerQuery, one hook instance keeps its last answer when only
+  // the path changes, so a dialog reused across tasks would show stale runs.
+  useTaskHistory: function useTaskHistory(id: string | null) {
     state.historyIds.push(id);
-    return (id && state.historyById?.[id]) || state.history;
+    const last = useRef<TaskExecutionRecord[] | null>(null);
+    const answer = (id && state.historyById?.[id]) || state.history;
+    if (answer.data) last.current = answer.data;
+    return { ...answer, data: answer.data ?? last.current };
   },
   setSchedulerEnabled: state.setEnabled,
   updateScheduledTask: state.update,
