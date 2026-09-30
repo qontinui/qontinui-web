@@ -5,20 +5,24 @@
  * project's work (done, in progress, blocked, planned) and the most recently
  * finished pieces of work. The bar is the page's one bold element; everything
  * around it stays quiet.
+ *
+ * The counts are the operator console's own (`../_lib/progress.ts` documents
+ * the mapping). When they could not be read, the panel says so and shows no
+ * figures — an unknown count is never drawn as zero.
  */
 
 import { format, parseISO } from "date-fns";
 import {
   PROGRESS_BUCKETS,
-  type Progress,
   type ProgressBucket,
+  type ProgressReading,
+  type RecentlyFinished,
 } from "../_lib/progress";
 
 /** Fill per bucket. Done is the only saturated colour on the page. */
 const BUCKET_FILL: Record<ProgressBucket, string> = {
   done: "bg-[var(--chart-2)]",
   in_progress: "bg-primary",
-  ready: "bg-primary/45",
   blocked: "bg-destructive",
   planned: "bg-muted-foreground/35",
   // Amber: the console's colour for "unknown".
@@ -41,24 +45,72 @@ function formatDate(iso: string): string {
   }
 }
 
-export function ProgressPanel({ progress }: { progress: Progress }) {
-  const { counts, total, truncated, recentlyFinished } = progress;
-  const listed = PROGRESS_BUCKETS.filter(
-    (b) => ALWAYS_LISTED.has(b.key) || counts[b.key] > 0
-  );
-
-  if (total === 0 && truncated) {
-    // A full page with nothing countable in it says nothing about the rest.
+function RecentlyFinishedList({ recent }: { recent: RecentlyFinished | null }) {
+  if (recent === null) {
     return (
       <p
-        className="text-[15px] leading-relaxed text-muted-foreground"
-        data-ui-bridge-id="overview.summary.progress.uncountable"
+        className="mt-2 text-sm text-muted-foreground"
+        data-ui-bridge-id="overview.summary.recently-finished.unknown"
       >
-        This project&rsquo;s work couldn&rsquo;t be counted from what was
-        returned. Try again later.
+        Recently finished work couldn&rsquo;t be loaded. Try again later.
       </p>
     );
   }
+  if (recent.items.length === 0) {
+    return (
+      <p className="mt-2 text-sm text-muted-foreground">
+        {recent.partial
+          ? "No finish dates were found in what was returned."
+          : "Nothing has been finished yet."}
+      </p>
+    );
+  }
+  return (
+    <>
+      <ol
+        className="mt-3 space-y-3"
+        data-ui-bridge-id="overview.summary.recently-finished"
+      >
+        {recent.items.map((item) => (
+          <li key={`${item.finishedAt}-${item.title}`}>
+            <p className="text-sm leading-snug text-foreground">{item.title}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              <time dateTime={item.finishedAt}>
+                {formatDate(item.finishedAt)}
+              </time>
+            </p>
+          </li>
+        ))}
+      </ol>
+      {recent.partial && (
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          The project has finished more work than one read returns, so this list
+          may miss something finished recently.
+        </p>
+      )}
+    </>
+  );
+}
+
+export function ProgressPanel({ reading }: { reading: ProgressReading }) {
+  if (!reading.counted) {
+    // No figures at all: a count that could not be read is unknown, and a
+    // zero here would tell a reader the project has no work.
+    return (
+      <p
+        className="text-[15px] leading-relaxed text-muted-foreground"
+        data-ui-bridge-id="overview.summary.progress.unknown"
+      >
+        This project&rsquo;s progress can&rsquo;t be counted right now (
+        {reading.reason}), so no figures are shown. Try again later.
+      </p>
+    );
+  }
+
+  const { counts, total, recentlyFinished } = reading.progress;
+  const listed = PROGRESS_BUCKETS.filter(
+    (b) => ALWAYS_LISTED.has(b.key) || counts[b.key] > 0
+  );
 
   if (total === 0) {
     return (
@@ -71,14 +123,8 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
     );
   }
 
-  // A share of a partial read is not a share of the project, so a truncated
-  // read leads with the count it can vouch for instead of a percentage.
-  const headline = truncated
-    ? `${counts.done}+`
-    : `${Math.round((counts.done / total) * 100)}%`;
-  const caption = truncated
-    ? "pieces of work done. The project has more work than one read returns, so the real count is higher."
-    : `of the planned work is done: ${counts.done} of ${total} pieces of work.`;
+  const headline = `${Math.round((counts.done / total) * 100)}%`;
+  const caption = `of the planned work is done: ${counts.done} of ${total} pieces of work.`;
 
   return (
     <div data-ui-bridge-id="overview.summary.progress">
@@ -99,10 +145,9 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
         <div
           className="flex h-3 w-full overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={
-            (truncated ? "At least: " : "") +
-            listed.map((b) => `${b.label}: ${counts[b.key]}`).join(", ")
-          }
+          aria-label={listed
+            .map((b) => `${b.label}: ${counts[b.key]}`)
+            .join(", ")}
         >
           {PROGRESS_BUCKETS.map((b) =>
             counts[b.key] > 0 ? (
@@ -135,40 +180,16 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
         ))}
       </dl>
 
-      {(truncated || counts.unknown > 0) && (
+      {counts.unknown > 0 && (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          {truncated && "Each count above is a lower bound. "}
-          {counts.unknown > 0 &&
-            `${counts.unknown} piece${counts.unknown === 1 ? " of work has a status" : "s of work have a status"} this page doesn\u2019t recognise. ${counts.unknown === 1 ? "It counts" : "They count"} toward the total but not as done.`}
+          {`${counts.unknown} piece${counts.unknown === 1 ? " of work has a status" : "s of work have a status"} this page doesn\u2019t recognise. ${counts.unknown === 1 ? "It counts" : "They count"} toward the total but not as done.`}
         </p>
       )}
 
       <h3 className="mt-8 font-[family-name:var(--font-overview-serif)] text-lg text-foreground">
         Recently finished
       </h3>
-      {recentlyFinished.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">
-          Nothing has been finished yet.
-        </p>
-      ) : (
-        <ol
-          className="mt-3 space-y-3"
-          data-ui-bridge-id="overview.summary.recently-finished"
-        >
-          {recentlyFinished.map((item) => (
-            <li key={`${item.finishedAt}-${item.title}`}>
-              <p className="text-sm leading-snug text-foreground">
-                {item.title}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <time dateTime={item.finishedAt}>
-                  {formatDate(item.finishedAt)}
-                </time>
-              </p>
-            </li>
-          ))}
-        </ol>
-      )}
+      <RecentlyFinishedList recent={recentlyFinished} />
     </div>
   );
 }
