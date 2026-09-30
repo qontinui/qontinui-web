@@ -88,13 +88,43 @@ export function indexCredentialOverview(
   return map;
 }
 
-/** The Authenticate button is offered for every runner that is not `live`. */
-export function canAuthenticate(posture: CoordCredentialStatus): boolean {
-  return posture.kind !== "live";
+/**
+ * The Authenticate button is offered for every runner that is not `live`, and
+ * for every device carrying the device-scoped deny: a revoked runner can still
+ * read `live` for the rest of its current token's life (up to ~4h), and
+ * Authenticate is the only thing that lifts the deny.
+ */
+export function canAuthenticate(
+  posture: CoordCredentialStatus,
+  overview?: DeviceCredentialOverviewRow
+): boolean {
+  return posture.kind !== "live" || isCredentialRevoked(overview);
 }
 
-/** Revoke is offered only for a device holding an unrevoked machine key. */
+/** The device-scoped deny (`credential_revoked_at`) is set. */
+export function isCredentialRevoked(
+  overview: DeviceCredentialOverviewRow | undefined
+): boolean {
+  return (
+    overview?.credential_revoked_at !== null &&
+    overview?.credential_revoked_at !== undefined
+  );
+}
+
+/**
+ * Revoke is offered whenever the device-scoped deny is NOT set, whether or
+ * not a machine key is held: the deny is what stops the refresh chain, so a
+ * device with no key still has something to revoke. With no overview row the
+ * deny's state is unknown, so nothing is offered.
+ */
 export function canRevoke(
+  overview: DeviceCredentialOverviewRow | undefined
+): boolean {
+  return overview !== undefined && !isCredentialRevoked(overview);
+}
+
+/** A machine key is held and not revoked — the only case Revoke withdraws one. */
+export function holdsActiveMachineKey(
   overview: DeviceCredentialOverviewRow | undefined
 ): boolean {
   return (
