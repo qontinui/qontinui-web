@@ -4,9 +4,11 @@ The test database is built from the SQLAlchemy models, and the journey ledger
 has no model (its precedent ``co_occurrence_observations`` has none either), so
 it normally starts ABSENT here — which is exactly the absent-table path. The
 present-table tests create it inside the test's own transaction from the
-``journey_01`` revision's own DDL constant, so the table under test is the
-migration's table, not a hand-kept copy; the transaction rollback removes it
-again.
+``journey_01`` revision's own ``CREATE TABLE`` literal — read out of its
+``upgrade()`` with ``ast`` — so the table under test is the migration's table,
+not a hand-kept copy; the transaction rollback removes it again. The revision's
+two indexes are NOT built here: they are ``CREATE INDEX CONCURRENTLY``, which
+cannot run inside a transaction, and the retention job needs neither.
 
 Pointed at a database the alembic chain HAS reached, the table already exists:
 the absent-table tests then skip (their precondition cannot be arranged), and
@@ -19,7 +21,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from types import ModuleType
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
 
 from app.jobs import journey_edge_retention as retention
-from tests._alembic_harness import backend_root, load_revision_module
+from tests._alembic_harness import backend_root, upgrade_execute_calls
 
 _NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 _NODE = json.dumps(
@@ -54,28 +55,33 @@ _TRIGGER = json.dumps(
 )
 
 
-def _revision() -> ModuleType:
-    return load_revision_module(
-        backend_root() / "alembic" / "versions" / "journey_01_edge_ledger.py",
-        "journey_01_edge_ledger_under_test",
-    )
+def _create_ledger_sql() -> str:
+    """The revision's own ``CREATE TABLE … journey_edge_observations`` literal."""
+    revision = backend_root() / "alembic" / "versions" / "journey_01_edge_ledger.py"
+    matches = [
+        call.sql
+        for call in upgrade_execute_calls(revision)
+        if call.sql is not None
+        and "CREATE TABLE IF NOT EXISTS project.journey_edge_observations"
+        in " ".join(call.sql.split())
+    ]
+    assert len(matches) == 1, "journey_01 must create the ledger in ONE op.execute"
+    return matches[0]
 
 
 @pytest_asyncio.fixture
 async def ledger(async_db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
     """The test session with an EMPTY journey ledger.
 
-    Created from the revision's DDL when absent; an existing (migrated) table is
-    used as-is and emptied — both inside the test transaction, so the rollback
-    undoes either.
+    Created from the revision's ``CREATE TABLE`` when absent (without its
+    CONCURRENTLY indexes — see the module docstring); an existing (migrated)
+    table is used as-is and emptied — both inside the test transaction, so the
+    rollback undoes either.
     """
     if await retention.journey_edge_table_present(async_db_session):
         await async_db_session.execute(text(f"DELETE FROM {retention.TABLE}"))
     else:
-        revision = _revision()
-        await async_db_session.execute(text(revision.CREATE_EDGE_OBSERVATIONS_SQL))
-        for statement in revision.CREATE_EDGE_OBSERVATIONS_INDEXES_SQL:
-            await async_db_session.execute(text(statement))
+        await async_db_session.execute(text(_create_ledger_sql()))
     yield async_db_session
 
 

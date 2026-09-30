@@ -106,13 +106,44 @@ job on every pass, so both are observable in the backend log.
 ``project.journey_explorations`` is NOT created here — Phase 3 adds it with the
 explorer that writes it (no table without a writer).
 
-Plain ``CREATE`` (not ``IF NOT EXISTS``) on upgrade: these are new tables, and a
-pre-existing one of the same name is a state this revision must refuse rather
-than adopt with an unknown shape. The downgrade drops both tables (their
-indexes and constraints go with them).
+Shaped for coord's migration classifier
+=======================================
 
-The DDL lives in module constants so the retention job's tests build the table
-from THIS revision's own statement rather than a hand-maintained copy.
+The upgrade path is written so qontinui-coord's merge-train migration
+classifier (``crates/coord/src/pr_merge/migration_classifier.rs``) can prove it
+additive-safe:
+
+* every ``op.execute`` argument is ONE static string literal written inline at
+  the call — a module constant, f-string or concatenation is "dynamic" to the
+  classifier and holds the PR;
+* both tables are ``CREATE TABLE IF NOT EXISTS`` with a plain column list (the
+  table-level ``CONSTRAINT`` clauses sit inside that list, which the classifier
+  admits);
+* both indexes are ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside
+  ``with op.get_context().autocommit_block():`` — the classifier rejects a
+  non-concurrent ``CREATE INDEX`` even on a table created in the same
+  revision, because it cannot see that the table is new.
+
+``IF NOT EXISTS`` on the tables is a fleet decision that OVERRIDES this
+revision's earlier choice of a plain ``CREATE`` (which would have refused a
+pre-existing same-named table of unknown shape): the classifier requires the
+guard, and the cost is that such a table would be adopted silently. The
+migration test pins the exact shape after upgrade, which is where a foreign
+table would show up. Likewise a CONCURRENTLY build that failed part-way leaves
+an INVALID index that ``IF NOT EXISTS`` keeps on a re-run; over a table created
+empty moments earlier that needs a crash mid-build, and the test pins both
+indexes by definition.
+
+Order: both tables first (in alembic's transaction), then the index block, which
+commits that transaction and builds the indexes in autocommit. A failure in the
+block leaves the tables created and the revision unstamped; a re-run is
+idempotent through the guards.
+
+The downgrade drops both tables (their indexes and constraints go with them).
+
+The tests read the DDL out of THIS file — the literal arguments of the
+``op.execute`` calls in ``upgrade()``, parsed with ``ast`` — so neither test
+holds a copy that could drift.
 """
 
 from collections.abc import Sequence
@@ -128,88 +159,90 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-CREATE_EDGE_OBSERVATIONS_SQL = """
-CREATE TABLE project.journey_edge_observations (
-    id UUID NOT NULL DEFAULT gen_random_uuid(),
-    observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    app_id TEXT NOT NULL,
-    app_version TEXT,
-    runner_build_id TEXT NOT NULL,
-    runner_instance TEXT NOT NULL,
-    run_id TEXT,
-    run_kind TEXT NOT NULL,
-    from_node JSONB NOT NULL,
-    to_node JSONB,
-    trigger JSONB NOT NULL,
-    outcome TEXT NOT NULL,
-    timeline JSONB,
-    invalidated_at TIMESTAMPTZ,
-    invalidated_reason TEXT,
-    invalidated_by TEXT,
-    invalidation_token TEXT,
-    CONSTRAINT journey_edge_observations_pkey PRIMARY KEY (id),
-    CONSTRAINT ck_journey_edge_observations_run_kind
-        CHECK (run_kind IN ('agent_action', 'explorer', 'passive_session')),
-    CONSTRAINT ck_journey_edge_observations_outcome
-        CHECK (outcome IN (
-            'changed', 'no_change', 'error', 'settle_timeout', 'to_node_unobserved'
-        )),
-    CONSTRAINT ck_journey_edge_observations_to_node_iff_observed
-        CHECK ((to_node IS NULL) = (outcome = 'to_node_unobserved')),
-    CONSTRAINT ck_journey_edge_observations_from_node_object
-        CHECK (jsonb_typeof(from_node) = 'object'),
-    CONSTRAINT ck_journey_edge_observations_to_node_object
-        CHECK (to_node IS NULL OR jsonb_typeof(to_node) = 'object'),
-    CONSTRAINT ck_journey_edge_observations_trigger_object
-        CHECK (jsonb_typeof(trigger) = 'object')
-)
-"""
-
-CREATE_EDGE_OBSERVATIONS_INDEXES_SQL = (
-    """
-    CREATE INDEX ix_journey_edge_observations_app_observed_at
-        ON project.journey_edge_observations (app_id, observed_at DESC)
-        WHERE invalidated_at IS NULL
-    """,
-    """
-    CREATE INDEX ix_journey_edge_observations_app_run
-        ON project.journey_edge_observations (app_id, run_id)
-    """,
-)
-
-CREATE_FRONTIER_SQL = """
-CREATE TABLE project.journey_frontier (
-    app_id TEXT NOT NULL,
-    node_key TEXT NOT NULL,
-    node JSONB NOT NULL,
-    affordance_fingerprint TEXT NOT NULL,
-    affordance_role TEXT,
-    declared_effect TEXT,
-    reason TEXT NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_run_id TEXT,
-    CONSTRAINT journey_frontier_pkey
-        PRIMARY KEY (app_id, node_key, affordance_fingerprint),
-    CONSTRAINT ck_journey_frontier_declared_effect
-        CHECK (declared_effect IN ('read', 'write', 'destructive')),
-    CONSTRAINT ck_journey_frontier_reason
-        CHECK (reason IN (
-            'not_yet_activated', 'effect_undeclared', 'effect_write',
-            'effect_destructive', 'budget_exhausted', 'activation_failed'
-        )),
-    CONSTRAINT ck_journey_frontier_node_object
-        CHECK (jsonb_typeof(node) = 'object')
-)
-"""
-
-
 def upgrade() -> None:
-    """Create the edge ledger, its two indexes, and the frontier."""
-    op.execute(CREATE_EDGE_OBSERVATIONS_SQL)
-    for statement in CREATE_EDGE_OBSERVATIONS_INDEXES_SQL:
-        op.execute(statement)
-    op.execute(CREATE_FRONTIER_SQL)
+    """Create the edge ledger and the frontier, then the ledger's two indexes."""
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project.journey_edge_observations (
+            id UUID NOT NULL DEFAULT gen_random_uuid(),
+            observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            app_id TEXT NOT NULL,
+            app_version TEXT,
+            runner_build_id TEXT NOT NULL,
+            runner_instance TEXT NOT NULL,
+            run_id TEXT,
+            run_kind TEXT NOT NULL,
+            from_node JSONB NOT NULL,
+            to_node JSONB,
+            trigger JSONB NOT NULL,
+            outcome TEXT NOT NULL,
+            timeline JSONB,
+            invalidated_at TIMESTAMPTZ,
+            invalidated_reason TEXT,
+            invalidated_by TEXT,
+            invalidation_token TEXT,
+            CONSTRAINT journey_edge_observations_pkey PRIMARY KEY (id),
+            CONSTRAINT ck_journey_edge_observations_run_kind
+                CHECK (run_kind IN ('agent_action', 'explorer', 'passive_session')),
+            CONSTRAINT ck_journey_edge_observations_outcome
+                CHECK (outcome IN (
+                    'changed', 'no_change', 'error', 'settle_timeout',
+                    'to_node_unobserved'
+                )),
+            CONSTRAINT ck_journey_edge_observations_to_node_iff_observed
+                CHECK ((to_node IS NULL) = (outcome = 'to_node_unobserved')),
+            CONSTRAINT ck_journey_edge_observations_from_node_object
+                CHECK (jsonb_typeof(from_node) = 'object'),
+            CONSTRAINT ck_journey_edge_observations_to_node_object
+                CHECK (to_node IS NULL OR jsonb_typeof(to_node) = 'object'),
+            CONSTRAINT ck_journey_edge_observations_trigger_object
+                CHECK (jsonb_typeof(trigger) = 'object')
+        )
+        """
+    )
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project.journey_frontier (
+            app_id TEXT NOT NULL,
+            node_key TEXT NOT NULL,
+            node JSONB NOT NULL,
+            affordance_fingerprint TEXT NOT NULL,
+            affordance_role TEXT,
+            declared_effect TEXT,
+            reason TEXT NOT NULL,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_seen_run_id TEXT,
+            CONSTRAINT journey_frontier_pkey
+                PRIMARY KEY (app_id, node_key, affordance_fingerprint),
+            CONSTRAINT ck_journey_frontier_declared_effect
+                CHECK (declared_effect IN ('read', 'write', 'destructive')),
+            CONSTRAINT ck_journey_frontier_reason
+                CHECK (reason IN (
+                    'not_yet_activated', 'effect_undeclared', 'effect_write',
+                    'effect_destructive', 'budget_exhausted', 'activation_failed'
+                )),
+            CONSTRAINT ck_journey_frontier_node_object
+                CHECK (jsonb_typeof(node) = 'object')
+        )
+        """
+    )
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                ix_journey_edge_observations_app_observed_at
+                ON project.journey_edge_observations (app_id, observed_at DESC)
+                WHERE invalidated_at IS NULL
+            """
+        )
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                ix_journey_edge_observations_app_run
+                ON project.journey_edge_observations (app_id, run_id)
+            """
+        )
 
 
 def downgrade() -> None:

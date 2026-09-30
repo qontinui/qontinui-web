@@ -19,6 +19,16 @@ path, where it surfaces only as ``LedgerState::write_failing``:
 5. **Defaults** — ``id`` and ``observed_at`` are server-stamped, so the
    producer's INSERT may omit them.
 6. **No ``journey_explorations``** — Phase 3 owns it.
+7. **The shape coord's migration classifier admits** (a static test, no
+   database): every ``op.execute`` in ``upgrade()`` takes one inline static
+   literal, every ``CREATE TABLE`` is ``IF NOT EXISTS``, every ``CREATE INDEX``
+   is ``CONCURRENTLY IF NOT EXISTS`` inside ``autocommit_block()``. This mirrors
+   the classifier's rules; it does not replace it.
+
+How the revision is applied: by ALEMBIC itself (``run_alembic``), never by
+replaying its statements — so the ``autocommit_block`` commits alembic's
+transaction and the CONCURRENTLY builds run in autocommit exactly as they do in
+production. The indexes asserted below are the ones that path built.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -43,6 +53,7 @@ from tests._alembic_harness import (
     index_exists,
     run_alembic,
     table_exists,
+    upgrade_execute_calls,
 )
 
 _REVISION_ID = "journey_01_edge_ledger"
@@ -273,6 +284,34 @@ def _insert_frontier(
     # Both server-stamped, and in order.
     assert first_seen_at is not None and last_seen_at is not None
     assert first_seen_at <= last_seen_at
+
+
+def test_journey_01_upgrade_is_shaped_for_the_migration_classifier() -> None:
+    """Static: the call shapes qontinui-coord's migration_classifier admits."""
+    calls = upgrade_execute_calls(
+        backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+    )
+    assert calls, "upgrade() runs no op.execute"
+    dynamic = [i for i, call in enumerate(calls) if call.sql is None]
+    assert not dynamic, (
+        f"op.execute call(s) {dynamic} in upgrade() do not take ONE inline static "
+        "string literal — coord's classifier holds that as dynamic SQL"
+    )
+    statements = [(" ".join(c.sql.split()).upper(), c) for c in calls if c.sql]
+    tables = [s for s, _ in statements if s.startswith("CREATE TABLE")]
+    indexes = [(s, c) for s, c in statements if s.startswith("CREATE INDEX")]
+    assert len(tables) == 2 and len(indexes) == 2, statements
+    for statement in tables:
+        assert statement.startswith("CREATE TABLE IF NOT EXISTS PROJECT."), statement
+    for statement, call in indexes:
+        assert statement.startswith("CREATE INDEX CONCURRENTLY IF NOT EXISTS "), (
+            statement
+        )
+        assert call.in_autocommit_block, (
+            f"{statement[:60]}… must sit inside op.get_context().autocommit_block()"
+        )
+    # Every statement is a CREATE; no DML or DROP on the upgrade path.
+    assert all(s.startswith("CREATE ") for s, _ in statements), statements
 
 
 @pytest.mark.skipif(
