@@ -279,11 +279,21 @@ describe("ScheduledTasksPanel", () => {
           catchUpRun: true,
         } as TaskExecutionRecord,
         {
+          executionId: "catch-up",
+          scheduledFor: "2026-09-25T09:00:00Z",
+          startedAt: "2026-09-28T13:30:00Z",
+          status: "running",
+          success: false,
+          triggeredAutoFix: false,
+          catchUpRun: true,
+        } as TaskExecutionRecord,
+        {
           executionId: "on-time",
           scheduledFor: "2026-09-28T09:00:00Z",
           startedAt: "2026-09-28T09:00:30Z",
-          endedAt: null,
-          status: "running",
+          // Before its start (clock skew): no duration rather than a negative one.
+          endedAt: "2026-09-28T09:00:00Z",
+          status: "failed",
           success: false,
           triggeredAutoFix: false,
           catchUpRun: false,
@@ -298,9 +308,11 @@ describe("ScheduledTasksPanel", () => {
     expect(
       screen.getByText("took 3m 5s · started 12m 0s late · catch-up run")
     ).toBeTruthy();
-    // Unfinished and within a minute of its slot: nothing beyond the status.
+    expect(screen.getByText("started 3d 4h late · catch-up run")).toBeTruthy();
+    // Within a minute of its slot, and ending before it started: nothing
+    // beyond the status.
     const rows = screen.getByTestId("schedule-history").querySelectorAll("li");
-    expect(rows[1].querySelectorAll("p")).toHaveLength(0);
+    expect(rows[2].querySelectorAll("p")).toHaveLength(0);
   });
 
   it("an unanswered history read is a failure, not 'has not run yet'", () => {

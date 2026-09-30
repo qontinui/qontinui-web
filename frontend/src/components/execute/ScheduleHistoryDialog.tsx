@@ -27,7 +27,7 @@ function formatTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
-/** "45s", "3m 5s", "2h 10m"; null when either end is missing or unparseable. */
+/** "45s", "3m 5s", "2h 10m", "3d 4h"; null when either end is missing or unparseable. */
 function formatSpan(fromIso: string, toIso: string): string | null {
   const ms = new Date(toIso).getTime() - new Date(fromIso).getTime();
   if (Number.isNaN(ms) || ms < 0) return null;
@@ -35,7 +35,9 @@ function formatSpan(fromIso: string, toIso: string): string | null {
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${mins}m ${secs % 60}s`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 /** A launch within this long of its slot is on time, not late. */
