@@ -28,6 +28,7 @@ test Postgres, skipped when none is reachable.
 
 from __future__ import annotations
 
+import ast
 import re
 import uuid
 from datetime import UTC, datetime
@@ -326,6 +327,62 @@ def _assert_shape(engine: Engine) -> None:
     assert _indexdefs(engine) == {
         name: (True, indexdef) for name, indexdef in _EXPECTED_INDEXDEFS.items()
     }, "every index must exist, be VALID, and match its exact definition"
+
+
+_LOCK_BOTH = (
+    "LOCK TABLE coord.devices, coord.device_resource_samples IN ACCESS EXCLUSIVE MODE"
+)
+
+# The first statement in each direction that touches an existing table.
+_EXISTING_TABLE_TOUCH = re.compile(
+    r"ALTER TABLE coord\.(devices|device_resource_samples)\b"
+    r"|DROP INDEX IF EXISTS coord\.ix_device"
+)
+
+
+def _function_sql(name: str) -> str:
+    """Every string literal in the named function body, concatenated in order."""
+    source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    func = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    # ast.walk is breadth-first, so order the literals by source position.
+    positioned = sorted(
+        (node.lineno, node.col_offset, node.value)
+        for node in ast.walk(func)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+    assert positioned, f"{name} has no SQL literals"
+    return "\n".join(" ".join(value.split()) for _, _, value in positioned)
+
+
+@pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
+def test_coord_computers_01_locks_devices_then_samples_before_any_alter(
+    direction: str,
+) -> None:
+    """Both tables are locked up front, in the coord reader join order.
+
+    coord placement and dispatch reads join coord.devices to
+    coord.device_resource_samples (devices first). A migration that locked
+    samples first would deadlock against them, so each direction must take both
+    locks in ONE statement, devices first, before touching either table.
+    """
+    sql = _function_sql(direction)
+    lock_at = sql.find(_LOCK_BOTH)
+    assert lock_at >= 0, f"{direction} must run: {_LOCK_BOTH}"
+    first_touch = _EXISTING_TABLE_TOUCH.search(sql)
+    assert first_touch is not None, f"{direction} touches no existing table?"
+    assert lock_at < first_touch.start(), (
+        f"{direction} touches {first_touch.group(0)!r} before taking both locks"
+    )
+    assert sql.find("SET LOCAL lock_timeout = '3s'") < lock_at, (
+        f"{direction} must bound the lock wait before LOCK TABLE"
+    )
 
 
 @pytest.mark.skipif(
