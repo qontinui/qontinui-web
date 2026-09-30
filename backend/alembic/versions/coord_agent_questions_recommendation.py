@@ -21,9 +21,9 @@ through to a recommendation (with what changes if he overturns it), or an open
 question that hands the unfinished work back to him. It is not computable
 today. Measured against ``crates/coord/src/agent_questions.rs`` on
 qontinui-coord ``origin/main`` ``d88329b47``: ``recommend`` appears nowhere in
-the file. ``AskQuestionRequest`` carries ``question``, ``options``,
-``context`` and ``plan_phase`` and nothing else, so the recommendation an
-agent has — when it has one — is either folded into free text or dropped, and
+the file. ``AskQuestionRequest`` carries no recommendation field, so the
+recommendation an agent has — when it has one — is either folded into free
+text (``question`` / ``context``) or dropped, and
 no reader can tell the two shapes apart.
 
 The plan's coord read door (``coord_project_state``, its ``needs_me`` block)
