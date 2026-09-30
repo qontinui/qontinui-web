@@ -61,9 +61,15 @@ export interface VerificationMetricsState {
 
 export function useVerificationMetrics(
   tenantId: string | null,
-  /** Hold every read while the project selection is not settled. */
+  /** Hold every read while the project selection is still loading. */
   hold: boolean,
-  windowParam: string = DEFAULT_METRICS_WINDOW
+  windowParam: string = DEFAULT_METRICS_WINDOW,
+  /**
+   * The project list failed to load. Nothing can be read for a project that
+   * cannot be named, so both reads become "could not look" with this reason
+   * rather than a skeleton that never resolves.
+   */
+  tenantError: string | null = null
 ): VerificationMetricsState {
   const [read, setRead] = useState<MetricsRead>({ status: "loading" });
   const [refuted, setRefuted] = useState<RefutedRead>({ status: "loading" });
@@ -104,7 +110,8 @@ export function useVerificationMetrics(
       .get<{
         findings?: RefutedFinding[] | null;
         unavailable?: string | null;
-        truncated?: boolean | null;
+        count?: number | null;
+        limit?: number | null;
       }>(`${FINDINGS_API}?${qs.toString()}`)
       .then((body) => {
         if (gen !== generation.current) return;
@@ -119,7 +126,13 @@ export function useVerificationMetrics(
         setRefuted({
           status: "ok",
           findings: body.findings,
-          truncated: body.truncated === true,
+          // The proxy's envelope carries `count` and coord's clamped `limit`,
+          // not a truncation flag: a full page means rows past it may exist.
+          truncated:
+            body.findings.length >=
+            (typeof body.limit === "number" && body.limit > 0
+              ? body.limit
+              : REFUTED_FINDINGS_LIMIT),
         });
       })
       .catch((err: unknown) => {
@@ -131,9 +144,17 @@ export function useVerificationMetrics(
   }, [tenantId, windowParam]);
 
   useEffect(() => {
+    if (tenantError !== null) {
+      ++generation.current;
+      const reason = `the list of projects couldn’t be loaded, so there is no project to read for (${tenantError})`;
+      setLastGood(null);
+      setRead({ status: "error", reason });
+      setRefuted({ status: "error", reason });
+      return;
+    }
     if (hold) return;
     void reload();
-  }, [hold, reload]);
+  }, [hold, reload, tenantError]);
 
   return { read, refuted, lastGood, reload };
 }
