@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/table";
 
 import type { VgaRunListItem } from "@/app/api/vga/runs/route";
+import { throwIfNotOk } from "@/app/(app)/vga/_components/api-client";
 
 const PAGE_SIZE = 50;
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
@@ -87,18 +88,7 @@ async function fetchRuns(params: URLSearchParams): Promise<RunsListResponse> {
   const resp = await fetch(`/api/vga/runs?${params.toString()}`, {
     cache: "no-store",
   });
-  if (!resp.ok) {
-    let detail = "";
-    try {
-      const body = (await resp.json()) as { error?: string; detail?: string };
-      detail = body.error ?? body.detail ?? "";
-    } catch {
-      detail = await resp.text().catch(() => "");
-    }
-    throw new Error(
-      `${resp.status} ${resp.statusText}${detail ? `: ${detail}` : ""}`
-    );
-  }
+  await throwIfNotOk(resp);
   return (await resp.json()) as RunsListResponse;
 }
 

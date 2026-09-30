@@ -26,7 +26,12 @@ import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 
 let pool: Pool | null = null;
 
-function resolveDsn(): string {
+/**
+ * The runner-DB DSN, or an EndpointUnresolvedError when it is unset outside
+ * development. Exported so a best-effort writer can check it BEFORE doing
+ * side-effecting work it would otherwise throw away.
+ */
+export function resolveRunnerDbDsn(): string {
   const url = resolveEndpoint(
     "runner_db",
     process.env.RUNNER_DATABASE_URL || process.env.DATABASE_URL
@@ -38,7 +43,7 @@ function resolveDsn(): string {
 function getPool(): Pool {
   if (pool === null) {
     const config: PoolConfig = {
-      connectionString: resolveDsn(),
+      connectionString: resolveRunnerDbDsn(),
       max: Number.parseInt(process.env.RUNNER_DB_POOL_SIZE ?? "5", 10),
       idleTimeoutMillis: 30_000,
     };

@@ -25,7 +25,10 @@ import {
  * a consumed body throws) and every candidate passes the guarded reader's
  * `plainSentence`, so an HTML gateway page never reaches the UI.
  */
-async function throwIfNotOk(resp: Response, what?: string): Promise<void> {
+export async function throwIfNotOk(
+  resp: Response,
+  what?: string
+): Promise<void> {
   if (resp.ok) return;
   const text = await resp.text().catch(() => "");
   let candidate = text;
