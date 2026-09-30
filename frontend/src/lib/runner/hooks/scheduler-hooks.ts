@@ -9,7 +9,6 @@ import {
 } from "@/contexts/active-runner-context";
 import type {
   ScheduledTask,
-  SchedulerSettings,
   SchedulerStatus,
   TaskExecutionRecord,
   CreateScheduledTaskRequest,
@@ -23,23 +22,6 @@ import type {
 /** Fetch all scheduled tasks */
 export function useScheduledTasks() {
   return useRunnerQuery<ScheduledTask[]>(useRunnerTarget(), "/scheduler/tasks");
-}
-
-/** Fetch a single scheduled task by ID */
-export function useScheduledTask(id: string | null) {
-  return useRunnerQuery<ScheduledTask>(
-    useRunnerTarget(),
-    id != null ? `/scheduler/tasks/${id}` : null,
-    { enabled: id != null }
-  );
-}
-
-/** Fetch scheduler settings */
-export function useSchedulerSettings() {
-  return useRunnerQuery<SchedulerSettings>(
-    useRunnerTarget(),
-    "/scheduler/settings"
-  );
 }
 
 /** Fetch scheduler status with polling */

@@ -264,6 +264,45 @@ describe("ScheduledTasksPanel", () => {
     expect(screen.queryByTestId("schedule-history")).toBeNull();
   });
 
+  it("a run shows how long it took, how late it started, and a catch-up launch", () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    state.history = {
+      data: [
+        {
+          executionId: "late",
+          scheduledFor: "2026-09-29T09:00:00Z",
+          startedAt: "2026-09-29T09:12:00Z",
+          endedAt: "2026-09-29T09:15:05Z",
+          status: "completed",
+          success: true,
+          triggeredAutoFix: false,
+          catchUpRun: true,
+        } as TaskExecutionRecord,
+        {
+          executionId: "on-time",
+          scheduledFor: "2026-09-28T09:00:00Z",
+          startedAt: "2026-09-28T09:00:30Z",
+          endedAt: null,
+          status: "running",
+          success: false,
+          triggeredAutoFix: false,
+          catchUpRun: false,
+        } as TaskExecutionRecord,
+      ],
+      isLoading: false,
+      error: null,
+    };
+    render(<ScheduledTasksPanel />);
+    fireEvent.click(screen.getByTitle("Run history"));
+
+    expect(
+      screen.getByText("took 3m 5s · started 12m 0s late · catch-up run")
+    ).toBeTruthy();
+    // Unfinished and within a minute of its slot: nothing beyond the status.
+    const rows = screen.getByTestId("schedule-history").querySelectorAll("li");
+    expect(rows[1].querySelectorAll("p")).toHaveLength(0);
+  });
+
   it("an unanswered history read is a failure, not 'has not run yet'", () => {
     state.query = { data: [TASK], isLoading: false, error: null };
     state.history = { data: null, isLoading: false, error: "runner offline" };
