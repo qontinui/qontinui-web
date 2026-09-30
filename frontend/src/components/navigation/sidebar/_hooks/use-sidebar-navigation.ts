@@ -6,6 +6,8 @@ import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems, OVERVIEW_GROUP } from "../nav-items";
 import { cloudNavItems } from "@cloud/nav-items";
 import { useAuth } from "@/contexts/auth-context";
+import { navEntryVisibleTo } from "@/components/admin/coord/coordNavModel";
+import { isCoordAdminUser } from "@/lib/coord-admin";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 
@@ -99,8 +101,13 @@ export function useSidebarNavigation() {
             item.productMode !== productMode
           )
             return false;
-          if (authLoading || !user) return !item.adminOnly;
-          return !item.adminOnly || user.is_superuser === true;
+          if (authLoading || !user) {
+            return !item.adminOnly && !item.coordAdminOnly;
+          }
+          return navEntryVisibleTo(item, {
+            isSuperuser: user.is_superuser === true,
+            isCoordAdmin: isCoordAdminUser(user),
+          });
         })
         .map((item) => ({
           ...item,
