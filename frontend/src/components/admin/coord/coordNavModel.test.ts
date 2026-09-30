@@ -21,8 +21,11 @@ import {
   DIRECT_TABS,
   GROUPS,
   findActiveLeaf,
+  navEntryVisibleTo,
   type NavGroup,
+  type NavViewer,
 } from "./coordNavModel";
+import { isCoordAdminUser } from "@/lib/coord-admin";
 
 function group(id: string): NavGroup {
   const found = GROUPS.find((g) => g.id === id);
@@ -31,10 +34,17 @@ function group(id: string): NavGroup {
 }
 
 const labels = (id: string) => group(id).items.map((i) => i.label);
-const memberLabels = (id: string) =>
+const MEMBER: NavViewer = { isSuperuser: false, isCoordAdmin: false };
+const COORD_ADMIN: NavViewer = { isSuperuser: false, isCoordAdmin: true };
+// `isCoordAdminUser` counts a superuser as a coord admin, so a real
+// superuser viewer carries both.
+const SUPERUSER: NavViewer = { isSuperuser: true, isCoordAdmin: true };
+
+const visibleLabels = (id: string, viewer: NavViewer) =>
   group(id)
-    .items.filter((i) => !i.operatorOnly)
+    .items.filter((i) => navEntryVisibleTo(i, viewer))
     .map((i) => i.label);
+const memberLabels = (id: string) => visibleLabels(id, MEMBER);
 
 describe("coordNavModel", () => {
   it("keeps the four daily destinations as direct tabs", () => {
@@ -114,6 +124,40 @@ describe("coordNavModel", () => {
       "Onboarding",
       "Onboarding Status",
     ]);
+  });
+
+  it("gates Computers on coord tenant admin — the same gate as its proxies", () => {
+    const computers = group("devops").items.find(
+      (i) => i.label === "Computers"
+    );
+    expect(computers?.coordAdminOnly).toBe(true);
+    expect(computers?.operatorOnly).toBeUndefined();
+    // Plain member: exactly Overview (resolved Q3 holds).
+    expect(visibleLabels("devops", MEMBER)).toEqual(["Overview"]);
+    // A coord admin who is NOT staff sees Computers and nothing operator-only.
+    expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
+      "Overview",
+      "Computers",
+    ]);
+    // A superuser sees every Dev Ops member.
+    expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
+  });
+
+  it("derives the viewer from the same predicate as useAuth().isCoordAdmin", () => {
+    expect(
+      isCoordAdminUser({ coord_is_admin: true, is_superuser: false })
+    ).toBe(true);
+    expect(
+      isCoordAdminUser({ coord_is_admin: false, is_superuser: true })
+    ).toBe(true);
+    expect(
+      isCoordAdminUser({ coord_is_admin: null, is_superuser: false })
+    ).toBe(false);
+    expect(isCoordAdminUser(null)).toBe(false);
+    // No viewer (auth loading) sees neither restricted class.
+    expect(navEntryVisibleTo({ coordAdminOnly: true }, null)).toBe(false);
+    expect(navEntryVisibleTo({ operatorOnly: true }, null)).toBe(false);
+    expect(navEntryVisibleTo({}, null)).toBe(true);
   });
 
   it("keeps Access to the console's own pages", () => {

@@ -8,7 +8,8 @@
  *    "AI-Dev Coordination" entry, and the shared Runners/Sessions items that
  *    web-local ones replace — so no route is listed twice
  *  - Organizations and Billing (cloud items) belong to the visual menu
- *  - operator-only console pages stay hidden from a plain member
+ *  - operator-only console pages stay hidden from a plain member, and
+ *    coord-admin-only ones (Computers) show for a coord tenant admin too
  *  - console pages keep their section highlighted on detail routes
  */
 
@@ -24,9 +25,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 let isSuperuser = false;
+let coordIsAdmin = false;
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({
-    user: { id: "u1", is_superuser: isSuperuser },
+    user: { id: "u1", is_superuser: isSuperuser, coord_is_admin: coordIsAdmin },
     loading: false,
   }),
 }));
@@ -76,6 +78,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
   beforeEach(() => {
     pathname = "/admin/coord/pipeline";
     isSuperuser = false;
+    coordIsAdmin = false;
     showAdvanced = false;
   });
 
@@ -189,7 +192,19 @@ describe("useSidebarNavigation — AI Dev menu", () => {
 
     isSuperuser = true;
     expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
-    expect(devops()?.children).toHaveLength(13);
+    expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
+    expect(devops()?.children).toHaveLength(14);
+  });
+
+  it("shows Computers to a coord tenant admin who is not staff, and nothing operator-only", () => {
+    coordIsAdmin = true;
+    const devops = menu().visibleNavItems.find(
+      (i) => i.id === "coord-group-devops"
+    );
+    expect(devops?.children?.map((c) => c.label)).toEqual([
+      "Overview",
+      "Computers",
+    ]);
   });
 
   it("keeps a console section active on its detail routes", () => {
