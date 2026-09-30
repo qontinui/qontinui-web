@@ -192,6 +192,15 @@ export function parseVerificationMetrics(raw: unknown): VerificationMetrics {
       "coord answered without `generated_at` or `lane`, so the answer cannot be dated"
     );
   }
+  if (
+    !isObject(raw.window) ||
+    typeof raw.window.days !== "number" ||
+    typeof raw.window.from !== "string"
+  ) {
+    throw new Error(
+      "coord answered without a readable `window` (days, from), so the numbers cannot be placed in time"
+    );
+  }
   if (raw.degraded) {
     return raw as unknown as DegradedMetrics;
   }
@@ -258,12 +267,34 @@ export function pct(v: number): string {
   return `${Math.round(v * 100)}%`;
 }
 
+/**
+ * A calibration rate, rounded without lying at the ends: `100%` only when
+ * nothing was refuted and `0%` only when nothing survived. 0.996 with a
+ * refutation reads `≥99%`; 0.004 with a survivor reads `≤1%`.
+ */
+export function ratePct(
+  v: number,
+  c: Pick<TrustCalibration, "survived" | "refuted">
+): string {
+  const r = Math.round(v * 100);
+  if (r >= 100 && c.refuted > 0) return "≥99%";
+  if (r <= 0 && c.survived > 0) return "≤1%";
+  return `${r}%`;
+}
+
 /** `(84–95)` — the Wilson+fpc 95 % interval, in whole percent. */
 export function interval(
-  c: Pick<TrustCalibration, "ci95_low" | "ci95_high">
+  c: Pick<TrustCalibration, "ci95_low" | "ci95_high" | "survived" | "refuted">
 ): string | null {
   if (c.ci95_low == null || c.ci95_high == null) return null;
-  return `(${Math.round(c.ci95_low * 100)}–${Math.round(c.ci95_high * 100)})`;
+  // Same end-guard as `ratePct`: a bound rounds to 100 only with nothing
+  // refuted, and to 0 only with nothing survived.
+  let lo = Math.round(c.ci95_low * 100);
+  let hi = Math.round(c.ci95_high * 100);
+  if (c.refuted > 0) hi = Math.min(hi, 99);
+  if (c.survived > 0) lo = Math.max(lo, 1);
+  lo = Math.min(lo, hi);
+  return `(${lo}–${hi})`;
 }
 
 /** `4000` basis points → `40%`. */
@@ -476,8 +507,8 @@ export function deriveTrustView(
   const iv = interval(tc);
   return {
     state: "populated",
-    throughputLine: `${landed} · ${pct(tc.value)} held up${iv ? ` ${iv}` : ""}, n=${tc.n}`,
-    calibrationLine: `${pct(tc.value)}${iv ? ` ${iv}` : ""} of ${plural(tc.n, "independently checked unit")} held up (${tc.survived} held, ${tc.refuted} refuted)`,
+    throughputLine: `${landed} · ${ratePct(tc.value, tc)} held up${iv ? ` ${iv}` : ""}, n=${tc.n}`,
+    calibrationLine: `${ratePct(tc.value, tc)}${iv ? ` ${iv}` : ""} of ${plural(tc.n, "independently checked unit")} held up (${tc.survived} held, ${tc.refuted} refuted)`,
     ...common,
   };
 }
@@ -529,7 +560,7 @@ export function refutedUnitsInWindow(
 ): RefutedUnit[] {
   const from = Date.parse(windowFrom);
   return findings
-    .filter((f) => f.topic == null || f.topic === REFUTED_FINDING_TOPIC)
+    .filter((f) => f.topic === REFUTED_FINDING_TOPIC)
     .filter((f) => {
       if (!Number.isFinite(from)) return true;
       const t = Date.parse(f.created_at ?? "");
