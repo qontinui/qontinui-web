@@ -9,6 +9,9 @@ Four verification dials on ``coord.tenant_merge_settings``. What is asserted:
    this revision must arm no demotion anywhere.
 3. **The CHECKs refuse out-of-range rates (0, 10001) and an unknown mode.**
 4. **Up -> down -> up leaves no residue and keeps the settings row.**
+5. **Re-executing ``upgrade()`` over an applied schema** (stamp back to the
+   parent, upgrade again) errors on nothing, keeps every dial value already
+   set, and leaves the three CHECKs in force.
 
 Substrate is ``_alembic_harness`` (see ``test_wuverif_01_...``); a skip proves
 nothing — set ``QONTINUI_TEST_PG=host:port``.
@@ -194,6 +197,44 @@ def test_up_down_up_leaves_no_residue_and_keeps_the_settings_row() -> None:
             == "shadow"
         )
 
-        # Idempotency: a second upgrade is a no-op.
+
+@_needs_pg
+def test_re_executing_upgrade_over_an_applied_schema_is_a_no_op() -> None:
+    with ephemeral_database(admin_database_url(), "wuverif02_rerun") as (
+        engine,
+        db_url,
+    ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        tenant_id = _seed_tenant_settings(engine)
+        _set(engine, tenant_id, "verification_sample_rate_bp", 250)
+        _set(engine, tenant_id, "calibration_floor_bp", 9000)
+        _set(engine, tenant_id, "verification_salt", b"\x07salt")
+        _set(engine, tenant_id, "verification_demotion_mode", "live")
+        select_state = (
+            f"SELECT verification_sample_rate_bp::text || ',' || "
+            f"calibration_floor_bp::text || ',' || "
+            f"encode(verification_salt, 'hex') || ',' || "
+            f"verification_demotion_mode FROM coord.{_TABLE} WHERE tenant_id = :t"
+        )
+        before = scalar(engine, select_state, t=str(tenant_id))
+
+        # Stamp back WITHOUT running downgrade(), so the next upgrade genuinely
+        # re-executes this revision's upgrade() body over the live columns.
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
+        assert (
+            scalar(engine, "SELECT version_num FROM alembic_version")
+            == _PARENT_REVISION_ID
+        )
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        assert scalar(engine, "SELECT version_num FROM alembic_version") == _REVISION_ID
+
         _assert_present(engine)
+        assert scalar(engine, select_state, t=str(tenant_id)) == before, (
+            "re-running upgrade() must not reset a dial already set"
+        )
+        for column, constraint in (
+            ("verification_sample_rate_bp", _CK_RATE),
+            ("calibration_floor_bp", _CK_FLOOR),
+        ):
+            _refused_by(engine, tenant_id, column, 0, constraint)
+        _refused_by(engine, tenant_id, "verification_demotion_mode", "armed", _CK_MODE)

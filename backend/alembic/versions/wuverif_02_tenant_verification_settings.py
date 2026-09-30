@@ -22,8 +22,9 @@ columns to ``coord.tenant_merge_settings``:
 DDL ONLY. Raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` and
 drop-then-add named CHECKs, so a re-run is a no-op (same posture as
 ``vetev_01``'s ``coord.work_units`` columns). CHECK names follow the table's
-existing ``tenant_merge_settings_<column>_check`` convention
-(``tenant_merge_settings_rollout_state_check``).
+historical ``tenant_merge_settings_<column>_check`` convention
+(``tenant_merge_settings_rollout_state_check``, since dropped by
+``merge_enabled_02_drop_rollout_state``).
 
 Hand-written — never ``--autogenerate`` (served policy ``production-and-cost``
 ``alembic-sole-authorship``). Deploy order: applied to prod BEFORE the coord
