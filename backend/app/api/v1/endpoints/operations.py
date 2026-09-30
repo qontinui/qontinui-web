@@ -244,7 +244,21 @@ def capture_caller_bearer(request: Request) -> None:
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
-    """Dependency: resolve the current user's home tenant_id (UUID).
+    """Dependency: resolve the caller's EFFECTIVE coord tenant_id (UUID).
+
+    The effective tenant is the Project-selector choice when the request
+    carries ``X-Qontinui-Active-Tenant`` naming a tenant the operator is a
+    member of, and the operator's home tenant otherwise (no header, a
+    malformed one, or a non-member selection — coord never widens access and
+    never 403s the override). It is NOT always "home": ``get_coord_identity``
+    forwards the header to coord's ``GET /admin/coord/me``, whose
+    ``home_tenant_id`` field is ``ctx.tenant_id`` of the POST-override
+    ``OperatorContext`` (qontinui-coord ``routes_phase3.rs::get_me``, after
+    ``auth::apply_active_tenant_override``). Reading this value as "home" is
+    how whole families went unscoped: the frontend attaches the header only to
+    ``ACTIVE_TENANT_URL_PREFIXES`` (``frontend/src/services/http-client.ts``),
+    so a new route depending on this must be covered there —
+    ``tests/test_active_tenant_prefix_drift_guard.py`` fails until it is.
 
     Identity is sourced from coord's ``GET /admin/coord/me`` over the HTTP
     boundary (no cross-schema read). Coord 403s an operator that isn't a
@@ -277,11 +291,12 @@ async def require_coord_tenant_admin(
     request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
-    """Resolve the user's coord home tenant AND require admin on it.
+    """Resolve the caller's EFFECTIVE coord tenant AND require admin on it.
 
-    Returns the home tenant_id. Raises 403 ``not_coord_tenant_admin`` when
-    coord reports the operator is not an admin (``is_admin`` on
-    ``/admin/coord/me``).
+    Returns the same effective tenant_id as :func:`get_tenant_id` (coord's
+    ``/me`` ``home_tenant_id`` is post-override). Raises 403
+    ``not_coord_tenant_admin`` when the operator holds no admin role in that
+    tenant (per-tenant roles, below) and is not a qontinui superuser.
 
     Web-side gate posture (plan Phase 1 #4): the ``is_admin`` flag from
     coord is the source; the web-side gate is kept so the proxied
@@ -363,8 +378,12 @@ async def require_coord_tenant_admin_target(
 
     :func:`require_coord_tenant_admin` checks admin in the effective tenant
     (the switcher selection when the operator is a member of it, else home)
-    but returns the HOME tenant id. For a pass-through proxy that mismatch is
-    harmless: nothing names a tenant, and coord re-scopes the operator on the
+    and returns whatever coord's ``/me`` reports as ``home_tenant_id`` —
+    post-override, so the effective tenant too. This dependency resolves the
+    effective tenant explicitly, web-side, from the same membership list the
+    admin check used, so the tenant a body NAMES never rests on that coord
+    behaviour. Were the two to diverge, a pass-through proxy would not care:
+    nothing names a tenant, and coord re-scopes the operator on the
     forwarded ``X-Qontinui-Active-Tenant`` header. For a route that NAMES the
     target tenant in a body it writes, it is not — an operator viewing tenant
     B would be admin-checked in B and then written into A, which is either a
