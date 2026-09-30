@@ -113,4 +113,33 @@ describe("isDomainCostPayload", () => {
     expect(isDomainCostPayload({})).toBe(false);
     expect(isDomainCostPayload({ ...compounded, domains: {} })).toBe(false);
   });
+
+  it("refuses a comparison without dimensions or a string verdict", () => {
+    const { dimensions: _dropped, ...noDims } = compounded.comparison;
+    expect(isDomainCostPayload({ ...compounded, comparison: noDims })).toBe(false);
+    expect(
+      isDomainCostPayload({
+        ...compounded,
+        comparison: { ...compounded.comparison, verdict: 7 },
+      })
+    ).toBe(false);
+    expect(
+      isDomainCostPayload({ ...compounded, comparison: null })
+    ).toBe(true);
+  });
+
+  it("refuses a domain without a name, without a cost, or with a non-object dimension", () => {
+    const [ux, ops] = compounded.domains;
+    const { cost: _cost, ...noCost } = ux;
+    expect(isDomainCostPayload({ ...compounded, domains: [noCost, ops] })).toBe(false);
+    expect(
+      isDomainCostPayload({ ...compounded, domains: [{ ...ux, name: 3 }, ops] })
+    ).toBe(false);
+    expect(
+      isDomainCostPayload({
+        ...compounded,
+        domains: [{ ...ux, cost: { ...ux.cost, tokens: 5 } }, ops],
+      })
+    ).toBe(false);
+  });
 });

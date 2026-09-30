@@ -109,6 +109,14 @@ function VerdictBlock({ comparison }: { comparison: DomainCostComparison }) {
           Cost ratio R = {comparison.numerator} ÷ {comparison.denominator}{" "}
           (computed only where both sides observed at least{" "}
           {Math.round(comparison.coverage_floor * 100)}% of their units)
+          {comparison.marginal_basis && (
+            <span
+              className="block pt-0.5"
+              data-testid={`${UI}.marginal-basis`}
+            >
+              Compared cost is marginal: {comparison.marginal_basis}
+            </span>
+          )}
         </caption>
         <tbody>
           {dimensionKeys(comparison.dimensions).map((key) => (

@@ -70,13 +70,17 @@ export function faultToVisibilityBadge(
     t.p90_secs === null ? F2V_NO_KNOWN_ONSET : formatDurationSecs(t.p90_secs);
   const p50 =
     t.p50_secs === null ? F2V_NO_KNOWN_ONSET : formatDurationSecs(t.p50_secs);
-  const worst = [...data.kinds]
-    .filter((k) => k.p90_secs !== null)
-    .sort((a, b) => (b.p90_secs ?? 0) - (a.p90_secs ?? 0))
+  // `typeof … === "number"`, not `!== null`: a row missing the field must
+  // not be sorted or printed as `0s`.
+  const worst = data.kinds
+    .flatMap((k) =>
+      typeof k.p90_secs === "number" ? [{ ...k, p90: k.p90_secs }] : []
+    )
+    .sort((a, b) => b.p90 - a.p90)
     .slice(0, 3)
     .map(
       (k) =>
-        `${k.kind} p90 ${formatDurationSecs(k.p90_secs ?? 0)} (onset known ${k.onset_known_n}/${k.episodes_n})`
+        `${k.kind} p90 ${formatDurationSecs(k.p90)} (onset known ${k.onset_known_n}/${k.episodes_n})`
     );
   const title = [
     `Fault-to-visibility over ${data.window}: p50 ${p50}, p90 ${p90}.`,
