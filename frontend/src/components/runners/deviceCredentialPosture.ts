@@ -92,13 +92,21 @@ export function indexCredentialOverview(
  * The Authenticate button is offered for every runner that is not `live`, and
  * for every device carrying the device-scoped deny: a revoked runner can still
  * read `live` for the rest of its current token's life (up to ~4h), and
- * Authenticate is the only thing that lifts the deny.
+ * Authenticate is the only thing that lifts the deny. Likewise for a device
+ * whose machine key alone is revoked.
  */
 export function canAuthenticate(
   posture: CoordCredentialStatus,
   overview?: DeviceCredentialOverviewRow
 ): boolean {
-  return posture.kind !== "live" || isCredentialRevoked(overview);
+  return (
+    posture.kind !== "live" ||
+    isCredentialRevoked(overview) ||
+    // A key revoked by the legacy per-key path leaves the device deny unset,
+    // yet `/mint` refuses it and only Authenticate re-arms it.
+    (overview?.machine_key.revoked_at !== null &&
+      overview?.machine_key.revoked_at !== undefined)
+  );
 }
 
 /** The device-scoped deny (`credential_revoked_at`) is set. */
