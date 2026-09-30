@@ -26,6 +26,11 @@ What is asserted
 3. **The window read rides it** — chosen OVER the kind-leading index with
    both available, with ``first_seen_at`` as its (now leading, so bounding)
    index condition — and returns exactly the in-window rows.
+3b. **It still does after ``VACUUM ANALYZE`` sets the visibility map**, the
+   state in which an Index Only Scan on the kind-leading index becomes cheap.
+   Autovacuum is disabled on the table for the seeded span so no plan above
+   races it; this case sets the map deliberately instead, and the table's
+   autovacuum setting is reset afterwards.
 4. Idempotency: ``stamp`` back to the parent and ``upgrade`` again leaves the
    same valid index untouched.
 5. Downgrade removes it; rows survive.
@@ -56,12 +61,22 @@ _INDEX_NAME = "idx_alerts_first_seen_at"
 # coord_iops_idx_01's (kind, first_seen_at): the parent revision's only path.
 _KIND_INDEX_NAME = "idx_alerts_kind_first_seen_at"
 
-# The judge query's selection: a kind-less trailing window on first_seen_at.
+# The judge query's shape: a kind-less trailing window on first_seen_at,
+# aggregated WITHOUT grouping by kind (coord's ops_judge_service_first_share_30d
+# filters by the range and counts). A `GROUP BY kind` variant is NOT this
+# shape and is not a stable probe: once the visibility map is set, the planner
+# serves it from an Index Only Scan on (kind, first_seen_at), which already
+# carries `kind` in key order.
 _WINDOW_SQL = """
-    SELECT kind, count(*) FROM coord.alerts
+    SELECT count(*) FROM coord.alerts
      WHERE first_seen_at >= now() - interval '30 days'
-     GROUP BY kind
 """
+
+# Seed geometry: 3000 rows, first_seen_at = now() - (g % 60) days. Offsets
+# 0..29 are inside the window (offset 30 sits at the seed's now() - 30 days,
+# which is before the query's later now() - 30 days), so 30 of every 60 rows.
+_SEED_ROWS = 3000
+_IN_WINDOW_ROWS = 1500
 
 
 def _index_row(engine: Engine) -> tuple[bool, str | None, str]:
@@ -101,6 +116,23 @@ def _has_first_seen_index_cond(plan: str) -> bool:
     )
 
 
+def _window_count(engine: Engine) -> int:
+    with engine.connect() as conn:
+        return int(conn.execute(text(_WINDOW_SQL)).scalar_one())
+
+
+def _all_visible_pages(engine: Engine) -> int:
+    """``pg_class.relallvisible`` for coord.alerts — pages the VM marks all-visible."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT relallvisible FROM pg_class WHERE oid = 'coord.alerts'::regclass"
+                )
+            ).scalar_one()
+        )
+
+
 def _alert_count(engine: Engine) -> int:
     with engine.connect() as conn:
         return int(conn.execute(text("SELECT count(*) FROM coord.alerts")).scalar_one())
@@ -126,7 +158,12 @@ def test_coord_alerts_firstseen_01_index_serves_the_trailing_window() -> None:
         assert not index_exists(engine, _INDEX_NAME)
 
         # Seed: 3 kinds spread over 60 days, so half the rows are in-window.
+        # Autovacuum off first, so it cannot set the visibility map between
+        # two plans below; 3b sets it on purpose.
         with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE coord.alerts SET (autovacuum_enabled = false)")
+            )
             conn.execute(
                 text(
                     """
@@ -135,9 +172,10 @@ def test_coord_alerts_firstseen_01_index_serves_the_trailing_window() -> None:
                     SELECT 'k-' || g, 'warning',
                            (ARRAY['pr_merge_stuck', 'red_main', 'stale_wip'])[1 + g % 3],
                            'seed', now() - (g % 60) * interval '1 day'
-                      FROM generate_series(1, 3000) AS g
+                      FROM generate_series(1, :n) AS g
                     """
-                )
+                ),
+                {"n": _SEED_ROWS},
             )
             conn.execute(text("ANALYZE coord.alerts"))
 
@@ -167,17 +205,18 @@ def test_coord_alerts_firstseen_01_index_serves_the_trailing_window() -> None:
             f"with both available the planner must prefer the bounded scan:\n{plan}"
         )
         assert _has_first_seen_index_cond(plan), plan
-        with engine.connect() as conn:
-            in_window = sum(int(r[1]) for r in conn.execute(text(_WINDOW_SQL)).all())
-            expected = int(
-                conn.execute(
-                    text(
-                        "SELECT count(*) FROM coord.alerts "
-                        "WHERE first_seen_at >= now() - interval '30 days'"
-                    )
-                ).scalar_one()
-            )
-        assert in_window == expected and 0 < in_window < _alert_count(engine)
+        assert _window_count(engine) == _IN_WINDOW_ROWS
+
+        # 3b. Set the visibility map on purpose and re-plan: the bounded scan
+        #     must still win over an Index Only Scan on (kind, first_seen_at).
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text("VACUUM ANALYZE coord.alerts"))
+        assert _all_visible_pages(engine) > 0, "VACUUM must have set the map"
+        vm_plan = _plan_for(engine, _WINDOW_SQL)
+        assert _INDEX_NAME in vm_plan, vm_plan
+        assert _KIND_INDEX_NAME not in vm_plan, vm_plan
+        assert _has_first_seen_index_cond(vm_plan), vm_plan
+        assert _window_count(engine) == _IN_WINDOW_ROWS
 
         # 4. Idempotency — re-running over its own schema is a no-op.
         with engine.connect() as conn:
@@ -191,6 +230,10 @@ def test_coord_alerts_firstseen_01_index_serves_the_trailing_window() -> None:
                 text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
             ).scalar_one()
         assert oid_after == oid_before and _index_row(engine)[0]
+
+        # Seeded span over: restore the table's autovacuum setting.
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE coord.alerts RESET (autovacuum_enabled)"))
 
         # 5. Downgrade removes it; rows survive.
         rows_before = _alert_count(engine)
