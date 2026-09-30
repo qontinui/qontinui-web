@@ -1,31 +1,57 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { Calendar, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Calendar, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRunnerTarget } from "@/contexts/active-runner-context";
 import {
   useScheduledTasks,
+  useSchedulerStatus,
+  setSchedulerEnabled,
   updateScheduledTask,
   deleteScheduledTask,
   runScheduledTaskNow,
 } from "@/lib/runner/hooks/scheduler-hooks";
 import type { ScheduledTask } from "@/lib/runner/types/scheduler";
 import { ScheduleEditorDialog } from "./ScheduleEditorDialog";
+import { ScheduleHistoryDialog } from "./ScheduleHistoryDialog";
 import { ScheduleListItem } from "./ScheduleListItem";
 
 /**
- * The runner's scheduled tasks: list, create, edit, delete, run now, and
- * enable/disable. Reads and edits go to the read target, where the tasks
- * live; creating a task is new work and is routed by `useScheduleForm`.
+ * The runner's scheduled tasks: list, create, edit, delete, run now,
+ * enable/disable and run history, plus the runner-wide scheduler switch.
+ * Reads and edits go to the read target, where the tasks live; creating a
+ * task is new work and is routed by `useScheduleForm`.
  */
 export function ScheduledTasksPanel() {
   const target = useRunnerTarget();
   const { data: tasks, isLoading, error, refetch } = useScheduledTasks();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
+  const [historyTask, setHistoryTask] = useState<ScheduledTask | null>(null);
+  const { data: status, refetch: refetchStatus } = useSchedulerStatus();
+  const [enablingScheduler, setEnablingScheduler] = useState(false);
+
+  const enableScheduler = async () => {
+    if (enablingScheduler) return;
+    setEnablingScheduler(true);
+    try {
+      await setSchedulerEnabled(target, true);
+      toast.success("Scheduler turned on");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to turn the scheduler on"
+      );
+    } finally {
+      try {
+        await Promise.all([refetchStatus(), refetch()]);
+      } finally {
+        setEnablingScheduler(false);
+      }
+    }
+  };
 
   const openEditor = (task?: ScheduledTask) => {
     setEditingTask(task);
@@ -101,6 +127,7 @@ export function ScheduledTasksPanel() {
             key={task.id}
             task={task}
             onEdit={openEditor}
+            onShowHistory={setHistoryTask}
             onDelete={(t) =>
               act(
                 t.id,
@@ -150,7 +177,35 @@ export function ScheduledTasksPanel() {
         </Button>
       </div>
 
+      {/* Only an answered status says the scheduler is off; an unanswered
+          one shows nothing rather than guessing either way. */}
+      {status?.enabled === false && (
+        <div
+          className="mb-4 flex items-center gap-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-300"
+          data-testid="scheduler-disabled"
+        >
+          <AlertTriangle className="size-4 shrink-0" />
+          <span className="flex-1">
+            The scheduler is off on this runner, so no schedule will run until
+            it is turned on.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={enableScheduler}
+            disabled={enablingScheduler}
+          >
+            Turn on
+          </Button>
+        </div>
+      )}
+
       {body}
+
+      <ScheduleHistoryDialog
+        task={historyTask}
+        onClose={() => setHistoryTask(null)}
+      />
 
       <ScheduleEditorDialog
         open={editorOpen}

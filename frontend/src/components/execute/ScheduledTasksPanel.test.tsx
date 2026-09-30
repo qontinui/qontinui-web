@@ -7,7 +7,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
-import type { ScheduledTask } from "@/lib/runner/types/scheduler";
+import type {
+  ScheduledTask,
+  SchedulerStatus,
+  TaskExecutionRecord,
+} from "@/lib/runner/types/scheduler";
 
 const READ: RunnerTarget = {
   kind: "runner",
@@ -25,6 +29,15 @@ const state = vi.hoisted(() => ({
   update: vi.fn(async (..._args: unknown[]) => ({})),
   remove: vi.fn(async (..._args: unknown[]) => {}),
   run: vi.fn(async (..._args: unknown[]) => {}),
+  status: null as SchedulerStatus | null,
+  refetchStatus: vi.fn(async () => {}),
+  setEnabled: vi.fn(async (..._args: unknown[]) => {}),
+  history: {
+    data: null as TaskExecutionRecord[] | null,
+    isLoading: false,
+    error: null as string | null,
+  },
+  historyIds: [] as (string | null)[],
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -32,6 +45,17 @@ vi.mock("@/contexts/active-runner-context", () => ({
 }));
 vi.mock("@/lib/runner/hooks/scheduler-hooks", () => ({
   useScheduledTasks: () => ({ ...state.query, refetch: state.refetch }),
+  useSchedulerStatus: () => ({
+    data: state.status,
+    isLoading: false,
+    error: null,
+    refetch: state.refetchStatus,
+  }),
+  useTaskHistory: (id: string | null) => {
+    state.historyIds.push(id);
+    return state.history;
+  },
+  setSchedulerEnabled: state.setEnabled,
   updateScheduledTask: state.update,
   deleteScheduledTask: state.remove,
   runScheduledTaskNow: state.run,
@@ -78,6 +102,11 @@ beforeEach(() => {
   state.run.mockClear();
   state.remove.mockReset();
   state.remove.mockImplementation(async () => {});
+  state.status = null;
+  state.refetchStatus.mockClear();
+  state.setEnabled.mockClear();
+  state.history = { data: null, isLoading: false, error: null };
+  state.historyIds = [];
   toast.success.mockClear();
   toast.error.mockClear();
 });
@@ -158,5 +187,74 @@ describe("ScheduledTasksPanel", () => {
     render(<ScheduledTasksPanel />);
     expect(screen.queryByText("No Scheduled Tasks")).toBeNull();
     expect(screen.queryByText(/Could not load/)).toBeNull();
+  });
+
+  it("an answered disabled scheduler is flagged and can be turned on", async () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    state.status = {
+      enabled: false,
+      runningTasks: 0,
+      pendingTasks: 1,
+    } as SchedulerStatus;
+    render(<ScheduledTasksPanel />);
+    expect(screen.getByTestId("scheduler-disabled")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Turn on"));
+    await vi.waitFor(() => expect(state.refetchStatus).toHaveBeenCalled());
+    expect(state.setEnabled).toHaveBeenCalledWith(READ, true);
+    expect(state.refetch).toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Scheduler turned on");
+  });
+
+  it("an enabled or unanswered scheduler status shows no warning", () => {
+    state.query = { data: [], isLoading: false, error: null };
+    const { unmount } = render(<ScheduledTasksPanel />);
+    expect(screen.queryByTestId("scheduler-disabled")).toBeNull();
+    unmount();
+
+    state.status = {
+      enabled: true,
+      runningTasks: 0,
+      pendingTasks: 0,
+    } as SchedulerStatus;
+    render(<ScheduledTasksPanel />);
+    expect(screen.queryByTestId("scheduler-disabled")).toBeNull();
+  });
+
+  it("run history opens for the clicked task and lists its runs", () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    state.history = {
+      data: [
+        {
+          executionId: "e1",
+          startedAt: "2026-09-29T09:00:00Z",
+          status: "failed",
+          success: false,
+          errorMessage: "workflow file missing",
+          triggeredAutoFix: false,
+        } as TaskExecutionRecord,
+      ],
+      isLoading: false,
+      error: null,
+    };
+    render(<ScheduledTasksPanel />);
+    expect(screen.queryByTestId("schedule-history")).toBeNull();
+
+    fireEvent.click(screen.getByTitle("Run history"));
+    expect(screen.getByTestId("schedule-history")).toBeTruthy();
+    expect(screen.getByText("workflow file missing")).toBeTruthy();
+    expect(state.historyIds.at(-1)).toBe("task-1");
+
+    fireEvent.click(screen.getByTitle("Close"));
+    expect(screen.queryByTestId("schedule-history")).toBeNull();
+  });
+
+  it("an unanswered history read is a failure, not 'has not run yet'", () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    state.history = { data: null, isLoading: false, error: "runner offline" };
+    render(<ScheduledTasksPanel />);
+    fireEvent.click(screen.getByTitle("Run history"));
+    expect(screen.getByText(/Could not load the run history/)).toBeTruthy();
+    expect(screen.queryByText(/has not run yet/)).toBeNull();
   });
 });

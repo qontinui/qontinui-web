@@ -122,3 +122,18 @@ export async function runScheduledTaskNow(
     method: "POST",
   });
 }
+
+/**
+ * Turn the runner's scheduler on or off as a whole. While it is off no task
+ * fires, whatever its own `enabled` says. The runner reads this body without
+ * camelCase renaming; `enabled` has the same spelling in both cases.
+ */
+export async function setSchedulerEnabled(
+  target: RunnerTarget,
+  enabled: boolean
+): Promise<void> {
+  return runnerFetch<void>(target, "/scheduler/settings", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
