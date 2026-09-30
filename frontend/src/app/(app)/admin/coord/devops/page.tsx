@@ -75,12 +75,18 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens FIVE POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens SIX POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
- * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence, and
+ * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence,
  * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
- * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3). Two
+ * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
+ * `/alerts/fault-to-visibility` here at 60 s (plan
+ * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+ * Phase 8 — a trailing-window percentile no other read on the page carries,
+ * which is why the strip's one badge built from it is the single exception to
+ * R1's "derived from data already on the page": the page owns that read, and
+ * the strip still only renders what it was handed). Two
  * polls of ONE route would be two chances to disagree about what the fleet
  * looks like right now; one poll per route is one read per fact, which is the
  * shape this page is built on — worktree-slot occupancy is a fact from a
@@ -133,6 +139,11 @@ import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusSt
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
+import { useFaultToVisibility } from "@/components/operations/useFaultToVisibility";
+import {
+  buildResolvabilityBadge,
+  faultToVisibilityBadge,
+} from "@/components/operations/fleetReadout";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
@@ -161,6 +172,10 @@ export default function CoordDevOpsPage() {
   // on. Owned here, one poll, passed down — the machine rows resolve their own
   // row from it rather than fetching per card.
   const ciRunnerMirror = useCiRunnerMirror();
+  // How long faults sat before anyone who can act on them could see them —
+  // the operations ratchet's perceive-stage readout (G1). Owned here, one
+  // poll, like every other read on this page.
+  const faultToVisibility = useFaultToVisibility();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
@@ -308,6 +323,33 @@ export default function CoordDevOpsPage() {
     return badges;
   }, [credentials, deviceStatus.error, deviceStatus.everSeeded, navigate]);
 
+  /**
+   * The operations-ratchet readouts (plan
+   * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+   * Phase 8, exit criteria 2 and 4): fault-to-visibility p90 WITH the share
+   * of episodes whose onset is known, and the share of machines whose running
+   * build coord can name. Both always render — an absent figure reads
+   * "unknown — <reason>", never nothing, because a strip that silently drops
+   * a readout is indistinguishable from one whose readout is fine.
+   */
+  const readoutBadges = useMemo<HealthBadge[]>(
+    () => [
+      faultToVisibilityBadge({
+        data: faultToVisibility.data,
+        loading: faultToVisibility.loading,
+        error: faultToVisibility.error,
+      }),
+      buildResolvabilityBadge(fleet.data, fleet.error),
+    ],
+    [
+      faultToVisibility.data,
+      faultToVisibility.loading,
+      faultToVisibility.error,
+      fleet.data,
+      fleet.error,
+    ]
+  );
+
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
     // than strand its right-hand columns off-screen. Vertical scroll comes
@@ -384,6 +426,9 @@ export default function CoordDevOpsPage() {
           // — an independent axis, because the incident it exists for is a
           // machine that answered every probe with a dead coord credential.
           ...credentialBadges,
+          // Last: not liveness at all, but how fast the fleet SEES its faults
+          // and whether it can name what each machine runs.
+          ...readoutBadges,
         ]}
       />
 
