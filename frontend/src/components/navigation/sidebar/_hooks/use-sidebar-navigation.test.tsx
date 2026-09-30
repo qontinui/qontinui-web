@@ -33,6 +33,13 @@ vi.mock("@/contexts/auth-context", () => ({
   }),
 }));
 
+type TenantRow = { id: string; slug: string; name: string; roles?: string[] };
+let tenants: TenantRow[] = [];
+let activeTenantId: string | null = null;
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({ tenants, activeTenantId }),
+}));
+
 vi.mock("@/contexts/product-mode-context", () => ({
   useProductMode: () => ({ mode: "ai", setMode: vi.fn() }),
 }));
@@ -79,6 +86,8 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     pathname = "/admin/coord/pipeline";
     isSuperuser = false;
     coordIsAdmin = false;
+    tenants = [];
+    activeTenantId = null;
     showAdvanced = false;
   });
 
@@ -196,8 +205,10 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(devops()?.children).toHaveLength(14);
   });
 
-  it("shows Computers to a coord tenant admin who is not staff, and nothing operator-only", () => {
+  it("shows Computers to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
     coordIsAdmin = true;
+    tenants = [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }];
+    activeTenantId = "t-a";
     const devops = menu().visibleNavItems.find(
       (i) => i.id === "coord-group-devops"
     );
@@ -205,6 +216,22 @@ describe("useSidebarNavigation — AI Dev menu", () => {
       "Overview",
       "Computers",
     ]);
+  });
+
+  it("hides Computers from an admin of tenant A while tenant B is active", () => {
+    // `coord_is_admin` is the union across tenants, so it is true here — and
+    // the proxies' `require_coord_tenant_admin` still refuses, because it
+    // checks B's roles. The menu must follow the gate, not the union.
+    coordIsAdmin = true;
+    tenants = [
+      { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      { id: "t-b", slug: "b", name: "B", roles: ["developer"] },
+    ];
+    activeTenantId = "t-b";
+    const devops = menu().visibleNavItems.find(
+      (i) => i.id === "coord-group-devops"
+    );
+    expect(devops?.children?.map((c) => c.label)).toEqual(["Overview"]);
   });
 
   it("keeps a console section active on its detail routes", () => {

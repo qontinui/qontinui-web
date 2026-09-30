@@ -134,6 +134,8 @@ import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import { useAuth } from "@/contexts/auth-context";
+import { useTenant } from "@/contexts/tenant-context";
+import { isActiveTenantCoordAdmin } from "@/lib/coord-admin";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
@@ -142,7 +144,16 @@ const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
 export default function CoordDevOpsPage() {
   const fleet = useFleetHealth();
-  const { isCoordAdmin } = useAuth();
+  // Admin IN THE ACTIVE TENANT — what `require_coord_tenant_admin` checks on
+  // the computers proxies. `useAuth().isCoordAdmin` is a union across tenants
+  // and would show an admin of project A a link that 403s on project B.
+  const { user } = useAuth();
+  const { tenants, activeTenantId } = useTenant();
+  const canReadComputers = isActiveTenantCoordAdmin({
+    user,
+    tenants,
+    activeTenantId,
+  });
   const router = useRouter();
   const navigate = useCallback((href: string) => router.push(href), [router]);
   // The CI-capacity join (Phase 2). One read, owned here, passed down —
@@ -431,11 +442,12 @@ export default function CoordDevOpsPage() {
           Phase 5). The rows below are coord DEVICES — one physical box can be
           several of them — while the Computers page groups them under the
           machine they run on, with its services, events and capacity.
-          Shown to a coord tenant admin only: both computer reads are gated on
-          `require_coord_tenant_admin` (they carry the registrar's CI-runner
-          rows and access facts), so a member following this link would get a
-          403 page instead of an answer. */}
-      {isCoordAdmin && (
+          Shown only to an admin of the ACTIVE tenant (or staff): both
+          computer reads are gated on `require_coord_tenant_admin`, which
+          checks the effective tenant's roles (they carry the registrar's
+          CI-runner rows and access facts), so anyone else following this
+          link would get a 403 page instead of an answer. */}
+      {canReadComputers && (
         <p
           className="text-xs text-muted-foreground"
           data-testid="coord-devops-computers-note"

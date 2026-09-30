@@ -25,7 +25,7 @@ import {
   type NavGroup,
   type NavViewer,
 } from "./coordNavModel";
-import { isCoordAdminUser } from "@/lib/coord-admin";
+import { isActiveTenantCoordAdmin, isCoordAdminUser } from "@/lib/coord-admin";
 
 function group(id: string): NavGroup {
   const found = GROUPS.find((g) => g.id === id);
@@ -143,7 +143,55 @@ describe("coordNavModel", () => {
     expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
   });
 
-  it("derives the viewer from the same predicate as useAuth().isCoordAdmin", () => {
+  it("asks admin IN THE ACTIVE TENANT, as require_coord_tenant_admin does", () => {
+    const tenants = [
+      { id: "t-a", roles: ["admin"] },
+      { id: "t-b", roles: ["developer"] },
+      { id: "t-old" }, // a backend predating per-tenant roles
+    ];
+    const unionAdmin = { coord_is_admin: true, is_superuser: false };
+    // Admin of A, A active: yes.
+    expect(
+      isActiveTenantCoordAdmin({
+        user: unionAdmin,
+        tenants,
+        activeTenantId: "t-a",
+      })
+    ).toBe(true);
+    // Admin of A, B active: the union says yes, the gate says no — follow the gate.
+    expect(
+      isActiveTenantCoordAdmin({
+        user: unionAdmin,
+        tenants,
+        activeTenantId: "t-b",
+      })
+    ).toBe(false);
+    // Roles absent for the active tenant: fall back to the union.
+    expect(
+      isActiveTenantCoordAdmin({
+        user: unionAdmin,
+        tenants,
+        activeTenantId: "t-old",
+      })
+    ).toBe(true);
+    expect(
+      isActiveTenantCoordAdmin({
+        user: { coord_is_admin: false, is_superuser: false },
+        tenants,
+        activeTenantId: "t-old",
+      })
+    ).toBe(false);
+    // A superuser passes whatever the tenant roles say.
+    expect(
+      isActiveTenantCoordAdmin({
+        user: { coord_is_admin: false, is_superuser: true },
+        tenants,
+        activeTenantId: "t-b",
+      })
+    ).toBe(true);
+  });
+
+  it("keeps the union predicate for what it is", () => {
     expect(
       isCoordAdminUser({ coord_is_admin: true, is_superuser: false })
     ).toBe(true);
