@@ -155,6 +155,28 @@ export function buildConditions(
   return conditions;
 }
 
+/** Order-insensitive equality; absent, null and `{}` all mean "no conditions". */
+export function sameConditions(
+  a: ScheduleConditions | null | undefined,
+  b: ScheduleConditions | null | undefined
+): boolean {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, v]) => v !== undefined && v !== null)
+          .sort(([x], [y]) => x.localeCompare(y))
+          .map(([k, v]) => [k, canonical(v)])
+      );
+    }
+    return value;
+  };
+  return (
+    JSON.stringify(canonical(a ?? {})) === JSON.stringify(canonical(b ?? {}))
+  );
+}
+
 /**
  * Build the Workflow task to save. Editing an existing Workflow task keeps its
  * other fields (`config_path`, `monitor_index`); `workflow_id` is kept only

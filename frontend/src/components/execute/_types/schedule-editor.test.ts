@@ -1,8 +1,9 @@
 /**
- * The runner persists a task's conditions (project.scheduled_tasks.conditions,
- * qontinui-web#1561) and serializes them camelCase. Saving from the editor must
- * carry forward every condition and task field it does not render, and must
- * never send an owned field twice (snake_case + camelCase is a serde
+ * The runner serializes a task's conditions camelCase, and an update replaces
+ * them wholesale (persisted in project.scheduled_tasks.conditions, the column
+ * qontinui-web#1561 added, once the runner's Phase 4c lands). Saving from the
+ * editor must carry forward every condition and task field it does not
+ * render, and must never send an owned field twice (snake_case + camelCase is a serde
  * duplicate-field refusal).
  */
 
@@ -11,7 +12,11 @@ import type {
   ScheduleConditions,
   ScheduledTaskType,
 } from "@/lib/runner/types/scheduler";
-import { buildConditions, buildWorkflowTask } from "./schedule-editor";
+import {
+  buildConditions,
+  buildWorkflowTask,
+  sameConditions,
+} from "./schedule-editor";
 
 const REPO_INACTIVE: ScheduleConditions["requireRepoInactive"] = {
   enabled: true,
@@ -105,5 +110,25 @@ describe("buildWorkflowTask", () => {
       config_path: "/cfg.json",
       monitor_index: 1,
     });
+  });
+});
+
+describe("sameConditions", () => {
+  it("ignores key order and treats absent and empty alike", () => {
+    expect(
+      sameConditions(
+        { timeoutMinutes: 5, requireIdle: { enabled: true } },
+        { requireIdle: { enabled: true }, timeoutMinutes: 5 }
+      )
+    ).toBe(true);
+    expect(sameConditions(undefined, null)).toBe(true);
+    expect(sameConditions({}, null)).toBe(true);
+  });
+
+  it("detects a changed or removed condition", () => {
+    expect(sameConditions({ timeoutMinutes: 5 }, { timeoutMinutes: 10 })).toBe(
+      false
+    );
+    expect(sameConditions({}, { requireIdle: { enabled: true } })).toBe(false);
   });
 });

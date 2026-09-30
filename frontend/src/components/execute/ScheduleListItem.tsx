@@ -85,6 +85,16 @@ function getLastRunBadge(task: ScheduledTask) {
           Failed {relativeTime(time)}
         </Badge>
       );
+    case "launch_failed":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]"
+        >
+          <XCircle className="size-2.5 mr-1" />
+          Launch failed {relativeTime(time)}
+        </Badge>
+      );
     case "skipped":
       return (
         <Badge

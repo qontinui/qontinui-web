@@ -6,8 +6,8 @@
 // `qontinui-schemas/rust/src/scheduler.rs`). The runner serializes every
 // scheduler struct camelCase (`skipIfCompleted`, `lastRun`, `conditionStatus`,
 // `requireIdle`, ...) and accepts snake_case only as an input alias. The hand-
-// written snake_case duplicates that used to live here matched neither
-// direction for reads, so every response field they named read `undefined`.
+// written snake_case duplicates that used to live here named every multi-word
+// response field wrongly, so each of those read `undefined`.
 // The task enum is the exception: it is tagged `task_type` with snake_case
 // fields, and the generated type says so.
 
