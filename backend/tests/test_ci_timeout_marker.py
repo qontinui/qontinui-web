@@ -69,7 +69,7 @@ MARKER_WORKFLOWS = [
     "migration-reversal.yml",
     "spec-ci.yml",
     "style-gate.yml",
-    "verify-frontend-deploy.yml",
+    "verify-frontend-run.yml",
 ]
 
 TRIPWIRE_STEP_NAME = "Warn if the job is approaching its budget"

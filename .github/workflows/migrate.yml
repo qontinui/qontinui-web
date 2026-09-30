@@ -25,7 +25,7 @@ run-name: "Apply Migrations to RDS${{ inputs.dispatch_id != '' && format(' [disp
 # audit INSERT path. Auto-deploy of migrations is the documented fix.
 #
 # FORWARD-ONLY — NOT covered by deploy auto-rollback. The post-deploy
-# auto-rollback in deploy-web.yml (and verify-frontend-deploy.yml) reverts the
+# auto-rollback in deploy-web.yml (and verify-frontend-run.yml) reverts the
 # APPLICATION (ECS task-def / Vercel alias) to a prior revision, but it does
 # NOT and MUST NOT revert the schema: alembic downgrades are not data-safe
 # (dropped columns/tables lose data). Treat migrations as forward-only —

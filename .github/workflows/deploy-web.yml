@@ -150,8 +150,10 @@ jobs:
       # this repo's `production` environment claim). The role is least-privilege
       # for exactly what this job calls: ECR push to qontinui-web-backend, the
       # qontinui-staging-web task-def/service/one-off task, the web log group,
-      # and the two eu-central-1 spec-ci SSM params. 7200s because a slow
-      # rollout + rollback can outlive the 1-hour default session.
+      # and the two eu-central-1 spec-ci SSM params. 7200s is headroom, not a
+      # current need: the job's timeout-minutes (45) already ends it inside
+      # the 1-hour default. It is kept so that a future raise of that timeout
+      # cannot expire the credential mid-rollback.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
