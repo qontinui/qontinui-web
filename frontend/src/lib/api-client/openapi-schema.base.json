@@ -103754,6 +103754,28 @@
         ]
       }
     },
+    "/api/v1/operations/project-state": {
+      "get": {
+        "description": "Return coord's project-state synthesis for the operator's tenant.\n\nPlan\n``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``\nPhase 4. A plain pass-through of coord's operator route\n``GET /coord/project-state`` \u2014 the same shared core that serves the\n``coord_project_state`` MCP tool and its device/agent twin\n``GET /coord/agent-project-state``, so the page and every agent read one\nanswer. No composition and no reshaping here: ``/admin/coord/home`` and\nthe ``/overview`` progress panel render coord's bytes.\n\nThe wire, as coord serves it (``schema: 1``): ``generated_at``,\n``tenant_id``, ``scope`` (``\"operator\"``, the one built scope), and four\nblocks \u2014 ``on_track``, ``correctness``, ``needs_me``, ``degradations`` \u2014\neach carrying a ``state`` in ``read | could_not_read | stale |\nnot_implemented | unknown`` that is DISTINCT from its counts. **A block\nwhose state is not ``read`` carries no counts**, and a caller must render\nit as unknown rather than as zero (``[policy: silent-empty-is-unknown]``).\n``does_not_know`` lists every source the door read, with ``state``,\n``as_of``, ``freshness_bound_secs``, rows considered / excluded and why.\n\n``on_track.totals`` is ``{row_count, classes}`` over a closed,\nexhaustive-with-zeros class set (``shipped``, ``in_flight``,\n``stalled``, ``blocked_on_dependency``, ``waiting_on_gate``,\n``not_started``, ``closed_other``, ``off_vocabulary``, ``unset``) whose\nsum coord asserts equals ``row_count``. ``stalled`` is a MECHANICAL\nabsence-of-recorded-change class (``stall_rule`` /\n``stall_window_secs`` ride the wire); it is not a verdict and the page\ndoes not render the word.\n\nDeclares no ``response_model``, so nothing here filters a field coord\nadds. This docstring is what FastAPI renders into the committed,\ndrift-gated OpenAPI snapshots, so it is this repo's contract of record\nfor the route.",
+        "operationId": "api_v1_operations_project_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Project State Api V1 Operations Project State Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Project State",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
       "post": {
         "description": "Place or release a coord hold on a PR (the operator's hold control).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``\n(plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced\nthe ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),\nso it works on private repos on GitHub Free, which have no draft PRs.\n\nBody: ``{\"held\": bool, \"reason\"?: str, \"kind\"?: str, \"gate_id\"?: str}``.\n``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;\n``held: false`` releases. Release authority is coord's: the holder, or an\nadmin-role operator for any hold; a ``security_tier`` hold is the\noperator's alone.\n\nAuth mirrors the gate-action stack: the operator's Cognito bearer is\nforwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=``) and coord\nderives the tenant, role and repo authority server-side. Only the four\ncontract keys are forwarded.\n\n``structured_errors=True``: coord's typed refusal object (``{\"error\",\n\"message\"}``) becomes the ``HTTPException.detail`` dict, which the app's\n``http_exception_handler`` splices into the top level of its envelope, so\nthe browser receives ``error`` as coord's code (400 invalid_input,\n403 not_holder / security_tier_operator_only, 404 not_found,\n500 internal) rather than a JSON string inside ``message``. A coord error\nbody that is not a JSON object still falls back to its text.",
