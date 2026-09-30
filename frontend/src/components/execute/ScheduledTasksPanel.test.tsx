@@ -38,6 +38,14 @@ const state = vi.hoisted(() => ({
     error: null as string | null,
   },
   historyIds: [] as (string | null)[],
+  historyById: null as Record<
+    string,
+    {
+      data: TaskExecutionRecord[] | null;
+      isLoading: boolean;
+      error: string | null;
+    }
+  > | null,
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -53,7 +61,7 @@ vi.mock("@/lib/runner/hooks/scheduler-hooks", () => ({
   }),
   useTaskHistory: (id: string | null) => {
     state.historyIds.push(id);
-    return state.history;
+    return (id && state.historyById?.[id]) || state.history;
   },
   setSchedulerEnabled: state.setEnabled,
   updateScheduledTask: state.update,
@@ -107,6 +115,7 @@ beforeEach(() => {
   state.setEnabled.mockClear();
   state.history = { data: null, isLoading: false, error: null };
   state.historyIds = [];
+  state.historyById = null;
   toast.success.mockClear();
   toast.error.mockClear();
 });
@@ -256,5 +265,60 @@ describe("ScheduledTasksPanel", () => {
     fireEvent.click(screen.getByTitle("Run history"));
     expect(screen.getByText(/Could not load the run history/)).toBeTruthy();
     expect(screen.queryByText(/has not run yet/)).toBeNull();
+  });
+
+  it("a second task's failed history read never shows the first task's runs", () => {
+    const other = { ...TASK, id: "task-2", name: "Weekly" } as ScheduledTask;
+    state.query = { data: [TASK, other], isLoading: false, error: null };
+    state.historyById = {
+      "task-1": {
+        data: [
+          {
+            executionId: "e1",
+            startedAt: "2026-09-29T09:00:00Z",
+            status: "completed",
+            success: true,
+            triggeredAutoFix: false,
+            errorMessage: "task one run",
+          } as TaskExecutionRecord,
+        ],
+        isLoading: false,
+        error: null,
+      },
+      "task-2": { data: null, isLoading: false, error: "runner offline" },
+    };
+    render(<ScheduledTasksPanel />);
+    const [first, second] = screen.getAllByTitle("Run history");
+    fireEvent.click(first);
+    expect(screen.getByText("task one run")).toBeTruthy();
+    fireEvent.click(screen.getByTitle("Close"));
+
+    fireEvent.click(second);
+    expect(screen.getByText(/Run history: Weekly/)).toBeTruthy();
+    expect(screen.getByText(/Could not load the run history/)).toBeTruthy();
+    expect(screen.queryByText("task one run")).toBeNull();
+  });
+
+  it("a failed Turn on is toasted, still refetches, and can be retried", async () => {
+    state.query = { data: [], isLoading: false, error: null };
+    state.status = {
+      enabled: false,
+      runningTasks: 0,
+      pendingTasks: 0,
+    } as SchedulerStatus;
+    state.setEnabled.mockRejectedValueOnce(new Error("runner said no"));
+    render(<ScheduledTasksPanel />);
+    fireEvent.click(screen.getByText("Turn on"));
+    await vi.waitFor(() => expect(state.refetchStatus).toHaveBeenCalled());
+    expect(toast.error).toHaveBeenCalledWith("runner said no");
+    expect(state.refetch).toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(
+        (screen.getByText("Turn on").closest("button") as HTMLButtonElement)
+          .disabled
+      ).toBe(false)
+    );
+    fireEvent.click(screen.getByText("Turn on"));
+    await vi.waitFor(() => expect(state.setEnabled).toHaveBeenCalledTimes(2));
   });
 });

@@ -33,9 +33,11 @@ export function ScheduledTasksPanel() {
   const [historyTask, setHistoryTask] = useState<ScheduledTask | null>(null);
   const { data: status, refetch: refetchStatus } = useSchedulerStatus();
   const [enablingScheduler, setEnablingScheduler] = useState(false);
+  const enablingRef = useRef(false);
 
   const enableScheduler = async () => {
-    if (enablingScheduler) return;
+    if (enablingRef.current) return;
+    enablingRef.current = true;
     setEnablingScheduler(true);
     try {
       await setSchedulerEnabled(target, true);
@@ -48,6 +50,7 @@ export function ScheduledTasksPanel() {
       try {
         await Promise.all([refetchStatus(), refetch()]);
       } finally {
+        enablingRef.current = false;
         setEnablingScheduler(false);
       }
     }
@@ -202,10 +205,15 @@ export function ScheduledTasksPanel() {
 
       {body}
 
-      <ScheduleHistoryDialog
-        task={historyTask}
-        onClose={() => setHistoryTask(null)}
-      />
+      {/* Keyed per task: one hook instance per task, so a previous task's
+          runs (or error) are never shown under this one's name. */}
+      {historyTask && (
+        <ScheduleHistoryDialog
+          key={historyTask.id}
+          task={historyTask}
+          onClose={() => setHistoryTask(null)}
+        />
+      )}
 
       <ScheduleEditorDialog
         open={editorOpen}
