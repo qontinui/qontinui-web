@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Calendar, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,12 +36,23 @@ export function ScheduledTasksPanel() {
     setEditingTask(undefined);
   };
 
-  const act = async (label: string, action: () => Promise<unknown>) => {
+  // One action per task at a time: a double click must not delete twice or
+  // flip a toggle back.
+  const inFlight = useRef(new Set<string>());
+  const act = async (
+    taskId: string,
+    labels: { done: string; failed: string },
+    action: () => Promise<unknown>
+  ) => {
+    if (inFlight.current.has(taskId)) return;
+    inFlight.current.add(taskId);
     try {
       await action();
+      toast.success(labels.done);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : `Failed to ${label}`);
+      toast.error(err instanceof Error ? err.message : labels.failed);
     } finally {
+      inFlight.current.delete(taskId);
       await refetch();
     }
   };
@@ -86,16 +97,30 @@ export function ScheduledTasksPanel() {
             task={task}
             onEdit={openEditor}
             onDelete={(t) =>
-              act("delete the schedule", () =>
-                deleteScheduledTask(target, t.id)
+              act(
+                t.id,
+                {
+                  done: "Schedule deleted",
+                  failed: "Failed to delete the schedule",
+                },
+                () => deleteScheduledTask(target, t.id)
               )
             }
             onRunNow={(t) =>
-              act("run the schedule", () => runScheduledTaskNow(target, t.id))
+              act(
+                t.id,
+                { done: "Run started", failed: "Failed to run the schedule" },
+                () => runScheduledTaskNow(target, t.id)
+              )
             }
             onToggleEnabled={(t, enabled) =>
-              act("update the schedule", () =>
-                updateScheduledTask(target, t.id, { enabled })
+              act(
+                t.id,
+                {
+                  done: enabled ? "Schedule enabled" : "Schedule disabled",
+                  failed: "Failed to update the schedule",
+                },
+                () => updateScheduledTask(target, t.id, { enabled })
               )
             }
           />
@@ -111,6 +136,8 @@ export function ScheduledTasksPanel() {
           {tasks
             ? `${tasks.length} scheduled task${tasks.length !== 1 ? "s" : ""}`
             : "Scheduled tasks"}
+          {target.kind === "runner" &&
+            ` on ${target.runner.name ?? target.runner.id}`}
         </p>
         <Button variant="brand-primary" size="sm" onClick={() => openEditor()}>
           <Plus className="size-4" />

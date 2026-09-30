@@ -394,14 +394,23 @@ export default function ExecutePage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 mx-auto flex flex-col lg:flex-row gap-6 max-w-[1400px] w-full">
-        {activeTab === "queue" ? (
+        {/* Both views stay mounted: the queue (and a run in flight) must
+            survive a look at the schedules. */}
+        <div
+          className={activeTab === "queue" ? "contents" : "hidden"}
+          data-testid="execute-view-queue"
+        >
           <QueueTabContent
             workflows={workflows}
             workflowsLoading={workflowsLoading}
           />
-        ) : (
+        </div>
+        <div
+          className={activeTab === "scheduled" ? "contents" : "hidden"}
+          data-testid="execute-view-scheduled"
+        >
           <ScheduledTasksPanel />
-        )}
+        </div>
       </main>
     </div>
   );

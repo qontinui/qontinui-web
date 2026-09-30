@@ -45,7 +45,8 @@ vi.mock("@/lib/runner/api-client", () => ({
 vi.mock("@/lib/api/unified-workflows", () => ({
   useUnifiedWorkflows: () => ({ data: [], isLoading: false }),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 import { useScheduleForm } from "./useScheduleForm";
 
@@ -60,6 +61,7 @@ beforeEach(() => {
   state.mutationTargets = [];
   state.dispatchOptions = [];
   state.mutate.mockClear();
+  toast.success.mockClear();
 });
 
 describe("creating a schedule goes only where NEW work may go", () => {
@@ -128,5 +130,39 @@ describe("creating a schedule goes only where NEW work may go", () => {
     expect(state.dispatchOptions.at(-1)).toEqual({
       workClass: "machine_bound",
     });
+  });
+
+  it("a create placed on another runner than the listed one says where it went", async () => {
+    state.dispatch = {
+      target: {
+        kind: "runner",
+        runner: { id: DESK, name: "desk" },
+        locality: "unknown",
+      },
+      runnerId: DESK,
+      refusal: null,
+    };
+    const { result } = renderHook(() =>
+      useScheduleForm(true, undefined, () => {})
+    );
+    fill(result.current);
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(toast.success).toHaveBeenCalledWith("Schedule created", {
+      description: "On runner desk, not the one this list shows.",
+    });
+  });
+
+  it("a create on the listed runner is a plain success", async () => {
+    state.dispatch = { target: READ, runnerId: "read-fallback", refusal: null };
+    const { result } = renderHook(() =>
+      useScheduleForm(true, undefined, () => {})
+    );
+    fill(result.current);
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(toast.success).toHaveBeenCalledWith("Schedule created", undefined);
   });
 });

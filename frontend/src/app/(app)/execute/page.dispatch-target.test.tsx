@@ -168,7 +168,7 @@ describe("Execute page Run goes only where NEW work may go", () => {
 });
 
 describe("Execute page Scheduled tab", () => {
-  it("switches from the queue to the runner's scheduled tasks and back", () => {
+  it("switches to the runner's scheduled tasks and back without losing the queue", () => {
     state.dispatch = {
       target: { kind: "runner", runner: { id: DESK }, locality: "unknown" },
       runnerId: DESK,
@@ -176,12 +176,16 @@ describe("Execute page Scheduled tab", () => {
       notice: null,
     };
     render(<ExecutePage />);
-    expect(screen.queryByTestId("scheduled-panel")).toBeNull();
+    const queueView = screen.getByTestId("execute-view-queue");
+    const scheduledView = screen.getByTestId("execute-view-scheduled");
+    expect(scheduledView).toHaveClass("hidden");
+    fireEvent.click(screen.getByTestId("add"));
     fireEvent.click(screen.getByTestId("execute-tab-scheduled"));
-    expect(screen.getByTestId("scheduled-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("run")).toBeNull();
+    expect(scheduledView).not.toHaveClass("hidden");
+    expect(queueView).toHaveClass("hidden");
     fireEvent.click(screen.getByTestId("execute-tab-queue"));
-    expect(screen.queryByTestId("scheduled-panel")).toBeNull();
-    expect(screen.getByTestId("run")).toBeInTheDocument();
+    expect(queueView).not.toHaveClass("hidden");
+    // The queue was hidden, not unmounted: the added item is still there.
+    expect(screen.getByTestId("run")).toBeEnabled();
   });
 });

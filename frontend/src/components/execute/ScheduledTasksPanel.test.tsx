@@ -46,7 +46,15 @@ vi.mock("./ScheduleEditorDialog", () => ({
   }) =>
     open ? <div data-testid="editor">{editingTask?.id ?? "new"}</div> : null,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// The real button refuses programmatic clicks by design.
+vi.mock("@/components/ui/destructive-button", () => ({
+  isSyntheticClick: () => false,
+  DestructiveButton: (props: Record<string, unknown>) => (
+    <button type="button" {...props} />
+  ),
+}));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 import { ScheduledTasksPanel } from "./ScheduledTasksPanel";
 
@@ -68,6 +76,10 @@ beforeEach(() => {
   state.update.mockClear();
   state.remove.mockClear();
   state.run.mockClear();
+  state.remove.mockReset();
+  state.remove.mockImplementation(async () => {});
+  toast.success.mockClear();
+  toast.error.mockClear();
 });
 
 describe("ScheduledTasksPanel", () => {
@@ -108,5 +120,43 @@ describe("ScheduledTasksPanel", () => {
     render(<ScheduledTasksPanel />);
     fireEvent.click(screen.getByText("New Schedule"));
     expect(screen.getByTestId("editor").textContent).toBe("new");
+  });
+
+  it("delete goes to the READ target; a failure is toasted and the list still refetched", async () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    state.remove.mockRejectedValueOnce(new Error("runner said no"));
+    render(<ScheduledTasksPanel />);
+    fireEvent.click(screen.getByTitle("Delete"));
+    await vi.waitFor(() => expect(state.refetch).toHaveBeenCalledTimes(1));
+    expect(state.remove).toHaveBeenCalledWith(READ, "task-1");
+    expect(toast.error).toHaveBeenCalledWith("runner said no");
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("a second click while an action is in flight is ignored", async () => {
+    state.query = { data: [TASK], isLoading: false, error: null };
+    let release: () => void = () => {};
+    state.run.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve))
+    );
+    render(<ScheduledTasksPanel />);
+    fireEvent.click(screen.getByTitle("Run now"));
+    fireEvent.click(screen.getByTitle("Run now"));
+    release();
+    await vi.waitFor(() => expect(state.refetch).toHaveBeenCalledTimes(1));
+    expect(state.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the runner whose schedules are listed", () => {
+    state.query = { data: [], isLoading: false, error: null };
+    render(<ScheduledTasksPanel />);
+    expect(screen.getByText(/0 scheduled tasks on read-target/)).toBeTruthy();
+  });
+
+  it("loading shows a spinner, not the empty state or a failure", () => {
+    state.query = { data: null, isLoading: true, error: null };
+    render(<ScheduledTasksPanel />);
+    expect(screen.queryByText("No Scheduled Tasks")).toBeNull();
+    expect(screen.queryByText(/Could not load/)).toBeNull();
   });
 });

@@ -52,9 +52,11 @@ export function useScheduleForm(
     useUnifiedWorkflows();
   // This form only creates Workflow tasks, which drive the GUI of the machine
   // they fire on: machine-bound, like running the Execute queue.
-  const { mutate: createTask, refusal: createRefusal } = useCreateScheduledTask(
-    { workClass: "machine_bound" }
-  );
+  const {
+    mutate: createTask,
+    refusal: createRefusal,
+    target: createTarget,
+  } = useCreateScheduledTask({ workClass: "machine_bound" });
   // Only CREATING places new work; updating an existing task is not refused.
   const saveRefusal = isEditing ? null : (createRefusal?.message ?? null);
 
@@ -180,7 +182,22 @@ export function useScheduleForm(
           autoFixOnFailure,
           conditions,
         });
-        toast.success("Schedule created");
+        // The list shows the read target's tasks; a create placed on another
+        // runner would otherwise vanish right after this toast.
+        const elsewhere =
+          createTarget.kind === "runner" &&
+          (target.kind !== "runner" ||
+            target.runner.id !== createTarget.runner.id);
+        toast.success(
+          "Schedule created",
+          elsewhere
+            ? {
+                description: `On runner ${
+                  createTarget.runner.name ?? createTarget.runner.id
+                }, not the one this list shows.`,
+              }
+            : undefined
+        );
       }
       onSaved();
     } catch (err) {

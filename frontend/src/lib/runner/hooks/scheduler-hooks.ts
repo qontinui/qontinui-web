@@ -82,6 +82,8 @@ export function useCreateScheduledTask(options: NewWorkOptions = {}) {
       "/scheduler/tasks"
     ),
     refusal,
+    /** Where a create is sent; it can differ from the read target. */
+    target,
   };
 }
 
