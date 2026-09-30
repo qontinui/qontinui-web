@@ -929,9 +929,9 @@ class TestPairCliKeepsAUsableKey:
         assert kwargs["refuse_if_usable_beyond"] == timedelta(days=7)
         assert kwargs["refuse_if_revoked"] is True
 
-    def test_revoked_device_is_refused_at_the_door(self) -> None:
-        """pair-cli refuses a revoked device itself — before coord mints it a
-        JWT — rather than trusting coord to."""
+    def test_revoked_device_gets_no_jwt(self) -> None:
+        """Once coord accepts the pairing, a revoked device is refused and the
+        JWT coord minted is withheld; no key is minted either."""
         device_id = uuid4()
         with (
             self._coord_pair_cli(device_id),
@@ -940,14 +940,33 @@ class TestPairCliKeepsAUsableKey:
                 "get_credential_revoked_at",
                 AsyncMock(return_value=datetime.now(UTC)),
             ),
-            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
             patch.object(dmk_crud, "mint", AsyncMock()) as mint,
         ):
             resp = self._post(device_id)
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
-        coord.assert_not_called()
+        assert "device-jwt" not in resp.text
         mint.assert_not_called()
+
+    def test_coord_refusal_discloses_no_revocation_state(self) -> None:
+        """A caller coord will not pair (e.g. not the owner) never reaches the
+        revocation read, so learns nothing about the device's state."""
+        device_id = uuid4()
+        refused = MagicMock(spec=httpx.Response)
+        refused.status_code = 403
+        refused.json.return_value = {"error": "user_mismatch"}
+        refused.text = "user_mismatch"
+        with (
+            patch.object(coord_service_account, "_admin_secret", "test-secret"),
+            patch(
+                "app.api.v1.endpoints.devices.post_to_coord",
+                AsyncMock(return_value=refused),
+            ),
+            patch.object(device_crud, "get_credential_revoked_at", AsyncMock()) as read,
+        ):
+            resp = self._post(device_id)
+        assert resp.status_code == 502, resp.text
+        read.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1443,37 +1462,75 @@ class TestFailClosedEdges:
                 "get_credential_revoked_at",
                 AsyncMock(side_effect=RuntimeError("db down")),
             ),
-            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
             patch.object(dmk_crud, "mint", AsyncMock()) as mint,
         ):
             resp = helper._post(device_id)
         assert resp.status_code == 503, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_state_unavailable"
-        coord.assert_not_called()
+        assert "device-jwt" not in resp.text
         mint.assert_not_called()
 
-    def test_pair_confirm_refuses_a_revoked_device(self) -> None:
-        device_id = uuid4()
+    @contextmanager
+    def _pair_confirm(
+        self, device_id: UUID, coord_status: int = 201
+    ) -> Iterator[AsyncMock]:
+        coord_resp = MagicMock(spec=httpx.Response)
+        coord_resp.status_code = coord_status
+        coord_resp.json.return_value = {"device_id": str(device_id), "token": "jwt-x"}
+        coord_resp.text = ""
+        post = AsyncMock(return_value=coord_resp)
         with (
             patch.object(coord_service_account, "_admin_secret", "test-secret"),
+            patch.object(coord_service_account, "_headers", AsyncMock(return_value={})),
             patch(
                 f"{_DEVICES_MODULE}.get_coord_identity",
                 AsyncMock(return_value=_identity(uuid4())),
             ),
+            patch("app.api.v1.endpoints.devices.post_to_coord", post),
+        ):
+            yield post
+
+    def _confirm(self, device_id: str) -> httpx.Response:
+        return TestClient(_app()).post(
+            f"{API_PREFIX}/pair-confirm",
+            json={"state": "s" * 32, "device_id": device_id},
+        )
+
+    def test_pair_confirm_refuses_a_revoked_device(self) -> None:
+        device_id = uuid4()
+        with (
+            self._pair_confirm(device_id),
             patch.object(
                 device_crud,
                 "get_credential_revoked_at",
                 AsyncMock(return_value=datetime.now(UTC)),
             ),
-            patch("app.api.v1.endpoints.devices.post_to_coord", AsyncMock()) as coord,
         ):
-            resp = TestClient(_app()).post(
-                f"{API_PREFIX}/pair-confirm",
-                json={"state": "s" * 32, "device_id": str(device_id)},
-            )
+            resp = self._confirm(str(device_id))
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
-        coord.assert_not_called()
+        assert "jwt-x" not in resp.text
+
+    def test_pair_confirm_coord_refusal_discloses_no_revocation_state(self) -> None:
+        device_id = uuid4()
+        with (
+            self._pair_confirm(device_id, coord_status=403),
+            patch.object(device_crud, "get_credential_revoked_at", AsyncMock()) as read,
+        ):
+            resp = self._confirm(str(device_id))
+        assert resp.status_code == 502, resp.text
+        read.assert_not_called()
+
+    def test_pair_confirm_refuses_an_unparseable_device_id(self) -> None:
+        with (
+            self._pair_confirm(uuid4()) as post,
+            patch.object(device_crud, "get_credential_revoked_at", AsyncMock()) as read,
+        ):
+            resp = self._confirm("not-a-uuid")
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"]["code"] == "device_id_malformed"
+        post.assert_not_called()
+        read.assert_not_called()
 
     def test_owner_mint_loses_the_race_to_a_concurrent_revoke(self) -> None:
         """The deny read passed, but the key was revoked before the locked
