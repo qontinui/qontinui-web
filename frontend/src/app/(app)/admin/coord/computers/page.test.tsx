@@ -257,6 +257,61 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.queryByTestId("coord-computer-lanes-unknown")).toBeNull();
   });
 
+  it("renders a lane silent past 30 min as a STALE last-known row, not a dropped one", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({
+        lanes: [
+          laneFx({ age_secs: 10 }),
+          laneFx({ lane: "wsl", lane_instance: "Ubuntu", age_secs: 2400 }),
+        ],
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const rows = await screen.findAllByTestId("coord-computer-lane-row");
+    expect(rows.map((r) => r.getAttribute("data-freshness"))).toEqual([
+      "fresh",
+      "stale",
+    ]);
+    expect(
+      within(rows[1]).getByTestId("coord-computer-lane-last-known").textContent
+    ).toBe("last known, 40m ago");
+    expect(screen.getByTestId("coord-computer-health").textContent).toContain(
+      "lane stale"
+    );
+  });
+
+  it("reads services_reported: false as unknown — never 'no watched service' or 0 down", async () => {
+    httpGet.mockResolvedValue(detailFx({ services_reported: false }));
+    render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-services-unknown")).textContent
+    ).toContain("unknown — not none");
+    expect(screen.queryByTestId("coord-computer-services-none")).toBeNull();
+    expect(
+      screen.getByTestId("coord-computer-health-services").textContent
+    ).toBe("services down –");
+  });
+
+  it("renders CI runners and divergence UNKNOWN when coord's registrar read failed", async () => {
+    httpGet.mockResolvedValue(detailFx({ registrar_read_ok: false }));
+    render(<CoordComputerDetailPage />);
+    expect(
+      await screen.findByTestId("coord-computer-divergence-unknown")
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("coord-computer-ci-runners-unknown")
+    ).toBeTruthy();
+    expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
+  });
+
+  it("says 'no disagreement found' — never 'agree' — when the registrar read succeeded", async () => {
+    httpGet.mockResolvedValue(detailFx());
+    render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-divergence-none")).textContent
+    ).toBe("No disagreement found among fresh registrar rows.");
+  });
+
   it("shows a stale computer's lanes as last known and its services as `last known: …`", async () => {
     httpGet.mockResolvedValue(
       detailFx({
@@ -277,7 +332,6 @@ describe("/admin/coord/computers/[computerId]", () => {
   it("renders a fresh down unit red, with its OOM policy in the detail", async () => {
     httpGet.mockResolvedValue(
       detailFx({
-        services_failed: 1,
         services: [
           serviceFx({
             active_state: "failed",
@@ -321,7 +375,9 @@ describe("/admin/coord/computers/[computerId]", () => {
     const { unmount } = render(<CoordComputerDetailPage />);
     expect(
       (await screen.findByTestId("coord-computer-agent-sessions")).textContent
-    ).toBe("2 open agent sessions across 1 device on this computer.");
+    ).toBe(
+      "2 open agent sessions across 1 device with sessions, of 1 coord device on this computer."
+    );
     unmount();
 
     const d = detailFx();

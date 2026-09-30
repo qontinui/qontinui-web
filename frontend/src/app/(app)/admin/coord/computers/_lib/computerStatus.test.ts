@@ -319,6 +319,17 @@ describe("computerStatus", () => {
     );
   });
 
+  it("does not call a fresh lane with an ungraded headroom healthy", () => {
+    const s = status(
+      computer({ lanes: [lane({ age_secs: 10, headroom: "unknown" })] })
+    );
+    expect(s.kind).toBe("headroom_unknown");
+    expect(s.attention).toBe("waiting");
+    expect(s.reason).toBe(
+      "Coord could not grade admission headroom for lane host, so whether it is refusing work is unknown."
+    );
+  });
+
   it("reads empty lanes with no sample ever as samples unknown — not healthy", () => {
     const s = status(computer({ lanes: [], newest_sample_age_secs: null }));
     expect(s.kind).toBe("lane_stale");
