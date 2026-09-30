@@ -471,6 +471,14 @@ def test_coord_computers_01_locks_tenant_devices_then_samples_before_any_alter(
     assert 0 <= timeout_at < lock_at, (
         f"{direction} must bound the lock wait before LOCK TABLE"
     )
+    # The bound is the FIRST statement (upgrade: the computers FK locks
+    # coord.tenants before any existing-table ALTER) and is never reset (the
+    # downgrade DROP TABLE coord.computers takes ACCESS EXCLUSIVE on
+    # coord.tenants while both tables are held).
+    assert timeout_at == 0, f"{direction} must set lock_timeout before anything"
+    assert "lock_timeout = DEFAULT" not in sql, (
+        f"{direction} must not reset lock_timeout; later locks would be unbounded"
+    )
 
 
 @pytest.mark.skipif(
@@ -737,20 +745,57 @@ def test_coord_computers_01_models_the_machine_and_reverses_cleanly() -> None:
             str(host_b),
         )
 
-        # -- deleting a tenant cascades its computers. ------------------------
+        # -- deleting a tenant that has a BOUND computer. ----------------------
+        # The device is owned by tenant A (devices.tenant_id) and bound to
+        # tenant B, whose binding points at tenant B computer host_b, which has
+        # a WSL guest and an event. Deleting tenant B reaches the tenant B
+        # binding row by TWO cascades at once: tenants -> tenant_devices
+        # (CASCADE) and tenants -> computers -> tenant_devices (SET NULL). The
+        # delete must succeed and remove every tenant B row, touching none of
+        # tenant A.
+        guest_b = _insert_computer(
+            engine, tenant_b, _HASH_B, kind="wsl_guest", parent=host_b
+        )
         with engine.begin() as conn:
             conn.execute(
-                text("DELETE FROM coord.tenant_devices WHERE tenant_id = :t"),
-                {"t": tenant_b},
+                text(
+                    """
+                    INSERT INTO coord.computer_events
+                        (computer_id, client_event_id, kind, observed_at)
+                    VALUES (:c, 'reboot:boot-2', 'reboot', :at)
+                    """
+                ),
+                {"c": host_b, "at": _NOW},
             )
+        with engine.begin() as conn:
             conn.execute(
                 text("DELETE FROM coord.tenants WHERE tenant_id = :t"), {"t": tenant_b}
             )
-            left = conn.execute(
-                text("SELECT COUNT(*) FROM coord.computers WHERE tenant_id = :t"),
-                {"t": tenant_b},
-            ).scalar_one()
-        assert left == 0
+            after = conn.execute(
+                text(
+                    """
+                    SELECT
+                      (SELECT COUNT(*) FROM coord.computers WHERE tenant_id = :tb),
+                      (SELECT COUNT(*) FROM coord.computer_events
+                        WHERE computer_id IN (:hb, :gb)),
+                      (SELECT COUNT(*) FROM coord.tenant_devices WHERE tenant_id = :tb),
+                      (SELECT COUNT(*) FROM coord.tenant_devices
+                        WHERE tenant_id = :ta AND device_id = :d),
+                      (SELECT COUNT(*) FROM coord.devices WHERE device_id = :d),
+                      (SELECT COUNT(*) FROM coord.computers WHERE tenant_id = :ta)
+                    """
+                ),
+                {
+                    "tb": tenant_b,
+                    "ta": tenant_a,
+                    "hb": host_b,
+                    "gb": guest_b,
+                    "d": device,
+                },
+            ).one()
+        # tenant B: no computers, events or bindings; tenant A: its binding, the
+        # device it owns, and its one remaining computer (the guest) survive.
+        assert tuple(after) == (0, 0, 0, 1, 1, 1)
 
         # -- reversal, then re-apply. -----------------------------------------
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
