@@ -54,13 +54,23 @@ a modified copy and read the Vercel token and the ci-bot login.
   then does the `verify` job assume `qontinui-web-verify-frontend`, whose
   trust is pinned to this file at `refs/heads/main`.
 
-So a branch or fork deployment can still run a modified trigger file. The
-most it can do is dispatch the main-branch run for some deployment id, or do
-what a `push`-triggered workflow on that branch could already do with the
-job token. The main-branch run then smokes only a validated production
-deployment of a commit on `main`, and it can roll back only to the prior
-production deployment. The branch copy never holds the role, the SSM
-parameters or the Vercel token.
+So a branch or fork deployment can still run a modified trigger file, and
+it runs in THIS repo's context: whatever the file says at that commit, it
+can reference any **repo-level** secret and request write scopes for the
+job token. The role, the SSM parameters and the Vercel token are out of its
+reach (the role trusts only `verify-frontend-run.yml` at `refs/heads/main`,
+which re-validates the deployment before doing anything). Two things keep the
+rest small:
+
+- **Keep no secret at repo level that such a copy could abuse.** The unused
+  `SPEC_CI_AUTH_EMAIL` / `SPEC_CI_AUTH_PASSWORD` repo secrets were deleted on
+  2026-09-30 (the ci-bot login lives in SSM). The static
+  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets are deleted in
+  Phase 4 of the plan, once no workflow reads them.
+- **Vercel Git Fork Protection must stay ON** for the `qontinui-web` Vercel
+  project (read 2026-09-30: `gitForkProtection: true`). It is the only gate
+  that stops a fork PR's commit from being deployed, and so from running this
+  file with base-repo secrets.
 
 ## Apply / recreate
 
