@@ -1,7 +1,7 @@
 """coord.worktree_cargo_lock — per-device cargo target lock samples
 
 Revision ID: coord_wt_cargo_lock_01
-Revises: sched_cond_01_scheduled_tasks_conditions
+Revises: coordinput_01_operator_inputs
 Create Date: 2026-09-30
 
 Phase 2 (web half) of plan
@@ -66,7 +66,7 @@ concurrent build is instant (precedent ``coord_test_result_heads_01``). No
 coord OWNS reads/writes of this table; web only authors the DDL (served policy
 ``production-and-cost`` ``alembic-sole-authorship``).
 
-Chains off ``sched_cond_01_scheduled_tasks_conditions``, the single head of
+Chains off ``coordinput_01_operator_inputs``, the single head of
 ``origin/main`` at authoring time. If a concurrent land moves the head before
 this merges, re-point ``down_revision`` (and the ``Revises:`` line and the
 test's pinned parent) onto the new head.
@@ -78,7 +78,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wt_cargo_lock_01"
-down_revision: str | Sequence[str] | None = "sched_cond_01_scheduled_tasks_conditions"
+down_revision: str | Sequence[str] | None = "coordinput_01_operator_inputs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
