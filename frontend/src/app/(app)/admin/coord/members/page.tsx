@@ -130,7 +130,10 @@ import { httpClient } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
 import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
 import {
+  BackendErrorMessage,
   CollapsiblePanel,
+  GlossaryTerm,
+  readingOf,
   RecordDetail,
   StatCluster,
   StatusBadge,
@@ -143,7 +146,9 @@ import {
 } from "@/components/admin/coord/CoordProjectRenameDialog";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
 import {
+  backendError,
   backendErrorMessage,
+  type BackendErrorReading,
   bounded,
   MAX_CAUSE_LENGTH,
   messageFromErrorBody,
@@ -498,7 +503,7 @@ function GroupNameHint({
 function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // The row whose Rename dialog is open. The dialog is MOUNTED only while this
   // is set, so the rest of the page never pays for its tenant-context and UI
   // Bridge hooks.
@@ -509,7 +514,7 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) throw await backendError(res);
       const json = (await res.json()) as MyTenantsResponse | null;
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
@@ -550,7 +555,7 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
       setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readingOf(err));
     } finally {
       setLoading(false);
     }
@@ -627,7 +632,8 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
           <Skeleton className="h-10 w-full" />
         ) : error ? (
           <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
+            <AlertTriangle className="h-4 w-4" />{" "}
+            <BackendErrorMessage error={error} />
           </p>
         ) : data ? (
           <div className="space-y-2 text-sm">
@@ -720,7 +726,7 @@ function MembersTable({
 }) {
   const [operators, setOperators] = useState<OperatorRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // Pending role selection per operator (defaults to Administrator).
   const [pendingRole, setPendingRole] = useState<Record<string, CoordRole>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -733,7 +739,7 @@ function MembersTable({
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) throw await backendError(res);
       const json = (await res.json()) as MembersResponse;
       // The third sibling. A malformed 200 here fabricates "No members yet." —
       // and, through `stats` below, the four-count headline `members 0 ·
@@ -759,7 +765,7 @@ function MembersTable({
       setOperators(rows);
     } catch (err) {
       log.warn("load members failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readingOf(err));
     } finally {
       setLoading(false);
     }
@@ -903,7 +909,8 @@ function MembersTable({
         </div>
       ) : error ? (
         <p className="text-sm text-destructive flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4" /> {error}
+          <AlertTriangle className="h-4 w-4" />{" "}
+          <BackendErrorMessage error={error} />
         </p>
       ) : operators.length === 0 ? (
         <p className="text-sm text-muted-foreground">No members yet.</p>
@@ -916,7 +923,9 @@ function MembersTable({
                 <TableHead>Display name</TableHead>
                 <TableHead>Access</TableHead>
                 <TableHead>Last login</TableHead>
-                <TableHead className="text-right">Grant tier</TableHead>
+                <TableHead className="text-right">
+                  Grant <GlossaryTerm id="tier">tier</GlossaryTerm>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1468,7 +1477,7 @@ function GroupTenantRolesSection({
 }) {
   const [rows, setRows] = useState<GroupTenantRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Add-mapping form state.
@@ -1500,7 +1509,7 @@ function GroupTenantRolesSection({
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/group-tenant-roles`
       );
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) throw await backendError(res);
       const json = (await res.json()) as GroupTenantRolesResponse;
       // A successful STATUS is not a successful READ — the same rule the
       // blast-radius read of this SAME endpoint applies below. `?? []` is dead
@@ -1517,7 +1526,7 @@ function GroupTenantRolesSection({
       );
     } catch (err) {
       log.warn("load group-tenant-roles failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readingOf(err));
     } finally {
       setLoading(false);
     }
@@ -1821,7 +1830,8 @@ function GroupTenantRolesSection({
           </div>
         ) : error ? (
           <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
+            <AlertTriangle className="h-4 w-4" />{" "}
+            <BackendErrorMessage error={error} />
           </p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">No mappings yet.</p>
@@ -2021,7 +2031,7 @@ function CognitoGroupMembers({
 }) {
   const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -2039,7 +2049,7 @@ function CognitoGroupMembers({
       // status the backend stopped relying on precisely because it says
       // nothing. `backendErrorMessage` is what the mutations on this page
       // already use.
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) throw await backendError(res);
       const json = (await res.json()) as CognitoGroupUsersResponse;
       // "No users in this group yet." is an assertion about a group an operator
       // is deciding whether to empty or delete. It must come from a read that
@@ -2047,7 +2057,7 @@ function CognitoGroupMembers({
       setUsers(requireRows<CognitoGroupUserRow>(json?.users, "cognito group users"));
     } catch (err) {
       log.warn("load cognito group users failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readingOf(err));
     } finally {
       setLoading(false);
     }
@@ -2104,7 +2114,8 @@ function CognitoGroupMembers({
   if (error) {
     return (
       <p className="text-sm text-destructive flex items-center gap-1.5 py-2">
-        <AlertTriangle className="h-4 w-4" /> {error}
+        <AlertTriangle className="h-4 w-4" />{" "}
+        <BackendErrorMessage error={error} />
       </p>
     );
   }
@@ -3012,7 +3023,7 @@ function CognitoGroupsSection({
 }) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // Blast-radius inputs for the group ROWS. Section-level, not per-row,
   // because the row that needs them is the one that has NOT been expanded —
   // a per-row lazy fetch would arrive only after the operator had already
@@ -3058,7 +3069,7 @@ function CognitoGroupsSection({
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/cognito/groups`
       );
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) throw await backendError(res);
       const json = (await res.json()) as CognitoGroupsResponse;
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
       // not the list is UNKNOWN, not "no groups". `?? []` would render "No
@@ -3067,7 +3078,7 @@ function CognitoGroupsSection({
       setGroups(requireRows<CognitoGroupRow>(json?.groups, "cognito groups"));
     } catch (err) {
       log.warn("load cognito groups failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readingOf(err));
     } finally {
       setLoading(false);
     }
@@ -3277,7 +3288,8 @@ function CognitoGroupsSection({
               </div>
             ) : error ? (
               <p className="text-sm text-destructive flex items-center gap-1.5">
-                <AlertTriangle className="h-4 w-4" /> {error}
+                <AlertTriangle className="h-4 w-4" />{" "}
+                <BackendErrorMessage error={error} />
               </p>
             ) : groups.length === 0 ? (
               <p className="text-sm text-muted-foreground">
