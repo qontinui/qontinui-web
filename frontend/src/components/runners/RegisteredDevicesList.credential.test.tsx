@@ -263,7 +263,7 @@ describe("RegisteredDevicesList credential panel", () => {
       "device-authenticate-pending"
     );
     expect(pending).toHaveTextContent(
-      "Pending until the runner's next check-in (≤5 min)"
+      "Authorization pending — any revocation on this runner is lifted now; it collects its new credential at its next check-in (≤5 min)"
     );
     expect(pending).not.toHaveTextContent(/success|authenticated|done/i);
     // The posture badge still says what coord reports — unknown — not live.
@@ -329,7 +329,7 @@ describe("RegisteredDevicesList credential panel", () => {
     expect(revokeMock).toHaveBeenCalledWith(DEVICE_A);
   });
 
-  it("offers no Revoke for a device whose key is already revoked", async () => {
+  it("offers no Revoke once the device-scoped deny is set", async () => {
     getRunnersMock.mockResolvedValue([device(DEVICE_A, "box-a")]);
     overviewMock.mockResolvedValue({
       devices: [
@@ -352,5 +352,79 @@ describe("RegisteredDevicesList credential panel", () => {
       "data-machine-key-state",
       "revoked"
     );
+    // Truthful copy: renewal is blocked; no claim about which service refuses.
+    const revoked = within(panel).getByTestId("device-credential-revoked");
+    expect(revoked).toHaveTextContent(
+      "this runner's credentials can no longer be renewed until you authenticate it again"
+    );
+    expect(revoked).not.toHaveTextContent(/coord refuses/i);
+  });
+
+  it("offers Revoke with no machine key held, without implying a key", async () => {
+    const user = userEvent.setup();
+    getRunnersMock.mockResolvedValue([device(DEVICE_A, "box-a")]);
+    overviewMock.mockResolvedValue({ devices: [overviewRow(DEVICE_A)] });
+    revokeMock.mockResolvedValue({
+      device_id: DEVICE_A,
+      revoked_at: new Date().toISOString(),
+    });
+
+    renderList();
+    const panel = await panelFor(DEVICE_A);
+    const button = await within(panel).findByTestId("device-revoke-button");
+    expect(button).toHaveTextContent("Revoke credentials");
+    expect(button).not.toHaveTextContent(/machine key/i);
+
+    await user.click(button);
+    const dialog = await screen.findByTestId("device-revoke-dialog");
+    expect(dialog).toHaveTextContent("This runner holds no machine key.");
+    expect(dialog).not.toHaveTextContent(/withdraws the key/i);
+
+    await user.click(screen.getByTestId("device-revoke-dialog-confirm"));
+    expect(revokeMock).toHaveBeenCalledWith(DEVICE_A);
+  });
+
+  it("offers no Revoke when the overview has no row (deny state unknown)", async () => {
+    getRunnersMock.mockResolvedValue([device(DEVICE_A, "box-a")]);
+    overviewMock.mockResolvedValue({ devices: [] });
+
+    renderList();
+    const panel = await panelFor(DEVICE_A);
+    await waitFor(() =>
+      expect(within(panel).getByTestId("device-machine-key")).toHaveAttribute(
+        "data-machine-key-state",
+        "unknown"
+      )
+    );
+    expect(within(panel).queryByTestId("device-revoke-button")).toBeNull();
+  });
+
+  it("offers Authenticate for a revoked device whose posture still reads live", async () => {
+    statusRows = new Map([
+      [
+        "box-a",
+        statusRow(
+          DEVICE_A,
+          "box-a",
+          { ok: true, posture: "live" },
+          new Date().toISOString()
+        ),
+      ],
+    ]);
+    getRunnersMock.mockResolvedValue([device(DEVICE_A, "box-a")]);
+    overviewMock.mockResolvedValue({
+      devices: [
+        overviewRow(DEVICE_A, {
+          credential_revoked_at: new Date().toISOString(),
+        }),
+      ],
+    });
+
+    renderList();
+    const panel = await panelFor(DEVICE_A);
+    expect(postureOf(panel)).toHaveAttribute("data-posture-kind", "live");
+    expect(
+      await within(panel).findByTestId("device-authenticate-button")
+    ).toBeInTheDocument();
   });
 });

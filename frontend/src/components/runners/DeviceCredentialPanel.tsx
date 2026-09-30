@@ -14,12 +14,13 @@
  * - **Machine key** comes from web's own `device_machine_credentials` row via
  *   `GET /devices/credential-overview`. When that read failed or has no row
  *   for this device the key is UNKNOWN, not "none".
- * - **Authenticate** (any runner not `live`) records an authorization the
- *   runner picks up on its next refresher tick. The 202 proves only that the
+ * - **Authenticate** (any runner not `live`, or any device carrying the
+ *   device-scoped deny) lifts that deny immediately and records an
+ *   authorization the runner picks up on its next refresher tick. The 202 proves only that the
  *   authorization was recorded, so the panel says *pending*, never success;
  *   success is the posture badge turning `live` once the runner reports it.
- * - **Revoke** (a device holding an unrevoked key) withdraws the key and sets
- *   the device-scoped deny, behind a confirmation.
+ * - **Revoke** (any device whose deny is not set, key or no key) sets the
+ *   device-scoped deny and withdraws any machine key, behind a confirmation.
  */
 
 import { useState } from "react";
@@ -37,6 +38,7 @@ import {
 import {
   canAuthenticate,
   canRevoke,
+  holdsActiveMachineKey,
   isPendingLive,
   type DevicePosture,
 } from "./deviceCredentialPosture";
@@ -137,6 +139,7 @@ export function DeviceCredentialPanel({
   const [revoking, setRevoking] = useState(false);
 
   const { credential, lastObserved } = posture;
+  const keyHeld = holdsActiveMachineKey(overview);
   const pending = localPending ?? overview?.pending_redeem ?? null;
   const showPending = isPendingLive(pending, now) && credential.kind !== "live";
 
@@ -214,9 +217,9 @@ export function DeviceCredentialPanel({
           data-testid="device-credential-revoked"
           title={absoluteTime(overview.credential_revoked_at)}
         >
-          Credential revoked{" "}
-          {relativeTime(overview.credential_revoked_at, { now })}. Coord refuses
-          this runner&apos;s refresh until an operator clicks Authenticate.
+          Revoked {relativeTime(overview.credential_revoked_at, { now })} — this
+          runner&apos;s credentials can no longer be renewed until you
+          authenticate it again.
         </p>
       )}
 
@@ -227,7 +230,8 @@ export function DeviceCredentialPanel({
           title={`Authorization lapses ${absoluteTime(pending.expires_at)}`}
         >
           <Clock className="w-3.5 h-3.5 shrink-0" />
-          Pending until the runner&apos;s next check-in (≤5 min). Not yet
+          Authorization pending — any revocation on this runner is lifted now;
+          it collects its new credential at its next check-in (≤5 min). Not yet
           confirmed — the badge turns live once the runner reports it.
           Authorization lapses {untilLabel(pending.expires_at, now)}.
         </p>
@@ -242,9 +246,9 @@ export function DeviceCredentialPanel({
         </p>
       )}
 
-      {(canAuthenticate(credential) || canRevoke(overview)) && (
+      {(canAuthenticate(credential, overview) || canRevoke(overview)) && (
         <div className="flex flex-wrap gap-2 pt-1">
-          {canAuthenticate(credential) && (
+          {canAuthenticate(credential, overview) && (
             <Button
               variant="outline"
               size="sm"
@@ -276,7 +280,7 @@ export function DeviceCredentialPanel({
               data-ui-bridge-id={`runners.device.${deviceId}.revoke`}
             >
               <ShieldOff className="w-4 h-4 mr-2" />
-              Revoke machine key
+              {keyHeld ? "Revoke machine key" : "Revoke credentials"}
             </Button>
           )}
         </div>
@@ -285,14 +289,26 @@ export function DeviceCredentialPanel({
       <ConfirmDestructiveDialog
         open={confirmRevoke}
         onOpenChange={setConfirmRevoke}
-        title="Revoke this runner's machine key?"
+        title={
+          keyHeld
+            ? "Revoke this runner's machine key?"
+            : "Revoke this runner's credentials?"
+        }
         description={
-          <>
-            This runner&apos;s machine key renews automatically until revoked.
-            Revoking withdraws the key and makes coord refuse this device&apos;s
-            credential refresh, so the runner goes dark once its current token
-            expires. Only an operator clicking <em>Authenticate</em> re-arms it.
-          </>
+          keyHeld ? (
+            <>
+              This runner&apos;s machine key renews automatically until revoked.
+              Revoking withdraws the key, and this runner&apos;s credentials can
+              no longer be renewed until you authenticate it again — it goes
+              dark once its current token expires.
+            </>
+          ) : (
+            <>
+              This runner holds no machine key. Revoking means its credentials
+              can no longer be renewed until you authenticate it again — it goes
+              dark once its current token expires.
+            </>
+          )
         }
         confirmLabel={revoking ? "Revoking…" : "Revoke"}
         busy={revoking}
