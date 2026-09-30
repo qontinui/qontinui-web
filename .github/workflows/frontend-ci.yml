@@ -49,6 +49,11 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      # `npm run lint` is `next lint` (src/) followed by `lint:config`: the
+      # files beside src/ — next.config.mjs, config/ (the rewrite resolver)
+      # and scripts/ — get the full rule set too,
+      # @qontinui-web/no-dev-stack-fallback included. Errors fail; console
+      # warnings in CLI scripts do not.
       - name: Lint
         working-directory: ./frontend
         run: npm run lint
@@ -67,14 +72,6 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
-
-      # `npm run lint` (next lint) covers only src/, so the files beside it —
-      # next.config.mjs, config/ (the rewrite resolver) and scripts/ — get the
-      # full rule set here, @qontinui-web/no-dev-stack-fallback included.
-      # Errors fail; console warnings in CLI scripts do not.
-      - name: Lint next.config.mjs, config/ and scripts/
-        working-directory: ./frontend
-        run: npx eslint next.config.mjs config scripts
 
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump
