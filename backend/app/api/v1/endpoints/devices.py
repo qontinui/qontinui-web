@@ -782,6 +782,21 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     return detail
 
 
+async def _refuse_revoked_pairing(
+    db: AsyncSession, device_id: UUID, *, door: str
+) -> None:
+    """Withhold a freshly paired device's JWT while its credentials are revoked.
+
+    A device an operator revoked is re-armed only by ``authorize-redeem`` —
+    never by re-pairing it — and web enforces that itself rather than trusting
+    coord to. The pairing doors call this after coord's reply, i.e. once coord
+    has established the caller may pair this device, so the revocation state
+    is disclosed only to someone who could already pair it. The JWT coord just
+    minted is discarded, and coord's own refresh refuses a revoked device.
+    """
+    await refuse_if_credential_revoked(db, device_id, door=door)
+
+
 @router.post(
     "/pair-confirm",
     response_model=PairConfirmResponse,
@@ -836,11 +851,16 @@ async def pair_confirm(
     # is kept purely as the linked-operator gate.
     await get_coord_identity(request)
 
-    # A device an operator revoked is re-armed only by authorize-redeem —
-    # never by re-pairing it. Enforced here rather than trusted to coord.
-    confirm_device = _as_uuid(payload.device_id)
-    if confirm_device is not None:
-        await refuse_if_credential_revoked(db, confirm_device, door="pair_confirm")
+    # A device id that is not a UUID can name no device, so it cannot be
+    # checked for revocation below — refuse it rather than let it through.
+    if _as_uuid(payload.device_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "device_id_malformed",
+                "message": "device_id must be a UUID.",
+            },
+        )
 
     # The credential coord verifies is in the HEADERS: the web service
     # token + `X-Qontinui-User-Id` (arm B). The body carries no identity —
@@ -943,6 +963,10 @@ async def pair_confirm(
             detail="Coord pair-complete returned malformed device_id.",
         ) from exc
 
+    # Checked only AFTER coord accepted the caller for this device, so the
+    # revocation state is never disclosed to someone coord would refuse.
+    await _refuse_revoked_pairing(db, device_uuid, door="pair_confirm")
+
     logger.info(
         "pair_confirm_completed",
         user_id=str(current_user.id),
@@ -1014,10 +1038,6 @@ async def pair_cli(
                 "device pairing unavailable."
             ),
         )
-
-    # A device an operator revoked is re-armed only by authorize-redeem —
-    # never by re-pairing it. Enforced here rather than trusted to coord.
-    await refuse_if_credential_revoked(db, payload.device_id, door="pair_cli")
 
     caller_token = _extract_caller_token(request)
     if not caller_token:
@@ -1091,6 +1111,10 @@ async def pair_cli(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Coord pair-cli returned malformed device_id.",
         ) from exc
+
+    # Checked only AFTER coord accepted the caller for this device, so the
+    # revocation state is never disclosed to someone coord would refuse.
+    await _refuse_revoked_pairing(db, device_uuid, door="pair_cli")
 
     # Auto-mint a device machine key (``dmk_``) for this device+owner so
     # every paired runner receives one out-of-box (zero extra setup) and can
