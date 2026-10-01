@@ -131,11 +131,19 @@ export default function ConnectRunnerPage() {
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as { detail?: string }).detail ||
-            (body as { message?: string }).message ||
-            `Pair-confirm failed (HTTP ${response.status})`
-        );
+        const detail = (body as { detail?: unknown }).detail;
+        // A coord refusal arrives as an object ({coord_status, coord_body}),
+        // e.g. coord's 403 when none of the selected workspaces could be paired.
+        const message =
+          typeof detail === "string"
+            ? detail
+            : detail && typeof detail === "object"
+              ? (detail as { coord_status?: number }).coord_status === 403
+                ? "None of the selected workspaces could be connected with this account."
+                : `Pairing was refused (coord HTTP ${(detail as { coord_status?: number }).coord_status ?? "?"}).`
+              : (body as { message?: string }).message ||
+                `Pair-confirm failed (HTTP ${response.status})`;
+        throw new Error(message);
       }
       const result: PairConfirmResult = await response.json();
       const redirectUrl = buildCallbackRedirect(callback, state, result);

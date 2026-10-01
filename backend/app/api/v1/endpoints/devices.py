@@ -788,7 +788,15 @@ async def pair_confirm(
     # holds them for the runner's pair-collect. The browser gets only the
     # per-tenant outcomes, so a token is not required here — and the page
     # never puts one in the callback URL.
-    collect = coord_body.get("collect") is True
+    raw_collect = coord_body.get("collect", False)
+    if not isinstance(raw_collect, bool):
+        # A non-boolean flag must never fall through to the legacy branch,
+        # which would put coord's token in the response and callback URL.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord pair-complete returned a malformed collect flag.",
+        )
+    collect = raw_collect
     if not coord_device_id or (not collect and not coord_token):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -798,7 +806,9 @@ async def pair_confirm(
     results: list[PairConfirmTenantResult] | None = None
     if collect:
         raw_results = coord_body.get("results")
-        if raw_results is not None and not isinstance(raw_results, list):
+        # Collect mode always carries at least one per-tenant outcome; coord
+        # answers 403 (not an empty list) when nothing was minted.
+        if not isinstance(raw_results, list) or not raw_results:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Coord pair-complete returned malformed results.",
@@ -812,7 +822,7 @@ async def pair_confirm(
                     status=entry.get("status"),
                     skipped_reason=entry.get("skipped_reason"),
                 )
-                for entry in (raw_results or [])
+                for entry in raw_results
             ]
         except (ValidationError, AttributeError) as exc:
             raise HTTPException(

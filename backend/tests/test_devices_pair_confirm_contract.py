@@ -267,14 +267,32 @@ class TestPairConfirmCollectMode:
         assert resp.status_code == 502
         assert "missing device_id/token" in resp.text
 
-    def test_malformed_results_are_a_502(self, client: TestClient) -> None:
-        resp, _ = self._post(
-            client,
-            {
-                "device_id": _DEVICE_ID,
-                "collect": True,
-                "results": [{"status": "minted"}],
-            },
-        )
+    @pytest.mark.parametrize(
+        "results",
+        [
+            [{"status": "minted", "token": "leak"}],  # entry missing tenant_id
+            {"tenant_id": "x", "token": "leak"},  # not a list
+            ["leak"],  # entry is not an object
+            [],  # empty
+            None,  # missing
+        ],
+    )
+    def test_malformed_results_are_a_502(
+        self, client: TestClient, results: object
+    ) -> None:
+        body: dict = {"device_id": _DEVICE_ID, "token": "leak", "collect": True}
+        if results is not None:
+            body["results"] = results
+        resp, _ = self._post(client, body)
         assert resp.status_code == 502
         assert "malformed results" in resp.text
+        assert "leak" not in resp.text
+
+    @pytest.mark.parametrize("flag", ["true", 1, "1"])
+    def test_non_boolean_collect_flag_is_a_502(
+        self, client: TestClient, flag: object
+    ) -> None:
+        resp, _ = self._post(client, {**_COORD_OK, "collect": flag})
+        assert resp.status_code == 502
+        assert "collect flag" in resp.text
+        assert "device-token-jwt" not in resp.text
