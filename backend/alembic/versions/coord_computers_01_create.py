@@ -283,6 +283,7 @@ def upgrade() -> None:
             memory_peak       BIGINT,
             n_restarts        INTEGER,
             state_changed_at  TIMESTAMPTZ,
+            reported_state_changed_at TIMESTAMPTZ,
             observed_at       TIMESTAMPTZ NOT NULL,
             runner_name       TEXT,
             repo              TEXT,
@@ -354,7 +355,13 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.computer_services IS
-            'Latest snapshot of each watched service unit per computer. A full snapshot report deletes rows for units it does not list; a delta report upserts only. runner_name joins a unit to the CI runner registrar.'
+            'Latest snapshot of each watched service unit per computer. For each kind a report declares complete, coord deletes that kind''s rows the report does not list; other kinds are a delta (upsert only). runner_name joins a unit to the CI runner registrar.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.computer_services.reported_state_changed_at IS
+            'The state_changed_at exactly as the reporter sent it, before coord clamped a future value to now(). A same-state report carrying the same raw value is the same transition, so state_changed_at (coord''s clock) is kept and dwell keeps growing on a fast-clock box.'
         """
     )
     op.execute(

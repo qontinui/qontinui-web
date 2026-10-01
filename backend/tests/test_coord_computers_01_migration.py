@@ -165,6 +165,7 @@ _EXPECTED_SERVICE_COLUMNS: dict[str, tuple[str, str]] = {
     "memory_peak": ("bigint", "YES"),
     "n_restarts": ("integer", "YES"),
     "state_changed_at": ("timestamp with time zone", "YES"),
+    "reported_state_changed_at": ("timestamp with time zone", "YES"),
     "observed_at": ("timestamp with time zone", "NO"),
     "runner_name": ("text", "YES"),
     "repo": ("text", "YES"),
