@@ -11,10 +11,11 @@ Prerequisite of plan
 
 coord authors **zero** DDL (``[policy: alembic-sole-authorship]``), so the
 table lands here, in qontinui-web, and must be DEPLOYED before coord's
-``POST /coord/devices/me/spawn-admission`` routes read and write it. coord reads
-it readiness-gated: until it exists those routes answer a typed
-schema-not-ready refusal, which the runner reads as admission UNKNOWN and falls
-back to its local token bucket.
+``POST /coord/devices/me/spawn-admission`` routes read and write it. coord is
+expected to read it readiness-gated; whatever coord answers while the table is
+absent, the runner treats any non-grant answer (including a 404 from a coord
+that does not serve the routes) as admission UNKNOWN and falls back to its
+local token bucket.
 
 The re-point rule
 =================

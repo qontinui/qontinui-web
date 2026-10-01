@@ -155,13 +155,29 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
             assert index_exists(engine, name), f"missing index {name}"
 
         with engine.connect() as conn:
-            open_grants_def = conn.execute(
-                text(
-                    "SELECT indexdef FROM pg_indexes "
-                    "WHERE schemaname = 'coord' AND indexname = :name"
-                ),
-                {"name": "ix_spawn_admission_ledger_open_grants"},
-            ).scalar_one()
+            indexdefs = {
+                name: conn.execute(
+                    text(
+                        "SELECT indexdef FROM pg_indexes "
+                        "WHERE schemaname = 'coord' AND indexname = :name"
+                    ),
+                    {"name": name},
+                ).scalar_one()
+                for name in _INDEXES
+            }
+        # Column lists and order, not just existence: a reordered or
+        # ASC index would pass ``index_exists`` and serve none of the
+        # per-device / per-tenant newest-first reads coord issues.
+        assert (
+            "(device_id, created_at DESC)"
+            in indexdefs["ix_spawn_admission_ledger_device_created_at"]
+        )
+        assert (
+            "(tenant_id, created_at DESC)"
+            in indexdefs["ix_spawn_admission_ledger_tenant_created_at"]
+        )
+        open_grants_def = indexdefs["ix_spawn_admission_ledger_open_grants"]
+        assert "(device_id, lease_expires_at)" in open_grants_def
         assert "WHERE" in open_grants_def
         assert "'grant'::text" in open_grants_def
         assert "released_at IS NULL" in open_grants_def
@@ -169,16 +185,18 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
         # 3. Defaults: count 1, work_keys [], lease/report columns NULL.
         grant = _row()
         with engine.begin() as conn:
-            conn.execute(
+            inserted = conn.execute(
                 text(
                     """
                     INSERT INTO coord.spawn_admission_ledger
-                        (id, tenant_id, device_id, class, origin, kind)
-                    VALUES (:id, :tid, :did, :class, :origin, :kind)
+                        (tenant_id, device_id, class, origin, kind)
+                    VALUES (:tid, :did, :class, :origin, :kind)
+                    RETURNING id
                     """
                 ),
-                {k: v for k, v in grant.items() if k != "count"},
+                {k: v for k, v in grant.items() if k not in ("count", "id")},
             )
+            generated_id = inserted.scalar_one()
             defaults = conn.execute(
                 text(
                     """
@@ -187,8 +205,10 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
                       FROM coord.spawn_admission_ledger WHERE id = :id
                     """
                 ),
-                {"id": grant["id"]},
+                {"id": generated_id},
             ).one()
+        # ``id`` was omitted, so a non-null id proves the gen_random_uuid() default.
+        assert generated_id is not None
         assert tuple(defaults) == (1, [], None, None, None, None, None, True)
 
         # A cumulative report row with count 0 is legitimate.
