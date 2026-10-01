@@ -138,16 +138,28 @@ jobs:
     environment: production
     permissions:
       contents: read
+      # OIDC: lets configure-aws-credentials exchange this job's GitHub token
+      # for the scoped qontinui-web-deploy role (no stored AWS key).
+      id-token: write
 
     steps:
       - name: Check out qontinui-web
         uses: actions/checkout@v5
 
+      # Assumes the scoped qontinui-web-deploy role via GitHub OIDC (trusts
+      # this repo's `production` environment claim). The role is least-privilege
+      # for exactly what this job calls: ECR push to qontinui-web-backend, the
+      # qontinui-staging-web task-def/service/one-off task, the web log group,
+      # and the two eu-central-1 spec-ci SSM params. 7200s is headroom, not a
+      # current need: the job's timeout-minutes (45) already ends it inside
+      # the 1-hour default. It is kept so that a future raise of that timeout
+      # cannot expire the credential mid-rollback.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-deploy
+          role-session-name: deploy-web-${{ github.run_id }}
+          role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve ECR registry
@@ -848,10 +860,10 @@ jobs:
             # Harness/permissions gap, NOT a behavioral failure. Skipping the
             # authed probe degrades the smoke to its health+routing gate (which
             # already passed) rather than failing — a missing IAM grant must
-            # never trigger a rollback of a likely-fine deploy. Grant the deploy
-            # IAM principal ssm:GetParameter + kms:Decrypt on
-            # /qontinui/spec-ci/auth-* in ${SSM_REGION} to enable the full
-            # authenticated smoke.
+            # never trigger a rollback of a likely-fine deploy. The
+            # qontinui-web-deploy role grants ssm:GetParameter + kms:Decrypt on
+            # /qontinui/spec-ci/auth-* in ${SSM_REGION}; a failure here means
+            # that grant drifted.
             echo "::warning::could not read CI-bot creds from SSM (${SSM_REGION}); skipping the authenticated probe (health + routing checks passed). NOT rolling back — a creds/harness gap is not a behavioral failure."
             exit 0
           fi
