@@ -222,9 +222,9 @@ jobs:
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
-      # Some alembic migrations reference the `runner` schema, created in dev
-      # by init-scripts/ which service containers don't run. Same carve-out
-      # as e2e-tests.yml.
+      # Some alembic migrations reference the `runner` schema, and nothing
+      # creates it in a fresh service container. Same carve-out as
+      # e2e-playwright-stack.yml.
       - name: Create runner schema
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
