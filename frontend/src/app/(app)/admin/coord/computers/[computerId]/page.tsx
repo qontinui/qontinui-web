@@ -42,6 +42,7 @@ import {
   DIVERGENCE_KIND_LABEL,
   SERVICE_KIND_LABEL,
   ciRunnerStatusText,
+  serviceObservedText,
   SERVICE_PALETTE,
   computerFreshness,
   computerHref,
@@ -199,11 +200,14 @@ function ServiceRow({
           </dl>
         }
         history={
-          <p className="text-xs text-muted-foreground m-0">
-            Observed{" "}
-            {relativeTime(service.observed_at ?? null, {
-              absent: "at an unknown time",
-            })}
+          <p
+            className="text-xs text-muted-foreground m-0"
+            data-testid="coord-computer-service-observed"
+            title={absoluteTime(service.observed_at)}
+          >
+            Last reported: {serviceObservedText(service)}. Whether that is
+            current is this computer&apos;s report freshness, not this
+            row&apos;s age.
           </p>
         }
         raw={
