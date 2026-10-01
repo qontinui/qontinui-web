@@ -441,17 +441,22 @@ def _as_sign_in_refusal(exc: RefusalHTTPException) -> RefusalHTTPException:
     With no browser session resolved, the bearer is tried as a device token.
     A browser token that expired fails that check as foreign-issuer or
     unverifiable, and telling a signed-out browser user "this is a defect,
-    report it" sends them nowhere. For those two failures the next action is
-    ``sign_in``; every other refusal passes through unchanged.
+    report it" sends them nowhere. For those two failures the refusal becomes
+    ``authentication_required`` / ``sign_in`` with a sentence that says so;
+    every other refusal passes through unchanged.
     """
     refusal = exc.refusal
     if refusal.discriminator not in _DUAL_AUTH_SIGN_IN_DISCRIMINATORS:
         return exc
     return refusal_error(
         exc.status_code,
-        refusal.code,
+        RefusalCode.authentication_required,
         NextActionKind.sign_in,
-        str(exc.detail),
+        # The device-facing sentence ("issued by a different coord") points at
+        # a deployment fault; for a browser caller it would contradict the
+        # sign-in. The discriminator keeps the diagnosis.
+        "Your sign-in is no longer valid, or the bearer presented is not a "
+        "credential this backend accepts; sign in again.",
         discriminator=refusal.discriminator,
         glossary_terms=refusal.glossary_terms,
         error_code=exc.error_code,

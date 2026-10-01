@@ -245,16 +245,31 @@ async def test_rejected_device_token_names_the_next_action(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error", "kind", "discriminator"),
+    ("error", "code", "kind", "discriminator"),
     [
-        ("CoordTokenForeignIssuerError", "sign_in", "foreign_issuer"),
-        ("CoordTokenInvalidError", "sign_in", "failed_verification"),
-        ("CoordTokenExpiredError", "retry_later", "expired"),
-        ("CoordTokenNotYetValidError", "set_setting", "not_yet_valid"),
+        (
+            "CoordTokenForeignIssuerError",
+            "authentication_required",
+            "sign_in",
+            "foreign_issuer",
+        ),
+        (
+            "CoordTokenInvalidError",
+            "authentication_required",
+            "sign_in",
+            "failed_verification",
+        ),
+        ("CoordTokenExpiredError", "credential_rejected", "retry_later", "expired"),
+        (
+            "CoordTokenNotYetValidError",
+            "credential_rejected",
+            "set_setting",
+            "not_yet_valid",
+        ),
     ],
 )
 async def test_dual_auth_bearer_rejection_sends_a_browser_user_to_sign_in(
-    error: str, kind: str, discriminator: str
+    error: str, code: str, kind: str, discriminator: str
 ) -> None:
     """With no browser session, a bearer that is really an expired browser
     token fails device verification as foreign-issuer or unverifiable. On the
@@ -273,7 +288,10 @@ async def test_dual_auth_bearer_rejection_sends_a_browser_user_to_sign_in(
             None, HTTPAuthorizationCredentials(scheme="Bearer", credentials="t")
         )
     assert info.value.status_code == 401
-    assert _kind(info.value) == ("credential_rejected", kind, discriminator)
+    assert _kind(info.value) == (code, kind, discriminator)
+    if kind == "sign_in":
+        assert "sign in again" in str(info.value.detail)
+        assert "different coord" not in str(info.value.detail)
 
 
 @pytest.mark.asyncio
