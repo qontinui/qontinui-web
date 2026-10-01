@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 
 /**
@@ -9,11 +10,6 @@ import { cookies } from "next/headers";
  *
  * Required because Next.js rewrites don't forward cookies to the backend.
  */
-
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
 
 async function getAccessToken(request: NextRequest): Promise<string | null> {
   // Get the access token from cookie (preferred) or Authorization header (fallback)
@@ -45,7 +41,9 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const backendUrl = `${BACKEND_URL}/api/v1/ai-tasks/${id}/findings/${findingId}`;
+    const base = backendBaseOrResponse();
+    if (base instanceof NextResponse) return base;
+    const backendUrl = `${base}/api/v1/ai-tasks/${id}/findings/${findingId}`;
 
     const response = await fetch(backendUrl, {
       method: "PATCH",

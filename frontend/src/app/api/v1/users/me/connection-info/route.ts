@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 import { createLogger } from "@/lib/logger";
 
@@ -21,10 +22,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const backendBaseUrl =
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://localhost:8000";
+    const backendBaseUrl = backendBaseOrResponse();
+    if (backendBaseUrl instanceof NextResponse) return backendBaseUrl;
     const backendUrl = `${backendBaseUrl}/api/v1/users/me/connection-info`;
 
     log.debug("Proxying GET to backend");

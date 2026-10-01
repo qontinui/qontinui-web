@@ -1211,7 +1211,10 @@ async def _route_device_message(
         return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
-    # (new with D6), refusals correlated by ``remote`` / ``grant_jti`` rather
+    # (new with D6), ``terminal_input_ack`` (the per-keystroke receipt of the
+    # remote-interactivity plan's Phase A1 — without this arm it would die at
+    # ``devices_ws_unhandled_message`` and every keystroke would read as
+    # unacknowledged), refusals correlated by ``remote`` / ``grant_jti`` rather
     # than ``request_id``, and refusals the target typed
     # ``remote_terminal_error``. Only the remote path consumes these, so they
     # ride a remote-only channel and the mobile watchers below see exactly the

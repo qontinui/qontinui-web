@@ -68,12 +68,23 @@ it is the integrity property the coverage signal rests on:
 None of it applies to a report that was not applied: an out-of-order report
 leaves the census exactly as the newer reading left it.
 
-Not done here: pruning. A decommissioned device's row persists and simply
-reads ``unknown`` (``observation_stale``) forever; removing it is a follow-up.
+Refused reports (Phase 1 of
+``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``) land in
+``agent.plan_scan_root_refusals`` through :func:`record_refusal` — a SEPARATE
+table, so a refusal can never overwrite a stored reading, and a device refused
+on its first-ever report needs no fabricated placeholder reading.
+
+Not done here, by design: pruning. Nothing deletes a reading or a refusal. A
+decommissioned device's row persists; the READ side retires it
+(``RETIRE_AFTER_SECS`` in :mod:`app.services.plan_scan_root_health`, Phase 2 of
+the same plan) once neither a reading nor a refusal has arrived for 30 days,
+and a retired device that reports again reappears on that report with nothing
+to undo.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -84,7 +95,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, undefer
 from sqlalchemy.sql.dml import ReturningInsert
 
-from app.models.plan_scan_root import IDENTITY_ORG_SQL, PlanScanRootObservation
+from app.models.plan_scan_root import (
+    IDENTITY_ORG_SQL,
+    REFUSAL_REASON_MAX,
+    PlanScanRootObservation,
+    PlanScanRootRefusal,
+)
 from app.models.work_artifact import NIL_ORGANIZATION_ID
 
 #: The columns a report may write. ``organization_id`` / ``device_id`` are
@@ -436,6 +452,143 @@ async def list_observations_with_censuses(
         .order_by(
             PlanScanRootObservation.received_at.desc(),
             PlanScanRootObservation.device_id,
+        )
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Refused reports — Phase 1 of
+# ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``
+# ---------------------------------------------------------------------------
+
+
+def refusal_reason(errors: Sequence[Mapping[str, Any]]) -> str:
+    """A compact, bounded, VALUE-FREE reason for a refused report.
+
+    ``"<loc>: <type>"`` of the first error — ``loc`` joined with ``.`` exactly
+    as the 422 body's ``details[].field`` spells it (``body.observed_at``), so
+    the stored reason and the runner's own WARN key name the same field — plus
+    ``" (+N more)"`` when there were others.
+
+    Never an input value and never pydantic's ``msg`` (which can quote one):
+    the body was refused, so nothing in it is trusted, and this string is
+    served on every corpus page. Bounded to :data:`REFUSAL_REASON_MAX` — the
+    ``loc`` of an ``extra_forbidden`` error is a key the client chose, so its
+    length is not ours to promise; the suffix survives the cut.
+    """
+    if not errors:
+        return "body: refused"[:REFUSAL_REASON_MAX]
+    first = errors[0]
+    loc = ".".join(str(part) for part in first.get("loc", ())) or "body"
+    head = f"{loc}: {first.get('type', 'unknown')}"
+    suffix = f" (+{len(errors) - 1} more)" if len(errors) > 1 else ""
+    return head[: REFUSAL_REASON_MAX - len(suffix)] + suffix
+
+
+def _refusal_org_scope(org_id: UUID | None) -> ColumnElement[bool]:
+    """:func:`_org_scope`, for the refusals table."""
+    return func.coalesce(
+        PlanScanRootRefusal.organization_id, NIL_ORGANIZATION_ID
+    ) == func.coalesce(org_id, NIL_ORGANIZATION_ID)
+
+
+def refusal_upsert_statement(
+    *,
+    org_id: UUID | None,
+    device_id: UUID,
+    reason: str,
+    refused_at: datetime,
+) -> ReturningInsert[tuple[UUID]]:
+    """The single-statement refusal upsert, returning the row id.
+
+    Inserts ``refused_count = 1`` with both stamps at ``refused_at``; on
+    conflict moves ``last_refused_at`` / ``last_refused_reason`` and adds one
+    to the count, leaving ``first_refused_at`` and ``created_at`` alone. The
+    ``ON CONFLICT`` target is the identity index's exact expressions, as for
+    the readings — the migration test runs this statement against the
+    alembic-built table for that reason.
+    """
+    insert_stmt = pg_insert(PlanScanRootRefusal).values(
+        organization_id=org_id,
+        device_id=device_id,
+        first_refused_at=refused_at,
+        last_refused_at=refused_at,
+        last_refused_reason=reason,
+        refused_count=1,
+        created_at=refused_at,
+    )
+    table = PlanScanRootRefusal.__table__
+    return insert_stmt.on_conflict_do_update(
+        index_elements=[
+            literal_column(IDENTITY_ORG_SQL),
+            PlanScanRootRefusal.device_id,
+        ],
+        set_={
+            "last_refused_at": insert_stmt.excluded.last_refused_at,
+            "last_refused_reason": insert_stmt.excluded.last_refused_reason,
+            "refused_count": table.c.refused_count + 1,
+        },
+    ).returning(PlanScanRootRefusal.id)
+
+
+async def record_refusal(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    device_id: UUID,
+    reason: str,
+) -> None:
+    """Count one refused report for ``device_id`` in ``org_id``, and COMMIT it.
+
+    The commit is the point, not a convenience. The caller answers the report
+    with a 422 by RAISING, and an exception leaving the request rolls the
+    session back at teardown — a merely flushed row would vanish with it, and
+    the device would again read as silent. Touches no reading: refusals live
+    in their own table.
+    """
+    await db.execute(
+        refusal_upsert_statement(
+            org_id=org_id,
+            device_id=device_id,
+            reason=reason,
+            refused_at=datetime.now(UTC),
+        )
+    )
+    await db.commit()
+
+
+async def get_refusal(
+    db: AsyncSession, *, org_id: UUID | None, device_id: UUID
+) -> PlanScanRootRefusal | None:
+    """``device_id``'s refusal row in ``org_id``, or ``None`` if never refused."""
+    stmt = (
+        select(PlanScanRootRefusal)
+        .execution_options(populate_existing=True)
+        .where(_refusal_org_scope(org_id))
+        .where(PlanScanRootRefusal.device_id == device_id)
+    )
+    result = await db.execute(stmt)
+    return result.scalars().one_or_none()
+
+
+async def list_refusals(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[PlanScanRootRefusal]:
+    """Every device's refusal row for ``org_id``, most recently refused first.
+
+    Read beside :func:`list_observations` by every rendering of the verdict,
+    so a refused device reads ``refused:`` rather than silent on all three
+    surfaces alike.
+    """
+    stmt = (
+        select(PlanScanRootRefusal)
+        .execution_options(populate_existing=True)
+        .where(_refusal_org_scope(org_id))
+        .order_by(
+            PlanScanRootRefusal.last_refused_at.desc(),
+            PlanScanRootRefusal.device_id,
         )
     )
     result = await db.execute(stmt)

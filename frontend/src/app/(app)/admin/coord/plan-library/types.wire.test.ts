@@ -54,7 +54,7 @@ const SNAPSHOTS: readonly SnapshotFile[] = [
 interface SchemaProperty {
   type?: string;
   enum?: string[];
-  anyOf?: { type?: string }[];
+  anyOf?: { type?: string; enum?: string[] }[];
   items?: { $ref?: string };
 }
 
@@ -96,8 +96,14 @@ function admitsNull(prop: SchemaProperty): boolean {
   );
 }
 
+/**
+ * A field's closed vocabulary — on the field itself, or on the one non-null
+ * arm of a nullable field (`reported_state` is `null` on a refusal-only row).
+ */
 function enumOf(schema: ObjectSchema, field: string): string[] {
-  const values = schema.properties[field]?.enum;
+  const prop = schema.properties[field];
+  const values =
+    prop?.enum ?? (prop?.anyOf ?? []).find((arm) => arm.enum)?.enum;
   if (!values?.length) {
     throw new Error(
       `${field} carries no enum — no longer a closed vocabulary?`
