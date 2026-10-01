@@ -90,7 +90,7 @@ parent revision — the "before" half of the plan's EXPLAIN verification), and
 that downgrade removes it with the rows intact.
 
 Revision ID: coord_sessions_fleet_idx_01
-Revises: coord_iops_idx_01
+Revises: overlord_01_interventions
 Create Date: 2026-09-26
 
 """
@@ -101,7 +101,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_fleet_idx_01"
-down_revision: str | None = "coord_iops_idx_01"
+down_revision: str | None = "overlord_01_interventions"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
