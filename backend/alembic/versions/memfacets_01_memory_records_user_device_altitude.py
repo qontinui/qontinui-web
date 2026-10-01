@@ -14,8 +14,11 @@ What this adds
 * ``coord.memory_records.device_id UUID NULL
   REFERENCES coord.devices(device_id) ON DELETE SET NULL`` — the machine the
   record came from, from the verified ``device_id`` claim.
-* ``coord.memory_records.applies_at TEXT NOT NULL DEFAULT 'tenant'`` — the
-  ALTITUDE facet, constrained to ``fleet|tenant|user|device|session``.
+* ``coord.memory_records.applies_at TEXT DEFAULT 'tenant'`` — the ALTITUDE
+  facet, constrained to ``fleet|tenant|user|device|session`` AND to non-NULL
+  by its CHECK (see "Why every statement is in the shape coord's migration
+  classifier admits" below for why that is a CHECK and not a catalog
+  ``NOT NULL``).
 
 Both provenance columns are NULLABLE and stay that way: a caller with no
 device identity (operator bearer, service token, CI) writes NULLs and the row
@@ -69,32 +72,59 @@ that names no row — is handled in the application, by
 ``_existing_provenance`` and the savepoint fallback in
 ``app/api/v1/endpoints/memory.py``.
 
-WHY THE TWO FKs ARE DROPPED AND RE-ADDED RATHER THAN LEFT TO THE INLINE
-``REFERENCES`` CLAUSE
+WHY EVERY STATEMENT IS IN THE SHAPE COORD'S MIGRATION CLASSIFIER ADMITS
 --------------------------------------------------------------------------
 
-The inline clause above reaches a database only when the ``ADD COLUMN``
-actually adds something. This revision was first written with a BARE
-``REFERENCES`` (``NO ACTION``) and the ``ON DELETE SET NULL`` was added
-under the SAME revision id — so on any database that had already run the
-earlier form, the ``ADD COLUMN IF NOT EXISTS`` no-ops, the inline clause
-is never parsed, and the ``NO ACTION`` constraints survive the "fix".
-Reproduced: apply the pre-fix chain, swap in this file, re-run the
-revision body, and ``pg_constraint.confdeltype`` reads ``'a'`` on all
-three constraints unless they are rebuilt explicitly. The explicit
-``DROP CONSTRAINT IF EXISTS`` / ``ADD CONSTRAINT`` pair below is what
-makes the delete rule a property of RUNNING this revision rather than a
-property of the column being new.
+coord's merge train lands a migration PR without an operator only when
+``qontinui-coord/crates/coord/src/pr_merge/migration_classifier.rs`` proves
+every upgrade-path statement additive-safe; anything else parks the PR on
+``escalate-path-matched``. The first form of this revision was rejected
+there, so each statement is now written in an admitted shape, and each
+change is behaviour-neutral for the reason given:
 
-⚠ It repairs only a database on which this revision's body RUNS — a
-downgrade→upgrade cycle (``migration-reversal.yml`` walks one on every PR
-touching ``backend/alembic/versions/**``) or a partially-applied state.
-A database already STAMPED at this revision is never re-run by
-``alembic upgrade head`` at all, and repairing that one would take a new
-revision. This branch is unmerged, so no such database is known to exist;
-the guard is here because "no such database exists" is not something a
-migration can check. ``test_a_prefix_database_is_repaired_by_rerunning_the_fixed_revision``
-pins both halves.
+* **The FKs are ``ADD CONSTRAINT … NOT VALID``, not an inline
+  ``REFERENCES``.** ``NOT VALID`` skips only the scan of EXISTING rows —
+  and every existing row has these columns NULL, because they are created
+  in the same revision, so there is nothing for a validation to find. Every
+  INSERT/UPDATE from here on is checked exactly as a validated FK checks
+  it, and the ``ON DELETE SET NULL`` action (a trigger) fires the same
+  either way — which is the delete-side contract the banner above is about.
+  ``pg_constraint.convalidated`` reads ``false``; nothing in this repo or in
+  coord reads that flag. A ``VALIDATE CONSTRAINT`` is not added here
+  because the classifier does not admit it and it would prove nothing on
+  all-NULL columns.
+* **``applies_at`` is nullable in the catalog and non-NULL by CHECK.**
+  ``ADD COLUMN … NOT NULL`` is rejected (it is a table rewrite/lock in the
+  general case). ``CHECK (applies_at IS NOT NULL AND …)`` rejects exactly
+  the writes ``NOT NULL`` would — a NULL fails the CHECK instead of the
+  not-null constraint, ``check_violation`` rather than
+  ``not_null_violation`` — and the literal ``DEFAULT 'tenant'`` still fills
+  every existing row without a rewrite.
+* **There is no ``DROP CONSTRAINT IF EXISTS`` / re-``ADD`` rebuild.** An
+  earlier form of this revision rebuilt both FKs so that re-running the body
+  over a database that had applied the even-earlier BARE-``REFERENCES`` form
+  would repair its ``NO ACTION`` rule. ``DROP`` is never admitted on the
+  upgrade path, so that repair is gone. What replaces it is a loud failure
+  rather than a silent one: re-running this body over such a database (no
+  downgrade first) no-ops the ``ADD COLUMN IF NOT EXISTS`` and then fails
+  with ``DuplicateObject`` on the pre-existing ``<table>_<column>_fkey``
+  name, so the bad rule is not carried forward unnoticed. A downgrade then
+  upgrade DOES repair such a database: the downgrade drops the columns and
+  their FKs, and the upgrade re-creates them ``SET NULL``.
+  ``test_a_prefix_database_fails_loudly_rather_than_keeping_no_action``
+  pins that. This branch is unmerged; no such database is known to exist.
+* **``RESET lock_timeout`` is ``SET LOCAL lock_timeout = DEFAULT``.** Every
+  ``RESET`` is rejected; the ``SET LOCAL … = DEFAULT`` form is the admitted
+  spelling of the same reset.
+* **The three indexes are NOT in this revision.** The only index build the
+  classifier admits is ``CONCURRENTLY IF NOT EXISTS`` inside
+  ``op.get_context().autocommit_block()``, and that block COMMITS the
+  transaction mid-``upgrade()``. Here that would make the column and FK DDL
+  durable before alembic stamps this revision, so a failed index build
+  would leave the FKs in place un-stamped and every later ``upgrade`` would
+  then fail on the duplicate ``ADD CONSTRAINT``. They live in their own
+  revision, ``memfacets_03_memory_records_indexes``, after ``findfacets_02``,
+  whose statements are all ``IF NOT EXISTS`` and so safe to re-run.
 
 The names are the ones Postgres derives for an inline column FK
 (``<table>_<column>_fkey``), spelled out because
@@ -106,7 +136,7 @@ matches the savepoint fallback on exactly those strings.
 
 Do not "fix" this by adding one. The plan originally had the ``DROP DEFAULT``
 in this migration and the re-vet of 2026-09-19 identified that as a
-**production outage**: after the drop, a ``NOT NULL`` column with no default
+**production outage**: after the drop, a column whose CHECK forbids NULL and that has no default
 makes every INSERT that does not name ``applies_at`` fail — and **no writer
 names it**. That is the whole argument, and it is a property of the code
 rather than of any line number, so confirm it the way it stays confirmable::
@@ -127,8 +157,8 @@ follows a citation onto unrelated prose has every reason to discount the
 argument it was supporting.
 
 This migration is advertised as behaviour-neutral, and the ``DROP DEFAULT``
-would have taken every memory write in the fleet to ``null value in column
-"applies_at" violates not-null constraint``.
+would have taken every memory write in the fleet to a violation of the
+``applies_at`` non-NULL CHECK.
 
 The ``DROP DEFAULT`` belongs to **Phase 3's migration 2b**, landing together
 with the API change that makes ``applies_at`` a required field on the wire.
@@ -165,14 +195,9 @@ The swap is free right now: Phase 3 owns the only future reader, so
 nothing queries the column yet and there is no plan behaviour to
 preserve. Getting it wrong would have cost an online rebuild later.
 
-Built NON-concurrently, inside this migration's transaction, deliberately:
-``coord.memory_records`` is a ~5.7k-row table (§2.1, measured 2026-08-06), so
-the SHARE lock a plain ``CREATE INDEX`` takes is held for milliseconds. A
-``CONCURRENTLY`` build would have to leave the transaction (an
-``autocommit_block``) and carry the INVALID-index recovery dance that
-``agent_questions_alert_episode_01`` needs, buying nothing at this size.
+Built in ``memfacets_03_memory_records_indexes`` (see above).
 
-Downgrade drops the three indexes and the three columns (the CHECK constraint
+Downgrade drops the three columns (the CHECK constraint
 goes with its column). Records survive.
 
 Revision ID: memfacets_01
@@ -193,83 +218,54 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add ``user_id`` / ``device_id`` / ``applies_at`` + three indexes."""
+    """Add ``user_id`` / ``device_id`` / ``applies_at`` (indexes: memfacets_03)."""
     # Both FKs take a SHARE ROW EXCLUSIVE lock on the REFERENCED table
     # (auth.users, coord.devices) for the duration of the ALTER, so bound
     # the wait rather than queueing behind a long reader.
     op.execute("SET LOCAL lock_timeout = '3s'")
+    # No inline REFERENCES and no NOT NULL: both are rejected by coord's
+    # migration classifier. The FKs follow as ADD CONSTRAINT ... NOT VALID,
+    # and the CHECK carries the non-NULL rule (module docstring).
     op.execute(
         """
         ALTER TABLE coord.memory_records
-            ADD COLUMN IF NOT EXISTS user_id UUID
-                REFERENCES auth.users(id) ON DELETE SET NULL,
-            ADD COLUMN IF NOT EXISTS device_id UUID
-                REFERENCES coord.devices(device_id) ON DELETE SET NULL,
-            ADD COLUMN IF NOT EXISTS applies_at TEXT NOT NULL DEFAULT 'tenant'
+            ADD COLUMN IF NOT EXISTS user_id UUID,
+            ADD COLUMN IF NOT EXISTS device_id UUID,
+            ADD COLUMN IF NOT EXISTS applies_at TEXT DEFAULT 'tenant'
                 CONSTRAINT ck_memory_records_applies_at
-                CHECK (applies_at IN (
+                CHECK (applies_at IS NOT NULL AND applies_at IN (
                     'fleet', 'tenant', 'user', 'device', 'session'
                 ))
         """
     )
-    # Idempotent by NAME, not by the column being new: see the banner above.
-    # An `ADD COLUMN IF NOT EXISTS` carries its inline `REFERENCES` only when
-    # it actually adds the column, so on a database that ran the pre-fix form
-    # of THIS revision the inline `ON DELETE SET NULL` never lands. Rebuilding
-    # the constraint makes the delete rule a property of running the revision.
-    # DROP and ADD in one statement. Postgres processes ALTER TABLE
-    # sub-commands in PASSES, with DROP CONSTRAINT before ADD CONSTRAINT
-    # regardless of the order they are written in, so the name is free when it
-    # is reused. (Do not carry "left to right" to another multi-subcommand
-    # ALTER TABLE -- it is not how Postgres works, and pass ordering does bite
-    # elsewhere. Measured: writing the ADD first also succeeds, and the ADD
-    # wins, which left-to-right could not produce.)
+    # NOT VALID skips only the scan of existing rows, all of which are NULL
+    # in these brand-new columns. New writes are checked and ON DELETE SET
+    # NULL fires exactly as on a validated FK. The names are the ones
+    # Postgres derives for an inline FK; memory.py matches on them.
     op.execute(
         """
         ALTER TABLE coord.memory_records
-            DROP CONSTRAINT IF EXISTS memory_records_user_id_fkey,
-            ADD  CONSTRAINT memory_records_user_id_fkey
-                 FOREIGN KEY (user_id) REFERENCES auth.users(id)
-                 ON DELETE SET NULL,
-            DROP CONSTRAINT IF EXISTS memory_records_device_id_fkey,
-            ADD  CONSTRAINT memory_records_device_id_fkey
-                 FOREIGN KEY (device_id) REFERENCES coord.devices(device_id)
-                 ON DELETE SET NULL
+            ADD CONSTRAINT memory_records_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES auth.users(id)
+                ON DELETE SET NULL NOT VALID
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.memory_records
+            ADD CONSTRAINT memory_records_device_id_fkey
+                FOREIGN KEY (device_id) REFERENCES coord.devices(device_id)
+                ON DELETE SET NULL NOT VALID
         """
     )
     # SET LOCAL is transaction-scoped and env.py wraps the WHOLE run in one
-    # transaction, so without this reset the 3s timeout leaks into every
-    # revision that lands after this one.
-    op.execute("RESET lock_timeout")
-
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_memory_records_user
-            ON coord.memory_records (user_id)
-            WHERE user_id IS NOT NULL AND is_tombstone = false
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_memory_records_device
-            ON coord.memory_records (device_id)
-            WHERE device_id IS NOT NULL AND is_tombstone = false
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_memory_records_altitude
-            ON coord.memory_records (tenant_id, applies_at)
-            WHERE is_tombstone = false
-        """
-    )
+    # transaction, so restore the default rather than let the 3s ceiling leak
+    # into later revisions. (`RESET` is not an admitted statement; this is.)
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
-    """Drop the three indexes, then the three columns."""
-    op.execute("DROP INDEX IF EXISTS coord.idx_memory_records_altitude")
-    op.execute("DROP INDEX IF EXISTS coord.idx_memory_records_device")
-    op.execute("DROP INDEX IF EXISTS coord.idx_memory_records_user")
+    """Drop the three columns (their FKs and CHECK go with them)."""
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """

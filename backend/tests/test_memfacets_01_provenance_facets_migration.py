@@ -56,7 +56,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -71,6 +71,7 @@ from tests._alembic_harness import (
 
 _MEM_REVISION = "memfacets_01"
 _FIND_REVISION = "findfacets_02"
+_IDX_REVISION = "memfacets_03"
 _PARENT_REVISION = "overlord_01_interventions"
 
 #: ``confdeltype`` codes in ``pg_constraint``: 'a' NO ACTION, 'n' SET NULL,
@@ -86,9 +87,9 @@ _FIND_REVISION_FILENAME = "findfacets_02_findings_author_user_altitude.py"
 #: ``ON DELETE NO ACTION`` default. Reconstructed here rather than read out of
 #: git (``git show <sha>~1:…``) so the test needs no repository history and no
 #: subprocess: what it has to reproduce is a STATE, and this is that state.
-#: The three partial indexes are deliberately left out — they are byte-identical
-#: between the two forms, the fixed revision creates them ``IF NOT EXISTS``
-#: anyway, and a second copy of DDL that never varies is only a thing to drift.
+#: The three partial indexes are deliberately left out — the prefix test only
+#: asks about the FKs, and a second copy of DDL it never reads is only a thing
+#: to drift.
 #: The precondition assertion below is what keeps this reconstruction honest:
 #: if it stops producing three ``'a'`` FKs it fails as a precondition rather
 #: than quietly testing nothing.
@@ -823,11 +824,51 @@ def test_the_pair_is_reversible_and_adds_nothing_before_it_runs() -> None:
         rules = _fk_delete_rules(engine)
         for key, expected_name in _EXPECTED_FK_RULES.items():
             assert rules[key] == (expected_name, _SET_NULL), (
-                "the re-applied revision must rebuild the FK with the SAME "
-                "name and delete rule — the ADD COLUMN IF NOT EXISTS idiom "
-                "makes a partially-applied state possible, and a column that "
-                "survives a downgrade would come back without its constraint"
+                "the re-applied revision must re-create the FK with the SAME "
+                "name and delete rule after a downgrade dropped the columns"
             )
+
+
+def test_the_index_revision_builds_three_valid_indexes_and_reruns_cleanly() -> None:
+    """``memfacets_03`` builds all three indexes VALID, and re-runs as a no-op.
+
+    The builds are CONCURRENTLY inside an ``autocommit_block`` — the only
+    shape coord's migration classifier admits — which is why they live in a
+    revision of their own: every statement is ``IF NOT EXISTS``, so a re-run
+    after a failed build carries on instead of wedging.
+    """
+    root = backend_root()
+    expected = {
+        "idx_memory_records_user",
+        "idx_memory_records_device",
+        "idx_memory_records_altitude",
+    }
+    sql = text(
+        """
+        SELECT c.relname, i.indisvalid
+          FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indexrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'coord' AND c.relname = ANY(:names)
+        """
+    )
+    with ephemeral_database(admin_database_url(), "memfacets_03_idx") as (
+        engine,
+        url,
+    ):
+        run_alembic(root, url, "upgrade", _FIND_REVISION)
+        with engine.connect() as conn:
+            assert conn.execute(sql, {"names": list(expected)}).all() == []
+        run_alembic(root, url, "upgrade", _IDX_REVISION)
+        with engine.connect() as conn:
+            rows = dict(conn.execute(sql, {"names": list(expected)}).all())
+        assert rows == dict.fromkeys(expected, True)
+        # Downgrade one step and back: the builds re-run cleanly.
+        run_alembic(root, url, "downgrade", _FIND_REVISION)
+        run_alembic(root, url, "upgrade", _IDX_REVISION)
+        with engine.connect() as conn:
+            rows = dict(conn.execute(sql, {"names": list(expected)}).all())
+        assert rows == dict.fromkeys(expected, True)
 
 
 def _run_revision_body(engine: Engine, filename: str, module_name: str) -> None:
@@ -844,34 +885,27 @@ def _run_revision_body(engine: Engine, filename: str, module_name: str) -> None:
             module.upgrade()
 
 
-def test_a_prefix_database_is_repaired_by_rerunning_the_fixed_revision() -> None:
-    """The ``ON DELETE SET NULL`` fix reaches a database that ran the OLD form.
+def test_a_prefix_database_fails_loudly_rather_than_keeping_no_action() -> None:
+    """Re-running the revision over a pre-fix database FAILS; it never no-ops.
 
-    The fix was made inside an ``ADD COLUMN IF NOT EXISTS`` under an
-    UNCHANGED revision id. Every other test in this file builds a fresh
-    database, where the ``ADD COLUMN`` really adds and the inline clause
-    therefore lands — so none of them can see the case this one exists for:
-    a database on which those columns ALREADY EXIST with the pre-fix
-    ``NO ACTION`` rule. There the ``ADD COLUMN`` no-ops, the inline clause
-    is never parsed, and without the explicit
-    ``DROP CONSTRAINT IF EXISTS`` / ``ADD CONSTRAINT`` rebuild the
-    ``NO ACTION`` FKs survive the fix — i.e. coord's device GC stays wedged
-    on exactly the databases the fix was written for.
+    The ``ON DELETE SET NULL`` fix was made under an UNCHANGED revision id,
+    so a database that ran the bare-``REFERENCES`` form already has these
+    columns with a ``NO ACTION`` FK. An earlier form of the revision repaired
+    that in place with a ``DROP CONSTRAINT IF EXISTS`` / ``ADD CONSTRAINT``
+    rebuild; coord's migration classifier admits no ``DROP`` on the upgrade
+    path, so the rebuild is gone. What must hold instead — and what this pins
+    — is that such a database can never be carried forward SILENTLY with the
+    wedging rule:
 
-    Both halves are asserted, because they are different claims:
-
-    1. ``alembic upgrade head`` does NOT repair such a database. The
-       revisions are already stamped, so their bodies never run at all.
-       This is a real residual and it is pinned here rather than described:
-       the only complete repair for an already-stamped database is a NEW
-       revision. This branch is unmerged, so no such database is known to
-       exist — but "almost certainly none" across dev boxes, CI caches and
-       persistent test databases is not a thing anyone can verify, which is
-       why the rebuild below is cheap insurance rather than dead code.
-    2. RUNNING the revision body does repair it. That covers every path on
-       which the body does run: a downgrade -> upgrade cycle (which
-       ``migration-reversal.yml`` walks on every PR touching
-       ``backend/alembic/versions/**``), and a partially-applied state.
+    1. ``alembic upgrade head`` leaves its FKs alone (the pair is stamped,
+       so their bodies never run). That residual is unchanged and pinned.
+    2. Re-running the upgrade body over it WITHOUT a downgrade raises
+       ``DuplicateObject`` (SQLSTATE 42710) on the pre-existing
+       ``<table>_<column>_fkey`` instead of skipping it, so the bad rule is
+       surfaced, not inherited. (A downgrade -> upgrade cycle, by contrast,
+       REPAIRS such a database: the downgrade drops the columns and their
+       FKs, and the upgrade re-creates them ``SET NULL`` — the reversal test
+       above shows that path.)
     """
     root = backend_root()
     with ephemeral_database(admin_database_url(), "memfacets_01_prefix") as (
@@ -897,27 +931,22 @@ def test_a_prefix_database_is_repaired_by_rerunning_the_fixed_revision() -> None
                 f"{before.get(key)!r}"
             )
 
-        # 1. The stamped revisions never re-run, so this changes nothing.
+        # 1. The stamped revisions never re-run: this only runs memfacets_03's
+        #    index builds and leaves the FKs unchanged.
         run_alembic(root, url, "upgrade", "head")
-        after_upgrade = _fk_delete_rules(engine)
-        for key in _EXPECTED_FK_RULES:
-            assert after_upgrade.get(key) == before[key], (
-                "`alembic upgrade head` repaired coord."
-                f"{key[0]}.{key[1]} — if a NEW revision was added to do that, "
-                "this pin is the place to record it; it asserts the residual "
-                "the in-place fix deliberately does not close"
-            )
+        assert _fk_delete_rules(engine) == before
 
-        # 2. Running the bodies does.
-        _run_revision_body(engine, _MEM_REVISION_FILENAME, f"_prefix_{_MEM_REVISION}")
-        _run_revision_body(engine, _FIND_REVISION_FILENAME, f"_prefix_{_FIND_REVISION}")
+        # 2. Running either body fails on the duplicate constraint name.
+        for filename, revision in (
+            (_MEM_REVISION_FILENAME, _MEM_REVISION),
+            (_FIND_REVISION_FILENAME, _FIND_REVISION),
+        ):
+            with pytest.raises(ProgrammingError) as excinfo:
+                _run_revision_body(engine, filename, f"_prefix_{revision}")
+            # 42710 = duplicate_object, and it must be one of OUR FKs — a
+            # duplicate index or column would be a different failure.
+            assert getattr(excinfo.value.orig, "pgcode", None) == "42710"
+            assert "_fkey" in str(excinfo.value.orig)
 
-        repaired = _fk_delete_rules(engine)
-        for key, expected_name in _EXPECTED_FK_RULES.items():
-            assert repaired.get(key) == (expected_name, _SET_NULL), (
-                f"coord.{key[0]}.{key[1]} still carries {repaired.get(key)!r} "
-                f"after the fixed revision ran over a pre-fix database. The "
-                f"inline ON DELETE SET NULL cannot reach it — ADD COLUMN IF "
-                f"NOT EXISTS no-ops — so the explicit DROP CONSTRAINT IF "
-                f"EXISTS / ADD CONSTRAINT rebuild is load-bearing here."
-            )
+        # The failed bodies rolled back: nothing half-applied.
+        assert _fk_delete_rules(engine) == before
