@@ -32,8 +32,8 @@ existed" -- the state every existing row starts in, and the conservative arm by
 construction (coord falls back to today's behaviour). So: no default, no
 backfill. A ``DEFAULT now()`` would forge a fresh observation onto every row.
 
-The writer contract (coord side, enforced by a census test there)
-=================================================================
+The writer contract (coord side; to be enforced by a census test in coord, plan Phase 3)
+========================================================================================
 
 Every coord statement that assigns ``pr_state`` falls into exactly one class:
 
@@ -65,6 +65,20 @@ wait is bounded with ``SET LOCAL lock_timeout = '3s'`` and restored afterwards
 
 No index: coord only projects the column inside the citation read's
 aggregate, so an index would add write amplification and serve nothing.
+
+Merge-train classifier disposition
+==================================
+
+The lock bracket makes this revision's ``upgrade()`` unclassifiable to coord's
+migration classifier (``SET ...`` matches no branch of
+``classify_sql_statement``), so an ``auto_if_provably_safe`` escalate policy
+covering this glob returns Blocked rather than clearing. That is the known
+price of the guard, the same one
+``coord_repo_branches_touched_files_authoritative_01`` documents, not a defect.
+
+Re-point rule: if another alembic revision lands first, coord re-points
+``down_revision`` at land time; the companion test's ``_PARENT_REVISION_ID``
+literal moves with it.
 """
 
 from collections.abc import Sequence
@@ -77,31 +91,44 @@ down_revision: str | Sequence[str] | None = "overlord_01_interventions"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_COMMENT = (
-    "When a PR-state authority (GitHub pull_request webhook, a live GitHub "
-    "read, or coord''s own land record) last observed this row''s pr_state. "
-    "NULL = not observed since the column existed; a non-authority pr_state "
-    "write clears it."
-)
-
-
 def upgrade() -> None:
     """Add the nullable PR-state observation stamp to both row sources."""
     op.execute("SET LOCAL lock_timeout = '3s'")
 
     # `IF NOT EXISTS` matches on NAME only; acceptable because no revision in
     # this chain spells `pr_state_observed_at`.
-    for table in ("repo_branches", "displaced_pr_rows"):
-        op.execute(
-            f"""
-            ALTER TABLE coord.{table}
-                ADD COLUMN IF NOT EXISTS pr_state_observed_at TIMESTAMPTZ
-            """
-        )
-        op.execute(
-            f"COMMENT ON COLUMN coord.{table}.pr_state_observed_at IS '{_COMMENT}'"
-        )
+    op.execute(
+        """
+        ALTER TABLE coord.repo_branches
+            ADD COLUMN IF NOT EXISTS pr_state_observed_at TIMESTAMPTZ
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.repo_branches.pr_state_observed_at IS
+            'When a PR-state authority (a GitHub pull_request webhook, a live '
+            'GitHub read, or coord''s own land record) last observed this '
+            'row''s pr_state. NULL = not observed since the column existed; '
+            'a non-authority pr_state write clears it.'
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.displaced_pr_rows
+            ADD COLUMN IF NOT EXISTS pr_state_observed_at TIMESTAMPTZ
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.displaced_pr_rows.pr_state_observed_at IS
+            'The archived row''s PR-state observation stamp, carried from '
+            'coord.repo_branches on rebind and re-stamped only by a PR-state '
+            'authority. NULL = not observed since the column existed.'
+        """
+    )
 
+    # env.py runs the whole batch in one transaction, so leaving this set would
+    # silently impose a 3 s ceiling on the next revision's DDL too.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
@@ -109,9 +136,17 @@ def downgrade() -> None:
     """Drop the stamp from both tables (a catalogue inverse; the data does not return)."""
     op.execute("SET LOCAL lock_timeout = '3s'")
 
-    for table in ("displaced_pr_rows", "repo_branches"):
-        op.execute(
-            f"ALTER TABLE coord.{table} DROP COLUMN IF EXISTS pr_state_observed_at"
-        )
+    op.execute(
+        """
+        ALTER TABLE coord.displaced_pr_rows
+            DROP COLUMN IF EXISTS pr_state_observed_at
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.repo_branches
+            DROP COLUMN IF EXISTS pr_state_observed_at
+        """
+    )
 
     op.execute("SET LOCAL lock_timeout = DEFAULT")
