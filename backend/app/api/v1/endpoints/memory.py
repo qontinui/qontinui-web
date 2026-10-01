@@ -84,6 +84,7 @@ import base64
 import binascii
 import hashlib
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast, get_args
@@ -94,7 +95,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +133,7 @@ from app.schemas.memory import (
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
+    MemoryRecordIn,
     MemoryRecordOut,
     MemoryStatsResponse,
     SupersedeRequest,
@@ -222,11 +224,47 @@ ARM_WEIGHTS = {"link": 0.1}
 
 @dataclass(frozen=True)
 class MemoryPrincipal:
-    """The server-side identity every memory operation is bound to."""
+    """The server-side identity every memory operation is bound to.
+
+    ``user_id`` and ``device_id`` are the orthogonal PROVENANCE facets of
+    plan ``2026-08-06-user-and-device-facets-on-memories-and-findings``
+    (§4.1). Both are derived HERE, from verified credentials, exactly as
+    ``tenant_id`` already is — and for the same reason: a self-declared
+    attribution is not an attribution. Neither is ever read from a request
+    body, and ``MemoryRecordIn`` / ``MemoryQueryRequest`` deliberately do
+    not declare them (§6 requirement 5b; both are ``extra="forbid"``, so an
+    attempt is a 422).
+
+    Both are OPTIONAL and a missing one is never an error. A caller with no
+    device identity — an operator bearer, a service token minted before
+    coord carried the claim, CI — writes NULLs and the row is simply less
+    filterable. Rejecting the write instead would be worse: a memory that
+    fails to save is worse than one that is coarsely scoped (§4.1 item 3).
+
+    Both columns are FKs, so "optional" has to mean *resolvable or NULL*,
+    never *dangling*: an id that names no row would abort the INSERT with
+    a ``ForeignKeyViolation``, which is the same rejected write by another
+    name. Two mechanisms keep that from happening, and they are not
+    redundant. :func:`_existing_provenance` resolves the COORD-SERVICE
+    arm's ids up front — a diagnostic, because that arm is the one whose
+    ids could be systematically from the wrong keyspace, and a per-request
+    warning is how that stays visible.
+    :func:`_write_degrading_dangling_provenance` then wraps every insert
+    in a savepoint and retries unattributed on a provenance FK violation —
+    the guarantee itself, covering every arm (including the device arm's
+    unresolved ``device_id``) and the raced deletion no pre-check can see.
+    The DELETE side is the FKs' own ``ON DELETE SET NULL``
+    (migration ``memfacets_01``), which also keeps a referenced row's
+    removal from wedging coord's device GC.
+    """
 
     tenant_id: UUID
     device_id: UUID | None
     actor: str  # "device" | "coord_service" | "operator"
+    # The human this operation is attributed to (``auth.users.id``).
+    # Defaulted so no construction site is obliged to resolve a user it
+    # does not have.
+    user_id: UUID | None = None
 
 
 def _claim_uuid(claims: dict[str, Any], key: str) -> UUID | None:
@@ -242,7 +280,286 @@ def _claim_uuid(claims: dict[str, Any], key: str) -> UUID | None:
         ) from exc
 
 
-def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
+async def _existing_provenance(
+    user_id: UUID | None, device_id: UUID | None
+) -> tuple[UUID | None, UUID | None]:
+    """Reduce a claim-ASSERTED ``user_id`` to the one that really exists.
+
+    Both facet columns are foreign keys —
+    ``coord.memory_records.user_id REFERENCES auth.users(id)`` and
+    ``coord.memory_records.device_id REFERENCES coord.devices(device_id)``
+    (migration ``memfacets_01``) — so an id that names no row does not
+    land a NULL, it raises ``ForeignKeyViolation`` and takes the whole
+    write to a 500. That is forbidden by the plan this facet comes from:
+    "never reject a write for missing provenance — a memory that fails to
+    save is worse than one that is coarsely scoped" (§4.1 item 3).
+
+    **Only the USER id is resolved here, and the asymmetry is a boundary
+    rule, not an oversight.** ``auth.users`` is web's OWN schema, so
+    reading it costs one session web already owns. The device id lives in
+    ``coord.devices`` — coord's schema — and web's read boundary is
+    closed against it: web reads coord state over coord's HTTP API, never
+    over the ``coord.*`` Postgres schema
+    (``backend/tests/test_coord_schema_boundary_guard.py``, whose
+    ``READ_BOUNDARY_CLOSED`` invariant is the empty set).
+
+    The cost argument is what actually decides it, and it stands on its
+    own. A pre-check is never more than a prediction — the row can go
+    between the check and the INSERT — so buying one here with a coord
+    HTTP round trip, on the fleet's hottest write path, would pay a real
+    price for a window it cannot close. (The boundary is a second,
+    independent reason, but a weaker one taken alone: the guard is
+    file-granular, so it measures which file a token sits in rather than
+    whether a read happens.) The guarantee is made exactly on the insert
+    side instead, by :func:`_write_degrading_dangling_provenance`, which
+    covers **every** arm and both columns. The device arm's ``device_id``
+    was already knowingly left unresolved for that same reason
+    (``_verify_device_jwt`` never touches ``coord.devices``); the
+    coord-service arm now simply matches it.
+
+    What changes for DIAGNOSIS, stated precisely, because the obvious
+    summary overstates it. The reason this function resolved anything at
+    all is that coord's ids could be systematically wrong — a different
+    keyspace rather than a raced deletion — and that has to be visible
+    instead of silent. The USER keyspace is the one genuinely at risk
+    (coord carries its own operator ids, and nothing proves they are in
+    ``auth.users``' keyspace) and is still checked per request here. For
+    the DEVICE column the signal moves rather than widens: it was a
+    pre-insert warning on the coord-service arm only, and it is now the
+    insert-side degrade log — which already fired on every arm, and now
+    also names the offending constraint and the column it dropped. That
+    is LATER and rarer than the warning it replaces; what makes it an
+    acceptable trade is that coord owns ``coord.devices`` as well as the
+    device ids it mints, so the keyspace-mismatch risk this function
+    exists to catch is real for users and largely theoretical for
+    devices.
+
+    It runs on its OWN session (the ``_verify_device_jwt`` pattern) so a
+    failure here can never poison the request's transaction, and ANY
+    failure — including the reference table being unreachable — degrades
+    rather than raises, because a coarser row beats a lost one.
+    """
+    if user_id is None:
+        return None, device_id
+
+    from sqlalchemy import text as sa_text
+
+    from app.db.session import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as session:
+            row = (
+                await session.execute(
+                    sa_text(
+                        "SELECT u.id AS user_id FROM auth.users u"
+                        "  WHERE u.id = CAST(:user_id AS uuid)"
+                    ),
+                    {"user_id": str(user_id)},
+                )
+            ).one_or_none()
+    except Exception as exc:
+        logger.warning(
+            "memory_provenance_unresolvable",
+            error=str(exc),
+            failure=type(exc).__name__,
+            note=(
+                "could not resolve claimed provenance against its reference "
+                "table; writing the record unattributed rather than failing it"
+            ),
+        )
+        return None, device_id
+
+    resolved_user = cast("UUID | None", row.user_id) if row is not None else None
+    if resolved_user is None:
+        logger.warning(
+            "memory_provenance_user_not_found",
+            claimed_user_id=str(user_id),
+            note=(
+                "coord-service token named a user_id with no auth.users row "
+                "— degraded to NULL. If this is steady-state, coord is "
+                "minting an id from a different keyspace."
+            ),
+        )
+    return resolved_user, device_id
+
+
+#: The two FK constraints ``memfacets_01`` creates on
+#: ``coord.memory_records``. Postgres derives these names from
+#: ``<table>_<column>_fkey``, so they are stable for as long as that
+#: migration spells the columns ``user_id`` / ``device_id``. Matched by
+#: NAME rather than by SQLSTATE alone because a 23503 from some OTHER
+#: foreign key on this table (``superseded_by``, say) is a real bug and
+#: must keep surfacing as a 500 — degrading it to "write it unattributed"
+#: would silently swallow it.
+_USER_FK_CONSTRAINT = "memory_records_user_id_fkey"
+_DEVICE_FK_CONSTRAINT = "memory_records_device_id_fkey"
+
+#: Order matters only for reporting: :func:`_violated_provenance_fk`
+#: returns the FIRST name found in the rendered error, so if both ever
+#: appeared in one message the user column would win. Postgres reports
+#: one violated constraint per error, so that case is unreachable today —
+#: noted because ``constraint`` is a log field people will trust.
+_PROVENANCE_FK_CONSTRAINTS = (_USER_FK_CONSTRAINT, _DEVICE_FK_CONSTRAINT)
+
+
+def _is_provenance_fk_violation(exc: IntegrityError) -> bool:
+    """Is this the FK on one of the two provenance columns, and only that?
+
+    Matched against the rendered driver error rather than a driver
+    attribute: SQLAlchemy's asyncpg dialect re-wraps asyncpg's
+    ``ForeignKeyViolationError`` in its own DBAPI shim, so
+    ``exc.orig.constraint_name`` is not reliably present across drivers,
+    whereas the constraint NAME is in the message text on every one of
+    them. The names are checked explicitly, so any other integrity error
+    — including a foreign-key violation on a different column — falls
+    through and still raises.
+    """
+    return _violated_provenance_fk(exc) is not None
+
+
+def _violated_provenance_fk(exc: IntegrityError) -> str | None:
+    """Which provenance FK constraint this error names, or ``None``.
+
+    The name-returning half of :func:`_is_provenance_fk_violation`, split
+    out so the degrade path can say WHICH column dangled. That is the
+    device arm's diagnosis: :func:`_existing_provenance` deliberately does
+    not resolve ``device_id`` (web's read boundary is closed against
+    coord's schema), so the insert side is where a dangling device id
+    becomes visible — and it is visible for every arm, not just the
+    coord-service one.
+    """
+    rendered = str(exc.orig) if exc.orig is not None else str(exc)
+    return next((name for name in _PROVENANCE_FK_CONSTRAINTS if name in rendered), None)
+
+
+async def _write_degrading_dangling_provenance[T](
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    write: Callable[[UUID | None, UUID | None], Awaitable[T]],
+) -> T:
+    """Run ``write(user_id, device_id)``; on a dangling FK, drop only that facet.
+
+    This is the INSERT-side half of the same guarantee ``memfacets_01``'s
+    ``ON DELETE SET NULL`` gives on the DELETE side: **a write is never
+    rejected for its provenance** — "a memory that fails to save is worse
+    than one that is coarsely scoped" (plan
+    ``2026-08-06-user-and-device-facets-on-memories-and-findings`` §4.1
+    item 3). ``SET NULL`` governs what happens to rows that are ALREADY
+    stored when a parent disappears; it does nothing for a write arriving
+    with an id whose parent has already gone.
+
+    Why a fallback rather than one more existence lookup. Every
+    provenance id on every arm is ultimately a claim about a row some
+    other service owns, so no pre-check can be more than a prediction:
+    :func:`_existing_provenance` resolves the coord-service arm's
+    ``user_id`` and is still a TOCTOU window, and extending it to the
+    DEVICE column would either breach web's closed read boundary against
+    ``coord.*`` or put a coord HTTP round trip on the fleet's hottest
+    write path. This closes the window exactly, for **every** arm and
+    both columns at once, and costs nothing when the ids resolve — which
+    is the steady state.
+
+    **The degradation is NARROW: only the facet that actually dangled is
+    dropped.** Postgres names the violated constraint in the error, and
+    :func:`_violated_provenance_fk` reads it straight out of the rendered
+    message — so identifying the bad column costs no extra round trip,
+    and there is no reason to discard a good id alongside a bad one. A
+    coord-service token carrying a live ``user_id`` and a device that was
+    reaped keeps its user attribution; only the device goes to NULL.
+
+    If BOTH ids dangle, the narrowed retry violates the other constraint
+    in turn — Postgres reports one per error — and the third and last
+    attempt writes the record fully unattributed. So the sequence is at
+    most: claimed, narrowed, bare; and it stops at the first one that
+    lands.
+
+    What is degraded is the REQUEST's provenance, not one row's.
+    Provenance is request-level — one verified principal per call — so
+    each retry re-runs the whole ``write``: on the batch path that is
+    every record in the request, not only the record whose id dangled
+    (the savepoint rolled the statement back). Coarser attribution for
+    the whole call is the intended fail-soft state; a rejected write is
+    not.
+
+    The cost when the ids resolve is one ``SAVEPOINT`` / ``RELEASE`` pair
+    on the connection the request already holds. That is deliberate and
+    it is the whole price: without the savepoint the first failed
+    statement poisons the request's transaction and there is nothing left
+    to retry into.
+
+    Anything that is not a provenance FK violation is re-raised untouched,
+    so this narrows the blast radius of exactly one failure mode and hides
+    no other.
+    """
+    if principal.user_id is None and principal.device_id is None:
+        # Nothing to dangle — skip the savepoint entirely so the
+        # unattributed callers (the bridge job, a coord-service token
+        # before coord mints the claim) pay nothing at all.
+        return await write(None, None)
+
+    try:
+        async with db.begin_nested():
+            return await write(principal.user_id, principal.device_id)
+    except IntegrityError as exc:
+        constraint = _violated_provenance_fk(exc)
+        if constraint is None:
+            raise
+        _log_provenance_degraded(exc, constraint, principal)
+
+    # Drop ONLY the column the constraint named. `constraint` is one of
+    # the two by construction, so exactly one of these is cleared and the
+    # other survives.
+    user_id = None if constraint == _USER_FK_CONSTRAINT else principal.user_id
+    device_id = None if constraint == _DEVICE_FK_CONSTRAINT else principal.device_id
+
+    if user_id is None and device_id is None:
+        # The dangling column was the only one claimed; the narrowed
+        # write and the bare write are the same statement, so do not pay
+        # for a savepoint to run it twice.
+        return await write(None, None)
+
+    try:
+        async with db.begin_nested():
+            return await write(user_id, device_id)
+    except IntegrityError as exc:
+        second = _violated_provenance_fk(exc)
+        if second is None:
+            raise
+        _log_provenance_degraded(exc, second, principal, both=True)
+
+    return await write(None, None)
+
+
+def _log_provenance_degraded(
+    exc: IntegrityError,
+    constraint: str,
+    principal: MemoryPrincipal,
+    *,
+    both: bool = False,
+) -> None:
+    """One warning per degraded facet, naming the constraint that fired."""
+    logger.warning(
+        "memory_provenance_fk_violation_degraded",
+        error=str(exc.orig) if exc.orig is not None else str(exc),
+        constraint=constraint,
+        degraded_column=(
+            "user_id" if constraint == _USER_FK_CONSTRAINT else "device_id"
+        ),
+        both_facets_dangled=both,
+        claimed_user_id=str(principal.user_id) if principal.user_id else None,
+        claimed_device_id=(str(principal.device_id) if principal.device_id else None),
+        actor=principal.actor,
+        note=(
+            "a provenance id named no referenced row at INSERT time (the row "
+            "was removed between resolution and the write, or this arm "
+            "asserts ids it does not resolve); re-writing the record with "
+            "that facet NULL rather than failing it. `degraded_column` is "
+            "the one dropped; the other is kept unless it dangles too."
+        ),
+    )
+
+
+async def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
     """Validate the coord-service-token contract and extract the tenant."""
     if claims.get("sub") != COORD_SERVICE_SUBJECT:
         raise HTTPException(
@@ -255,10 +572,26 @@ def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="coord service token carries no tenant_id",
         )
+    # Read from the VERIFIED claims, the same way ``tenant_id`` is — never
+    # from the request. coord does not yet mint ``user_id`` into
+    # ``MemoryProxyClaims`` (the deferred coord half of plan
+    # 2026-08-06-user-and-device-facets-on-memories-and-findings Phase 2),
+    # so today the user resolves to ``None`` on every proxied write. That
+    # is the intended fail-soft: the claim's absence must never raise,
+    # because an un-updated coord deploy would otherwise 401 every memory
+    # write in the fleet rather than dropping one facet.
+    #
+    # Shape is not existence, though. This is the ONE arm whose ids are
+    # unverified assertions, so both are resolved against their FK targets
+    # and a dangling one degrades to NULL — see ``_existing_provenance``.
+    user_id, device_id = await _existing_provenance(
+        _claim_uuid(claims, "user_id"), _claim_uuid(claims, "device_id")
+    )
     return MemoryPrincipal(
         tenant_id=tenant_id,
-        device_id=_claim_uuid(claims, "device_id"),
+        device_id=device_id,
         actor="coord_service",
+        user_id=user_id,
     )
 
 
@@ -328,12 +661,22 @@ async def get_memory_tenant(
 
         if claims is not None:
             if claims.get("token_kind") == COORD_SERVICE_TOKEN_KIND:
-                return _principal_from_service_claims(claims)
+                return await _principal_from_service_claims(claims)
 
             # Coord-signed but not a service token → device-token path.
             # Reuse the canonical device verification (user resolution +
             # active check) from app.api.deps.
-            device_claims, _device_user = await _verify_device_jwt(
+            # ``device_user`` is NOT a discard. ``_verify_device_jwt`` has
+            # already resolved and validated the owning human — it 401s a
+            # token with no ``user_id`` claim, a malformed one, an unknown
+            # user, or an inactive one (app/api/deps.py) — so by the time
+            # this line runs the user facet is free, fully verified, and
+            # server-side. It used to be bound to ``_device_user`` and
+            # thrown away; plan
+            # 2026-08-06-user-and-device-facets-on-memories-and-findings
+            # §4.1 stops the discard. This is the one arm on which the
+            # user facet resolves today.
+            device_claims, device_user = await _verify_device_jwt(
                 credentials.credentials
             )
             tenant_id = _claim_uuid(device_claims, "tenant_id")
@@ -344,8 +687,18 @@ async def get_memory_tenant(
                 )
             return MemoryPrincipal(
                 tenant_id=tenant_id,
+                # SHAPE-checked only, and deliberately not resolved against
+                # ``coord.devices``: ``_verify_device_jwt`` never reads that
+                # table, so this id is as unverified as the coord-service
+                # arm's and lands in the same FK column. The asymmetry is a
+                # cost decision, not an oversight — this is the fleet's
+                # hottest write path and a lookup here would be one more
+                # round trip for a check that a raced deletion defeats
+                # anyway. The insert-side guarantee is made exactly, at the
+                # write, by ``_write_degrading_dangling_provenance``.
                 device_id=_claim_uuid(device_claims, "device_id"),
                 actor="device",
+                user_id=device_user.id,
             )
 
     if user is not None:
@@ -356,7 +709,15 @@ async def get_memory_tenant(
                 detail="tenant_not_resolved",
             )
         return MemoryPrincipal(
-            tenant_id=identity.home_tenant_id, device_id=None, actor="operator"
+            tenant_id=identity.home_tenant_id,
+            device_id=None,
+            actor="operator",
+            # ``user`` is the authenticated ``auth.users`` row this
+            # dependency was handed — the same table ``user_id`` FKs to —
+            # so this is the identity itself, not a lookup. Deliberately
+            # NOT ``identity.operator_id``: that is coord's own operator
+            # id from ``GET /admin/coord/me`` and is a different keyspace.
+            user_id=user.id,
         )
 
     raise HTTPException(
@@ -622,8 +983,24 @@ async def write_records(
         )
         for h in write_hashes
     ]
-    batch_results = await store.insert_records_batch(
-        db, tenant_id=principal.tenant_id, items=batch_items
+    # Provenance from the VERIFIED principal, exactly like tenant_id. Never
+    # from ``payload`` — ``MemoryRecordIn`` declares no such field, and that
+    # omission is the enforcement (§6 requirement 5b). Wrapped so a
+    # provenance id whose row has gone degrades the request's PROVENANCE
+    # rather than failing the request. Provenance is request-level — one
+    # principal per call — so on this path a single dangling id writes
+    # EVERY record in the batch unattributed, not just the one that
+    # dangled. See ``_write_degrading_dangling_provenance``.
+    batch_results = await _write_degrading_dangling_provenance(
+        db,
+        principal,
+        lambda user_id, device_id: store.insert_records_batch(
+            db,
+            tenant_id=principal.tenant_id,
+            items=batch_items,
+            user_id=user_id,
+            device_id=device_id,
+        ),
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
         zip(write_hashes, batch_results, strict=True)
@@ -640,24 +1017,43 @@ async def write_records(
             if existing_id is not None:
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
+
             # Vanishingly rare race (row invalidated between the hash
             # pre-check and now): insert this one record on its own,
             # reusing ITS OWN caller-supplied vector (or none) — the race
             # path must never grow a server-side embed back.
-            memory_id, deduped = await store.insert_record(
-                db,
-                tenant_id=principal.tenant_id,
-                scope=rec.scope,
-                scope_ref=rec.scope_ref,
-                kind=rec.kind,
-                title=titles[i],
-                content=contents[i],
-                content_hash=h,
-                embedding=rec.embedding,
-                embedding_model=rec.embedding_model,
-                importance=rec.importance,
-                source=rec.source,
-                anchors=[a.model_dump(mode="json") for a in rec.anchors],
+            # A nested ``def`` rather than a lambda, and the loop variables
+            # bound as defaults rather than closed over: the defaults are
+            # what stop the late-binding bug ruff's B023 exists for, and the
+            # ``def`` is what lets mypy infer the callable's type at all
+            # (it cannot infer a lambda that carries defaults).
+            def _insert_the_raced_row(
+                user_id: UUID | None,
+                device_id: UUID | None,
+                i: int = i,
+                rec: MemoryRecordIn = rec,
+                h: str = h,
+            ) -> Awaitable[tuple[UUID, bool]]:
+                return store.insert_record(
+                    db,
+                    tenant_id=principal.tenant_id,
+                    scope=rec.scope,
+                    scope_ref=rec.scope_ref,
+                    kind=rec.kind,
+                    title=titles[i],
+                    content=contents[i],
+                    content_hash=h,
+                    embedding=rec.embedding,
+                    embedding_model=rec.embedding_model,
+                    importance=rec.importance,
+                    source=rec.source,
+                    anchors=[a.model_dump(mode="json") for a in rec.anchors],
+                    user_id=user_id,
+                    device_id=device_id,
+                )
+
+            memory_id, deduped = await _write_degrading_dangling_provenance(
+                db, principal, _insert_the_raced_row
             )
             # Later intra-batch occurrences dedup onto this row.
             outcome_by_hash[h] = (memory_id, True)
@@ -1206,26 +1602,38 @@ async def supersede_record(
         else list(old["anchors"] or [])
     )
 
-    new_id, deduped = await store.insert_record(
+    # The successor is a NEW row authored by THIS caller, so its provenance
+    # is this caller's — not the superseded row's. Same verified-principal
+    # source as every other write, and the same insert-side fail-soft: a
+    # dangling id degrades the row, never the supersede.
+    new_id, deduped = await _write_degrading_dangling_provenance(
         db,
-        tenant_id=principal.tenant_id,
-        scope=payload.scope if payload.scope is not None else old["scope"],
-        scope_ref=(
-            payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+        principal,
+        lambda user_id, device_id: store.insert_record(
+            db,
+            tenant_id=principal.tenant_id,
+            scope=payload.scope if payload.scope is not None else old["scope"],
+            scope_ref=(
+                payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+            ),
+            kind=payload.kind if payload.kind is not None else old["kind"],
+            title=rt.text,
+            content=rc.text,
+            content_hash=content_hash,
+            embedding=payload.embedding,
+            embedding_model=payload.embedding_model,
+            importance=(
+                payload.importance
+                if payload.importance is not None
+                else float(old["importance"])
+            ),
+            source=(
+                payload.source if payload.source is not None else (old["source"] or {})
+            ),
+            anchors=inherited_anchors,
+            user_id=user_id,
+            device_id=device_id,
         ),
-        kind=payload.kind if payload.kind is not None else old["kind"],
-        title=rt.text,
-        content=rc.text,
-        content_hash=content_hash,
-        embedding=payload.embedding,
-        embedding_model=payload.embedding_model,
-        importance=(
-            payload.importance
-            if payload.importance is not None
-            else float(old["importance"])
-        ),
-        source=payload.source if payload.source is not None else (old["source"] or {}),
-        anchors=inherited_anchors,
     )
     if new_id == memory_id:
         raise HTTPException(
