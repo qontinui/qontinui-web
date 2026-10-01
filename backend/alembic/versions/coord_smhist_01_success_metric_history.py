@@ -370,6 +370,18 @@ exactly and the rollup is an index scan.
 every read and write here is tenant-scoped and a leading tenant column is what
 keeps one tenant's metric-heavy corpus cheap for every other tenant.
 
+It is built ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside
+``op.get_context().autocommit_block()``, written as a static literal. On a
+table created one statement earlier a plain build would cost nothing, but
+coord's merge-train migration classifier
+(``qontinui-coord/crates/coord/src/pr_merge/migration_classifier.rs``)
+admits no other index build and no f-string ``op.execute``, and this PR must
+land without an operator override. ``autocommit_block`` commits the
+transaction ``env.py`` opened, so the ``CREATE TABLE`` is durable before the
+build starts (precedent ``coord_alerts_flakeidx_01``). A KILLED concurrent
+build leaves an INVALID index that ``IF NOT EXISTS`` would then skip — check
+``pg_index.indisvalid``, and ``DROP INDEX`` + re-run if it is invalid.
+
 Idempotency
 ===========
 ``CREATE TABLE IF NOT EXISTS`` / ``CREATE INDEX IF NOT EXISTS`` /
@@ -420,10 +432,6 @@ revision: str = "coord_smhist_01_success_metric_history"
 down_revision: str | Sequence[str] | None = "coord_pdclaims_02_claim_lifecycle"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# Index name, stated once so upgrade and downgrade cannot drift — the same
-# convention as coord_pdclaims_01_claim_states.
-_IX_METRIC = "idx_success_metric_history_metric_observed"
 
 
 def upgrade() -> None:
@@ -573,13 +581,17 @@ def upgrade() -> None:
     #    The DESC on observed_at is load-bearing for the second one —
     #    see "Index shape is the read's shape" in the module docstring.
     # ----------------------------------------------------------------
-    op.execute(
-        f"""
-        CREATE INDEX IF NOT EXISTS {_IX_METRIC}
+    #    A static literal, CONCURRENTLY, in an autocommit_block: the only
+    #    index build coord's migration classifier admits (docstring).
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_success_metric_history_metric_observed
             ON coord.success_metric_history
                (tenant_id, kind, name, observed_at DESC)
-        """
-    )
+            """
+        )
 
 
 def downgrade() -> None:
@@ -593,5 +605,5 @@ def downgrade() -> None:
     way the table reference does. Nothing references this table, so a plain
     ``DROP TABLE`` suffices.
     """
-    op.execute(f"DROP INDEX IF EXISTS coord.{_IX_METRIC}")
+    op.execute("DROP INDEX IF EXISTS coord.idx_success_metric_history_metric_observed")
     op.execute("DROP TABLE IF EXISTS coord.success_metric_history")

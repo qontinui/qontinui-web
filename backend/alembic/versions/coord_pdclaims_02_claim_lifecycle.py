@@ -107,10 +107,13 @@ soft ``retired_at`` stamp; or re-assert the pair from a pre-delete read.
 Columns
 =======
 
-* ``lifecycle``       — ``TEXT NOT NULL DEFAULT 'aspirational'``,
-                        CHECK-constrained to the two-value vocabulary for the
+* ``lifecycle``       — ``TEXT DEFAULT 'aspirational'``, CHECK-constrained
+                        to NON-NULL and to the two-value vocabulary for the
                         same reason ``state`` is: a third spelling must not be
-                        able to creep in from the writer. The default is
+                        able to creep in from the writer. Non-NULL is a CHECK
+                        rather than a catalog ``NOT NULL`` because coord's
+                        migration classifier rejects ``ADD COLUMN … NOT
+                        NULL``; the CHECK refuses exactly the same writes. The default is
                         ``aspirational`` because "has never resolved CONFIRMED"
                         is exactly the state of a claim nothing has observed
                         yet, and UNKNOWN must never render as the stronger
@@ -123,8 +126,9 @@ Columns
                         a behaviour first demonstrably worked, which is the
                         fact a rollup and a regression post-mortem both need.
 
-                        ⚠️ **On a row this migration backfills it is an UPPER
-                        BOUND, not the first confirmation.** The backfill has
+                        ⚠️ **On a row the catch-up promote backfills it is an
+                        UPPER BOUND, not the first confirmation.** That
+                        backfill has
                         only ``observed_at`` to work from, and on a
                         current-row-only table ``observed_at`` is the LAST
                         tick, not the first — coord's upsert overwrites it
@@ -134,17 +138,18 @@ Columns
                         the most recent tick, not the day it started working.
                         That is the best this table's own contents can
                         support, and ``established_by`` is what tells the two
-                        apart: a row stamped with this revision carries an
-                        upper bound, a row stamped by coord's observer carries
-                        the moment coord actually witnessed the promotion.
+                        apart: the catch-up promote must stamp an actor of its
+                        own, distinct from the observer's, so an inferred
+                        upper bound is never confused with a witnessed
+                        promotion.
 * ``established_by``  — ``TEXT NULL``; the actor that recorded the promotion,
                         following the derived-state precedent in
                         ``work_unit_derive_worker.rs`` (every derived state in
                         coord is stamped ``by_actor="coord::derive_worker"``).
                         Coord's observer stamps its own actor here; the
-                        backfill below stamps this revision, so a promotion
-                        inferred by this migration is distinguishable forever
-                        from one coord actually observed.
+                        catch-up promote stamps a different one, so an
+                        inferred promotion is distinguishable forever from
+                        one coord actually observed.
 
 The two nullable columns are a deliberate pair rather than a JSONB blob:
 ``established_at`` is a rollup denominator ("claims CONFIRMED and fresh" in
@@ -159,7 +164,8 @@ Two CHECK constraints, and what each catches
 2. ``ck_prompt_document_claim_states_established_at`` — the promotion
    invariant, ``lifecycle = 'established'`` **iff** ``established_at IS NOT
    NULL``. Written as an equality between two booleans, which is total
-   because ``lifecycle`` is ``NOT NULL``, so it never evaluates to NULL and
+   because constraint 1 makes ``lifecycle`` non-NULL, so it never evaluates
+   to NULL and
    never passes by omission. It catches both halves of the defect: an
    ``established`` row with no promotion date — which would break the §6
    rollup and defeat the auditability this column exists for — and an
@@ -170,52 +176,48 @@ actor is conceivable (a promotion recorded by a build that predates the
 actor stamp); an unknown promotion *time* is not, because a promotion always
 happens at a moment.
 
-The backfill, and why this migration HAS one
-=============================================
-Unlike ``tenant_policies_02_transcript_sync_enabled`` — where the column
-DEFAULT alone reaches every existing row and a follow-up ``UPDATE`` would be a
-no-op — ``DEFAULT 'aspirational'`` is **wrong for the rows that already
-exist**. A row sitting at ``state = 'confirmed'`` right now has, by the
-lifecycle's own definition, resolved CONFIRMED at least once: its current
-verdict IS that evidence. Leaving it ``aspirational`` would mean a genuine
-regression on an already-working claim raises no alert — a silent weakening of
-shipped alerting behaviour, which this plan explicitly does not do (§1:
-*"alert volume does not change for any spec that exists today"*).
+The backfill, and why it is NOT in this migration
+==================================================
+``DEFAULT 'aspirational'`` is **wrong for the rows that already exist**. A row
+sitting at ``state = 'confirmed'`` right now has, by the lifecycle's own
+definition, resolved CONFIRMED at least once: its current verdict IS that
+evidence. Leaving it ``aspirational`` once the ``established``-only alerting
+rule is armed would mean a genuine regression on an already-working claim
+raises no alert — a silent weakening of shipped alerting behaviour, which this
+plan explicitly does not do (§1: *"alert volume does not change for any spec
+that exists today"*).
 
-So the ``UPDATE`` below promotes exactly those rows, evidence-first, and
-stamps ``established_at`` from the row's own ``observed_at`` rather than from
-``now()``, which would assert a promotion time this migration did not witness.
-(What ``observed_at`` does and does not mean on this table is the upper-bound
-caveat under ``established_at`` above.)
+The first form of this revision promoted those rows with an ``UPDATE``. It is
+REMOVED, because coord's merge-train migration classifier
+(``qontinui-coord/crates/coord/src/pr_merge/migration_classifier.rs``)
+rejects every DML statement on the upgrade path, and this PR must land without
+an operator override. Removing it loses nothing, for a reason that is
+structural rather than hopeful:
 
-⚠️ **The backfill does NOT close the window, and it is not this migration's
-to close.** The exposure is not "until the next observer tick" — it is
-**until the coord PR that writes ``lifecycle`` deploys**, which is longer, and
-the coord running in the meantime actively widens it. ``UPSERT_CLAIM_SQL``
-(``qontinui-coord/crates/coord/src/prompt_document_claims.rs``) inserts with
-an explicit column list that does not include ``lifecycle``, so **every claim
-that first resolves CONFIRMED during that window lands ``aspirational``** —
-confirmed, but unpromoted. If such a claim then regresses before the new
-observer re-confirms it, the ``established``-only alerting rule reads it as
-backlog and raises nothing on a real regression.
+* **Nothing reads ``lifecycle`` until the coord PR deploys.** The column is
+  inert before then, so an unpromoted row before then is not yet a defect.
+* **That coord PR must ALREADY carry a catch-up promote** (requirement 1 under
+  "Deploy ordering"), with exactly the predicate the removed ``UPDATE`` used —
+  ``state = 'confirmed' AND lifecycle = 'aspirational'`` — run once before the
+  alerting rule is armed. Because the coord in the meantime inserts every newly
+  confirmed claim at the ``aspirational`` default (``UPSERT_CLAIM_SQL`` does
+  not name ``lifecycle``), that catch-up was required regardless of any
+  migration backfill, and it is a superset of it: it reaches the rows that
+  existed when this migration ran AND the ones confirmed afterwards.
 
-No SQL in this migration can fix that, because the rows do not exist yet when
-it runs. **The coord PR must therefore carry a catch-up promote** — the same
-predicate as the backfill below (``state = 'confirmed' AND lifecycle =
-'aspirational'``), run once at startup before the alerting rule is armed, or
-folded into the upsert itself. This is recorded here so the coord PR inherits
-it as a requirement rather than discovering it as an incident.
+So the coord PR's catch-up promote is now the ONLY backfill, and it must:
+stamp ``established_at`` from the row's own ``observed_at`` (never ``now()``,
+which would assert a promotion time nobody witnessed — and see the
+upper-bound caveat under ``established_at``), assign ``lifecycle`` and
+``established_at`` in one statement (requirement 2), and stamp an
+``established_by`` actor distinct from the observer's.
 
-Rows at ``state = 'contradicted'`` or ``'unknown'`` are deliberately NOT
-promoted. They may well have been CONFIRMED at some point in the past, but
-this table kept no record of it and inventing one would be exactly the
+Rows at ``state = 'contradicted'`` or ``'unknown'`` must NOT be promoted by it.
+They may well have been CONFIRMED at some point in the past, but this table
+kept no record of it and inventing one would be exactly the
 absence-reads-as-evidence failure the plan is about. They stay
 ``aspirational`` until an observer tick confirms them, which promotes them on
 evidence. That is an honest under-count, not a guess.
-
-Per ``production-and-cost`` ``pipeline-deploys-are-not-adhoc-mutation`` the
-``UPDATE`` rides the normal migration pipeline and reaches every existing row
-without any separate ad-hoc mutation step.
 
 Why no new index
 ================
@@ -231,28 +233,27 @@ before.
 
 Idempotency
 ===========
-``ADD COLUMN IF NOT EXISTS`` / ``DROP COLUMN IF EXISTS``, and the backfill is
-itself idempotent: its ``WHERE`` clause excludes rows that are already
-promoted, so a second run re-stamps nothing it already stamped. **It does not
-follow that a second run is always ``UPDATE 0``**, and the earlier wording here
-claimed that: the filter is ``lifecycle = 'aspirational' AND state =
-'confirmed'``, so a row that reached ``confirmed`` through coord's own upsert
-BETWEEN the two runs is promoted by the second one — measured, ``UPDATE 1``
-then ``UPDATE 1``, not ``UPDATE 0``. That behaviour is correct and is in fact
-better than the property the docstring used to assert; what is idempotent is
-the per-row effect, not the statement's row count. It does **not** re-derive
-the same values on
-a re-run — it does not touch those rows at all, which is the stronger
-property and the one that matters, since ``observed_at`` may have moved on
-under it. A re-run against an already-applied database is a no-op.
+``ADD COLUMN IF NOT EXISTS`` / ``DROP COLUMN IF EXISTS`` for the three
+columns, and the single-column ``lifecycle`` CHECK rides its column's guard,
+so it cannot be added twice.
 
-The single-column ``lifecycle`` CHECK rides the ``IF NOT EXISTS`` guard on
-its own column, so it cannot be added twice. The two-column promotion
-invariant cannot: it spans ``lifecycle`` and ``established_at``, so it has to
-be an ``ADD CONSTRAINT``, which has no ``IF NOT EXISTS`` form. Its
-idempotency comes from a ``pg_constraint`` lookup instead — a narrower
-question than a blanket ``EXCEPTION WHEN duplicate_object``, which would also
-swallow whatever else the statement might have raised.
+The two-column promotion invariant cannot ride a column: it is an ``ADD
+CONSTRAINT``, which has no ``IF NOT EXISTS`` form. The first form of this
+revision guarded it with a ``DO $$`` block over ``pg_constraint``; coord's
+migration classifier admits no ``DO`` block, so it is now a bare
+``ADD CONSTRAINT … NOT VALID``. That costs idempotency only in a state that
+cannot arise: this revision contains no ``autocommit_block`` and its version
+stamp lands inside the same transaction as its DDL (the next revision,
+``coord_smhist_01``, commits only after that), so it is never partially
+applied, and ``downgrade()`` drops the constraint. A re-run
+over a database that somehow has it fails LOUDLY on ``DuplicateObject`` rather
+than silently.
+
+``NOT VALID`` skips only the validation scan of existing rows, and at this
+point every existing row is ``('aspirational', NULL)``, which satisfies the
+invariant — so nothing is left unchecked. Every write from here on is checked
+exactly as by a validated constraint. ``pg_constraint.convalidated`` reads
+``false``; nothing reads that flag.
 
 Deploy ordering (load-bearing)
 ===============================
@@ -269,9 +270,10 @@ concern and is not made here.
 Two requirements this migration hands the coord PR, both cheaper to read here
 than to discover at runtime:
 
-1. **The catch-up promote** described under "The backfill" above. Without it,
-   every claim first confirmed between this landing and that deploy stays
-   unpromoted and its later regression is silent.
+1. **The catch-up promote** described under "The backfill" above — now the
+   ONLY backfill. Without it, every claim already confirmed when this lands,
+   and every claim first confirmed between this landing and that deploy,
+   stays unpromoted and its later regression is silent.
 2. **``lifecycle`` and ``established_at`` must be written in the SAME
    statement.** The promotion invariant spans both columns, so an
    ``ON CONFLICT DO UPDATE SET lifecycle = CASE WHEN ... THEN 'established'
@@ -295,45 +297,33 @@ down_revision: str | Sequence[str] | None = "overlord_01_interventions"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# The actor stamped into ``established_by`` for rows this migration promotes
-# is the literal ``alembic::coord_pdclaims_02_claim_lifecycle``, written
-# inline in the UPDATE below so a promotion INFERRED from a current verdict
-# stays distinguishable forever from one coord's observer actually witnessed.
-#
-# It is deliberately NOT a module constant interpolated into the SQL. The
-# sibling revisions' f-strings interpolate an object NAME (an index, e.g.
-# ``{_IX_DOC}`` in coord_pdclaims_01_claim_states.py), where no parameter form
-# exists; this would be a VALUE inside a string literal, which is the form
-# that breaks silently the day the constant grows an apostrophe. One fixed
-# literal in one place has neither problem, and ruff flags neither, so the
-# difference has to be made by hand.
-
 
 def upgrade() -> None:
-    """Add the lifecycle columns, then promote the already-CONFIRMED rows."""
+    """Add the lifecycle columns and the promotion invariant. No backfill."""
     # ----------------------------------------------------------------
     # 1. The lifecycle itself. Raw SQL rather than op.add_column for the
     #    same reason as the sibling coord.* revisions: the
     #    IF NOT EXISTS guard and the inline CHECK want to be stated
     #    literally, and the CHECK must ride that guard rather than
     #    needing an ADD CONSTRAINT that has no IF NOT EXISTS form.
+    #    Non-NULL is enforced by the CHECK, not a catalog NOT NULL,
+    #    which coord's migration classifier rejects (module docstring).
     # ----------------------------------------------------------------
     op.execute(
         """
         ALTER TABLE coord.prompt_document_claim_states
-            ADD COLUMN IF NOT EXISTS lifecycle TEXT NOT NULL
+            ADD COLUMN IF NOT EXISTS lifecycle TEXT
                 DEFAULT 'aspirational'
                 CONSTRAINT ck_prompt_document_claim_states_lifecycle
-                CHECK (lifecycle IN ('aspirational', 'established'))
+                CHECK (lifecycle IS NOT NULL
+                       AND lifecycle IN ('aspirational', 'established'))
         """
     )
 
     # ----------------------------------------------------------------
     # 2. When the one-way promotion happened, and who recorded it.
-    #    Separate statements: a single ALTER with three ADD COLUMN
-    #    clauses is atomic either way, and one statement per column
-    #    keeps each IF NOT EXISTS independently meaningful on a
-    #    partially-applied database.
+    #    Separate statements: one statement per column keeps each
+    #    IF NOT EXISTS independently meaningful.
     # ----------------------------------------------------------------
     op.execute(
         """
@@ -352,68 +342,26 @@ def upgrade() -> None:
     # 3. The promotion invariant, enforced rather than trusted:
     #    lifecycle = 'established'  IFF  established_at IS NOT NULL.
     #
-    #    Total, because lifecycle is NOT NULL — both sides are plain
-    #    booleans, so this never evaluates to NULL and never passes by
-    #    omission. It catches both halves: an 'established' row with no
-    #    promotion date (which would break the §6 rollup and the
-    #    auditability this column exists for) and an 'aspirational' row
-    #    carrying a leftover date from a reverted write.
+    #    Total, because step 1's CHECK makes lifecycle non-NULL — both
+    #    sides are plain booleans, so this never evaluates to NULL and
+    #    never passes by omission.
     #
-    #    This one spans two columns, so unlike the lifecycle CHECK it
-    #    cannot ride an ADD COLUMN IF NOT EXISTS. ADD CONSTRAINT has no
-    #    IF NOT EXISTS form, so idempotency comes from the catalog
-    #    lookup instead. A plain `EXCEPTION WHEN duplicate_object` would
-    #    also work but would abort the surrounding subtransaction on any
-    #    OTHER error it happened to catch; asking pg_constraint is the
-    #    narrower question.
-    #
-    #    Added BEFORE the backfill so the backfill is itself validated
-    #    by it. Ordering is otherwise free: at this point every row is
-    #    ('aspirational', NULL), which satisfies it.
+    #    NOT VALID skips only the scan of existing rows, every one of
+    #    which is ('aspirational', NULL) here and so satisfies it. No
+    #    DO-block idempotency guard: coord's classifier admits none, and
+    #    the revision is never partially applied (module docstring).
     # ----------------------------------------------------------------
     op.execute(
         """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                  FROM pg_constraint
-                 WHERE conname = 'ck_prompt_document_claim_states_established_at'
-                   AND conrelid = 'coord.prompt_document_claim_states'::regclass
-            ) THEN
-                ALTER TABLE coord.prompt_document_claim_states
-                    ADD CONSTRAINT ck_prompt_document_claim_states_established_at
-                    CHECK ((lifecycle = 'established')
-                           = (established_at IS NOT NULL));
-            END IF;
-        END $$
+        ALTER TABLE coord.prompt_document_claim_states
+            ADD CONSTRAINT ck_prompt_document_claim_states_established_at
+            CHECK ((lifecycle = 'established')
+                   = (established_at IS NOT NULL)) NOT VALID
         """
     )
 
-    # ----------------------------------------------------------------
-    # 4. Backfill — see "The backfill, and why this migration HAS one".
-    #    A row currently CONFIRMED has, by definition, resolved
-    #    CONFIRMED at least once. Its observed_at is the LAST tick
-    #    rather than the first, so the established_at written here is
-    #    an upper bound — see the established_at entry in the module
-    #    docstring. Rows that are contradicted or unknown are left
-    #    aspirational on purpose: this table kept no history, so any
-    #    promotion for them would be invented rather than observed.
-    #
-    #    The lifecycle predicate in the WHERE clause makes a re-run a
-    #    no-op: it matches nothing the second time, rather than
-    #    re-stamping established_at from a moved observed_at.
-    # ----------------------------------------------------------------
-    op.execute(
-        """
-        UPDATE coord.prompt_document_claim_states
-           SET lifecycle      = 'established',
-               established_at = observed_at,
-               established_by = 'alembic::coord_pdclaims_02_claim_lifecycle'
-         WHERE state = 'confirmed'
-           AND lifecycle = 'aspirational'
-        """
-    )
+    # No backfill here: coord's catch-up promote is the only one — see
+    # "The backfill, and why it is NOT in this migration".
 
 
 def downgrade() -> None:
@@ -421,13 +369,15 @@ def downgrade() -> None:
 
     ⚠️ **This is LOSSY, and the loss is not symmetric with the upgrade.**
     Dropping ``lifecycle`` / ``established_at`` destroys every promotion coord
-    recorded, and a later ``upgrade()`` re-derives promotions only from each
-    row's CURRENT verdict. So a claim that coord promoted and that has since
-    regressed — ``state = 'contradicted'``, ``lifecycle = 'established'``,
-    i.e. exactly the rows that are actively alerting — comes back
-    ``aspirational`` and stops alerting, silently. A down/up cycle therefore
-    disarms the live regression alerts while leaving the backlog intact, which
-    is the precise inversion of what this column is for.
+    recorded, and a later ``upgrade()`` re-derives NOTHING: every row comes
+    back ``aspirational``, including rows currently ``confirmed``, until
+    coord's catch-up promote runs — and that re-derives promotions only from
+    each row's CURRENT verdict. So a claim that coord promoted and that has
+    since regressed — ``state = 'contradicted'``, ``lifecycle =
+    'established'``, i.e. exactly the rows that are actively alerting — comes
+    back ``aspirational`` and stops alerting, silently. A down/up cycle
+    therefore disarms the live regression alerts while leaving the backlog
+    intact, which is the precise inversion of what this column is for.
 
     That is unavoidable here: the promotion is a historical fact this table
     keeps nowhere else, so once the column is gone there is nothing to restore
@@ -440,8 +390,7 @@ def downgrade() -> None:
     the column, so the explicit ``DROP CONSTRAINT`` below is belt-and-braces
     rather than load-bearing — it is here so the two-column invariant is
     reversed by a statement of its own, symmetric with the statement that
-    added it, and so a partially-applied upgrade downgrades cleanly whatever
-    it managed to create. The single-column ``lifecycle`` CHECK needs no such
+    added it. The single-column ``lifecycle`` CHECK needs no such
     statement: it rides its own column.
 
     Columns are dropped in reverse order of addition for symmetry; nothing
