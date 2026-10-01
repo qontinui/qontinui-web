@@ -17,8 +17,8 @@
  *    reason spelled out in prose beside it — not merely in a `title`, which a
  *    reader on a touch device never sees. An enabled control that drains
  *    nothing is the predictability failure the plan's Risks section names
- *    twice: once for a row with no coord device link, and once for `spaceship`
- *    versus `gh-runner-spaceship-wsl`.
+ *    twice: once for a row with no coord device link, and once for a
+ *    workstation versus the CI runner registered under it.
  * 2. **The target is labelled with coord's own identity**, never the card
  *    title. That title is `displayName ?? hostname` — an operator-settable
  *    alias — and the two CI/workstation registrations for one physical box

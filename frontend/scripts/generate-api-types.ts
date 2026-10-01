@@ -20,8 +20,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Configuration
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+// Maintainer codegen, run by hand against a LOCAL dev backend and never
+// bundled into the app, so its dev-stack defaults are the point of it.
+const BACKEND_URL =
+  // eslint-disable-next-line @qontinui-web/no-dev-stack-fallback -- maintainer codegen tool, run against a local dev backend; never shipped.
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 const QONTINUI_URL =
+  // eslint-disable-next-line @qontinui-web/no-dev-stack-fallback -- maintainer codegen tool, run against a local dev backend; never shipped.
   process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8000";
 const SCHEMA_PATH = path.resolve(
   __dirname,

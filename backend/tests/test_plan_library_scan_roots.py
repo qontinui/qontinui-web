@@ -60,11 +60,12 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.plan_scan_root import PlanScanRootObservation
+from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.schemas.plan_library_scan_roots import MAX_FUTURE_SKEW_SECS, ScanRootReport
 from app.services.plan_scan_root_health import (
     FRESH_WITHIN_SECS,
     REF_STALE_ZERO_FLOOR_DETAIL,
+    RETIRE_AFTER_SECS,
     ref_stale_zero_behind_detail,
 )
 
@@ -1157,3 +1158,414 @@ class TestValidation:
         for resp in responses:
             assert resp.status_code == 422, resp.text
         assert await _rows_for(async_db_session, DEVICE_A) == []
+
+
+# ===========================================================================
+# 7. Refused reports are recorded (Phase 1 of
+#    2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune)
+# ===========================================================================
+
+
+def _future_dated() -> dict[str, Any]:
+    """A report the web refuses on ``observed_at`` — the runner-clock case."""
+    ahead = datetime.now(UTC) + timedelta(seconds=MAX_FUTURE_SKEW_SECS + 600)
+    return _reading(observed_at=ahead.isoformat())
+
+
+async def _refusals_for(db: AsyncSession, device_id: UUID) -> list[PlanScanRootRefusal]:
+    result = await db.execute(
+        select(PlanScanRootRefusal)
+        .where(PlanScanRootRefusal.device_id == device_id)
+        .execution_options(populate_existing=True)
+    )
+    return list(result.scalars().all())
+
+
+async def _observation_snapshot(db: AsyncSession, device_id: UUID) -> tuple[Any, ...]:
+    """Every stored column of the device's reading, as one comparable tuple."""
+    table = PlanScanRootObservation.__table__
+    result = await db.execute(select(table).where(table.c.device_id == device_id))
+    return tuple(result.one())
+
+
+def _app_with_web_envelope(db_session: AsyncSession) -> FastAPI:
+    """The router plus the web's OWN 422 handler — the envelope prod sends."""
+    from fastapi.exceptions import RequestValidationError
+
+    from app.middleware.error_handler import validation_exception_handler
+
+    app = _build_app(db_session=db_session, cognito_user=None)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    return app
+
+
+class TestRefusedReportsAreRecorded:
+    async def test_the_422_web_envelope_field_is_byte_identical(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        """The runner keys its WARN on ``details[0].field == "body.observed_at"``.
+
+        Validation moved from FastAPI into the handler; the re-raised errors
+        must carry the ``body`` loc prefix or this string silently becomes
+        ``observed_at``. Mutation-proved: dropping the ``("body", *loc)``
+        prefix in ``_body_errors`` fails this test.
+        """
+        app = _app_with_web_envelope(async_db_session)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(SCAN_ROOTS, json=_future_dated())
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert body["error"] == "VALIDATION_ERROR"
+        assert body["details"][0]["field"] == "body.observed_at"
+        assert body["details"][0]["type"] == "value_error"
+
+    async def test_fastapis_default_envelope_keeps_its_loc_too(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(SCAN_ROOTS, json=_future_dated())
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"][0]["loc"] == ["body", "observed_at"]
+
+    async def test_a_body_that_is_not_json_is_a_json_invalid_422_and_recorded(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        app = _app_with_web_envelope(async_db_session)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS,
+                content=b"{not json",
+                headers={"content-type": "application/json"},
+            )
+        assert resp.status_code == 422, resp.text
+        [detail] = resp.json()["details"]
+        assert detail["type"] == "json_invalid"
+        assert detail["field"] == "body.1"
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.last_refused_reason == "body.1: json_invalid"
+
+    async def test_an_empty_body_is_a_missing_body_422_and_recorded(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        app = _app_with_web_envelope(async_db_session)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(SCAN_ROOTS)
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["details"][0]["field"] == "body"
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.last_refused_reason == "body: missing"
+
+    async def test_a_json_null_body_is_missing_as_fastapi_spells_it(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        """FastAPI treats a required body that decodes to ``None`` as absent:
+        ``missing`` at ``("body",)``, not the model's ``model_type``."""
+        app = _app_with_web_envelope(async_db_session)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS,
+                content=b"null",
+                headers={"content-type": "application/json"},
+            )
+        assert resp.status_code == 422, resp.text
+        [detail] = resp.json()["details"]
+        assert (detail["field"], detail["type"]) == ("body", "missing")
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.last_refused_reason == "body: missing"
+
+    async def test_the_reason_is_compact_value_free_and_counts_the_rest(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        secret = "s3cr3t-value-that-must-not-be-stored"
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS,
+                json=_reading(state=secret, behind=-1),
+            )
+        assert resp.status_code == 422, resp.text
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.last_refused_reason.startswith("body.state: literal_error")
+        assert refusal.last_refused_reason.endswith(" (+1 more)")
+        assert secret not in refusal.last_refused_reason
+
+    async def test_a_second_refusal_counts_and_keeps_the_first_stamp(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_future_dated())
+            [first] = await _refusals_for(async_db_session, DEVICE_A)
+            first_at = first.first_refused_at
+            await client.post(SCAN_ROOTS, json=_reading(device_id=str(uuid4())))
+        [refusal] = await _refusals_for(async_db_session, DEVICE_A)
+        assert refusal.refused_count == 2
+        assert refusal.first_refused_at == first_at
+        assert refusal.last_refused_at >= first_at
+        assert refusal.last_refused_reason == "body.device_id: extra_forbidden"
+
+    async def test_an_operator_session_is_403_and_records_no_refusal(
+        self, async_db_session: AsyncSession, owner, stub_device_jwt: list[str]
+    ) -> None:
+        user, _org = owner
+        app = _build_app(db_session=async_db_session, cognito_user=user)
+        async with _client(app) as client:
+            resp = await client.post(SCAN_ROOTS, json=_future_dated())
+        assert resp.status_code == 403, resp.text
+        result = await async_db_session.execute(
+            select(func.count()).select_from(PlanScanRootRefusal)
+        )
+        assert result.scalar_one() == 0
+
+    async def test_a_refusal_never_overwrites_a_good_reading(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The stored reading is byte-identical before and after a refusal.
+
+        Mutation-proved: writing the refusal into the observation row (moving
+        its ``received_at`` or ``detail`` from the refusal path) fails this.
+        """
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            assert (await client.post(SCAN_ROOTS, json=_reading())).status_code == 201
+            before = await _observation_snapshot(async_db_session, DEVICE_A)
+            refused = await client.post(SCAN_ROOTS, json=_future_dated())
+            assert refused.status_code == 422, refused.text
+        after = await _observation_snapshot(async_db_session, DEVICE_A)
+        assert after == before
+        assert len(await _refusals_for(async_db_session, DEVICE_A)) == 1
+
+    async def test_a_device_refused_on_its_first_report_reads_refused(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            refused = await client.post(SCAN_ROOTS, json=_future_dated())
+            listed = await client.get(SCAN_ROOTS)
+        assert refused.status_code == 422, refused.text
+        # No reading was stored — and none was fabricated.
+        assert await _rows_for(async_db_session, DEVICE_A) == []
+        body = listed.json()
+        assert body["state"] == "reported"
+        assert (body["count"], body["fresh_count"]) == (1, 0)
+        [row] = body["rows"]
+        assert row["device_id"] == str(DEVICE_A)
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("refused: body.observed_at: value_error, ")
+        assert row["reported_state"] is None
+        assert row["received_at"] is None and row["observed_at"] is None
+        assert row["refused_count"] == 1
+        assert row["retired"] is False
+
+    async def test_a_device_refused_for_50_minutes_reads_refused_then_recovers(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """Refused for 50 minutes → ``refused:``, not ``observation_stale``; a
+        fresh good report then restores the reading's own verdict.
+
+        Mutation-proved: moving ``render_row``'s ``refused`` arm below the
+        ``observation_stale`` arm fails the first half.
+        """
+        fifty = timedelta(minutes=50)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            assert (await client.post(SCAN_ROOTS, json=_reading())).status_code == 201
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=fifty, received_ago=fifty
+            )
+            # Refused on every report since; the first 49 minutes ago.
+            assert (
+                await client.post(SCAN_ROOTS, json=_future_dated())
+            ).status_code == 422
+            assert (
+                await client.post(SCAN_ROOTS, json=_future_dated())
+            ).status_code == 422
+            await async_db_session.execute(
+                update(PlanScanRootRefusal)
+                .where(PlanScanRootRefusal.device_id == DEVICE_A)
+                .values(first_refused_at=datetime.now(UTC) - timedelta(minutes=49))
+            )
+            await async_db_session.commit()
+            refused_view = (await client.get(SCAN_ROOTS)).json()
+            recovered = await client.post(SCAN_ROOTS, json=_reading(behind=7))
+            recovered_view = (await client.get(SCAN_ROOTS)).json()
+
+        [row] = refused_view["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("refused: body.observed_at: value_error")
+        assert "(2 refused since " in row["detail"]
+        assert row["observation_fresh"] is False
+        assert row["reported_state"] == "measured"
+
+        assert recovered.status_code == 200, recovered.text
+        # The POST's own row already carries the refusal beside the verdict.
+        assert recovered.json()["row"]["refused_count"] == 2
+        [row] = recovered_view["rows"]
+        assert row["state"] == "measured"
+        assert row["behind"] == 7
+        assert row["detail"] is None
+        assert row["refused_count"] == 2
+
+
+@pytest_asyncio.fixture()
+async def committing_device(test_engine, monkeypatch):
+    """A device whose request session COMMITS for real.
+
+    ``async_db_session`` joins an outer transaction that the fixture rolls
+    back, so a ``commit()`` inside it never reaches the database and no other
+    connection could tell a committed row from a flushed one. This session is
+    bound to the engine directly; whatever it commits is removed afterwards.
+    """
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.api import deps
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    device = UUID("0c0c0c0c-0000-4000-8000-00000000000c")
+    token = "device-c-committing-jwt"
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    session = maker()
+    user = await _make_user(session, "scanroot_commit")
+    org = await _make_personal_org(session, user)
+
+    async def _fake_verify(presented: str):
+        if presented != token:
+            raise HTTPException(status_code=401, detail="Invalid device token.")
+        return {"device_id": str(device), "user_id": str(user.id)}, user
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+    try:
+        yield session, device, token
+    finally:
+        await session.close()
+        async with maker() as cleanup:
+            await cleanup.execute(
+                delete(PlanScanRootRefusal).where(
+                    PlanScanRootRefusal.device_id == device
+                )
+            )
+            await cleanup.execute(
+                delete(PlanScanRootObservation).where(
+                    PlanScanRootObservation.device_id == device
+                )
+            )
+            await cleanup.execute(delete(Organization).where(Organization.id == org.id))
+            await cleanup.execute(delete(User).where(User.id == user.id))
+            await cleanup.commit()
+
+
+class TestTheRefusalIsCommittedBeforeThe422:
+    async def test_another_connection_sees_the_refusal_after_the_422(
+        self, test_engine, committing_device
+    ) -> None:
+        """Committed, not merely flushed: the 422 is RAISED, and an exception
+        leaving the request rolls the request session back at teardown.
+
+        Mutation-proved: removing ``await db.commit()`` from
+        ``crud.record_refusal`` fails this test — the row is then visible only
+        inside the request's own open transaction.
+        """
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session, device, token = committing_device
+        app = _app_with_web_envelope(session)
+        async with _client(app, token) as client:
+            resp = await client.post(SCAN_ROOTS, json=_future_dated())
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["details"][0]["field"] == "body.observed_at"
+
+        async with async_sessionmaker(test_engine)() as other:
+            rows = (
+                (
+                    await other.execute(
+                        select(PlanScanRootRefusal).where(
+                            PlanScanRootRefusal.device_id == device
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert [(r.refused_count, r.last_refused_reason) for r in rows] == [
+            (1, "body.observed_at: value_error")
+        ]
+
+
+# ===========================================================================
+# 8. Retirement (Phase 2) — over HTTP
+# ===========================================================================
+
+
+class TestRetirementOverHttp:
+    async def test_a_31_day_old_row_is_absent_by_default_and_present_on_request(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        month = timedelta(days=31)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading())
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=month, received_ago=month
+            )
+            default = (await client.get(SCAN_ROOTS)).json()
+            included = (
+                await client.get(SCAN_ROOTS, params={"include_retired": "true"})
+            ).json()
+
+        assert default["rows"] == []
+        assert default["state"] == "unknown"
+        assert default["detail"].startswith("all_retired: every one of the 1 device(s)")
+        assert (default["retired_count"], default["retire_after_secs"]) == (
+            1,
+            RETIRE_AFTER_SECS,
+        )
+        assert default["by_source_repo"] == []
+
+        assert included["state"] == "reported"
+        [row] = included["rows"]
+        assert row["retired"] is True
+        assert row["device_id"] == str(DEVICE_A)
+        assert included["retired_count"] == 1
+        # A retired device feeds no roll-up, even when it is served.
+        assert included["by_source_repo"] == []
+
+    async def test_a_row_inside_the_window_is_unaffected(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        inside = timedelta(days=29)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading())
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=inside, received_ago=inside
+            )
+            body = (await client.get(SCAN_ROOTS)).json()
+        [row] = body["rows"]
+        assert row["retired"] is False
+        assert body["retired_count"] == 0
+
+    async def test_a_recent_refusal_keeps_an_old_reading_from_retiring(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        month = timedelta(days=31)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading())
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=month, received_ago=month
+            )
+            assert (
+                await client.post(SCAN_ROOTS, json=_future_dated())
+            ).status_code == 422
+            await async_db_session.execute(
+                update(PlanScanRootRefusal)
+                .where(PlanScanRootRefusal.device_id == DEVICE_A)
+                .values(last_refused_at=datetime.now(UTC) - timedelta(days=1))
+            )
+            await async_db_session.commit()
+            body = (await client.get(SCAN_ROOTS)).json()
+        [row] = body["rows"]
+        assert row["retired"] is False
+        assert body["retired_count"] == 0
+        assert row["detail"].startswith("observation_stale:")
+
+    async def test_include_retired_must_be_a_boolean(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.get(SCAN_ROOTS, params={"include_retired": "maybe"})
+        assert resp.status_code == 422, resp.text

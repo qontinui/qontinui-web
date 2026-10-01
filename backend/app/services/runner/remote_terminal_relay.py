@@ -87,6 +87,26 @@ exhaustive, so match on the code, not the prefix. Unlike attach, a create's
 claim key is NOT deleted
 on release — it expires with the grant, which is what single use means.
 
+Remote END
+----------
+Plan ``2026-09-30-close-remote-sessions-from-the-local-runner`` adds
+``remote_terminal_end``: END the session an ATTACH grant names (a graceful
+``/exit`` on the target, or a hard close with ``force``), forwarded as
+``terminal_end`` with the same ``remote`` block ``terminal_attach`` carries.
+The target answers ``terminal_ended`` on the remote-only channel, correlated by
+the minted ``request_id`` in ``pending_end``; the relay rebuilds it as
+``remote_terminal_ended``. Two paths, kept apart in ``_handle_end``: an OPEN
+TAB's bound grant (authorized like input, attachment left alone — a PTY that
+closes is retired by ``terminal_exit``), and a FRESH grant for a session this
+socket never attached to (verified, claimed, listened for, and ALWAYS released
+when the round trip settles). An end the target does not answer within
+``PENDING_END_TTL_SECONDS`` is answered ``end_reply_timeout``; one whose
+target's relay socket dies, or whose return route is lost, is answered at once
+``target_not_connected`` / ``listener_lost``. All three arrive as a
+``remote_terminal_error`` and mean the outcome is UNKNOWN. While a fresh-grant
+end is in flight every other frame naming that grant — detach included — is
+refused ``end_already_pending``, and the expiry sweep leaves it alone.
+
 Forward direction is replica-local
 ----------------------------------
 The SOURCE → TARGET leg goes through the in-process connection registry
@@ -144,8 +164,23 @@ SOURCE_FRAME_TYPES: frozenset[str] = frozenset(
         # different `sub_type`, a different device preference on the target,
         # and no session of its own. See `_handle_create`.
         "remote_terminal_create",
+        # END a remote session (plan
+        # `2026-09-30-close-remote-sessions-from-the-local-runner`, Phase 2).
+        # Forwarded as `terminal_end` under an ATTACH grant — the open tab's,
+        # or a fresh one presented for this frame alone. See `_handle_end`.
+        "remote_terminal_end",
     }
 )
+
+# The TARGET's reply to a ``terminal_end`` and the SOURCE-side frame the relay
+# rebuilds it into. ``outcome`` is a closed set on the wire contract; anything
+# else a target sends is reported as ``unknown`` — never as ``ended``.
+TARGET_END_REPLY_FRAME_TYPE = "terminal_ended"
+SOURCE_END_REPLY_FRAME_TYPE = "remote_terminal_ended"
+END_OUTCOMES: frozenset[str] = frozenset(
+    {"ended", "refused", "still_running", "unknown", "not_found"}
+)
+END_OUTCOME_FALLBACK = "unknown"
 
 # The grant's ``sub_type`` claim. A device JWT reads ``device`` here; a grant
 # is a capability token and is never accepted as one.
@@ -202,6 +237,14 @@ CODE_LISTENER_LOST = "listener_lost"
 # ``PENDING_BUFFER_MAX``: the source may retry once the target answers or the
 # TTL sweeps the backlog.
 CODE_BUFFER_BACKLOG = "buffer_backlog"
+# A ``remote_terminal_end`` the target did not answer within
+# ``PENDING_END_TTL_SECONDS``. Typed rather than silent: the source's own
+# timeout is longer, so this is how it learns the relay gave up first. The
+# source must read it as an UNKNOWN outcome, never as ``ended``.
+CODE_END_TIMEOUT = "end_reply_timeout"
+# A second ``remote_terminal_end`` for a grant whose first one is still
+# unanswered. One end in flight per grant is what bounds ``pending_end``.
+CODE_END_PENDING = "end_already_pending"
 
 # ---------------------------------------------------------------------------
 # The TARGET's own closed set of refusal codes.
@@ -439,7 +482,64 @@ TARGET_CODE_FALLBACK = f"{TARGET_CODE_PREFIX}unknown"
 # terminal the target has — so it is the one type that must not be an info
 # line. Everything else on these channels is a lifecycle or RPC frame, rare
 # enough that an info line per frame is what makes the route auditable.
-_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output"})
+#
+# ``terminal_input_ack`` is the firehose's twin in the other direction: one
+# per keystroke frame the source sends, so it is logged at debug too.
+_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output", "terminal_input_ack"})
+
+# ---------------------------------------------------------------------------
+# Input acknowledgement (plan
+# ``2026-09-20-remote-session-interactivity-is-a-query-and-both-halves-hold``,
+# Phase A1).
+# ---------------------------------------------------------------------------
+# The target answers every ``terminal_input`` that carried a ``remote`` block,
+# once the grant gate passed, with a ``terminal_input_ack`` — accepted or not.
+# The relay publishes it (``is_remote_only_target_frame``), retypes it and
+# hands it to the source that holds the grant. Until that frame existed the
+# write half of a remote session was blind: an accepted keystroke, a dropped
+# one and an undecodable one all looked identical to the source.
+TARGET_INPUT_ACK_FRAME_TYPE = "terminal_input_ack"
+SOURCE_INPUT_ACK_FRAME_TYPE = "remote_terminal_input_ack"
+
+# Keys of a source ``remote_terminal_input`` the relay OWNS on the forward.
+# Everything else is copied to the target verbatim — ``data``, ``seq``,
+# ``probe`` and whatever a newer source adds — because rebuilding the forward
+# frame from a known field set is how fields die in transit: the 08-31 attach
+# work lost ``have_offset`` and three more fields that way (web#1301), and an
+# input forward that dropped ``probe`` would turn every liveness probe into a
+# real zero-byte keystroke on the target.
+#
+# Why each key is the relay's:
+# - ``type`` — the outbound type is ``terminal_input``, the relay's literal.
+# - ``remote`` — the relay's authority block, rebuilt from the attachment;
+#   a source must never be able to name its own grant to the target.
+# - ``grant_jti`` — routing identity; it travels inside ``remote``.
+# - ``terminal_id`` — the terminal the TARGET bound, from the attachment.
+# - ``request_id`` — never forwarded on input (the relay mints its own ids for
+#   the RPCs that need one). Forwarding it would ALSO misroute the target's
+#   refusal of this keystroke: an ``error`` carrying a ``request_id`` is the
+#   mobile watcher's shape and is not published on the remote-only channel.
+# - ``timestamp`` — stamped by the relay at forward time.
+INPUT_FORWARD_RELAY_OWNED_KEYS: frozenset[str] = frozenset(
+    {"type", "remote", "grant_jti", "terminal_id", "request_id", "timestamp"}
+)
+
+# Keys of a target ``terminal_input_ack`` the relay OWNS on the return. The
+# rest of the frame — ``seq``, ``bytes``, ``accepted``, ``error``, ``via``,
+# ``accepted_at`` and any field a newer target adds — reaches the source
+# verbatim. ``grant_jti`` and ``terminal_id`` are set FROM THE ATTACHMENT
+# RECORD (the rule every return frame follows), and the ``remote`` block is
+# stripped: it is the relay's own routing block, and no other return frame
+# hands it to the source.
+#
+# ``request_id`` and ``code`` are stripped too, because on the source's wire
+# they are the relay's voice: a ``request_id`` resolves a waiting RPC (an ack
+# answers none), and ``code`` is the field a relay refusal speaks through —
+# the one ``namespace_target_code`` exists to keep a target out of. An ack
+# states its outcome through ``accepted`` / ``error`` instead.
+INPUT_ACK_RELAY_OWNED_KEYS: frozenset[str] = frozenset(
+    {"type", "remote", "grant_jti", "terminal_id", "request_id", "code"}
+)
 
 
 def _prefix_is_disjoint_from_relay_codes() -> bool:
@@ -644,6 +744,18 @@ def is_remote_only_target_frame(msg: dict[str, Any]) -> bool:
         return False
     if msg_type == "terminal_attached":
         return True
+    if msg_type == TARGET_END_REPLY_FRAME_TYPE:
+        # New with remote END (plan
+        # `2026-09-30-close-remote-sessions-from-the-local-runner`); no mobile
+        # arm consumes it. Without this arm it would die at
+        # ``devices_ws_unhandled_message`` and every end would time out.
+        return True
+    if msg_type == TARGET_INPUT_ACK_FRAME_TYPE:
+        # New with the input-ack wire (Phase A1); no mobile arm consumes it,
+        # so it is admitted unconditionally like ``terminal_attached``. One
+        # that names no grant this socket holds is answered ``False`` by
+        # ``route_target_frame`` and goes nowhere.
+        return True
     if msg_type not in TARGET_REFUSAL_FRAME_TYPES:
         return False
     if msg_type == "error":
@@ -686,10 +798,22 @@ class _Attachment:
     # ships the whole ring tail, and the source writes a false DATA-LOSS marker
     # into a pane that lost nothing). See ``_handle_attach``.
     attach_frame: dict[str, Any] | None = None
+    # Set once the first ``terminal_input_ack`` naming another terminal under
+    # this grant has been logged at warning; the rest go to debug. An ack is
+    # per keystroke, so a target stuck on the defect would otherwise emit one
+    # warning per key.
+    ack_mismatch_warned: bool = False
     # Armed at most once, and never reset: the second ``attach_grant_unknown``
     # for this grant takes the unchanged fatal path. This is what makes the
     # re-present one-shot rather than a retry loop.
     represented: bool = False
+    # True for an attach grant presented ONLY to end its session (the fresh-
+    # grant path of ``_handle_end``). It never binds a terminal and admits no
+    # post-attach frame; it exists to hold the claim and the return route for
+    # one ``terminal_end`` round trip, and is ALWAYS dropped when that round
+    # trip settles — reply, refusal or TTL — so the Redis claim is never held
+    # until the grant expires.
+    end_only: bool = False
 
     def expired(self, now: float | None = None) -> bool:
         return (now if now is not None else time.time()) >= self.exp
@@ -720,10 +844,49 @@ class _Attachment:
             block["kind"] = KIND_CREATE
         return block
 
+    def session_remote_block(self) -> dict[str, Any]:
+        """The ``remote`` block of a SESSION-addressed frame (attach, end).
+
+        :meth:`remote_block` plus the grant's ``session_id`` and, when the
+        grant names one, its ``terminal_id`` hint. One builder, so
+        ``terminal_end`` carries exactly what ``terminal_attach`` carries.
+        """
+        block: dict[str, Any] = {
+            **self.remote_block(),
+            "session_id": self.target_session_id,
+        }
+        if self.requested_terminal_id is not None:
+            block["terminal_id"] = self.requested_terminal_id
+        return block
+
 
 # ``pending_*`` entries: the MINTED request_id on the wire to the target maps
 # back to (the source's own request_id, grant_jti).
 _Pending = tuple[str | None, str]
+
+
+@dataclass(frozen=True)
+class _PendingEnd:
+    """One in-flight ``terminal_end``, snapshotted at forward time.
+
+    A SNAPSHOT rather than a ``_Pending`` pointing at ``session.grants``,
+    because an end's settlement must not depend on its attachment surviving
+    the round trip. The ordinary success of an open-tab end is the PTY
+    closing, and the target's ``terminal_exit`` (which retires the tab and
+    drops its attachment) usually arrives BEFORE its ``terminal_ended`` —
+    an entry keyed to the live attachment would be swept with it and the
+    source left in silence. So the reply and the TTL answer from this record
+    alone, and only an ``end_only`` (fresh-grant) attachment's drop sweeps it.
+    """
+
+    source_request_id: str | None
+    grant_jti: str
+    target_device_id: str
+    target_session_id: str | None
+    # The bound terminal for an open tab; ``None`` for a fresh grant.
+    terminal_id: str | None
+    end_only: bool
+
 
 # How long an unanswered ``terminal_buffer`` RPC stays correlatable, and how
 # many may be outstanding on one socket at once.
@@ -753,6 +916,19 @@ _Pending = tuple[str | None, str]
 PENDING_BUFFER_TTL_SECONDS = 60.0
 PENDING_BUFFER_MAX = 32
 
+# How long an unanswered ``terminal_end`` stays correlatable before the source
+# is told ``end_reply_timeout``. One fixed ladder, stated in one place:
+#
+#   target graceful-exit deadline (60 s) < THIS (75 s) < source timeout (90 s)
+#
+# Deliberately NOT ``PENDING_BUFFER_TTL_SECONDS``: that is 60 s, EQUAL to the
+# target's default deadline, so a graceful exit that used its whole budget
+# would race the relay's give-up and the source would read a typed timeout for
+# an end that in fact succeeded. Above the target so its answer always has room
+# to arrive; below the source so the source hears the relay's verdict rather
+# than its own silence. Read at call time, so tests can shorten it.
+PENDING_END_TTL_SECONDS = 75.0
+
 
 @dataclass
 class _SourceSession:
@@ -765,6 +941,15 @@ class _SourceSession:
     pending_attach: dict[str, _Pending] = field(default_factory=dict)
     pending_buffer: dict[str, _Pending] = field(default_factory=dict)
     pending_create: dict[str, _Pending] = field(default_factory=dict)
+    # ``terminal_end`` RPCs, keyed by the MINTED wire id like the other three
+    # but holding a snapshot (``_PendingEnd``), so an entry outlives the
+    # attachment it was forwarded under. Bounded by one entry per grant
+    # (``CODE_END_PENDING``) and expired by a per-entry timer
+    # (``_expire_pending_end``), not by a sweep.
+    pending_end: dict[str, _PendingEnd] = field(default_factory=dict)
+    # The TTL task of each ``pending_end`` entry, cancelled when the entry is
+    # settled (reply, refusal, drop) so no timer outlives its correlation.
+    pending_end_timers: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     # ``pending_buffer`` only: the ``time.monotonic()`` deadline each entry
     # stops being correlatable at. Kept beside the dict rather than inside
     # ``_Pending`` because ``_pop_correlated`` is generic over all three
@@ -928,11 +1113,24 @@ class RemoteTerminalRelay:
             await self._handle_attach(session, msg)
         elif msg_type == "remote_terminal_create":
             await self._handle_create(session, msg)
+        elif msg_type == "remote_terminal_end":
+            await self._handle_end(session, msg)
         elif msg_type == "remote_terminal_input":
             att = await self._authorize(session, msg)
             if att is not None:
+                # The WHOLE source frame minus the keys the relay owns — see
+                # ``INPUT_FORWARD_RELAY_OWNED_KEYS``. ``seq`` and ``probe``
+                # ride here, and so does any field a newer source adds.
                 await self._forward(
-                    session, msg, att, "terminal_input", {"data": msg.get("data")}
+                    session,
+                    msg,
+                    att,
+                    "terminal_input",
+                    {
+                        key: value
+                        for key, value in msg.items()
+                        if key not in INPUT_FORWARD_RELAY_OWNED_KEYS
+                    },
                 )
         elif msg_type == "remote_terminal_resize":
             att = await self._authorize(session, msg)
@@ -1124,6 +1322,41 @@ class RemoteTerminalRelay:
             return None
         return claims, jti, socket_source, int(exp)
 
+    async def _attach_target(
+        self, session: _SourceSession, claims: dict[str, Any], request_id: Any
+    ) -> tuple[str, str, str | None] | None:
+        """The ``attach`` claims of a verified attach grant; ``None`` when refused.
+
+        Returns ``(target_device_id, target_session_id, requested_terminal_id)``.
+        Shared by attach and end, so the fresh-grant end path cannot grow a
+        weaker reading of the same token.
+        """
+        attach = claims.get("attach")
+        if not isinstance(attach, dict):
+            await self._refuse(
+                session,
+                CODE_GRANT_INVALID,
+                "grant missing attach claims",
+                request_id=request_id,
+            )
+            return None
+        try:
+            target_device_id = str(UUID(str(attach.get("target_device_id"))))
+            target_session_id = str(UUID(str(attach.get("target_session_id"))))
+        except (ValueError, TypeError):
+            await self._refuse(
+                session,
+                CODE_GRANT_INVALID,
+                "grant attach target malformed",
+                request_id=request_id,
+            )
+            return None
+        raw_terminal_id = attach.get("terminal_id")
+        requested_terminal_id = (
+            raw_terminal_id if isinstance(raw_terminal_id, str) else None
+        )
+        return target_device_id, target_session_id, requested_terminal_id
+
     async def _handle_attach(
         self, session: _SourceSession, msg: dict[str, Any]
     ) -> None:
@@ -1141,30 +1374,10 @@ class RemoteTerminalRelay:
             return
         claims, jti, socket_source, exp = verified
 
-        attach = claims.get("attach")
-        if not isinstance(attach, dict):
-            await self._refuse(
-                session,
-                CODE_GRANT_INVALID,
-                "grant missing attach claims",
-                request_id=request_id,
-            )
+        target = await self._attach_target(session, claims, request_id)
+        if target is None:
             return
-        try:
-            target_device_id = str(UUID(str(attach.get("target_device_id"))))
-            target_session_id = str(UUID(str(attach.get("target_session_id"))))
-        except (ValueError, TypeError):
-            await self._refuse(
-                session,
-                CODE_GRANT_INVALID,
-                "grant attach target malformed",
-                request_id=request_id,
-            )
-            return
-        raw_terminal_id = attach.get("terminal_id")
-        requested_terminal_id = (
-            raw_terminal_id if isinstance(raw_terminal_id, str) else None
-        )
+        target_device_id, target_session_id, requested_terminal_id = target
 
         # A grant is single use on this socket too — the Redis claim below
         # would refuse it anyway, but that message would blame "another"
@@ -1234,18 +1447,12 @@ class RemoteTerminalRelay:
             )
             return
 
-        remote: dict[str, Any] = {
-            **att.remote_block(),
-            "session_id": target_session_id,
-        }
-        if requested_terminal_id is not None:
-            remote["terminal_id"] = requested_terminal_id
         frame: dict[str, Any] = {
             "type": "terminal_attach",
             "request_id": minted,
             "cols": msg.get("cols"),
             "rows": msg.get("rows"),
-            "remote": remote,
+            "remote": att.session_remote_block(),
             "timestamp": utc_now().isoformat(),
         }
         # A REATTACH carries `have_offset`: the absolute offset of the last byte
@@ -1421,6 +1628,420 @@ class RemoteTerminalRelay:
             forwarded_request_id=minted,
         )
 
+    # ------------------------------------------------------------------
+    # END a remote session (plan
+    # ``2026-09-30-close-remote-sessions-from-the-local-runner``, Phase 2)
+    # ------------------------------------------------------------------
+
+    async def _handle_end(self, session: _SourceSession, msg: dict[str, Any]) -> None:
+        """Forward ``remote_terminal_end`` as ``terminal_end``. Two SEPARATE paths.
+
+        * **Open tab** — the frame names (``grant_jti``) an attach grant already
+          bound on this socket. Authorized exactly like input/resize and
+          forwarded; the attachment is LEFT alone whatever the outcome. If the
+          PTY does close, the target's ``terminal_exit`` retires it through the
+          existing ``remote_terminal_exit`` + drop arm — ``_release_registry``
+          is never reached for from here.
+        * **Fresh grant** — the frame presents a grant token (``grant``) this
+          socket holds no attachment for, to end a session it never attached
+          to. ``_authorize`` would refuse it (nothing registered) and
+          ``_handle_attach`` is the wrong door (it asks the target to BIND), so
+          it is verified, claimed and given a return route here, marked
+          ``end_only``, and dropped the moment the round trip settles — reply,
+          refusal or TTL — so the Redis claim is never held to grant expiry.
+
+        Either way the target receives the same frame, built by
+        ``_forward_end``, and the grant's ``target_session_id`` — not anything
+        on the wire — names the session the target resolves.
+        """
+        grant_jti = msg.get("grant_jti")
+        registered = isinstance(grant_jti, str) and grant_jti in session.grants
+        grant = msg.get("grant")
+        if not registered and isinstance(grant, str) and grant:
+            await self._end_with_fresh_grant(session, msg)
+        else:
+            await self._end_attached(session, msg)
+
+    async def _end_attached(self, session: _SourceSession, msg: dict[str, Any]) -> None:
+        """The open-tab path: an attach grant already bound on this socket."""
+        grant_jti = msg.get("grant_jti")
+        held = session.grants.get(grant_jti) if isinstance(grant_jti, str) else None
+        if held is not None and held.end_only:
+            # A fresh-grant end of this very grant is in flight; ``_authorize``
+            # would answer the symptom ("nothing attached"), not the reason.
+            await self._refuse(
+                session,
+                CODE_END_PENDING,
+                "an end for this grant is still awaiting the target's answer",
+                request_id=msg.get("request_id"),
+                grant_jti=held.grant_jti,
+            )
+            return
+        authorize_msg = msg
+        if held is not None and held.attached and msg.get("terminal_id") is None:
+            # ``terminal_id`` is optional on the end frame: a bound grant holds
+            # exactly one terminal, so an omitted one means THAT terminal. A
+            # frame that names a DIFFERENT one is still refused by
+            # ``_authorize``.
+            authorize_msg = {**msg, "terminal_id": held.terminal_id}
+        att = await self._authorize(session, authorize_msg)
+        if att is None:
+            return
+        await self._forward_end(session, msg, att, terminal_id=att.terminal_id)
+
+    async def _end_with_fresh_grant(
+        self, session: _SourceSession, msg: dict[str, Any]
+    ) -> None:
+        """The fresh-grant path: verify → claim → listen → forward → always drop."""
+        request_id = msg.get("request_id")
+        verified = await self._verify_grant(
+            session,
+            msg,
+            sub_type=ATTACH_GRANT_SUB_TYPE,
+            kind_noun="an attach grant",
+            code_invalid=CODE_GRANT_INVALID,
+            code_expired=CODE_GRANT_EXPIRED,
+            code_wrong_source=CODE_GRANT_WRONG_SOURCE,
+        )
+        if verified is None:
+            return
+        claims, jti, socket_source, exp = verified
+        held = session.grants.get(jti)
+        if held is not None and held.end_only:
+            # This very token is already ending its session on this socket.
+            await self._refuse(
+                session,
+                CODE_END_PENDING,
+                "an end for this grant is still awaiting the target's answer",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+        if held is not None:
+            # The token of a grant this socket already holds, presented without
+            # its ``grant_jti``: that is the open-tab path, not a second claim.
+            await self._end_attached(session, {**msg, "grant_jti": jti})
+            return
+
+        target = await self._attach_target(session, claims, request_id)
+        if target is None:
+            return
+        target_device_id, target_session_id, requested_terminal_id = target
+
+        att = _Attachment(
+            grant_jti=jti,
+            source_device_id=socket_source,
+            target_device_id=target_device_id,
+            target_session_id=target_session_id,
+            exp=exp,
+            request_id=request_id if isinstance(request_id, str) else None,
+            requested_terminal_id=requested_terminal_id,
+            end_only=True,
+        )
+        claimed = False
+        try:
+            claimed = await self._claim_grant(att)
+            if claimed:
+                await self._write_grant_record(att)
+                session.grants[jti] = att
+                await self._ensure_listener(session, target_device_id)
+        except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
+            logger.error(
+                "remote_terminal_registry_unavailable",
+                source_device_id=session.device_id,
+                grant_jti=jti,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            if claimed:
+                await self._drop_attachment(session, att)
+            await self._refuse(
+                session,
+                CODE_REGISTRY_UNAVAILABLE,
+                "attachment registry temporarily unavailable",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+        if not claimed:
+            await self._refuse(
+                session,
+                CODE_GRANT_CONSUMED,
+                "grant is already held by a live attachment",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+
+        named = msg.get("terminal_id")
+        if (
+            not await self._forward_end(
+                session, msg, att, terminal_id=named if isinstance(named, str) else None
+            )
+            and session.grants.get(jti) is att
+        ):
+            # Nothing is in flight, so nothing will settle it later. Dropped
+            # only while it is still OURS: a ``runner_disconnected`` or listener
+            # loss during the forward's await may already have evicted it, and
+            # a second drop would delete the claim key unconditionally — by
+            # then possibly a new claim on this jti from another socket.
+            await self._drop_attachment(session, att)
+
+    async def _forward_end(
+        self,
+        session: _SourceSession,
+        msg: dict[str, Any],
+        att: _Attachment,
+        *,
+        terminal_id: str | None,
+    ) -> bool:
+        """Send ``terminal_end`` under a minted id and arm its TTL; False if not sent.
+
+        The frame is ``terminal_attach``'s shape — the same ``remote`` block
+        (``session_remote_block``), a relay-MINTED ``request_id``, a
+        ``timestamp`` — plus ``force`` and an optional top-level
+        ``terminal_id`` the target only COMPARES against the terminal it
+        resolves from the grant. ``force`` is true only when the source sent
+        the JSON literal ``true``: anything else fails toward the graceful end.
+        """
+        request_id = msg.get("request_id")
+        if any(e.grant_jti == att.grant_jti for e in session.pending_end.values()):
+            await self._refuse(
+                session,
+                CODE_END_PENDING,
+                "an end for this grant is still awaiting the target's answer",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=att.terminal_id,
+            )
+            return False
+        minted = uuid4().hex
+        force = msg.get("force") is True
+        frame: dict[str, Any] = {
+            "type": "terminal_end",
+            "request_id": minted,
+            "remote": att.session_remote_block(),
+            "force": force,
+            "timestamp": utc_now().isoformat(),
+        }
+        if terminal_id is not None:
+            frame["terminal_id"] = terminal_id
+        # Register BEFORE forwarding: the reply can race back on the listener
+        # before ``send_terminal`` returns.
+        session.pending_end[minted] = _PendingEnd(
+            source_request_id=request_id if isinstance(request_id, str) else None,
+            grant_jti=att.grant_jti,
+            target_device_id=att.target_device_id,
+            target_session_id=att.target_session_id,
+            terminal_id=att.terminal_id if att.attached else None,
+            end_only=att.end_only,
+        )
+        try:
+            sent = await session.manager.send_terminal(att.target_device_id, frame)
+        except Exception as exc:  # noqa: BLE001 - a dead target is a refusal
+            logger.warning(
+                "remote_terminal_end_forward_failed",
+                grant_jti=att.grant_jti,
+                target_device_id=att.target_device_id,
+                error=str(exc),
+            )
+            sent = False
+        if not sent:
+            if session.pending_end.pop(minted, None) is None:
+                # Already settled while the send was in flight (a
+                # ``runner_disconnected`` answered it): the source has its one
+                # answer, so a second refusal would only be noise it must drop.
+                return False
+            await self._refuse(
+                session,
+                CODE_TARGET_NOT_CONNECTED,
+                "target device is not connected",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=att.terminal_id,
+            )
+            return False
+        # Armed only while the entry is still unsettled: the reply can race
+        # back on the listener before ``send_terminal`` returns, and a timer
+        # armed for an already-settled id would idle out its whole TTL.
+        if minted in session.pending_end:
+            timer = asyncio.get_running_loop().create_task(
+                self._expire_pending_end(session, minted)
+            )
+            session.pending_end_timers[minted] = timer
+            self._background.add(timer)
+            timer.add_done_callback(self._background.discard)
+        logger.info(
+            "remote_terminal_end_forwarded",
+            source_device_id=session.device_id,
+            target_device_id=att.target_device_id,
+            target_session_id=att.target_session_id,
+            grant_jti=att.grant_jti,
+            request_id=request_id,
+            forwarded_request_id=minted,
+            force=force,
+            fresh_grant=att.end_only,
+        )
+        return True
+
+    def _cancel_end_timer(self, session: _SourceSession, wire_request_id: Any) -> None:
+        """Disarm the TTL of a ``pending_end`` entry that has been settled."""
+        if not isinstance(wire_request_id, str):
+            return
+        timer = session.pending_end_timers.pop(wire_request_id, None)
+        if timer is not None and timer is not asyncio.current_task():
+            timer.cancel()
+
+    async def _expire_pending_end(self, session: _SourceSession, minted: str) -> None:
+        """Answer an end the target never did with a TYPED error, not silence.
+
+        The TTL is read from the module at call time so tests can shorten it.
+        A fresh-grant attachment is dropped here too: this is the third of the
+        three ways its round trip settles.
+        """
+        await asyncio.sleep(PENDING_END_TTL_SECONDS)
+        session.pending_end_timers.pop(minted, None)
+        entry = session.pending_end.pop(minted, None)
+        if entry is None:
+            return
+        logger.warning(
+            "remote_terminal_end_timed_out",
+            source_device_id=session.device_id,
+            grant_jti=entry.grant_jti,
+            request_id=entry.source_request_id,
+            forwarded_request_id=minted,
+            ttl_seconds=PENDING_END_TTL_SECONDS,
+        )
+        await self._answer_end_and_release(
+            session,
+            entry,
+            self._end_error_payload(
+                entry,
+                code=CODE_END_TIMEOUT,
+                message="target did not answer the end request in time; "
+                "its outcome is unknown",
+            ),
+        )
+
+    @staticmethod
+    def _end_error_payload(
+        entry: _PendingEnd, *, code: str, message: str
+    ) -> dict[str, Any]:
+        """The ``remote_terminal_error`` a relay-settled end is answered with."""
+        payload: dict[str, Any] = {
+            "type": "remote_terminal_error",
+            "grant_jti": entry.grant_jti,
+            "code": code,
+            "message": message,
+        }
+        if entry.source_request_id is not None:
+            payload["request_id"] = entry.source_request_id
+        if entry.terminal_id is not None:
+            payload["terminal_id"] = entry.terminal_id
+        return payload
+
+    async def _answer_end_and_release(
+        self, session: _SourceSession, entry: _PendingEnd, payload: dict[str, Any]
+    ) -> None:
+        """Send a settled end's answer, then release it — the release ALWAYS runs.
+
+        ``_send_to_source`` swallows only the benign "socket already gone"
+        exceptions; anything else propagates. Were the release sequenced after
+        it rather than in ``finally``, such a send would leave a fresh-grant
+        end's ``end_only`` attachment and its Redis claim held to grant expiry,
+        and every later end of that grant refused ``end_already_pending``.
+        """
+        try:
+            await self._send_to_source(session, payload)
+        finally:
+            await self._release_end_only(session, entry)
+
+    async def _settle_pending_ends_on_target(
+        self,
+        session: _SourceSession,
+        target_device_id: str,
+        *,
+        code: str,
+        message: str,
+    ) -> int:
+        """Answer every end in flight to ``target_device_id`` NOW; return how many.
+
+        For the two conditions under which no reply can arrive — the target's
+        relay socket died (``runner_disconnected``) or this socket's return
+        route did (listener lost). Waiting out ``PENDING_END_TTL_SECONDS`` would
+        only delay the same UNKNOWN verdict by 75 s. Covers open-tab ends too,
+        which ``_evict`` deliberately leaves in ``pending_end``.
+        """
+        settled = 0
+        for rid, entry in list(session.pending_end.items()):
+            if entry.target_device_id != target_device_id:
+                continue
+            if session.pending_end.pop(rid, None) is None:
+                continue
+            self._cancel_end_timer(session, rid)
+            settled += 1
+            logger.info(
+                "remote_terminal_end_settled_by_relay",
+                source_device_id=session.device_id,
+                target_device_id=target_device_id,
+                grant_jti=entry.grant_jti,
+                request_id=entry.source_request_id,
+                forwarded_request_id=rid,
+                code=code,
+            )
+            await self._answer_end_and_release(
+                session,
+                entry,
+                self._end_error_payload(entry, code=code, message=message),
+            )
+        return settled
+
+    def _pop_pending_end(
+        self, session: _SourceSession, wire_request_id: Any, target_device_id: str
+    ) -> _PendingEnd | None:
+        """Pop the ``pending_end`` entry a target frame answers, and disarm it.
+
+        Bound to the device the end was forwarded to, as ``_pop_correlated``
+        binds the other three tables — but checked against the SNAPSHOT, not
+        ``session.grants``, so an entry whose attachment is already gone (the
+        open tab ``terminal_exit`` retired first) still settles. On a device
+        mismatch the entry is put back: the frame is not the answer.
+        """
+        if not isinstance(wire_request_id, str):
+            return None
+        entry = session.pending_end.pop(wire_request_id, None)
+        if entry is None:
+            return None
+        if entry.target_device_id != target_device_id:
+            logger.warning(
+                "remote_terminal_reply_wrong_target",
+                what="terminal_end",
+                grant_jti=entry.grant_jti,
+                granted_target=entry.target_device_id,
+                frame_target=target_device_id,
+            )
+            session.pending_end[wire_request_id] = entry
+            return None
+        self._cancel_end_timer(session, wire_request_id)
+        return entry
+
+    async def _release_end_only(
+        self, session: _SourceSession, entry: _PendingEnd
+    ) -> None:
+        """Release what a SETTLED end held; never an open tab's attachment.
+
+        A fresh-grant end's attachment is dropped (which also stops the
+        listener when nothing else needs it). An open tab's is left alone, but
+        its settled end may have been the last thing keeping the listener up —
+        the tab itself having been retired by ``terminal_exit`` first.
+        """
+        if entry.end_only:
+            att = session.grants.get(entry.grant_jti)
+            if att is not None and att.end_only:
+                await self._drop_attachment(session, att)
+                return
+        await self._maybe_stop_listener(session, entry.target_device_id)
+
     async def _authorize(
         self,
         session: _SourceSession,
@@ -1458,6 +2079,21 @@ class RemoteTerminalRelay:
                 "no attachment registered for this grant on this socket",
                 request_id=request_id,
                 grant_jti=grant_jti if isinstance(grant_jti, str) else None,
+                terminal_id=terminal_id,
+            )
+            return None
+        if att.end_only:
+            # A fresh-grant end of this grant is in flight. Refused BEFORE the
+            # expiry arm and for every door — detach included, which admits on
+            # the grant alone: dropping this attachment would silently cancel
+            # the pending end and discard the target's ``terminal_ended``. It
+            # settles by reply, refusal or TTL; nothing else may end it.
+            await self._refuse(
+                session,
+                CODE_END_PENDING,
+                "an end for this grant is still awaiting the target's answer",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
                 terminal_id=terminal_id,
             )
             return None
@@ -1552,10 +2188,14 @@ class RemoteTerminalRelay:
         extra: dict[str, Any],
     ) -> bool:
         """Forward one frame to the target for an already-authorized attachment."""
+        # ``extra`` FIRST: whatever it carries, the relay-owned keys below
+        # win. The input arm copies the source frame into ``extra`` minus a
+        # denylist; this ordering is what keeps a gap in that list from ever
+        # letting a source spell the type, terminal or authority block.
         frame: dict[str, Any] = {
+            **extra,
             "type": target_type,
             "terminal_id": att.terminal_id,
-            **extra,
             "remote": att.remote_block(),
             "timestamp": utc_now().isoformat(),
         }
@@ -1576,7 +2216,10 @@ class RemoteTerminalRelay:
         self, session: _SourceSession, att: _Attachment, terminal_id: str | None
     ) -> None:
         """Tell the PTY owner to unbind the grant. Best effort: it may be gone."""
-        if att.kind != KIND_ATTACH:
+        if att.kind != KIND_ATTACH or att.end_only:
+            # An end-only grant never asked the target to bind anything, and a
+            # detach racing its own ``terminal_end`` is noise at best.
+            #
             # A create grant never bound a terminal, and the target admits
             # exactly one frame type under it — so a detach sent here would be
             # refused as an unadmitted type and answered as an error, which is
@@ -1698,6 +2341,17 @@ class RemoteTerminalRelay:
         ):
             for rid in [r for r, (_, j) in pending.items() if j == att.grant_jti]:
                 pending.pop(rid, None)
+        # ``pending_end`` is swept only for a FRESH-grant end, whose attachment
+        # exists for that one round trip. An open tab's in-flight end outlives
+        # the tab on purpose (see ``_PendingEnd``): its reply or TTL settles it.
+        if att.end_only:
+            for rid in [
+                r
+                for r, e in session.pending_end.items()
+                if e.grant_jti == att.grant_jti
+            ]:
+                session.pending_end.pop(rid, None)
+                self._cancel_end_timer(session, rid)
         try:
             # Two commands; shielded so a cancel of the caller (socket
             # teardown) cannot stop after the first and strand the second.
@@ -1708,8 +2362,29 @@ class RemoteTerminalRelay:
                 grant_jti=att.grant_jti,
                 error=str(exc),
             )
-        if att.target_device_id not in session.targets():
-            await self._stop_listener(session, att.target_device_id)
+        await self._maybe_stop_listener(session, att.target_device_id)
+
+    async def _maybe_stop_listener(
+        self, session: _SourceSession, target_device_id: str
+    ) -> None:
+        """Stop a target's listener once nothing on this socket still needs it.
+
+        Two kinds of thing need it: a grant held on that target, and an
+        in-flight ``terminal_end`` to it. The second outlives its attachment on
+        purpose — an open tab's PTY usually closes (``terminal_exit`` drops the
+        tab) BEFORE the target sends ``terminal_ended`` — so tearing the route
+        down on the grant count alone would leave that reply arriving on a
+        channel nobody listens to, and the source reading a timeout for an end
+        that succeeded. Every settlement of an end calls back in here, so the
+        listener still goes once the last one settles.
+        """
+        if target_device_id in session.targets():
+            return
+        if any(
+            e.target_device_id == target_device_id for e in session.pending_end.values()
+        ):
+            return
+        await self._stop_listener(session, target_device_id)
 
     async def _evict(
         self, session: _SourceSession, att: _Attachment, *, code: str, message: str
@@ -1752,10 +2427,17 @@ class RemoteTerminalRelay:
         listener and the runner's ``terminal_subscribe`` for the socket's
         lifetime. Runs at the top of both frame paths.
         """
+        # An ``end_only`` attachment whose end is still in flight is NOT reaped:
+        # evicting it would answer ``grant_expired`` and sweep the pending end,
+        # dropping the target's real ``terminal_ended``. Its reply, a target
+        # refusal or the end's own TTL settles it — and releases the claim.
+        ending = {e.grant_jti for e in session.pending_end.values() if e.end_only}
         expired = [
             att
             for att in session.grants.values()
-            if att.grant_jti != except_jti and att.expired()
+            if att.grant_jti != except_jti
+            and att.expired()
+            and not (att.end_only and att.grant_jti in ending)
         ]
         for att in expired:
             logger.info(
@@ -1946,7 +2628,17 @@ class RemoteTerminalRelay:
         The entry is already popped, so ``_drop_attachment``'s own
         ``_stop_listener`` is a no-op here and the runner-side unsubscribe
         (matched to this listener's subscribe) is sent explicitly.
+
+        Ends in flight to that target are answered FIRST, typed
+        ``listener_lost``: their reply can no longer reach this socket, so
+        waiting out the end TTL would only delay the same UNKNOWN verdict.
         """
+        await self._settle_pending_ends_on_target(
+            session,
+            target_device_id,
+            code=CODE_LISTENER_LOST,
+            message="return route to the target was lost; the end's outcome is unknown",
+        )
         for att in list(session.grants.values()):
             if att.target_device_id != target_device_id:
                 continue
@@ -2336,6 +3028,12 @@ class RemoteTerminalRelay:
         if frame_type == "terminal_buffer_response":
             return await self._route_buffer_response(session, target_device_id, frame)
 
+        if frame_type == TARGET_END_REPLY_FRAME_TYPE:
+            return await self._route_end_reply(session, target_device_id, frame)
+
+        if frame_type == TARGET_INPUT_ACK_FRAME_TYPE:
+            return await self._route_input_ack(session, target_device_id, frame)
+
         if frame_type == "runner_disconnected":
             # A RELAY-authored notice, not a target refusal, which is why it
             # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES`` and above it:
@@ -2387,17 +3085,30 @@ class RemoteTerminalRelay:
         output firehose switched ON for every terminal it owns, so each failed
         attach permanently ratcheted the load that kills the next socket.
 
+        Ends in flight to that target — open-tab ones included, which outlive
+        their attachment on purpose — are answered FIRST with the same code,
+        rather than left to the 75 s end TTL: no reply can come from a socket
+        that is gone. A fresh-grant end's attachment is released by that
+        settlement, so it is not evicted a second time below.
+
         Returns False when this socket holds nothing on that target — the
         frame is a device-wide notice every watcher sees, and one that settles
-        none of our attachments is not ours.
+        none of our attachments or ends is not ours.
         """
+        ends = await self._settle_pending_ends_on_target(
+            session,
+            target_device_id,
+            code=CODE_TARGET_NOT_CONNECTED,
+            message="target device's relay socket disconnected; "
+            "the end's outcome is unknown",
+        )
         doomed = [
             att
             for att in session.grants.values()
             if att.target_device_id == target_device_id
         ]
         if not doomed:
-            return False
+            return ends > 0
         logger.info(
             "remote_terminal_target_disconnected",
             source_device_id=session.device_id,
@@ -2452,6 +3163,133 @@ class RemoteTerminalRelay:
         if att is None or att.target_device_id != target_device_id:
             return None
         return att
+
+    async def _route_end_reply(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Rebuild a target ``terminal_ended`` as ``remote_terminal_ended``.
+
+        Correlated by the MINTED id and bound to the device the end was sent
+        to (``_pop_pending_end``). The payload is REBUILT, never forwarded:
+        ``grant_jti`` and ``session_id`` come from the snapshot taken at
+        forward time (the grant is the authority on which session was ended),
+        the target's ``remote`` / ``remote_echo`` blocks are dropped,
+        ``outcome`` is held to the closed set — anything else reads
+        ``unknown``, never ``ended`` — and ``via`` / ``reason`` are capped
+        free text. ``terminal_id`` is the bound terminal for an open tab, and
+        the target's report for a fresh grant (which bound nothing).
+
+        Answered from the snapshot even when the attachment is already gone:
+        an open tab whose PTY closed is usually retired by ``terminal_exit``
+        before this reply lands. A fresh-grant attachment is dropped once the
+        reply is sent, whatever the outcome; an open tab's never is.
+        """
+        entry = self._pop_pending_end(
+            session, frame.get("request_id"), target_device_id
+        )
+        if entry is None:
+            return False
+        outcome = frame.get("outcome")
+        if not isinstance(outcome, str) or outcome not in END_OUTCOMES:
+            logger.warning(
+                "remote_terminal_ended_unknown_outcome",
+                source_device_id=session.device_id,
+                grant_jti=entry.grant_jti,
+                outcome=outcome[:TARGET_CODE_MAX] if isinstance(outcome, str) else None,
+            )
+            outcome = END_OUTCOME_FALLBACK
+        terminal_id: str | None = entry.terminal_id
+        if terminal_id is None:
+            reported = frame.get("terminal_id")
+            terminal_id = (
+                reported[:TARGET_MESSAGE_MAX] if isinstance(reported, str) else None
+            )
+        payload: dict[str, Any] = {
+            "type": SOURCE_END_REPLY_FRAME_TYPE,
+            "request_id": entry.source_request_id,
+            "grant_jti": entry.grant_jti,
+            "session_id": entry.target_session_id,
+            "terminal_id": terminal_id,
+            "outcome": outcome,
+        }
+        for key, cap in (("via", TARGET_CODE_MAX), ("reason", TARGET_MESSAGE_MAX)):
+            value = frame.get(key)
+            if isinstance(value, str) and value:
+                payload[key] = value[:cap]
+        await self._answer_end_and_release(session, entry, payload)
+        logger.info(
+            "remote_terminal_ended_routed",
+            source_device_id=session.device_id,
+            target_device_id=target_device_id,
+            grant_jti=entry.grant_jti,
+            outcome=outcome,
+            fresh_grant=entry.end_only,
+        )
+        return True
+
+    async def _route_input_ack(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Route a target ``terminal_input_ack`` to the source holding its grant.
+
+        Routed by the grant the target echoed in ``remote`` (or a top-level
+        ``grant_jti``) — the target emits an ack ONLY for a ``terminal_input``
+        that carried a ``remote`` block, so an unmarked ack is not ours. The
+        grant must be one THIS socket holds, on THIS target, and BOUND: an ack
+        for an unknown, foreign, expired or not-yet-attached grant is dropped
+        (``False``) exactly as ``terminal_output`` and the unsolicited buffer
+        resync are, never turned into a refusal the source did not ask for.
+
+        Expiry needs no arm here: ``_dispatch_target_frame`` reaps expired
+        grants (and tells their sources) before any arm runs, so an ack under
+        an expired grant finds no attachment and is dropped as unknown.
+
+        The frame is copied WHOLE — see ``INPUT_ACK_RELAY_OWNED_KEYS`` — so a
+        field a newer target adds reaches the source without a relay change.
+        Only ``type`` is retyped; ``grant_jti`` / ``terminal_id`` come from the
+        attachment record, and the relay's ``remote`` block and the relay-voice
+        keys are stripped. ``error`` is target-supplied free text, so it is
+        capped at ``TARGET_MESSAGE_MAX`` like a refusal's ``message``, and a
+        non-string one is dropped. It is deliberately NOT namespaced: it is not
+        a relay ``code`` field, and its leading token is the wire refusal code
+        the source reports to coord verbatim (plan A2), which a prefix would
+        break.
+        """
+        if not _is_remote_marked(frame):
+            return False
+        att = await self._attachment_by_remote_mark(session, target_device_id, frame)
+        if att is None or not att.attached:
+            return False
+        if frame.get("terminal_id") != att.terminal_id:
+            # An ack marked with our grant naming another pane: a target
+            # defect. Handing it over would credit a keystroke to the wrong
+            # pane's write half.
+            log = logger.debug if att.ack_mismatch_warned else logger.warning
+            att.ack_mismatch_warned = True
+            log(
+                "remote_terminal_input_ack_terminal_mismatch",
+                source_device_id=session.device_id,
+                grant_jti=att.grant_jti,
+                expected_terminal_id=att.terminal_id,
+                terminal_id=frame.get("terminal_id"),
+            )
+            return False
+        payload: dict[str, Any] = {
+            key: value
+            for key, value in frame.items()
+            if key not in INPUT_ACK_RELAY_OWNED_KEYS
+        }
+        if "error" in payload:
+            error = payload["error"]
+            if isinstance(error, str):
+                payload["error"] = error[:TARGET_MESSAGE_MAX]
+            else:
+                del payload["error"]
+        payload["type"] = SOURCE_INPUT_ACK_FRAME_TYPE
+        payload["grant_jti"] = att.grant_jti
+        payload["terminal_id"] = att.terminal_id
+        await self._send_to_source(session, payload)
+        return True
 
     async def _route_buffer_response(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
@@ -2649,10 +3487,84 @@ class RemoteTerminalRelay:
             delay_seconds=ATTACH_REPRESENT_DELAY_SECONDS,
         )
 
+    @staticmethod
+    def _target_error_payload(
+        frame: dict[str, Any],
+        *,
+        grant_jti: str,
+        request_id: str | None,
+        terminal_id: Any,
+    ) -> dict[str, Any]:
+        """The ``remote_terminal_error`` a target refusal is REBUILT into."""
+        message = frame.get("message")
+        if not isinstance(message, str) or not message.strip():
+            message = "target refused the remote frame"
+        payload: dict[str, Any] = {
+            "type": "remote_terminal_error",
+            "grant_jti": grant_jti,
+            # NAMESPACED, not forwarded: ``code`` is target-supplied and the
+            # relay has its own vocabulary on this same field. See
+            # ``namespace_target_code``.
+            "code": namespace_target_code(frame.get("code")),
+            "message": message[:TARGET_MESSAGE_MAX],
+        }
+        # Echo the SOURCE's request id only for an RPC we correlated; a
+        # request id we did not mint belongs to some other watcher.
+        if request_id is not None:
+            payload["request_id"] = request_id
+        if isinstance(terminal_id, str):
+            payload["terminal_id"] = terminal_id
+        # Forward the target's REMEDY fields. This payload is rebuilt rather
+        # than forwarded, so anything not named here is dropped — and the
+        # fields the target puts on a create refusal are precisely the ones
+        # that make it actionable: which working-dir KEYS it offers, and which
+        # intent repos. Without them the source can say "refused" but never
+        # "here is what you may ask for instead", which is the difference
+        # between an error and a remedy.
+        #
+        # A bounded allowlist, not a blanket merge: the target controls this
+        # frame, so forwarding it wholesale would let it set `code`,
+        # `grant_jti` or `request_id` on a payload the source trusts for
+        # routing. Each entry is a list of short strings and is length-capped,
+        # because a refusal is a diagnostic, not a transfer channel.
+        for key in ("allowed_working_dir_keys", "allowed_intent_repos"):
+            value = frame.get(key)
+            if isinstance(value, list):
+                safe = [v for v in value if isinstance(v, str) and len(v) <= 256]
+                if safe:
+                    payload[key] = safe[:64]
+        return payload
+
+    async def _route_end_error(
+        self, session: _SourceSession, entry: _PendingEnd, frame: dict[str, Any]
+    ) -> bool:
+        """A target refusal of a ``terminal_end``, answered from its snapshot.
+
+        Never torn down as a failed attach: a refused end leaves an open tab
+        exactly as it was. A fresh-grant end is released, whatever the code.
+        """
+        terminal_id = entry.terminal_id or frame.get("terminal_id")
+        await self._answer_end_and_release(
+            session,
+            entry,
+            self._target_error_payload(
+                frame,
+                grant_jti=entry.grant_jti,
+                request_id=entry.source_request_id,
+                terminal_id=terminal_id,
+            ),
+        )
+        return True
+
     async def _route_target_error(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
         wire_request_id = frame.get("request_id")
+        # A refused ``terminal_end`` first, and apart: its correlation is a
+        # snapshot that must settle even when the attachment is already gone.
+        end_entry = self._pop_pending_end(session, wire_request_id, target_device_id)
+        if end_entry is not None:
+            return await self._route_end_error(session, end_entry, frame)
         att: _Attachment | None = None
         correlated: _Pending | None = None
         failed_attach = False
@@ -2711,6 +3623,16 @@ class RemoteTerminalRelay:
                 att = await self._attachment_by_remote_mark(
                     session, target_device_id, frame
                 )
+                if att is not None and att.end_only:
+                    # A fresh-grant end has exactly one thing in flight, so a
+                    # refusal marked with its grant answers THAT end: settle it
+                    # under the source's request id rather than leave the
+                    # waiter to the TTL.
+                    for rid, entry in list(session.pending_end.items()):
+                        if entry.grant_jti == att.grant_jti:
+                            session.pending_end.pop(rid, None)
+                            self._cancel_end_timer(session, rid)
+                            return await self._route_end_error(session, entry, frame)
         if att is None:
             return False
         if pending_attach_rpc and self._should_represent_attach(att, frame):
@@ -2729,48 +3651,19 @@ class RemoteTerminalRelay:
             )
             self._schedule_attach_represent(session, att)
             return True
-        message = frame.get("message")
-        if not isinstance(message, str) or not message.strip():
-            message = "target refused the remote frame"
-        payload: dict[str, Any] = {
-            "type": "remote_terminal_error",
-            "grant_jti": att.grant_jti,
-            # NAMESPACED, not forwarded: ``code`` is target-supplied and the
-            # relay has its own vocabulary on this same field. See
-            # ``namespace_target_code``.
-            "code": namespace_target_code(frame.get("code")),
-            "message": message[:TARGET_MESSAGE_MAX],
-        }
-        # Echo the SOURCE's request id only for an RPC we correlated; a
-        # request id we did not mint belongs to some other watcher.
-        if correlated is not None and correlated[0] is not None:
-            payload["request_id"] = correlated[0]
-        terminal_id = att.terminal_id or frame.get("terminal_id")
-        if isinstance(terminal_id, str):
-            payload["terminal_id"] = terminal_id
-        # Forward the target's REMEDY fields. This payload is rebuilt rather
-        # than forwarded, so anything not named here is dropped — and the
-        # fields the target puts on a create refusal are precisely the ones
-        # that make it actionable: which working-dir KEYS it offers, and which
-        # intent repos. Without them the source can say "refused" but never
-        # "here is what you may ask for instead", which is the difference
-        # between an error and a remedy.
-        #
-        # A bounded allowlist, not a blanket merge: the target controls this
-        # frame, so forwarding it wholesale would let it set `code`,
-        # `grant_jti` or `request_id` on a payload the source trusts for
-        # routing. Each entry is a list of short strings and is length-capped,
-        # because a refusal is a diagnostic, not a transfer channel.
-        for key in ("allowed_working_dir_keys", "allowed_intent_repos"):
-            value = frame.get(key)
-            if isinstance(value, list):
-                safe = [v for v in value if isinstance(v, str) and len(v) <= 256]
-                if safe:
-                    payload[key] = safe[:64]
-        await self._send_to_source(session, payload)
-        if failed_attach:
+        await self._send_to_source(
+            session,
+            self._target_error_payload(
+                frame,
+                grant_jti=att.grant_jti,
+                request_id=correlated[0] if correlated is not None else None,
+                terminal_id=att.terminal_id or frame.get("terminal_id"),
+            ),
+        )
+        if failed_attach or att.end_only:
             # The target refused the attach itself: nothing is bound, so the
-            # grant registration on this socket is garbage now.
+            # grant registration on this socket is garbage now. (An end-only
+            # grant reaching here had no end left in flight; it is garbage too.)
             await self._drop_attachment(session, att)
         return True
 
@@ -2788,6 +3681,12 @@ class RemoteTerminalRelay:
             await self._drop_attachment(session, att)
         for target_device_id in list(session.listeners):
             await self._stop_listener(session, target_device_id)
+        # An open tab's in-flight end outlives its attachment by design, so
+        # the socket's own teardown is what disarms whatever is left: there is
+        # no source left to answer.
+        for rid in list(session.pending_end):
+            session.pending_end.pop(rid, None)
+            self._cancel_end_timer(session, rid)
         logger.info(
             "remote_terminal_source_released",
             source_device_id=session.device_id,

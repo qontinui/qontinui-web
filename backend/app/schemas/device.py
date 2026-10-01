@@ -146,17 +146,56 @@ class PairConfirmRequest(BaseModel):
     )
 
 
+class PairConfirmTenantResult(BaseModel):
+    """One tenant's outcome in a collect-mode (multi-tenant) pairing.
+
+    Mirrors coord's ``pair-complete`` ``results[]`` entry. Deliberately has no
+    token field: the tokens reach the runner only over coord's
+    ``pair-collect``, never through the browser.
+    """
+
+    tenant_id: UUID
+    status: str = Field(
+        ...,
+        description='"minted" or "skipped" (coord\'s vocabulary, passed through).',
+    )
+    skipped_reason: str | None = None
+
+
 class PairConfirmResponse(BaseModel):
     """Response body for ``POST /api/v1/devices/pair-confirm``.
 
     The browser receives this and redirects the runner's local callback
     server to
-    ``callback?state=<state>&token=<jwt>&token_id=<device_id>``.
+    ``callback?state=<state>&token=<jwt>&token_id=<device_id>`` -- or, when
+    ``collect`` is true (multi-tenant flow), to
+    ``callback?state=<state>&token_id=<device_id>&collect=1`` with NO token,
+    so no tenant credential ever rides a URL.
     """
 
     device_id: UUID
-    token: str = Field(..., description="Coord-issued device-token JWT.")
+    token: str | None = Field(
+        default=None,
+        description=(
+            "Coord-issued device-token JWT. Always present in the legacy "
+            "single-tenant flow; optional in collect mode, where the runner "
+            "fetches every tenant's token itself over pair-collect."
+        ),
+    )
     state: str = Field(..., description="Echoed pairing-flow nonce.")
+    collect: bool = Field(
+        default=False,
+        description=(
+            "True when coord ran a multi-tenant (collect-mode) flow. The page "
+            "then redirects the runner's callback WITHOUT a token param; the "
+            "runner collects the per-tenant tokens from coord's "
+            "pair-collect with its PKCE-style verifier."
+        ),
+    )
+    results: list[PairConfirmTenantResult] | None = Field(
+        default=None,
+        description="Per-tenant outcome of a collect-mode flow. Never carries tokens.",
+    )
 
 
 class PairCliRequest(BaseModel):
