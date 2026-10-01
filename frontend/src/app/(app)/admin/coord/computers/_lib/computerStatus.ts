@@ -263,8 +263,18 @@ export interface ComputerSummaryWire {
   services_failed: number;
   last_event: ComputerEventWire | null;
   devices: ComputerDeviceWire[];
-  ci_runners: CiRunnerWire[];
+  /**
+   * Registrar rows attributed to THIS computer (exactly one computer claims
+   * the runner name). `null` = the registrar read failed — UNKNOWN.
+   */
+  ci_runners: CiRunnerWire[] | null;
   drill_down: string;
+}
+
+/** Coord's `AmbiguousCiRunner`: a registrar row two or more computers claim — attributed to none. */
+export interface AmbiguousCiRunnerWire extends CiRunnerWire {
+  /** The claiming computers' ids, sorted by coord. */
+  claimed_by: string[];
 }
 
 /** Coord's `AgentSessionCount`. */
@@ -275,7 +285,8 @@ export interface AgentSessionCountWire {
 
 export interface ComputerWorkloadsWire {
   devices: ComputerDeviceWire[];
-  ci_runners: CiRunnerWire[];
+  /** `null` = the registrar read failed (UNKNOWN). */
+  ci_runners: CiRunnerWire[] | null;
   /** `null` = coord's session read failed — UNKNOWN, never "no sessions". */
   agent_sessions: AgentSessionCountWire[] | null;
 }
@@ -293,14 +304,14 @@ export interface ComputerDetailWire extends ComputerSummaryWire {
   history: LaneHistoryWire[];
   history_truncated: boolean;
   workloads: ComputerWorkloadsWire;
-  divergence: DivergenceWire[];
+  /** `null` = the registrar read failed — UNKNOWN, never "agree". */
+  divergence: DivergenceWire[] | null;
   /**
-   * `false` = coord's registrar read failed: `ci_runners`, `workloads.ci_runners`
-   * and `divergence` are then UNKNOWN, not empty. Absent (a coord predating
-   * the field) is read the same way — an empty divergence list is only a
-   * measurement when the registrar read is known to have succeeded.
+   * `false` = coord's registrar read failed: `ci_runners`,
+   * `workloads.ci_runners` and `divergence` are then `null` (UNKNOWN). The
+   * page also treats anything but an explicit `true` as unknown.
    */
-  registrar_read_ok?: boolean;
+  registrar_read_ok: boolean;
   schema_pending: boolean;
   staleness: StalenessRulesWire;
 }
@@ -309,9 +320,12 @@ export interface ComputerDetailWire extends ComputerSummaryWire {
 export interface ComputersListWire {
   computers: ComputerSummaryWire[] | null;
   count: number | null;
+  /** `null` = the registrar read failed — UNKNOWN, never "none". */
   unattributed_ci_runners: CiRunnerWire[] | null;
-  /** `false` = the registrar read failed: every `ci_runners` and the unattributed list are UNKNOWN. */
-  registrar_read_ok?: boolean;
+  /** Rows two or more computers claim. `null` = the registrar read failed — UNKNOWN. */
+  ambiguous_ci_runners: AmbiguousCiRunnerWire[] | null;
+  /** `false` = the registrar read failed: every runner list is `null` (UNKNOWN). */
+  registrar_read_ok: boolean;
   schema_pending: boolean;
   staleness: StalenessRulesWire;
 }
@@ -1220,6 +1234,22 @@ export function ciRunnerStatusText(r: CiRunnerWire): string {
   return r.registrar_fresh ? status : `last known: ${status} (registrar stale)`;
 }
 
+/**
+ * The computers claiming an ambiguous runner, by name. A claimant not in this
+ * read's list (a computer outside the page's view) is named by its id prefix
+ * rather than dropped — every claimant is part of the answer.
+ */
+export function ambiguousClaimants(
+  runner: AmbiguousCiRunnerWire,
+  computers: readonly NormalizedComputer[]
+): string[] {
+  const byId = new Map(computers.map((c) => [c.computerId, c]));
+  return runner.claimed_by.map((id) => {
+    const c = byId.get(id);
+    return c ? computerName(c) : `computer ${id.slice(0, 8)}`;
+  });
+}
+
 /** Operator words for coord's divergence kinds; the wire kind rides in the title. */
 export const DIVERGENCE_KIND_LABEL: Record<string, string> = {
   reported_down_registrar_online:
@@ -1289,8 +1319,10 @@ export function deriveComputersHealth(input: {
   loaded: boolean;
   issue: ComputersReadIssue | null;
   unattributed: number | null;
+  /** Runners two or more computers claim; `null` = unknown. Omitted = not shown. */
+  ambiguous?: number | null;
 }): ComputersHealth {
-  const { rows, loaded, issue, unattributed } = input;
+  const { rows, loaded, issue, unattributed, ambiguous } = input;
   const dashBadges: ComputersHealth["badges"] = [
     {
       key: "computers",
@@ -1385,6 +1417,17 @@ export function deriveComputersHealth(input: {
       "CI runners GitHub's registrar knows about that no reporting computer claims. Shown, not dropped: nothing says which box they run on.",
     "data-testid": "coord-computers-unattributed-badge",
   });
+
+  if (ambiguous !== undefined) {
+    badges.push({
+      key: "ambiguous",
+      label: `ambiguous CI runners ${ambiguous ?? DASH}`,
+      tone: ambiguous !== null && ambiguous > 0 ? "default" : "muted",
+      title:
+        "CI runners two or more of your computers claim (a cloned image, a moved runner). Coord attributes them to none of them rather than picking a winner.",
+      "data-testid": "coord-computers-ambiguous-badge",
+    });
+  }
 
   const staleRead = issue !== null;
   const needsPerson = failed + conflicts > 0;
