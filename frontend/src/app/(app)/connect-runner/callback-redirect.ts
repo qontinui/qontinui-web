@@ -36,3 +36,26 @@ export function buildCallbackRedirect(
   redirectUrl.searchParams.set("token_id", result.device_id);
   return redirectUrl;
 }
+
+/** Human message for a non-OK `POST /api/v1/devices/pair-confirm` answer. */
+export function pairConfirmErrorMessage(
+  body: unknown,
+  httpStatus: number
+): string {
+  const b = (body ?? {}) as { detail?: unknown; message?: unknown };
+  if (typeof b.detail === "string" && b.detail) {
+    return b.detail;
+  }
+  if (b.detail && typeof b.detail === "object") {
+    // A coord refusal is relayed as {coord_status, coord_body}.
+    const coordStatus = (b.detail as { coord_status?: unknown }).coord_status;
+    if (coordStatus === 403) {
+      return "This account isn't a member of the workspace(s) this device asked to join.";
+    }
+    return `Pairing was refused (coord HTTP ${typeof coordStatus === "number" ? coordStatus : "?"}).`;
+  }
+  if (typeof b.message === "string" && b.message) {
+    return b.message;
+  }
+  return `Pair-confirm failed (HTTP ${httpStatus})`;
+}
