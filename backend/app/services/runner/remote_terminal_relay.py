@@ -303,6 +303,18 @@ TARGET_ERROR_CODES = frozenset(
         "remote_create_source_user_not_allowed",
         # backend_relay's pre-dispatch refusal
         "remote_type_not_admitted",
+        # The remote-block checks (attach, detach, flow — and end once
+        # qontinui-runner#1883 lands): a frame with no
+        # ``remote`` block. The relay always sends one, so this is a target
+        # disagreeing with the relay about the frame, not a relay verdict.
+        "remote_block_required",
+        # backend_relay's refusal of a ``terminal_flow`` with no boolean
+        # ``paused``.
+        "flow_paused_required",
+        # backend_relay's ``terminal_create`` replies: the spawned PTY exited
+        # before coord confirmed it, or coord never confirmed the registration.
+        "terminal_exited",
+        "coord_registration_unconfirmed",
     }
 )
 
