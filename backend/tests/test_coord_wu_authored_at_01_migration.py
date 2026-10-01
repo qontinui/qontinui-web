@@ -287,7 +287,7 @@ def test_coord_wu_authored_at_01_backfills_from_slug_and_downgrades(
 
         # ----------------------------------------------------------------
         # 2. Apply the revision — under a NON-UTC session zone (case 6).
-        #    libpq honours PGTZ; run_alembic copies os.environ into the child.
+        #    libpq honours PGTZ; run_alembic runs in-process, so libpq reads the patched os.environ.
         # ----------------------------------------------------------------
         monkeypatch.setenv("PGTZ", _NON_UTC_SESSION_ZONE)
         run_alembic(root, url, "upgrade", _REVISION_ID)

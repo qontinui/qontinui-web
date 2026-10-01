@@ -41,9 +41,6 @@ exactly like a green run in the summary line.
 from __future__ import annotations
 
 import importlib.util
-import os
-import subprocess
-import sys
 import uuid
 from types import ModuleType
 
@@ -251,35 +248,14 @@ def _upgrade_to(db_url: str, revision: str):
 
 
 def _upgrade_expecting_failure(db_url: str, revision: str):
-    """Run `alembic upgrade` WITHOUT the harness's success assertion.
+    """Run `alembic upgrade` expecting a refusal (``expect_success=False``).
 
-    ``run_alembic`` asserts ``returncode == 0`` internally, so it can only ever
-    express "this migration succeeds". The Class C test needs the opposite — a
-    refusal is the passing outcome — and routing it through the harness turns a
-    correct refusal into a harness ``AssertionError`` that reads exactly like a
-    broken migration.
-
-    Same invocation as the harness otherwise, including ``sys.executable`` (the
-    child must be the interpreter running the tests, not whatever ``python`` the
-    OS finds first) and passing the URL both ways.
+    The harness's default assertion is a zero exit, so it can only express "this
+    migration succeeds". The Class C test needs the opposite — a refusal is the
+    passing outcome.
     """
-    env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
-    return subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "alembic",
-            "-x",
-            f"db_url={db_url}",
-            "upgrade",
-            revision,
-        ],
-        cwd=str(backend_root()),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
+    return run_alembic(
+        backend_root(), db_url, "upgrade", revision, expect_success=False
     )
 
 

@@ -115,7 +115,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
 import subprocess
 import uuid
 from pathlib import Path
@@ -1228,25 +1227,11 @@ def _run_alembic_expecting_failure(
 ) -> subprocess.CompletedProcess[str]:
     """``run_alembic``'s inverse: the run MUST fail, and both streams come back.
 
-    The shared helper asserts a zero exit, which is exactly what this test
-    needs to disprove — an aborting invariant is only useful if the deploy
-    actually stops.
+    The default assertion is a zero exit, which is exactly what this test needs
+    to disprove — an aborting invariant is only useful if the deploy actually
+    stops.
     """
-    env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
-    proc = subprocess.run(
-        ["python", "-m", "alembic", "-x", f"db_url={db_url}", *args],
-        cwd=str(cwd),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert proc.returncode != 0, (
-        "the migration was expected to ABORT\n"
-        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
-    )
-    return proc
+    return run_alembic(cwd, db_url, *args, expect_success=False)
 
 
 @_PG_SKIP

@@ -34,6 +34,8 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from tests._alembic_harness import run_alembic
+
 # The revision under test.
 _REVISION_ID = "coord_memory_links"
 
@@ -132,17 +134,8 @@ def _kind_check_def(engine: Engine) -> str:
 
 
 def _alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run alembic with a target DB URL injected via env override."""
-    env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
-    return subprocess.run(
-        ["python", "-m", "alembic", "-x", f"db_url={db_url}", *args],
-        cwd=str(cwd),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    """Run alembic in-process against ``db_url``; asserts a zero exit."""
+    return run_alembic(cwd, db_url, *args)
 
 
 @pytest.mark.skipif(
