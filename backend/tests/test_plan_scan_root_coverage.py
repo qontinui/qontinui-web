@@ -909,7 +909,9 @@ class TestTheRouteReadsTheStems:
         ]
         took: list[str] = []
 
-        async def _capture_health(_db: Any, *, org_id: Any) -> list[Any]:
+        async def _capture_health(
+            _db: Any, *, org_id: Any, include_archived: bool = False
+        ) -> list[Any]:
             return []
 
         async def _deferred(_db: Any, *, org_id: Any) -> list[PlanScanRootObservation]:

@@ -102,10 +102,6 @@ EVIDENCE_POSTURE_PLAN: Final = (
     "2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-"
     "its-vocabulary-and-a-correction-verb"
 )
-#: Owns plan-library artifact soft-delete (qontinui-web #1545).
-JUNK_ROW_PLAN: Final = (
-    "2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent"
-)
 #: Owns the plan-library edge retract/correct verbs (qontinui-web #1459).
 EDGE_CORRECTION_PLAN: Final = (
     "2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-"
@@ -202,6 +198,13 @@ STORES: Final[dict[str, Store]] = {
         states=("never_held", "held", "released"),
         terminal=("held", "released"),
     ),
+    # A plan-library artifact (``agent.work_artifacts``). Nothing automatic
+    # archives a live row, and an archived row is revived only by a write
+    # that re-asserts its identity, so both states are terminal.
+    "work_artifacts": Store(
+        states=("live", "archived"),
+        terminal=("live", "archived"),
+    ),
 }
 
 
@@ -254,6 +257,8 @@ Posture = Read | Ephemeral | Evidence
 _MEMORY_SUPERSEDE = f"POST {_V1}/memory/records/{{memory_id}}/supersede"
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
+_PLAN_LIBRARY_UPSERT = f"POST {_V1}/plan-library"
+_PLAN_LIBRARY_ARCHIVE = f"DELETE {_V1}/plan-library/{{artifact_id}}"
 
 #: One row per device-JWT-admitted write route. Classified by reading each
 #: handler, not its summary.
@@ -267,25 +272,40 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             "re-upserting the right one under the same (kind, slug, "
             "source_repo) and the wrong version stays readable as history"
         ),
+        store="work_artifacts",
         aspects=(
             (
+                # An agent-written wrong kind. kind is part of the row identity
+                # (organization, kind, slug, source_repo), so re-upserting under
+                # the right kind alone leaves the wrong-kind row beside it.
+                # PATCH /plan-library/{id}/kind is operator-only by design (it
+                # sets kind_locked; module invariant 7). The device-reachable
+                # correction is: upsert the right kind FIRST, then archive the
+                # wrong-kind row. The order matters: with the correct row live
+                # (and kind_locked, as an agent upsert makes it), the archive's
+                # file-backing guard admits the wrong-kind duplicate even when
+                # a scanned file still lists the stem, because the scanner
+                # resolves to the live row (``crud.work_artifact.
+                # sibling_admits_archive``). Archiving first would be refused
+                # (``file_backed`` / ``file_backing_unknown``) for a scanned
+                # plan. The target must be the WRONG-kind row, and this is
+                # enforced: archiving the kind_locked correct row beside an
+                # unlocked guess is refused the same way.
                 "kind",
-                Gap(
-                    tracked_by=JUNK_ROW_PLAN,
-                    what=(
-                        "an agent-written wrong kind. kind is part of the row "
-                        "identity (organization, kind, slug, source_repo), so "
-                        "re-upserting under the right kind creates the correct "
-                        "row BESIDE an orphaned wrong-kind row that no "
-                        "device-reachable verb removes. PATCH /plan-library/"
-                        "{id}/kind is operator-only by design (it sets "
-                        "kind_locked; module invariant 7) — the correction is "
-                        "soft-delete + re-upsert, and the soft-delete is "
-                        "qontinui-web #1545"
-                    ),
+                Verb(
+                    verb=_PLAN_LIBRARY_ARCHIVE,
+                    first=_PLAN_LIBRARY_UPSERT,
+                    admits=("live",),
                 ),
             ),
         ),
+    ),
+    ("DELETE", f"{_V1}/plan-library/{{artifact_id}}"): Evidence(
+        closed_fields=(),
+        store="work_artifacts",
+        # A wrongly archived row is revived by re-upserting its identity: the
+        # upsert clears the archive stamp and answers ``unarchived: true``.
+        correction=Verb(verb=_PLAN_LIBRARY_UPSERT, admits=("archived",)),
     ),
     ("POST", f"{_V1}/plan-library/{{artifact_id}}/edges"): Evidence(
         closed_fields=("relation",),

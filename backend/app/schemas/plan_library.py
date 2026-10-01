@@ -332,6 +332,13 @@ class WorkArtifactSummary(BaseORMSchema):
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
     difficulty_rubric_version: int | None = None
+    #: Soft-delete stamp (``plan_library_10_archive``). ``null`` on a LIVE row.
+    #: A default read never returns an archived row; one appears only on a
+    #: by-id read or under ``include_archived=true``, and these three fields
+    #: are how the caller tells it from a live one.
+    archived_at: IsoDatetime | None = None
+    archived_by: str | None = None
+    archive_reason: str | None = None
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -406,6 +413,44 @@ class WorkArtifactUpsertResponse(BaseModel):
     changed: bool
     created: bool
     artifact: WorkArtifactSummary
+    #: ``True`` when this write landed on an ARCHIVED identity and cleared its
+    #: archive stamp — the row is live again. Reported so the resurrection is
+    #: visible: whatever re-posted the row (a returning file, an agent) has
+    #: re-asserted it. Implies ``changed``.
+    unarchived: bool = False
+    #: When ``unarchived``: ids of the revived row's OUTBOUND edges whose target
+    #: is still archived. They are allowed to stand, but they point a reader at
+    #: a hidden row, so they are named here. Always empty otherwise.
+    edges_to_archived: list[UUID] = Field(default_factory=list)
+
+
+class WorkArtifactArchiveRequest(BaseModel):
+    """Body of ``DELETE /plan-library/{id}``.
+
+    ``reason`` is REQUIRED and must not be blank: a deletion with no stated
+    cause is indistinguishable from a mistake six weeks later. It is stored
+    verbatim (trimmed) in ``archive_reason``.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class WorkArtifactArchiveResponse(BaseModel):
+    """Outcome of ``DELETE /plan-library/{id}`` — always the STORED stamp.
+
+    ``already_archived`` is ``True`` when the row was archived before this
+    request; the stamp is then the existing one, unchanged (the verb is
+    idempotent). Verify by read: the row is gone from the default list and
+    present under ``include_archived=true`` and by id.
+    """
+
+    id: UUID
+    archived_at: IsoDatetime
+    archived_by: str | None
+    archive_reason: str | None
+    already_archived: bool
 
 
 class DivergentVariant(BaseORMSchema):
@@ -503,6 +548,11 @@ class CaptureHealthResponse(BaseModel):
 
     total: int
     doors: list[CaptureDoorHealth]
+    #: How many ARCHIVED artifacts the organization holds (all kinds). Always
+    #: reported; they are excluded from ``total`` and ``doors`` unless the read
+    #: asked for ``include_archived=true``. A fall in ``total`` after an
+    #: archive therefore explains itself.
+    archived: int
     #: ``max(updated_at)`` across every door — the corpus's freshness in one
     #: figure, beside the census. ``null`` on an empty corpus.
     newest_updated_at: IsoDatetime | None = None
@@ -534,6 +584,10 @@ class CorpusHealth(BaseModel):
     artifact_count: int
     #: ``kind == "plan"`` only — the number the by-stem probes care about.
     plan_count: int
+    #: ARCHIVED artifacts in scope, all kinds — excluded from the two counts
+    #: above (and from ``capture``) unless the read passed
+    #: ``include_archived=true``. Same figure as ``capture.archived``.
+    archived_count: int
     #: ``max(updated_at)`` in scope; ``null`` on an EMPTY corpus, never an
     #: epoch. Last TOUCHED, not last captured (see ``CaptureDoorHealth``).
     newest_updated_at: IsoDatetime | None = None

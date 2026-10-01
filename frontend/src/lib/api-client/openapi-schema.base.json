@@ -6720,6 +6720,10 @@
       "CaptureHealthResponse": {
         "description": "Corpus census by capture door.\n\nEvery door in :data:`CapturedBy` appears, **including the ones with zero\nartifacts**. That is the point of the panel: \"the agent door has written\nnothing\" is the finding, and a door that is simply missing from the list\nreads as an absent feature rather than an unused one.",
         "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
           "doors": {
             "items": {
               "$ref": "#/components/schemas/CaptureDoorHealth"
@@ -6745,7 +6749,8 @@
         },
         "required": [
           "total",
-          "doors"
+          "doors",
+          "archived"
         ],
         "title": "CaptureHealthResponse",
         "type": "object"
@@ -11120,6 +11125,10 @@
       "CorpusHealth": {
         "description": "What the corpus this page was drawn from actually holds.\n\n``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read\npath that cannot report its own health is not a read path. Without this\nblock a ``200`` with ``items: []`` was two indistinguishable sentences \u2014\n\"no such plan\" and \"the corpus holds no plans at all\" (the body sync\nis opt-in and its off-state is unlogged, so the second was the live\nstate on the operator box for weeks). With it, ``plan_count: 0`` beside\nan empty page says which, and ``newest_updated_at`` says how long ago the\ncorpus last moved.\n\nEvery figure is org-scoped like the page, and UNFILTERED by the page's\nown query: the caller's filter is what they asked about, this is what\nthey asked it of. ``capture`` is the ``/capture-health`` census from the\nSAME query and the same builder, so the two apply one rule to one census\n(two reads can still differ by when they happen).",
         "properties": {
+          "archived_count": {
+            "title": "Archived Count",
+            "type": "integer"
+          },
           "artifact_count": {
             "title": "Artifact Count",
             "type": "integer"
@@ -11149,6 +11158,7 @@
         "required": [
           "artifact_count",
           "plan_count",
+          "archived_count",
           "capture",
           "scan_roots"
         ],
@@ -57348,9 +57358,108 @@
         "title": "WakeRequiredResponse",
         "type": "object"
       },
+      "WorkArtifactArchiveRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``DELETE /plan-library/{id}``.\n\n``reason`` is REQUIRED and must not be blank: a deletion with no stated\ncause is indistinguishable from a mistake six weeks later. It is stored\nverbatim (trimmed) in ``archive_reason``.",
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "WorkArtifactArchiveRequest",
+        "type": "object"
+      },
+      "WorkArtifactArchiveResponse": {
+        "description": "Outcome of ``DELETE /plan-library/{id}`` \u2014 always the STORED stamp.\n\n``already_archived`` is ``True`` when the row was archived before this\nrequest; the stamp is then the existing one, unchanged (the verb is\nidempotent). Verify by read: the row is gone from the default list and\npresent under ``include_archived=true`` and by id.",
+        "properties": {
+          "already_archived": {
+            "title": "Already Archived",
+            "type": "boolean"
+          },
+          "archive_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Reason"
+          },
+          "archived_at": {
+            "title": "Archived At",
+            "type": "string"
+          },
+          "archived_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "archived_at",
+          "archived_by",
+          "archive_reason",
+          "already_archived"
+        ],
+        "title": "WorkArtifactArchiveResponse",
+        "type": "object"
+      },
       "WorkArtifactDetail": {
         "description": "Single-artifact read: body + full version log + edges BOTH ways.\n\n``coord`` carries the linked work unit and its PR citations, with the same\nhonesty flags ``/candidates`` uses \u2014 see :class:`CandidateCoordLink`. It is\nALWAYS present (defaulting to ``work_unit_state: \"unlinked\"``) so a\nconsumer never has to distinguish \"the field is missing\" from \"there is no\nlink\", and it is ``unavailable`` rather than empty whenever coord could not\nbe read. ``include_coord=false`` skips the fetch, which reports\n``unavailable`` for a linked artifact \u2014 deliberately, because \"we did not\nlook\" is not \"there is nothing there\".",
         "properties": {
+          "archive_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Reason"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "archived_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived By"
+          },
           "authored_at": {
             "anyOf": [
               {
@@ -57875,6 +57984,39 @@
       "WorkArtifactSummary": {
         "description": "List-row shape \u2014 everything except the (potentially huge) body.",
         "properties": {
+          "archive_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Reason"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "archived_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived By"
+          },
           "authored_at": {
             "anyOf": [
               {
@@ -58260,6 +58402,19 @@
           },
           "created": {
             "title": "Created",
+            "type": "boolean"
+          },
+          "edges_to_archived": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Edges To Archived",
+            "type": "array"
+          },
+          "unarchived": {
+            "default": false,
+            "title": "Unarchived",
             "type": "boolean"
           }
         },
@@ -99300,6 +99455,18 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -99338,7 +99505,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.\n\n**An upsert onto an ARCHIVED identity un-archives it** and answers\n``unarchived=true``: whatever wrote the row back (a file that returned\nunder a scan root, an agent re-posting) has re-asserted it, and a re-post\nthat stayed hidden would leave its author believing it was written. When\nthe revived row's outbound edges point at archived rows they are left in\nplace and listed in ``edges_to_archived``.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {
@@ -99425,6 +99592,18 @@
               "title": "Include Coord",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -99465,8 +99644,22 @@
     },
     "/api/v1/plan-library/capture-health": {
       "get": {
-        "description": "Which door is actually feeding the store.\n\nThe deterministic scanner is the backbone (design decision D3) and the\nagent write door is the addition that captures what a scan cannot see \u2014\nad-hoc worktree prompts, and the provenance edges only the agent that ran\nthe chain knows. If the agent door is unused, the corpus is quietly\nmissing exactly that half, and nothing else on this page would say so.\n\nEvery door in the schema's vocabulary is returned, **zeros included** \u2014 an\nunused door must render as ``0``, not as an absent row. A row with\n``known: false`` is a value the CHECK constraint allows that this build\ndoes not recognise; it is surfaced rather than swallowed.",
+        "description": "Which door is actually feeding the store.\n\nThe deterministic scanner is the backbone (design decision D3) and the\nagent write door is the addition that captures what a scan cannot see \u2014\nad-hoc worktree prompts, and the provenance edges only the agent that ran\nthe chain knows. If the agent door is unused, the corpus is quietly\nmissing exactly that half, and nothing else on this page would say so.\n\nEvery door in the schema's vocabulary is returned, **zeros included** \u2014 an\nunused door must render as ``0``, not as an absent row. A row with\n``known: false`` is a value the CHECK constraint allows that this build\ndoes not recognise; it is surfaced rather than swallowed.\n\nArchived artifacts are excluded from the census unless\n``include_archived``; ``archived`` reports how many there are either way.",
         "operationId": "api_v1_plan_library_capture_health_get",
+        "parameters": [
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -99477,6 +99670,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -99497,6 +99700,20 @@
       "get": {
         "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
         "operationId": "api_v1_plan_library_difficulty_get",
+        "parameters": [
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -99507,6 +99724,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -99525,7 +99752,7 @@
     },
     "/api/v1/plan-library/divergent": {
       "get": {
-        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
+        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.\n\nArchived rows are excluded from both unless ``include_archived``, so an\narchived mis-keyed twin stops reading as a fork.",
         "operationId": "api_v1_plan_library_divergent_get",
         "parameters": [
           {
@@ -99544,6 +99771,18 @@
               ],
               "description": "Restrict to one artifact kind",
               "title": "Kind"
+            }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
             }
           }
         ],
@@ -99585,7 +99824,7 @@
     },
     "/api/v1/plan-library/edges/{edge_id}": {
       "patch": {
-        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\nFailure modes, each distinguished on purpose:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409** \u2014 already claimed. Claiming is NOT idempotent across different\n  targets: silently re-pointing the edge would erase the first claim with\n  no trace and leave two callers each believing they own the work. The\n  response names the current owner.",
+        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\nFailure modes, each distinguished on purpose:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n* **409 ``target_archived``** \u2014 ``to_id`` names an ARCHIVED artifact; a\n  claim is an edge pointed at it, and would lead a reader to a hidden row.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409** \u2014 already claimed. Claiming is NOT idempotent across different\n  targets: silently re-pointing the edge would erase the first claim with\n  no trace and leave two callers each believing they own the work. The\n  response names the current owner.",
         "operationId": "api_v1_plan_library_edges_edge_id_patch",
         "parameters": [
           {
@@ -99778,6 +100017,18 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -99838,6 +100089,18 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
+              "type": "boolean"
             }
           }
         ],
@@ -99914,6 +100177,18 @@
               "default": true,
               "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
               "title": "Include Coord",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived row is excluded from this read and from every count it reports. A row returned under true carries a non-null `archived_at`.",
+              "title": "Include Archived",
               "type": "boolean"
             }
           }
@@ -100112,6 +100387,72 @@
       }
     },
     "/api/v1/plan-library/{artifact_id}": {
+      "delete": {
+        "description": "Archive one artifact: it disappears from every default read.\n\nPlan ``2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent``\nPhase 2. **Soft only**: sets ``archived_at`` / ``archived_by`` /\n``archive_reason`` and nothing else. The row and its version log survive \u2014\n``GET /{id}``, ``GET /{id}/export?version_number=N`` and\n``include_archived=true`` still reach it \u2014 because a hard delete would\nsilently break every citation of it.\n\nSame credential as the upsert (:func:`~app.api.deps.get_audit_actor_user`,\nCognito or a coord device JWT carrying ``user_id``), so an agent can clean\nup after itself in-band. ``reason`` is required and non-blank (422).\n\nRefusals, all ``409`` and none of them a partial write:\n\nFile backing is decided by FRESH, applied scan readings only (the\nscan-roots route's freshness rule). A stale or superseded device is\nIGNORED (listed under ``ignored``), so a dead device cannot block archiving\nunder its ``source_repo`` forever. If it later returns and its scanner\nre-pushes the row, the upsert un-archives it visibly (``unarchived: true``).\nAll guards run under the row lock, against the locked row.\n\n* ``file_backed`` \u2014 a fresh scan census (``ref`` or ``work_tree``) under\n  this row's ``source_repo`` still LISTS its stem, and no other live row\n  holds the stem (see below). The scanner would re-push it next cycle and\n  un-archive it. To retire the plan, delete the file first; to remove a\n  wrong-kind duplicate, upsert the correct kind first. The detail names\n  the ``source_repo``, the stem, the device(s) and the census side(s).\n* ``file_backing_unknown`` \u2014 devices report this ``source_repo`` and no\n  fresh census lists the stem, but either NO reporting device has a fresh\n  census, or not EVERY fresh side (each fresh device \u00d7 ``ref`` /\n  ``work_tree``) is a complete census confirming its absence (one is NULL,\n  withheld or a truncated floor). One \"absent\" never outvotes an unknown.\n  A row whose ``source_repo`` no device has ever reported (including NULL)\n  is not scanner-backed and is allowed.\n* Neither file refusal applies to a **wrong-kind duplicate**: when another\n  LIVE row holds the same scan identity ``(organization, slug,\n  source_repo)`` under a different kind, the scanner resolves to that row\n  (live rows win ``resolve_scan_target``), so archiving this one holds.\n  The correction for a wrong kind is therefore: upsert the correct kind,\n  then archive the wrong-kind row. The target must BE the wrong-kind row,\n  and that is enforced: a ``kind_locked`` row is exempt only when the row\n  the scanner would pick among the live siblings is ``kind_locked`` too,\n  so the asserted (correct) row cannot be archived beside an unlocked\n  guess; an unlocked row is exempt beside any live sibling. Checked under\n  the row lock and a per-scan-identity advisory lock, taken before the\n  census read on every path.\n* ``inbound_edges`` \u2014 live artifacts still have edges pointing AT this one;\n  the edge ids are listed. Checked under the row lock, so an edge created\n  concurrently cannot slip past it. Retract or re-point them first \u2014 this\n  verb never cascades. Outbound edges do not block: they stay attached to\n  a row that still exists and drop out of ``/followups`` with it. The\n  converse holds too: an edge cannot be created or claimed ONTO an\n  archived artifact (``409 target_archived``).\n\n``kind_locked`` does NOT block archiving: the lock stops a re-scan moving\n``kind``, which is a different concern from eviction.\n\n**Idempotent.** Archiving an archived row answers ``200`` with the EXISTING\nstamp and ``already_archived: true`` \u2014 not a 409, and the stored reason is\nnot overwritten. An upsert onto the same identity later un-archives it\n(``unarchived: true`` on the POST).\n\nVerify by read (the lost-write doctrine): the response carries the stored\n``archived_at``, and the row must be gone from ``GET /plan-library`` and\npresent under ``include_archived=true``.",
+        "operationId": "api_v1_plan_library_artifact_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactArchiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such artifact in the caller's organization."
+          },
+          "409": {
+            "description": "Refused: `file_backed` (a scanned file still lists this stem and no live row of another kind holds it), `file_backing_unknown` (the scan census cannot say), or `inbound_edges` (live artifacts still point at it)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Archive (soft-delete) one work artifact \u2014 body {reason}",
+        "tags": [
+          "plan-library"
+        ]
+      },
       "get": {
         "description": "One artifact, with everything the operator page's detail view renders.\n\nThe ``coord`` block is resolved over coord's HTTP API (never its Postgres\nschema \u2014 invariant 4) and carries its own honesty flags:\n\n* no ``work_unit_slug`` at all \u2192 ``unlinked``. A first-class normal state:\n  the link is optional and most artifacts have none.\n* a slug coord does not know \u2192 ``dangling``. ALSO normal \u2014 the link has no\n  FK by design and MAY dangle. It is never a 404 on this read.\n* coord unreachable \u2192 ``unavailable`` on both halves. UNKNOWN, not empty.\n\n``linked_prs_state`` is tracked separately from ``work_unit_state`` for a\nconcrete reason: the two halves fail independently. The work unit can\nresolve while coord reports the citation relation unreadable (a ``503``\n``SurfaceUnavailable``), or while a coord that has not yet shipped the\ncitation read refuses the hop outright. Rendering an empty PR list in\neither case would assert something this read has not established.\n\nThe coord reads go to the door tier the CALLING credential can open \u2014\ncoord's operator routes for a Cognito user, their ``agent-`` twins for the\nrunner's device JWT \u2014 because each tier rejects the other's bearer.",
         "operationId": "api_v1_plan_library_artifact_id_get",
@@ -100177,7 +100518,7 @@
     },
     "/api/v1/plan-library/{artifact_id}/edges": {
       "post": {
-        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\nRe-posting the same note is idempotent on ``(from_id, relation, note)``,\nwhile a DIFFERENT note is a second follow-up \u2014 a plan may surface several.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
+        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\nRe-posting the same note is idempotent on ``(from_id, relation, note)``,\nwhile a DIFFERENT note is a second follow-up \u2014 a plan may surface several.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.\n\nAn edge whose TARGET is archived is refused ``409 target_archived``: it\nwould lead a reader to a hidden row (the converse of ``DELETE``'s\n``inbound_edges`` refusal). An archived SOURCE is allowed \u2014 its edges drop\nout of the default reads with it.",
         "operationId": "api_v1_plan_library_artifact_id_edges_post",
         "parameters": [
           {
