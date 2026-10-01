@@ -19,10 +19,11 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review
- *   Dev Ops ▸ Overview / Trees° / Spawn° / Runner Drain° / Test Targets° /
- *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
- *             Memory° / Onboarding° / Onboarding Status°
- *   Access ▸  Members / Agent Registry                  (° = operator-only)
+ *   Dev Ops ▸ Overview / Computers† / Trees° / Spawn° / Maintenance° /
+ *             Test Targets° / Migrations° / Deploys° / Releases° / Git Ops° /
+ *             Federation° / Memory° / Onboarding° / Onboarding Status°
+ *   Access ▸  Members / Agent Registry / Tenant Policy
+ *             (° = operator-only, † = coord tenant admin or superuser only)
  *
  * There is no Alerts tab. The raw `coord.alerts` list is agents' work (plan
  * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
