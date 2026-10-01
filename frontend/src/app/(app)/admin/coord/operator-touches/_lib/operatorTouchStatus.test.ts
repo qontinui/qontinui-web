@@ -375,6 +375,9 @@ describe("human labels (R8)", () => {
     expect(
       answerViaSentence({ kind: "question", id: "q1", state: "pending" })
     ).toBe("The question is still waiting for an answer");
+    expect(
+      answerViaSentence({ kind: "question", id: "q2", state: "withdrawn" })
+    ).toBe("The question was withdrawn");
     expect(answerViaSentence({ kind: "gate", id: "g1", state: "cleared" })).toBe(
       "The gate cleared"
     );
