@@ -302,16 +302,17 @@ export default function CoordComputersPage() {
     [read.data, read.fetchedAtMs, nowMs]
   );
   const loaded = read.data !== null;
-  // `registrar_read_ok: false` = coord's registrar read failed, so the
-  // (empty) unattributed list it sent beside it is UNKNOWN, not "none".
+  // The registrar lists are a measurement only when coord says its registrar
+  // read succeeded (`registrar_read_ok === true`); `false` or absent is
+  // UNKNOWN, not "none" (coord also sends them `null` on a failed read).
   const unattributed: CiRunnerWire[] | null =
-    read.data?.registrar_read_ok === false
-      ? null
-      : (read.data?.unattributed_ci_runners ?? null);
+    read.data?.registrar_read_ok === true
+      ? (read.data.unattributed_ci_runners ?? null)
+      : null;
   const ambiguous: AmbiguousCiRunnerWire[] | null =
-    read.data?.registrar_read_ok === false
-      ? null
-      : (read.data?.ambiguous_ci_runners ?? null);
+    read.data?.registrar_read_ok === true
+      ? (read.data.ambiguous_ci_runners ?? null)
+      : null;
   const health = useMemo(
     () =>
       deriveComputersHealth({

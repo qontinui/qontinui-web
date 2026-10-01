@@ -294,7 +294,39 @@ describe("computerStatus", () => {
     );
     expect(s.kind).toBe("under_pressure");
     expect(s.reason).toBe(
-      "Lane host is at or below an admission floor, so coord is deferring or refusing work here until it recovers."
+      "Lane host is past an admission floor — coord is refusing work here."
+    );
+  });
+
+  it("says a warn lane is NEAR a floor and may be deferring — not refusing", () => {
+    const s = status(
+      computer({
+        lanes: [
+          lane({ age_secs: 10, headroom: "breach" }),
+          lane({
+            lane: "wsl",
+            lane_instance: "Ubuntu",
+            age_secs: 10,
+            headroom: "warn",
+          }),
+        ],
+      })
+    );
+    expect(s.kind).toBe("under_pressure");
+    expect(s.reason).toBe(
+      "Lane host is past an admission floor — coord is refusing work here. Lane wsl (Ubuntu) is near an admission floor — coord may be deferring work."
+    );
+  });
+
+  it("reads a truncated lane list as not fully known, with its own reason", () => {
+    // Coord's degrade_for_truncation: fresh -> unknown when truncated.
+    const c = computer({ lanes_truncated: true });
+    expect(c.samples_state).toBe("unknown");
+    const s = status(c);
+    expect(s.kind).toBe("lane_stale");
+    expect(s.label).toBe("samples not fully known");
+    expect(s.reason).toBe(
+      "Coord listed only part of this computer's lanes (cap reached), so its sample state is not fully known."
     );
   });
 
@@ -337,7 +369,8 @@ describe("computerStatus", () => {
   });
 
   it("reads empty lanes with an old sample as samples STALE, naming the newest age", () => {
-    // Coord drops a lane silent > 30 min from `lanes` and folds to `stale`.
+    // No lane of an attached device, but a sample exists (from a device no
+    // longer attached): coord folds to `stale`.
     const c = computer({ lanes: [], newest_sample_age_secs: 2400 });
     expect(c.samples_state).toBe("stale");
     const s = status(c);
@@ -347,7 +380,7 @@ describe("computerStatus", () => {
       "Coord reports this computer's samples as stale — newest 40m ago; current usage is unknown."
     );
     expect(emptyLanesText(normalizeComputer(c), NOW, NOW)).toBe(
-      "Samples stale, newest 40m ago — no lane has sampled in the last 30 min, so current usage is unknown (not idle)."
+      "Samples stale, newest 40m ago — no lane of a currently attached device is listed, so current usage is unknown (not idle)."
     );
   });
 });
@@ -519,6 +552,7 @@ describe("a 403 is its own answer", () => {
       services: null,
       events: null,
       divergence: null,
+      registrarReadOk: false,
     });
     expect(detail.headline).toBe("Coord tenant admins only");
   });
@@ -583,6 +617,19 @@ describe("deriveComputersHealth", () => {
     expect(rows[0].computer.ciRunners).toBeNull();
   });
 
+  it("treats CI runners as measured only on an explicit registrar_read_ok: true", () => {
+    const body = listFx([computer()]);
+    expect(buildComputerRows(body, NOW, NOW)[0].computer.ciRunners).toEqual([]);
+    // A body that does not SAY the registrar read succeeded is unknown, even
+    // if a list rode along.
+    const { registrar_read_ok: _ok, ...unconfirmed } = body;
+    void _ok;
+    expect(
+      buildComputerRows(unconfirmed as unknown as typeof body, NOW, NOW)[0]
+        .computer.ciRunners
+    ).toBeNull();
+  });
+
   it("counts stale and unknown computers", () => {
     const rows = buildComputerRows(
       listFx([
@@ -623,10 +670,25 @@ describe("deriveComputerDetailHealth", () => {
       services: [serviceFx({ active_state: "inactive" }), serviceFx()],
       events: [],
       divergence: [],
+      registrarReadOk: true,
     });
     const labels = h.badges.map((b) => b.label);
     expect(labels).toContain("services down 1");
     expect(labels).toContain("events 7d 0");
+  });
+
+  it("shows the divergence badge as a dash unless the registrar read is confirmed", () => {
+    const h = deriveComputerDetailHealth({
+      computer: n,
+      freshness: f,
+      status: computerStatus(n, f, { fetchedAtMs: NOW, nowMs: NOW }),
+      issue: null,
+      services: [],
+      events: [],
+      divergence: [],
+      registrarReadOk: false,
+    });
+    expect(h.badges.map((b) => b.label)).toContain("divergence –");
   });
 
   it("headlines not-found even when a computer from an earlier read is passed in", () => {
@@ -638,6 +700,7 @@ describe("deriveComputerDetailHealth", () => {
       services: [],
       events: [],
       divergence: [],
+      registrarReadOk: true,
     });
     expect(h.headline).toBe("No such computer in this tenant");
     expect(h.level).toBe("amber");

@@ -5757,10 +5757,19 @@ async def get_computers(
     """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
 
     The fleet list: per computer its identity (no raw OS ids), capacity,
-    ``freshness {last_report_at, age_secs, state}``, the latest sample
-    rollup per lane, ``services_failed``, ``last_event``, ``devices[]`` and
-    ``ci_runners[]``, plus ``unattributed_ci_runners`` at list level.
-    Response shape is coord-authored and passed through untouched.
+    ``freshness {last_report_at, age_secs, state, stale_after_secs}``, every
+    known lane's newest sample (``lanes``, ``samples_state``,
+    ``lanes_truncated``), ``services_reported`` / ``services_failed``,
+    ``last_event``, ``devices[]`` and ``ci_runners``. At list level:
+    ``unattributed_ci_runners`` (registrar rows no computer claims),
+    ``ambiguous_ci_runners`` (rows two or more computers claim, each with
+    ``claimed_by``), and ``registrar_read_ok``.
+
+    When ``registrar_read_ok`` is false coord's registrar read failed, and
+    every registrar-derived list — each computer's ``ci_runners``,
+    ``unattributed_ci_runners`` and ``ambiguous_ci_runners`` — is ``null``:
+    UNKNOWN, never "no runners". Response shape is coord-authored and passed
+    through untouched; this proxy adds no defaults.
     """
     return await _proxy_coord_passthrough(
         "GET", "/coord/computers", tenant_id=tenant_id

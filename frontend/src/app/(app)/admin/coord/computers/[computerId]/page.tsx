@@ -404,7 +404,12 @@ export default function CoordComputerDetailPage() {
 
   const detail = read.data;
   const computer = useMemo(
-    () => (detail ? normalizeComputer(detail) : null),
+    () =>
+      detail
+        ? normalizeComputer(detail, {
+            registrarReadOk: detail.registrar_read_ok === true,
+          })
+        : null,
     [detail]
   );
   const freshness = useMemo(
@@ -441,8 +446,18 @@ export default function CoordComputerDetailPage() {
         services,
         events,
         divergence,
+        registrarReadOk: detail?.registrar_read_ok === true,
       }),
-    [computer, freshness, status, read.issue, services, events, divergence]
+    [
+      computer,
+      freshness,
+      status,
+      read.issue,
+      services,
+      events,
+      divergence,
+      detail?.registrar_read_ok,
+    ]
   );
   const workloadDevices = listOrNull(detail?.workloads?.devices);
   const workloadRunners = listOrNull(detail?.workloads?.ci_runners);
@@ -664,7 +679,7 @@ export default function CoordComputerDetailPage() {
           <Section
             title="Divergence"
             testId="coord-computer-divergence-section"
-            note="Where the computer's own report and the CI registrar (or a declared CI host) disagree. The computer's report is the one coord trusts; the disagreement is shown, not resolved."
+            note="Where the computer's own report and a fresh CI-registrar row attributed to this computer disagree. Shown, not resolved."
           >
             {divergence === null || !registrarReadOk ? (
               <RegistrarUnknown

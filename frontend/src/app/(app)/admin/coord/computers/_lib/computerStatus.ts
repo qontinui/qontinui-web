@@ -249,9 +249,10 @@ export interface ComputerSummaryWire {
   freshness: ComputerFreshnessWire;
   lanes: ComputerLaneWire[];
   /**
-   * Worst lane freshness: `stale` if any listed lane is, OR if no lane sampled
-   * inside coord's 30 min lane lookback while an older sample exists (then
-   * `lanes` is EMPTY); `unknown` only when the computer was never sampled.
+   * Worst lane freshness over every known lane of the computer's attached
+   * devices: `stale` if any is, or if no lane is listed while an older sample
+   * exists (from a device no longer attached); `unknown` when never sampled,
+   * or when coord truncated the lane list and could not vouch for the rest.
    */
   samples_state: string;
   /** Age of the newest sample on this computer, any lane — `null` = never sampled (UNKNOWN). */
@@ -521,7 +522,7 @@ export interface NormalizedComputer {
   /** `null` = coord holds no event in its retention window. */
   lastEvent: ComputerEventWire | null;
   devices: ComputerDeviceWire[];
-  /** `null` = the registrar read failed (`registrar_read_ok: false`) — UNKNOWN. */
+  /** `null` unless coord's registrar read is known to have succeeded (`registrar_read_ok === true`) — UNKNOWN. */
   ciRunners: CiRunnerWire[] | null;
   drillDown: string;
 }
@@ -564,7 +565,7 @@ export function normalizeComputer(
     servicesTotal: reported ? c.services_total : null,
     lastEvent: c.last_event,
     devices: c.devices,
-    ciRunners: options.registrarReadOk === false ? null : c.ci_runners,
+    ciRunners: options.registrarReadOk === true ? c.ci_runners : null,
     drillDown: c.drill_down,
   };
 }
@@ -627,10 +628,10 @@ export function newestSampleAge(
 }
 
 /**
- * The sentence for a computer whose `lanes` coord sent EMPTY. Two different
- * facts share that empty array, and coord's `samples_state` tells them apart:
- * `stale` = every lane went silent past the 30 min lookback (so none is
- * listed) but a sample exists, `unknown` = never sampled.
+ * The sentence for a computer whose `lanes` coord sent EMPTY. Coord lists
+ * every known lane of the devices attached to the computer, so an empty array
+ * with a newest-sample age means the samples came from devices no longer
+ * attached; with no age at all, the computer was never sampled.
  */
 export function emptyLanesText(
   c: NormalizedComputer,
@@ -639,9 +640,12 @@ export function emptyLanesText(
 ): string {
   const age = newestSampleAge(c, fetchedAtMs, nowMs);
   if (c.samplesState === "stale" && age !== null) {
-    return `Samples stale, newest ${formatAge(age)} — no lane has sampled in the last 30 min, so current usage is unknown (not idle).`;
+    return `Samples stale, newest ${formatAge(age)} — no lane of a currently attached device is listed, so current usage is unknown (not idle).`;
   }
-  return "No resource sample from this computer — usage is unknown, not idle.";
+  if (age === null) {
+    return "No resource sample from this computer — usage is unknown, not idle.";
+  }
+  return `No lane is listed for this computer (newest sample ${formatAge(age)}) — current usage is unknown, not idle.`;
 }
 
 /**
@@ -1049,10 +1053,28 @@ export function computerStatus(
   // pressure that is not there, and it is reported below as stale instead.
   const pressured = laneState.filter((s) => s.fresh && atFloor(s.lane));
   if (pressured.length > 0) {
+    // Two different claims: `breach` is a guard REFUSING work now; `warn` is
+    // inside the amber band, where a guard may be deferring it.
+    const names = (h: string) =>
+      pressured
+        .filter((s) => s.lane.headroom === h)
+        .map((s) => laneName(s.lane))
+        .join(", ");
+    const breach = names("breach");
+    const warn = names("warn");
     return make(
       "under_pressure",
       "under pressure",
-      `Lane ${pressured.map((s) => laneName(s.lane)).join(", ")} is at or below an admission floor, so coord is deferring or refusing work here until it recovers.`
+      [
+        breach
+          ? `Lane ${breach} is past an admission floor — coord is refusing work here.`
+          : null,
+        warn
+          ? `Lane ${warn} is near an admission floor — coord may be deferring work.`
+          : null,
+      ]
+        .filter((x): x is string => x !== null)
+        .join(" ")
     );
   }
   const staleLanes = laneState.filter((s) => !s.fresh).map((s) => s.lane);
@@ -1081,6 +1103,16 @@ export function computerStatus(
       `Coord could not grade admission headroom for lane ${ungraded.map(laneName).join(", ")}, so whether it is refusing work is unknown.`
     );
   }
+  // A truncated lane list cannot vouch for the lanes it did not list — coord
+  // degrades `fresh` to `unknown` for exactly this. Checked before the
+  // samples-state branch so it gets its own reason, not "never sampled".
+  if (c.lanesTruncated) {
+    return make(
+      "lane_stale",
+      "samples not fully known",
+      "Coord listed only part of this computer's lanes (cap reached), so its sample state is not fully known."
+    );
+  }
   // Coord's own fold over the lanes. With no lane in its lookback it reads
   // `unknown` — there is then no lane row above to be stale, and "healthy"
   // would claim a usage nobody measured.
@@ -1090,7 +1122,9 @@ export function computerStatus(
       c.samplesState === "stale" ? "samples stale" : "samples unknown",
       c.samplesState === "stale"
         ? `Coord reports this computer's samples as stale — newest ${formatAge(newestSampleAge(c, clock.fetchedAtMs, clock.nowMs))}; current usage is unknown.`
-        : "Coord has never received a resource sample from this computer — current usage is unknown, not idle."
+        : c.newestSampleAgeSecs === null
+          ? "Coord has never received a resource sample from this computer — current usage is unknown, not idle."
+          : "Coord cannot vouch for this computer's sample state — current usage is unknown, not idle."
     );
   }
   if (c.servicesFailed === null) {
@@ -1308,7 +1342,7 @@ export function buildComputerRows(
   fetchedAtMs: number | null,
   nowMs: number
 ): ComputerRowModel[] {
-  const registrarReadOk = list?.registrar_read_ok;
+  const registrarReadOk = list?.registrar_read_ok === true;
   return (list?.computers ?? []).map((raw) => {
     const computer = normalizeComputer(raw, { registrarReadOk });
     const freshness = computerFreshness(computer.freshness, fetchedAtMs, nowMs);
@@ -1453,7 +1487,7 @@ export function deriveComputersHealth(input: {
       : stale + unknown > 0
         ? `${stale + unknown} of ${rows.length} computers are not reporting current state`
         : pressure > 0
-          ? `${pressure} computer${pressure === 1 ? " is" : "s are"} at an admission floor`
+          ? `${pressure} computer${pressure === 1 ? " is" : "s are"} at or near an admission floor`
           : staleRead
             ? "Every computer was healthy at the last good read"
             : `All ${rows.length} computers report fresh, with no failed service`;
@@ -1482,9 +1516,19 @@ export function deriveComputerDetailHealth(input: {
   services: ComputerServiceWire[] | null;
   events: ComputerEventWire[] | null;
   divergence: DivergenceWire[] | null;
+  /** Only an explicit `true` makes the divergence list a measurement. */
+  registrarReadOk: boolean;
 }): ComputersHealth {
-  const { computer, freshness, status, issue, services, events, divergence } =
-    input;
+  const {
+    computer,
+    freshness,
+    status,
+    issue,
+    services,
+    events,
+    divergence,
+    registrarReadOk,
+  } = input;
   // Not-found is a MEASUREMENT that supersedes whatever an earlier read held:
   // coord now says this computer is not in the tenant, so no retained figure
   // may headline beside it.
@@ -1556,11 +1600,14 @@ export function deriveComputerDetailHealth(input: {
       },
       {
         key: "divergence",
-        label: `divergence ${divergence === null ? DASH : divergence.length}`,
+        label: `divergence ${divergence === null || !registrarReadOk ? DASH : divergence.length}`,
         tone:
-          divergence !== null && divergence.length > 0 ? "default" : "muted",
-        title:
-          "Places the computer's own report and the CI registrar disagree about what runs here.",
+          registrarReadOk && divergence !== null && divergence.length > 0
+            ? "default"
+            : "muted",
+        title: registrarReadOk
+          ? "Where the computer's own report and a fresh CI-registrar row attributed to it disagree."
+          : "Coord did not confirm a successful CI registrar read — unknown, not none.",
         "data-testid": "coord-computer-health-divergence",
       },
     ],

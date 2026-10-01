@@ -248,9 +248,10 @@ export function LaneTable({
     </p>
   ) : null;
   if (computer.lanes.length === 0) {
-    // Coord drops a lane silent > 30 min from `lanes`, so an empty array is
-    // either "all lanes went silent" (samples_state stale, with the newest
-    // sample's age) or "never sampled" — never an idle machine.
+    // Coord lists every known lane of the computer's attached devices, so an
+    // empty array is either "samples exist, but only from devices no longer
+    // attached" (with the newest sample's age) or "never sampled" — never an
+    // idle machine.
     const stale = computer.samplesState === "stale";
     return (
       <>

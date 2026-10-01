@@ -75,6 +75,15 @@ export function laneFx(
   };
 }
 
+/**
+ * Coord's `degrade_for_truncation`: a truncated lane list cannot vouch for
+ * the lanes it did not list, so `fresh` becomes `unknown`; a `stale` found
+ * among the listed lanes stays `stale`.
+ */
+function degradeForTruncation(state: string, truncated: boolean): string {
+  return state === "fresh" && truncated ? "unknown" : state;
+}
+
 export const OTHER_COMPUTER_ID = "7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 
 export function computerFx(
@@ -123,16 +132,16 @@ export function computerFx(
     },
     lanes,
     // Coord's `fold_sample_state`.
-    samples_state:
+    samples_state: degradeForTruncation(
+      lanes.length === 0
+        ? newest === null
+          ? "unknown"
+          : "stale"
+        : lanes.every((l) => l.freshness.state === "fresh")
+          ? "fresh"
+          : "stale",
       rest.lanes_truncated === true
-        ? "stale"
-        : lanes.length === 0
-          ? newest === null
-            ? "unknown"
-            : "stale"
-          : lanes.every((l) => l.freshness.state === "fresh")
-            ? "fresh"
-            : "stale",
+    ),
     newest_sample_age_secs: newest,
     lanes_truncated: false,
     sample_stale_after_secs: 90,

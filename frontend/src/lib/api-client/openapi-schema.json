@@ -88085,7 +88085,7 @@
     },
     "/api/v1/operations/computers": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state}``, the latest sample\nrollup per lane, ``services_failed``, ``last_event``, ``devices[]`` and\n``ci_runners[]``, plus ``unattributed_ci_runners`` at list level.\nResponse shape is coord-authored and passed through untouched.",
+        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state, stale_after_secs}``, every\nknown lane's newest sample (``lanes``, ``samples_state``,\n``lanes_truncated``), ``services_reported`` / ``services_failed``,\n``last_event``, ``devices[]`` and ``ci_runners``. At list level:\n``unattributed_ci_runners`` (registrar rows no computer claims),\n``ambiguous_ci_runners`` (rows two or more computers claim, each with\n``claimed_by``), and ``registrar_read_ok``.\n\nWhen ``registrar_read_ok`` is false coord's registrar read failed, and\nevery registrar-derived list \u2014 each computer's ``ci_runners``,\n``unattributed_ci_runners`` and ``ambiguous_ci_runners`` \u2014 is ``null``:\nUNKNOWN, never \"no runners\". Response shape is coord-authored and passed\nthrough untouched; this proxy adds no defaults.",
         "operationId": "api_v1_operations_computers_get",
         "responses": {
           "200": {
