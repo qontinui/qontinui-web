@@ -1153,8 +1153,9 @@ export function computerStatus(
  * How long ago coord recorded the row — just the age (`"12m ago"`), for the
  * caller to put in one sentence. Information only: coord re-records an
  * UNCHANGED unit only about once per 300 s report cadence, so this can
- * overstate a unit's silence by up to ~5 min, and a row's age says nothing
- * about whether the unit still exists. It never changes the badge.
+ * overstate a unit's silence by up to ~10 min (just under two report
+ * cadences), and a row's age says nothing about whether the unit still
+ * exists. It never changes the badge.
  */
 export function serviceObservedText(s: ComputerServiceWire): string {
   const age = num(s.observed_age_secs);
