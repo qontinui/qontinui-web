@@ -38,10 +38,10 @@ import ast
 from collections import Counter
 from pathlib import Path
 
-#: The exact count on the head that introduced this ratchet (849 before the
-#: D2 conversions on the same change). Lower it when a conversion lands;
-#: never raise it.
-BASELINE = 811
+#: The exact count on the head that introduced this ratchet (852 on the
+#: ``origin/main`` it was re-measured against, before the D2 conversions on
+#: the same change). Lower it when a conversion lands; never raise it.
+BASELINE = 814
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
