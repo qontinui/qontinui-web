@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import warnings
 
 import pytest
 
@@ -112,10 +113,33 @@ def test_expect_failure_asserts_when_the_command_succeeds() -> None:
         )
 
 
-@pytest.mark.filterwarnings("error")
-def test_a_warning_under_an_error_filter_does_not_fail_the_call() -> None:
-    # A child process printed warnings to its stderr; in-process they must not
-    # become exceptions just because the test session escalates warnings.
-    proc = run_alembic(backend_root(), _OFFLINE_URL, "stamp", "head", "--sql")
+def test_a_warning_under_an_error_filter_is_printed_not_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A warning raised during the call must reach stderr, not become an
+    # exception just because the session escalates warnings. The probe warning
+    # is injected (every alembic command builds a ScriptDirectory) so the test
+    # does not depend on which deprecations alembic or alembic.ini happen to
+    # emit today.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    original_from_config = ScriptDirectory.from_config
+
+    def warning_from_config(
+        cls: type[ScriptDirectory], config: Config
+    ) -> ScriptDirectory:
+        warnings.warn("harness-probe-warning", DeprecationWarning, stacklevel=1)
+        return original_from_config(config)
+
+    monkeypatch.setattr(
+        ScriptDirectory, "from_config", classmethod(warning_from_config)
+    )
+    # Set inside the body, not with a filterwarnings marker: a marker would also
+    # apply to session fixture setup, which imports app code that warns.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        proc = run_alembic(backend_root(), _OFFLINE_URL, "stamp", "head", "--sql")
 
     assert proc.returncode == 0, proc.stderr
+    assert "harness-probe-warning" in proc.stderr, proc.stderr

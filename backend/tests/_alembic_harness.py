@@ -159,14 +159,18 @@ def _isolated_process_state(cwd: Path) -> Iterator[None]:
 
 @contextlib.contextmanager
 def _warnings_to(stream: io.StringIO) -> Iterator[None]:
-    """Print Python warnings to ``stream`` for the call, as a child process did.
+    """Print Python warnings to ``stream`` for the call instead of raising them.
 
     In-process, a warning raised by alembic or a revision would otherwise land
     in pytest's warning collection — and under a ``-W error`` /
     ``filterwarnings = error`` configuration it would become an exception, so a
     deprecation alembic emits on EVERY call would turn every ``run_alembic`` into
-    exit 1. A subprocess printed it to its own stderr and carried on; so does
-    this. The previous filters and hook are restored on exit.
+    exit 1. Here every warning is printed to the captured stderr and the call
+    carries on. That is somewhat MORE output than a child process gave: Python's
+    default filters hid library DeprecationWarnings there, and the ``default``
+    action shows them — deliberately, since a deprecation in the migration path
+    is worth seeing in a failing test's stderr. The previous filters and hook
+    are restored on exit.
     """
 
     def _show(
@@ -227,7 +231,7 @@ def run_alembic(
     * **Failure** — an exception becomes ``returncode=1`` with its full
       traceback appended to ``stderr``; ``sys.exit`` keeps its status (alembic's
       ``FAILED:`` path exits ``-1``, i.e. 255). ``KeyboardInterrupt`` and
-      pytest's outcome exceptions propagate. Python warnings are printed to
+      ``pytest.fail`` / ``pytest.skip`` propagate. Python warnings are printed to
       ``stderr`` rather than raised into pytest's warning machinery.
 
     Process-global state ``env.py`` touches — ``os.environ``, ``sys.path``,
@@ -278,9 +282,9 @@ def run_alembic(
             if not isinstance(exc.code, (int, type(None))):
                 print(exc.code, file=err)
         except Exception:
-            # Not BaseException: pytest's own outcome exceptions (`pytest.fail`,
-            # `pytest.skip`, a timeout plugin) must propagate, never be read as
-            # the migration refusing — which `expect_success=False` would pass.
+            # Not BaseException: `pytest.fail` / `pytest.skip` (and a timeout
+            # plugin's) must propagate, never be read as the migration
+            # refusing — which `expect_success=False` would pass.
             traceback.print_exc(file=err)
             returncode = 1
     proc = subprocess.CompletedProcess(
