@@ -3980,6 +3980,8 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
         rtr.CODE_CREATE_GRANT_WRONG_SOURCE,
         rtr.CODE_GRANT_WRONG_KIND,
         rtr.CODE_LISTENER_LOST,
+        rtr.CODE_END_TIMEOUT,
+        rtr.CODE_END_PENDING,
     ]
     for code in relay_only:
         assert code not in rtr.TARGET_ERROR_CODES, code
@@ -5740,7 +5742,8 @@ async def test_remote_marked_uncorrelated_refusal_settles_a_fresh_end(
     assert routed is True
     (err,) = ws.of_type("remote_terminal_error")
     assert err["request_id"] == "req-end-1"
-    assert err["code"] == "target_said_remote_block_required"
+    # A target refusal from the runner's own vocabulary passes through.
+    assert err["code"] == "remote_block_required"
     assert session.grants == {}
     assert redis.empty()
 
