@@ -34100,12 +34100,33 @@
         "type": "object"
       },
       "PairConfirmResponse": {
-        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>``.",
+        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>`` -- or, when\n``collect`` is true (multi-tenant flow), to\n``callback?state=<state>&token_id=<device_id>&collect=1`` with NO token,\nso no tenant credential ever rides a URL.",
         "properties": {
+          "collect": {
+            "default": false,
+            "description": "True when coord ran a multi-tenant (collect-mode) flow. The page then redirects the runner's callback WITHOUT a token param; the runner collects the per-tenant tokens from coord's pair-collect with its PKCE-style verifier.",
+            "title": "Collect",
+            "type": "boolean"
+          },
           "device_id": {
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PairConfirmTenantResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-tenant outcome of a collect-mode flow. Never carries tokens.",
+            "title": "Results"
           },
           "state": {
             "description": "Echoed pairing-flow nonce.",
@@ -34113,17 +34134,55 @@
             "type": "string"
           },
           "token": {
-            "description": "Coord-issued device-token JWT.",
-            "title": "Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord-issued device-token JWT. Always present in the legacy single-tenant flow; optional in collect mode, where the runner fetches every tenant's token itself over pair-collect.",
+            "title": "Token"
           }
         },
         "required": [
           "device_id",
-          "token",
           "state"
         ],
         "title": "PairConfirmResponse",
+        "type": "object"
+      },
+      "PairConfirmTenantResult": {
+        "description": "One tenant's outcome in a collect-mode (multi-tenant) pairing.\n\nMirrors coord's ``pair-complete`` ``results[]`` entry. Deliberately has no\ntoken field: the tokens reach the runner only over coord's\n``pair-collect``, never through the browser.",
+        "properties": {
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "status": {
+            "description": "\"minted\" or \"skipped\" (coord's vocabulary, passed through).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status"
+        ],
+        "title": "PairConfirmTenantResult",
         "type": "object"
       },
       "PathElement": {
@@ -88078,6 +88137,78 @@
           }
         },
         "summary": "Report Claude Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/computers": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state, stale_after_secs}``, every\nknown lane's newest sample (``lanes``, ``samples_state``,\n``lanes_truncated``), ``services_reported`` / ``services_failed``,\n``last_event``, ``devices[]`` and ``ci_runners``. At list level:\n``unattributed_ci_runners`` (registrar rows no computer claims),\n``ambiguous_ci_runners`` (rows two or more computers claim, each with\n``claimed_by``), and ``registrar_read_ok``.\n\nWhen ``registrar_read_ok`` is false coord's registrar read failed, and\nevery registrar-derived list \u2014 each computer's ``ci_runners``,\n``unattributed_ci_runners`` and ``ambiguous_ci_runners`` \u2014 is ``null``:\nUNKNOWN, never \"no runners\". Response shape is coord-authored and passed\nthrough untouched; this proxy adds no defaults.",
+        "operationId": "api_v1_operations_computers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/computers/{computer_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).\n\nOne computer's whole answer to \"how is this machine\": the list fields\nplus ``services[]``, ``events`` (7 d, newest first), per-lane sample\n``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``\nis validated as a UUID here so a malformed id is a 422 at the web edge\nand never reaches coord as an arbitrary path segment.",
+        "operationId": "api_v1_operations_computers_computer_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "computer_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Computer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computer",
         "tags": [
           "operations"
         ]

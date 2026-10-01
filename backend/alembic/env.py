@@ -29,8 +29,19 @@ if database_url:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+#
+# Skipped when the caller sets ``config.attributes["configure_logger"] = False``
+# (alembic's own cookbook switch). The CLI never sets it, so every `alembic ...`
+# command configures logging exactly as before. The test harness runs alembic
+# IN-PROCESS (tests/_alembic_harness.py::run_alembic) and sets it: there,
+# ``fileConfig`` would close every live handler, replace pytest's capture
+# handlers on the root logger and — via ``disable_existing_loggers`` —
+# permanently disable every ``app.*`` logger already created in the test
+# process. The harness installs the same handler shape alembic.ini declares for
+# the duration of the call instead, and restores the previous state after.
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
