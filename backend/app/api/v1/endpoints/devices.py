@@ -687,6 +687,49 @@ async def get_device_identity(
 # ---------------------------------------------------------------------------
 
 
+def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
+    """The 502 ``detail`` relaying a non-2xx coord pairing answer.
+
+    Coord's pairing refusals are ``{error, code, hint?}`` (plus a token-free
+    per-tenant ``results`` list on a collect-mode batch refusal). ``code``,
+    ``hint`` and the distinct per-tenant ``skipped_reason`` values ride as
+    their own fields, parsed from the FULL body:
+    ``coord_body`` is truncated, and a multi-tenant refusal routinely runs
+    past 500 chars, so a client cannot reliably parse it to tell "not a
+    member" from a retryable coord-side failure or a burned pairing nonce.
+    """
+    detail: dict[str, Any] = {
+        "coord_status": resp.status_code,
+        "coord_body": resp.text[:500],
+    }
+    try:
+        refusal = resp.json()
+    except ValueError:
+        refusal = None
+    if isinstance(refusal, dict):
+        for field in ("code", "hint"):
+            value = refusal.get(field)
+            if isinstance(value, str) and value:
+                detail[f"coord_{field}"] = value
+        # A batch refusal's top-level code (`no_tenant_authorized`) does not
+        # say WHY; the per-tenant reasons do. Relay only the distinct reason
+        # strings — never the entries themselves.
+        results = refusal.get("results")
+        if isinstance(results, list):
+            reasons = sorted(
+                {
+                    entry["skipped_reason"]
+                    for entry in results
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("skipped_reason"), str)
+                    and entry["skipped_reason"]
+                }
+            )
+            if reasons:
+                detail["coord_skip_reasons"] = reasons
+    return detail
+
+
 @router.post(
     "/pair-confirm",
     response_model=PairConfirmResponse,
@@ -771,7 +814,7 @@ async def pair_confirm(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"coord_status": resp.status_code, "coord_body": resp.text[:500]},
+            detail=_coord_refusal_detail(resp),
         )
 
     try:
@@ -959,7 +1002,7 @@ async def pair_cli(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"coord_status": resp.status_code, "coord_body": resp.text[:500]},
+            detail=_coord_refusal_detail(resp),
         )
 
     try:
