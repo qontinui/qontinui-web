@@ -327,6 +327,18 @@ describe("/admin/coord/computers/[computerId]", () => {
     );
   });
 
+  it("says when coord truncated the lane list, and the verdict is not healthy", async () => {
+    httpGet.mockResolvedValue(detailFx({ lanes_truncated: true }));
+    render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-lanes-truncated")).textContent
+    ).toBe("Lanes truncated — some lanes not shown, state not fully known.");
+    expect(screen.getByTestId("coord-computer-lanes")).toBeTruthy();
+    expect(screen.getByTestId("coord-computer-health").textContent).toContain(
+      "samples stale"
+    );
+  });
+
   it("reads services_reported: false as unknown — never 'no watched service' or 0 down", async () => {
     httpGet.mockResolvedValue(detailFx({ services_reported: false }));
     render(<CoordComputerDetailPage />);

@@ -124,14 +124,17 @@ export function computerFx(
     lanes,
     // Coord's `fold_sample_state`.
     samples_state:
-      lanes.length === 0
-        ? newest === null
-          ? "unknown"
-          : "stale"
-        : lanes.every((l) => l.freshness.state === "fresh")
-          ? "fresh"
-          : "stale",
+      rest.lanes_truncated === true
+        ? "stale"
+        : lanes.length === 0
+          ? newest === null
+            ? "unknown"
+            : "stale"
+          : lanes.every((l) => l.freshness.state === "fresh")
+            ? "fresh"
+            : "stale",
     newest_sample_age_secs: newest,
+    lanes_truncated: false,
     sample_stale_after_secs: 90,
     services_reported: true,
     services_total: 3,

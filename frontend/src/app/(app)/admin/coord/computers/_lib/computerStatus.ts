@@ -256,6 +256,11 @@ export interface ComputerSummaryWire {
   samples_state: string;
   /** Age of the newest sample on this computer, any lane — `null` = never sampled (UNKNOWN). */
   newest_sample_age_secs: number | null;
+  /**
+   * `true` = coord hit its per-lane-class cap (16) and did not enumerate
+   * every lane; `samples_state` is then never `fresh`.
+   */
+  lanes_truncated: boolean;
   sample_stale_after_secs: number;
   /** `false` = no service row was ever stored — `services_failed: 0` is then UNKNOWN. */
   services_reported: boolean;
@@ -505,6 +510,8 @@ export interface NormalizedComputer {
   samplesState: string;
   /** Coord's `newest_sample_age_secs` — `null` = never sampled. */
   newestSampleAgeSecs: number | null;
+  /** Coord's `lanes_truncated` — some lanes were not listed. */
+  lanesTruncated: boolean;
   /**
    * Down units (failed or inactive). `null` when `services_reported` is
    * false: coord then sends `services_failed: 0`, and that zero is UNKNOWN.
@@ -552,6 +559,7 @@ export function normalizeComputer(
     lanes: c.lanes,
     samplesState: c.samples_state,
     newestSampleAgeSecs: num(c.newest_sample_age_secs),
+    lanesTruncated: c.lanes_truncated === true,
     servicesFailed: reported ? c.services_failed : null,
     servicesTotal: reported ? c.services_total : null,
     lastEvent: c.last_event,
