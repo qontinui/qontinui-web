@@ -1,12 +1,14 @@
 # Console UI Style Guide
 
-**Version:** 0.2.3 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+**Version:** 0.2.4 (Phase 1 — §3 filled in from the shipped primitives; §3.3
 records the patterns the first post-guide page had to add; §3.4 records the
-alerts page's retirement and the Dev Ops Conditions panel)
-**Last Updated:** 2026-09-18
+alerts page's retirement and the Dev Ops Conditions panel; §3.5 adds the share
+primitives)
+**Last Updated:** 2026-09-27
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
-`2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8
+`2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
+§3.5 from `2026-08-27-operator-touch-read-and-surface` Phase C3
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -1302,6 +1304,7 @@ same table. Every module doc cites its rule number and links this file.
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
+| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.5](#35-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, "data-testid"? }[]`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three (deleted with the alerts page, §3.4) each
@@ -1462,6 +1465,42 @@ came to render `machines 8` beside thousands of unresolved criticals (plan
 **a second strip is allowed when it answers a second question that the first
 strip's verdict does not depend on, and it sits directly under the first.**
 It is not licence for a strip per section.
+
+### 3.5 The share primitives — recorded under §6.4
+
+Plan `2026-08-27-operator-touch-read-and-surface` Phase C3 built
+`/admin/coord/operator-touches`, whose operator half answers a STRATEGIC
+question — *"these four classes are 60% of my interruptions; which do I make
+policy about?"* — and the console had nothing to draw that with. No primitive
+in `components/console/` rendered a share, a percentage or a ranked
+distribution; `RecordRow`'s slots are identity, label, status, reason and time;
+and the only two percentage formatters on operator surfaces were a scalar
+(`MergeOrchestrationSettings`' `fmtRate`) and a private helper
+(`PlanCoveragePanel`'s `share()`). §6.4 allows compose or extend; this is the
+extension, in the same PR as the page that needed it.
+
+| Export | What it is |
+|---|---|
+| `share(n, d)` / `shareOfFraction(f)` (`console/share.ts`) | The ONE part-of-a-whole formatter. **Promoted, not rewritten**: it is `PlanCoveragePanel`'s `share()`, which now imports it. `100%` and `0%` only at the exact ends; `>99.9%` / `<0.1%` rather than a rounding that asserts full or no coverage; and `SHARE_UNKNOWN` (`–`) for a share over nothing — a zero/negative/unknown whole, or a part outside it. `0 of 0` used to compute to `100%`. |
+| `ShareBar` | The glyph: a fixed-width track, a fill, and the `share()` text in mono. A known zero is an empty SOLID track; an unknown share is an empty DASHED track and `–` — the two must never look alike (R6's dash rule, applied to a bar). |
+| `ShareList` | A ranked distribution: one line per class — label (truncating, `title` for the full text), optional `detail` from `sm` up, the count, the `ShareBar`. **It ranks itself** (count descending, stable on ties), so ranking is a property of the primitive rather than a hope about its input. |
+
+Three rules, each held by the primitive rather than left to a caller:
+
+- **The bar is neutral — never an attention hue.** A share is a measurement of
+  the whole surface, the same kind of thing as a `HealthStrip` count badge, and
+  says nothing about whose move a line is (R3). Painting the largest class red
+  would spend the loudest signal in the console on "big". `share.test.tsx`
+  asserts no red or amber class is emitted.
+- **A `ShareList` line is not a button.** It is an aggregate, read and not acted
+  on; a per-line action is what `RecordRow` + R5 are for. A surface that wants
+  both — an aggregate and its records — renders a `ShareList` for the first and
+  a `RecordList` for the second, and says which question each answers.
+- **Labels are human words (R8).** The wire token belongs in the line's `title`
+  or in a record's expanded detail, never as the label.
+
+Density: a `ShareList` line is `px-3 py-1.5` + `text-sm` — inside §5's 40px
+row budget with room to spare, because a ranked aggregate is read as one block.
 
 ---
 
