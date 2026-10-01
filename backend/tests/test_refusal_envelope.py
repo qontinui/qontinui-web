@@ -244,6 +244,55 @@ async def test_rejected_device_token_names_the_next_action(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "kind", "discriminator"),
+    [
+        ("CoordTokenForeignIssuerError", "sign_in", "foreign_issuer"),
+        ("CoordTokenInvalidError", "sign_in", "failed_verification"),
+        ("CoordTokenExpiredError", "retry_later", "expired"),
+        ("CoordTokenNotYetValidError", "set_setting", "not_yet_valid"),
+    ],
+)
+async def test_dual_auth_bearer_rejection_sends_a_browser_user_to_sign_in(
+    error: str, kind: str, discriminator: str
+) -> None:
+    """With no browser session, a bearer that is really an expired browser
+    token fails device verification as foreign-issuer or unverifiable. On the
+    dual-auth path that is a sign-in, not "report a defect"."""
+    from app.services.coord_jwks import coord_jwks_client
+
+    with (
+        patch.object(
+            coord_jwks_client,
+            "verify_token",
+            AsyncMock(side_effect=_token_error(error)),
+        ),
+        pytest.raises(HTTPException) as info,
+    ):
+        await deps._resolve_actor_principal(
+            None, HTTPAuthorizationCredentials(scheme="Bearer", credentials="t")
+        )
+    assert info.value.status_code == 401
+    assert _kind(info.value) == ("credential_rejected", kind, discriminator)
+
+
+@pytest.mark.asyncio
+async def test_expired_device_token_says_a_fresh_token_is_needed() -> None:
+    from app.services.coord_jwks import coord_jwks_client
+
+    with (
+        patch.object(
+            coord_jwks_client,
+            "verify_token",
+            AsyncMock(side_effect=_token_error("CoordTokenExpiredError")),
+        ),
+        pytest.raises(HTTPException) as info,
+    ):
+        await deps._verify_device_jwt("t")
+    assert "fresh token" in str(info.value.detail)
+
+
+@pytest.mark.asyncio
 async def test_unreachable_key_set_is_retry_later() -> None:
     from app.services.coord_jwks import CoordJWKSUnavailableError, coord_jwks_client
 
@@ -492,6 +541,9 @@ async def test_coord_proxy_write_transport_failures(
         assert target is None
     else:
         assert target == operations._REREAD_BEFORE_RETRY
+        # The human sentence carries it too: a reader rendering only the
+        # `retry_later` kind drops the target, and must still be warned.
+        assert "re-read" in str(info.value.detail)
 
 
 class _Answering:

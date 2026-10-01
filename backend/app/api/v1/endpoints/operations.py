@@ -968,7 +968,15 @@ def _coord_timeout(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
-        "timeout waiting for coord",
+        # The sentence carries the re-read too: a reader rendering only
+        # `retry_later` drops its target, so the warning must not live there
+        # alone.
+        (
+            "timeout waiting for coord; the change may have been applied, "
+            "so re-read the current state before retrying"
+            if write
+            else "timeout waiting for coord"
+        ),
         discriminator="coord_write_timeout" if write else "coord_timeout",
         target=_REREAD_BEFORE_RETRY if write else None,
         glossary_terms=[GlossaryTerm.coord],
@@ -1415,7 +1423,8 @@ async def _proxy_coord_write(
             logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise _coord_answer_lost(
                 f"coord's answer was lost in transit ({type(exc).__name__}); "
-                "the change may have been applied",
+                "the change may have been applied, so re-read the current "
+                "state before retrying",
                 not_json=False,
             ) from exc
     if resp.status_code >= 400:
@@ -1435,7 +1444,8 @@ async def _proxy_coord_write(
         )
         raise _coord_answer_lost(
             f"coord answered {resp.status_code} with a body that is not "
-            "JSON; the change may have been applied",
+            "JSON; the change may have been applied, so re-read the current "
+            "state before retrying",
             not_json=True,
         ) from exc
 

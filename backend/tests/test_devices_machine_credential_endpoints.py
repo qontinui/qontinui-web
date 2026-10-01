@@ -441,6 +441,18 @@ class TestSelfMintEndpoint:
         app.include_router(router, prefix=API_PREFIX)
         return app
 
+    def _served_app(self) -> FastAPI:
+        """:meth:`_app` plus the production HTTP exception handler, for the
+        tests that assert the served body (top-level ``error`` and the nested
+        ``refusal``) rather than the bare ``detail``."""
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        app = self._app()
+        app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+        return app
+
     def _verify(self, claims):
         return patch(
             "app.api.deps._verify_device_jwt",
@@ -578,7 +590,7 @@ class TestSelfMintEndpoint:
 
     @pytest.mark.parametrize("provenance", ["bootstrap", "unknown", None])
     def test_non_paired_provenance_is_403(self, provenance) -> None:
-        client = TestClient(self._app())
+        client = TestClient(self._served_app())
         with (
             self._verify(_device_claims(mint_provenance=provenance)),
             self._coord(),
@@ -586,16 +598,17 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        # The refusal envelope is composed by the production handler, which
-        # this bare app does not register; the plain detail is the sentence.
-        assert "pairing-issued device token" in resp.json()["detail"]
+        body = resp.json()
+        assert body["error"] == "device_token_provenance_refused"
+        assert body["refusal"]["discriminator"] == "device_token_provenance_refused"
+        assert body["refusal"]["next_action"]["kind"] == "pair_device"
         mock_mint.assert_not_called()
 
     @pytest.mark.parametrize("sub_type", ["agent", "attach_grant", "create_grant"])
     def test_non_device_principal_is_403(self, sub_type) -> None:
         # The anonymous /agents/credential mint names the device in ``sub``
         # but is an ``agent``; grants carry their SOURCE device_id.
-        client = TestClient(self._app())
+        client = TestClient(self._served_app())
         with (
             self._verify(_device_claims(sub_type=sub_type)),
             self._coord(),
@@ -603,9 +616,9 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"] == (
-            "This route accepts only a paired device token."
-        )
+        body = resp.json()
+        assert body["error"] == "not_a_device_principal"
+        assert body["refusal"]["discriminator"] == "not_a_device_principal"
         mock_mint.assert_not_called()
 
     def test_coord_404_is_403_device_not_owned(self) -> None:

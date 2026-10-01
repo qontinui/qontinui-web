@@ -36,6 +36,7 @@ from app.core.refusal import (
     GlossaryTerm,
     NextActionKind,
     RefusalCode,
+    RefusalHTTPException,
     refusal_error,
 )
 from app.models.user import User
@@ -203,7 +204,14 @@ def _token_rejection_refusal(exc: Exception, message: str) -> HTTPException:
 
     * expired → ``retry_later``: device tokens are short-lived and the
       runner re-mints them on its own, so an expired one is ordinary
-      lifecycle. Re-pairing would be a heavy, wrong remedy.
+      lifecycle. Re-pairing would be a heavy, wrong remedy. The sentence
+      says a FRESH token is what makes the retry work, because a static
+      holder (a token file, a script) retrying the same token fails forever.
+    * On the dual-auth path a foreign-issuer or unverifiable bearer is most
+      often an expired browser sign-in token, so
+      :func:`_resolve_actor_principal` re-states those two as ``sign_in``
+      (see :func:`_as_sign_in_refusal`). The ``report_defect`` arms below
+      hold for the device-only dependencies.
     * not yet valid → ``set_setting`` the system clock: the token is fine,
       the clocks disagree.
     * foreign issuer → ``report_defect``: this backend and the caller trust
@@ -227,6 +235,7 @@ def _token_rejection_refusal(exc: Exception, message: str) -> HTTPException:
     elif isinstance(exc, CoordTokenExpiredError):
         discriminator = "expired"
         kind = NextActionKind.retry_later
+        message = f"{message.rstrip('.')}; obtain a fresh token, then retry."
     elif isinstance(exc, CoordTokenNotYetValidError):
         discriminator = "not_yet_valid"
         kind = NextActionKind.set_setting
@@ -420,6 +429,37 @@ class ActorPrincipal:
         return f"ActorPrincipal(kind={self.kind!r}, user_id={self.user.id!r})"
 
 
+#: Verification failures that, on the dual-auth path, are most often a
+#: browser sign-in token that expired or is otherwise unusable (its ``kid`` is
+#: not in coord's key set, so it reads as foreign), not a device fault.
+_DUAL_AUTH_SIGN_IN_DISCRIMINATORS = frozenset({"foreign_issuer", "failed_verification"})
+
+
+def _as_sign_in_refusal(exc: RefusalHTTPException) -> RefusalHTTPException:
+    """Re-state a device-verification refusal for a dual-auth caller.
+
+    With no browser session resolved, the bearer is tried as a device token.
+    A browser token that expired fails that check as foreign-issuer or
+    unverifiable, and telling a signed-out browser user "this is a defect,
+    report it" sends them nowhere. For those two failures the next action is
+    ``sign_in``; every other refusal passes through unchanged.
+    """
+    refusal = exc.refusal
+    if refusal.discriminator not in _DUAL_AUTH_SIGN_IN_DISCRIMINATORS:
+        return exc
+    return refusal_error(
+        exc.status_code,
+        refusal.code,
+        NextActionKind.sign_in,
+        str(exc.detail),
+        discriminator=refusal.discriminator,
+        glossary_terms=refusal.glossary_terms,
+        error_code=exc.error_code,
+        headers=exc.headers,
+        metadata=exc.metadata,
+    )
+
+
 async def _resolve_actor_principal(
     user: User | None,
     credentials: HTTPAuthorizationCredentials | None,
@@ -450,7 +490,10 @@ async def _resolve_actor_principal(
         return ActorPrincipal(user=user, kind="operator")
 
     if credentials is not None:
-        _claims, device_user = await _verify_device_jwt(credentials.credentials)
+        try:
+            _claims, device_user = await _verify_device_jwt(credentials.credentials)
+        except RefusalHTTPException as exc:
+            raise _as_sign_in_refusal(exc) from exc
         return ActorPrincipal(user=device_user, kind="device")
 
     raise refusal_error(
