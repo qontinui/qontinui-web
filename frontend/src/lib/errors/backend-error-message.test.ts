@@ -255,6 +255,22 @@ describe("readErrorBody — the Refusal envelope", () => {
     expect(messageFromErrorBody(body, 409)).toBe(RENDERED);
   });
 
+  it("drops the quoted target before cutting into the action clause", () => {
+    const long = {
+      ...refusal,
+      next_action: { kind: "set_setting", target: "x".repeat(150) },
+    };
+    const body = JSON.stringify({ refusal: long });
+    const full = readErrorBody(body, 409, 10_000).sentence;
+    expect(full.length).toBeGreaterThan(MAX_CAUSE_LENGTH);
+    const sentence = readErrorBody(body, 409, MAX_CAUSE_LENGTH).sentence;
+    expect(sentence.length).toBeLessThanOrEqual(MAX_CAUSE_LENGTH);
+    // The action clause survives whole; only the target was left out.
+    expect(sentence.endsWith(".")).toBe(true);
+    expect(sentence).not.toContain("…");
+    expect(sentence).not.toContain("xxxx");
+  });
+
   it("reads body.detail.refusal (a dict detail wrapped by FastAPI)", () => {
     const body = JSON.stringify({ detail: { error: "x", refusal } });
     expect(readErrorBody(body, 409).sentence).toBe(RENDERED);
