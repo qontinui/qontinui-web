@@ -15,7 +15,7 @@
  *   page (`deriveTouchesHealth`). The verdict arrives in the same payload as
  *   the list (plan C3c), so there is no second fetch.
  * - **The strategic aggregate** — reason classes ranked by share, as a
- *   `<ShareList>` (style guide §3.5). Aggregate, read-only, no per-line action:
+ *   `<ShareList>` (style guide §3.6). Aggregate, read-only, no per-line action:
  *   the operator's question is which classes are worth a policy.
  * - **The record feed** — `<RecordList>` of `<OperatorTouchRow>`, human words
  *   on the row and coord's vocabulary only in the expanded detail (R8, R5).

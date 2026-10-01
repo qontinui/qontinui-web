@@ -5,7 +5,7 @@
  * distribution of such parts.
  *
  * **Recorded under §6.4** in `frontend/docs/console-ui-style-guide.md`
- * §3.5: the guide's primitives had no share, percentage or ranked-distribution
+ * §3.6: the guide's primitives had no share, percentage or ranked-distribution
  * concept at all (`RecordRow`'s slots are identity/label/status/reason/time),
  * and plan `2026-08-27-operator-touch-read-and-surface` Phase C3 needed one for
  * the operator-touch page's strategic aggregate — *"these four classes are 60%
