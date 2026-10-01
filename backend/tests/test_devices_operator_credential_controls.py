@@ -1472,11 +1472,17 @@ class TestFailClosedEdges:
 
     @contextmanager
     def _pair_confirm(
-        self, device_id: UUID, coord_status: int = 201
+        self,
+        device_id: UUID,
+        coord_status: int = 201,
+        coord_body: dict[str, Any] | None = None,
     ) -> Iterator[AsyncMock]:
         coord_resp = MagicMock(spec=httpx.Response)
         coord_resp.status_code = coord_status
-        coord_resp.json.return_value = {"device_id": str(device_id), "token": "jwt-x"}
+        coord_resp.json.return_value = coord_body or {
+            "device_id": str(device_id),
+            "token": "jwt-x",
+        }
         coord_resp.text = ""
         post = AsyncMock(return_value=coord_resp)
         with (
@@ -1510,6 +1516,29 @@ class TestFailClosedEdges:
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
         assert "jwt-x" not in resp.text
+
+    def test_pair_confirm_collect_mode_refuses_a_revoked_device(self) -> None:
+        """Collect mode (multi-tenant) is refused too: no token and no
+        per-tenant outcome reaches the browser for a revoked device."""
+        device_id = uuid4()
+        body = {
+            "device_id": str(device_id),
+            "token": "jwt-x",
+            "collect": True,
+            "results": [{"tenant_id": str(uuid4()), "status": "minted"}],
+        }
+        with (
+            self._pair_confirm(device_id, coord_body=body),
+            patch.object(
+                device_crud,
+                "get_credential_revoked_at",
+                AsyncMock(return_value=datetime.now(UTC)),
+            ),
+        ):
+            resp = self._confirm(str(device_id))
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_revoked"
+        assert "jwt-x" not in resp.text and "minted" not in resp.text
 
     def test_pair_confirm_coord_refusal_discloses_no_revocation_state(self) -> None:
         device_id = uuid4()
