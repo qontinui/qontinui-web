@@ -236,25 +236,42 @@ export function LaneTable({
   nowMs: number;
   showSparkline: boolean;
 }) {
+  // Coord caps lane enumeration per lane class; when it hit the cap the rows
+  // below are not every lane, so the computer's sample state is not fully
+  // known (coord never folds it to `fresh` then). Said above whatever follows.
+  const truncatedNote = computer.lanesTruncated ? (
+    <p
+      className="text-xs text-muted-foreground italic m-0"
+      data-testid="coord-computer-lanes-truncated"
+    >
+      Lanes truncated — some lanes not shown, state not fully known.
+    </p>
+  ) : null;
   if (computer.lanes.length === 0) {
     // Coord drops a lane silent > 30 min from `lanes`, so an empty array is
     // either "all lanes went silent" (samples_state stale, with the newest
     // sample's age) or "never sampled" — never an idle machine.
     const stale = computer.samplesState === "stale";
     return (
-      <p
-        className="text-sm text-muted-foreground italic"
-        data-testid={
-          stale ? "coord-computer-lanes-stale" : "coord-computer-lanes-unknown"
-        }
-      >
-        {emptyLanesText(computer, fetchedAtMs, nowMs)}
-      </p>
+      <>
+        {truncatedNote}
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid={
+            stale
+              ? "coord-computer-lanes-stale"
+              : "coord-computer-lanes-unknown"
+          }
+        >
+          {emptyLanesText(computer, fetchedAtMs, nowMs)}
+        </p>
+      </>
     );
   }
   const cores = computer.capacity.cpuCores;
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto space-y-1">
+      {truncatedNote}
       <table
         className="w-full text-left text-xs"
         data-testid="coord-computer-lanes"
