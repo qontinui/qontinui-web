@@ -60,6 +60,104 @@ describe("pairConfirmErrorMessage", () => {
       "This account isn't a member of the workspace(s) this device asked to join."
     );
   });
+  it("maps coord's refusal code instead of assuming membership", () => {
+    expect(
+      pairConfirmErrorMessage(
+        { detail: { coord_status: 403, coord_code: "probe_failed" } },
+        502
+      )
+    ).toBe("Coord hit a temporary error while pairing. Try again shortly.");
+    expect(
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            coord_status: 403,
+            coord_code: "device_owned_by_other_user",
+          },
+        },
+        502
+      )
+    ).toBe("This device is already paired to a different account.");
+    expect(
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            coord_status: 403,
+            coord_code: "tenant_membership_required",
+          },
+        },
+        502
+      )
+    ).toBe(
+      "This account isn't a member of the workspace this device asked to join."
+    );
+  });
+  it("names an unmapped coord code rather than guessing", () => {
+    expect(
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            coord_status: 403,
+            coord_code: "credential_not_pairing_capable",
+          },
+        },
+        502
+      )
+    ).toBe(
+      "Pairing was refused (coord HTTP 403: credential_not_pairing_capable)."
+    );
+  });
+  it("says to restart pairing when coord used up the request", () => {
+    expect(
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            coord_status: 403,
+            coord_code: "no_tenant_authorized",
+            coord_hint: "restart pairing",
+          },
+        },
+        502
+      )
+    ).toBe(
+      "None of the workspaces this device asked to join could be paired. Start pairing again from your device."
+    );
+  });
+  it("derives a batch refusal's message from its per-tenant reasons", () => {
+    const batch = (reasons: string[]) =>
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            coord_status: 403,
+            coord_code: "no_tenant_authorized",
+            coord_skip_reasons: reasons,
+          },
+        },
+        502
+      );
+    expect(batch(["not_a_member"])).toBe(
+      "This account isn't a member of any of the workspaces this device asked to join."
+    );
+    expect(batch(["not_a_member", "probe_failed"])).toBe(
+      "Coord hit a temporary error while pairing. Try again shortly."
+    );
+    expect(batch(["not_a_member", "user_not_provisioned"])).toMatch(
+      /single sign-on/
+    );
+    expect(batch(["not_a_member", "user_mismatch"])).toBe(
+      "None of the workspaces this device asked to join could be paired."
+    );
+  });
+  it("tells the user to restart after an expired or reused request", () => {
+    expect(
+      pairConfirmErrorMessage(
+        { detail: { coord_status: 401, coord_code: "unknown_state" } },
+        502
+      )
+    ).toBe(
+      "This pairing request has expired or was already used. Start pairing again from your device."
+    );
+  });
   it("names another coord status", () => {
     expect(
       pairConfirmErrorMessage({ detail: { coord_status: 500 } }, 502)
