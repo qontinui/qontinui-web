@@ -361,7 +361,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.computer_services.reported_state_changed_at IS
-            'The state_changed_at exactly as the reporter sent it, before coord clamped a future value to now(). A same-state report carrying the same raw value is the same transition, so state_changed_at (coord''s clock) is kept and dwell keeps growing on a fast-clock box.'
+            'The state_changed_at exactly as the reporter sent it, before coord clamped a future value to now(). A same-state report carrying the same raw value is the same transition, so the stored state_changed_at (coord''s now() if it was clamped on first sight, else the reported value) is kept and dwell keeps growing on a fast-clock box.'
         """
     )
     op.execute(
