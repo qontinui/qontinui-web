@@ -13,9 +13,11 @@ coord authors **zero** DDL (``[policy: alembic-sole-authorship]``), so the
 table lands here, in qontinui-web, and must be DEPLOYED before coord's
 ``POST /coord/devices/me/spawn-admission`` routes read and write it. coord is
 expected to read it readiness-gated; whatever coord answers while the table is
-absent, the runner treats any non-grant answer (including a 404 from a coord
-that does not serve the routes) as admission UNKNOWN and falls back to its
-local token bucket.
+absent, the runner client is expected (plan
+``2026-10-01-runner-spawn-bursts-are-unregulated-coord-must-admit-spawns-per-machine``,
+§3 "Offline / coord-unreachable") to treat any non-grant answer, a 404 from a
+coord that does not serve the routes included, as admission UNKNOWN and fall
+back to its local token bucket.
 
 The re-point rule
 =================

@@ -196,6 +196,8 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
                 ),
                 {k: v for k, v in grant.items() if k not in ("count", "id")},
             )
+            # ``id`` was omitted: the insert succeeding is what proves the
+            # gen_random_uuid() default (``id`` is a NOT NULL primary key).
             generated_id = inserted.scalar_one()
             defaults = conn.execute(
                 text(
@@ -207,8 +209,6 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
                 ),
                 {"id": generated_id},
             ).one()
-        # ``id`` was omitted, so a non-null id proves the gen_random_uuid() default.
-        assert generated_id is not None
         assert tuple(defaults) == (1, [], None, None, None, None, None, True)
 
         # A cumulative report row with count 0 is legitimate.
