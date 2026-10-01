@@ -298,7 +298,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     render(<CoordComputerDetailPage />);
     const note = await screen.findByTestId("coord-computer-lanes-stale");
     expect(note.textContent).toBe(
-      "Samples stale, newest 40m ago — no lane has sampled in the last 30 min, so current usage is unknown (not idle)."
+      "Samples stale, newest 40m ago — no lane of a currently attached device is listed, so current usage is unknown (not idle)."
     );
     expect(screen.queryByTestId("coord-computer-lanes")).toBeNull();
     expect(screen.queryByTestId("coord-computer-lanes-unknown")).toBeNull();
@@ -335,7 +335,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     ).toBe("Lanes truncated — some lanes not shown, state not fully known.");
     expect(screen.getByTestId("coord-computer-lanes")).toBeTruthy();
     expect(screen.getByTestId("coord-computer-health").textContent).toContain(
-      "samples stale"
+      "samples not fully known"
     );
   });
 
