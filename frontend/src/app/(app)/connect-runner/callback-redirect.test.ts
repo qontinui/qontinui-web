@@ -65,6 +65,19 @@ describe("pairConfirmErrorMessage", () => {
       pairConfirmErrorMessage({ detail: { coord_status: 500 } }, 502)
     ).toBe("Pairing was refused (coord HTTP 500).");
   });
+  it("keeps a coord outage's retry advice", () => {
+    expect(
+      pairConfirmErrorMessage(
+        {
+          detail: {
+            error: "SERVICE_UNAVAILABLE",
+            message: "Coord is temporarily unavailable; retry shortly.",
+          },
+        },
+        503
+      )
+    ).toBe("Coord is temporarily unavailable; retry shortly.");
+  });
   it("falls back to message, then the HTTP status", () => {
     expect(pairConfirmErrorMessage({ message: "m" }, 500)).toBe("m");
     expect(pairConfirmErrorMessage(null, 500)).toBe(
