@@ -788,7 +788,10 @@ async def pair_confirm(
     # holds them for the runner's pair-collect. The browser gets only the
     # per-tenant outcomes, so a token is not required here — and the page
     # never puts one in the callback URL.
-    raw_collect = coord_body.get("collect", False)
+    raw_collect = coord_body.get("collect")
+    if raw_collect is None:
+        # Absent and an explicit null both mean the legacy single-tenant flow.
+        raw_collect = False
     if not isinstance(raw_collect, bool):
         # A non-boolean flag must never fall through to the legacy branch,
         # which would put coord's token in the response and callback URL.

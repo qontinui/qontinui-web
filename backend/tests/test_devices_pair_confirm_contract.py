@@ -288,6 +288,12 @@ class TestPairConfirmCollectMode:
         assert "malformed results" in resp.text
         assert "leak" not in resp.text
 
+    def test_null_collect_flag_is_the_legacy_flow(self, client: TestClient) -> None:
+        resp, _ = self._post(client, {**_COORD_OK, "collect": None})
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["collect"] is False
+        assert resp.json()["token"] == "device-token-jwt"
+
     @pytest.mark.parametrize("flag", ["true", 1, "1"])
     def test_non_boolean_collect_flag_is_a_502(
         self, client: TestClient, flag: object
