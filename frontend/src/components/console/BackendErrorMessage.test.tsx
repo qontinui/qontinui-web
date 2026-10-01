@@ -150,7 +150,9 @@ describe("BackendErrorMessage — structured", () => {
       const button = screen.getByRole("button", { name: "Copy command" });
       fireEvent.click(button);
       expect(button.getAttribute("data-copy-state")).toBe("failed");
-      expect(screen.getByRole("status").textContent).toMatch(/copy failed/i);
+      expect(screen.getByText(/copy failed/i).getAttribute("aria-live")).toBe(
+        "polite"
+      );
     } finally {
       if (original) Object.defineProperty(navigator, "clipboard", original);
       else delete (navigator as { clipboard?: unknown }).clipboard;

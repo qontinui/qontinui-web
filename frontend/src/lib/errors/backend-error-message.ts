@@ -112,6 +112,31 @@ export async function backendError(
 }
 
 /**
+ * `renderRefusal`'s sentence within `limit`, without cutting into the
+ * next-action clause where that can be avoided.
+ *
+ * The clause after the headline is what the reader acts on, so an ellipsis
+ * landing inside it defeats the sentence. When the full sentence is over the
+ * limit the producer's quoted target is dropped first (the structured
+ * affordance and `detail` still carry it); only a sentence still over the
+ * limit without it is cut.
+ */
+function boundedRefusalSentence(
+  refusal: DecodedRefusal,
+  limit: number
+): string {
+  const full = renderRefusal(refusal);
+  if (full.length <= limit) return full;
+  return bounded(
+    renderRefusal({
+      ...refusal,
+      next_action: { ...refusal.next_action, target: null },
+    }),
+    limit
+  );
+}
+
+/**
  * The body-level half of {@link readBackendError}, for callers that have
  * already consumed `res.text()`.
  */
@@ -124,7 +149,7 @@ export function readErrorBody(
   if (refusal !== null) {
     return {
       kind: "refusal",
-      sentence: bounded(renderRefusal(refusal), limit),
+      sentence: boundedRefusalSentence(refusal, limit),
       refusal,
     };
   }

@@ -133,11 +133,14 @@ function CopyCommand({ command }: { command: string }) {
           <Copy className="h-3 w-3" aria-hidden />
         )}
       </button>
-      {state === "failed" && (
-        <span className="text-xs text-muted-foreground" role="status">
-          Copy failed — select the command.
-        </span>
-      )}
+      {/* Always mounted, so a screen reader announces the text change. */}
+      <span className="text-xs text-muted-foreground" aria-live="polite">
+        {state === "failed" ? (
+          "Copy failed — select the command."
+        ) : state === "copied" ? (
+          <span className="sr-only">Copied.</span>
+        ) : null}
+      </span>
     </span>
   );
 }
@@ -152,6 +155,7 @@ function NextActionAffordance({ refusal }: { refusal: DecodedRefusal }) {
         href={link.href}
         target="_blank"
         rel="noopener noreferrer"
+        title={`${link.href} (opens in a new tab)`}
         className="font-medium underline underline-offset-2"
         data-refusal-action="open_page"
       >
@@ -160,6 +164,8 @@ function NextActionAffordance({ refusal }: { refusal: DecodedRefusal }) {
     ) : (
       <Link
         href={link.href}
+        prefetch={false}
+        title={link.href}
         className="font-medium underline underline-offset-2"
         data-refusal-action="open_page"
       >
@@ -231,14 +237,14 @@ export function BackendErrorMessage({
         <span className="text-xs text-muted-foreground" data-refusal-terms>
           Terms:{" "}
           {refusal.glossary_terms.map((id, i) => (
-            <span key={id}>
+            <span key={`${i}:${id}`}>
               {i > 0 && ", "}
               <GlossaryTerm id={id} />
             </span>
           ))}
           {refusal.unrecognised_glossary_terms.map((id, i) => (
             <span
-              key={`unrecognised:${id}`}
+              key={`unrecognised:${i}:${id}`}
               title="Not in this version's glossary"
               data-glossary-unrecognised={id}
             >
