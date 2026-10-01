@@ -47,6 +47,11 @@ export function pairConfirmErrorMessage(
     return b.detail;
   }
   if (b.detail && typeof b.detail === "object") {
+    // A coord outage is relayed as {error, message} carrying retry advice.
+    const nested = (b.detail as { message?: unknown }).message;
+    if (typeof nested === "string" && nested) {
+      return nested;
+    }
     // A coord refusal is relayed as {coord_status, coord_body}.
     const coordStatus = (b.detail as { coord_status?: unknown }).coord_status;
     if (coordStatus === 403) {
