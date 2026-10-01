@@ -169,6 +169,7 @@ export function serviceFx(
   over: Partial<ComputerServiceWire> = {}
 ): ComputerServiceWire {
   const active = over.active_state ?? "active";
+  const age = over.observed_age_secs ?? 60;
   return {
     unit: "actions.runner.qontinui-web.merytshost-1.service",
     kind: "gh_actions_runner",
@@ -183,8 +184,11 @@ export function serviceFx(
     state_changed_at: "2026-09-30T01:48:00Z",
     runner_name: "merytshost-1",
     repo: "qontinui-web",
-    observed_at: "2026-09-30T11:59:00Z",
-    // Coord's `service_is_down`.
+    observed_at: new Date(Date.now() - age * 1000).toISOString(),
+    observed_age_secs: age,
+    // Coord: `observed_age_secs > REPORT_STALE_AFTER_SECS`.
+    stale: age > 900,
+    // Coord's `service_is_down` — the last reported state, whatever its age.
     down: active === "failed" || active === "inactive",
     ...over,
   };
@@ -226,7 +230,10 @@ export function detailFx(
       ...over,
       services_reported: reported,
       services_total: reported ? services.length : 0,
-      services_failed: reported ? services.filter((s) => s.down).length : 0,
+      // Coord's `service_counts_as_down`: down AND not stale.
+      services_failed: reported
+        ? services.filter((s) => s.down && !s.stale).length
+        : 0,
     },
     nowMs
   );
