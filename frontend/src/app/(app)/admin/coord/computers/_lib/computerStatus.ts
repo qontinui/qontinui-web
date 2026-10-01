@@ -192,7 +192,14 @@ export interface ComputerServiceWire {
   runner_name: string | null;
   repo: string | null;
   observed_at: string;
-  /** `failed` or `inactive` — coord's one "down" predicate (`service_is_down`). */
+  /** Server-computed `now() - observed_at`, whole seconds. */
+  observed_age_secs: number;
+  /**
+   * `true` = coord has not seen this row refreshed for > 900 s: its state is
+   * LAST-KNOWN, not current, and coord does not count it in `services_failed`.
+   */
+  stale: boolean;
+  /** The last REPORTED state is down (`failed` / `inactive`), whatever its age. */
   down: boolean;
 }
 
@@ -1206,6 +1213,19 @@ export function serviceStatus(
       attention: SERVICE_ATTENTION_BY_KIND.unknown,
     };
   }
+  // A row coord has not seen refreshed for > 900 s is last-known even on a
+  // fresh computer (a unit removed from a delta-only reporter is never
+  // deleted). Its `down` is the LAST reported state: never a current red,
+  // and coord does not count it in `services_failed` either.
+  if (s.stale) {
+    const mins = Math.round(s.observed_age_secs / 60);
+    return {
+      kind: "unknown",
+      label: `last known: ${word ?? "unknown"} (${mins} min ago)`,
+      reason: `Coord has not seen this unit reported for ${mins} min, so this is its last known state, not its current one.`,
+      attention: SERVICE_ATTENTION_BY_KIND.unknown,
+    };
+  }
   // Coord's `down` decides, never a second reading of `active_state`.
   const kind: ServiceKind = s.down
     ? "down"
@@ -1559,7 +1579,7 @@ export function deriveComputerDetailHealth(input: {
   const failedServices =
     services === null || computer.servicesFailed === null
       ? null
-      : services.filter((s) => s.down).length;
+      : services.filter((s) => s.down && !s.stale).length;
   const level: ComputersHealth["level"] =
     status.attention === "author"
       ? "red"

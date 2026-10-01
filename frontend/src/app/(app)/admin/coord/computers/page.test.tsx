@@ -339,6 +339,27 @@ describe("/admin/coord/computers/[computerId]", () => {
     );
   });
 
+  it("renders a stale down unit as last known, never a current red, and not in the verdict", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({
+        services: [
+          serviceFx({ active_state: "failed", observed_age_secs: 3600 }),
+        ],
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const status = await screen.findByTestId("coord-computer-service-status");
+    expect(status.getAttribute("data-status")).toBe("unknown");
+    expect(status.textContent).toBe("last known: failed (60 min ago)");
+    // Coord counts it in no `services_failed`, so the computer is not red.
+    expect(
+      screen.getByTestId("coord-computer-health-services").textContent
+    ).toBe("services down 0");
+    expect(screen.getByTestId("coord-computer-health").textContent).toContain(
+      "healthy"
+    );
+  });
+
   it("reads services_reported: false as unknown — never 'no watched service' or 0 down", async () => {
     httpGet.mockResolvedValue(detailFx({ services_reported: false }));
     render(<CoordComputerDetailPage />);
