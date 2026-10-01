@@ -41,9 +41,11 @@ import {
   StatusBadge,
   absoluteTime,
   relativeTime,
+  rowAccentClass,
 } from "@/components/console";
 import {
   COMPUTER_PALETTE,
+  ambiguousClaimants,
   buildComputerRows,
   ciRunnerStatusText,
   computerHref,
@@ -51,8 +53,10 @@ import {
   deriveComputersHealth,
   eventLabel,
   eventSubject,
+  type AmbiguousCiRunnerWire,
   type CiRunnerWire,
   type ComputerRowModel,
+  type NormalizedComputer,
 } from "./_lib/computerStatus";
 import { COMPUTERS_POLL_MS, useComputers } from "./_lib/useComputers";
 import {
@@ -168,6 +172,66 @@ function ComputerRow({
   );
 }
 
+function AmbiguousRunners({
+  runners,
+  computers,
+  retained,
+}: {
+  runners: AmbiguousCiRunnerWire[] | null;
+  computers: NormalizedComputer[];
+  retained: boolean;
+}) {
+  if (runners === null) {
+    return (
+      <p
+        className="text-sm text-muted-foreground italic"
+        data-testid="coord-computers-ambiguous-unknown"
+      >
+        Coord could not read the CI registrar, so whether any runner is claimed
+        by more than one computer is unknown — not none.
+      </p>
+    );
+  }
+  if (runners.length === 0) {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="coord-computers-ambiguous-none"
+      >
+        No CI runner is claimed by more than one computer
+        {retained ? " at the last good read" : ""}.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1" data-testid="coord-computers-ambiguous-list">
+      {runners.map((r) => (
+        <li
+          key={`${r.device_id}:${r.host_key}`}
+          className={`flex flex-wrap items-center gap-x-3 px-3 py-2 text-sm rounded-md border border-border bg-card/30 ${rowAccentClass({ attention: "waiting" })}`}
+          data-testid="coord-computers-ambiguous-row"
+        >
+          <span className="font-mono text-[11px]">
+            {r.runner_name ?? r.host_key}
+          </span>
+          <span className="text-muted-foreground text-xs truncate">
+            {r.repo ?? "repo not reported"}
+          </span>
+          <span
+            className="text-xs"
+            data-testid="coord-computers-ambiguous-claimants"
+          >
+            claimed by {ambiguousClaimants(r, computers).join(", ")}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {ciRunnerStatusText(r)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function UnattributedRunners({
   runners,
   retained,
@@ -244,6 +308,10 @@ export default function CoordComputersPage() {
     read.data?.registrar_read_ok === false
       ? null
       : (read.data?.unattributed_ci_runners ?? null);
+  const ambiguous: AmbiguousCiRunnerWire[] | null =
+    read.data?.registrar_read_ok === false
+      ? null
+      : (read.data?.ambiguous_ci_runners ?? null);
   const health = useMemo(
     () =>
       deriveComputersHealth({
@@ -251,8 +319,9 @@ export default function CoordComputersPage() {
         loaded,
         issue: read.issue,
         unattributed: unattributed === null ? null : unattributed.length,
+        ambiguous: ambiguous === null ? null : ambiguous.length,
       }),
-    [rows, loaded, read.issue, unattributed]
+    [rows, loaded, read.issue, unattributed, ambiguous]
   );
 
   return (
@@ -352,6 +421,32 @@ export default function CoordComputersPage() {
           <p
             className="text-sm text-muted-foreground italic"
             data-testid="coord-computers-unattributed-unknown"
+          >
+            Not read yet — unknown.
+          </p>
+        )}
+      </section>
+
+      <section
+        className="space-y-2"
+        data-testid="coord-computers-ambiguous-section"
+      >
+        <h2 className="text-sm font-medium">Ambiguous CI runners</h2>
+        <p className="text-xs text-muted-foreground m-0">
+          Runners two or more of your computers claim — a cloned image or a
+          moved runner. Coord attributes them to none of them rather than
+          letting the last report win.
+        </p>
+        {loaded ? (
+          <AmbiguousRunners
+            runners={ambiguous}
+            computers={rows.map((r) => r.computer)}
+            retained={read.issue !== null}
+          />
+        ) : (
+          <p
+            className="text-sm text-muted-foreground italic"
+            data-testid="coord-computers-ambiguous-unknown"
           >
             Not read yet — unknown.
           </p>

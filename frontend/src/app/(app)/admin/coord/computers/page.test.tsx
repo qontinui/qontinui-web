@@ -38,6 +38,7 @@ vi.mock("@/services/service-factory", () => ({
 import {
   computerFx,
   detailFx,
+  OTHER_COMPUTER_ID,
   laneFx,
   listFx,
   serviceFx,
@@ -188,6 +189,45 @@ describe("/admin/coord/computers", () => {
     ).toBe("unattributed CI runners 1");
   });
 
+  it("lists a runner two computers claim as ambiguous, naming every claimant", async () => {
+    const a = computerFx({ hostname: "merytshost" });
+    const b = computerFx({
+      computer_id: OTHER_COMPUTER_ID,
+      hostname: "msi-wsl",
+    });
+    httpGet.mockResolvedValue(
+      listFx([a, b], {
+        ambiguous_ci_runners: [
+          {
+            device_id: "aaaaaaaa-0000-4000-8000-000000000002",
+            hostname: "gh-runner-clone-1@qontinui/qontinui-web",
+            runner_name: "clone-1",
+            host_key: "clone-1",
+            repo: "qontinui/qontinui-web",
+            ci_runner_status: "idle",
+            last_seen_at: null,
+            registrar_fresh: true,
+            service_unit: null,
+            service_active_state: null,
+            claimed_by: [
+              COMPUTER_ID,
+              OTHER_COMPUTER_ID,
+              "99999999-0000-4000-8000-000000000009",
+            ],
+          },
+        ],
+      })
+    );
+    render(<CoordComputersPage />);
+    const row = await screen.findByTestId("coord-computers-ambiguous-row");
+    expect(
+      within(row).getByTestId("coord-computers-ambiguous-claimants").textContent
+    ).toBe("claimed by merytshost, msi-wsl, computer 99999999");
+    expect(
+      screen.getByTestId("coord-computers-ambiguous-badge").textContent
+    ).toBe("ambiguous CI runners 1");
+  });
+
   it("reads coord's `registrar_read_ok: false` as unattributed UNKNOWN, not none", async () => {
     httpGet.mockResolvedValue(
       listFx([computerFx()], { registrar_read_ok: false })
@@ -202,6 +242,13 @@ describe("/admin/coord/computers", () => {
     expect(
       screen.getByTestId("coord-computers-unattributed-badge").textContent
     ).toBe("unattributed CI runners –");
+    expect(
+      screen.getByTestId("coord-computers-ambiguous-unknown")
+    ).toBeTruthy();
+    expect(screen.queryByTestId("coord-computers-ambiguous-none")).toBeNull();
+    expect(
+      screen.getByTestId("coord-computers-ambiguous-badge").textContent
+    ).toBe("ambiguous CI runners –");
   });
 });
 

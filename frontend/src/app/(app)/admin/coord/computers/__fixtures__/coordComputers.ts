@@ -75,6 +75,8 @@ export function laneFx(
   };
 }
 
+export const OTHER_COMPUTER_ID = "7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
 export function computerFx(
   over: Partial<ComputerSummaryWire> & { report_age_secs?: number } = {},
   nowMs = Date.now()
@@ -180,11 +182,17 @@ export function listFx(
   computers: ComputerSummaryWire[],
   over: Partial<ComputersListWire> = {}
 ): ComputersListWire {
+  // Coord's `registrar_read_ok.then_some(...)`: a failed registrar read nulls
+  // every runner list, on the body AND on each computer.
+  const ok = over.registrar_read_ok ?? true;
   return {
-    computers,
+    computers: ok
+      ? computers
+      : computers.map((c) => ({ ...c, ci_runners: null })),
     count: computers.length,
-    unattributed_ci_runners: [],
-    registrar_read_ok: true,
+    unattributed_ci_runners: ok ? [] : null,
+    ambiguous_ci_runners: ok ? [] : null,
+    registrar_read_ok: ok,
     schema_pending: false,
     staleness: STALENESS,
     ...over,
@@ -227,6 +235,18 @@ export function detailFx(
     schema_pending: false,
     staleness: STALENESS,
     ...rest,
+    // Coord nulls the registrar-derived lists when its registrar read failed.
+    ...(rest.registrar_read_ok === false
+      ? {
+          ci_runners: null,
+          divergence: null,
+          workloads: {
+            devices: summary.devices,
+            ci_runners: null,
+            agent_sessions: [{ device_id: DEVICE_ID, open_sessions: 2 }],
+          },
+        }
+      : {}),
     // Re-assert the derived fields over `rest`.
     services_reported: summary.services_reported,
     services_total: summary.services_total,
