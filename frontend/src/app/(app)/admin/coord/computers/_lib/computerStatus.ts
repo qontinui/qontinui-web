@@ -192,14 +192,14 @@ export interface ComputerServiceWire {
   runner_name: string | null;
   repo: string | null;
   observed_at: string;
-  /** Server-computed `now() - observed_at`, whole seconds. */
-  observed_age_secs: number;
   /**
-   * `true` = coord has not seen this row refreshed for > 900 s: its state is
-   * LAST-KNOWN, not current, and coord does not count it in `services_failed`.
+   * `now() - observed_at` on coord's database clock, whole seconds. DISPLAY
+   * ONLY (contract A2): a row leaves coord when a report complete for its
+   * kind omits it, so a row present is the machine's last stated view of the
+   * unit; whether that view is current is the computer's own `freshness`.
    */
-  stale: boolean;
-  /** The last REPORTED state is down (`failed` / `inactive`), whatever its age. */
+  observed_age_secs: number;
+  /** The reported state is down (`failed` / `inactive`). Counted in `services_failed`. */
   down: boolean;
 }
 
@@ -1149,6 +1149,19 @@ export function computerStatus(
   return make("healthy", "healthy", freshness.reason);
 }
 
+/**
+ * How long ago coord recorded the row — just the age (`"12m ago"`), for the
+ * caller to put in one sentence. Information only: coord re-records an
+ * UNCHANGED unit only about once per 300 s report cadence, so this can
+ * overstate a unit's silence by up to ~10 min (just under two report
+ * cadences), and a row's age says nothing about whether the unit still
+ * exists. It never changes the badge.
+ */
+export function serviceObservedText(s: ComputerServiceWire): string {
+  const age = num(s.observed_age_secs);
+  return age === null ? "at an unknown time" : formatAge(age);
+}
+
 /** A watched service's state, bucketed. `down` is coord's `down` flag (failed or inactive). */
 export type ServiceKind = "active" | "transitioning" | "down" | "unknown";
 
@@ -1210,19 +1223,6 @@ export function serviceStatus(
       label: word ? `last known: ${word}` : "unknown",
       reason:
         "This computer's report is not fresh, so the unit's current state is unknown; this is what it last reported.",
-      attention: SERVICE_ATTENTION_BY_KIND.unknown,
-    };
-  }
-  // A row coord has not seen refreshed for > 900 s is last-known even on a
-  // fresh computer (a unit removed from a delta-only reporter is never
-  // deleted). Its `down` is the LAST reported state: never a current red,
-  // and coord does not count it in `services_failed` either.
-  if (s.stale) {
-    const mins = Math.round(s.observed_age_secs / 60);
-    return {
-      kind: "unknown",
-      label: `last known: ${word ?? "unknown"} (${mins} min ago)`,
-      reason: `Coord has not seen this unit reported for ${mins} min, so this is its last known state, not its current one.`,
       attention: SERVICE_ATTENTION_BY_KIND.unknown,
     };
   }
@@ -1579,7 +1579,7 @@ export function deriveComputerDetailHealth(input: {
   const failedServices =
     services === null || computer.servicesFailed === null
       ? null
-      : services.filter((s) => s.down && !s.stale).length;
+      : services.filter((s) => s.down).length;
   const level: ComputersHealth["level"] =
     status.attention === "author"
       ? "red"

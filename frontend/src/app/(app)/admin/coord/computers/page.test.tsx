@@ -339,7 +339,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     );
   });
 
-  it("renders a stale down unit as last known, never a current red, and not in the verdict", async () => {
+  it("counts an old down row as down — its age is information only (contract A2)", async () => {
     httpGet.mockResolvedValue(
       detailFx({
         services: [
@@ -349,14 +349,23 @@ describe("/admin/coord/computers/[computerId]", () => {
     );
     render(<CoordComputerDetailPage />);
     const status = await screen.findByTestId("coord-computer-service-status");
-    expect(status.getAttribute("data-status")).toBe("unknown");
-    expect(status.textContent).toBe("last known: failed (60 min ago)");
-    // Coord counts it in no `services_failed`, so the computer is not red.
+    expect(status.getAttribute("data-status")).toBe("down");
+    expect(status.textContent).toBe("✕ failed");
     expect(
       screen.getByTestId("coord-computer-health-services").textContent
-    ).toBe("services down 0");
-    expect(screen.getByTestId("coord-computer-health").textContent).toContain(
-      "healthy"
+    ).toBe("services down 1");
+    // Expand the row (RecordRow's whole line is one button).
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId("coord-computer-service-row")).getAllByRole(
+          "button"
+        )[0]
+      );
+    });
+    expect(
+      (await screen.findByTestId("coord-computer-service-observed")).textContent
+    ).toBe(
+      "Recorded by coord 1h ago (an unchanged unit is re-recorded about every 5 min; currency is this computer's report freshness)"
     );
   });
 
