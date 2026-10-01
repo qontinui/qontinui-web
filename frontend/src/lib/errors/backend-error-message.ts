@@ -111,15 +111,22 @@ export async function backendError(
   return new BackendError(await readBackendError(res, limit), res.status);
 }
 
+/** The shortest target prefix worth quoting; below it the cut target says
+ * nothing and the whole sentence is bounded instead. */
+const MIN_QUOTED_TARGET = 8;
+
 /**
  * `renderRefusal`'s sentence within `limit`, without cutting into the
  * next-action clause where that can be avoided.
  *
  * The clause after the headline is what the reader acts on, so an ellipsis
- * landing inside it defeats the sentence. When the full sentence is over the
- * limit the producer's quoted target is dropped first (the structured
- * affordance and `detail` still carry it); only a sentence still over the
- * limit without it is cut.
+ * landing at the end of the sentence can cut the action itself. When the full
+ * sentence is over the limit, the producer's TARGET is shortened inside its
+ * own quotes (`Set the "workspace_ro…" setting, then try again.`), so the
+ * clause keeps its shape and still says the producer named something. A
+ * target is never dropped: re-rendering with no target would produce the
+ * "it did not name one" sentence, which would be false. When even a short
+ * target does not fit, the whole sentence is bounded as before.
  */
 function boundedRefusalSentence(
   refusal: DecodedRefusal,
@@ -127,13 +134,33 @@ function boundedRefusalSentence(
 ): string {
   const full = renderRefusal(refusal);
   if (full.length <= limit) return full;
-  return bounded(
-    renderRefusal({
-      ...refusal,
-      next_action: { ...refusal.next_action, target: null },
-    }),
-    limit
-  );
+  const target = refusal.next_action.target;
+  if (target !== null) {
+    const withTarget = (t: string) =>
+      renderRefusal({
+        ...refusal,
+        next_action: { ...refusal.next_action, target: t },
+      });
+    // Longest prefix that fits, found by bisection: rendering is monotone in
+    // the target's length once the target is quotable.
+    let lo = MIN_QUOTED_TARGET;
+    let hi = target.length - 1;
+    let best: string | null = null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const candidate = withTarget(
+        `${bounded(target, mid).replace(/…$/, "")}…`
+      );
+      if (candidate.length <= limit) {
+        best = candidate;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best !== null) return best;
+  }
+  return bounded(full, limit);
 }
 
 /**

@@ -255,20 +255,36 @@ describe("readErrorBody — the Refusal envelope", () => {
     expect(messageFromErrorBody(body, 409)).toBe(RENDERED);
   });
 
-  it("drops the quoted target before cutting into the action clause", () => {
+  it("shortens an over-long target inside its quotes, never drops it", () => {
     const long = {
       ...refusal,
       next_action: { kind: "set_setting", target: "x".repeat(150) },
     };
     const body = JSON.stringify({ refusal: long });
-    const full = readErrorBody(body, 409, 10_000).sentence;
-    expect(full.length).toBeGreaterThan(MAX_CAUSE_LENGTH);
+    expect(readErrorBody(body, 409, 10_000).sentence.length).toBeGreaterThan(
+      MAX_CAUSE_LENGTH
+    );
     const sentence = readErrorBody(body, 409, MAX_CAUSE_LENGTH).sentence;
     expect(sentence.length).toBeLessThanOrEqual(MAX_CAUSE_LENGTH);
-    // The action clause survives whole; only the target was left out.
-    expect(sentence.endsWith(".")).toBe(true);
-    expect(sentence).not.toContain("…");
-    expect(sentence).not.toContain("xxxx");
+    expect(sentence).toMatch(
+      /^No workspace folder could be found for this operation\. Set the "x+…" setting, then try again\.$/
+    );
+    expect(sentence).not.toContain("did not name one");
+  });
+
+  it("bounds the whole sentence when not even a short target fits", () => {
+    const long = {
+      ...refusal,
+      next_action: { kind: "set_setting", target: "x".repeat(150) },
+    };
+    const sentence = readErrorBody(
+      JSON.stringify({ refusal: long }),
+      409,
+      40
+    ).sentence;
+    expect(sentence.length).toBeLessThanOrEqual(41);
+    expect(sentence.endsWith("…")).toBe(true);
+    expect(sentence).not.toContain("did not name one");
   });
 
   it("reads body.detail.refusal (a dict detail wrapped by FastAPI)", () => {
