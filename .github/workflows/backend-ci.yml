@@ -471,20 +471,6 @@ jobs:
         # ./backend (one level deeper than the repo root the clone sits beside).
         run: poetry run pip install -e ../../qontinui-cloud-control
 
-      # backend/tests/conftest.py uses Base.metadata.create_all (NOT
-      # alembic) to bootstrap the test DB, so SQLAlchemy will try to
-      # create tables in named schemas without first ensuring the
-      # schemas exist. Models reference `project`, `auth`, and `cloud`
-      # schemas (the last via the qontinui-cloud-control sibling repo
-      # whose models are side-effect-imported in conftest.py); the
-      # postgres service container doesn't run our init-scripts/, so
-      # create them explicitly here. We also `CREATE EXTENSION vector`
-      # — alembic does this in 05a366f58455 but conftest skips alembic,
-      # so create_all hits `UndefinedObjectError: type "vector" does
-      # not exist` whenever a Vector column is materialized. Without
-      # the schema lines, create_all fails with:
-      #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
-      #   does not exist
       # Keep the committed OpenAPI snapshot authoritative. The exporter calls
       # app.openapi() (the FastAPI method — computes the schema from the
       # registered routes with no running server and no DB connection), writes
@@ -579,6 +565,20 @@ jobs:
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
+      # backend/tests/conftest.py uses Base.metadata.create_all (NOT
+      # alembic) to bootstrap the test DB, so SQLAlchemy will try to
+      # create tables in named schemas without first ensuring the
+      # schemas exist. Models reference `project`, `auth`, and `cloud`
+      # schemas (the last via the qontinui-cloud-control sibling repo
+      # whose models are side-effect-imported in conftest.py); the
+      # postgres service container starts with none of them, so
+      # create them explicitly here. We also `CREATE EXTENSION vector`
+      # — alembic does this in 05a366f58455 but conftest skips alembic,
+      # so create_all hits `UndefinedObjectError: type "vector" does
+      # not exist` whenever a Vector column is materialized. Without
+      # the schema lines, create_all fails with:
+      #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
+      #   does not exist
       - name: Create test schemas and extensions
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
