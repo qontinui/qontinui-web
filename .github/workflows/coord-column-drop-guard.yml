@@ -26,7 +26,13 @@
 # change the string the `web-protect-main` ruleset registers (Phase 3 of the
 # plan makes this check REQUIRED, only after this workflow has posted the
 # context on main at least once — a required context that has never posted
-# blocks every PR).
+# blocks every PR). coord's `guard_rerun.rs` `GUARDS` table (added by
+# qontinui-coord#2542) keys on the same string: on a failed run of THIS check
+# it reads the job log for the `UNKNOWN-PENDING-PRECONDITION:` marker and
+# registers a re-run gate, so a renamed check would also leave a stale UNKNOWN
+# red with no gate behind it. A `strategy:` matrix or a job-level `uses:`
+# renames the check run too. backend/tests/test_coord_column_drop_guard.py
+# pins all three.
 #
 # The common case costs no network call: the script exits 0 after an offline
 # AST scan when the changed revisions drop nothing in coord.*. Only a real

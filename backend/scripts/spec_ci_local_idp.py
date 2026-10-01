@@ -20,7 +20,7 @@ The backend then verifies the token exactly as it would a real Cognito
 token — RS256 signature via JWKS, ``iss``, ``aud``, ``exp`` — and
 JIT-provisions the ci-bot ``auth.users`` row. No backend code path is
 stubbed; only the issuer is local. Real-Cognito integration remains
-covered post-deploy by verify-frontend-deploy.yml's authed smoke.
+covered post-deploy by verify-frontend-run.yml's authed smoke.
 
 The key is NOT a secret worth protecting: it is generated per-run,
 trusted only by the run-local backend, and dies with the runner VM.

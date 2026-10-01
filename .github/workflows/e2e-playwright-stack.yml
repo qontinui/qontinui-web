@@ -262,11 +262,16 @@ jobs:
 
       # `npm run build` = build-id injection + `next build` + the standalone
       # sw.js stamp (frontend/package.json). The build bakes NEXT_PUBLIC_*
-      # and the rewrite targets (BACKEND_URL / COORD_URL) in — so this step
-      # deliberately sets none of them, exactly as the `npm run dev` server
-      # this replaces was given none: both fall back to the config's
-      # localhost defaults, and the built app points at the same run-local
-      # stack the test step starts.
+      # and the rewrite targets (BACKEND_URL / COORD_URL) in. A production
+      # build no longer falls back to a localhost backend by itself (plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists,
+      # B5: unset, the `/api/:path*` rewrite and the `src/app/api/v1` route
+      # handlers answer a 503 naming the variable), so this step and the
+      # test step's `next start` both set BACKEND_URL explicitly to the
+      # run-local backend the test step starts — at build time for the
+      # rewrite table, at runtime for the route handlers. COORD_URL stays
+      # unset: no coord runs here, and `/coord-api/*` now answers the same
+      # structured 503 instead of a refused loopback connection.
       #
       # NEXT_PUBLIC_DEV_RESET is the one dev-only dependency the suite
       # ASSERTS on (plan Phase 1): `src/app/dev/reset/page.tsx` renders
@@ -317,6 +322,7 @@ jobs:
         working-directory: ./frontend
         env:
           NEXT_PUBLIC_DEV_RESET: 'true'
+          BACKEND_URL: http://localhost:8000
         run: npm run build
 
       # `npx playwright install --with-deps <engines>` was THREE things fused
@@ -748,6 +754,10 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # Runtime half of the build step's BACKEND_URL: `next start` (the
+          # webServer) inherits this env, and the route handlers read it per
+          # request. See the comment on the build step.
+          BACKEND_URL: http://localhost:8000
           # The config's default, spelled out so the log and the file agree:
           # Playwright's webServer is `next start` on the build above. `dev`
           # is a local-iteration opt-in only (playwright.config.ts).

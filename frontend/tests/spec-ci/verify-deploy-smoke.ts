@@ -1,7 +1,7 @@
 /**
  * Post-deploy public-route behavioral smoke for the production frontend.
  *
- * Invoked by `.github/workflows/verify-frontend-deploy.yml` after a successful
+ * Invoked by `.github/workflows/verify-frontend-run.yml` after a successful
  * Vercel Production deploy. It REUSES the Spec CI gate contract — the same
  * console classifier (`classifyConsole`) and same-origin 5xx scope
  * (`isSameOriginServerError`) — over the app's PUBLIC routes on the public

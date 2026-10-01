@@ -139,7 +139,7 @@ export function usePatternExtraction(
         try {
           logger.debug(
             "Sending fetch request to:",
-            "http://localhost:8000/api/masked-patterns/extract-masked"
+            "/api/masked-patterns/extract-masked"
           );
 
           // Now send the actual request (using relative path through proxy)
