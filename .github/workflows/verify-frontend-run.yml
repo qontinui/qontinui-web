@@ -204,7 +204,8 @@ jobs:
       contents: read
       deployments: read
       # For the "Page on frontend rollback" step (auto-filed de-duped issue —
-      # the one channel that emails repo watchers; see migrate.yml's sibling).
+      # the one channel that emails repo watchers; see migrate.yml's sibling)
+      # and the step that closes that issue once both smokes run clean.
       issues: write
       # LOAD-BEARING for the infrastructure-timeout marker below. Declaring ANY
       # `permissions:` block sets every scope not listed here to `none`, and the
@@ -891,6 +892,69 @@ jobs:
           echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
           exit 1
 
+      # ── Resolve the open frontend-deploy-rollback issue (best-effort) ─────
+      # The page below files ONE open `frontend-deploy-rollback` issue that
+      # "closes manually once a verify run is green" — but nothing acted on a
+      # green run, so the issue outlived the incident (#626 sat open from
+      # 2026-06-19 through months of smoke-green deploys). Mirrors migrate.yml's
+      # "Resolve open migration-failure issue". Both smokes crawl
+      # PROD_PUBLIC_URL — what prod actually serves now, which may be a newer
+      # deploy or a rollback target rather than the dispatched one — so a
+      # clean pass of BOTH settles every page state (rolled back, bad deploy
+      # live): prod is serving a behaviourally clean deploy.
+      # Gated on each smoke's own success, never on a merely green job: an
+      # authed smoke SKIPPED for a creds gap exits 0 yet verified nothing
+      # authed, and an authed regression is exactly what can file this issue.
+      # `validate` already pinned the run to main and a Production deploy on
+      # main. Only an issue last updated BEFORE this job started is closed:
+      # the concurrency group is per deployment, so a run for a NEWER deploy
+      # can file (or comment on) the issue while this run is mid-smoke, and
+      # this run's pass then says nothing about that deploy. Such an issue is
+      # left for the next run to settle. Best-effort, fail-open — never alters
+      # the verify outcome.
+      - name: Resolve open frontend-deploy-rollback issue
+        if: >-
+          success() &&
+          steps.smoke.outcome == 'success' &&
+          steps.authed_smoke.outcome == 'success' &&
+          steps.authed_smoke.outputs.authed_skipped != '1'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          START="${JOB_START_EPOCH:-}"
+          if [ -z "${START}" ] || [ -n "${START//[0-9]/}" ]; then
+            echo "::warning::JOB_START_EPOCH is unset or malformed ('${START}'); cannot tell which issues predate this run, so closing none (best-effort)."
+            exit 0
+          fi
+          # "<number> <updatedAt epoch>" per open issue.
+          OPEN=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label frontend-deploy-rollback \
+            --state open \
+            --json number,updatedAt \
+            --jq '.[] | "\(.number) \(.updatedAt | fromdateiso8601)"' || true)
+          if [ -z "${OPEN}" ]; then
+            echo "No open frontend-deploy-rollback issue."
+            exit 0
+          fi
+          while read -r N UPDATED; do
+            [ -n "${N}" ] || continue
+            UPDATED="${UPDATED%.*}"
+            if [ -z "${UPDATED}" ] || [ -n "${UPDATED//[0-9]/}" ] || [ "${UPDATED}" -ge "${START}" ]; then
+              echo "Leaving frontend-deploy-rollback issue #${N} open: updated after this job started (or no readable timestamp), so a concurrent run may have filed it against a newer deploy."
+              continue
+            fi
+            echo "Closing frontend-deploy-rollback issue #${N}: both smokes passed against prod."
+            gh issue close "${N}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --reason completed \
+              --comment "Resolved: verify run ${RUN_URL} (dispatched for deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
+              || echo "::warning::could not close issue #${N} (best-effort)"
+          done <<< "${OPEN}"
+          exit 0
+
       # ── Page on frontend rollback / un-rollable failure (best-effort) ─────
       # A behavioral smoke failure here either auto-rolls-back the Production
       # alias or leaves a bad deploy live — both page-worthy, yet historically
@@ -938,7 +1002,7 @@ jobs:
 
           Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
 
-          _Auto-filed by .github/workflows/verify-frontend-run.yml (dispatched by verify-frontend-deploy.yml); closes manually once a verify run is green._"
+          _Auto-filed by .github/workflows/verify-frontend-run.yml (dispatched by verify-frontend-deploy.yml); closed automatically by the next verify run whose public and authed smokes both pass._"
 
           gh label create frontend-deploy-rollback \
             --repo "${GITHUB_REPOSITORY}" \
