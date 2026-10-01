@@ -121,6 +121,9 @@ function CopyCommand({ command }: { command: string }) {
             setState("failed");
             return;
           }
+          // Back to idle first, so a repeat press changes the live region
+          // again and is announced again.
+          setState("idle");
           navigator.clipboard.writeText(command).then(
             () => setState("copied"),
             () => setState("failed")
