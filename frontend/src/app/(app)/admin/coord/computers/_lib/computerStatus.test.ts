@@ -294,7 +294,7 @@ describe("computerStatus", () => {
     );
     expect(s.kind).toBe("under_pressure");
     expect(s.reason).toBe(
-      "Lane host is past an admission floor — coord is refusing work here."
+      "Lane host is past an admission floor — a guard is refusing work here."
     );
   });
 
@@ -314,7 +314,7 @@ describe("computerStatus", () => {
     );
     expect(s.kind).toBe("under_pressure");
     expect(s.reason).toBe(
-      "Lane host is past an admission floor — coord is refusing work here. Lane wsl (Ubuntu) is near an admission floor — coord may be deferring work."
+      "Lane host is past an admission floor — a guard is refusing work here. Lane wsl (Ubuntu) is near an admission floor — a guard may be deferring work."
     );
   });
 
