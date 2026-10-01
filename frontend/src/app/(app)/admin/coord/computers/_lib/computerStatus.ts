@@ -1150,15 +1150,15 @@ export function computerStatus(
 }
 
 /**
- * When coord last saw the unit reported — information only. A row's age says
- * nothing about whether the unit still exists (coord deletes a unit only when
- * a report complete for its kind omits it), so it never changes the badge.
+ * How long ago coord recorded the row — just the age (`"12m ago"`), for the
+ * caller to put in one sentence. Information only: coord re-records an
+ * UNCHANGED unit only about once per 300 s report cadence, so this can
+ * overstate a unit's silence by up to ~5 min, and a row's age says nothing
+ * about whether the unit still exists. It never changes the badge.
  */
 export function serviceObservedText(s: ComputerServiceWire): string {
   const age = num(s.observed_age_secs);
-  return age === null
-    ? "observed at an unknown time"
-    : `observed ${formatAge(age)}`;
+  return age === null ? "at an unknown time" : formatAge(age);
 }
 
 /** A watched service's state, bucketed. `down` is coord's `down` flag (failed or inactive). */

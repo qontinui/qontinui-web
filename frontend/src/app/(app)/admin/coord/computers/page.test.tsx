@@ -364,7 +364,9 @@ describe("/admin/coord/computers/[computerId]", () => {
     });
     expect(
       (await screen.findByTestId("coord-computer-service-observed")).textContent
-    ).toContain("Last reported: observed 1h ago.");
+    ).toBe(
+      "Recorded by coord 1h ago (an unchanged unit is re-recorded about every 5 min; currency is this computer's report freshness)"
+    );
   });
 
   it("reads services_reported: false as unknown — never 'no watched service' or 0 down", async () => {

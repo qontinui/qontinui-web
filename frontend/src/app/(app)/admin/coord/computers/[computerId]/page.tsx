@@ -205,9 +205,9 @@ function ServiceRow({
             data-testid="coord-computer-service-observed"
             title={absoluteTime(service.observed_at)}
           >
-            Last reported: {serviceObservedText(service)}. Whether that is
-            current is this computer&apos;s report freshness, not this
-            row&apos;s age.
+            Recorded by coord {serviceObservedText(service)} (an unchanged unit
+            is re-recorded about every 5 min; currency is this computer&apos;s
+            report freshness)
           </p>
         }
         raw={
