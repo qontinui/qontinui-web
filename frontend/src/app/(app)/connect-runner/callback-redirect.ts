@@ -94,6 +94,7 @@ export function pairConfirmErrorMessage(
       coord_status?: unknown;
       coord_code?: unknown;
       coord_hint?: unknown;
+      coord_skip_reasons?: unknown;
     };
     // A coord outage is relayed as {error, message} carrying retry advice.
     if (typeof detail.message === "string" && detail.message) {
