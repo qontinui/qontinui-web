@@ -1,0 +1,1096 @@
+{
+  "_source": "gh api 'repos/qontinui/qontinui-web/actions/runs/36548570438/jobs?filter=latest' fetched 2026-09-30, trimmed to the fields shard_headroom.py reads (+ step names/conclusions)",
+  "total_count": 10,
+  "jobs": [
+    {
+      "id": 109340833762,
+      "run_id": 36548570438,
+      "name": "Test Docker Build",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322050,
+      "runner_name": "GitHub Actions 1000322050",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:52Z",
+      "completed_at": "2026-09-29T09:22:43Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Resolve qontinui-cloud-control pin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build Docker image",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Docker image",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834141,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 5/6)",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322060,
+      "runner_name": "GitHub Actions 1000322060",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:51Z",
+      "completed_at": "2026-09-29T09:38:35Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834193,
+      "run_id": 36548570438,
+      "name": "Lint & Format Check",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322062,
+      "runner_name": "GitHub Actions 1000322062",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:52Z",
+      "completed_at": "2026-09-29T09:22:03Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run ruff (linting)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run ruff format (formatting)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run mypy (type checking)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834214,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 1/6)",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322057,
+      "runner_name": "GitHub Actions 1000322057",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:51Z",
+      "completed_at": "2026-09-29T09:40:47Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834250,
+      "run_id": 36548570438,
+      "name": "Security Scanning",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322058,
+      "runner_name": "GitHub Actions 1000322058",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:51Z",
+      "completed_at": "2026-09-29T09:24:12Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Trivy vulnerability scanner",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload Trivy results to GitHub Security",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run safety check (dependency vulnerabilities)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Upload Trivy results to GitHub Security",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Trivy vulnerability scanner",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834309,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 3/6)",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322061,
+      "runner_name": "GitHub Actions 1000322061",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:52Z",
+      "completed_at": "2026-09-29T09:44:27Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834334,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 2/6)",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322059,
+      "runner_name": "GitHub Actions 1000322059",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:51Z",
+      "completed_at": "2026-09-29T09:38:49Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834433,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 4/6)",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000322064,
+      "runner_name": "GitHub Actions 1000322064",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:52Z",
+      "completed_at": "2026-09-29T09:36:36Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109340834465,
+      "run_id": 36548570438,
+      "name": "Run Tests (shard 6/6)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runner_id": 1000322063,
+      "runner_name": "GitHub Actions 1000322063",
+      "created_at": "2026-09-29T09:20:49Z",
+      "started_at": "2026-09-29T09:20:52Z",
+      "completed_at": "2026-09-29T10:06:11Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record job start time",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Free disk space",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Poetry",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install qontinui-cloud-control into poetry venv",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI snapshot is up to date",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload CI-generated OpenAPI snapshot on drift",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Install postgresql-client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create test schemas and extensions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect the test suite",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Select this shard's test files",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tests with coverage",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Warn if the job is approaching its budget",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Upload coverage to Codecov",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Upload coverage artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Explain infrastructure timeout vs external cancellation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109356865790,
+      "run_id": 36548570438,
+      "name": "Run Tests",
+      "status": "completed",
+      "conclusion": "failure",
+      "runner_id": 1000322208,
+      "runner_name": "GitHub Actions 1000322208",
+      "created_at": "2026-09-29T10:06:12Z",
+      "started_at": "2026-09-29T10:06:14Z",
+      "completed_at": "2026-09-29T10:06:18Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Assert every shard succeeded",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

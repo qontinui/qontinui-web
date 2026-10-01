@@ -29,7 +29,8 @@ import { createHash } from "node:crypto";
 import { existsSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { vgaQuery } from "@/lib/db/vga";
+import { resolveRunnerDbDsn, vgaQuery } from "@/lib/db/vga";
+import { tryResolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 import {
   correctionsDir,
   imageDir as getImageDir,
@@ -82,6 +83,9 @@ function writeImageIfNew(imagePath: string, bytes: Buffer): void {
   }
 }
 
+/** Whether the unresolved-DSN skip has been reported in this process. */
+let warnedUnresolved = false;
+
 /**
  * Best-effort, fire-and-forget shadow-sample writer.
  *
@@ -97,6 +101,21 @@ function writeImageIfNew(imagePath: string, bytes: Buffer): void {
  */
 export async function logShadowSample(input: ShadowSampleInput): Promise<void> {
   try {
+    // An unconfigured runner DB cannot take the row, so skip BEFORE the SM
+    // lookup and the image write: otherwise every grounding call in such a
+    // deployment writes a PNG nothing will ever reference and logs one or two
+    // errors. Said once per process — the refusal names the variable to set.
+    const dsn = tryResolveEndpoint(resolveRunnerDbDsn);
+    if (!dsn.ok) {
+      if (!warnedUnresolved) {
+        warnedUnresolved = true;
+        console.warn(
+          `[vga-shadow] shadow samples are not logged: ${dsn.error.message}`
+        );
+      }
+      return;
+    }
+
     // 1. Resolve per-domain key + privacy flag.
     let targetProcess = input.targetProcess;
     let isPrivate = false;

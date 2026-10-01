@@ -12,20 +12,44 @@ import type {
   VgaStateMachineRow,
   VgaStateMachineSummary,
 } from "@/lib/types/vga";
+import {
+  MAX_CAUSE_LENGTH,
+  plainSentence,
+} from "@/lib/errors/backend-error-message";
+
+/**
+ * Throw a readable error for a non-ok response. The /api/vga/* routes answer
+ * `{error, detail?}` — and, for an unconfigured deployment,
+ * `{code: "endpoint_unresolved", error, next_action}` whose `error` sentence
+ * already names the variable to set. The body is read ONCE (a second read of
+ * a consumed body throws) and every candidate passes the guarded reader's
+ * `plainSentence`, so an HTML gateway page never reaches the UI.
+ */
+export async function throwIfNotOk(
+  resp: Response,
+  what?: string
+): Promise<void> {
+  if (resp.ok) return;
+  const text = await resp.text().catch(() => "");
+  let candidate = text;
+  try {
+    const body = JSON.parse(text) as { error?: unknown; detail?: unknown };
+    candidate =
+      (typeof body.error === "string" && body.error) ||
+      (typeof body.detail === "string" && body.detail) ||
+      "";
+  } catch {
+    // Not JSON — the raw text is the only candidate.
+  }
+  const detail = plainSentence(candidate, MAX_CAUSE_LENGTH);
+  const prefix = what ? `${what}: ` : "";
+  throw new Error(
+    `${prefix}${resp.status} ${resp.statusText}${detail ? `: ${detail}` : ""}`
+  );
+}
 
 async function handleJson<T>(resp: Response): Promise<T> {
-  if (!resp.ok) {
-    let detail = "";
-    try {
-      const body = (await resp.json()) as { error?: string; detail?: string };
-      detail = body.error ?? body.detail ?? "";
-    } catch {
-      detail = await resp.text().catch(() => "");
-    }
-    throw new Error(
-      `${resp.status} ${resp.statusText}${detail ? `: ${detail}` : ""}`
-    );
-  }
+  await throwIfNotOk(resp);
   return (await resp.json()) as T;
 }
 
@@ -121,9 +145,7 @@ export async function captureScreenshot(monitor: number): Promise<Blob> {
   const resp = await fetch(`/api/vga/capture?monitor=${monitor}`, {
     cache: "no-store",
   });
-  if (!resp.ok) {
-    throw new Error(`Capture failed: ${resp.status} ${resp.statusText}`);
-  }
+  await throwIfNotOk(resp, "Capture failed");
   return resp.blob();
 }
 

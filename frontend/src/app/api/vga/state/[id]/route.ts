@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isEndpointUnresolved } from "@/lib/errors/endpoint-unresolved";
+
 import { vgaQuery } from "@/lib/db/vga";
 import type { VgaStateMachineGraph, VgaStateMachineRow } from "@/lib/types/vga";
 import { buildCanonicalExport, canonicalJsonString } from "@/lib/vga/canonical";
@@ -90,6 +92,10 @@ export async function GET(
     }
     return NextResponse.json(rowToApi(rows[0] as StateMachineDbRow));
   } catch (err) {
+    // An unset runner-DB DSN outside development is a named 503, not a 500.
+    if (isEndpointUnresolved(err)) {
+      return NextResponse.json(err.toBody(), { status: 503 });
+    }
     return NextResponse.json(
       { error: "Database error", detail: (err as Error).message },
       { status: 500 }
@@ -191,6 +197,10 @@ export async function PATCH(
     }
     return NextResponse.json(rowToApi(rows[0] as StateMachineDbRow));
   } catch (err) {
+    // An unset runner-DB DSN outside development is a named 503, not a 500.
+    if (isEndpointUnresolved(err)) {
+      return NextResponse.json(err.toBody(), { status: 503 });
+    }
     return NextResponse.json(
       { error: "Database error", detail: (err as Error).message },
       { status: 500 }
@@ -219,6 +229,10 @@ export async function DELETE(
     }
     return NextResponse.json({ deleted: id });
   } catch (err) {
+    // An unset runner-DB DSN outside development is a named 503, not a 500.
+    if (isEndpointUnresolved(err)) {
+      return NextResponse.json(err.toBody(), { status: 503 });
+    }
     return NextResponse.json(
       { error: "Database error", detail: (err as Error).message },
       { status: 500 }

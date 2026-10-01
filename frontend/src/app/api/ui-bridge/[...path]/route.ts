@@ -71,6 +71,7 @@ import {
   originForbiddenResponse,
   unauthenticatedResponse,
   upstreamErrorResponse,
+  misconfiguredResponse,
 } from "./_auth";
 import {
   commandNameFromPath,
@@ -197,6 +198,9 @@ async function wrapHandler(
       // rate-limiting us, broken, or unreachable) is passed through with its
       // real status and Retry-After: reporting it as a 401 would tell an
       // operator holding a perfectly valid token that their token is bad.
+      if (auth.reason === "misconfigured") {
+        return misconfiguredResponse(auth.error);
+      }
       return auth.reason === "upstream_error"
         ? upstreamErrorResponse(auth)
         : unauthenticatedResponse();

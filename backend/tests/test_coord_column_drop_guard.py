@@ -47,6 +47,7 @@ from email.message import Message
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.gate_lane_roster import (
     assert_docstring_names_every_lane,
@@ -733,6 +734,44 @@ COORD_MARKER_LINE = (
     'UNKNOWN-PENDING-PRECONDITION: {"kind":"sql_count",'
     '"query_id":"schema_read_surfaces_main_at_head","op":"gte","n":1}'
 )
+
+# The check-run name coord's `guard_rerun.rs` `GUARDS` table (added by
+# qontinui-coord#2542) keys this guard on: entry `qontinui/qontinui-web` +
+# `coord-column-drop-guard`. coord reads a job log for the marker ONLY on a
+# failed check run with this exact name. Nothing ties this constant to coord
+# mechanically; it is the web half of that cross-repo contract.
+COORD_RERUN_CHECK_NAME = "coord-column-drop-guard"
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "coord-column-drop-guard.yml"
+
+# Job keys that rename the check run away from the bare job id: `name:`
+# replaces it, a `strategy.matrix` suffixes it with `(…)`, and a job-level
+# `uses:` (a reusable workflow) prefixes it as `caller / callee`. A `strategy:`
+# with no matrix renames nothing; it is refused whole on purpose, since a
+# matrix added under an existing `strategy:` would otherwise slip past.
+_RENAMING_JOB_KEYS = frozenset({"name", "strategy", "uses"})
+
+
+def test_the_check_name_coord_reruns_on_is_the_workflow_job_id() -> None:
+    """The marker is inert unless the check run carries coord's allowlisted name.
+
+    A renamed check run would leave coord reading no log and registering no
+    re-run gate, with nothing on either side going red. The ``web-protect-main``
+    ruleset will register the same string once the check is made required, per
+    the workflow's header.
+    """
+    jobs = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    # `_SCRIPT_REF` is defined with the lane-roster tests below.
+    invoking = [
+        job_id
+        for job_id, job in jobs.items()
+        if any(_SCRIPT_REF in str(step.get("run", "")) for step in job.get("steps", []))
+    ]
+    assert invoking == [COORD_RERUN_CHECK_NAME]
+    renaming = _RENAMING_JOB_KEYS & jobs[COORD_RERUN_CHECK_NAME].keys()
+    assert not renaming, (
+        f"{sorted(renaming)} on this job renames its check run away from the "
+        "string coord's guard_rerun GUARDS table matches"
+    )
 
 
 @pytest.fixture(autouse=True)

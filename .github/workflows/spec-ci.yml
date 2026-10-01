@@ -15,7 +15,7 @@ name: Spec CI
 # check must depend only on inputs the PR author controls). `--include-write`
 # transitions also wrote to prod as ci-bot; hermetically they write to the
 # throwaway CI database. Real-Cognito + real-prod integration stays covered
-# post-deploy by verify-frontend-deploy.yml's public + authed smokes.
+# post-deploy by verify-frontend-run.yml's public + authed smokes.
 #
 # Pipeline:
 #   1. Boot Postgres (pgvector) + Redis services; install backend deps;

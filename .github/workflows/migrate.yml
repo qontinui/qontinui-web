@@ -25,7 +25,7 @@ run-name: "Apply Migrations to RDS${{ inputs.dispatch_id != '' && format(' [disp
 # audit INSERT path. Auto-deploy of migrations is the documented fix.
 #
 # FORWARD-ONLY — NOT covered by deploy auto-rollback. The post-deploy
-# auto-rollback in deploy-web.yml (and verify-frontend-deploy.yml) reverts the
+# auto-rollback in deploy-web.yml (and verify-frontend-run.yml) reverts the
 # APPLICATION (ECS task-def / Vercel alias) to a prior revision, but it does
 # NOT and MUST NOT revert the schema: alembic downgrades are not data-safe
 # (dropped columns/tables lose data). Treat migrations as forward-only —
@@ -53,6 +53,15 @@ on:
         description: "Coord gate-executor correlation id — echoed in run-name so the dispatcher can find this run (leave empty for manual runs)"
         required: false
         default: ""
+      # How long the migrator step waits for the task to STOP before it reports
+      # outcome UNKNOWN (integer seconds, 1..960; anything else -> 900). For a
+      # known-slow apply, and for exercising the UNKNOWN path: a tiny value
+      # expires while Fargate is still provisioning, and the idempotent migrator
+      # then finishes as a no-op at head.
+      wait_deadline_secs:
+        description: "Seconds to wait for the migrator task to stop before reporting outcome UNKNOWN (1..960; empty = 900)"
+        required: false
+        default: ""
 
 # Migrator runs as a one-shot ECS task; concurrent runs are safe (alembic
 # acquires its own advisory lock on the DB) but pointless. Cancel-in-progress
@@ -77,10 +86,12 @@ jobs:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2).
     # A deliberate number, not the green-run formula: 40 green runs are p50 2.70 /
     # p90 3.44 / max 4.88 min, but they are mostly no-op runs at head. A run that
-    # applies real DDL spends up to the full ~10-min `aws ecs wait tasks-stopped`
-    # on top of build (~3) + task start (~1) + reporting. A timeout CANCELS the job,
-    # and `failure()` is false for a cancelled job, so a cap below that path would
-    # skip the migration-failure page. 25 covers the worst path with headroom.
+    # applies real DDL spends up to the migrator step's full wait deadline (900 s
+    # by default, 960 s max via the wait_deadline_secs input) on top of build (~3)
+    # + task start (~1) + reporting. A timeout CANCELS the job, and `failure()` is
+    # false for a cancelled job, so a cap below that path would skip the
+    # migration-failure page. 25 covers the worst path with headroom — the cap and
+    # the wait deadline must move TOGETHER.
     timeout-minutes: 25
     name: Build, push, run migrator
     runs-on: ubuntu-latest
@@ -90,6 +101,9 @@ jobs:
       # issues: write powers the page-on-failure step below (create/comment a
       # tracking issue when the migration apply fails).
       issues: write
+      # OIDC: configure-aws-credentials assumes the scoped qontinui-web-migrate
+      # role with this job's GitHub token (no stored AWS key).
+      id-token: write
 
     steps:
       - name: Check out qontinui-web
@@ -279,11 +293,14 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
         shell: bash
 
+      # Scoped qontinui-web-migrate role via GitHub OIDC: ECR on
+      # qontinui-migrator only, the qontinui-staging-migrator task-def + task,
+      # and the migrator log group.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-migrate
+          role-session-name: migrate-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve ECR registry
@@ -387,43 +404,137 @@ jobs:
           echo "task_arn=${TASK_ARN}" >> "$GITHUB_OUTPUT"
           echo "Started ${TASK_ARN}"
 
-      - name: Wait for task to stop
+      # ── Wait for the migrator (bounded) and classify its outcome ──────────
+      # One step, not a waiter followed by a reporter. `aws ecs wait
+      # tasks-stopped` gives up by itself after ~10 min (100 polls x 6 s) and
+      # FAILS its step, which skipped the exit-code/log report and fired the
+      # page below as "apply failed" about a task that was still running and
+      # might succeed (plan
+      # 2026-09-26-migrate-waiter-timeout-hides-the-outcome-and-pages-a-running-migration-as-failed).
+      # This step polls to its own deadline and sets `outcome`:
+      #   succeeded — the task STOPPED with container exitCode 0
+      #   failed    — the task STOPPED with any other exitCode, including null
+      #               (it stopped without the container exiting cleanly: image
+      #               pull, OOM, essential container stopped — see stop_reason)
+      #   unknown   — the task was never observed STOPPED before the deadline;
+      #               it keeps running and may still succeed
+      # Only `succeeded` exits 0 — an unconfirmed apply must not read green; the
+      # page tells `failed` and `unknown` apart. It NEVER stops the task:
+      # stopping a migration mid-DDL is the half-applied-schema risk the
+      # concurrency comment at the top of this file forbids for cancellation.
+      # Logs are tailed in every outcome — a running task has logs too.
+      - name: Wait for migrator + report outcome
+        id: migrator
+        env:
+          TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
+          WAIT_DEADLINE_INPUT: ${{ inputs.wait_deadline_secs }}
+          # The per-call --cli-*-timeout flags bound ONE attempt; the CLI's
+          # default retries could still stack several. Two attempts max keeps
+          # the deadline + tail inside the job cap.
+          AWS_MAX_ATTEMPTS: "2"
+          AWS_RETRY_MODE: standard
         run: |
-          aws ecs wait tasks-stopped \
-            --cluster "${ECS_CLUSTER}" \
-            --tasks "${{ steps.runtask.outputs.task_arn }}"
+          set -uo pipefail
 
-      - name: Report exit code + tail logs
-        run: |
-          TASK_DESC=$(aws ecs describe-tasks \
-            --cluster "${ECS_CLUSTER}" \
-            --tasks "${{ steps.runtask.outputs.task_arn }}" \
-            --query 'tasks[0]')
+          DEADLINE=900
+          # No leading zero: bash arithmetic reads `0900` as (invalid) octal
+          # and would abort this step before it writes any output.
+          if [[ "${WAIT_DEADLINE_INPUT:-}" =~ ^[1-9][0-9]{0,3}$ ]] \
+            && [ "${WAIT_DEADLINE_INPUT}" -le 960 ]; then
+            DEADLINE="${WAIT_DEADLINE_INPUT}"
+          elif [ -n "${WAIT_DEADLINE_INPUT:-}" ]; then
+            echo "::warning::wait_deadline_secs is not an integer in 1..960; using ${DEADLINE}"
+          fi
+          echo "Waiting up to ${DEADLINE}s for ${TASK_ARN} to stop"
 
-          EXIT_CODE=$(echo "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); c=t.get("containers",[{}])[0]; print(c.get("exitCode") if c.get("exitCode") is not None else "null")')
-          STOP_REASON=$(echo "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); print(t.get("stoppedReason") or "")')
+          START=$(date +%s)
+          LAST_STATUS="UNOBSERVED"
+          TASK_DESC=""
+          DESCRIBE_ERR=$(mktemp)
+          while :; do
+            # A failed describe (throttling, a network blip) is logged and the
+            # poll continues — it is not an outcome. stderr is kept apart so a
+            # CLI warning on a SUCCESSFUL call cannot corrupt the JSON.
+            # Per-call timeouts: the AWS CLI defaults (60 s connect + 60 s read,
+            # plus retries) would let one slow call run past the job cap.
+            if RESP=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" \
+                  --tasks "${TASK_ARN}" --output json \
+                  --cli-connect-timeout 10 --cli-read-timeout 20 2>"$DESCRIBE_ERR"); then
+              # lastStatus, or ECS's own failure reason (e.g. MISSING) when it
+              # returns no task.
+              STATUS=$(printf '%s' "$RESP" | python3 -c 'import sys,json; r=json.load(sys.stdin); t=(r.get("tasks") or [None])[0]; f=(r.get("failures") or [{}])[0]; print((t or {}).get("lastStatus") or ("ECS_" + f["reason"] if f.get("reason") else "NO_STATUS"))' 2>/dev/null) || STATUS="UNPARSEABLE"
+              LAST_STATUS="$STATUS"
+              if [ "$STATUS" = "STOPPED" ]; then
+                TASK_DESC=$(printf '%s' "$RESP" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["tasks"][0]))' 2>/dev/null) || TASK_DESC=""  # unreadable -> outcome unknown, never a false "failed"
+                break
+              fi
+            else
+              echo "::warning::describe-tasks failed (poll continues): $(head -c 300 "$DESCRIBE_ERR" | tr '\n' ' ')"
+            fi
+            ELAPSED=$(( $(date +%s) - START ))
+            if [ "$ELAPSED" -ge "$DEADLINE" ]; then
+              break
+            fi
+            REMAINING=$(( DEADLINE - ELAPSED ))
+            sleep $(( REMAINING < 10 ? REMAINING : 10 ))
+          done
+          WAITED=$(( $(date +%s) - START ))
 
+          EXIT_CODE="null"
+          STOP_REASON=""
+          if [ -n "$TASK_DESC" ]; then
+            EXIT_CODE=$(printf '%s' "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); c=(t.get("containers") or [{}])[0]; print(c.get("exitCode") if c.get("exitCode") is not None else "null")' 2>/dev/null) || EXIT_CODE="null"
+            # One line: it lands in $GITHUB_OUTPUT and in the page text.
+            STOP_REASON=$(printf '%s' "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); print(" ".join((t.get("stoppedReason") or "").split())[:300])' 2>/dev/null) || STOP_REASON=""
+            if [ "$EXIT_CODE" = "0" ]; then OUTCOME=succeeded; else OUTCOME=failed; fi
+          else
+            OUTCOME=unknown
+          fi
+
+          echo "outcome=${OUTCOME}"
+          echo "lastStatus=${LAST_STATUS}"
           echo "exitCode=${EXIT_CODE}"
           echo "stoppedReason=${STOP_REASON}"
+          echo "waited=${WAITED}s (deadline ${DEADLINE}s)"
+          {
+            echo "outcome=${OUTCOME}"
+            echo "last_status=${LAST_STATUS}"
+            echo "exit_code=${EXIT_CODE}"
+            echo "stop_reason=${STOP_REASON}"
+            echo "waited_secs=${WAITED}"
+          } >> "$GITHUB_OUTPUT"
 
           # CloudWatch logs (last 100 events) for diagnostic capture in the
           # workflow run output. The log group + stream naming is
           # /ecs/qontinui-staging/migrator + migrator/migrator/<task-id>.
-          TASK_ID=$(echo "${{ steps.runtask.outputs.task_arn }}" | awk -F/ '{print $NF}')
+          TASK_ID="${TASK_ARN##*/}"
           aws logs get-log-events \
             --log-group-name "/ecs/qontinui-staging/migrator" \
             --log-stream-name "migrator/migrator/${TASK_ID}" \
             --limit 100 \
             --query 'events[].message' \
-            --output text 2>/dev/null \
+            --output text \
+            --cli-connect-timeout 10 --cli-read-timeout 20 2>/dev/null \
             || echo "(log stream not yet flushed)"
 
-          if [ "${EXIT_CODE}" != "0" ]; then
-            echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
-            exit 1
-          fi
+          case "$OUTCOME" in
+            succeeded)
+              exit 0 ;;
+            failed)
+              echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
+              exit 1 ;;
+            *)
+              echo "::error::migrator task still ${LAST_STATUS} after ${WAITED}s; outcome UNKNOWN — the task keeps running and may still succeed; do NOT treat this as a failed apply"
+              exit 1 ;;
+          esac
 
       # ── Report the migration apply to coord (best-effort) ─────────────────
+      # NEVER `if: always()`. POST /coord/schema/applications has no outcome
+      # field — every POST asserts that `revision` WAS applied to `database` —
+      # so running this after a `failed` or `unknown` migrator outcome would
+      # insert a false row into coord.migration_applications. An `unknown` run
+      # tells coord nothing; the next green run (a no-op at head still posts the
+      # head) records the true state.
       # Phase 3 provenance: after the migrator one-shot succeeds (the step
       # above `exit 1`s otherwise), record the apply event in
       # coord.migration_applications. The applied revision == the authored head
@@ -432,6 +543,7 @@ jobs:
       # database = canonical-pg. Best-effort, fail-open — never gates, never
       # alters the (already-green) migrate outcome.
       - name: Report migration apply to coord
+        if: steps.migrator.outputs.outcome == 'succeeded'
         continue-on-error: true
         env:
           COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
@@ -506,33 +618,75 @@ jobs:
       # can never mask (or alter) the underlying red run. De-dupes into one
       # open `migration-failure` issue (the nightly cron would otherwise file a
       # new issue every 24h while broken).
+      #
+      # The page names WHICH of three things happened, from the migrator step's
+      # `outcome` (empty when that step never ran):
+      #   unknown — the task was still running at the wait deadline; it may
+      #             still succeed, so this is NOT an apply failure
+      #   failed  — the task stopped with a non-zero / null exit: apply failed
+      #   (empty) — no outcome recorded. With no task ARN the job failed
+      #             BEFORE the migrator ran (build / push / task-def /
+      #             run-task) and did not touch the schema; WITH one, the task
+      #             started and its fate is UNKNOWN
+      # One open issue collects runs of every class, so its title is
+      # outcome-neutral and each comment carries the class.
       - name: Page on migration failure
         if: failure()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.migrator.outputs.outcome }}
+          LAST_STATUS: ${{ steps.migrator.outputs.last_status }}
+          EXIT_CODE: ${{ steps.migrator.outputs.exit_code }}
+          STOP_REASON: ${{ steps.migrator.outputs.stop_reason }}
+          WAITED_SECS: ${{ steps.migrator.outputs.waited_secs }}
+          TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-9)"
 
-          echo "::error::MIGRATION APPLY FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA} — the staging RDS schema may be BEHIND the authored alembic head. Coord-proxied pages (e.g. /commits) degrade to 503 schema_migration_pending until this is fixed forward. MANUAL INTERVENTION REQUIRED: ${RUN_URL}"
+          case "${OUTCOME}" in
+            unknown)
+              CLASS="migration outcome UNKNOWN"
+              DETAIL="The migrator task was still ${LAST_STATUS} after ${WAITED_SECS}s. It may still succeed — this is NOT a failed apply. Check the task / its log stream; the next migrate run reports the true state."
+              echo "::error::MIGRATION OUTCOME UNKNOWN on ${GITHUB_REPOSITORY}@${SHORT_SHA} — the migrator task was still ${LAST_STATUS} after ${WAITED_SECS}s and may still succeed. Check the task before intervening: ${RUN_URL}"
+              ;;
+            failed)
+              CLASS="migration apply FAILED"
+              DETAIL="The migrator task stopped with exit code ${EXIT_CODE} (reason: ${STOP_REASON:-none}). The staging RDS schema may be BEHIND the authored alembic head; coord routes that need the new columns degrade to 503 \`schema_migration_pending\`."
+              echo "::error::MIGRATION APPLY FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA} (exit ${EXIT_CODE}) — the staging RDS schema may be BEHIND the authored alembic head. Coord-proxied pages (e.g. /commits) degrade to 503 schema_migration_pending until this is fixed forward. MANUAL INTERVENTION REQUIRED: ${RUN_URL}"
+              ;;
+            *)
+              if [ -n "${TASK_ARN}" ]; then
+                # The task WAS started, but the migrator step recorded no
+                # outcome (it aborted early). Its fate is unknown.
+                CLASS="migration outcome UNKNOWN (not recorded)"
+                DETAIL="The migrator task ${TASK_ARN##*/} was started, but this run recorded no outcome for it. It may still be running and may succeed — this is NOT a confirmed failed apply. Check the task / its log stream; the next migrate run reports the true state."
+                echo "::error::MIGRATION OUTCOME NOT RECORDED on ${GITHUB_REPOSITORY}@${SHORT_SHA} — the migrator task was started but its outcome was not captured. Check the task before intervening: ${RUN_URL}"
+              else
+                CLASS="failed BEFORE the migrator ran"
+                DETAIL="migrate.yml failed before the migrator task ran (build / push / task-def / run-task). This run did not touch the schema; if the authored head is ahead of the database, the schema is still behind."
+                echo "::error::migrate.yml FAILED BEFORE THE MIGRATOR RAN on ${GITHUB_REPOSITORY}@${SHORT_SHA} — this run did not touch the schema. ${RUN_URL}"
+              fi
+              ;;
+          esac
 
-          TITLE="migrate.yml FAILED: alembic apply did not complete"
-          BODY="Migration apply failed.
+          TITLE="migrate.yml did not confirm a clean apply"
+          BODY="Outcome: **${CLASS}**. ${DETAIL}
 
           - **Repo:** ${GITHUB_REPOSITORY}
           - **Run:** ${RUN_URL}
           - **Head SHA:** ${GITHUB_SHA}
           - **Trigger:** ${GITHUB_EVENT_NAME}
 
-          The staging RDS schema may be behind the authored alembic head; coord routes that need the new columns degrade to 503 \`schema_migration_pending\`. Migrations are FORWARD-ONLY — fix forward (see the workflow header comment), never downgrade.
+          Migrations are FORWARD-ONLY — fix forward (see the workflow header comment), never downgrade.
 
           _Auto-filed by .github/workflows/migrate.yml; closes manually once a migrate run is green._"
 
           # Ensure the label exists (idempotent), then de-dupe into one issue.
           gh label create migration-failure \
             --repo "${GITHUB_REPOSITORY}" \
-            --description "Auto-filed: migrate.yml apply failed" \
+            --description "Auto-filed: migrate.yml did not confirm a clean apply" \
             --color B60205 --force || true
 
           EXISTING=$(gh issue list \
@@ -546,7 +700,7 @@ jobs:
             echo "Open migration-failure issue #${EXISTING} exists — commenting."
             gh issue comment "${EXISTING}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --body "Still failing: ${RUN_URL} (head ${GITHUB_SHA}, trigger ${GITHUB_EVENT_NAME})" \
+              --body "Again (${CLASS}): ${RUN_URL} (head ${GITHUB_SHA}, trigger ${GITHUB_EVENT_NAME}). ${DETAIL}" \
               || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
           else
             gh issue create \

@@ -168,7 +168,10 @@ const FWD_QUERY = "?Q";
  *   - a leading `${base}` is dropped ONLY when it is the backend origin: a
  *     `process.env.*` read (optionally `||`/`??` fallbacks), directly or
  *     through the never-reassigned const holding it (`BACKEND_URL`,
- *     `backendBaseUrl`). Any other leading variable is inlined, so
+ *     `backendBaseUrl`), or the shared resolver `backendBaseOrResponse()`
+ *     (`@/lib/errors/endpoint-response`, which reads the same two env vars
+ *     and answers a 503 instead of a dev fallback). Any other leading
+ *     variable is inlined, so
  *     `${prefix}/api/v1/own/…` with `prefix = "/api/v1/other"` forwards to
  *     `/api/v1/other/api/v1/own/…`, and `${ownUrl}/other` to `…/own/…/other`;
  *   - a variable that is the whole URL (`fetch(backendUrl)`) or a whole
@@ -251,9 +254,16 @@ function forwardedPaths(sf: ts.SourceFile): Map<string, string[]> {
   };
   const unparen = (x: ts.Expression): ts.Expression =>
     ts.isParenthesizedExpression(x) ? unparen(x.expression) : x;
-  /** `process.env.X`, optionally with `||` / `??` fallbacks, or a const holding one. */
+  /** `process.env.X`, optionally with `||` / `??` fallbacks, the shared
+   * `backendBaseOrResponse()` resolver, or a const holding one. */
   const isBackendBase = (raw: ts.Expression, scope: ts.Node): boolean => {
     const e = unparen(raw);
+    if (
+      ts.isCallExpression(e) &&
+      ts.isIdentifier(e.expression) &&
+      e.expression.text === "backendBaseOrResponse"
+    )
+      return true;
     if (ts.isPropertyAccessExpression(e))
       return unparen(e.expression).getText(sf) === "process.env";
     if (
