@@ -15,6 +15,8 @@ import {
   type VisionExtractionResponse,
 } from "@/services/vision-extraction-service";
 import { toast } from "sonner";
+import { ApiConfig } from "@/services/api-config";
+import { tryResolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 import { useRunnerClient } from "@/lib/runner-client";
 import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { isRunnerNeedsLocalError } from "@/lib/runner/api-client";
@@ -234,7 +236,18 @@ export function useWebExtractionState() {
     }
 
     try {
-      // First check if runner is available
+      // Resolve the base the runner reports back to FIRST — before the
+      // availability probe and before a session exists — so a misconfigured
+      // deployment refuses with the variable to set and leaves nothing behind.
+      const backend = tryResolveEndpoint(() =>
+        ApiConfig.resolveAbsoluteBaseUrl()
+      );
+      if (!backend.ok) {
+        toast.error(backend.error.message);
+        return;
+      }
+
+      // Then check the runner is available
       const runner = await runnerClient.getAvailability();
       if (!runner.available) {
         toast.error(
@@ -268,7 +281,7 @@ export function useWebExtractionState() {
         max_depth: extractionCfg.max_depth ?? 5,
         max_pages: extractionCfg.max_pages ?? 100,
         session_id: result.id,
-        backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+        backend_url: backend.url,
         auth_token: authToken || undefined,
       });
 

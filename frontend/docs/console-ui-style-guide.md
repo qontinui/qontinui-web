@@ -1463,6 +1463,25 @@ came to render `machines 8` beside thousands of unresolved criticals (plan
 strip's verdict does not depend on, and it sits directly under the first.**
 It is not licence for a strip per section.
 
+### 3.5 The computers console — recorded under §6.4
+
+`/admin/coord/computers` and its `[computerId]` drill-down (plan
+`2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
+Phase 5) compose `HealthStrip`, `RecordList`/`RecordRow`/`RecordDetail`,
+`StatCluster`, `StatusBadge` and `RefreshButton`, and register three palettes
+(the computer's verdict, its report freshness, a watched service's state) in
+`CONSOLE_PALETTES`. Two things they needed are recorded here rather than shipped
+silently.
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **The pressure sparkline is shared, not re-drawn** | `components/operations/PressureSparkline.tsx` | The Dev Ops strip's pinned-`[0,1]`, time-axis, gaps-not-lines sparkline, moved out of `FleetResourceStrip.tsx` (where it was private) and fed POINTS instead of a `HistorySeries`. Its default testids are the strip's frozen ones. | A second sparkline for the same lanes would be a second picture of one number that can disagree with the first. It lives in `operations/`, not `console/`, because it knows the resource-sample vocabulary (`RowTone`); `console/` stays presentation-only. |
+| **A capacity-vs-usage table whose cells can refuse to answer** | `computers/_components/ComputerParts.tsx` (`LaneTable`) | A Family-C dense table (one row per lane) where every figure is one of four things: a value, `unknown` (never measured), `not supported` (the publisher says it cannot measure this axis — Windows load averages), or `unavailable`. A stale lane is dimmed, its freshness badge says `STALE`, and it carries a "last known" note — its figures are never presented as current. | R6 covers a count that was not fetched (`–`, not `0`). This is the per-FIELD version with two more states, and it is a correctness rule rather than a density one: a `0` or a blank in these cells is the confidently-wrong dashboard plan §3.5 exists to end. |
+
+The freshness badge itself is not a new component: it is a `StatusBadge` over a
+three-kind palette (`fresh` calm, `stale` and `unknown` on `UNKNOWN_AMBER` —
+R3's ignorance floor), so it inherits the glyph and title rules for free.
+
 ---
 
 ## 4. The attention palette

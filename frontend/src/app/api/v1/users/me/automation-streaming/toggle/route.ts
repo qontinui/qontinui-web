@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
 import { createLogger } from "@/lib/logger";
 
@@ -24,10 +25,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     log.debug("Proxying POST to backend");
 
-    const backendBaseUrl =
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://localhost:8000";
+    const backendBaseUrl = backendBaseOrResponse();
+    if (backendBaseUrl instanceof NextResponse) return backendBaseUrl;
     const backendUrl = `${backendBaseUrl}/api/v1/users/me/automation-streaming/toggle`;
 
     const response = await fetch(backendUrl, {

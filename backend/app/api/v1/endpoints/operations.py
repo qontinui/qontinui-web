@@ -244,7 +244,21 @@ def capture_caller_bearer(request: Request) -> None:
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
-    """Dependency: resolve the current user's home tenant_id (UUID).
+    """Dependency: resolve the caller's EFFECTIVE coord tenant_id (UUID).
+
+    The effective tenant is the Project-selector choice when the request
+    carries ``X-Qontinui-Active-Tenant`` naming a tenant the operator is a
+    member of, and the operator's home tenant otherwise (no header, a
+    malformed one, or a non-member selection — coord never widens access and
+    never 403s the override). It is NOT always "home": ``get_coord_identity``
+    forwards the header to coord's ``GET /admin/coord/me``, whose
+    ``home_tenant_id`` field is ``ctx.tenant_id`` of the POST-override
+    ``OperatorContext`` (qontinui-coord ``routes_phase3.rs::get_me``, after
+    ``auth::apply_active_tenant_override``). Reading this value as "home" is
+    how whole families went unscoped: the frontend attaches the header only to
+    ``ACTIVE_TENANT_URL_PREFIXES`` (``frontend/src/services/http-client.ts``),
+    so a new route depending on this must be covered there —
+    ``tests/test_active_tenant_prefix_drift_guard.py`` fails until it is.
 
     Identity is sourced from coord's ``GET /admin/coord/me`` over the HTTP
     boundary (no cross-schema read). Coord 403s an operator that isn't a
@@ -277,11 +291,12 @@ async def require_coord_tenant_admin(
     request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
-    """Resolve the user's coord home tenant AND require admin on it.
+    """Resolve the caller's EFFECTIVE coord tenant AND require admin on it.
 
-    Returns the home tenant_id. Raises 403 ``not_coord_tenant_admin`` when
-    coord reports the operator is not an admin (``is_admin`` on
-    ``/admin/coord/me``).
+    Returns the same effective tenant_id as :func:`get_tenant_id` (coord's
+    ``/me`` ``home_tenant_id`` is post-override). Raises 403
+    ``not_coord_tenant_admin`` when the operator holds no admin role in that
+    tenant (per-tenant roles, below) and is not a qontinui superuser.
 
     Web-side gate posture (plan Phase 1 #4): the ``is_admin`` flag from
     coord is the source; the web-side gate is kept so the proxied
@@ -363,8 +378,12 @@ async def require_coord_tenant_admin_target(
 
     :func:`require_coord_tenant_admin` checks admin in the effective tenant
     (the switcher selection when the operator is a member of it, else home)
-    but returns the HOME tenant id. For a pass-through proxy that mismatch is
-    harmless: nothing names a tenant, and coord re-scopes the operator on the
+    and returns whatever coord's ``/me`` reports as ``home_tenant_id`` —
+    post-override, so the effective tenant too. This dependency resolves the
+    effective tenant explicitly, web-side, from the same membership list the
+    admin check used, so the tenant a body NAMES never rests on that coord
+    behaviour. Were the two to diverge, a pass-through proxy would not care:
+    nothing names a tenant, and coord re-scopes the operator on the
     forwarded ``X-Qontinui-Active-Tenant`` header. For a route that NAMES the
     target tenant in a body it writes, it is not — an operator viewing tenant
     B would be admin-checked in B and then written into A, which is either a
@@ -2026,10 +2045,16 @@ async def get_pr_merge_onboarding_doctor(
     "detail", "remediation"}], "summary": {"pass", "warn", "fail",
     "skip", "ready_to_land"}}``
 
-    with the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /
-    profile_present / merge_enabled / config_yaml / bootstrap_pr /
-    ci_workflow / ruleset_bypass`` and ``status`` in
-    ``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``
+    with coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /
+    repo_archived / profile_present / merge_enabled / config_yaml /
+    bootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /
+    config_yml_current`` (ids are stable and append-only, but NOT positional
+    -- key on ``id``, never on index) and ``status`` in
+    ``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of
+    them passing: ``tenant_mapped / repo_enrolled / profile_present /
+    merge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``
+    (``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and
+    ``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``
     page (the GitHub App's post-install Setup URL target). Operator
     bearer forwarded; coord scopes by the bearer's tenant.
     """
@@ -5691,6 +5716,81 @@ async def get_fleet_worktree_slots(
     """
     return await _proxy_coord_passthrough(
         "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
+
+
+# ---- Computers (the physical/virtual machine as a coord entity) -----------
+#
+# Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-
+# coord-has-no-resource-model` Phase 5. Backs `/admin/coord/computers` and its
+# `[computerId]` drill-down. The coord-side reads are that plan's Phase 3.2
+# (`GET /coord/computers`, `GET /coord/computers/:computer_id`), tenant-scoped
+# by coord through `coord.tenant_devices -> coord.devices.computer_id`.
+#
+# **Passthrough, not the generic helpers.** Both reads carry load-bearing
+# refusal and absence states the console renders specifically: a 404 from a
+# coord that predates Phase 3 (route not deployed), a 404 for a computer
+# outside the caller's tenant, and a `schema_pending` answer while the
+# qontinui-web migration has not reached the database coord reads. All three
+# must reach the browser with coord's status and JSON body intact — wrapped in
+# `HTTPException(detail=resp.text)` they collapse into one opaque error string
+# and the page can no longer render them as UNKNOWN rather than as a failure.
+#
+# **Admin-gated, like ``/fleet/ci-runners``.** Both payloads carry the
+# registrar's CI-runner rows (the same data ``get_fleet_ci_runners`` serves
+# only to a tenant admin) and each computer's ``access`` facts (tailnet name,
+# address, SSH user). A Developer-tier member must not read either through a
+# second, looser door, so both routes depend on ``require_coord_tenant_admin``
+# rather than ``get_tenant_id`` — a door is only as strict as its loosest twin.
+#
+# **Honesty (plan §3.5).** Coord computes `freshness.state` and never
+# synthesises a sample, a service row or a capacity figure. This proxy adds no
+# defaults and zero-fills nothing: a computer with no measured PSI axis stays
+# `null`/`not_supported`, and an upstream failure stays an error (502/504/
+# coord's status) rather than an empty computer list.
+
+
+@router.get("/computers")
+async def get_computers(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
+
+    The fleet list: per computer its identity (no raw OS ids), capacity,
+    ``freshness {last_report_at, age_secs, state, stale_after_secs}``, every
+    known lane's newest sample (``lanes``, ``samples_state``,
+    ``lanes_truncated``), ``services_reported`` / ``services_failed``,
+    ``last_event``, ``devices[]`` and ``ci_runners``. At list level:
+    ``unattributed_ci_runners`` (registrar rows no computer claims),
+    ``ambiguous_ci_runners`` (rows two or more computers claim, each with
+    ``claimed_by``), and ``registrar_read_ok``.
+
+    When ``registrar_read_ok`` is false coord's registrar read failed, and
+    every registrar-derived list — each computer's ``ci_runners``,
+    ``unattributed_ci_runners`` and ``ambiguous_ci_runners`` — is ``null``:
+    UNKNOWN, never "no runners". Response shape is coord-authored and passed
+    through untouched; this proxy adds no defaults.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/computers", tenant_id=tenant_id
+    )
+
+
+@router.get("/computers/{computer_id}")
+async def get_computer(
+    computer_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).
+
+    One computer's whole answer to "how is this machine": the list fields
+    plus ``services[]``, ``events`` (7 d, newest first), per-lane sample
+    ``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``
+    is validated as a UUID here so a malformed id is a 422 at the web edge
+    and never reaches coord as an arbitrary path segment.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", f"/coord/computers/{computer_id}", tenant_id=tenant_id
     )
 
 
