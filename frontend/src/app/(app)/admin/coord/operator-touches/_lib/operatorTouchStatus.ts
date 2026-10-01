@@ -64,9 +64,9 @@ export interface AnswerVia {
   /** `null` exactly when `state` is `missing`. */
   id: string | null;
   /**
-   * question: `pending` | `answered`; gate: `open` | `cleared` | `failed` |
-   * `misconfigured` | `withdrawn` | `archived`; `missing` = the item the touch
-   * names was not found in this tenant.
+   * question: `withdrawn` | `pending` | `answered`; gate: `open` | `cleared` |
+   * `failed` | `misconfigured` | `withdrawn` | `archived`; `missing` = the item
+   * the touch names was not found in this tenant.
    */
   state: string | null;
 }
@@ -285,6 +285,7 @@ export function answerViaSentence(via: AnswerVia | null | undefined): string {
   if (via.kind === "question") {
     if (via.state === "pending") return "The question is still waiting for an answer";
     if (via.state === "answered") return "The question has been answered";
+    if (via.state === "withdrawn") return "The question was withdrawn";
     return "The question's state is unknown";
   }
   if (via.kind === "gate") {
