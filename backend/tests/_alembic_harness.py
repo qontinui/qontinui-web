@@ -35,6 +35,7 @@ import subprocess
 import sys
 import traceback
 import uuid
+import warnings
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -156,6 +157,34 @@ def _isolated_process_state(cwd: Path) -> Iterator[None]:
                 os.environ[key] = value
 
 
+@contextlib.contextmanager
+def _warnings_to(stream: io.StringIO) -> Iterator[None]:
+    """Print Python warnings to ``stream`` for the call, as a child process did.
+
+    In-process, a warning raised by alembic or a revision would otherwise land
+    in pytest's warning collection — and under a ``-W error`` /
+    ``filterwarnings = error`` configuration it would become an exception, so a
+    deprecation alembic emits on EVERY call would turn every ``run_alembic`` into
+    exit 1. A subprocess printed it to its own stderr and carried on; so does
+    this. The previous filters and hook are restored on exit.
+    """
+
+    def _show(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: object = None,
+        line: str | None = None,
+    ) -> None:
+        stream.write(warnings.formatwarning(message, category, filename, lineno, line))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        warnings.showwarning = _show
+        yield
+
+
 def _exit_status(code: object) -> int:
     """The status a process would have exited with for ``sys.exit(code)``."""
     if code is None:
@@ -197,7 +226,9 @@ def run_alembic(
       log lines and ``FAILED:`` messages all land where a subprocess put them.
     * **Failure** — an exception becomes ``returncode=1`` with its full
       traceback appended to ``stderr``; ``sys.exit`` keeps its status (alembic's
-      ``FAILED:`` path exits ``-1``, i.e. 255). ``KeyboardInterrupt`` propagates.
+      ``FAILED:`` path exits ``-1``, i.e. 255). ``KeyboardInterrupt`` and
+      pytest's outcome exceptions propagate. Python warnings are printed to
+      ``stderr`` rather than raised into pytest's warning machinery.
 
     Process-global state ``env.py`` touches — ``os.environ``, ``sys.path``,
     cwd, and logging — is restored after the call (see
@@ -222,6 +253,7 @@ def run_alembic(
         contextlib.redirect_stdout(out),
         contextlib.redirect_stderr(err),
         _alembic_ini_logging(err),
+        _warnings_to(err),
     ):
         os.environ["DATABASE_URL"] = db_url
         cli = CommandLine(prog="alembic")
@@ -241,13 +273,14 @@ def run_alembic(
                 attributes={"configure_logger": False},
             )
             cli.run_cmd(config, options)
-        except KeyboardInterrupt:
-            raise
         except SystemExit as exc:
             returncode = _exit_status(exc.code)
             if not isinstance(exc.code, (int, type(None))):
                 print(exc.code, file=err)
-        except BaseException:
+        except Exception:
+            # Not BaseException: pytest's own outcome exceptions (`pytest.fail`,
+            # `pytest.skip`, a timeout plugin) must propagate, never be read as
+            # the migration refusing — which `expect_success=False` would pass.
             traceback.print_exc(file=err)
             returncode = 1
     proc = subprocess.CompletedProcess(

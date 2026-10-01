@@ -11,7 +11,8 @@ so the properties below are exactly the ones the move could silently break:
   ``fileConfig`` would have reconfigured for the rest of the session;
 * the streams the migration tests read (revision log lines on stderr, offline
   SQL and ``FAILED:`` on stdout);
-* the exit status and traceback of a failing command, and ``expect_success``.
+* the exit status and traceback of a failing command, ``expect_success``, and
+  warnings staying on stderr rather than escalating under an error filter.
 
 Every case runs offline (``--sql``) or against an unreachable port, so none of
 them needs Postgres — unlike the ``*_migration.py`` tests that exercise the same
@@ -109,3 +110,12 @@ def test_expect_failure_asserts_when_the_command_succeeds() -> None:
             "--sql",
             expect_success=False,
         )
+
+
+@pytest.mark.filterwarnings("error")
+def test_a_warning_under_an_error_filter_does_not_fail_the_call() -> None:
+    # A child process printed warnings to its stderr; in-process they must not
+    # become exceptions just because the test session escalates warnings.
+    proc = run_alembic(backend_root(), _OFFLINE_URL, "stamp", "head", "--sql")
+
+    assert proc.returncode == 0, proc.stderr
