@@ -2,13 +2,13 @@
 
 **Version:** 0.2.4 (Phase 1 — §3 filled in from the shipped primitives; §3.3
 records the patterns the first post-guide page had to add; §3.4 records the
-alerts page's retirement and the Dev Ops Conditions panel; §3.5 adds the share
-primitives)
-**Last Updated:** 2026-09-27
+alerts page's retirement and the Dev Ops Conditions panel; §3.5 records the computers console; §3.6 adds the
+share primitives)
+**Last Updated:** 2026-10-01
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
 `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
-§3.5 from `2026-08-27-operator-touch-read-and-surface` Phase C3
+§3.6 from `2026-08-27-operator-touch-read-and-surface` Phase C3
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -1304,7 +1304,7 @@ same table. Every module doc cites its rule number and links this file.
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
-| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.5](#35-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, "data-testid"? }[]`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
+| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.6](#36-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, "data-testid"? }[]`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three (deleted with the alerts page, §3.4) each
