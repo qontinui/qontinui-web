@@ -1540,6 +1540,28 @@ class TestFailClosedEdges:
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
         assert "jwt-x" not in resp.text and "minted" not in resp.text
 
+    @pytest.mark.parametrize("collect", [False, True])
+    def test_pair_confirm_unreadable_flag_refuses(self, collect: bool) -> None:
+        """An unreadable revocation flag is a 503, never a pass — in either
+        mode, and with no token or per-tenant outcome in the answer."""
+        device_id = uuid4()
+        body: dict[str, Any] = {"device_id": str(device_id), "token": "jwt-x"}
+        if collect:
+            body["collect"] = True
+            body["results"] = [{"tenant_id": str(uuid4()), "status": "minted"}]
+        with (
+            self._pair_confirm(device_id, coord_body=body),
+            patch.object(
+                device_crud,
+                "get_credential_revoked_at",
+                AsyncMock(side_effect=RuntimeError("db down")),
+            ),
+        ):
+            resp = self._confirm(str(device_id))
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_state_unavailable"
+        assert "jwt-x" not in resp.text and "minted" not in resp.text
+
     def test_pair_confirm_coord_refusal_discloses_no_revocation_state(self) -> None:
         device_id = uuid4()
         with (
