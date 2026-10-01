@@ -1053,8 +1053,10 @@ export function computerStatus(
   // pressure that is not there, and it is reported below as stale instead.
   const pressured = laneState.filter((s) => s.fresh && atFloor(s.lane));
   if (pressured.length > 0) {
-    // Two different claims: `breach` is a guard REFUSING work now; `warn` is
-    // inside the amber band, where a guard may be deferring it.
+    // Two different claims, both made by a guard ON THE MACHINE (ci_node
+    // dispatch, the supervisor's disk guard), not by coord: `breach` is a
+    // guard refusing work now; `warn` is inside the amber band, where a guard
+    // may be deferring it.
     const names = (h: string) =>
       pressured
         .filter((s) => s.lane.headroom === h)
@@ -1067,10 +1069,10 @@ export function computerStatus(
       "under pressure",
       [
         breach
-          ? `Lane ${breach} is past an admission floor — coord is refusing work here.`
+          ? `Lane ${breach} is past an admission floor — a guard is refusing work here.`
           : null,
         warn
-          ? `Lane ${warn} is near an admission floor — coord may be deferring work.`
+          ? `Lane ${warn} is near an admission floor — a guard may be deferring work.`
           : null,
       ]
         .filter((x): x is string => x !== null)
@@ -1113,9 +1115,12 @@ export function computerStatus(
       "Coord listed only part of this computer's lanes (cap reached), so its sample state is not fully known."
     );
   }
-  // Coord's own fold over the lanes. With no lane in its lookback it reads
-  // `unknown` — there is then no lane row above to be stale, and "healthy"
-  // would claim a usage nobody measured.
+  // Coord's own fold over every known lane of the attached devices (there is
+  // no lookback window): a lane is stale after 90 s, so any stale lane makes
+  // this `stale`; empty lanes with a sample from a no-longer-attached device
+  // also fold to `stale`; never sampled is `unknown`. The refusal itself is a
+  // machine-side guard's (ci_node dispatch, the supervisor's disk guard), so
+  // "healthy" here would claim a usage nobody measured.
   if (c.samplesState !== "fresh") {
     return make(
       "lane_stale",

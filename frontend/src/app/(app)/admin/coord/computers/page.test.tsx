@@ -304,7 +304,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.queryByTestId("coord-computer-lanes-unknown")).toBeNull();
   });
 
-  it("renders a lane silent past 30 min as a STALE last-known row, not a dropped one", async () => {
+  it("renders a lane past its 90 s sample window as a STALE last-known row, listed not dropped", async () => {
     httpGet.mockResolvedValue(
       detailFx({
         lanes: [
