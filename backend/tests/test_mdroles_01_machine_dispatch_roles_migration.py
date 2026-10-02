@@ -16,8 +16,13 @@ table mirroring every live column (§D4 "Versions mirror every column").
 With a database (``QONTINUI_TEST_PG=host:port``; skipped otherwise — a skip
 proves nothing): column shape of both tables, the exactly-one-machine-key
 CHECK, the role CHECK, the COALESCE unique index treating the NULL half of the
-key as a value, the version FK + ``UNIQUE (role_id, version)``, the comments,
-idempotent upgrade and an up/down/up round-trip.
+key as a value, the canonical host name (trimmed, unique case-insensitively),
+the version FK + ``UNIQUE (role_id, version)`` + ``ON DELETE CASCADE``, the
+comments, idempotent upgrade and an up/down/up round-trip. Every refusal is
+pinned to its SQLSTATE and constraint name, not a bare ``IntegrityError``.
+
+One test upgrades to ``head`` rather than to this revision: it is the standing
+guard that a later migration widening the parent widens ``_versions`` too.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ import ast
 import re
 import sys
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -303,6 +310,35 @@ def _snapshot(engine: Engine, role_id: uuid.UUID, version: int) -> None:
         )
 
 
+# SQLSTATEs the refusals below are pinned to, so a refusal for the WRONG
+# reason (e.g. a NOT NULL violation where a CHECK was meant) cannot pass.
+_CHECK = "23514"
+_UNIQUE = "23505"
+_FK = "23503"
+
+_CK_ONE_KEY = "ck_machine_dispatch_roles_one_machine_key"
+_CK_HOST = "ck_machine_dispatch_roles_ci_host_name_canonical"
+_CK_ROLE = "ck_machine_dispatch_roles_dispatch_role"
+_UQ_VERSION = "uq_machine_dispatch_roles_versions_role_version"
+_FK_ROLE = "machine_dispatch_roles_versions_role_id_fkey"
+
+
+@contextmanager
+def _refused(sqlstate: str, constraint: str) -> Iterator[None]:
+    """Expect an IntegrityError carrying exactly this SQLSTATE and constraint."""
+    with pytest.raises(sqlalchemy.exc.IntegrityError) as exc:
+        yield
+    orig = exc.value.orig
+    assert getattr(orig, "pgcode", None) == sqlstate, (
+        getattr(orig, "pgcode", None),
+        str(orig),
+    )
+    assert orig.diag.constraint_name == constraint, (  # type: ignore[union-attr]
+        orig.diag.constraint_name,  # type: ignore[union-attr]
+        str(orig),
+    )
+
+
 @_needs_pg
 def test_table_shapes_checks_and_unique_machine_key() -> None:
     with ephemeral_database(admin_database_url(), "mdroles01_shape") as (
@@ -326,22 +362,64 @@ def test_table_shapes_checks_and_unique_machine_key() -> None:
 
         # The unique index treats the NULL half of the key as a value:
         # a second row for the same machine is refused, by either key.
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
+        with _refused(_UNIQUE, _UNIQUE_INDEX):
             _insert(engine, tenant_id=tenant, machine_device_id=device)
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
+        with _refused(_UNIQUE, _UNIQUE_INDEX):
             _insert(engine, machine_device_id=None, ci_host_name="hp2")
         # Exactly one machine key: neither, or both, is refused.
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
+        with _refused(_CHECK, _CK_ONE_KEY):
             _insert(engine, machine_device_id=None, ci_host_name=None)
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
+        with _refused(_CHECK, _CK_ONE_KEY):
             _insert(engine, ci_host_name="hp3")
-        # '' is the index's COALESCE sentinel and never a host name.
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _insert(engine, machine_device_id=None, ci_host_name="  ")
         # Closed role set — and not coord.devices.role's vocabulary.
         for bad in ("build", "standby", "Workhorse"):
-            with pytest.raises(sqlalchemy.exc.IntegrityError):
+            with _refused(_CHECK, _CK_ROLE):
                 _insert(engine, dispatch_role=bad)
+
+
+@_needs_pg
+def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
+    """'hp2', 'HP2' and 'hp2 ' are one machine, or a role lookup can miss.
+
+    A miss reads as unassigned, i.e. workhorse — which would silently break the
+    Bench guarantee. So padding and emptiness are refused outright, and a second
+    case spelling of a host that already has a row collides on the index.
+    """
+    with ephemeral_database(admin_database_url(), "mdroles01_host") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _insert(engine, machine_device_id=None, ci_host_name="hp2")
+
+        # Trim rule: any leading/trailing whitespace, or an empty name.
+        for bad in ("hp2 ", " hp2", "\thp2", "hp2\n", "\rhp2", "\x0bhp2", "", "  "):
+            with _refused(_CHECK, _CK_HOST):
+                _insert(engine, machine_device_id=None, ci_host_name=bad)
+        # Case rule: another spelling of the same host is the same machine.
+        for same in ("HP2", "Hp2"):
+            with _refused(_UNIQUE, _UNIQUE_INDEX):
+                _insert(engine, machine_device_id=None, ci_host_name=same)
+        # The same host under another tenant is a different machine, and an
+        # inner space is part of a name, not padding.
+        _insert(
+            engine,
+            tenant_id=uuid.UUID(int=2),
+            machine_device_id=None,
+            ci_host_name="HP2",
+        )
+        _insert(engine, machine_device_id=None, ci_host_name="hp 2")
+        # The stored case is kept; lookups fold it (coord matches with lower()).
+        assert (
+            scalar(
+                engine,
+                f"SELECT count(*) FROM {_SCHEMA}.{_TABLE} "
+                "WHERE tenant_id = :t AND lower(ci_host_name) = lower(:h)",
+                t=uuid.UUID(int=1),
+                h="HP2",
+            )
+            == 1
+        )
 
 
 @_needs_pg
@@ -353,10 +431,10 @@ def test_versions_mirror_the_row_and_are_keyed_per_role() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         role_id = _insert(engine, machine_device_id=None, ci_host_name="hp2")
         _snapshot(engine, role_id, 1)
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _snapshot(engine, role_id, 1)  # UNIQUE (role_id, version)
+        with _refused(_UNIQUE, _UQ_VERSION):
+            _snapshot(engine, role_id, 1)
         # FK: a snapshot of a role that does not exist is refused.
-        with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as conn:
+        with _refused(_FK, _FK_ROLE), engine.begin() as conn:
             conn.execute(
                 text(
                     f"INSERT INTO {_SCHEMA}.{_VERSIONS} "
@@ -373,6 +451,67 @@ def test_versions_mirror_the_row_and_are_keyed_per_role() -> None:
             )
             == "hp2"
         )
+
+
+@_needs_pg
+def test_deleting_a_role_cascades_to_its_versions_only() -> None:
+    with ephemeral_database(admin_database_url(), "mdroles01_cascade") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        doomed = _insert(engine)
+        kept = _insert(engine)
+        for role_id in (doomed, kept):
+            _snapshot(engine, role_id, 1)
+            _snapshot(engine, role_id, 2)
+
+        with engine.begin() as conn:
+            conn.execute(
+                text(f"DELETE FROM {_SCHEMA}.{_TABLE} WHERE id = :id"), {"id": doomed}
+            )
+
+        count = f"SELECT count(*) FROM {_SCHEMA}.{_VERSIONS} WHERE role_id = :r"
+        assert scalar(engine, count, r=doomed) == 0
+        assert scalar(engine, count, r=kept) == 2
+
+
+@_needs_pg
+def test_at_head_versions_still_mirror_every_parent_column() -> None:
+    """The standing guard for §D4 "versions mirror every column".
+
+    Upgrades to ``head``, not to this revision, so a LATER migration that adds a
+    column to ``machine_dispatch_roles`` without adding it to ``_versions``
+    fails here — a partial snapshot is an audit trail that lies while still
+    reporting as versioned.
+    """
+    with ephemeral_database(admin_database_url(), "mdroles01_head") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", "head")
+
+        def types(table: str) -> dict[str, tuple[str, str]]:
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT column_name, data_type, udt_name
+                          FROM information_schema.columns
+                         WHERE table_schema = :schema AND table_name = :table
+                        """
+                    ),
+                    {"schema": _SCHEMA, "table": table},
+                ).all()
+            return {r[0]: (r[1], r[2]) for r in rows}
+
+        parent = types(_TABLE)
+        snapshot = types(_VERSIONS)
+        assert parent and snapshot
+        mirrored = set(parent) - {"id", "current_version", "created_at"}
+        assert mirrored <= set(snapshot), sorted(mirrored - set(snapshot))
+        for name in sorted(mirrored):
+            assert snapshot[name] == parent[name], (name, parent[name], snapshot[name])
 
 
 @_needs_pg
