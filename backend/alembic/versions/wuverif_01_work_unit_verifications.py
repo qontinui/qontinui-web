@@ -1,7 +1,7 @@
 """coord work-unit verifications — one row per independent post-ship verification
 
 Revision ID: wuverif_01
-Revises: coordinput_01_operator_inputs
+Revises: cmtland_01
 Create Date: 2026-09-30
 
 Phase 1 (storage) of the work-unit verification plan. DDL ONLY: no route, no
@@ -87,9 +87,9 @@ this one.
 Head resolution
 ===============
 
-``down_revision = "coordinput_01_operator_inputs"`` — the single
-head of qontinui-web ``origin/main`` @ ``e85503b64`` (612 revisions) on
-2026-09-30, resolved by AST-parsing every file in ``backend/alembic/versions``
+``down_revision = "cmtland_01"`` — the single
+head of qontinui-web ``origin/main`` @ ``78e08d53d`` on
+2026-10-02, resolved by AST-parsing every file in ``backend/alembic/versions``
 and taking the one ``revision`` no file names as ``down_revision``. If main
 moves before this lands, re-chain onto the live head (prove ONE head with
 ``ScriptDirectory.from_config(...).get_heads()``), and re-point the
@@ -102,7 +102,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wuverif_01"
-down_revision: str | Sequence[str] | None = "coordinput_01_operator_inputs"
+down_revision: str | Sequence[str] | None = "cmtland_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
