@@ -231,7 +231,7 @@ def test_upgrade_write_downgrade_upgrade_round_trip() -> None:
             "the parent must not already carry this table"
         )
 
-        run_alembic(root, db_url, "upgrade", "head")
+        run_alembic(root, db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _INDEX, schema=_SCHEMA)
 
@@ -284,11 +284,11 @@ def test_upgrade_write_downgrade_upgrade_round_trip() -> None:
         assert created is not None
 
         # head -> parent -> head leaves no residue and re-creates cleanly.
-        run_alembic(root, db_url, "downgrade", "-1")
+        run_alembic(root, db_url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, _SCHEMA, _TABLE)
         assert not index_exists(engine, _INDEX, schema=_SCHEMA)
 
-        run_alembic(root, db_url, "upgrade", "head")
+        run_alembic(root, db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _INDEX, schema=_SCHEMA)
 
