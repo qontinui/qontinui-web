@@ -4,9 +4,9 @@
  *
  * Invoked by the `validate` job of `.github/workflows/verify-frontend-run.yml`
  * on every push to main (and on a manual `workflow_dispatch` re-smoke). It
- * replaced the `deployment_status` trigger, which fired for only ~5 of 29
- * production deploys because Vercel does not reliably write the GitHub
- * deployment record (plan
+ * replaced the `deployment_status` trigger, which fired for only 5 of 29
+ * production deploys in 48 h (coord finding `c4f43823`, 2026-10-02) because
+ * Vercel does not reliably write the GitHub deployment record (plan
  * 2026-10-02-frontend-post-deploy-smoke-misses-most-production-deploys).
  *
  * The decision is the pure `classify()` below — one call per poll, unit-tested
@@ -17,7 +17,8 @@
  * The `verify` job uses two more modes of the same CLI, each backed by a pure
  * function:
  *   `prior`  -> `selectRollbackTarget()`: the last-known-good production
- *               deployment, i.e. the newest live one created before THIS one.
+ *               deployment, i.e. the newest live one created before THIS one
+ *               whose own smoke has not already failed.
  *   `alias <pre_smoke|pre_rollback>` -> `aliasDecision()`: whether the
  *               production alias still serves THIS deployment, so a run never
  *               smokes, or rolls back, a newer deployment than its own.
@@ -172,14 +173,29 @@ export function classify(input: ClassifyInput): Outcome {
     );
   }
 
-  return waitOrTimeout(
-    budgetElapsed,
-    mine.length === 0
-      ? `no production deployment for ${sha} yet.`
-      : mine.some((d) => stateOf(d) === "READY")
-        ? `production deployment for ${sha} is READY but STAGED, not yet promoted.`
-        : `production deployment for ${sha} was CANCELED and main has not moved.`
-  );
+  if (mine.length === 0) {
+    return waitOrTimeout(
+      budgetElapsed,
+      `no production deployment for ${sha} yet.`
+    );
+  }
+  if (mine.some((d) => stateOf(d) === "READY")) {
+    // Vercel docs (/docs/instant-rollback, read 2026-10-02): "After a
+    // rollback, Vercel turns off auto-assignment of production domains", and
+    // `vercel promote` restores it. Whether this workflow's own
+    // `vercel promote` rollback can leave it off is not documented, so the
+    // message names it as the likely cause rather than asserting it.
+    return waitOrTimeout(
+      budgetElapsed,
+      `production deployment for ${sha} is READY but STAGED, not promoted. Production auto-assignment may be paused after a rollback; promote a good deployment or undo the rollback in Vercel.`
+    );
+  }
+  // Only CANCELED deployments of the head of main, and nothing newer to wait
+  // for: no deployment of this commit will go live, so waiting is pointless.
+  return {
+    kind: "fail",
+    reason: `production deployment for ${sha} was CANCELED and main has not moved past it, so the head of main will not go live.`,
+  };
 }
 
 function waitOrTimeout(budgetElapsed: boolean, reason: string): Outcome {
@@ -200,7 +216,8 @@ export class ApiError extends Error {
 }
 
 export interface ResolveDeps {
-  listDeployments(): Promise<VercelDeployment[]>;
+  /** Production deployments of exactly this commit (Vercel `sha=` filter). */
+  listDeployments(sha: string): Promise<VercelDeployment[]>;
   mainHead(): Promise<string>;
   sleep(ms: number): Promise<void>;
   now(): number;
@@ -226,10 +243,13 @@ export async function resolveDeployment(
     let deployments: VercelDeployment[];
     let mainHeadSha: string;
     try {
-      [deployments, mainHeadSha] = await Promise.all([
-        deps.listDeployments(),
-        deps.mainHead(),
-      ]);
+      mainHeadSha = await deps.mainHead();
+      deployments = await deps.listDeployments(opts.sha);
+      if (mainHeadSha !== opts.sha) {
+        deployments = deployments.concat(
+          await deps.listDeployments(mainHeadSha)
+        );
+      }
       errors = 0;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -266,16 +286,26 @@ export type RollbackTarget =
  * newest production deployment that is READY and was promoted (not STAGED),
  * created strictly before this one, and not this one. A newer deployment is
  * never a rollback target, and neither is a failed, building or cancelled one.
+ *
+ * Nor is one in `failedUids`: a deployment whose own smoke already failed
+ * stays READY and PROMOTED in Vercel after being rolled away from, so state
+ * alone would offer it again. Those uids come from the durable record the
+ * paging step writes into the `frontend-deploy-rollback` issues (see
+ * `parseFailedDeploymentUids`). Residual limit: a failure whose record could
+ * not be written (the paging step is best-effort), or one older than the
+ * issues read, is not excluded.
  * Pure.
  */
 export function selectRollbackTarget(
   deployments: VercelDeployment[],
-  self: { uid: string; created: number }
+  self: { uid: string; created: number },
+  failedUids: readonly string[] = []
 ): RollbackTarget {
   const target = deployments
     .filter(
       (d) =>
         d.uid !== self.uid &&
+        !failedUids.includes(d.uid) &&
         typeof d.created === "number" &&
         d.created < self.created &&
         isLive(d)
@@ -294,6 +324,26 @@ export function selectRollbackTarget(
     };
   }
   return { found: true, uid: target.uid, url: `https://${target.url}` };
+}
+
+/**
+ * The marker the workflow's paging step writes into a `frontend-deploy-rollback`
+ * issue body for every deployment whose smoke failed:
+ *   <!-- verify-frontend-failed-deployment: dpl_xxx -->
+ * Keep this regex and the workflow's literal in step.
+ */
+const FAILED_MARKER_RE =
+  /<!-- verify-frontend-failed-deployment: ([A-Za-z0-9_]+) -->/g;
+
+/** Every failed-deployment uid recorded in these issue bodies. Pure. */
+export function parseFailedDeploymentUids(
+  bodies: readonly (string | null | undefined)[]
+): string[] {
+  const uids = new Set<string>();
+  for (const body of bodies) {
+    for (const m of (body ?? "").matchAll(FAILED_MARKER_RE)) uids.add(m[1]);
+  }
+  return [...uids];
 }
 
 // ── Supersession guard ──────────────────────────────────────────────────────
@@ -434,12 +484,13 @@ async function resolveCli(): Promise<number> {
     return fail(`RESOLVE_SHA '${sha}' is not a 40-hex sha.`);
   if (!token)
     return fail(
-      "No Vercel token (SSM /qontinui/vercel/token or secrets.VERCEL_TOKEN)."
+      "No Vercel token (SSM /qontinui/vercel/token could not be read)."
     );
   if (!ghToken || !repo) return fail("GITHUB_TOKEN / GITHUB_REPOSITORY unset.");
 
   const deps: ResolveDeps = {
-    listDeployments: () => listProduction(20),
+    listDeployments: async (forSha) =>
+      (await listProduction(`sha=${forSha}&limit=20`)).deployments,
     async mainHead() {
       const body = (await getJson(`${GITHUB_API}/repos/${repo}/commits/main`, {
         Authorization: `Bearer ${ghToken}`,
@@ -487,15 +538,49 @@ async function resolveCli(): Promise<number> {
   }
 }
 
-async function listProduction(limit: number): Promise<VercelDeployment[]> {
+/**
+ * One page of production deployments, newest first. `query` adds filters:
+ * `sha=<commit>` (honoured: verified live 2026-10-02, it returns exactly that
+ * commit's deployments) or `until=<ms>` (exclusive), plus `limit` (max 100).
+ */
+async function listProduction(
+  query: string
+): Promise<{ deployments: VercelDeployment[]; next: number | null }> {
   const body = (await vercelGet(
     `/v6/deployments?projectId=${encodeURIComponent(projectId)}` +
-      `&target=production&limit=${limit}`
-  )) as { deployments?: unknown };
+      `&target=production&${query}`
+  )) as { deployments?: unknown; pagination?: { next?: unknown } };
   if (!Array.isArray(body.deployments)) {
     throw new ApiError("Vercel list response has no deployments array", false);
   }
-  return body.deployments as VercelDeployment[];
+  const next = body.pagination?.next;
+  return {
+    deployments: body.deployments as VercelDeployment[],
+    next: typeof next === "number" ? next : null,
+  };
+}
+
+/** Failed-deployment uids recorded in the rollback issues (any state). */
+async function recordedFailedUids(): Promise<string[]> {
+  const ghToken = env.GITHUB_TOKEN ?? "";
+  const repo = env.GITHUB_REPOSITORY ?? "";
+  if (!ghToken || !repo) {
+    throw new ApiError("GITHUB_TOKEN / GITHUB_REPOSITORY unset", false);
+  }
+  const issues = (await getJson(
+    `${GITHUB_API}/repos/${repo}/issues?labels=frontend-deploy-rollback&state=all&per_page=100`,
+    {
+      Authorization: `Bearer ${ghToken}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    }
+  )) as unknown;
+  if (!Array.isArray(issues)) {
+    throw new ApiError("GitHub issues response is not a list", false);
+  }
+  return parseFailedDeploymentUids(
+    issues.map((i: { body?: string | null }) => i.body)
+  );
 }
 
 /** `GET /v13/deployments/<uid or alias host>`, checked to be this project's. */
@@ -548,10 +633,29 @@ async function priorCli(): Promise<number> {
     if (!Number.isFinite(self.created)) {
       return notFound(`Vercel reported no creation time for ${uid}.`);
     }
-    const target = selectRollbackTarget(await listProduction(100), {
-      uid,
-      created: self.created,
-    });
+    // Without the failure record a known-bad deployment could be promoted,
+    // so an unreadable record means no rollback target (HARNESS), not "none".
+    const failed = await recordedFailedUids();
+    if (failed.length > 0) {
+      process.stdout.write(
+        `Excluding deployments whose smoke already failed: ${failed.join(", ")}\n`
+      );
+    }
+    // Page back from this deployment's creation time until a target turns up.
+    let until: number | null = self.created;
+    let target: RollbackTarget = {
+      found: false,
+      reason: `no production deployment was created before ${uid}.`,
+    };
+    for (let page = 0; page < 5 && until !== null && !target.found; page++) {
+      const listed = await listProduction(`until=${until}&limit=100`);
+      target = selectRollbackTarget(
+        listed.deployments,
+        { uid, created: self.created },
+        failed
+      );
+      until = listed.next;
+    }
     if (!target.found) return notFound(target.reason);
     process.stdout.write(
       `Prior (last-known-good) Production deployment = ${target.uid} (${target.url})\n`
@@ -564,7 +668,9 @@ async function priorCli(): Promise<number> {
     return 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return notFound(`Could not read the Vercel API: ${msg}.`);
+    return notFound(
+      `Could not read the Vercel API or the GitHub failure record: ${msg}.`
+    );
   }
 }
 

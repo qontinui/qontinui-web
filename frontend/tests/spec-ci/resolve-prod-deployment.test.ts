@@ -4,6 +4,7 @@ import {
   ApiError,
   classify,
   escapeCommandData,
+  parseFailedDeploymentUids,
   resolveDeployment,
   selectRollbackTarget,
   type ResolveDeps,
@@ -180,6 +181,25 @@ describe("classify", () => {
     expect(outcome.kind).toBe("skip_superseded");
   });
 
+  it("fails red at once on a CANCELED head when main has not moved", () => {
+    const outcome = classify({ ...base, deployments: [dep(SHA, "CANCELED")] });
+    expect(outcome.kind).toBe("fail");
+    expect(outcome.kind === "fail" && outcome.reason).toContain("CANCELED");
+  });
+
+  it("names paused auto-assignment when a STAGED deployment times out", () => {
+    const d = { ...dep(SHA, "READY"), readySubstate: "STAGED" };
+    const outcome = classify({
+      ...base,
+      budgetElapsed: true,
+      deployments: [d],
+    });
+    expect(outcome.kind).toBe("fail");
+    expect(outcome.kind === "fail" && outcome.reason).toContain(
+      "auto-assignment may be paused after a rollback"
+    );
+  });
+
   it("fails red on a READY deployment whose url is not a bare host", () => {
     const d = dep(SHA, "READY");
     d.url = "evil.example\n::set-output name=ok::true";
@@ -286,6 +306,21 @@ describe("resolveDeployment", () => {
     expect(outcome.kind).toBe("fail");
   });
 
+  it("lists this sha, and main's head only once main has moved", async () => {
+    const asked: string[] = [];
+    await resolveDeployment(
+      fakeDeps(
+        async (forSha) => {
+          asked.push(forSha);
+          return [dep(forSha, "READY")];
+        },
+        async () => NEWER
+      ),
+      OPTS
+    );
+    expect(asked).toEqual([SHA, NEWER]);
+  });
+
   it("skips by name once main moves on mid-wait", async () => {
     let polls = 0;
     const outcome = await resolveDeployment(
@@ -370,6 +405,18 @@ describe("selectRollbackTarget", () => {
     expect(target.found).toBe(false);
   });
 
+  it("never picks a deployment whose smoke already failed", () => {
+    const target = selectRollbackTarget(
+      [
+        dep(OTHER, "READY", "dpl_good", 10),
+        dep(NEWER, "READY", "dpl_failed", 50),
+      ],
+      SELF,
+      ["dpl_failed"]
+    );
+    expect(target).toMatchObject({ found: true, uid: "dpl_good" });
+  });
+
   it("reports not-found when nothing qualifies", () => {
     const target = selectRollbackTarget(
       [dep(OTHER, "ERROR", "dpl_e", 10), dep(NEWER, "READY", "dpl_n", 300)],
@@ -415,5 +462,17 @@ describe("aliasDecision", () => {
       action: "block",
       level: "error",
     });
+  });
+});
+
+describe("parseFailedDeploymentUids", () => {
+  it("reads every marker the paging step writes, de-duplicated", () => {
+    const uids = parseFailedDeploymentUids([
+      "Smoke failed.\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
+      "<!-- verify-frontend-failed-deployment: dpl_B2 -->\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
+      null,
+      "no marker here, dpl_C3",
+    ]);
+    expect(uids).toEqual(["dpl_A1", "dpl_B2"]);
   });
 });
