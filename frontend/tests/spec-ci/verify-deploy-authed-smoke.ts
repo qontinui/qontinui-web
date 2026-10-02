@@ -20,8 +20,10 @@
  *        - sessionStorage.auth_bearer_refresh_token
  *        - localStorage.is_authenticated = "true"
  *        - localStorage.token_expiry     = <far-future ms>
- *        - document.cookie qontinui_auth=1 (the middleware soft-gate marker;
- *          carries no token — see token-storage.ts AUTH_MARKER_COOKIE).
+ *      and, on the browser CONTEXT before the first navigation (not from the
+ *      init script, which misses the first request — see auth-marker-cookie.ts):
+ *        - cookie qontinui_auth=1 (the middleware soft-gate marker; carries no
+ *          token — see token-storage.ts AUTH_MARKER_COOKIE).
  *      The app's http-client.ts then attaches the Bearer header on every call,
  *      and middleware.ts lets protected routes through.
  *
@@ -46,6 +48,7 @@ import {
   type ConsoleErrorEntry,
   type ConsoleLevel,
 } from "./console-policy";
+import { seedAuthMarkerCookie } from "./auth-marker-cookie";
 import { settleRoute } from "./route-settle";
 import {
   isSameOriginServerError,
@@ -265,12 +268,14 @@ async function main(): Promise<number> {
     viewport: { width: 1280, height: 800 },
     ignoreHTTPSErrors: true,
   });
+  // The marker cookie goes on the context so the FIRST request carries it;
+  // see auth-marker-cookie.ts for the false /sessions bounce this prevents.
+  await seedAuthMarkerCookie(context, base);
   const page: Page = await context.newPage();
 
   // Seed the auth surface the app boots from BEFORE any navigation. Mirrors
   // token-storage.ts: Bearer tokens in sessionStorage (the primary auth path),
-  // is_authenticated + a far-future token_expiry in localStorage, and the
-  // qontinui_auth marker cookie that lets middleware.ts pass protected routes.
+  // and is_authenticated + a far-future token_expiry in localStorage.
   const farFutureExpiryMs = Date.now() + 23 * 60 * 60 * 1000; // ~23h ahead
   await page.addInitScript(
     ([accessToken, refreshToken, expiry]) => {
@@ -279,7 +284,6 @@ async function main(): Promise<number> {
         sessionStorage.setItem("auth_bearer_refresh_token", refreshToken);
         localStorage.setItem("is_authenticated", "true");
         localStorage.setItem("token_expiry", expiry);
-        document.cookie = "qontinui_auth=1; Path=/; SameSite=Lax; Secure";
       } catch {
         // sessionStorage/localStorage may be unavailable on the very first
         // about:blank init; the per-route goto re-runs this init script.
