@@ -1604,7 +1604,7 @@ def test_the_shards_upload_their_junit_results():
     assert "--junitxml=junit-results.xml" in run
 
 
-def test_the_durations_proposal_is_nightly_only_and_never_gates():
+def test_the_durations_proposal_never_gates():
     jobs = _workflow()["jobs"]
     job = jobs.get(PROPOSAL_JOB)
     assert isinstance(job, dict), f"backend-ci.yml has no {PROPOSAL_JOB!r} job"
@@ -1614,6 +1614,8 @@ def test_the_durations_proposal_is_nightly_only_and_never_gates():
     condition = str(job.get("if", ""))
     assert "always()" in condition
     assert "github.event_name == 'schedule'" in condition
+    assert "github.event_name == 'pull_request'" not in condition
+    assert "github.event_name == 'push'" not in condition
     steps = job.get("steps") or []
     download = [s for s in steps if "download-artifact" in str(s.get("uses", ""))]
     assert download and download[0]["with"]["pattern"] == "junit-results-shard-*"
@@ -1636,6 +1638,40 @@ def _proposal_step(name: str) -> dict:
     return _step(_workflow()["jobs"][PROPOSAL_JOB], name)
 
 
+def _proposal_env() -> dict[str, str]:
+    """The proposal job's own `env:`, which its steps' scripts read."""
+    env = _workflow()["jobs"][PROPOSAL_JOB].get("env") or {}
+    return {str(k): str(v) for k, v in env.items()}
+
+
+_EVENT = re.compile(r"github\.event_name == '([a-z_]+)'")
+
+
+def test_the_proposal_runs_wherever_the_headroom_alarm_does():
+    """A `skewed` headroom verdict names THIS run's proposal artifact as its fix.
+
+    So every event that runs the alarm must also produce the artifact; a
+    `workflow_dispatch` alarm pointing at an artifact its run never uploaded
+    sends the reader nowhere.
+    """
+    jobs = _workflow()["jobs"]
+    proposal = set(_EVENT.findall(str(jobs[PROPOSAL_JOB].get("if", ""))))
+    headroom = set(_EVENT.findall(str(jobs["shard-headroom"].get("if", ""))))
+    assert headroom, "shard-headroom's `if:` names no event"
+    assert headroom <= proposal, (
+        f"shard-headroom runs on {sorted(headroom)} but the proposal only on "
+        f"{sorted(proposal)}"
+    )
+
+
+def test_the_proposal_expects_one_junit_file_per_matrix_shard():
+    matrix = _shard_job()["strategy"]["matrix"]["shard"]
+    assert _proposal_env().get("EXPECTED_SHARDS") == str(len(matrix))
+    run = _proposal_step("Build shard-durations-proposed.json")["run"]
+    assert '"${EXPECTED_SHARDS}"' in run
+    assert '!= "6"' not in run, "the count is the env pin, not a literal"
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
 @pytest.mark.parametrize("make_dir", [False, True], ids=["no-dir", "empty-dir"])
 def test_the_proposal_skips_cleanly_when_no_shard_uploaded_junit(tmp_path, make_dir):
@@ -1655,7 +1691,7 @@ def test_the_proposal_skips_cleanly_when_no_shard_uploaded_junit(tmp_path, make_
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "GITHUB_OUTPUT": str(output)},
+        env={**_proposal_env(), "PATH": "/usr/bin:/bin", "GITHUB_OUTPUT": str(output)},
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "::notice" in proc.stdout
@@ -1910,12 +1946,14 @@ def test_the_proposal_build_reports_drift_on_the_summary_page(tmp_path):
         capture_output=True,
         text=True,
         env={
+            **_proposal_env(),
             "PATH": f"{shim.as_posix()}:/usr/bin:/bin:{python_dir}",
             "GITHUB_OUTPUT": str(output),
             "GITHUB_STEP_SUMMARY": str(summary),
         },
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Found 1 junit files, not 6," in proc.stdout, "one shard of six is partial"
     assert "proposed=true" in output.read_text(encoding="utf-8")
     assert (tmp_path / "shard-durations-proposed.json").is_file()
     assert (

@@ -205,6 +205,8 @@ def test_a_skewed_over_margin_does_not_blame_the_matrix():
     result = headroom.evaluate(_run([40, 10, 10, 10, 10, 10]), 45)
     assert result.verdict == "over_margin"
     assert "outgrown the matrix" not in result.reason
+    assert headroom.DURATIONS_REF in result.reason
+    assert f"`{headroom.PROPOSAL_ARTIFACT}`" in result.reason
 
 
 def test_skew_of_exactly_two_is_not_skewed():

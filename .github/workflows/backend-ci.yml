@@ -1302,9 +1302,14 @@ jobs:
 
   # Keeps `backend/tests/shard-durations.json` from rotting (plan
   # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget,
-  # Phase 2). On the nightly only, it turns the six shards' junit timings into
-  # a proposed replacement map and uploads it, so a refresh is a download and a
-  # reviewed commit. It writes nothing to the tree itself.
+  # Phase 2). On the nightly (and a manual dispatch), it turns the six shards'
+  # junit timings into a proposed replacement map and uploads it, so a refresh
+  # is a download and a reviewed commit. It writes nothing to the tree itself.
+  #
+  # It runs on exactly the events `shard-headroom` runs on, because a `skewed`
+  # headroom verdict names THIS run's `shard-durations-proposed` artifact as
+  # its remedy; a dispatch run without the artifact would point at nothing.
+  # Pinned by backend/tests/test_pytest_shard_split.py.
   #
   # It is deliberately NOT in `test-gate`'s `needs:` and nothing gates on it: a
   # tuning-file proposal must never be able to red or hold the `Run Tests`
@@ -1313,11 +1318,15 @@ jobs:
   shard-durations-proposal:
     name: Propose shard durations
     needs: [test]
-    if: always() && github.event_name == 'schedule'
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      # The `test` job's matrix length, pinned equal by
+      # backend/tests/test_pytest_shard_split.py.
+      EXPECTED_SHARDS: '6'
     steps:
       - uses: actions/checkout@v5
 
@@ -1345,14 +1354,14 @@ jobs:
           if [ -d junit ]; then
             found=$(find junit -name '*.xml' -type f | wc -l)
           fi
-          echo "junit files downloaded: ${found} (expected 6)"
+          echo "junit files downloaded: ${found} (expected ${EXPECTED_SHARDS})"
           if [ "${found}" = "0" ]; then
             echo "::notice title=No shard durations proposal tonight::No shard uploaded a junit file (every shard was cancelled or timed out before pytest wrote one), so there is nothing to measure. Skipping the proposal; this is not a failure of this job."
             echo "proposed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${found}" != "6" ]; then
-            echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not 6, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
+          if [ "${found}" != "${EXPECTED_SHARDS}" ]; then
+            echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not ${EXPECTED_SHARDS}, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
           fi
           # `--compare` reports how far the committed map has drifted from
           # tonight's measurement (new / dropped / moved files, both totals) on
