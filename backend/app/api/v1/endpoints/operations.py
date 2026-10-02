@@ -130,8 +130,30 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
-# Timeout for the ONE coord read that is not a small JSON payload: the
-# recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
+# Timeout for the open-PR LISTING (``GET /pr-merge/prs`` without
+# ``include_merged``), the fleet pipeline's hot poll. It is not a small JSON
+# payload either: coord builds every open PR's row through several batched
+# passes (CI lifecycle, conflict clock, base verdicts) and answers with
+# 100-500 rows. Measured straight to coord (``curl -w %{time_total}`` with a
+# device JWT) after qontinui-coord#2414 removed the pr_events re-scan that was
+# hitting coord's 60s statement timeout: 2.9-12.3s over 5 calls on 2026-09-23
+# (coord finding 685356b1), 2.3-5.7s over 6 calls on 2026-10-01 (finding
+# addc9526). 3 of 5 and 1 of 6 of those would have answered 504 at
+# ``_COORD_TIMEOUT``, and the page kept showing the previous rows with nothing
+# on screen saying they were stale. 20s clears the observed ceiling (12.3s)
+# with headroom and stays under the merged read's budget. The frontend polls
+# it single-flight every 15s, so a slow read stretches the gap rather than
+# stacking. Connect stays short, as below.
+#
+# COST: ``/operations/pr-merge/prs`` holds no backend DB session across the
+# coord call (``get_tenant_id`` resolves identity without one). Its
+# ``/admin-dev/prs`` mirror does: the active-user dependency's session stays
+# checked out until teardown, so each of its reads now pins one pooled
+# connection for coord's real latency instead of at most 5s. That page polls
+# single-flight every 45s, so this is a longer hold, not more requests.
+_COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+
+# Timeout for the slowest coord read: the recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
 # resolves a deploy surface per repo and runs a git-ancestry probe per merged
 # PR, so it is slow by construction. Measured against prod on 2026-09-19
 # straight to coord with this proxy's own call shape: a 1h window 1.7s, 12h
@@ -982,10 +1004,10 @@ async def _proxy_coord_get(
     Default ``None`` puts nothing extra on the wire.
 
     ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
-    construction (today only the recently-merged rows,
-    :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None`` keeps the 5s
-    fail-fast for every other proxy: coord answering a small JSON read slower
-    than that means something is wrong, and that is worth surfacing.
+    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, and the
+    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
+    keeps the 5s fail-fast for every other proxy: coord answering a small JSON
+    read slower than that means something is wrong, and that is worth surfacing.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1084,9 +1106,12 @@ async def get_pr_merge_prs(
         "/pr-merge/prs",
         params=params or None,
         tenant_id=tenant_id,
-        # Only the merged ROWS are slow; ``merged_count_hours`` is one indexed
-        # count and keeps the 5s fail-fast.
-        timeout=_COORD_MERGED_READ_TIMEOUT if include_merged > 0 else None,
+        # The merged ROWS are the slow read. The plain listing is cheaper but
+        # still measured past 5s (see ``_COORD_PR_LIST_TIMEOUT``);
+        # ``merged_count_hours`` adds only one indexed count to it.
+        timeout=(
+            _COORD_MERGED_READ_TIMEOUT if include_merged > 0 else _COORD_PR_LIST_TIMEOUT
+        ),
     )
 
 

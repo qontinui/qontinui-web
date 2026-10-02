@@ -30,6 +30,8 @@ const hookData: { current: MergePipelineData } = {
     prs: [],
     mergedPrs: null,
     mergedError: null,
+    prsError: null,
+    prsLoaded: true,
     mergedCount: null,
     economicsByRepo: {},
     suggestions: [],
@@ -158,6 +160,8 @@ describe("MergePipeline", () => {
       prs: [],
       mergedPrs: null,
       mergedError: null,
+      prsError: null,
+      prsLoaded: true,
       mergedCount: null,
       economicsByRepo: {},
       gateBlocks: [],
@@ -923,6 +927,54 @@ describe("MergePipeline", () => {
     expect(screen.queryByTestId("merged-read-failed")).toBeNull();
     fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
     expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+  });
+
+  it("says the PR list is stale when a refresh fails after a good read", () => {
+    // A failed hot read keeps the last good rows. Without the notice the page
+    // passes for current; it must say the rows may be out of date, on every
+    // tab, because every tab (Train included) is built from this list.
+    hookData.current.prs = [pr()];
+    hookData.current.prsLoaded = true;
+    hookData.current.prsError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    const notice = screen.getByTestId("prs-read-failed");
+    expect(notice).toHaveTextContent("could not be refreshed (HTTP 504)");
+    expect(notice).toHaveTextContent(/may be out of date/);
+    for (const tab of ["attention", "in-flight", "merged", "train"]) {
+      fireEvent.click(screen.getByTestId(`pipeline-filter-${tab}`));
+      expect(screen.getByTestId("prs-read-failed")).toBeInTheDocument();
+    }
+  });
+
+  it("says the pipeline is unknown, not empty, when no PR read has succeeded", () => {
+    hookData.current.prs = [];
+    hookData.current.prsLoaded = false;
+    hookData.current.prsError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    const notice = screen.getByTestId("prs-read-failed");
+    expect(notice).toHaveTextContent("could not be loaded (HTTP 504)");
+    expect(notice).toHaveTextContent(/unknown, not empty/);
+    expect(notice).not.toHaveTextContent(/may be out of date/);
+    // The rest of the page must not contradict it with an empty, healthy
+    // pipeline: it stays on its connecting state until a read succeeds.
+    expect(screen.queryByTestId("pipeline-empty")).toBeNull();
+    expect(screen.getByText("Connecting…")).toBeInTheDocument();
+    // ...nor with counts of rows nobody fetched.
+    expect(screen.getByTestId("pipeline-filter-in-flight")).toHaveTextContent("–");
+    expect(screen.getByTestId("pipeline-filter-in-flight")).not.toHaveTextContent("0");
+    expect(screen.getByTestId("pipeline-health")).toHaveTextContent("in flight –");
+  });
+
+  it("shows no PR-read notice when the last read succeeded", () => {
+    hookData.current.prs = [pr()];
+
+    render(<MergePipeline />);
+
+    expect(screen.queryByTestId("prs-read-failed")).toBeNull();
   });
 
   it("renders an unparseable opened_at as unknown, never as 'opened never'", () => {

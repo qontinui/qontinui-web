@@ -190,6 +190,19 @@ export interface MergePipelineData {
    */
   mergedError: string | null;
   /**
+   * Error from the last open-PR listing read (the hot poll's
+   * `/pr-merge/prs`), or `null` when it succeeded. A failed read KEEPS the
+   * last good rows, so without this a slow or failing coord renders as a
+   * current pipeline. Read it with {@link MergePipelineData.prsLoaded}:
+   *
+   * - `prsLoaded` false: no read has ever succeeded. `prs` is `[]` so the
+   *   page can render, but that is UNKNOWN, not an empty pipeline.
+   * - `prsLoaded` true: the rows are the last good read, and STALE.
+   */
+  prsError: string | null;
+  /** Whether any open-PR listing read has succeeded since mount. */
+  prsLoaded: boolean;
+  /**
    * How many PRs landed in the {@link MERGED_LOOKBACK_HOURS} window, per
    * coord's cheap count — available WITHOUT the expensive merged-rows read, so
    * the Merged tab can be labelled before anyone opens it. `null` = unknown
@@ -244,6 +257,8 @@ export function useMergePipelineData(
   const [prs, setPrs] = useState<PrRow[] | null>(null);
   const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
   const [mergedError, setMergedError] = useState<string | null>(null);
+  const [prsError, setPrsError] = useState<string | null>(null);
+  const [prsLoaded, setPrsLoaded] = useState(false);
   const [mergedCount, setMergedCount] = useState<number | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
@@ -329,7 +344,11 @@ export function useMergePipelineData(
       );
       if (!res.ok) {
         if (res.status === 404) {
-          if (!cleanedUpRef.current) setPrs([]);
+          if (!cleanedUpRef.current) {
+            setPrs([]);
+            setPrsError(null);
+            setPrsLoaded(true);
+          }
           return;
         }
         throw new Error(`HTTP ${res.status}`);
@@ -347,6 +366,8 @@ export function useMergePipelineData(
       if (!cleanedUpRef.current) {
         setPrs(list);
         setMergedCount(typeof count === "number" ? count : null);
+        setPrsError(null);
+        setPrsLoaded(true);
       }
     } catch (err) {
       // Keep the last known-good list. This endpoint is slow enough on a
@@ -355,7 +376,13 @@ export function useMergePipelineData(
       // which reads as "nothing to do" rather than "the read failed". 404 is
       // handled above and IS authoritative emptiness.
       log.warn("fetchPrs failed — keeping last known rows", err);
-      if (!cleanedUpRef.current) setPrs((prev) => prev ?? []);
+      // ...and SAY so: kept rows are stale, and a never-loaded list is
+      // unknown. `prsError` is what lets the page tell either apart from a
+      // current, genuinely short pipeline.
+      if (!cleanedUpRef.current) {
+        setPrs((prev) => prev ?? []);
+        setPrsError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, []);
 
@@ -923,6 +950,8 @@ export function useMergePipelineData(
     prs,
     mergedPrs,
     mergedError,
+    prsError,
+    prsLoaded,
     mergedCount,
     economicsByRepo,
     suggestions,

@@ -289,9 +289,11 @@ function PipelineHealthStrip({
     () => deriveCandidateChurn(economicsByRepo),
     [economicsByRepo]
   );
+  // Before the first good read these are counts of rows nobody has fetched:
+  // a dash, not a 0 that would read as an idle pipeline.
   const badges: HealthBadge[] = [
-    { key: "queue", label: `queue ${health.queueDepth}` },
-    { key: "in-flight", label: `in flight ${health.inFlight}` },
+    { key: "queue", label: `queue ${loaded ? health.queueDepth : "–"}` },
+    { key: "in-flight", label: `in flight ${loaded ? health.inFlight : "–"}` },
   ];
   if (health.needsAttention > 0) {
     badges.push({
@@ -900,6 +902,8 @@ export function MergePipeline() {
     prs,
     mergedPrs,
     mergedError,
+    prsError,
+    prsLoaded,
     mergedCount,
     economicsByRepo,
     suggestions,
@@ -927,7 +931,10 @@ export function MergePipeline() {
     filter === "train"
   );
 
-  const loaded = proposals !== null && prs !== null;
+  // `prsLoaded`, not `prs !== null`: a first PR read that fails leaves `prs`
+  // as `[]`, and treating that as loaded would show a green "merging normally"
+  // strip and an empty list beside a notice saying the pipeline is unknown.
+  const loaded = proposals !== null && prsLoaded;
   const rows = useMemo(() => {
     // ONE row per PR, across AND within the two reads — see `fusePipelinePrs`.
     //
@@ -1067,8 +1074,10 @@ export function MergePipeline() {
         tabs={FILTERS.map((f) => ({
           id: f.id,
           label: f.label,
-          count:
-            f.id === "merged" && mergedPrs === null
+          // Unloaded is unknown, not zero: same `–` rule, for every tab.
+          count: !loaded
+            ? null
+            : f.id === "merged" && mergedPrs === null
               ? mergedCount
               : counts[f.id],
           attention: f.id === "attention" && counts[f.id] > 0,
@@ -1083,6 +1092,22 @@ export function MergePipeline() {
       />
 
       {error && <p className="text-xs text-red-300">{error}</p>}
+
+      {/* The PR list feeds every tab, Train included, and a failed read keeps
+          the previous rows: without this the page passes for current while
+          coord is slow. Before the first good read the list is empty for want
+          of an answer, which must not read as "nothing in flight". */}
+      {prsError && (
+        <p
+          className="text-xs text-amber-300"
+          role="status"
+          data-testid="prs-read-failed"
+        >
+          {prsLoaded
+            ? `Pull requests could not be refreshed (${prsError}). Showing the last successful read, which may be out of date.`
+            : `Pull requests could not be loaded (${prsError}). The pipeline is unknown, not empty.`}
+        </p>
+      )}
 
       {/* A failed merged read is an INCOMPLETE history, not an empty one, and
           the list would otherwise pass for the whole thing: the only landed rows
