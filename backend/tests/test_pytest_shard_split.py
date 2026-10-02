@@ -1224,6 +1224,9 @@ def _load_refresh():
     )
     assert spec and spec.loader, f"cannot load {REFRESH_PATH}"
     module = importlib.util.module_from_spec(spec)
+    # Registered before exec: a dataclass resolves its string annotations
+    # through sys.modules[cls.__module__].
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -1811,6 +1814,114 @@ def test_refresh_main_merges_inputs_and_refuses_an_empty_result(tmp_path):
         == 1
     )
     assert not (tmp_path / "no.json").exists()
+
+
+def test_compare_counts_new_dropped_and_moved_files():
+    committed = {"tests/a.py": 10.0, "tests/b.py": 1.0, "tests/gone.py": 5.0}
+    proposed = {"tests/a.py": 29.0, "tests/b.py": 3.1, "tests/new.py": 2.0}
+    diff = refresh.compare(committed, proposed)
+    assert diff.new == ["tests/new.py"]
+    assert diff.dropped == ["tests/gone.py"]
+    # a moved 2.9x (inside MOVED_FACTOR), b moved 3.1x (outside it).
+    assert diff.moved == ["tests/b.py"]
+    assert (diff.committed_s, diff.proposed_s) == (16.0, 34.1)
+
+
+def test_compare_does_not_flag_sub_tenth_noise_as_moved():
+    """0.0 -> 0.2 is rounding noise on a fast file, not a 'moved' measurement."""
+    diff = refresh.compare({"tests/a.py": 0.0}, {"tests/a.py": 0.2})
+    assert diff.moved == []
+
+
+def _compare_line(err: str) -> str:
+    lines = [ln for ln in err.splitlines() if ln.startswith(refresh.COMPARE_PREFIX)]
+    assert len(lines) == 1, err
+    assert err.rstrip().splitlines()[-1] == lines[0], "the compare line prints last"
+    return lines[0]
+
+
+def test_refresh_main_compares_the_proposal_with_the_committed_map(tmp_path, capsys):
+    xml = tmp_path / "shard.xml"
+    xml.write_text(
+        _junit(("tests.test_a", "t1", 1.04), ("tests.test_new", "t1", 2.0)),
+        encoding="utf-8",
+    )
+    committed = tmp_path / "committed.json"
+    committed.write_text(
+        refresh.render({"tests/test_a.py": 1.0, "tests/test_gone.py": 9.0}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    rc = refresh.main([str(xml), "--out", str(out), "--compare", str(committed)])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert _compare_line(err) == (
+        f"{refresh.COMPARE_PREFIX} committed=2 proposed=2 new=1 dropped=1 "
+        "committed_s=10.0 proposed_s=3.0 moved=0"
+    )
+    assert "tests/test_new.py" in err and "tests/test_gone.py" in err
+
+
+@pytest.mark.parametrize("content", [None, "not json", '["a list"]', '{"a.py": "x"}'])
+def test_an_unreadable_committed_map_is_reported_never_fatal(tmp_path, capsys, content):
+    xml = tmp_path / "shard.xml"
+    xml.write_text(_junit(("tests.test_a", "t1", 1.0)), encoding="utf-8")
+    committed = tmp_path / "committed.json"
+    if content is not None:
+        committed.write_text(content, encoding="utf-8")
+    out = tmp_path / "out.json"
+    rc = refresh.main([str(xml), "--out", str(out), "--compare", str(committed)])
+    assert rc == 0, "the proposal is the product; a bad comparison must not lose it"
+    assert out.is_file()
+    assert _compare_line(capsys.readouterr().err) == (
+        f"{refresh.COMPARE_PREFIX} committed=unreadable proposed=1"
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+def test_the_proposal_build_reports_drift_on_the_summary_page(tmp_path):
+    """Runs the build step's REAL script against one shard's junit file."""
+    (tmp_path / "scripts" / "ci").mkdir(parents=True)
+    shutil.copy(REFRESH_PATH, tmp_path / "scripts" / "ci")
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    (tmp_path / "backend" / "tests" / "test_a.py").write_text("", encoding="utf-8")
+    (tmp_path / "backend" / DURATIONS_REF).write_text(
+        refresh.render({"tests/test_a.py": 1.0}), encoding="utf-8"
+    )
+    (tmp_path / "junit").mkdir()
+    (tmp_path / "junit" / "junit-results.xml").write_text(
+        _junit(("tests.test_a", "t1", 5.0)), encoding="utf-8"
+    )
+    output = tmp_path / "github_output"
+    summary = tmp_path / "step_summary"
+    output.write_text("", encoding="utf-8")
+    step = _proposal_step("Build shard-durations-proposed.json")
+    python_dir = str(Path(sys.executable).parent)
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    # The step calls `python`; point it at this interpreter whatever it is named.
+    (shim / "python").write_text(
+        f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "$@"\n', encoding="utf-8"
+    )
+    (shim / "python").chmod(0o755)
+    proc = subprocess.run(
+        [shutil.which("bash") or "bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{shim.as_posix()}:/usr/bin:/bin:{python_dir}",
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "proposed=true" in output.read_text(encoding="utf-8")
+    assert (tmp_path / "shard-durations-proposed.json").is_file()
+    assert (
+        f"{refresh.COMPARE_PREFIX} committed=1 proposed=1 new=0 dropped=0 "
+        "committed_s=1.0 proposed_s=5.0 moved=1"
+    ) in summary.read_text(encoding="utf-8")
 
 
 # --- the committed durations file (Phase 2: keep it from rotting) ------------

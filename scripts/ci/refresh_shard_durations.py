@@ -22,6 +22,25 @@ ONE lane invokes it:
   as ``shard-durations-proposed.json``. A refresh is then a download and a
   reviewed commit; nothing writes the committed file automatically.
 
+How a proposal is compared with the committed map (``--compare``)
+-----------------------------------------------------------------
+
+``--compare backend/tests/shard-durations.json`` prints, after the proposal is
+written, how far the committed map has drifted from it, ending with ONE
+machine-readable line::
+
+    shard-durations-compare: committed=307 proposed=312 new=6 dropped=1 committed_s=5650.3 proposed_s=5841.0 moved=14
+
+``new`` is files the proposal measured that the committed map does not list
+(each is dealt by class median today); ``dropped`` is committed keys the
+proposal has no timing for (a deleted or renamed test file, or a shard missing
+from a partial proposal); ``moved`` is files listed in both whose seconds
+differ by more than ``MOVED_FACTOR``x either way. Both totals are over
+the rendered (0.1 s) values. It is a REPORT: a committed map that cannot be
+read prints ``committed=unreadable`` and the run still succeeds, because the
+proposal is the product and the comparison only says whether committing it is
+worth a PR.
+
 How a log is turned into seconds (``--from-logs``)
 --------------------------------------------------
 
@@ -80,6 +99,7 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -185,6 +205,86 @@ def render(durations: dict[str, float]) -> str:
     return json.dumps(rounded, indent=2, sort_keys=True) + "\n"
 
 
+#: A file whose seconds changed by more than this factor either way counts as
+#: ``moved`` in ``--compare``. Hosted-runner noise alone is ~2-3x on migration
+#: tests within one nightly, so a smaller factor would flag every refresh.
+MOVED_FACTOR = 3.0
+
+#: The prefix of the one machine-readable line ``--compare`` prints last.
+COMPARE_PREFIX = "shard-durations-compare:"
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """How a committed map differs from a proposal; see the module docstring."""
+
+    new: list[str]
+    dropped: list[str]
+    moved: list[str]
+    committed_s: float
+    proposed_s: float
+
+
+def compare(committed: dict[str, float], proposed: dict[str, float]) -> Comparison:
+    """How `committed` differs from `proposed`."""
+    both = set(committed) & set(proposed)
+    return Comparison(
+        new=sorted(set(proposed) - set(committed)),
+        dropped=sorted(set(committed) - set(proposed)),
+        moved=sorted(
+            path
+            for path in both
+            if max(committed[path], proposed[path])
+            > MOVED_FACTOR * max(min(committed[path], proposed[path]), 0.1)
+        ),
+        committed_s=round(sum(committed.values()), 1),
+        proposed_s=round(sum(proposed.values()), 1),
+    )
+
+
+def load_committed(path: str) -> dict[str, float] | None:
+    """The committed map at `path`, or None when it is not a seconds map."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict) or not all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in raw.values()
+    ):
+        return None
+    return {str(k): float(v) for k, v in raw.items()}
+
+
+def report_comparison(path: str, proposed: dict[str, float]) -> str:
+    """Print the ``--compare`` report to stderr and return its verdict line."""
+    committed = load_committed(path)
+    if committed is None:
+        print(
+            f"::warning::cannot read {path} as a durations map; nothing to compare",
+            file=sys.stderr,
+        )
+        line = f"{COMPARE_PREFIX} committed=unreadable proposed={len(proposed)}"
+        print(line, file=sys.stderr)
+        return line
+    diff = compare(committed, proposed)
+    for paths, label in (
+        (diff.new, "measured but not in the committed map"),
+        (diff.dropped, "in the committed map but not measured"),
+        (diff.moved, f"seconds moved more than {MOVED_FACTOR:g}x"),
+    ):
+        if paths:
+            shown = ", ".join(paths[:10]) + (" ..." if len(paths) > 10 else "")
+            print(f"{len(paths)} file(s) {label}: {shown}", file=sys.stderr)
+    line = (
+        f"{COMPARE_PREFIX} committed={len(committed)} proposed={len(proposed)} "
+        f"new={len(diff.new)} dropped={len(diff.dropped)} "
+        f"committed_s={diff.committed_s} proposed_s={diff.proposed_s} "
+        f"moved={len(diff.moved)}"
+    )
+    print(line, file=sys.stderr)
+    return line
+
+
 def _inputs(paths: list[str], suffixes: tuple[str, ...]) -> list[Path]:
     """Files named directly, plus matching files under any directory named."""
     found: list[Path] = []
@@ -218,6 +318,11 @@ def main(argv: list[str] | None = None) -> int:
         help="the backend directory, to map junit classnames onto real files",
     )
     parser.add_argument("--out", required=True, help="where to write the JSON")
+    parser.add_argument(
+        "--compare",
+        help="the committed durations map; report how far it has drifted from "
+        "the proposal (never fails the run)",
+    )
     args = parser.parse_args(argv)
 
     suffixes = (".log", ".txt") if args.from_logs else (".xml",)
@@ -253,6 +358,9 @@ def main(argv: list[str] | None = None) -> int:
         f"{sum(durations.values()):.1f} s total, from {len(files)} input file(s)",
         file=sys.stderr,
     )
+    if args.compare:
+        # Compared as rendered, so the totals match the file a refresh commits.
+        report_comparison(args.compare, json.loads(render(durations)))
     return 0
 
 
