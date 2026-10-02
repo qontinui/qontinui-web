@@ -393,7 +393,17 @@ def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
         _insert(engine, machine_device_id=None, ci_host_name="hp2")
 
         # Trim rule: any leading/trailing whitespace, or an empty name.
-        for bad in ("hp2 ", " hp2", "\thp2", "hp2\n", "\rhp2", "\x0bhp2", "", "  "):
+        for bad in (
+            "hp2 ",
+            " hp2",
+            "\thp2",
+            "hp2\n",
+            "\rhp2",
+            "\fhp2",
+            "\x0bhp2",
+            "",
+            "  ",
+        ):
             with _refused(_CHECK, _CK_HOST):
                 _insert(engine, machine_device_id=None, ci_host_name=bad)
         # Case rule: another spelling of the same host is the same machine.
@@ -491,19 +501,19 @@ def test_at_head_versions_still_mirror_every_parent_column() -> None:
     ):
         run_alembic(backend_root(), db_url, "upgrade", "head")
 
-        def types(table: str) -> dict[str, tuple[str, str]]:
+        def types(table: str) -> dict[str, tuple[str, str, bool]]:
             with engine.connect() as conn:
                 rows = conn.execute(
                     text(
                         """
-                        SELECT column_name, data_type, udt_name
+                        SELECT column_name, data_type, udt_name, is_nullable
                           FROM information_schema.columns
                          WHERE table_schema = :schema AND table_name = :table
                         """
                     ),
                     {"schema": _SCHEMA, "table": table},
                 ).all()
-            return {r[0]: (r[1], r[2]) for r in rows}
+            return {r[0]: (r[1], r[2], r[3] == "YES") for r in rows}
 
         parent = types(_TABLE)
         snapshot = types(_VERSIONS)
@@ -511,7 +521,19 @@ def test_at_head_versions_still_mirror_every_parent_column() -> None:
         mirrored = set(parent) - {"id", "current_version", "created_at"}
         assert mirrored <= set(snapshot), sorted(mirrored - set(snapshot))
         for name in sorted(mirrored):
-            assert snapshot[name] == parent[name], (name, parent[name], snapshot[name])
+            # Same type ...
+            assert snapshot[name][:2] == parent[name][:2], (
+                name,
+                parent[name],
+                snapshot[name],
+            )
+            # ... and never STRICTER on nullability: a snapshot copies the live
+            # row, so a NOT NULL snapshot column over a nullable parent column
+            # makes the snapshot INSERT fail at runtime on the first NULL.
+            if parent[name][2]:
+                assert snapshot[name][2], (
+                    f"{_VERSIONS}.{name} is NOT NULL but {_TABLE}.{name} is nullable"
+                )
 
 
 @_needs_pg
