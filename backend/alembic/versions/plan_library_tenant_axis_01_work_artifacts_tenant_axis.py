@@ -67,7 +67,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "plan_library_tenant_axis_01"
-down_revision: str | Sequence[str] | None = "overview_02_authoring_core"
+down_revision: str | Sequence[str] | None = "coord_pr_state_observed_at_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -94,14 +94,23 @@ def upgrade() -> None:
         "ALTER TABLE agent.work_artifacts "
         "ADD COLUMN IF NOT EXISTS tenant_source TEXT NOT NULL DEFAULT 'unknown'"
     )
+    # The CHECK is added only when absent, rather than dropped-then-added:
+    # upgrade() stays purely additive (nothing outside downgrade() removes
+    # anything), and a re-run after a partial upgrade still cannot die on an
+    # already-present constraint. Postgres has no ``ADD CONSTRAINT IF NOT
+    # EXISTS``, hence the catalog probe.
     op.execute(
-        "ALTER TABLE agent.work_artifacts "
-        "DROP CONSTRAINT IF EXISTS ck_work_artifacts_tenant_source"
-    )
-    op.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS ("
+        "SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_work_artifacts_tenant_source' "
+        "AND conrelid = 'agent.work_artifacts'::regclass"
+        ") THEN "
         "ALTER TABLE agent.work_artifacts "
         "ADD CONSTRAINT ck_work_artifacts_tenant_source "
-        f"CHECK (tenant_source IN ({_TENANT_SOURCE_VALUES}))"
+        f"CHECK (tenant_source IN ({_TENANT_SOURCE_VALUES})); "
+        "END IF; "
+        "END $$"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_work_artifacts_tenant_id "

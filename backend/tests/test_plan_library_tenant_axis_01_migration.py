@@ -127,8 +127,31 @@ def test_the_ddl_is_hand_authored_and_idempotent() -> None:
     assert "DROP COLUMN IF EXISTS tenant_source" in source
     assert source.count("CREATE INDEX IF NOT EXISTS") == 1
     assert source.count("DROP INDEX IF EXISTS") == 1
-    # Dropped before it is added, so a re-run cannot die on the constraint.
-    assert source.count("DROP CONSTRAINT IF EXISTS") == 2
+    # The CHECK is added only when absent (a pg_constraint probe), so a re-run
+    # cannot die on the constraint; the only DROP CONSTRAINT is downgrade()'s.
+    assert "SELECT 1 FROM pg_constraint" in source
+    assert "ADD CONSTRAINT ck_work_artifacts_tenant_source" in source
+    assert source.count("DROP CONSTRAINT IF EXISTS") == 1
+
+
+def test_upgrade_is_purely_additive() -> None:
+    """Nothing outside ``downgrade()`` drops, truncates or deletes.
+
+    coord refuses to re-point a revision carrying destructive DDL outside
+    ``downgrade()`` (E6), so this pins the property locally rather than
+    discovering it at merge time.
+    """
+    import ast
+
+    tree = ast.parse(_revision_source())
+    upgrade = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+    )
+    code = ast.unparse(upgrade).lower()
+    for token in ("drop", "truncate", "delete"):
+        assert token not in code, f"upgrade() contains {token!r}"
 
 
 def test_the_revision_does_not_touch_the_identity_index() -> None:
