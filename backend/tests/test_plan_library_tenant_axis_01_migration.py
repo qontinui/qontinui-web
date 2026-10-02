@@ -151,7 +151,7 @@ def test_upgrade_is_purely_additive() -> None:
             if not line[:1] or line[0].isspace() or line.startswith("#"):
                 continue
             in_downgrade = False
-        if re.match(r"\s*def downgrade\s*\(", line):
+        if re.match(r"(?:async )?def downgrade\s*\(", line):
             in_downgrade = True
             continue
         kept.append(line)
