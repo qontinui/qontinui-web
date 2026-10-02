@@ -1,7 +1,7 @@
 """coord.spawn_admission_ledger — per-machine spawn admission grants, refusals and reports
 
 Revision ID: spawnadm_01_spawn_admission_ledger
-Revises: overlord_01_interventions
+Revises: cmtland_01
 Create Date: 2026-10-01
 
 Prerequisite of plan
@@ -106,7 +106,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "spawnadm_01_spawn_admission_ledger"
-down_revision: str | Sequence[str] | None = "overlord_01_interventions"
+down_revision: str | Sequence[str] | None = "cmtland_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -161,7 +161,9 @@ def upgrade() -> None:
         """
         CREATE INDEX IF NOT EXISTS ix_spawn_admission_ledger_open_grants
             ON coord.spawn_admission_ledger (device_id, lease_expires_at)
-            WHERE kind = 'grant' AND released_at IS NULL
+            WHERE kind IN ('grant', 'shadow')
+              AND verdict = 'admit'
+              AND released_at IS NULL
         """
     )
 
