@@ -1035,11 +1035,17 @@ jobs:
               continue
             fi
             echo "Closing frontend-deploy-rollback issue #${N}: both smokes passed against prod."
+            # The page step locks these issues (their comments are the failure
+            # record); unlock to post the closing comment, then re-lock so a
+            # closed issue cannot be flooded back into the record's window.
+            gh issue unlock "${N}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
             gh issue close "${N}" \
               --repo "${GITHUB_REPOSITORY}" \
               --reason completed \
               --comment "Resolved: verify run ${RUN_URL} (Vercel deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
               || echo "::warning::could not close issue #${N} (best-effort)"
+            gh issue lock "${N}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+              || echo "::warning::could not re-lock issue #${N}; its comments can be flooded by anyone until it is locked."
           done <<< "${OPEN}"
           exit 0
 
@@ -1134,14 +1140,20 @@ jobs:
           # Lock the issue so only collaborators (and this bot) can comment: the
           # failure record is read from its comments with a page cap, and an
           # unlocked issue would let anyone flood it past the cap and switch
-          # auto-rollback off (the read fails closed). Already-locked is fine.
+          # auto-rollback off (the read fails closed). An existing issue is
+          # UNLOCKED before this run comments on it and re-locked after, so the
+          # marker never depends on whether this token may comment on a locked
+          # issue. A failed lock/unlock is a visible warning, never fatal.
           lock_issue() {
-            gh issue lock "$1" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
+            gh issue lock "$1" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+              || gh issue view "$1" --repo "${GITHUB_REPOSITORY}" --json locked --jq .locked 2>/dev/null | grep -qx true \
+              || echo "::warning::could not lock issue $1; its comments (the failure record) can be flooded by anyone until it is locked."
           }
 
           if [ -n "${EXISTING}" ]; then
             echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
             ISSUE="${EXISTING}"
+            gh issue unlock "${ISSUE}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
             # The marker rides in the same comment: one write, nothing to race.
             gh issue comment "${ISSUE}" \
               --repo "${GITHUB_REPOSITORY}" \
