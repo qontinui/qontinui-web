@@ -138,20 +138,40 @@ def test_upgrade_is_purely_additive() -> None:
     """Nothing outside ``downgrade()`` drops, truncates or deletes.
 
     coord refuses to re-point a revision carrying destructive DDL outside
-    ``downgrade()`` (E6), so this pins the property locally rather than
-    discovering it at merge time.
+    ``downgrade()`` (E6), and it scans the RAW text there — docstring,
+    comments and module constants included — lowercased and
+    whitespace-collapsed. This mirrors that scan (``DESTRUCTIVE_TOKENS`` in
+    ``qontinui-coord`` ``alembic_repoint_plan.rs``) so the refusal surfaces
+    here rather than at merge time.
     """
-    import ast
-
-    tree = ast.parse(_revision_source())
-    upgrade = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+    kept: list[str] = []
+    in_downgrade = False
+    for line in _revision_source().splitlines():
+        if in_downgrade:
+            if not line[:1] or line[0].isspace() or line.startswith("#"):
+                continue
+            in_downgrade = False
+        if re.match(r"\s*def downgrade\s*\(", line):
+            in_downgrade = True
+            continue
+        kept.append(line)
+    normalized = " ".join(chr(10).join(kept).lower().split())
+    destructive = re.compile(
+        r"\.drop_"
+        r"|\bdrop_(?:table|column|index|constraint|schema)\("
+        r"|\bdrop(?:table|index|constraint|schema|column|sequence)\b"
+        r"|\bdrop (?:materialized view|table|column|schema|index|constraint|type"
+        r"|view|sequence|function|procedure|trigger|extension|database)\b"
+        r"|\btruncate\b"
+        r"|\bdelete from\b"
+        r"|\bdelete ?\("
+        r"|\balter table\b[^;]{0,300}?\bdrop\b"
     )
-    code = ast.unparse(upgrade).lower()
-    for token in ("drop", "truncate", "delete"):
-        assert token not in code, f"upgrade() contains {token!r}"
+    match = destructive.search(normalized)
+    assert match is None, f"destructive token outside downgrade(): {match}"
+    # The scan must have seen upgrade()'s DDL, or it proves nothing.
+    assert "add constraint ck_work_artifacts_tenant_source" in normalized
+    assert "drop column if exists" not in normalized
 
 
 def test_the_revision_does_not_touch_the_identity_index() -> None:
