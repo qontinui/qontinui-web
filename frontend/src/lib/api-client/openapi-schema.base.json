@@ -58720,6 +58720,58 @@
         "title": "WorkflowPhaseConfigUpdate",
         "type": "object"
       },
+      "WorktreeCapClearRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap/clear``.\n\nA reason is required here too, and for the same purpose: removing a cap is\nas much an operator decision as setting one, and coord records both.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "WorktreeCapClearRequestBody",
+        "type": "object"
+      },
+      "WorktreeCapRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap``.\n\n``extra=\"forbid\"`` is not decoration \u2014 coord's struct is\n``deny_unknown_fields``, so a stray key would return a 422 carrying a serde\nmessage. There is deliberately no ``set_by``: coord stamps the author from\nthe authenticated operator context, and an audit trail with a\nclient-asserted author is not an audit trail.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "max_worktrees": {
+            "minimum": 1.0,
+            "title": "Max Worktrees",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "max_worktrees",
+          "reason"
+        ],
+        "title": "WorktreeCapRequestBody",
+        "type": "object"
+      },
       "WrapperAuthor": {
         "description": "Author block as stored in the registry's author_json column.",
         "properties": {
@@ -91388,6 +91440,120 @@
           }
         },
         "summary": "Get Fleet Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap": {
+      "get": {
+        "description": "Return which devices carry a per-device worktree-cap override.\n\nProxies coord's ``GET /coord/fleet/worktree-cap``, body passed through\nuntouched \u2014 this route declares no ``response_model``, so nothing here\nfilters a field coord adds.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n\"the read succeeded and no device is capped\" and \"coord could not find out\"\napart on purpose, in a ``state`` field, and so must every hop after it: a\n404 (this coord predates the route), a 502/504 from the transport, or a body\nin an unrecognised shape is UNKNOWN, never \"no device is capped\"\n(``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The 404 arm in\nparticular is the EXPECTED reading during the window where this console is a\ndeploy ahead of coord, which for this feature is guaranteed to exist: the\nalembic revision lands first, this console second, coord third.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Set how many agent worktrees coord will allow on ONE device.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim \u2014\nbecause coord's request struct is ``deny_unknown_fields``.\n\nCoord's refusals are typed and mean different things: ``admin_required``\n(not an admin in your own tenant), ``device_not_in_tenant`` (a cap governs\nwhat a shared MACHINE accepts, so the caller must be one of the tenants that\nuses it), ``schema_pending`` (the qontinui-web alembic revision adding the\noverride column has not been APPLIED yet \u2014 nothing was written, and nothing\nis being reported as capped; that revision is\n``wtcap_01_max_worktrees_by_device``, added by qontinui-web#1596, which at\nthe time of writing is open and not yet on ``main``), and a 400 from coord's\nown floor check. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on this\npath may imply that it does. It is not a drain: it has no deadline and it\ndoes not remove the device from dispatch.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap/clear": {
+      "post": {
+        "description": "Remove one device's override, so coord derives its cap again.\n\nCoord answers with ``changed: false`` when the request altered nothing \u2014 a\nclear of a device that carried no override. That is passed through rather\nthan dressed up as a successful removal: \"I removed it\" and \"there was\nnothing to remove\" are different outcomes and the operator is entitled to\ntell them apart.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapClearRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Clear Api V1 Operations Fleet Worktree Cap Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap Clear",
         "tags": [
           "operations"
         ]
