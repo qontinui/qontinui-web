@@ -3,13 +3,12 @@ name: Verify Frontend Deploy (run)
 # Post-deploy behavioral smoke for the qontinui-web FRONTEND + auto-rollback.
 #
 # The frontend has no GitHub Actions deploy workflow: it auto-deploys via
-# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`). Vercel
-# emits a GitHub `deployment_status` event when a deploy reaches a terminal
-# state; for a successful PRODUCTION deploy that event carries the new prod URL
-# in `environment_url` and `environment: Production`. We hang a behavioral
-# smoke off that event — the frontend half of replacing the removed manual
-# deploy gate (the backend half is the behavioral smoke + circuit-breaker
-# rollback in deploy-web.yml).
+# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`), which
+# builds a PRODUCTION deployment for each push to main. This workflow runs on
+# that same push, waits for Vercel's production deployment of the pushed
+# commit to reach READY, and then hangs a behavioral smoke off it -- the
+# frontend half of replacing the removed manual deploy gate (the backend half
+# is the behavioral smoke + circuit-breaker rollback in deploy-web.yml).
 #
 # What the smoke checks: it drives a headless Chromium over the app's PUBLIC
 # routes on the freshly-deployed prod URL and asserts the SAME run-level
@@ -49,148 +48,210 @@ name: Verify Frontend Deploy (run)
 # back — we never roll back a possibly-fine deploy because our own tooling or a
 # missing credential broke.
 #
-# WHY THIS FILE IS SEPARATE FROM verify-frontend-deploy.yml (plan
-# 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share, review
-# finding S1). GitHub runs a `deployment_status` workflow from the DEPLOYMENT'S
-# commit, and Vercel deploys (and reports) every commit it builds -- branch and
-# preview commits included -- by SHA. A job holding AWS credentials on that
-# trigger would therefore run whatever copy of the file sits at that commit, so
-# the OIDC role could only be trusted at ANY ref, and anyone able to get a
-# commit deployed could read the Vercel token and the ci-bot login out of SSM.
+# WHY THE TRIGGER IS `push` TO MAIN, NOT `deployment_status` (plan
+# 2026-10-02-frontend-post-deploy-smoke-misses-most-production-deploys). The
+# smoke used to be dispatched by verify-frontend-deploy.yml on Vercel's GitHub
+# `deployment_status` event. Vercel creates that GitHub deployment record for
+# only some production deploys (measured 2026-10-02: 5 of 29 in 48 h), so most
+# deploys went live unsmoked. That dispatcher is deleted. This file now runs on
+# every push to main and resolves the production deployment itself, by commit
+# SHA, from the Vercel API (frontend/tests/spec-ci/resolve-prod-deployment.ts).
 #
-# So the split is:
-#   * verify-frontend-deploy.yml (`deployment_status`) holds NO AWS access and
-#     NO secrets. It applies the cheap success/vercel[bot]/Production gate and
-#     dispatches THIS workflow on `main` with the deployment id.
-#   * THIS workflow (`workflow_dispatch`, always run from main) trusts none of
-#     its inputs: the `validate` job re-reads the deployment from the GitHub
-#     API with the job token and re-checks creator, environment, latest status
-#     and that main contains the deployed SHA. Only if every check passes does
-#     the `verify` job run, and only a run of THIS file at refs/heads/main can
-#     assume qontinui-web-verify-frontend (see
-#     .github/aws-iam/qontinui-web-verify-frontend.trust.json).
+# Trust boundary. Both triggers run THIS file from main: a `push` run is the
+# pushed main commit's copy, and a `workflow_dispatch` run is refused unless it
+# was dispatched on refs/heads/main. The qontinui-web-verify-frontend role
+# trusts exactly one OIDC subject,
+#   repo:qontinui/qontinui-web:ref:refs/heads/main:job_workflow_ref:qontinui/qontinui-web/.github/workflows/verify-frontend-run.yml@refs/heads/main
+# (the repo's OIDC template is repo + context + job_workflow_ref; see
+# .github/aws-iam/qontinui-web-verify-frontend.trust.json and
+# .github/aws-iam/README.md). A branch, fork or preview commit cannot produce
+# that subject, so `validate` reading the Vercel token from SSM is exactly as
+# safe as `verify` doing so. The old split existed only because a
+# `deployment_status` run executes the DEPLOYED commit's copy of the file
+# (review finding S1 of plan
+# 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share); with that
+# trigger gone, no AWS-holding job runs any copy but main's.
+#
+# Outcomes of `validate` (plan D3):
+#   * READY production deployment of the SHA          -> ok=true, `verify` runs
+#   * no (or only a CANCELED) deployment of the SHA,
+#     and main has moved on to a deployed head        -> green named skip
+#                                                        (::notice::), ok=false
+#   * the SHA's production deployment is in ERROR     -> red
+#   * still not READY after 15 min                    -> red
+#   * Vercel/GitHub API unreachable, or no token      -> red
+#   * refused dispatch input (bad SHA, not on main,
+#     dispatched from another ref)                    -> green ::notice::, ok=false
+# It never exits green having smoked nothing without saying why.
+#
+# NOT COVERED, by name: a production deployment that no push to main created
+# (a manual Vercel redeploy or promote). Re-smoke one by hand with
+#   gh workflow run verify-frontend-run.yml --ref main -f sha=<40-hex sha>
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
-      deployment_id:
+      sha:
         description: >-
-          GitHub deployment id to verify. The ONLY input read, and it is not
-          trusted: everything else (URL, SHA, environment, creator, state) is
-          re-read from the GitHub API and re-validated.
-        required: true
+          Main commit to (re-)smoke, 40-hex. Optional: empty means the head of
+          main. Not trusted: it must be contained in main, and the deployment,
+          URL and state are read from the Vercel API, never from inputs.
+        required: false
         type: string
 
 # Concurrency lives on the `verify` job below, keyed on the VALIDATED URL, so an
 # unvalidated dispatch can neither join nor block a real verify's group.
 
 jobs:
-  # Re-validates the dispatched deployment against the GitHub API. Any failed
-  # check ends this job GREEN with a ::notice:: and ok=false, which skips
-  # `verify` -- a refused dispatch is not a red run. Holds no AWS access.
+  # Resolves the Vercel production deployment of the pushed (or dispatched)
+  # main commit. A refused dispatch input, or a commit superseded by a newer
+  # main head, ends this job GREEN with a ::notice:: and ok=false, which skips
+  # `verify`. A failed production build, a timeout or an API error ends it RED.
   validate:
-    name: Validate dispatched deployment
+    name: Resolve production deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # The resolver waits up to 15 min for Vercel (measured build time p50
+    # 167 s, p90 224 s, max 496 s); 20 leaves room for setup and retries.
+    timeout-minutes: 20
     permissions:
       contents: read
-      deployments: read
+      # OIDC: assumes qontinui-web-verify-frontend to read the Vercel token.
+      # Safe on both triggers -- see the trust-boundary note in the header.
+      id-token: write
     outputs:
-      ok: ${{ steps.check.outputs.ok }}
-      deployment_id: ${{ steps.check.outputs.deployment_id }}
-      environment_url: ${{ steps.check.outputs.environment_url }}
-      sha: ${{ steps.check.outputs.sha }}
+      ok: ${{ steps.resolve.outputs.ok || 'false' }}
+      # The Vercel deployment uid (dpl_...), not a GitHub deployment id.
+      deployment_id: ${{ steps.resolve.outputs.deployment_id }}
+      environment_url: ${{ steps.resolve.outputs.environment_url }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    env:
+      SSM_REGION: eu-central-1
     steps:
-      - name: Re-validate deployment from the GitHub API
-        id: check
+      - name: Check the trigger and pick the commit
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -uo pipefail
           refuse() {
-            # The message can quote API-sourced strings (creator, environment,
-            # URL). Flatten CR/LF so none can start a workflow command line.
+            # The message can quote the dispatch input. Flatten CR/LF so it can
+            # never start a workflow command line.
             local msg="${1//$'\n'/ }"
             msg="${msg//$'\r'/ }"
             echo "::notice title=verify-frontend-run refused this dispatch::${msg} Nothing was smoked, no AWS role was assumed."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
           # 1. Only a run of the main-branch copy of this file may proceed.
           if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            refuse "Dispatched on '${GITHUB_REF}', not refs/heads/main."
+            refuse "Ran on '${GITHUB_REF}', not refs/heads/main."
           fi
 
-          # 2. The id is interpolated into an API path: digits only.
-          id="${INPUT_DEPLOYMENT_ID}"
-          if [ -z "$id" ] || [ -n "${id//[0-9]/}" ]; then
-            refuse "deployment_id '${id}' is not a positive integer."
+          # 2. The commit. A push smokes what it pushed; a dispatch smokes its
+          #    `sha` input, or main's head when that is empty.
+          sha="${GITHUB_SHA}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_SHA}" ]; then
+            sha="${INPUT_SHA}"
+            # Interpolated into an API path below: 40 lowercase hex only.
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              refuse "sha '${sha}' is not a 40-character lowercase hex commit SHA."
+            fi
+            # main must CONTAIN it. compare/<sha>...main is `identical` (main
+            # is that commit) or `ahead` (main descends from it); `behind` /
+            # `diverged` mean a branch or fork commit.
+            if ! rel=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq '.status' 2>/dev/null); then
+              refuse "Could not compare ${sha} against main."
+            fi
+            case "$rel" in
+              identical|ahead) ;;
+              *) refuse "SHA ${sha} is not on main (compare status '${rel}')." ;;
+            esac
           fi
 
-          # 3. The deployment itself, from the API -- never from inputs.
-          if ! dep=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}" 2>/dev/null); then
-            refuse "Deployment ${id} could not be read from the GitHub API."
-          fi
-          creator=$(jq -r '.creator.login // ""' <<<"$dep")
-          environment=$(jq -r '.environment // ""' <<<"$dep")
-          sha=$(jq -r '.sha // ""' <<<"$dep")
-          if [ "$creator" != "vercel[bot]" ]; then
-            refuse "Deployment ${id} was created by '${creator}', not vercel[bot]."
-          fi
-          case "$environment" in
-            Production|production) ;;
-            *) refuse "Deployment ${id} targets environment '${environment}', not Production." ;;
-          esac
-          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-            refuse "Deployment ${id} carries no valid commit SHA ('${sha}')."
-          fi
-
-          # 4. Its LATEST status must be success (statuses list newest-first).
-          #    A deploy that a newer one has since marked inactive is skipped:
-          #    the newer deployment's own run verifies the same public URL.
-          if ! st=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses?per_page=1" --jq '.[0] // {}' 2>/dev/null); then
-            refuse "Statuses of deployment ${id} could not be read."
-          fi
-          state=$(jq -r '.state // ""' <<<"$st")
-          url=$(jq -r '(.environment_url | select(. != null and . != "")) // .target_url // ""' <<<"$st")
-          if [ "$state" != "success" ]; then
-            refuse "Latest status of deployment ${id} is '${state}', not success."
-          fi
-          if ! [[ "$url" =~ ^https://[A-Za-z0-9.-]+(/[^[:space:]]*)?$ ]]; then
-            refuse "Deployment ${id} reports no usable https environment_url ('${url}')."
-          fi
-
-          # 5. main must CONTAIN the deployed SHA. compare/<sha>...main is
-          #    `identical` (main is that commit) or `ahead` (main descends from
-          #    it); `behind` / `diverged` mean a branch or fork commit.
-          if ! rel=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq '.status' 2>/dev/null); then
-            refuse "Could not compare ${sha} against main."
-          fi
-          case "$rel" in
-            identical|ahead) ;;
-            *) refuse "Deployed SHA ${sha} is not on main (compare status '${rel}')." ;;
-          esac
-
-          echo "Validated deployment ${id}: ${environment} by ${creator}, sha ${sha}, url ${url}"
+          echo "Resolving the production deployment of ${sha} (${GITHUB_EVENT_NAME})"
           {
-            echo "ok=true"
-            echo "deployment_id=${id}"
-            echo "environment_url=${url}"
+            echo "proceed=true"
             echo "sha=${sha}"
           } >> "$GITHUB_OUTPUT"
+
+      # The trusted resolver: this run's own commit, which is main (step 1).
+      # Sparse -- only the resolver's directory is needed.
+      - name: Check out qontinui-web
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: frontend/tests/spec-ci
+
+      - name: Setup Node
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.proceed == 'true'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
+          role-session-name: verify-frontend-validate-${{ github.run_id }}
+          aws-region: ${{ env.SSM_REGION }}
+
+      # Same source order as `verify`'s "Resolve Vercel token": SSM
+      # /qontinui/vercel/token first, then secrets.VERCEL_TOKEN. A missing
+      # token is NOT handled here: the resolver turns it into a red run, since
+      # without it no deployment can be resolved (plan D3).
+      - name: Resolve Vercel token
+        if: steps.gate.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          TOKEN=""
+          if SSM_VAL=$(aws ssm get-parameter \
+                --name /qontinui/vercel/token \
+                --with-decryption --region "${SSM_REGION}" \
+                --query Parameter.Value --output text 2>/dev/null); then
+            if [ -n "$SSM_VAL" ] && [ "$SSM_VAL" != "None" ]; then
+              TOKEN="$SSM_VAL"
+              echo "Vercel token source: SSM /qontinui/vercel/token"
+            fi
+          fi
+          if [ -z "$TOKEN" ]; then
+            TOKEN="${{ secrets.VERCEL_TOKEN }}"
+            if [ -n "$TOKEN" ]; then
+              echo "Vercel token source: secrets.VERCEL_TOKEN"
+            fi
+          fi
+          if [ -n "$TOKEN" ]; then
+            # Mask + export without printing the value.
+            echo "::add-mask::$TOKEN"
+            echo "VERCEL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          fi
+
+      # Polls the Vercel API (every 15 s, up to 15 min) and maps what it sees
+      # onto the outcomes listed in the header. Writes ok / deployment_id /
+      # environment_url / sha to $GITHUB_OUTPUT. Node built-ins only, so no
+      # `npm ci`: tsx is fetched at the version frontend/package-lock.json pins.
+      - name: Resolve the production deployment
+        id: resolve
+        if: steps.gate.outputs.proceed == 'true'
+        working-directory: ./frontend
+        env:
+          RESOLVE_SHA: ${{ steps.gate.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --yes tsx@4.22.4 tests/spec-ci/resolve-prod-deployment.ts
 
   verify:
     name: Smoke new prod frontend + auto-rollback
     needs: validate
-    # Runs only for a deployment `validate` accepted: a successful Vercel
-    # PRODUCTION deploy (creator vercel[bot], environment Production/production)
-    # whose SHA is on main. The creator gate is decisive: a GitHub-Actions job
-    # that declares `environment: production` (the backend deploy-web.yml /
-    # migrate.yml) creates deployments whose creator is the workflow actor and
-    # whose environment_url is a github.com Actions job URL -- NOT a deployable
-    # surface; smoking that fired spurious rollbacks before this gate existed.
+    # Runs only for a deployment `validate` resolved: a READY, promoted Vercel
+    # PRODUCTION deployment of a commit on main, read off the Vercel API by
+    # its commit SHA. GitHub deployment records play no part any more, so the
+    # backend's own `environment: production` records (deploy-web.yml /
+    # migrate.yml, whose environment_url is a github.com job URL -- the cause
+    # of spurious rollbacks before the old creator gate) cannot reach here.
     if: needs.validate.outputs.ok == 'true'
     runs-on: ubuntu-latest
     # One verify per prod URL. Cancel-in-progress is OFF: a rollback mid-flight
@@ -219,22 +280,23 @@ jobs:
       id-token: write
 
     env:
-      # The validated deployment (from the `validate` job, read off the GitHub
+      # The resolved deployment (from the `validate` job, read off the Vercel
       # API -- never a dispatch input), used ONLY for logging + the rollback
-      # target capture (the prior deployment) -- NOT as the smoke target. For a
-      # vercel[bot] Production deploy this is the `*.vercel.app` deployment URL.
+      # target capture (the prior deployment) -- NOT as the smoke target. This
+      # is the `*.vercel.app` deployment URL.
       NEW_PROD_URL: ${{ needs.validate.outputs.environment_url }}
-      # The deployed commit (validated to be on main). Stands in for GITHUB_SHA,
-      # which under workflow_dispatch is main's tip rather than the deployment.
+      # The deployed commit (on main). Stands in for GITHUB_SHA, which under a
+      # workflow_dispatch re-smoke is main's tip rather than the deployment.
       DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
+      # The Vercel deployment uid (dpl_...), not a GitHub deployment id.
       DEPLOYMENT_ID: ${{ needs.validate.outputs.deployment_id }}
       # The PUBLIC production surface the smokes actually crawl. We do NOT smoke
       # NEW_PROD_URL: raw `*.vercel.app` deployment URLs sit behind Vercel
       # Deployment Protection (HTTP 401 + a FedCM "Vercel authentication" wall),
       # so crawling them only sees the protection page, never the app, and fails
-      # every deploy. By the time this event fires, Vercel has re-pointed the
-      # prod alias to the new deployment, so the public domain serves the new
-      # code. Overridable if the public prod domain ever changes.
+      # every deploy. `validate` waits for the deployment to be READY and
+      # PROMOTED, i.e. Vercel has re-pointed the prod alias to it, so the public
+      # domain serves the new code (unless a newer deploy has since replaced it). Overridable if the public prod domain ever changes.
       PROD_PUBLIC_URL: https://qontinui.io
       # The production backend API base the authed smoke logs ci-bot into. The
       # prod frontend talks to api.qontinui.io; overridable via repo/env config
@@ -268,10 +330,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      # Checks out the DEPLOYED commit, as the deployment_status run did (its
-      # GITHUB_SHA was the deployment SHA), so the smoke scripts match the code
-      # being smoked. `validate` has already proven main contains this SHA, so
-      # it is trusted code; this workflow file itself always runs from main.
+      # Checks out the DEPLOYED commit (for a push run, that is GITHUB_SHA
+      # itself), so the smoke scripts match the code being smoked. It is on
+      # main (the push itself, or `validate`'s compare check for a dispatched
+      # sha), so it is trusted code; this workflow file always runs from main.
       - name: Check out qontinui-web
         uses: actions/checkout@v5
         with:
@@ -899,7 +961,7 @@ jobs:
       # 2026-06-19 through months of smoke-green deploys). Mirrors migrate.yml's
       # "Resolve open migration-failure issue". Both smokes crawl
       # PROD_PUBLIC_URL — what prod actually serves now, which may be a newer
-      # deploy or a rollback target rather than the dispatched one — so a
+      # deploy or a rollback target rather than the resolved one — so a
       # clean pass of BOTH settles every page state (rolled back, bad deploy
       # live): prod is serving a behaviourally clean deploy.
       # Gated on each smoke's own success, never on a merely green job: an
@@ -950,7 +1012,7 @@ jobs:
             gh issue close "${N}" \
               --repo "${GITHUB_REPOSITORY}" \
               --reason completed \
-              --comment "Resolved: verify run ${RUN_URL} (dispatched for deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
+              --comment "Resolved: verify run ${RUN_URL} (Vercel deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
               || echo "::warning::could not close issue #${N} (best-effort)"
           done <<< "${OPEN}"
           exit 0
@@ -1002,7 +1064,7 @@ jobs:
 
           Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
 
-          _Auto-filed by .github/workflows/verify-frontend-run.yml (dispatched by verify-frontend-deploy.yml); closed automatically by the next verify run whose public and authed smokes both pass._"
+          _Auto-filed by .github/workflows/verify-frontend-run.yml (runs on every push to main); closed automatically by the next verify run whose public and authed smokes both pass._"
 
           gh label create frontend-deploy-rollback \
             --repo "${GITHUB_REPOSITORY}" \
