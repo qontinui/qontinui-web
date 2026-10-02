@@ -1354,9 +1354,16 @@ jobs:
           if [ "${found}" != "6" ]; then
             echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not 6, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
           fi
+          # `--compare` reports how far the committed map has drifted from
+          # tonight's measurement (new / dropped / moved files, both totals) on
+          # the run's summary page, so whether a refresh PR is worth opening is
+          # readable without downloading anything. It never fails the step.
+          set -o pipefail
           python scripts/ci/refresh_shard_durations.py junit \
             --root backend \
-            --out shard-durations-proposed.json
+            --out shard-durations-proposed.json \
+            --compare backend/tests/shard-durations.json 2>&1 \
+            | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
           echo "proposed=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload shard-durations-proposed.json

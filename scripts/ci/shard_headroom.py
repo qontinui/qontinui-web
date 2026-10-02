@@ -30,7 +30,14 @@ Verdicts, in precedence order
 ``skewed``
     slowest / fastest > ``MAX_SKEW`` (2.0): the deal is unbalanced, which on a
     duration-balanced split means the durations file has gone stale. Exits
-    non-zero.
+    non-zero. The reason names the remedy: commit this same run's
+    ``shard-durations-proposed`` artifact (job ``Propose shard durations``) as
+    ``backend/tests/shard-durations.json``.
+
+An ``over_margin`` whose shards are NOT skewed says so in its reason: a
+balanced deal near the budget means the suite has outgrown six shards, and the
+lever is the matrix length (with ``--shards``, pinned equal to it), never the
+budget.
 ``ok``
     Exits 0.
 
@@ -115,6 +122,11 @@ DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
 PER_PAGE = 100
 MAX_PAGES = 10
+
+#: The committed durations map the shard deal reads, and the nightly artifact
+#: that proposes its replacement -- named in a `skewed` reason as the remedy.
+DURATIONS_REF = "backend/tests/shard-durations.json"
+PROPOSAL_ARTIFACT = "shard-durations-proposed"
 
 SHARD_NAME = re.compile(r"^Run Tests \(shard (\d+)/(\d+)\)$")
 
@@ -364,16 +376,23 @@ def evaluate(
             "by definition",
         )
     elif max_s * 100 > budget * 60 * MARGIN_PCT:
-        verdict, reason = (
-            "over_margin",
+        reason = (
             f"shard {slowest_shard} took {_minutes(max_s):.1f} min, {pct:.1f}% of the "
-            f"{float(budget):g}-minute budget (margin {MARGIN_PCT}%)",
+            f"{float(budget):g}-minute budget (margin {MARGIN_PCT}%)"
         )
+        if max_s <= min_s * MAX_SKEW:
+            reason += (
+                f"; the shards are balanced (skew {skew:.2f}x), so the suite has "
+                "outgrown the matrix -- raise the `test` job's matrix length and "
+                "--shards together, not the budget"
+            )
+        verdict = "over_margin"
     elif max_s > min_s * MAX_SKEW:
         verdict, reason = (
             "skewed",
             f"slowest/fastest shard = {_minutes(max_s):.1f}/{_minutes(min_s):.1f} min = "
-            f"{skew:.2f}x (limit {MAX_SKEW}x); the shard deal is unbalanced",
+            f"{skew:.2f}x (limit {MAX_SKEW}x); the shard deal is unbalanced -- "
+            f"refresh {DURATIONS_REF} from this run's `{PROPOSAL_ARTIFACT}` artifact",
         )
     else:
         verdict, reason = (
