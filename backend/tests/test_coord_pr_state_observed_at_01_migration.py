@@ -47,7 +47,7 @@ _REVISION_ID = "coord_pr_state_observed_at_01"
 _REVISION_FILENAME = f"{_REVISION_ID}.py"
 # The single head of origin/main when this revision was authored. If coord's
 # land-time re-point moves down_revision, update this literal with it.
-_PARENT_REVISION_ID = "overlord_01_interventions"
+_PARENT_REVISION_ID = "cmtland_01"
 
 _SCHEMA = "coord"
 # Order matters: upgrade() adds to repo_branches first, downgrade() drops in
