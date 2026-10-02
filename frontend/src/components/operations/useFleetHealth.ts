@@ -137,6 +137,18 @@ export interface FleetHealthDevice {
    * predates the field: UNKNOWN, and treated as "not known to be a CI runner".
    */
   ci_runner_status?: string | null;
+  /**
+   * Is this device inside coord's dispatch/liveness window right now —
+   * probe-reachable, or heartbeated within `COORD_DEVICE_HEARTBEAT_TTL_SECS`
+   * (`fleet_health.rs` `DeviceHealthSnapshot::within_dispatch_window`). Coord
+   * LISTS devices outside the window rather than dropping them, so `false` is
+   * "listed, but do not expect this machine to answer".
+   *
+   * Absent on a coord predating the field: UNKNOWN, never "offline" and never
+   * "online". Read by the Regression Tests runner hint
+   * (`app/(app)/conditions/_hooks/runnerAvailability.ts`).
+   */
+  within_dispatch_window?: boolean;
 }
 
 /**

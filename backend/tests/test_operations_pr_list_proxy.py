@@ -153,15 +153,20 @@ class TestGetPrMergePrs:
         # An unreachable coord must still fail fast: only the READ is long.
         assert timeout.connect == 5.0
 
-    def test_every_other_call_keeps_the_fail_fast_timeout(self, client: TestClient):
-        """The long timeout is for the merged ROWS only — never the default.
+    def test_listing_gets_the_listing_timeout(self, client: TestClient):
+        """The open-PR listing gets its own budget: past 5s, short of the merged read.
 
-        ``merged_count_hours`` is one indexed count and rides the hot poll; a
-        coord that answers it slower than 5s is broken and should say so.
+        Measured after qontinui-coord#2414 (coord findings 685356b1 and
+        addc9526): the plain listing takes 2.3-12.3s, so the old 5s cap failed
+        3 of 5 and 1 of 6 sampled reads, and the page kept stale rows with
+        nothing on screen saying so.
+        ``merged_count_hours`` adds one indexed count, so it shares the budget.
         """
+        merged = self._timeout_for(client, "?include_merged=48")
         for query in ("", "?merged_count_hours=48"):
             timeout = self._timeout_for(client, query)
-            assert timeout.read == 5.0, query
+            assert timeout.read is not None, query
+            assert 12.3 < timeout.read < merged.read, query
             assert timeout.connect == 5.0, query
 
     def test_merged_rows_read_that_still_times_out_is_a_504(self, client: TestClient):
@@ -236,13 +241,15 @@ class TestAdminDevPrsMirror:
 
         assert resp.status_code == 200
         assert instance.get.call_args.kwargs["params"] is None
-        # No merged rows requested → the default fail-fast timeout.
-        assert MockClient.call_args.kwargs["timeout"].read == 5.0
+        # No merged rows requested → the listing budget, not the 5s default.
+        from app.api.coord_proxy import _COORD_PR_LIST_TIMEOUT
 
-    def test_merged_count_hours_keeps_the_fail_fast_timeout(
+        assert MockClient.call_args.kwargs["timeout"] == _COORD_PR_LIST_TIMEOUT
+
+    def test_merged_count_hours_gets_the_listing_timeout(
         self, admin_client: TestClient
     ):
-        """The cheap count must not inherit the long timeout on the mirror either."""
+        """The cheap count rides the listing budget, never the merged read's."""
         mock_resp = _mock_response(json_data=_COORD_PAYLOAD)
         with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
@@ -253,8 +260,10 @@ class TestAdminDevPrsMirror:
 
             resp = admin_client.get("/api/v1/admin-dev/prs?merged_count_hours=48")
 
+        from app.api.coord_proxy import _COORD_PR_LIST_TIMEOUT
+
         assert resp.status_code == 200
-        assert MockClient.call_args.kwargs["timeout"].read == 5.0
+        assert MockClient.call_args.kwargs["timeout"] == _COORD_PR_LIST_TIMEOUT
 
     def test_include_merged_gets_the_long_timeout(self, admin_client: TestClient):
         """The mirror must not drift from ``/operations/pr-merge/prs``.

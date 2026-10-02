@@ -9,7 +9,9 @@
  *
  * This harness fills that gap. It seeds a PRE-MINTED operator id token (passed
  * in `QONTINUI_SEED_ID_TOKEN`) and renders operator-scoped routes headlessly,
- * asserting (a) no bounce to /login and (b) a stable landmark is visible. The
+ * asserting (a) no bounce to /login and (b) a stable landmark is visible —
+ * polled to a deadline (route-settle.ts), not sampled once, so a slow render
+ * is not misread as a missing landmark. The
  * token is minted OUT OF BAND so this script needs no AWS creds and is identity-
  * agnostic — the caller decides who to authenticate as:
  *
@@ -39,7 +41,12 @@
  *   2 = harness error (no token/base, could not reach ANY route, unexpected throw).
  */
 import { chromium, type Page } from "@playwright/test";
-import { classifyConsole, type ConsoleErrorEntry, type ConsoleLevel } from "./console-policy";
+import {
+  classifyConsole,
+  type ConsoleErrorEntry,
+  type ConsoleLevel,
+} from "./console-policy";
+import { settleRoute } from "./route-settle";
 
 const DEFAULT_ROUTES = ["/operations", "/sessions", "/admin/coord/pipeline"];
 
@@ -50,9 +57,17 @@ const DEFAULT_ROUTES = ["/operations", "/sessions", "/admin/coord/pipeline"];
  * check below is the primary authed-ness signal.
  */
 async function hasLandmark(page: Page): Promise<boolean> {
-  const h1 = await page.locator("h1").first().isVisible().catch(() => false);
+  const h1 = await page
+    .locator("h1")
+    .first()
+    .isVisible()
+    .catch(() => false);
   if (h1) return true;
-  const main = await page.locator("main, [role=main]").first().isVisible().catch(() => false);
+  const main = await page
+    .locator("main, [role=main]")
+    .first()
+    .isVisible()
+    .catch(() => false);
   return main;
 }
 
@@ -69,11 +84,16 @@ async function main(): Promise<number> {
     return 2;
   }
   if (!token) {
-    process.stderr.write("[operator-smoke] no QONTINUI_SEED_ID_TOKEN (harness)\n");
+    process.stderr.write(
+      "[operator-smoke] no QONTINUI_SEED_ID_TOKEN (harness)\n"
+    );
     return 2;
   }
 
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-gpu"],
+  });
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     ignoreHTTPSErrors: true,
@@ -97,7 +117,7 @@ async function main(): Promise<number> {
         // first about:blank init — the per-route goto re-runs this.
       }
     },
-    [token, String(farFutureExpiryMs)] as const,
+    [token, String(farFutureExpiryMs)] as const
   );
 
   const consoleErrors: ConsoleErrorEntry[] = [];
@@ -131,51 +151,58 @@ async function main(): Promise<number> {
   for (const route of routes) {
     currentRoute = route;
     try {
-      await page.goto(`${base}${route}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForTimeout(2_500);
+      await page.goto(`${base}${route}`, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
     } catch (e) {
       process.stderr.write(
-        `[operator-smoke] ${route} NAV-FAIL: ${e instanceof Error ? e.message : String(e)}\n`,
+        `[operator-smoke] ${route} NAV-FAIL: ${e instanceof Error ? e.message : String(e)}\n`
       );
       continue;
     }
     reachedAny = true;
 
-    let landedPath: string;
-    try {
-      landedPath = new URL(page.url()).pathname;
-    } catch {
-      landedPath = page.url();
-    }
-    if (landedPath === "/login" || landedPath.startsWith("/login")) {
-      findings.push(`${route}: BOUNCED to /login (landed ${landedPath}) — token not trusted/authed`);
-      process.stderr.write(`[operator-smoke] ${route} BOUNCE -> ${landedPath}\n`);
+    const outcome = await settleRoute(page, hasLandmark);
+    if (outcome.kind === "bounce") {
+      findings.push(
+        `${route}: BOUNCED to /login (landed ${outcome.landedPath}) — token not trusted/authed`
+      );
+      process.stderr.write(
+        `[operator-smoke] ${route} BOUNCE -> ${outcome.landedPath}\n`
+      );
       continue;
     }
-    const visible = await hasLandmark(page).catch(() => false);
-    if (!visible) {
+    if (outcome.kind === "missing") {
       findings.push(`${route}: no landmark (h1/main) at ${page.url()}`);
       process.stderr.write(`[operator-smoke] ${route} LANDMARK-MISSING\n`);
       continue;
     }
-    process.stderr.write(`[operator-smoke] ${route} ok (no bounce + landmark)\n`);
+    process.stderr.write(
+      `[operator-smoke] ${route} ok (no bounce + landmark)\n`
+    );
   }
 
   await browser.close();
 
   if (!reachedAny) {
-    process.stderr.write("[operator-smoke] HARNESS: could not reach ANY route\n");
+    process.stderr.write(
+      "[operator-smoke] HARNESS: could not reach ANY route\n"
+    );
     return 2;
   }
   for (const e of consoleErrors) {
-    process.stderr.write(`[operator-smoke] CONSOLE ${e.specId}: [${e.level}] ${e.text}\n`);
+    process.stderr.write(
+      `[operator-smoke] CONSOLE ${e.specId}: [${e.level}] ${e.text}\n`
+    );
   }
-  for (const f of findings) process.stderr.write(`[operator-smoke] FINDING ${f}\n`);
+  for (const f of findings)
+    process.stderr.write(`[operator-smoke] FINDING ${f}\n`);
 
   const clean = findings.length === 0 && consoleErrors.length === 0;
   process.stderr.write(
     `[operator-smoke] result: ${clean ? "CLEAN" : "FAIL"} ` +
-      `(${findings.length} findings, ${consoleErrors.length} console across ${routes.length} routes)\n`,
+      `(${findings.length} findings, ${consoleErrors.length} console across ${routes.length} routes)\n`
   );
   return clean ? 0 : 1;
 }
@@ -184,7 +211,7 @@ main()
   .then((code) => process.exit(code))
   .catch((err) => {
     process.stderr.write(
-      `[operator-smoke] fatal harness error: ${err instanceof Error ? err.message : String(err)}\n`,
+      `[operator-smoke] fatal harness error: ${err instanceof Error ? err.message : String(err)}\n`
     );
     process.exit(2);
   });

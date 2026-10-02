@@ -8983,6 +8983,68 @@
         "title": "CloneCredentialRequest",
         "type": "object"
       },
+      "ClosedFieldVocabulary": {
+        "description": "The accepted set of one closed field on the plan-library write doors.",
+        "properties": {
+          "accepted_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted By",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "server_set": {
+            "default": false,
+            "title": "Server Set",
+            "type": "boolean"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/VocabularyTerm"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "written_as": {
+            "title": "Written As",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "written_as",
+          "accepted_by",
+          "values"
+        ],
+        "title": "ClosedFieldVocabulary",
+        "type": "object"
+      },
       "CodeExecutionRequest": {
         "description": "Request to execute Python code.",
         "properties": {
@@ -34133,12 +34195,33 @@
         "type": "object"
       },
       "PairConfirmResponse": {
-        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>``.",
+        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>`` -- or, when\n``collect`` is true (multi-tenant flow), to\n``callback?state=<state>&token_id=<device_id>&collect=1`` with NO token,\nso no tenant credential ever rides a URL.",
         "properties": {
+          "collect": {
+            "default": false,
+            "description": "True when coord ran a multi-tenant (collect-mode) flow. The page then redirects the runner's callback WITHOUT a token param; the runner collects the per-tenant tokens from coord's pair-collect with its PKCE-style verifier.",
+            "title": "Collect",
+            "type": "boolean"
+          },
           "device_id": {
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PairConfirmTenantResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-tenant outcome of a collect-mode flow. Never carries tokens.",
+            "title": "Results"
           },
           "state": {
             "description": "Echoed pairing-flow nonce.",
@@ -34146,17 +34229,55 @@
             "type": "string"
           },
           "token": {
-            "description": "Coord-issued device-token JWT.",
-            "title": "Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord-issued device-token JWT. Always present in the legacy single-tenant flow; optional in collect mode, where the runner fetches every tenant's token itself over pair-collect.",
+            "title": "Token"
           }
         },
         "required": [
           "device_id",
-          "token",
           "state"
         ],
         "title": "PairConfirmResponse",
+        "type": "object"
+      },
+      "PairConfirmTenantResult": {
+        "description": "One tenant's outcome in a collect-mode (multi-tenant) pairing.\n\nMirrors coord's ``pair-complete`` ``results[]`` entry. Deliberately has no\ntoken field: the tokens reach the runner only over coord's\n``pair-collect``, never through the browser.",
+        "properties": {
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "status": {
+            "description": "\"minted\" or \"skipped\" (coord's vocabulary, passed through).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status"
+        ],
+        "title": "PairConfirmTenantResult",
         "type": "object"
       },
       "PathElement": {
@@ -35921,6 +36042,36 @@
           "model_selector_vocabulary"
         ],
         "title": "PlanDifficultyResponse",
+        "type": "object"
+      },
+      "PlanLibraryVocabularyResponse": {
+        "description": "Every closed field the plan-library write doors accept, and how a\nwrong write through each door is corrected.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ClosedFieldVocabulary"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "write_doors": {
+            "items": {
+              "$ref": "#/components/schemas/WriteDoorCorrection"
+            },
+            "title": "Write Doors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fields",
+          "count",
+          "write_doors"
+        ],
+        "title": "PlanLibraryVocabularyResponse",
         "type": "object"
       },
       "PlanSlugCensus": {
@@ -58386,6 +58537,25 @@
         "title": "VisualComparisonSummary",
         "type": "object"
       },
+      "VocabularyTerm": {
+        "description": "One accepted value and what writing it asserts.",
+        "properties": {
+          "meaning": {
+            "title": "Meaning",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "meaning"
+        ],
+        "title": "VocabularyTerm",
+        "type": "object"
+      },
       "WakeAlreadyOnlineResponse": {
         "properties": {
           "runner_id": {
@@ -59873,6 +60043,58 @@
         "title": "WorkflowPhaseConfigUpdate",
         "type": "object"
       },
+      "WorktreeCapClearRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap/clear``.\n\nA reason is required here too, and for the same purpose: removing a cap is\nas much an operator decision as setting one, and coord records both.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "WorktreeCapClearRequestBody",
+        "type": "object"
+      },
+      "WorktreeCapRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap``.\n\n``extra=\"forbid\"`` is not decoration \u2014 coord's struct is\n``deny_unknown_fields``, so a stray key would return a 422 carrying a serde\nmessage. There is deliberately no ``set_by``: coord stamps the author from\nthe authenticated operator context, and an audit trail with a\nclient-asserted author is not an audit trail.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "max_worktrees": {
+            "minimum": 1.0,
+            "title": "Max Worktrees",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "max_worktrees",
+          "reason"
+        ],
+        "title": "WorktreeCapRequestBody",
+        "type": "object"
+      },
       "WrapperAuthor": {
         "description": "Author block as stored in the registry's author_json column.",
         "properties": {
@@ -60316,6 +60538,51 @@
           "toml"
         ],
         "title": "WriteConfigRequest",
+        "type": "object"
+      },
+      "WriteDoorCorrection": {
+        "description": "How a WRONG write through one plan-library door is corrected.\n\nRendered from ``app.core.evidence_posture.ROUTE_POSTURE`` \u2014 the same table\nthe posture test pins \u2014 so this cannot drift from what the build checks.",
+        "properties": {
+          "corrections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "posture": {
+            "enum": [
+              "read",
+              "ephemeral",
+              "evidence"
+            ],
+            "title": "Posture",
+            "type": "string"
+          },
+          "tracked_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tracked By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "posture",
+          "corrections",
+          "tracked_by"
+        ],
+        "title": "WriteDoorCorrection",
         "type": "object"
       },
       "WriteRecordResult": {
@@ -82361,7 +82628,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {
@@ -88058,6 +88325,78 @@
         ]
       }
     },
+    "/api/v1/operations/computers": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state, stale_after_secs}``, every\nknown lane's newest sample (``lanes``, ``samples_state``,\n``lanes_truncated``), ``services_reported`` / ``services_failed``,\n``last_event``, ``devices[]`` and ``ci_runners``. At list level:\n``unattributed_ci_runners`` (registrar rows no computer claims),\n``ambiguous_ci_runners`` (rows two or more computers claim, each with\n``claimed_by``), and ``registrar_read_ok``.\n\nWhen ``registrar_read_ok`` is false coord's registrar read failed, and\nevery registrar-derived list \u2014 each computer's ``ci_runners``,\n``unattributed_ci_runners`` and ``ambiguous_ci_runners`` \u2014 is ``null``:\nUNKNOWN, never \"no runners\". Response shape is coord-authored and passed\nthrough untouched; this proxy adds no defaults.",
+        "operationId": "api_v1_operations_computers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/computers/{computer_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).\n\nOne computer's whole answer to \"how is this machine\": the list fields\nplus ``services[]``, ``events`` (7 d, newest first), per-lane sample\n``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``\nis validated as a UUID here so a malformed id is a 422 at the web edge\nand never reaches coord as an arbitrary path segment.",
+        "operationId": "api_v1_operations_computers_computer_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "computer_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Computer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computer",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/audit/recent": {
       "get": {
         "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
@@ -93396,6 +93735,120 @@
           }
         },
         "summary": "Get Fleet Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap": {
+      "get": {
+        "description": "Return which devices carry a per-device worktree-cap override.\n\nProxies coord's ``GET /coord/fleet/worktree-cap``, body passed through\nuntouched \u2014 this route declares no ``response_model``, so nothing here\nfilters a field coord adds.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n\"the read succeeded and no device is capped\" and \"coord could not find out\"\napart on purpose, in a ``state`` field, and so must every hop after it: a\n404 (this coord predates the route), a 502/504 from the transport, or a body\nin an unrecognised shape is UNKNOWN, never \"no device is capped\"\n(``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The 404 arm in\nparticular is the EXPECTED reading during the window where this console is a\ndeploy ahead of coord, which for this feature is guaranteed to exist: the\nalembic revision lands first, this console second, coord third.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Set how many agent worktrees coord will allow on ONE device.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim \u2014\nbecause coord's request struct is ``deny_unknown_fields``.\n\nCoord's refusals are typed and mean different things: ``admin_required``\n(not an admin in your own tenant), ``device_not_in_tenant`` (a cap governs\nwhat a shared MACHINE accepts, so the caller must be one of the tenants that\nuses it), ``schema_pending`` (the qontinui-web alembic revision adding the\noverride column has not been APPLIED yet \u2014 nothing was written, and nothing\nis being reported as capped; that revision is\n``wtcap_01_max_worktrees_by_device``, added by qontinui-web#1596, which at\nthe time of writing is open and not yet on ``main``), and a 400 from coord's\nown floor check. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on this\npath may imply that it does. It is not a drain: it has no deadline and it\ndoes not remove the device from dispatch.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap/clear": {
+      "post": {
+        "description": "Remove one device's override, so coord derives its cap again.\n\nCoord answers with ``changed: false`` when the request altered nothing \u2014 a\nclear of a device that carried no override. That is passed through rather\nthan dressed up as a successful removal: \"I removed it\" and \"there was\nnothing to remove\" are different outcomes and the operator is entitled to\ntell them apart.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapClearRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Clear Api V1 Operations Fleet Worktree Cap Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap Clear",
         "tags": [
           "operations"
         ]
@@ -102246,6 +102699,36 @@
           }
         ],
         "summary": "A device reports its latest plan-scan-source reading (upsert)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/vocabulary": {
+      "get": {
+        "description": "Read this BEFORE writing: the accepted values of every closed field on\n``POST /plan-library``, ``POST /plan-library/{id}/edges`` and\n``POST /plan-library/scan-roots``, what each\nvalue asserts, and \u2014 per write door \u2014 how a wrong write is corrected.\n\nPhase 3 of plan\n``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.\nThree wrong ``supersedes`` edges were written in one day by agents that\ncould not read the relation vocabulary before writing, on a store where a\nrecorded edge cannot be retracted. Every value is derived from the schema\n``Literal``s (never retyped) and every correction sentence from\n``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.\n\nSame admission as the write doors it describes\n(:func:`~app.api.deps.get_audit_actor_user`: a Cognito user OR a coord\ndevice JWT), so an agent holding only the runner's device token can read\nit. The payload is the same for every caller; the principal is resolved\nonly to refuse an anonymous one.",
+        "operationId": "api_v1_plan_library_vocabulary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLibraryVocabularyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every closed field the write doors accept, and how a wrong write is corrected",
         "tags": [
           "plan-library"
         ]

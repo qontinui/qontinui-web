@@ -1170,3 +1170,70 @@ class ReconciliationResponse(BaseModel):
     axis_c_scope: AxisCScope = "page"
     axis_c_computed_count: int
     facets: ReconciliationFacets
+
+
+# ─────────────── write vocabulary (evidence-posture Phase 3) ───────────────
+#
+# ``GET /plan-library/vocabulary`` — plan
+# ``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.
+# Every value below is DERIVED from the ``Literal``s above with
+# ``typing.get_args`` (``app/services/plan_library_vocabulary.py``); nothing
+# here retypes a vocabulary.
+
+
+class VocabularyTerm(BaseModel):
+    """One accepted value and what writing it asserts."""
+
+    value: str
+    meaning: str
+
+
+class ClosedFieldVocabulary(BaseModel):
+    """The accepted set of one closed field on the plan-library write doors."""
+
+    #: The field's name as the write door spells it.
+    field: str
+    #: Where the value is written — a request-body property, or the plan
+    #: body's header stamp for a field the server parses out of the body.
+    written_as: str
+    #: ``METHOD path`` of every write door that accepts the field. Empty for
+    #: a ``server_set`` field.
+    accepted_by: list[str]
+    #: ``True`` when no caller writes the field — the server sets it (a
+    #: value served so a READER can interpret it, not a value to send).
+    server_set: bool = False
+    #: The value a write gets when it omits the field, or ``None`` when the
+    #: field is required or has no default.
+    default: str | None = None
+    values: list[VocabularyTerm]
+    #: Guidance a caller needs BEFORE choosing a value — ``None`` when the
+    #: per-value meanings say it all.
+    note: str | None = None
+
+
+class WriteDoorCorrection(BaseModel):
+    """How a WRONG write through one plan-library door is corrected.
+
+    Rendered from ``app.core.evidence_posture.ROUTE_POSTURE`` — the same table
+    the posture test pins — so this cannot drift from what the build checks.
+    """
+
+    method: str
+    path: str
+    posture: Literal["read", "ephemeral", "evidence"]
+    #: One sentence per assertion the door makes. A sentence that starts
+    #: ``NO CORRECTION VERB TODAY`` means the write is final: choose the value
+    #: before writing it.
+    corrections: list[str]
+    #: Plan stems that own closing each ``Gap`` on this door (empty when none).
+    tracked_by: list[str]
+
+
+class PlanLibraryVocabularyResponse(BaseModel):
+    """Every closed field the plan-library write doors accept, and how a
+    wrong write through each door is corrected."""
+
+    fields: list[ClosedFieldVocabulary]
+    #: ``len(fields)``.
+    count: int
+    write_doors: list[WriteDoorCorrection]

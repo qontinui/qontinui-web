@@ -234,6 +234,13 @@ jobs:
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -299,7 +306,7 @@ jobs:
       # schemas exist. Models reference `project`, `auth`, and `cloud`
       # schemas (the last via the qontinui-cloud-control sibling repo
       # whose models are side-effect-imported in conftest.py); the
-      # postgres service container doesn't run our init-scripts/, so
+      # postgres service container starts with none of them, so
       # create them explicitly here. We also `CREATE EXTENSION vector`
       # — alembic does this in 05a366f58455 but conftest skips alembic,
       # so create_all hits `UndefinedObjectError: type "vector" does
