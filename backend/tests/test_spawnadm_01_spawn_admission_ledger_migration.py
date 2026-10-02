@@ -10,7 +10,8 @@ Pins the contract coord's admission routes and the runner client rely on:
 3. **Defaults are honest** — ``count`` 1, ``work_keys`` ``[]``, nullable
    lease/report columns NULL; a report row with ``count`` 0 is accepted.
 4. **The partial index is what the open-permit read uses** — its predicate is
-   ``kind = 'grant' AND released_at IS NULL``.
+   ``kind IN ('grant', 'shadow') AND verdict = 'admit' AND released_at IS NULL``
+   (shadow-mode leases are admitted ``shadow`` rows).
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -179,7 +180,12 @@ def test_spawnadm_01_creates_the_ledger_and_enforces_vocabulary() -> None:
         open_grants_def = indexdefs["ix_spawn_admission_ledger_open_grants"]
         assert "(device_id, lease_expires_at)" in open_grants_def
         assert "WHERE" in open_grants_def
+        # Shadow-mode leases are ``kind = 'shadow'`` rows with verdict
+        # ``admit``; refused shadow rows never hold a lease, so the predicate
+        # carries both kinds but only admitted rows.
         assert "'grant'::text" in open_grants_def
+        assert "'shadow'::text" in open_grants_def
+        assert "'admit'::text" in open_grants_def
         assert "released_at IS NULL" in open_grants_def
 
         # 3. Defaults: count 1, work_keys [], lease/report columns NULL.
