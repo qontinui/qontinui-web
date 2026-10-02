@@ -46,6 +46,7 @@ import {
   type ConsoleErrorEntry,
   type ConsoleLevel,
 } from "./console-policy";
+import { settleRoute } from "./route-settle";
 import {
   isSameOriginServerError,
   type ServerErrorEntry,
@@ -130,52 +131,6 @@ const AUTHED_ROUTES: AuthedRoute[] = [
     },
   },
 ];
-
-/**
- * How long a route gets to settle — its landmark visible, or a bounce to
- * /login — after `domcontentloaded`. The page renders its landmark only after
- * client-side hydration plus the authed API round-trips it gates on, so a
- * single fixed-delay sample read a merely slow prod render as a regression
- * (and auto-rolled prod back): runs 34675607499 / 36090455809 (/runs/active
- * landmark missing) and 36915202471 (every route, with no deploy content
- * change since the previous green run). Polling to a deadline keeps a real
- * regression a failure — a landmark that never appears or a bounce still
- * fails — while a slow one passes.
- */
-const ROUTE_SETTLE_TIMEOUT_MS = 15_000;
-const ROUTE_SETTLE_POLL_MS = 500;
-
-type RouteOutcome =
-  | { kind: "ok" }
-  | { kind: "bounce"; landedPath: string }
-  | { kind: "missing" };
-
-function currentPath(page: Page): string {
-  try {
-    return new URL(page.url()).pathname;
-  } catch {
-    return page.url();
-  }
-}
-
-/**
- * Poll until the route settles: a bounce to /login (the protected-route gate
- * rejected our seeded session) or its landmark visible (the page actually
- * rendered). Neither by the deadline is a missing landmark.
- */
-async function settleRoute(
-  page: Page,
-  landmark: (page: Page) => Promise<boolean>
-): Promise<RouteOutcome> {
-  const deadline = Date.now() + ROUTE_SETTLE_TIMEOUT_MS;
-  for (;;) {
-    const landedPath = currentPath(page);
-    if (landedPath.startsWith("/login")) return { kind: "bounce", landedPath };
-    if (await landmark(page).catch(() => false)) return { kind: "ok" };
-    if (Date.now() >= deadline) return { kind: "missing" };
-    await new Promise((resolve) => setTimeout(resolve, ROUTE_SETTLE_POLL_MS));
-  }
-}
 
 interface LoginTokens {
   accessToken: string;
