@@ -193,6 +193,14 @@ import {
   RUNNER_SESSION_BADGE_CLASS,
 } from "@/components/operations/runnerStatus";
 import {
+  CI_REGISTRATION_ATTENTION_BY_KIND,
+  CI_REGISTRATION_AUTHOR_GLYPH_KINDS,
+  CI_REGISTRATION_BADGE_CLASS,
+  MAINTENANCE_LEVER_ATTENTION_BY_KIND,
+  MAINTENANCE_LEVER_AUTHOR_GLYPH_KINDS,
+  MAINTENANCE_LEVER_BADGE_CLASS,
+} from "@/components/operations/maintenanceStatus";
+import {
   COORD_CREDENTIAL_ATTENTION_BY_POSTURE,
   COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS,
   COORD_CREDENTIAL_BADGE_CLASS,
@@ -497,13 +505,41 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     // FLOOR and rendered, not skipped: a session whose readiness report is
     // stale may still be blocking the rebuild the operator is waiting on
     // (plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8).
-    surface: "runner wind-down (/admin/coord/runners)",
+    surface: "runner wind-down (/admin/coord/machine-maintenance)",
     module: "components/operations/runnerStatus.ts",
     attentionByKind: RUNNER_SESSION_ATTENTION_BY_KIND,
     palette: {
       badgeClass: RUNNER_SESSION_BADGE_CLASS,
       authorGlyphKinds:
         RUNNER_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // One row per maintenance lever (agent work, CI) on the machine being
+    // prepared for a restart (plan
+    // `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D7).
+    // A partial CI pause, a hand-restored label and "no CI host linked" are
+    // `author` — each stays as it is until an operator acts.
+    surface: "maintenance lever (/admin/coord/machine-maintenance)",
+    module: "components/operations/maintenanceStatus.ts",
+    attentionByKind: MAINTENANCE_LEVER_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MAINTENANCE_LEVER_BADGE_CLASS,
+      authorGlyphKinds:
+        MAINTENANCE_LEVER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // One row per GitHub registration of the machine's CI host. `busy` and an
+    // idle reading taken BEFORE the pause are `waiting` — both clear on their
+    // own (the job finishes; the next registrar poll lands).
+    surface: "CI registration (/admin/coord/machine-maintenance)",
+    module: "components/operations/maintenanceStatus.ts",
+    attentionByKind: CI_REGISTRATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CI_REGISTRATION_BADGE_CLASS,
+      authorGlyphKinds:
+        CI_REGISTRATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the consolidated sessions console ------------------------------------

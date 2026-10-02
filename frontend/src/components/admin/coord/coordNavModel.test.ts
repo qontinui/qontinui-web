@@ -113,7 +113,7 @@ describe("coordNavModel", () => {
       "Computers",
       "Trees",
       "Spawn",
-      "Runner Drain",
+      "Maintenance",
       "Test Targets",
       "Migrations",
       "Deploys",

@@ -1,74 +1,36 @@
 /**
- * Machine drain — the pure half: the wire contract, its parse, and the two
- * resolutions a device row needs.
+ * Machine drain — the READ: the wire contract, its parse, and one device's
+ * resolution, plus the deadline presets the maintenance-window form shares.
  *
  * Plan `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
- * 4b. Coord owns the state; this file owns nothing but the reading of it, so
- * every rule below is unit-testable without a DOM or a network.
+ * 4b, narrowed by plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` Phase 7:
+ * the console no longer WRITES drains. A machine is paused by opening a
+ * maintenance window, which coord composes from a lane drain, a `drain-host`
+ * and the GitHub label change (§D3) — so the per-row Drain/Undrain control and
+ * its target/validation helpers were deleted with the Runner Drain page. What
+ * stays is the read: a drain set outside any window (an agent's
+ * `coord_fleet_drain`, say) is still a real fact, and the Machine Maintenance
+ * page's agent strip shows it.
  *
  * ## What a drain is
  *
- * `POST /coord/fleet/drain` stops coord sending a machine NEW work — CI jobs,
- * builds, and (this plan's Phases 1-3) agent-session spawning and continuation
- * dispatch. It is the one deliberate HARD filter in a ladder that otherwise
- * only deprioritises, and coord's own module doc says why that is safe: it is
- * an explicit operator action, and it carries a **mandatory expiry**. A drain
- * with no deadline is how a machine silently leaves the fleet forever, so
- * `until` is required by coord (`DrainRequest::until` is not an `Option`) and
- * it is required by this UI — never defaulted in, never offered as "no expiry".
- *
- * It does **not** stop work already running on the machine. Nothing here may
- * imply that it does.
- *
- * ## The keying, and the correction this file records
- *
- * Coord's drain map is keyed by **device UUID**
- * (`{"<device_uuid>": {until, reason, drained_by, drained_at}}`, stored on
- * `coord.fleet_runtime_policy.drain`), and both writes take a `device_id`. The
- * Dev Ops machine list, by contrast, is built in a `byHost` map keyed by
- * **hostname** (`FleetOverview.buildMachineGroups`). Something has to bridge
- * them, and picking the wrong bridge is the phase's real hazard.
- *
- * The plan's keying note named `Machine.coord_device_id` — the devenv machine
- * roster's soft, nullable pointer — as "the only bridge". **It is not the one
- * used here, and the difference is a correctness improvement rather than a
- * shortcut.** Every row on this list already carries coord's OWN device row,
- * merged in by `buildMachineGroups` from `GET /operations/fleet/health`:
- * `MachineGroup.coordHealth`, which is `{matched: true, device_id, hostname}`
- * or `{matched: false}`. That id comes from the same `coord.devices` registry
- * the drain routes write against, so it is the identity, not a pointer at it.
- * Routing the drain through `Machine.coord_device_id` instead would add a
- * second, weaker path to the same id and would render "not drainable" for a
- * machine coord names on this very page merely because nobody enrolled it
- * under Environments. That is the exact silent-inertness failure the plan asks
- * this phase to prevent, reached from the other side.
- *
- * The requirement the plan is actually making still holds in full, and
- * {@link resolveDrainTarget} is where it is enforced: a row with no resolvable
- * coord device id has **no drainable identity**, and must render a control
- * that is disabled WITH THE REASON — never one that is enabled and silently
- * inert.
- *
- * ## Why the target is labelled, always
- *
- * A workstation (`<host>`, which hosts agent sessions) and the CI runner
- * registered under it (`gh-runner-<host>-wsl`, the GitHub self-hosted runner's
- * synthetic `gh-runner-{name}` identity) are SEPARATE coord device
- * registrations. Draining one does nothing to the other, and coord returns no
- * error for it — the drain simply lands on a machine the operator did not
- * mean. So the control names the device id and coord's own hostname it will
- * act on, and it takes neither from the card title: that title is
- * `displayName ?? hostname`, an operator-settable ALIAS, which is precisely
- * the string that must not be trusted to identify a drain target.
+ * `POST /coord/fleet/drain` stops coord sending a machine NEW work on the
+ * lanes it names — `agent` (agent-session spawns and continuations) and/or
+ * `ci` (coord's CI-node dispatch, builds and merge capacity); a row with no
+ * lanes holds both. It is the one deliberate HARD filter in a ladder that
+ * otherwise only deprioritises, and it carries a **mandatory expiry**. It does
+ * **not** stop work already running on the machine, and it does not stop
+ * GitHub routing jobs to a self-hosted runner by label.
  *
  * ## Unknown is never "not drained"
  *
  * `[policy: verification-and-evidence unknown-must-not-render-as-a-default]`.
- * A read that did not answer, a route that 404s (the deploy window before
- * coord's `GET /coord/fleet/drain` lands), a body in a shape this build does
- * not recognise, and an entry whose `until` will not parse are all UNKNOWN for
- * the devices they concern. None of them is evidence that a machine is taking
- * work, and this module has no path that turns one into `not_drained`.
+ * A read that did not answer, a route that 404s, a body in a shape this build
+ * does not recognise, and an entry whose `until` will not parse are all
+ * UNKNOWN for the devices they concern. None of them is evidence that a
+ * machine is taking work, and this module has no path that turns one into
+ * `not_drained`.
  */
 
 /**
@@ -92,6 +54,87 @@ export interface DrainEntry {
   drainedBy: string | null;
   /** RFC 3339. */
   drainedAt: string | null;
+  /**
+   * The drain LANES held (plan
+   * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D3):
+   * `agent` = agent-session spawns and continuations, `ci` = coord's CI-node
+   * lane, builds and merge capacity. `null` means coord sent none — a legacy
+   * row, which coord reads as BOTH lanes, so it is rendered as both.
+   */
+  lanes: DrainLane[] | null;
+  /**
+   * Each lane's OWN hold — coord's drain is per-lane, and the headline fields
+   * above come from whichever lane ends LAST. `null` from an older coord that
+   * serves no `by_lane`; then every held lane reads the headline.
+   */
+  byLane: Partial<Record<DrainLane, DrainLaneHold>> | null;
+}
+
+/** One drain lane. */
+export type DrainLane = "agent" | "ci";
+
+/** One lane's own hold, from coord's `by_lane`. */
+export interface DrainLaneHold {
+  until: string;
+  reason: string | null;
+  /** The operator, or coord's `[redacted]` placeholder — a value. */
+  drainedBy: string | null;
+  drainedAt: string | null;
+}
+
+/**
+ * The hold on ONE lane at `now`, or `null` when that lane is not held.
+ *
+ * With `by_lane`, the lane's own entry decides — its own `until` and reason,
+ * and it may have lapsed while another lane holds on. Without it (an older
+ * coord), a lane named in `lanes` (or every lane, for a lane-less legacy row)
+ * reads the headline.
+ */
+export function laneHold(
+  entry: DrainEntry,
+  lane: DrainLane,
+  now: number
+): DrainLaneHold | null {
+  // A lane coord claims but whose per-lane entry this build could not read is
+  // UNKNOWN (`unknownDrainLanes`) — it must not borrow the headline, which is
+  // some OTHER lane's hold.
+  if (unknownDrainLanes(entry).includes(lane)) return null;
+  const own = entry.byLane?.[lane];
+  const hold: DrainLaneHold | null = own
+    ? own
+    : entry.lanes === null || entry.lanes.includes(lane)
+      ? {
+          until: entry.until,
+          reason: entry.reason,
+          drainedBy: entry.drainedBy,
+          drainedAt: entry.drainedAt,
+        }
+      : null;
+  if (hold === null) return null;
+  const untilMs = parseTimestamp(hold.until);
+  return untilMs !== null && untilMs > now ? hold : null;
+}
+
+/**
+ * Lanes whose hold is UNKNOWN: coord serves `by_lane` and claims the lane (in
+ * `lanes`, in a dropped `by_lane` entry, or — lane-less — every lane), but the
+ * lane's own entry is missing or had no parseable `until`. Without `by_lane`
+ * (an older coord) nothing is unknown: every claimed lane reads the headline.
+ */
+export function unknownDrainLanes(entry: DrainEntry): DrainLane[] {
+  const byLane = entry.byLane;
+  if (byLane === null) return [];
+  const claimed = entry.lanes ?? (["agent", "ci"] as const);
+  return (["agent", "ci"] as const).filter(
+    (l) => claimed.includes(l) && byLane[l] === undefined
+  );
+}
+
+/** The lanes an entry actually holds at `now`, each by its own deadline. */
+export function activeDrainLanes(entry: DrainEntry, now: number): DrainLane[] {
+  return (["agent", "ci"] as const).filter(
+    (l) => laneHold(entry, l, now) !== null
+  );
 }
 
 /**
@@ -132,34 +175,6 @@ export type DeviceDrainState =
   /** Nothing here is a claim that the device is taking work. */
   | { state: "unknown"; reason: string };
 
-/** What a row would actually drain, if anything. */
-export type DrainTarget =
-  | {
-      state: "identified";
-      /** The coord device UUID the write is keyed on. */
-      deviceId: string;
-      /**
-       * Coord's OWN hostname for that device — never the card's display
-       * alias. `null` when coord's device row carries none, in which case the
-       * id is the only identity there is and the control says so.
-       */
-      coordHostname: string | null;
-    }
-  | { state: "no_device"; reason: string };
-
-/**
- * The coord-health join this module reads, structurally.
- *
- * Declared locally rather than imported from `./types` so the pure layer has
- * no dependency on the machine-card model: the only thing a drain needs from a
- * row is whether coord named a device for it.
- */
-export interface DrainTargetSource {
-  matched: boolean;
-  device_id?: string;
-  hostname?: string;
-}
-
 /** Coord's ceiling on a drain deadline (`fleet_drain::MAX_DRAIN_DAYS`). */
 export const MAX_DRAIN_DAYS = 30;
 
@@ -195,12 +210,63 @@ export function parseDrainEntry(value: unknown): DrainEntry | null {
   if (!isRecord(value)) return null;
   const until = optionalString(value.until);
   if (until === null || parseTimestamp(until) === null) return null;
+  const parsed = parseByLane(value.by_lane);
+  const byLane = parsed?.lanes ?? null;
+  // Every lane `by_lane` NAMES — including one whose entry was dropped as
+  // unreadable, which must stay claimed so it reads UNKNOWN, not "not held".
+  const byLaneKeys = parsed?.named ?? [];
   return {
     until,
     reason: optionalString(value.reason),
     drainedBy: optionalString(value.drained_by),
     drainedAt: optionalString(value.drained_at),
+    lanes:
+      parseLanes(value.lanes) ?? (byLaneKeys.length > 0 ? byLaneKeys : null),
+    byLane,
   };
+}
+
+/**
+ * Read coord's `by_lane`. A lane whose entry has no parseable `until` is
+ * dropped from the map but kept in `named`, so it stays claimed and reads
+ * UNKNOWN (`unknownDrainLanes`) — never the headline, which is some other
+ * lane's hold. A missing or non-object `by_lane` is `null` — an older coord.
+ */
+function parseByLane(value: unknown): {
+  lanes: Partial<Record<DrainLane, DrainLaneHold>>;
+  named: DrainLane[];
+} | null {
+  if (!isRecord(value)) return null;
+  const out: Partial<Record<DrainLane, DrainLaneHold>> = {};
+  const named: DrainLane[] = [];
+  for (const lane of ["agent", "ci"] as const) {
+    if (!(lane in value)) continue;
+    named.push(lane);
+    const v = value[lane];
+    if (!isRecord(v)) continue;
+    const until = optionalString(v.until);
+    if (until === null || parseTimestamp(until) === null) continue;
+    out[lane] = {
+      until,
+      reason: optionalString(v.reason),
+      drainedBy: optionalString(v.drained_by),
+      drainedAt: optionalString(v.drained_at),
+    };
+  }
+  return { lanes: out, named };
+}
+
+/**
+ * Read an entry's `lanes`. Absent, or a list naming no lane this build knows,
+ * is `null` — both lanes, coord's reading of a lane-less row — rather than an
+ * empty set, which would claim the drain holds nothing.
+ */
+function parseLanes(value: unknown): DrainLane[] | null {
+  if (!Array.isArray(value)) return null;
+  const lanes = value.filter(
+    (l): l is DrainLane => l === "agent" || l === "ci"
+  );
+  return lanes.length === 0 ? null : [...new Set(lanes)];
 }
 
 /**
@@ -465,61 +531,8 @@ export function resolveDeviceDrain(
   return { state: "drained", entry };
 }
 
-/**
- * Resolve what a row would drain.
- *
- * The `no_device` arm is the plan's keying requirement made executable: it is
- * the ONLY thing that may put an enabled drain button on the page, so a row
- * that reaches it renders a disabled control and the reason it is disabled.
- */
-export function resolveDrainTarget(
-  coordHealth: DrainTargetSource | undefined
-): DrainTarget {
-  if (!coordHealth) {
-    return {
-      state: "no_device",
-      reason:
-        "This machine list was built without coord's device read, so no row " +
-        "on it carries a coord device id. A drain is keyed on that id and " +
-        "there is nothing here to key it on.",
-    };
-  }
-  if (!coordHealth.matched) {
-    return {
-      state: "no_device",
-      reason:
-        "Coord's fleet-health read carries no device row for this host, so " +
-        "there is no coord device id to drain. That is a gap in the join, " +
-        "not a statement that the machine cannot be drained — find it under " +
-        "coord's device registry and drain it there.",
-    };
-  }
-  const deviceId = coordHealth.device_id?.trim();
-  if (!deviceId) {
-    return {
-      state: "no_device",
-      reason:
-        "Coord matched a device to this host but served no device id for it, " +
-        "so there is no key to drain on.",
-    };
-  }
-  return {
-    state: "identified",
-    deviceId,
-    coordHostname: optionalString(coordHealth.hostname),
-  };
-}
-
-/** Whether a drain control may be enabled at all. */
-export function canActOnDrain(
-  target: DrainTarget,
-  drain: DeviceDrainState
-): boolean {
-  return target.state === "identified" && drain.state !== "unknown";
-}
-
 // ---------------------------------------------------------------------------
-// The write side — expiry presets and validation
+// Deadline presets — shared by the maintenance-window form
 // ---------------------------------------------------------------------------
 
 /**
@@ -552,124 +565,4 @@ export function toLocalInputValue(ms: number): string {
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `T${pad(d.getHours())}:${pad(d.getMinutes())}`
   );
-}
-
-/**
- * How long a drain has left, or how long ago it lapsed.
- *
- * `relativeTime` cannot serve this: it renders every future stamp as
- * `"just now"` (a deliberate choice for clock skew on PAST events), and
- * "Drained until just now" is the opposite of what a deadline four hours out
- * means. This one is signed and says which side of `now` the deadline is on.
- */
-export function formatDrainRemaining(untilIso: string, now: number): string {
-  const untilMs = parseTimestamp(untilIso);
-  if (untilMs === null) return "an unknown time";
-  const deltaMs = untilMs - now;
-  const past = deltaMs < 0;
-  const minutes = Math.floor(Math.abs(deltaMs) / 60_000);
-  let magnitude: string;
-  if (minutes < 1) magnitude = "under a minute";
-  else if (minutes < 60) magnitude = `${minutes}m`;
-  else if (minutes < 60 * 24) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    magnitude = m === 0 ? `${h}h` : `${h}h ${m}m`;
-  } else {
-    const d = Math.floor(minutes / (60 * 24));
-    const h = Math.floor((minutes % (60 * 24)) / 60);
-    magnitude = h === 0 ? `${d}d` : `${d}d ${h}h`;
-  }
-  return past ? `${magnitude} ago` : `in ${magnitude}`;
-}
-
-export type DrainFormCheck =
-  | { ok: true; untilIso: string }
-  | { ok: false; message: string };
-
-/**
- * Validate the drain form against `now`. PURE.
- *
- * Mirrors coord's `validate_drain` exactly — non-blank reason, a future
- * `until`, and a deadline within {@link MAX_DRAIN_DAYS}. Duplicated here not
- * to replace coord's check (which is the one that counts) but so the operator
- * is told what is wrong before a round trip, and so the submit control can be
- * honestly disabled rather than optimistically enabled.
- */
-export function validateDrainForm(
-  untilLocal: string,
-  reason: string,
-  now: number
-): DrainFormCheck {
-  if (reason.trim() === "") {
-    return {
-      ok: false,
-      message:
-        "A reason is required — it is what the audit row and the other " +
-        "operators' alert will say.",
-    };
-  }
-  if (untilLocal.trim() === "") {
-    return {
-      ok: false,
-      message:
-        "An expiry is required. A drain with no deadline is how a machine " +
-        "silently leaves the fleet forever, so there is no 'no expiry' option.",
-    };
-  }
-  const untilMs = Date.parse(untilLocal);
-  if (!Number.isFinite(untilMs)) {
-    return { ok: false, message: "That expiry is not a time this build can read." };
-  }
-  if (untilMs <= now) {
-    return {
-      ok: false,
-      message:
-        "The expiry must be in the future — a drain that has already expired " +
-        "would be a no-op reported as a success.",
-    };
-  }
-  const ceiling = now + MAX_DRAIN_DAYS * 24 * 60 * 60 * 1000;
-  if (untilMs > ceiling) {
-    return {
-      ok: false,
-      message:
-        `The expiry must be within ${MAX_DRAIN_DAYS} days — coord rejects a ` +
-        "longer one, because a deadline that far out is a permanent removal " +
-        "wearing an expiry's clothes. Re-drain instead.",
-    };
-  }
-  return { ok: true, untilIso: new Date(untilMs).toISOString() };
-}
-
-/**
- * Turn a failed drain/undrain response into a human line.
- *
- * Coord's refusals are machine-readable and mean genuinely different things —
- * `admin_required` (you are not an operator admin) versus
- * `device_not_in_tenant` (the drain reaches every tenant sharing the machine,
- * so the caller must be one of them) versus a 400 from `validate_drain`. The
- * web proxy nests coord's body under `detail`, so both levels are unwrapped.
- * Same shape as `describeDraftStateError`, which learned this first.
- */
-export function describeDrainError(status: number, body: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return body.trim() ? `HTTP ${status} — ${body.trim()}` : `HTTP ${status}`;
-  }
-  if (!isRecord(parsed)) {
-    return body.trim() ? `HTTP ${status} — ${body.trim()}` : `HTTP ${status}`;
-  }
-  const inner = isRecord(parsed.detail) ? parsed.detail : parsed;
-  const code = optionalString(inner.error);
-  const message =
-    optionalString(inner.message) ??
-    optionalString(inner.detail) ??
-    (typeof parsed.detail === "string" ? parsed.detail : null);
-  const parts: string[] = [`HTTP ${status}`];
-  if (code) parts.push(code);
-  if (message) parts.push(message);
-  return parts.join(" — ");
 }

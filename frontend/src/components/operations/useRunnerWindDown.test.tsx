@@ -1,5 +1,6 @@
 /**
- * useRunnerWindDown — the device-keyed polls behind `/admin/coord/runners`.
+ * useRunnerWindDown — the device-keyed polls behind the session wind-down on
+ * `/admin/coord/machine-maintenance`.
  *
  * Pinned here: **the poll and an operator's refresh never overlap.** A refresh
  * issued while a read is outstanding runs once, after it, and its answer is

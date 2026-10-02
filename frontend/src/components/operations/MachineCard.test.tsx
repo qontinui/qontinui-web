@@ -7,6 +7,7 @@ import {
 } from "./MachineCard";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { MachineGroup, SymbolClaim } from "./types";
+import type { MachineMaintenanceView } from "./maintenanceWindow";
 import type { Runner } from "@qontinui/shared-types";
 
 /**
@@ -590,7 +591,8 @@ describe("MachineCard — CI-runner drain scope", () => {
     );
     expect(note?.textContent).toBe(CI_RUNNER_DRAIN_SCOPE);
     expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/merge-capacity/);
-    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/qontinui/);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/routing labels at GitHub/);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/Maintenance page/);
   });
 
   it("says nothing of the kind for a device coord does not call a CI runner", () => {
@@ -599,6 +601,93 @@ describe("MachineCard — CI-runner drain scope", () => {
     );
     expect(
       container.querySelector("[data-testid='ci-runner-drain-scope']")
+    ).toBeNull();
+  });
+});
+
+/**
+ * The maintenance block — plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D7. The
+ * card lost its Drain / Undrain lever; it keeps the FACT (a badge) and a link
+ * to the one page that changes it.
+ */
+describe("MachineCard — maintenance", () => {
+  const HREF = "/admin/coord/machine-maintenance?machine=d-1";
+  const renderWith = (maintenance: MachineMaintenanceView) =>
+    render(
+      <TooltipProvider>
+        <MachineCard machine={baseGroup()} maintenance={maintenance} />
+      </TooltipProvider>
+    );
+
+  it("shows the badge and links to the maintenance page", () => {
+    const { container } = renderWith({
+      badge: {
+        state: "in_maintenance",
+        label: "In maintenance until 18:00 · CI + agents",
+        title: "kernel update — opened by jan",
+      },
+      href: HREF,
+      linkedCiHosts: [{ host: "merytshost", registrations: 3, busy: 1 }],
+    });
+    const badge = container.querySelector(
+      "[data-testid='machine-maintenance-badge']"
+    );
+    expect(badge?.textContent).toBe("In maintenance until 18:00 · CI + agents");
+    expect(badge?.getAttribute("title")).toBe("kernel update — opened by jan");
+    expect(
+      container
+        .querySelector("[data-testid='machine-maintenance-link']")
+        ?.getAttribute("href")
+    ).toBe(HREF);
+    expect(
+      container.querySelector("[data-testid='machine-maintenance-ci-hosts']")
+        ?.textContent
+    ).toBe("CI host merytshost: 3 registrations (1 busy)");
+    // No lever on the card any more.
+    expect(
+      container.querySelector("button[data-testid^='device-drain']")
+    ).toBeNull();
+  });
+
+  it("renders UNKNOWN — never a calm card — when the read failed", () => {
+    const { container } = renderWith({
+      badge: {
+        state: "unknown",
+        label: "maintenance UNKNOWN",
+        title: "HTTP 404",
+      },
+      href: HREF,
+      linkedCiHosts: null,
+    });
+    const badge = container.querySelector(
+      "[data-testid='machine-maintenance-badge']"
+    );
+    expect(badge?.getAttribute("data-maintenance-state")).toBe("unknown");
+    expect(
+      container.querySelector("[data-testid='machine-maintenance-ci-hosts']")
+    ).toBeNull();
+  });
+
+  it("names a machine with no declared CI host as exactly that", () => {
+    const { container } = renderWith({
+      badge: { state: "in_service" },
+      href: HREF,
+      linkedCiHosts: [],
+    });
+    expect(
+      container.querySelector("[data-testid='machine-maintenance-badge']")
+    ).toBeNull();
+    expect(
+      container.querySelector("[data-testid='machine-maintenance-ci-hosts']")
+        ?.textContent
+    ).toBe("No CI host linked to this machine.");
+  });
+
+  it("renders no maintenance block for a list built without the read", () => {
+    const { container } = renderCard(baseGroup());
+    expect(
+      container.querySelector("[data-testid='machine-maintenance']")
     ).toBeNull();
   });
 });
