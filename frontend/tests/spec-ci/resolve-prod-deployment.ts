@@ -14,12 +14,26 @@
  * loop with injectable fetchers; the CLI at the bottom wires it to the Vercel
  * and GitHub REST APIs and to `$GITHUB_OUTPUT`.
  *
+ * The `verify` job uses two more modes of the same CLI, each backed by a pure
+ * function:
+ *   `prior`  -> `selectRollbackTarget()`: the last-known-good production
+ *               deployment, i.e. the newest live one created before THIS one.
+ *   `alias <pre_smoke|pre_rollback>` -> `aliasDecision()`: whether the
+ *               production alias still serves THIS deployment, so a run never
+ *               smokes, or rolls back, a newer deployment than its own.
+ *
  * ZERO dependencies beyond Node built-ins (global `fetch`, `fs`), so the
  * workflow runs it with `npx tsx` and no `npm ci` — `validate` stays fast.
  *
  * Exit codes (read by the workflow):
- *   0 = resolved: `ok=true` (smoke it) or a NAMED skip (`ok=false` + notice)
- *   1 = red: failed production build, timeout, API error or missing token
+ *   default mode: 0 = resolved: `ok=true` (smoke it) or a NAMED skip
+ *                     (`ok=false` + notice)
+ *                 1 = red: failed production build, timeout, API error or
+ *                     missing token
+ *   `prior`:      0 always (HARNESS semantics: a failure is a warning and
+ *                 `prior_found=0`, never a red run)
+ *   `alias`:      0 = proceed, 3 = do not (skip the smokes / withhold the
+ *                 promote); the reason is annotated by the CLI itself
  */
 import { appendFileSync } from "node:fs";
 
@@ -241,6 +255,103 @@ export async function resolveDeployment(
   }
 }
 
+// ── Rollback target ─────────────────────────────────────────────────────────
+
+export type RollbackTarget =
+  | { found: true; uid: string; url: string }
+  | { found: false; reason: string };
+
+/**
+ * The deployment to `vercel promote` when THIS deployment's smoke fails: the
+ * newest production deployment that is READY and was promoted (not STAGED),
+ * created strictly before this one, and not this one. A newer deployment is
+ * never a rollback target, and neither is a failed, building or cancelled one.
+ * Pure.
+ */
+export function selectRollbackTarget(
+  deployments: VercelDeployment[],
+  self: { uid: string; created: number }
+): RollbackTarget {
+  const target = deployments
+    .filter(
+      (d) =>
+        d.uid !== self.uid &&
+        typeof d.created === "number" &&
+        d.created < self.created &&
+        isLive(d)
+    )
+    .sort(newestFirst)[0];
+  if (!target) {
+    return {
+      found: false,
+      reason: `no READY, promoted production deployment created before ${self.uid} in the listing.`,
+    };
+  }
+  if (!UID_RE.test(target.uid) || !HOST_RE.test(target.url)) {
+    return {
+      found: false,
+      reason: `rollback candidate ${target.uid} carries an unusable uid/url from the Vercel API.`,
+    };
+  }
+  return { found: true, uid: target.uid, url: `https://${target.url}` };
+}
+
+// ── Supersession guard ──────────────────────────────────────────────────────
+
+export type AliasSite = "pre_smoke" | "pre_rollback";
+
+export interface AliasDecision {
+  /** pre_smoke: proceed | skip.  pre_rollback: proceed | block. */
+  action: "proceed" | "skip" | "block";
+  /** Annotation level the CLI emits the message at. */
+  level: "info" | "notice" | "warning" | "error";
+  message: string;
+}
+
+/**
+ * Does the production alias still serve THIS deployment? `servingUid` is the
+ * deployment the alias resolves to, or null when it could not be read. Pure.
+ *
+ * Before the smokes an unreadable alias proceeds (smoking is safe, and is the
+ * old behaviour); before the rollback it blocks, because promoting on unknown
+ * state is the dangerous direction.
+ */
+export function aliasDecision(
+  site: AliasSite,
+  servingUid: string | null,
+  selfUid: string
+): AliasDecision {
+  if (servingUid === selfUid) {
+    return {
+      action: "proceed",
+      level: "info",
+      message: `production alias serves this deployment (${selfUid}).`,
+    };
+  }
+  if (site === "pre_smoke") {
+    if (servingUid === null) {
+      return {
+        action: "proceed",
+        level: "warning",
+        message: `could not read which deployment the production alias serves; smoking it anyway (it may not be ${selfUid}).`,
+      };
+    }
+    return {
+      action: "skip",
+      level: "notice",
+      message: `production alias now serves ${servingUid}, not this deployment ${selfUid}: a newer deployment superseded it. Smokes and rollback skipped; that deployment's own run judges prod. This is NOT a pass.`,
+    };
+  }
+  return {
+    action: "block",
+    level: "error",
+    message:
+      servingUid === null
+        ? `the smoke of ${selfUid} failed, but which deployment the production alias serves could not be read, so NO rollback was done (promoting on unknown state could revert a newer deploy). Check prod by hand.`
+        : `the smoke of ${selfUid} failed, but prod is now serving a different deployment ${servingUid}, so NO rollback was done. That deployment's own run judges it.`,
+  };
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -274,25 +385,43 @@ async function getJson(url: string, headers: Record<string, string>) {
   return res.json();
 }
 
-async function cli(): Promise<number> {
-  const env = process.env;
+const env = process.env;
+const token = env.VERCEL_TOKEN ?? "";
+const projectId = env.VERCEL_PROJECT_ID || "prj_HObFtTGU6kka7Gx7aUbaf0DzjEfI";
+const teamId = env.VERCEL_TEAM_ID || "team_QshrMW2BcfZGXlEiJFkP6hZj";
+
+function output(pairs: Record<string, string>): void {
+  const lines = Object.entries(pairs)
+    .map(([k, v]) => `${k}=${v.replace(/[\r\n]/g, " ")}\n`)
+    .join("");
+  if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, lines);
+  else process.stdout.write(lines);
+}
+
+function annotate(level: string, title: string, message: string): void {
+  if (level === "info") {
+    process.stdout.write(`${message.replace(/[\r\n]/g, " ")}\n`);
+    return;
+  }
+  process.stdout.write(
+    `::${level} title=${title}::${escapeCommandData(message)}\n`
+  );
+}
+
+function vercelGet(path: string): Promise<unknown> {
+  const sep = path.includes("?") ? "&" : "?";
+  return getJson(
+    `${VERCEL_API}${path}${sep}teamId=${encodeURIComponent(teamId)}`,
+    { Authorization: `Bearer ${token}` }
+  );
+}
+
+async function resolveCli(): Promise<number> {
   const sha = env.RESOLVE_SHA ?? "";
-  const token = env.VERCEL_TOKEN ?? "";
-  const projectId = env.VERCEL_PROJECT_ID || "prj_HObFtTGU6kka7Gx7aUbaf0DzjEfI";
-  const teamId = env.VERCEL_TEAM_ID || "team_QshrMW2BcfZGXlEiJFkP6hZj";
   const ghToken = env.GITHUB_TOKEN ?? "";
   const repo = env.GITHUB_REPOSITORY ?? "";
-  const outputFile = env.GITHUB_OUTPUT;
   const budgetMs = Number(env.RESOLVE_BUDGET_SECONDS || 900) * 1000;
   const pollMs = Number(env.RESOLVE_POLL_SECONDS || 15) * 1000;
-
-  const output = (pairs: Record<string, string>) => {
-    const lines = Object.entries(pairs)
-      .map(([k, v]) => `${k}=${v.replace(/[\r\n]/g, " ")}\n`)
-      .join("");
-    if (outputFile) appendFileSync(outputFile, lines);
-    else process.stdout.write(lines);
-  };
   const fail = (reason: string) => {
     output({ ok: "false" });
     process.stdout.write(
@@ -309,22 +438,8 @@ async function cli(): Promise<number> {
     );
   if (!ghToken || !repo) return fail("GITHUB_TOKEN / GITHUB_REPOSITORY unset.");
 
-  const listUrl =
-    `${VERCEL_API}/v6/deployments?projectId=${encodeURIComponent(projectId)}` +
-    `&target=production&limit=20&teamId=${encodeURIComponent(teamId)}`;
   const deps: ResolveDeps = {
-    async listDeployments() {
-      const body = (await getJson(listUrl, {
-        Authorization: `Bearer ${token}`,
-      })) as { deployments?: unknown };
-      if (!Array.isArray(body.deployments)) {
-        throw new ApiError(
-          "Vercel list response has no deployments array",
-          false
-        );
-      }
-      return body.deployments as VercelDeployment[];
-    },
+    listDeployments: () => listProduction(20),
     async mainHead() {
       const body = (await getJson(`${GITHUB_API}/repos/${repo}/commits/main`, {
         Authorization: `Bearer ${ghToken}`,
@@ -370,6 +485,125 @@ async function cli(): Promise<number> {
     case "wait": // unreachable: resolveDeployment never returns `wait`
       return fail(outcome.reason);
   }
+}
+
+async function listProduction(limit: number): Promise<VercelDeployment[]> {
+  const body = (await vercelGet(
+    `/v6/deployments?projectId=${encodeURIComponent(projectId)}` +
+      `&target=production&limit=${limit}`
+  )) as { deployments?: unknown };
+  if (!Array.isArray(body.deployments)) {
+    throw new ApiError("Vercel list response has no deployments array", false);
+  }
+  return body.deployments as VercelDeployment[];
+}
+
+/** `GET /v13/deployments/<uid or alias host>`, checked to be this project's. */
+async function getDeployment(
+  idOrHost: string
+): Promise<{ id: string; created: number }> {
+  const body = (await vercelGet(
+    `/v13/deployments/${encodeURIComponent(idOrHost)}`
+  )) as { id?: unknown; createdAt?: unknown; projectId?: unknown };
+  if (typeof body.id !== "string" || !UID_RE.test(body.id)) {
+    throw new ApiError(
+      `Vercel returned no deployment id for ${idOrHost}`,
+      false
+    );
+  }
+  if (body.projectId !== projectId) {
+    throw new ApiError(
+      `${idOrHost} resolves to a deployment of another project`,
+      false
+    );
+  }
+  return {
+    id: body.id,
+    created: typeof body.createdAt === "number" ? body.createdAt : NaN,
+  };
+}
+
+function selfUid(): string | null {
+  const uid = env.DEPLOYMENT_ID ?? "";
+  return UID_RE.test(uid) ? uid : null;
+}
+
+/** `prior` mode: the rollback target. HARNESS semantics: never red. */
+async function priorCli(): Promise<number> {
+  const TITLE = "no auto-rollback target";
+  const notFound = (reason: string) => {
+    annotate(
+      "warning",
+      TITLE,
+      `${reason} Auto-rollback is impossible for this run (harness).`
+    );
+    output({ prior_found: "0" });
+    return 0;
+  };
+  const uid = selfUid();
+  if (!uid) return notFound("DEPLOYMENT_ID is not a Vercel deployment uid.");
+  if (!token) return notFound("No Vercel token.");
+  try {
+    const self = await getDeployment(uid);
+    if (!Number.isFinite(self.created)) {
+      return notFound(`Vercel reported no creation time for ${uid}.`);
+    }
+    const target = selectRollbackTarget(await listProduction(100), {
+      uid,
+      created: self.created,
+    });
+    if (!target.found) return notFound(target.reason);
+    process.stdout.write(
+      `Prior (last-known-good) Production deployment = ${target.uid} (${target.url})\n`
+    );
+    output({
+      prior_found: "1",
+      prior_deployment: target.url,
+      prior_uid: target.uid,
+    });
+    return 0;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return notFound(`Could not read the Vercel API: ${msg}.`);
+  }
+}
+
+/** `alias <site>` mode: does the production alias still serve this deploy? */
+async function aliasCli(site: string | undefined): Promise<number> {
+  if (site !== "pre_smoke" && site !== "pre_rollback") {
+    process.stdout.write(
+      `::error::alias mode needs pre_smoke or pre_rollback, got '${escapeCommandData(String(site))}'\n`
+    );
+    return 2;
+  }
+  const uid = selfUid() ?? "<unknown>";
+  const host = new URL(env.PROD_PUBLIC_URL || "https://qontinui.io").host;
+  let serving: string | null = null;
+  if (token && uid !== "<unknown>") {
+    try {
+      serving = (await getDeployment(host)).id;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stdout.write(
+        `[alias] could not resolve ${host}: ${msg.replace(/[\r\n]/g, " ")}\n`
+      );
+    }
+  }
+  const decision = aliasDecision(site, serving, uid);
+  const title =
+    site === "pre_smoke"
+      ? `verify-frontend-run: production alias check before the smokes`
+      : `verify-frontend-run: auto-rollback withheld`;
+  annotate(decision.level, title, decision.message);
+  output({ alias_action: decision.action, serving_uid: serving ?? "" });
+  return decision.action === "proceed" ? 0 : 3;
+}
+
+function cli(): Promise<number> {
+  const [mode, arg] = process.argv.slice(2);
+  if (mode === "prior") return priorCli();
+  if (mode === "alias") return aliasCli(arg);
+  return resolveCli();
 }
 
 // Run only when executed directly (`npx tsx resolve-prod-deployment.ts`), never

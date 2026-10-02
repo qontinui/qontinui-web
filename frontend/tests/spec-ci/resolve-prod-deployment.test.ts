@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  aliasDecision,
   ApiError,
   classify,
   escapeCommandData,
   resolveDeployment,
+  selectRollbackTarget,
   type ResolveDeps,
   type VercelDeployment,
 } from "./resolve-prod-deployment";
@@ -305,5 +307,113 @@ describe("escapeCommandData", () => {
     expect(escapeCommandData("a\r\n::error::x 100%")).toBe(
       "a%0D%0A::error::x 100%25"
     );
+  });
+});
+
+describe("selectRollbackTarget", () => {
+  const SELF = { uid: "dpl_self", created: 100 };
+
+  it("takes the newest promoted READY deployment created before this one", () => {
+    const target = selectRollbackTarget(
+      [
+        dep(OTHER, "READY", "dpl_older", 10),
+        dep(NEWER, "READY", "dpl_prior", 50),
+        { ...dep(SHA, "READY", "dpl_self", 100) },
+      ],
+      SELF
+    );
+    expect(target).toEqual({
+      found: true,
+      uid: "dpl_prior",
+      url: "https://qontinui-web-dpl-prior.vercel.app",
+    });
+  });
+
+  it.each(["ERROR", "BUILDING", "CANCELED", "QUEUED"])(
+    "skips a %s deployment",
+    (state) => {
+      const target = selectRollbackTarget(
+        [dep(OTHER, "READY", "dpl_good", 10), dep(NEWER, state, "dpl_bad", 50)],
+        SELF
+      );
+      expect(target).toMatchObject({ found: true, uid: "dpl_good" });
+    }
+  );
+
+  it("skips a READY deployment that was never promoted (STAGED)", () => {
+    const target = selectRollbackTarget(
+      [
+        dep(OTHER, "READY", "dpl_good", 10),
+        { ...dep(NEWER, "READY", "dpl_staged", 50), readySubstate: "STAGED" },
+      ],
+      SELF
+    );
+    expect(target).toMatchObject({ found: true, uid: "dpl_good" });
+  });
+
+  it("never picks a deployment newer than this one", () => {
+    const target = selectRollbackTarget(
+      [
+        dep(OTHER, "READY", "dpl_good", 10),
+        dep(NEWER, "READY", "dpl_newer", 200),
+      ],
+      SELF
+    );
+    expect(target).toMatchObject({ found: true, uid: "dpl_good" });
+  });
+
+  it("never picks this deployment itself", () => {
+    const target = selectRollbackTarget(
+      [dep(SHA, "READY", "dpl_self", 100), dep(SHA, "READY", "dpl_self", 1)],
+      SELF
+    );
+    expect(target.found).toBe(false);
+  });
+
+  it("reports not-found when nothing qualifies", () => {
+    const target = selectRollbackTarget(
+      [dep(OTHER, "ERROR", "dpl_e", 10), dep(NEWER, "READY", "dpl_n", 300)],
+      SELF
+    );
+    expect(target.found).toBe(false);
+    expect(selectRollbackTarget([], SELF).found).toBe(false);
+  });
+});
+
+describe("aliasDecision", () => {
+  const SELF_UID = "dpl_self";
+
+  it.each(["pre_smoke", "pre_rollback"] as const)(
+    "%s: proceeds when the alias serves this deployment",
+    (site) => {
+      expect(aliasDecision(site, SELF_UID, SELF_UID).action).toBe("proceed");
+    }
+  );
+
+  it("pre_smoke: skips (a notice, not a pass) when a newer deployment is live", () => {
+    const d = aliasDecision("pre_smoke", "dpl_newer", SELF_UID);
+    expect(d).toMatchObject({ action: "skip", level: "notice" });
+    expect(d.message).toContain("dpl_newer");
+    expect(d.message).toContain("NOT a pass");
+  });
+
+  it("pre_smoke: proceeds with a warning when the alias is unreadable", () => {
+    expect(aliasDecision("pre_smoke", null, SELF_UID)).toMatchObject({
+      action: "proceed",
+      level: "warning",
+    });
+  });
+
+  it("pre_rollback: blocks the promote when a different deployment is live", () => {
+    const d = aliasDecision("pre_rollback", "dpl_newer", SELF_UID);
+    expect(d).toMatchObject({ action: "block", level: "error" });
+    expect(d.message).toContain("dpl_newer");
+  });
+
+  it("pre_rollback: blocks the promote when the alias is unreadable", () => {
+    expect(aliasDecision("pre_rollback", null, SELF_UID)).toMatchObject({
+      action: "block",
+      level: "error",
+    });
   });
 });

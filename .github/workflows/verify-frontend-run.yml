@@ -42,7 +42,9 @@ name: Verify Frontend Deploy (run)
 # Auto-rollback: on a GENUINE smoke failure (EITHER the public-route smoke OR
 # the authed smoke found a console error, a same-origin 5xx, a bounce to
 # /login, or a missing authed landmark) we re-point the Production alias to the
-# prior READY Production deployment via `vercel promote`. A HARNESS error (no
+# prior READY Production deployment via `vercel promote` -- unless the alias no
+# longer serves the deployment this run smoked (a newer push has deployed), in
+# which case nothing is smoked or promoted. A HARNESS error (no
 # token, couldn't find a prior deployment, couldn't reach the Vercel API, or
 # the authed smoke could not obtain ci-bot creds) fails/skips WITHOUT rolling
 # back — we never roll back a possibly-fine deploy because our own tooling or a
@@ -402,71 +404,25 @@ jobs:
             echo "token_missing=0" >> "$GITHUB_OUTPUT"
           fi
 
-      # Capture the PRIOR READY Production deployment (the last-known-good
-      # rollback target) BEFORE smoking, so it reflects the deploy that was live
-      # immediately before this one. `vercel ls --prod` lists production
-      # deployments newest-first; the just-deployed one is index 0 (matches
-      # NEW_PROD_URL), the prior READY one is the rollback target.
+      # Capture the rollback target BEFORE smoking: the newest production
+      # deployment that is READY and was promoted (not STAGED), created
+      # strictly before THIS one, and not this one. Resolved through the Vercel
+      # API by frontend/tests/spec-ci/resolve-prod-deployment.ts (`prior`
+      # mode, `selectRollbackTarget()`), keyed on THIS deployment's uid -- not
+      # by list position, which ignored state and, once a newer push had
+      # deployed, picked this deployment or a newer one.
       #
       # This is HARNESS work: if no token, or the API can't be reached, or no
-      # prior READY deployment exists (e.g. the very first prod deploy), we
-      # record prior_found=0. The smoke still runs (a broken frontend should
-      # still fail loudly), but the rollback step is skipped — failing the job
-      # WITHOUT rolling back, since there is nothing safe to roll back to.
+      # such deployment exists (e.g. the very first prod deploy), the resolver
+      # warns and records prior_found=0 (it never fails the step). The smoke
+      # still runs (a broken frontend should still fail loudly), but the
+      # rollback step is skipped -- failing the job WITHOUT rolling back, since
+      # there is nothing safe to roll back to.
       - name: Capture prior Production deployment (rollback target)
         id: prior
         if: steps.token.outputs.token_missing == '0'
-        run: |
-          set -uo pipefail
-          # `npx --yes` auto-installs vercel@latest without an interactive
-          # prompt. `vercel ls --prod` prints production deployments newest-first;
-          # we parse the *.vercel.app deployment URLs from the listing.
-          # --scope qontinui pins the team: CI's fresh checkout has no `.vercel`
-          # link, so without it the listing defaults to the token's scope. The
-          # provisioned token is team-scoped (so this is currently redundant)
-          # but pinning keeps it robust to a future full-account token. Slug
-          # confirmed via `vercel teams ls`.
-          if ! npx --yes vercel@latest ls --prod --scope qontinui --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
-            echo "::warning::could not list Vercel production deployments (harness):"
-            sed -e 's/[A-Za-z0-9._-]*'"$VERCEL_TOKEN"'[A-Za-z0-9._-]*/[redacted]/g' vercel_ls.err || true
-            echo "prior_found=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Extract production deployment URLs, newest-first. The CLI's human
-          # table prints the deployment URL in column 1; we keep only lines that
-          # name a *.vercel.app deployment URL, preserving newest-first order.
-          grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app[^[:space:]]*' vercel_ls.txt > urls.txt || true
-          # The freshly-deployed URL is the newest (first line of urls.txt); the
-          # PRIOR (rollback target) is the next distinct deployment URL below it.
-          # We skip by POSITION (line 0 = the deploy we just made) rather than by
-          # string-matching NEW_PROD_URL, because NEW_PROD_URL may be a custom
-          # domain alias rather than the *.vercel.app deployment URL the listing
-          # prints — a string match would then never find index 0.
-          PRIOR=""
-          while IFS= read -r u; do
-            u="${u%/}"
-            [ -z "$u" ] && continue
-            # Skip the just-deployed URL (and the alias form, if NEW_PROD_URL is
-            # a custom domain rather than the *.vercel.app deployment URL the
-            # very-newest line will simply be the new deploy → skip index 0).
-            if [ -z "$PRIOR" ]; then
-              # First line = newest = the deploy we just made. Skip it.
-              PRIOR="__skip__"
-              continue
-            fi
-            if [ "$PRIOR" = "__skip__" ]; then
-              PRIOR="$u"
-              break
-            fi
-          done < urls.txt
-          if [ -z "$PRIOR" ] || [ "$PRIOR" = "__skip__" ]; then
-            echo "::warning::no prior READY Production deployment found — cannot auto-rollback (first prod deploy?)."
-            echo "prior_found=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "Prior (last-known-good) Production deployment = $PRIOR"
-            echo "prior_deployment=$PRIOR" >> "$GITHUB_OUTPUT"
-            echo "prior_found=1" >> "$GITHUB_OUTPUT"
-          fi
+        working-directory: ./frontend
+        run: npx --yes tsx@4.22.4 tests/spec-ci/resolve-prod-deployment.ts prior
 
       - name: Install frontend deps
         working-directory: ./frontend
@@ -805,8 +761,36 @@ jobs:
       #   1  -> GENUINE smoke failure (console error / same-origin 5xx found)
       #   2  -> HARNESS error (couldn't reach the public prod URL at all / launch
       #         failure). A harness error must NOT roll back.
+      # Supersession guard, read as late as possible before the smokes. Both
+      # smokes crawl PROD_PUBLIC_URL, so they judge whatever the production
+      # alias serves NOW. If that is no longer THIS deployment (a newer push
+      # has deployed since), smoking would judge the newer deployment and a
+      # failure would roll IT back under this run's name. So, via the Vercel
+      # API (`alias pre_smoke` mode, `aliasDecision()`):
+      #   * alias serves this uid   -> proceed
+      #   * alias serves another    -> alias_action=skip: a ::notice:: naming
+      #     the serving deployment; the smokes, the rollback and the
+      #     close-the-rollback-issue step are all skipped. Green, NOT a pass:
+      #     the newer deployment's own run judges prod.
+      #   * alias unreadable (no token, API error) -> ::warning:: and proceed,
+      #     the pre-guard behaviour.
+      # Never fails the job: any unexpected resolver exit reads as unreadable.
+      - name: Check the production alias still serves this deployment
+        id: alias
+        working-directory: ./frontend
+        run: |
+          set -uo pipefail
+          # `|| rc=$?`: the default run shell is `bash -e`, and exit 3 is an answer.
+          rc=0
+          npx --yes tsx@4.22.4 tests/spec-ci/resolve-prod-deployment.ts alias pre_smoke || rc=$?
+          if [ "$rc" != "0" ] && [ "$rc" != "3" ]; then
+            echo "::warning::alias check exited ${rc}; treating the alias as unreadable and smoking anyway."
+          fi
+          exit 0
+
       - name: Post-deploy behavioral smoke (public routes)
         id: smoke
+        if: steps.alias.outputs.alias_action != 'skip'
         working-directory: ./frontend
         env:
           SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
@@ -854,6 +838,7 @@ jobs:
       # Creds are exported to the script's env and NEVER echoed.
       - name: Post-deploy authed smoke
         id: authed_smoke
+        if: steps.alias.outputs.alias_action != 'skip'
         working-directory: ./frontend
         env:
           SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
@@ -914,8 +899,14 @@ jobs:
       # captured. A build/install/harness/creds failure leaves the new deploy
       # live and this step correctly skips (failing the job without a rollback).
       # Re-points the Production alias to the last-known-good deployment via
-      # `vercel promote`.
+      # `vercel promote` -- but only after re-reading the alias (`alias
+      # pre_rollback`) and finding it STILL serves this deployment. If a newer
+      # deployment went live during the smoke, or the alias cannot be read,
+      # nothing is promoted (rollback_blocked=1): promoting on a different or
+      # unknown state would revert a deploy this run never judged.
       - name: Auto-rollback on behavioral smoke failure
+        id: rollback
+        working-directory: ./frontend
         if: >-
           failure() &&
           ((steps.smoke.conclusion == 'failure' &&
@@ -932,9 +923,25 @@ jobs:
             echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
             exit 1
           fi
+          # Supersession guard, second read. The resolver emits the ::error::
+          # itself when it withholds the promote.
+          # `|| rc=$?`: the default run shell is `bash -e`, and exit 3 is an answer.
+          rc=0
+          npx --yes tsx@4.22.4 tests/spec-ci/resolve-prod-deployment.ts alias pre_rollback || rc=$?
+          if [ "$rc" != "0" ]; then
+            [ "$rc" = "3" ] || echo "::error::alias check exited ${rc}; prod state unknown, so NO rollback was done."
+            echo "rollback_blocked=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           echo "Behavioral smoke failed — rolling back Production alias to last-known-good: $PRIOR"
-          # --scope qontinui: pin the team (same rationale as the ls above).
-          npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"
+          # --scope qontinui pins the team: CI's fresh checkout has no
+          # `.vercel` link, so without it the CLI defaults to the token's scope.
+          if ! npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"; then
+            echo "::error::frontend post-deploy smoke failed AND \`vercel promote $PRIOR\` failed. The bad deploy may be STILL LIVE — roll back by hand."
+            echo "rollback_blocked=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "rolled_back=1" >> "$GITHUB_OUTPUT"
           echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
           exit 1
 
@@ -964,6 +971,9 @@ jobs:
       # deploy or a rollback target rather than the resolved one — so a
       # clean pass of BOTH settles every page state (rolled back, bad deploy
       # live): prod is serving a behaviourally clean deploy.
+      # A run whose smokes were skipped because a newer deployment is live
+      # (alias_action=skip) settles nothing: it is excluded explicitly, on top
+      # of the smoke-outcome gates that already exclude it.
       # Gated on each smoke's own success, never on a merely green job: an
       # authed smoke SKIPPED for a creds gap exits 0 yet verified nothing
       # authed, and an authed regression is exactly what can file this issue.
@@ -977,6 +987,7 @@ jobs:
       - name: Resolve open frontend-deploy-rollback issue
         if: >-
           success() &&
+          steps.alias.outputs.alias_action != 'skip' &&
           steps.smoke.outcome == 'success' &&
           steps.authed_smoke.outcome == 'success' &&
           steps.authed_smoke.outputs.authed_skipped != '1'
@@ -1045,9 +1056,10 @@ jobs:
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${DEPLOY_SHA}" | cut -c1-9)"
 
-          if [ "${{ steps.token.outputs.token_missing }}" = "0" ] && \
-             [ "${{ steps.prior.outputs.prior_found }}" = "1" ]; then
+          if [ "${{ steps.rollback.outputs.rolled_back }}" = "1" ]; then
             STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
+          elif [ "${{ steps.rollback.outputs.rollback_blocked }}" = "1" ]; then
+            STATE="Auto-rollback was WITHHELD — prod was serving a different deployment than the one smoked, its state could not be read, or the promote failed (see the run's errors). Prod may still be serving the failing deploy."
           else
             STATE="Auto-rollback was NOT possible — the failing deploy is STILL LIVE on prod."
           fi
