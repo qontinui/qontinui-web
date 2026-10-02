@@ -1,7 +1,7 @@
 """coord policy_clauses.body — verbatim label-less clause block
 
 Revision ID: coord_policy_clauses_02
-Revises: overlord_01_interventions
+Revises: cmtland_01
 Create Date: 2026-09-26
 
 Phase 2 schema prerequisite of the policy-clause-schema-body-column plan.
@@ -41,7 +41,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_policy_clauses_02"
-down_revision: str | None = "overlord_01_interventions"
+down_revision: str | None = "cmtland_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
