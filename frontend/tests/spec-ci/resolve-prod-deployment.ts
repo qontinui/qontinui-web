@@ -75,7 +75,16 @@ export type Outcome =
       sha: string;
     }
   | { kind: "skip_superseded"; supersededBy: string; reason: string }
-  | { kind: "fail"; reason: string }
+  | {
+      kind: "fail";
+      reason: string;
+      /**
+       * Set on a CANCELED head when main had not moved. The likeliest cause
+       * is a double push whose main read raced Vercel's cancel, so the
+       * polling loop re-reads main once before it accepts the failure.
+       */
+      recheckMainHead?: boolean;
+    }
   | { kind: "wait"; reason: string };
 
 const IN_PROGRESS = new Set(["BUILDING", "INITIALIZING", "QUEUED"]);
@@ -195,6 +204,7 @@ export function classify(input: ClassifyInput): Outcome {
   return {
     kind: "fail",
     reason: `production deployment for ${sha} was CANCELED and main has not moved past it, so the head of main will not go live.`,
+    recheckMainHead: true,
   };
 }
 
@@ -239,6 +249,7 @@ export async function resolveDeployment(
 ): Promise<Outcome> {
   const start = deps.now();
   let errors = 0;
+  let rechecked = false;
   for (;;) {
     let deployments: VercelDeployment[];
     let mainHeadSha: string;
@@ -269,13 +280,35 @@ export async function resolveDeployment(
       mainHeadSha,
       budgetElapsed,
     });
-    if (outcome.kind !== "wait") return outcome;
+    if (outcome.kind === "fail" && outcome.recheckMainHead && !rechecked) {
+      // Re-read main (and its head's deployments) once, at once: if main has
+      // moved, this run takes the superseded path instead of going red.
+      rechecked = true;
+      deps.log?.(`re-reading main before failing: ${outcome.reason}`);
+      continue;
+    }
+    if (outcome.kind !== "wait") {
+      if (outcome.kind === "fail")
+        return { kind: "fail", reason: outcome.reason };
+      return outcome;
+    }
     deps.log?.(`waiting: ${outcome.reason}`);
     await deps.sleep(opts.pollMs);
   }
 }
 
 // ── Rollback target ─────────────────────────────────────────────────────────
+
+/**
+ * Oldest rollback target, measured back from this deployment's creation:
+ * 14 days. Production deploys at ~15 a day (29 in 48 h, coord finding
+ * `c4f43823`), so a good target inside the window is the overwhelmingly
+ * common case. Reaching further back would revert weeks of main against a
+ * backend that deploys independently (its API and migrations move on), which
+ * is more likely to break prod than to fix it; there a human should decide.
+ * It also bounds how far back the failure record has to be read.
+ */
+export const ROLLBACK_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export type RollbackTarget =
   | { found: true; uid: string; url: string }
@@ -293,14 +326,20 @@ export type RollbackTarget =
  * paging step writes into the `frontend-deploy-rollback` issues (see
  * `parseFailedDeploymentUids`). Residual limit: a failure whose record could
  * not be written (the paging step is best-effort), or one older than the
- * issues read, is not excluded.
+ * comments read, is not excluded.
+ *
+ * And nothing older than `maxAgeMs` before this deployment (default
+ * ROLLBACK_MAX_AGE_MS). When nothing qualifies there is NO target, so the run
+ * pages as un-rollable rather than reaching back to an ancient build.
  * Pure.
  */
 export function selectRollbackTarget(
   deployments: VercelDeployment[],
   self: { uid: string; created: number },
-  failedUids: readonly string[] = []
+  failedUids: readonly string[] = [],
+  maxAgeMs: number = ROLLBACK_MAX_AGE_MS
 ): RollbackTarget {
+  const oldest = self.created - maxAgeMs;
   const target = deployments
     .filter(
       (d) =>
@@ -308,13 +347,14 @@ export function selectRollbackTarget(
         !failedUids.includes(d.uid) &&
         typeof d.created === "number" &&
         d.created < self.created &&
+        d.created >= oldest &&
         isLive(d)
     )
     .sort(newestFirst)[0];
   if (!target) {
     return {
       found: false,
-      reason: `no READY, promoted production deployment created before ${self.uid} in the listing.`,
+      reason: `no READY, promoted production deployment that has not already failed its smoke was created in the ${Math.round(maxAgeMs / 86_400_000)} days before ${self.uid}.`,
     };
   }
   if (!UID_RE.test(target.uid) || !HOST_RE.test(target.url)) {
@@ -327,23 +367,47 @@ export function selectRollbackTarget(
 }
 
 /**
- * The marker the workflow's paging step writes into a `frontend-deploy-rollback`
- * issue body for every deployment whose smoke failed:
+ * The marker the workflow's paging step posts, as an issue COMMENT (append-
+ * only, so concurrent runs cannot clobber each other), on the
+ * `frontend-deploy-rollback` issue for every deployment whose smoke failed:
  *   <!-- verify-frontend-failed-deployment: dpl_xxx -->
  * Keep this regex and the workflow's literal in step.
  */
 const FAILED_MARKER_RE =
   /<!-- verify-frontend-failed-deployment: ([A-Za-z0-9_]+) -->/g;
 
-/** Every failed-deployment uid recorded in these issue bodies. Pure. */
+/** The only author whose markers count: the workflow's own job token. */
+export const MARKER_AUTHOR = "github-actions[bot]";
+
+export interface IssueComment {
+  body?: string | null;
+  user?: { login?: string } | null;
+}
+
+/**
+ * Every failed-deployment uid recorded in these comments. Only comments by
+ * MARKER_AUTHOR count: anyone who can comment on an issue could otherwise
+ * veto a rollback target. Pure.
+ */
 export function parseFailedDeploymentUids(
-  bodies: readonly (string | null | undefined)[]
+  comments: readonly IssueComment[]
 ): string[] {
   const uids = new Set<string>();
-  for (const body of bodies) {
-    for (const m of (body ?? "").matchAll(FAILED_MARKER_RE)) uids.add(m[1]);
+  for (const c of comments) {
+    if (c.user?.login !== MARKER_AUTHOR) continue;
+    for (const m of (c.body ?? "").matchAll(FAILED_MARKER_RE)) uids.add(m[1]);
   }
   return [...uids];
+}
+
+/** The `rel="next"` URL of a GitHub `Link` header, or null. Pure. */
+export function nextLink(link: string | null): string | null {
+  if (!link) return null;
+  for (const part of link.split(",")) {
+    const m = part.match(/<([^>]+)>\s*;\s*rel="next"/);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 // ── Supersession guard ──────────────────────────────────────────────────────
@@ -416,6 +480,13 @@ const VERCEL_API = "https://api.vercel.com";
 const GITHUB_API = "https://api.github.com";
 
 async function getJson(url: string, headers: Record<string, string>) {
+  return (await getJsonWithLink(url, headers)).body;
+}
+
+async function getJsonWithLink(
+  url: string,
+  headers: Record<string, string>
+): Promise<{ body: unknown; link: string | null }> {
   let res: Response;
   try {
     res = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
@@ -432,7 +503,7 @@ async function getJson(url: string, headers: Record<string, string>) {
       transient
     );
   }
-  return res.json();
+  return { body: await res.json(), link: res.headers.get("link") };
 }
 
 const env = process.env;
@@ -560,27 +631,67 @@ async function listProduction(
   };
 }
 
-/** Failed-deployment uids recorded in the rollback issues (any state). */
-async function recordedFailedUids(): Promise<string[]> {
+/** At most this many pages (100 items each) per GitHub listing. */
+const MAX_GITHUB_PAGES = 10;
+
+/** Every item of a paginated GitHub list, following `Link: rel="next"`. */
+export async function githubList<T>(firstUrl: string): Promise<T[]> {
   const ghToken = env.GITHUB_TOKEN ?? "";
+  const headers = {
+    Authorization: `Bearer ${ghToken}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const items: T[] = [];
+  let url: string | null = firstUrl;
+  for (let page = 0; url !== null; page++) {
+    if (page === MAX_GITHUB_PAGES) {
+      // A truncated record could miss a failed deployment: fail closed.
+      throw new ApiError(
+        `more than ${MAX_GITHUB_PAGES} pages at ${firstUrl}`,
+        false
+      );
+    }
+    const { body, link }: { body: unknown; link: string | null } =
+      await getJsonWithLink(url, headers);
+    if (!Array.isArray(body)) {
+      throw new ApiError(`GitHub list at ${firstUrl} is not an array`, false);
+    }
+    items.push(...(body as T[]));
+    url = nextLink(link);
+  }
+  return items;
+}
+
+/**
+ * Failed-deployment uids recorded since `sinceMs` in comments on
+ * `frontend-deploy-rollback` issues (open or closed; pull requests excluded).
+ * A marker for a deployment inside the rollback window was necessarily
+ * written after that deployment was created, so reading from the window's
+ * start is complete for every candidate.
+ */
+export async function recordedFailedUids(sinceMs: number): Promise<string[]> {
   const repo = env.GITHUB_REPOSITORY ?? "";
-  if (!ghToken || !repo) {
+  if (!env.GITHUB_TOKEN || !repo) {
     throw new ApiError("GITHUB_TOKEN / GITHUB_REPOSITORY unset", false);
   }
-  const issues = (await getJson(
-    `${GITHUB_API}/repos/${repo}/issues?labels=frontend-deploy-rollback&state=all&per_page=100`,
-    {
-      Authorization: `Bearer ${ghToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    }
-  )) as unknown;
-  if (!Array.isArray(issues)) {
-    throw new ApiError("GitHub issues response is not a list", false);
-  }
-  return parseFailedDeploymentUids(
-    issues.map((i: { body?: string | null }) => i.body)
+  const since = new Date(sinceMs).toISOString();
+  const issues = await githubList<{
+    number: number;
+    pull_request?: unknown;
+  }>(
+    `${GITHUB_API}/repos/${repo}/issues?labels=frontend-deploy-rollback&state=all&since=${since}&per_page=100`
   );
+  const comments: IssueComment[] = [];
+  for (const issue of issues) {
+    if (issue.pull_request) continue;
+    comments.push(
+      ...(await githubList<IssueComment>(
+        `${GITHUB_API}/repos/${repo}/issues/${issue.number}/comments?since=${since}&per_page=100`
+      ))
+    );
+  }
+  return parseFailedDeploymentUids(comments);
 }
 
 /** `GET /v13/deployments/<uid or alias host>`, checked to be this project's. */
@@ -635,7 +746,8 @@ async function priorCli(): Promise<number> {
     }
     // Without the failure record a known-bad deployment could be promoted,
     // so an unreadable record means no rollback target (HARNESS), not "none".
-    const failed = await recordedFailedUids();
+    const oldest = self.created - ROLLBACK_MAX_AGE_MS;
+    const failed = await recordedFailedUids(oldest);
     if (failed.length > 0) {
       process.stdout.write(
         `Excluding deployments whose smoke already failed: ${failed.join(", ")}\n`
@@ -647,7 +759,12 @@ async function priorCli(): Promise<number> {
       found: false,
       reason: `no production deployment was created before ${uid}.`,
     };
-    for (let page = 0; page < 5 && until !== null && !target.found; page++) {
+    // Stop at the age bound: nothing older can be a target.
+    for (
+      let page = 0;
+      page < 5 && until !== null && until > oldest && !target.found;
+      page++
+    ) {
       const listed = await listProduction(`until=${until}&limit=100`);
       target = selectRollbackTarget(
         listed.deployments,

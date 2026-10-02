@@ -926,7 +926,10 @@ jobs:
           steps.prior.outputs.prior_found == '1'
         run: |
           set -uo pipefail
-          PRIOR="${{ steps.prior.outputs.prior_deployment }}"
+          # `vercel promote` takes a deployment id or URL (Vercel docs,
+          # /docs/instant-rollback "Undo a rollback": `vercel promote
+          # [deployment-id or url]`); the uid is the unambiguous one.
+          PRIOR="${{ steps.prior.outputs.prior_uid }}"
           if [ -z "$PRIOR" ]; then
             echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
             exit 1
@@ -1060,16 +1063,34 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          # What the alias served before the smokes, and (if the rollback step
+          # ran) what it served before the promote. Both are uids validated by
+          # the resolver, passed as env rather than interpolated.
+          PRE_SMOKE_SERVING_UID: ${{ steps.alias.outputs.serving_uid }}
+          PRE_ROLLBACK_SERVING_UID: ${{ steps.rollback.outputs.serving_uid }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${DEPLOY_SHA}" | cut -c1-9)"
-          # Durable record of a deployment whose smoke failed. The resolver's
-          # `prior` mode (parseFailedDeploymentUids) reads these markers from
-          # every frontend-deploy-rollback issue, open or closed, and never
-          # offers such a deployment as a rollback target again: it stays
-          # READY and PROMOTED in Vercel after being rolled away from. Keep
-          # the literal in step with FAILED_MARKER_RE there.
-          MARKER="<!-- verify-frontend-failed-deployment: ${DEPLOYMENT_ID} -->"
+          # Durable record of a deployment whose smoke failed, posted as a
+          # COMMENT (append-only, so concurrent runs cannot clobber each
+          # other). The resolver's `prior` mode (parseFailedDeploymentUids)
+          # reads these markers from github-actions[bot] comments on
+          # frontend-deploy-rollback issues and never offers such a deployment
+          # as a rollback target again: it stays READY and PROMOTED in Vercel
+          # after being rolled away from. Keep the literal in step with
+          # FAILED_MARKER_RE there.
+          #
+          # The failure is charged to this deployment ONLY when we know it is
+          # what the smokes judged: the alias read before the smokes named it,
+          # and, if the rollback step re-read the alias, that read did not see
+          # a different deployment (one that may have gone live mid-smoke).
+          MARKER=""
+          if [ -n "${DEPLOYMENT_ID}" ] && [ "${PRE_SMOKE_SERVING_UID}" = "${DEPLOYMENT_ID}" ] \
+             && { [ -z "${PRE_ROLLBACK_SERVING_UID}" ] || [ "${PRE_ROLLBACK_SERVING_UID}" = "${DEPLOYMENT_ID}" ]; }; then
+            MARKER="<!-- verify-frontend-failed-deployment: ${DEPLOYMENT_ID} -->"
+          else
+            echo "::warning::not recording deployment ${DEPLOYMENT_ID} as failed: the alias was not confirmed to serve it throughout (before smokes: '${PRE_SMOKE_SERVING_UID}', before rollback: '${PRE_ROLLBACK_SERVING_UID}')."
+          fi
 
           if [ "${{ steps.rollback.outputs.rolled_back }}" = "1" ]; then
             STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
@@ -1091,9 +1112,7 @@ jobs:
 
           Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
 
-          _Auto-filed by .github/workflows/verify-frontend-run.yml (runs on every push to main); closed automatically by the next verify run whose public and authed smokes both pass._
-
-          ${MARKER}"
+          _Auto-filed by .github/workflows/verify-frontend-run.yml (runs on every push to main); closed automatically by the next verify run whose public and authed smokes both pass._"
 
           gh label create frontend-deploy-rollback \
             --repo "${GITHUB_REPOSITORY}" \
@@ -1109,27 +1128,29 @@ jobs:
 
           if [ -n "${EXISTING}" ]; then
             echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
-            gh issue comment "${EXISTING}" \
+            ISSUE="${EXISTING}"
+            # The marker rides in the same comment: one write, nothing to race.
+            gh issue comment "${ISSUE}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --body "Still failing: ${RUN_URL} (head ${DEPLOY_SHA}, deployment ${DEPLOYMENT_ID}). ${STATE}" \
-              || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
-            # The marker goes in the BODY, which the resolver reads in one
-            # call; comments would need one call per issue.
-            if OLD_BODY=$(gh issue view "${EXISTING}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body); then
-              gh issue edit "${EXISTING}" --repo "${GITHUB_REPOSITORY}" \
-                --body "${OLD_BODY}
+              --body "Still failing: ${RUN_URL} (head ${DEPLOY_SHA}, deployment ${DEPLOYMENT_ID}). ${STATE}
           ${MARKER}" \
-                || echo "::warning::could not record deployment ${DEPLOYMENT_ID} as failed on issue #${EXISTING}; a later rollback could pick it (best-effort)"
-            else
-              echo "::warning::could not read issue #${EXISTING} to record deployment ${DEPLOYMENT_ID} as failed (best-effort)"
-            fi
+              || echo "::warning::could not comment on issue #${ISSUE} (best-effort)${MARKER:+; deployment ${DEPLOYMENT_ID} is NOT recorded as failed, so a later rollback could pick it}"
           else
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${TITLE}" \
-              --label frontend-deploy-rollback \
-              --body "${BODY}" \
-              || echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
+            if ISSUE=$(gh issue create \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${TITLE}" \
+                --label frontend-deploy-rollback \
+                --body "${BODY}"); then
+              if [ -n "${MARKER}" ]; then
+                gh issue comment "${ISSUE}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --body "Failed deployment ${DEPLOYMENT_ID} (head ${DEPLOY_SHA}).
+          ${MARKER}" \
+                  || echo "::warning::could not record deployment ${DEPLOYMENT_ID} as failed on ${ISSUE}; a later rollback could pick it (best-effort)"
+              fi
+            else
+              echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
+            fi
           fi
           exit 0
 

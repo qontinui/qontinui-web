@@ -4,7 +4,9 @@ import {
   ApiError,
   classify,
   escapeCommandData,
+  nextLink,
   parseFailedDeploymentUids,
+  ROLLBACK_MAX_AGE_MS,
   resolveDeployment,
   selectRollbackTarget,
   type ResolveDeps,
@@ -321,6 +323,40 @@ describe("resolveDeployment", () => {
     expect(asked).toEqual([SHA, NEWER]);
   });
 
+  it("re-reads main once before failing a CANCELED head (double push)", async () => {
+    let reads = 0;
+    const outcome = await resolveDeployment(
+      fakeDeps(
+        async (forSha) =>
+          forSha === SHA ? [dep(SHA, "CANCELED")] : [dep(NEWER, "BUILDING")],
+        async () => (++reads === 1 ? SHA : NEWER)
+      ),
+      OPTS
+    );
+    expect(outcome).toMatchObject({
+      kind: "skip_superseded",
+      supersededBy: NEWER,
+    });
+    expect(reads).toBe(2);
+  });
+
+  it("fails a CANCELED head red when main still has not moved on re-read", async () => {
+    let reads = 0;
+    const outcome = await resolveDeployment(
+      fakeDeps(
+        async () => [dep(SHA, "CANCELED")],
+        async () => {
+          reads += 1;
+          return SHA;
+        }
+      ),
+      OPTS
+    );
+    expect(outcome.kind).toBe("fail");
+    expect(outcome).not.toHaveProperty("recheckMainHead");
+    expect(reads).toBe(2);
+  });
+
   it("skips by name once main moves on mid-wait", async () => {
     let polls = 0;
     const outcome = await resolveDeployment(
@@ -417,6 +453,36 @@ describe("selectRollbackTarget", () => {
     expect(target).toMatchObject({ found: true, uid: "dpl_good" });
   });
 
+  it("never reaches back past the age bound", () => {
+    const now = 100 * ROLLBACK_MAX_AGE_MS;
+    const self = { uid: "dpl_self", created: now };
+    const ancient = dep(
+      OTHER,
+      "READY",
+      "dpl_ancient",
+      now - ROLLBACK_MAX_AGE_MS - 1
+    );
+    expect(selectRollbackTarget([ancient], self).found).toBe(false);
+    const recent = dep(NEWER, "READY", "dpl_recent", now - ROLLBACK_MAX_AGE_MS);
+    expect(selectRollbackTarget([ancient, recent], self)).toMatchObject({
+      found: true,
+      uid: "dpl_recent",
+    });
+  });
+
+  it("returns no target when only failed or ancient deployments remain", () => {
+    const now = 100 * ROLLBACK_MAX_AGE_MS;
+    const target = selectRollbackTarget(
+      [
+        dep(OTHER, "READY", "dpl_failed", now - 1000),
+        dep(NEWER, "READY", "dpl_ancient", now - 2 * ROLLBACK_MAX_AGE_MS),
+      ],
+      { uid: "dpl_self", created: now },
+      ["dpl_failed"]
+    );
+    expect(target.found).toBe(false);
+  });
+
   it("reports not-found when nothing qualifies", () => {
     const target = selectRollbackTarget(
       [dep(OTHER, "ERROR", "dpl_e", 10), dep(NEWER, "READY", "dpl_n", 300)],
@@ -465,14 +531,48 @@ describe("aliasDecision", () => {
   });
 });
 
+const BOT = { login: "github-actions[bot]" };
+
 describe("parseFailedDeploymentUids", () => {
-  it("reads every marker the paging step writes, de-duplicated", () => {
+  it("reads every workflow-authored marker comment, de-duplicated", () => {
     const uids = parseFailedDeploymentUids([
-      "Smoke failed.\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
-      "<!-- verify-frontend-failed-deployment: dpl_B2 -->\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
-      null,
-      "no marker here, dpl_C3",
+      {
+        user: BOT,
+        body: "Still failing.\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
+      },
+      {
+        user: BOT,
+        body: "<!-- verify-frontend-failed-deployment: dpl_B2 -->\n<!-- verify-frontend-failed-deployment: dpl_A1 -->",
+      },
+      { user: BOT, body: null },
+      { user: BOT, body: "no marker here, dpl_C3" },
     ]);
     expect(uids).toEqual(["dpl_A1", "dpl_B2"]);
+  });
+
+  it("ignores markers written by anyone but the workflow", () => {
+    const uids = parseFailedDeploymentUids([
+      {
+        user: { login: "someone" },
+        body: "<!-- verify-frontend-failed-deployment: dpl_GOOD -->",
+      },
+      { user: null, body: "<!-- verify-frontend-failed-deployment: dpl_X -->" },
+    ]);
+    expect(uids).toEqual([]);
+  });
+});
+
+describe("nextLink", () => {
+  it("returns the rel=next URL of a GitHub Link header", () => {
+    const link =
+      '<https://api.github.com/x?page=1>; rel="prev", <https://api.github.com/x?page=3>; rel="next", <https://api.github.com/x?page=9>; rel="last"';
+    expect(nextLink(link)).toBe("https://api.github.com/x?page=3");
+  });
+
+  it("returns null on the last page or without a header", () => {
+    expect(
+      nextLink('<https://api.github.com/x?page=1>; rel="prev"')
+    ).toBeNull();
+    expect(nextLink(null)).toBeNull();
   });
 });
