@@ -1,7 +1,7 @@
 """coord.repo_branches / coord.displaced_pr_rows .pr_state_observed_at — the PR-state clock
 
 Revision ID: coord_pr_state_observed_at_01
-Revises: overlord_01_interventions
+Revises: cmtland_01
 Create Date: 2026-10-02
 
 Phase 1 of plan
@@ -87,7 +87,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pr_state_observed_at_01"
-down_revision: str | Sequence[str] | None = "overlord_01_interventions"
+down_revision: str | Sequence[str] | None = "cmtland_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
