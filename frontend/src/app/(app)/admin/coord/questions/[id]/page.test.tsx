@@ -42,8 +42,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+let isCoordAdmin = true;
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ user: { email: "op@example.com" } }),
+  useAuth: () => ({ user: { email: "op@example.com" }, isCoordAdmin }),
 }));
 
 // Not under test, and ESM-only — the markdown renderer would drag remark's
@@ -52,6 +53,17 @@ vi.mock("react-markdown", () => ({
   default: ({ children }: { children?: string }) => <div>{children}</div>,
 }));
 vi.mock("remark-gfm", () => ({ default: () => undefined }));
+
+// `DestructiveButton` refuses synthetic clicks (`isTrusted === false`), which
+// every jsdom `fireEvent.click` is. Swapped for a plain button so the proposal
+// approve CONFIRM step can be driven; the confirm step itself is what is
+// under test here, not the synthetic-click gate.
+vi.mock("@/components/ui/destructive-button", () => ({
+  isSyntheticClick: () => false,
+  DestructiveButton: (props: Record<string, unknown>) => (
+    <button type="button" {...props} />
+  ),
+}));
 
 import CoordQuestionDetailPage from "./page";
 
@@ -68,6 +80,7 @@ const httpError = (status: number) =>
 
 beforeEach(() => {
   routeId = "q-1";
+  isCoordAdmin = true;
   get.mockReset();
   post.mockReset();
 });
@@ -698,5 +711,378 @@ describe("the composer's own onChange", () => {
     for (const card of screen.getAllByTestId("coord-question-option-card")) {
       expect(card.className).not.toContain("border-primary");
     }
+  });
+});
+
+/**
+ * Decision effects — plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3. An effect row is answered through the SAME `/respond` door, but
+ * only with the effect's canonical values — coord routes them through the
+ * gate / proposal core, which cannot apply free text. So the composer is
+ * replaced by one button per value, and the body POSTed is pinned here.
+ */
+describe("a decision-effect row is answered with the effect's own values", () => {
+  const GATE_ROW = {
+    ...QUESTION,
+    question: "Approve phase 2 of wu-42?",
+    options: ["met", "not_met"],
+    effect_kind: "gate",
+    effect_ref: {
+      id: "gate-7",
+      gate_id: "gate-7",
+      work_unit_id: "wu-42",
+      phase_name: "Phase 2",
+    },
+  };
+
+  function decisionButtons(): HTMLElement[] {
+    return screen.queryAllByTestId("coord-question-effect-decision");
+  }
+
+  it("posts `met` for a gate row, to the existing respond door", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(decisionButtons().map((b) => b.getAttribute("data-decision-value")))
+      .toEqual(["met", "not_met"]);
+    // No free-text composer and no seed-the-composer option cards.
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-options")
+    ).not.toBeInTheDocument();
+    // The linked chip names the gate's work unit and phase.
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/gates?gate=gate-7");
+    expect(screen.getByTestId("coord-question-effect-detail")).toHaveTextContent(
+      "wu-42 · Phase 2"
+    );
+
+    // `met` clears the gate and fires its continuation — confirm first.
+    fireEvent.click(decisionButtons()[0]);
+    const dialog = await screen.findByTestId("coord-question-met-confirm");
+    expect(post).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent(/continuation/);
+    fireEvent.click(screen.getByTestId("coord-question-met-confirm-confirm"));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      "/api/v1/operations/agent-questions/q-1/respond",
+      { response: "met", responded_by_operator: "op@example.com" }
+    );
+  });
+
+  it("cancelling the `met` confirm posts nothing", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[0]);
+    await screen.findByTestId("coord-question-met-confirm");
+    fireEvent.click(screen.getByTestId("coord-question-met-confirm-cancel"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-question-met-confirm")
+      ).not.toBeInTheDocument()
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("hides the decision buttons from a non-admin, with a notice", async () => {
+    isCoordAdmin = false;
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-effect-admin-only")
+      ).toHaveTextContent(/requires tenant admin/i)
+    );
+    expect(decisionButtons()).toHaveLength(0);
+    expect(
+      screen.queryByTestId("coord-question-effect-decisions")
+    ).not.toBeInTheDocument();
+    // Still no free-text composer: an effect row is not answerable as text.
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+  });
+
+  it("posts `not_met` for the gate's second button", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[1]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "not_met", responded_by_operator: "op@example.com" }
+      )
+    );
+  });
+
+  const PROPOSAL_ROW = {
+    ...QUESTION,
+    options: ["approve", "reject"],
+    effect_kind: "proposal",
+    effect_ref: { id: "p-1", proposal_id: "p-1" },
+  };
+
+  it("posts `approve` for a proposal row only after the confirm step", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+
+    // One click opens the confirm dialog; it does NOT apply the edit.
+    fireEvent.click(decisionButtons()[0]);
+    const dialog = await screen.findByTestId("coord-question-approve-confirm");
+    expect(post).not.toHaveBeenCalled();
+    // The dialog carries the way to the diff at the moment of decision.
+    expect(
+      screen
+        .getByTestId("coord-question-approve-confirm-review-link")
+        .getAttribute("href")
+    ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+    expect(dialog).toHaveTextContent(/Approve and apply/);
+
+    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-confirm"));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "approve", responded_by_operator: "op@example.com" }
+      )
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancelling the approve confirm posts nothing", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[0]);
+    await screen.findByTestId("coord-question-approve-confirm");
+    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-cancel"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-question-approve-confirm")
+      ).not.toBeInTheDocument()
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("puts a review-the-diff link inside the proposal decision block", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    const link = screen.getByTestId("coord-question-effect-review-link");
+    expect(link).toHaveTextContent("Open proposal to review the diff");
+    expect(link.getAttribute("href")).toBe(
+      "/admin/coord/prompt-document-proposals?proposal=p-1"
+    );
+    expect(
+      screen.getByRole("group", { name: "Decide this proposal" })
+    ).toBeInTheDocument();
+  });
+
+  it("rejects a proposal in one click (no confirm — nothing is applied)", async () => {
+    get.mockResolvedValue(PROPOSAL_ROW);
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    fireEvent.click(decisionButtons()[1]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "reject", responded_by_operator: "op@example.com" }
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-question-approve-confirm")
+    ).not.toBeInTheDocument();
+  });
+
+  it("labels the gate decision group for assistive tech", async () => {
+    get.mockResolvedValue(GATE_ROW);
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => expect(decisionButtons()).toHaveLength(2));
+    expect(
+      screen.getByRole("group", { name: "Decide this gate" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-effect-review-link")
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a renamed value", ["met", "blocked"]],
+    ["an extra option", ["met", "not_met", "defer"]],
+    ["no options", null],
+  ])(
+    "falls back to the composer with a notice when options disagree (%s)",
+    async (_l, options) => {
+      get.mockResolvedValue({ ...GATE_ROW, options });
+      render(<CoordQuestionDetailPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-question-response-textarea")
+        ).toBeInTheDocument()
+      );
+      expect(decisionButtons()).toHaveLength(0);
+      expect(
+        screen.getByTestId("coord-question-effect-mismatch")
+      ).toHaveTextContent(/met \/ not_met/);
+    }
+  );
+
+  it.each([
+    [
+      "proposal `approve`",
+      { ...PROPOSAL_ROW, options: ["approve", "reject", "defer"] },
+      "  Approve ",
+      "coord-question-approve-confirm",
+      // The CANONICAL value, not the operator's casing or padding.
+      "approve",
+    ],
+    [
+      "gate `MET` (typed in capitals)",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+      " MET",
+      "coord-question-met-confirm",
+      "met",
+    ],
+    [
+      "gate `met`",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+      "met",
+      "coord-question-met-confirm",
+      "met",
+    ],
+  ])(
+    "confirms a typed %s in the fallback composer before posting",
+    async (_l, row, typed, confirmId, posted) => {
+      get.mockResolvedValue(row);
+      post.mockResolvedValue({});
+      render(<CoordQuestionDetailPage />);
+      const textarea = await screen.findByTestId(
+        "coord-question-response-textarea"
+      );
+      expect(screen.getByTestId("coord-question-effect-mismatch")).toBeInTheDocument();
+      fireEvent.change(textarea, { target: { value: typed } });
+      fireEvent.click(screen.getByTestId("coord-question-submit"));
+
+      await screen.findByTestId(confirmId);
+      expect(post).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId(`${confirmId}-confirm`));
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(
+          "/api/v1/operations/agent-questions/q-1/respond",
+          { response: posted, responded_by_operator: "op@example.com" }
+        )
+      );
+      expect(post).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("posts other fallback-composer text without a confirm", async () => {
+    get.mockResolvedValue({
+      ...PROPOSAL_ROW,
+      options: ["approve", "reject", "defer"],
+    });
+    post.mockResolvedValue({});
+    render(<CoordQuestionDetailPage />);
+    const textarea = await screen.findByTestId(
+      "coord-question-response-textarea"
+    );
+    fireEvent.change(textarea, { target: { value: "defer" } });
+    fireEvent.click(screen.getByTestId("coord-question-submit"));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/v1/operations/agent-questions/q-1/respond",
+        { response: "defer", responded_by_operator: "op@example.com" }
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-question-approve-confirm")
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers no decision on an ANSWERED effect row", async () => {
+    get.mockResolvedValue({
+      ...GATE_ROW,
+      responded_at: "2026-09-26T10:00:00Z",
+      response: "met",
+      responded_by_operator: "josh@qontinui.io",
+    });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-question-respond")).toHaveTextContent(
+        /Recorded response/i
+      )
+    );
+    expect(decisionButtons()).toHaveLength(0);
+  });
+
+  it.each([
+    ["a clause row (reserved)", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
+    ["an effect-less row", { effect_kind: "none", effect_ref: null }],
+    ["a row from an older coord", {}],
+  ])("keeps the free-text composer for %s", async (_l, extra) => {
+    get.mockResolvedValue({ ...QUESTION, options: ["pin", "bump"], ...extra });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument()
+    );
+    expect(decisionButtons()).toHaveLength(0);
+    expect(screen.getByTestId("coord-question-options")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a clause row", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
+    ["an unknown effect kind", { effect_kind: "future_kind", effect_ref: { id: "x" } }],
+    [
+      "a gate row whose options mismatch",
+      { ...GATE_ROW, options: ["met", "blocked"] },
+    ],
+  ])(
+    "shows a non-admin the tenant-admin notice, not the composer, for %s",
+    async (_l, extra) => {
+      isCoordAdmin = false;
+      get.mockResolvedValue({ ...QUESTION, options: ["pin", "bump"], ...extra });
+      render(<CoordQuestionDetailPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-question-effect-admin-only")
+        ).toHaveTextContent(/Requires tenant admin/)
+      );
+      expect(
+        screen.queryByTestId("coord-question-response-textarea")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("coord-question-submit")
+      ).not.toBeInTheDocument();
+    }
+  );
+
+  it("[over-correction] still gives a non-admin the composer on an ordinary row", async () => {
+    isCoordAdmin = false;
+    get.mockResolvedValue({ ...QUESTION, effect_kind: "none", effect_ref: null });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument()
+    );
+    expect(
+      screen.queryByTestId("coord-question-effect-admin-only")
+    ).not.toBeInTheDocument();
   });
 });
