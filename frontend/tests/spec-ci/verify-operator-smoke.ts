@@ -28,7 +28,8 @@
  *
  * Seed surface mirrors token-storage.ts EXACTLY (same recipe as the ci-bot
  * smoke): sessionStorage Bearer + localStorage is_authenticated/token_expiry +
- * the qontinui_auth middleware marker cookie.
+ * the qontinui_auth middleware marker cookie, set on the browser context so the
+ * first request carries it (auth-marker-cookie.ts).
  *
  * Env:
  *   QONTINUI_SEED_ID_TOKEN  (required) — the pre-minted id token to seed.
@@ -46,6 +47,7 @@ import {
   type ConsoleErrorEntry,
   type ConsoleLevel,
 } from "./console-policy";
+import { seedAuthMarkerCookie } from "./auth-marker-cookie";
 import { settleRoute } from "./route-settle";
 
 const DEFAULT_ROUTES = ["/operations", "/sessions", "/admin/coord/pipeline"];
@@ -98,12 +100,13 @@ async function main(): Promise<number> {
     viewport: { width: 1280, height: 800 },
     ignoreHTTPSErrors: true,
   });
+  // On the context, so the first request carries it (auth-marker-cookie.ts).
+  await seedAuthMarkerCookie(context, base);
   const page = await context.newPage();
 
   // Seed BEFORE any navigation. Mirrors token-storage.ts (and the ci-bot smoke):
   // Bearer in sessionStorage, is_authenticated + far-future token_expiry in
-  // localStorage, qontinui_auth marker cookie so middleware lets protected
-  // routes through.
+  // localStorage. The qontinui_auth marker cookie is on the context, above.
   const farFutureExpiryMs = Date.now() + 23 * 60 * 60 * 1000;
   await page.addInitScript(
     ([accessToken, expiry]) => {
@@ -112,7 +115,6 @@ async function main(): Promise<number> {
         sessionStorage.setItem("auth_bearer_refresh_token", "");
         localStorage.setItem("is_authenticated", "true");
         localStorage.setItem("token_expiry", expiry);
-        document.cookie = "qontinui_auth=1; Path=/; SameSite=Lax; Secure";
       } catch {
         // first about:blank init — the per-route goto re-runs this.
       }
