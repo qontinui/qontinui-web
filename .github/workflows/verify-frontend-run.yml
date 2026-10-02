@@ -937,6 +937,10 @@ jobs:
           # Supersession guard, second read. The resolver emits the ::error::
           # itself when it withholds the promote.
           # `|| rc=$?`: the default run shell is `bash -e`, and exit 3 is an answer.
+          # pre_rollback_read=1 tells the page step this read was attempted, so
+          # an UNREADABLE result (serving_uid empty) is not mistaken for "the
+          # rollback step never ran" when deciding what to record as failed.
+          echo "pre_rollback_read=1" >> "$GITHUB_OUTPUT"
           rc=0
           npx --yes tsx@4.22.4 "${GITHUB_WORKSPACE}/resolver/frontend/tests/spec-ci/resolve-prod-deployment.ts" alias pre_rollback || rc=$?
           if [ "$rc" != "0" ]; then
@@ -1068,6 +1072,7 @@ jobs:
           # the resolver, passed as env rather than interpolated.
           PRE_SMOKE_SERVING_UID: ${{ steps.alias.outputs.serving_uid }}
           PRE_ROLLBACK_SERVING_UID: ${{ steps.rollback.outputs.serving_uid }}
+          PRE_ROLLBACK_READ: ${{ steps.rollback.outputs.pre_rollback_read }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${DEPLOY_SHA}" | cut -c1-9)"
@@ -1086,7 +1091,7 @@ jobs:
           # a different deployment (one that may have gone live mid-smoke).
           MARKER=""
           if [ -n "${DEPLOYMENT_ID}" ] && [ "${PRE_SMOKE_SERVING_UID}" = "${DEPLOYMENT_ID}" ] \
-             && { [ -z "${PRE_ROLLBACK_SERVING_UID}" ] || [ "${PRE_ROLLBACK_SERVING_UID}" = "${DEPLOYMENT_ID}" ]; }; then
+             && { [ "${PRE_ROLLBACK_READ}" != "1" ] || [ "${PRE_ROLLBACK_SERVING_UID}" = "${DEPLOYMENT_ID}" ]; }; then
             MARKER="<!-- verify-frontend-failed-deployment: ${DEPLOYMENT_ID} -->"
           else
             echo "::warning::not recording deployment ${DEPLOYMENT_ID} as failed: the alias was not confirmed to serve it throughout (before smokes: '${PRE_SMOKE_SERVING_UID}', before rollback: '${PRE_ROLLBACK_SERVING_UID}')."
@@ -1126,6 +1131,14 @@ jobs:
             --json number \
             --jq '.[0].number // empty' || true)
 
+          # Lock the issue so only collaborators (and this bot) can comment: the
+          # failure record is read from its comments with a page cap, and an
+          # unlocked issue would let anyone flood it past the cap and switch
+          # auto-rollback off (the read fails closed). Already-locked is fine.
+          lock_issue() {
+            gh issue lock "$1" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
+          }
+
           if [ -n "${EXISTING}" ]; then
             echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
             ISSUE="${EXISTING}"
@@ -1152,6 +1165,9 @@ jobs:
               echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
             fi
           fi
+          # Lock AFTER the writes above, so they never depend on whether this
+          # token may comment on a locked issue.
+          [ -n "${ISSUE:-}" ] && lock_issue "${ISSUE}"
           exit 0
 
       # ----------------------------------------------------------------------
