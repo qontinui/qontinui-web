@@ -4931,8 +4931,10 @@ class WorktreeCapRequestBody(BaseModel):
         """Mirror the floor plan A3 specifies, and say WHY.
 
         A cap of 0 refuses every allocation on that device — including the
-        `qontinui-dev-notes` worktree an operator would need in order to set it
-        back. Coord's write door will reject it too; naming it here turns a 400
+        worktree an operator would need in order to set it back. (No repo is
+        named here on purpose: `test_fleet_nouns_ratchet` forbids this fleet's
+        own layout nouns in backend app code, and the point does not need one.)
+        Coord's write door will reject it too; naming it here turns a 400
         carrying a Rust string into a typed 422 at this door. There is
         deliberately NO upper bound on the CAP: a no-build worktree costs disk
         rather than RAM, and disk is carried by coord's own disk gate, so a
