@@ -34,10 +34,10 @@ Verdicts, in precedence order
     ``shard-durations-proposed`` artifact (job ``Propose shard durations``) as
     ``backend/tests/shard-durations.json``.
 
-An ``over_margin`` whose shards are NOT skewed says so in its reason: a
-balanced deal near the budget means the suite has outgrown six shards, and the
-lever is the matrix length (with ``--shards``, pinned equal to it), never the
-budget.
+An ``over_margin`` names its lever too. Balanced shards near the budget mean
+the suite has outgrown six shards, and the lever is the matrix length (with
+``--shards``, pinned equal to it), never the budget. Skewed shards mean the
+deal is stale, so the remedy is the same durations refresh as ``skewed``.
 ``ok``
     Exits 0.
 
@@ -385,6 +385,12 @@ def evaluate(
                 f"; the shards are balanced (skew {skew:.2f}x), so the suite has "
                 "outgrown the matrix -- raise the `test` job's matrix length and "
                 "--shards together, not the budget"
+            )
+        else:
+            reason += (
+                f"; the shards are skewed ({skew:.2f}x), so rebalance first -- "
+                f"refresh {DURATIONS_REF} from this run's `{PROPOSAL_ARTIFACT}` "
+                "artifact"
             )
         verdict = "over_margin"
     elif max_s > min_s * MAX_SKEW:
