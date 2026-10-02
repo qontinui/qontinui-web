@@ -153,9 +153,10 @@ _COORD_TIMEOUT = httpx.Timeout(5.0)
 # single-flight every 45s, so this is a longer hold, not more requests.
 _COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 
-# Timeout for the slowest coord read: the recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
-# resolves a deploy surface per repo and runs a git-ancestry probe per merged
-# PR, so it is slow by construction. Measured against prod on 2026-09-19
+# Timeout for the slowest coord read: the recently-merged ROWS
+# (``GET /pr-merge/prs?include_merged=<hours>``). coord resolves a deploy
+# surface per repo and runs a git-ancestry probe per merged PR, so it is slow
+# by construction. Measured against prod on 2026-09-19
 # straight to coord with this proxy's own call shape: a 1h window 1.7s, 12h
 # 3.0s, 18h 4.2s, and 24h/48h 14-21s (varying run to run) — so at
 # ``_COORD_TIMEOUT`` every window past roughly 18h answered 504 and the
@@ -167,10 +168,13 @@ _COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 # normal non-2xx path below rather than as a timeout. The connect phase stays
 # at the short default: an unreachable coord should still fail fast.
 #
-# COST: the operations proxy holds a pooled backend DB session across the coord
-# round trip (see the load-discipline note in useMergePipelineData.ts), so this
-# read pins one connection for its 14-21s instead of <5s. The frontend
-# therefore polls it single-flight, never retries it, and skips hidden tabs.
+# COST: on ``/operations/pr-merge/prs`` this read holds no backend DB session
+# (``get_tenant_id`` stopped depending on the active-user session in
+# ``d77d79072``, 2026-07-26), so its cost is coord's: 14-21s of coord work per
+# read. On the ``/admin-dev/prs`` mirror it also pins one pooled connection for
+# that long (see ``_COORD_PR_LIST_TIMEOUT``). The pipeline hook
+# (useMergePipelineData.ts) therefore polls it single-flight, never retries it,
+# and skips hidden tabs (its load-discipline note).
 _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no

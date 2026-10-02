@@ -25,11 +25,17 @@
 // SURFACES too (StuckPrRecoveryPanel, usePrCheckDetails)
 // — what may not happen again is the hero fetching them a second time.
 //
-// Load discipline (2026-07-21 prod incident): every request in a batch pins
-// a backend DB connection for its WHOLE lifetime — the operations proxy
-// holds its pooled session across the outbound coord round-trip. So the
-// dashboard's request volume is directly a backend connection-pool cost,
-// and an unbounded one takes the API down. Three rules keep it bounded:
+// Load discipline (2026-07-21 prod incident). Then, every request in a batch
+// pinned a backend DB connection for its whole lifetime: `get_tenant_id`
+// depended on the active-user session, which the operations proxy held across
+// the outbound coord round-trip, so unbounded polling exhausted the backend
+// pool and 504'd sign-in. That dependency was dropped on 2026-07-26
+// (`d77d79072`), so these GETs no longer hold a backend DB connection. The
+// rules below still stand, for the cost that remains: every request is a coord
+// query plus an identity call to coord's `/admin/coord/me`, and the PR listing
+// is not cheap (2.3-12.3s since qontinui-coord#2414; before it, the listing hit
+// coord's 60s statement timeout). Overlapping batches multiply that coord load
+// instead of the pool:
 //
 //   1. Single-flight — a batch already in flight absorbs new triggers
 //      instead of stacking. Previously a fixed 2s `setInterval` fired
@@ -298,7 +304,7 @@ export function useMergePipelineData(
    * evaporate for any batch slower than the floor (elapsed already exceeds
    * it the moment the batch ends), which is precisely the degraded regime it
    * has to hold in. Anchoring to completion guarantees a real idle gap in
-   * which the backend's pooled connections are actually released.
+   * which no request of ours is outstanding against coord.
    */
   const lastBatchEndedAtRef = useRef(0);
 
@@ -395,10 +401,10 @@ export function useMergePipelineData(
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
         // No client retry. The client retries every 5xx up to 3 times, and each
-        // attempt is a full coord query that holds a backend DB connection for
-        // its whole (14-21s) life: a coord that is already struggling would be
-        // asked the same expensive question four times per poll. The next poll
-        // IS the retry, on the cold cadence this read is meant to have.
+        // attempt is a full coord query (14-21s for a 48h window): a coord that
+        // is already struggling would be asked the same expensive question four
+        // times per poll. The next poll IS the retry, on the cold cadence this
+        // read is meant to have.
         { maxRetries: 0 }
       );
       if (!res.ok) {
@@ -815,8 +821,8 @@ export function useMergePipelineData(
 
     // Hidden-gated like every other path into `fetchAll`: session-restore or
     // ctrl-clicking several dashboard tabs into the background would
-    // otherwise each fire 5 concurrent requests before anything is on screen
-    // — four such tabs is the entire 20-connection pool. `onVisibility`
+    // otherwise each fire 5 concurrent coord-backed requests before anything
+    // is on screen, for tabs nobody is reading. `onVisibility`
     // fetches on first reveal, so nothing is lost.
     if (!document.hidden) void fetchAllRef.current();
     pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
@@ -858,15 +864,15 @@ export function useMergePipelineData(
   //
   // The same three load rules as the main batch (see the header): single-flight,
   // a gap measured from COMPLETION, and no polling from a hidden tab. This read
-  // holds a backend DB connection for 14-21s, so it is the one that most needs
-  // them — it used to run on a bare `setInterval`, which stacks requests when
+  // keeps coord busy for 14-21s, so it is the one that most needs them — it
+  // used to run on a bare `setInterval`, which stacks requests when
   // coord slows down, and polled from tabs nobody was looking at.
   // The in-flight read and the time of the last completed one are owned by the
   // HOOK, not by any one effect run. Owning them per effect run is what let
   // single-flight break: the effect re-runs when `includeMerged` flips (a tab
   // click away from All PRs and back) and under StrictMode, and each run's own
   // "I am not in flight" state started a second 14-21s read while the first was
-  // still pinning its DB connection. A new run now ADOPTS the read that is
+  // still running. A new run now ADOPTS the read that is
   // already out.
   //
   // The minimum age is the rate floor. Single-flight caps concurrency, not

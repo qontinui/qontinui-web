@@ -925,8 +925,7 @@ export function MergePipeline() {
 
   // Merge-train liveness — its own hook on its own slower cadence, and only
   // while the Train tab is open (coord's health read scales with the
-  // ready-unmerged backlog, and every dashboard request pins a backend DB
-  // connection for its whole lifetime).
+  // ready-unmerged backlog, and every dashboard request is coord work).
   const { health: trainHealth, loaded: trainHealthLoaded } = useTrainHealth(
     filter === "train"
   );

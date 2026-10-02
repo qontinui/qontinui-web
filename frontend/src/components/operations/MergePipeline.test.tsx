@@ -1278,9 +1278,9 @@ describe("MergePipeline", () => {
   });
 
   it("only reads coord health while the Train tab is open", () => {
-    // The health read scales with the ready-unmerged backlog and every
-    // dashboard request pins a backend DB connection, so it must not ride
-    // along on the other tabs.
+    // The health read scales with the ready-unmerged backlog, and every
+    // dashboard request is coord work, so it must not ride along on the other
+    // tabs.
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
