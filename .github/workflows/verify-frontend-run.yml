@@ -1146,7 +1146,7 @@ jobs:
           # issue. A failed lock/unlock is a visible warning, never fatal.
           lock_issue() {
             gh issue lock "$1" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
-              || gh issue view "$1" --repo "${GITHUB_REPOSITORY}" --json locked --jq .locked 2>/dev/null | grep -qx true \
+              || gh api "repos/${GITHUB_REPOSITORY}/issues/${1##*/}" --jq .locked 2>/dev/null | grep -qx true \
               || echo "::warning::could not lock issue $1; its comments (the failure record) can be flooded by anyone until it is locked."
           }
 
