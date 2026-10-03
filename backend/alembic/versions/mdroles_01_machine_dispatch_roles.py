@@ -63,26 +63,36 @@ hole under a name that looks enforced. It also gives coord a NAMED arbiter for
 explicit value for a GENERATED ALWAYS column), and the versions table does not
 mirror it.
 
-Host names are CANONICAL: compared trimmed and case-insensitively
-====================================================================
+Host names are CANONICAL: printable ASCII, compared case-insensitively
+=======================================================================
 
 ``'hp2'``, ``'HP2'`` and ``'hp2 '`` must be ONE machine. If they were three, a
 role stored under one spelling and looked up under another would miss, and a
 miss reads as "unassigned", i.e. ``workhorse`` — silently breaking the Bench
 guarantee (nothing coord sends lands on a Bench). So:
 
-* a CHECK refuses a stored name with leading/trailing whitespace or an empty
-  one (``ci_host_name = btrim(ci_host_name, <ws>) AND ci_host_name <> ''``).
-  The trim set is spelled out — space, tab, LF, CR, FF, VT — because
-  ``btrim`` with one argument strips spaces only, and a tab-padded name is the
-  same miss;
+* a CHECK requires ``ci_host_name ~ '^[\\x21-\\x7e]+$'``: one or more
+  printable ASCII characters, no whitespace anywhere (so no padding, no inner
+  space, no empty name) and nothing outside ASCII. ASCII is the rule because
+  case folding must agree on both sides of the wire: PostgreSQL ``lower()``
+  under a C/POSIX ``LC_CTYPE`` folds ASCII only, while coord's
+  ``canonical_host_name`` folds full Unicode, so a non-ASCII spelling could
+  fold to one key in coord and another in the database. Host names are ASCII
+  by nature (RFC 1123 labels), so the rule costs nothing real. It also
+  subsumes the explicit-whitespace ``btrim`` clause an earlier draft carried
+  (one-argument ``btrim`` strips spaces only, which is how a tab-padded name
+  slipped through);
 * ``machine_key`` folds ``lower(ci_host_name)``, so two case spellings of one
   host collide on ``uq_machine_dispatch_roles_machine`` and cannot both hold a
   row;
-* **coord must still match READS with ``lower()``** on both sides
-  (``lower(ci_host_name) = lower($host)``), never ``=`` on the raw value — the
-  stored case is whatever the operator first typed. (Upserts need no such care:
-  the constraint folds case for them.)
+* **coord reads by the key, shaped the way the key is built**:
+  ``machine_key = '/' || lower($host)`` for a CI host and
+  ``machine_key = $device::text || '/'`` for a workstation device (both with
+  ``tenant_id = $tenant``). Those agree with the uniqueness rule by
+  construction — the same expression decides both — and ride the constraint's
+  index. Never ``ci_host_name = $host`` on the raw value: the stored case is
+  whatever the operator first typed. (Upserts need no such care: the
+  constraint folds case for them.)
 
 Versioning — copied from ``fleet_res_tel_02`` / ``coord_sesscompl_02``
 ======================================================================
@@ -155,10 +165,11 @@ Other notes
   workstation lives in ``coord.machine_ci_hosts``, another table.
 * No per-table GRANT: the ``coord`` schema's privileges are granted at the
   schema level, and no sibling ``coord.*`` migration issues per-table grants.
-* Lookups by machine ride the constraint's backing index on
-  ``(tenant_id, machine_key)``; history lookups ride the leading column of
-  ``UNIQUE (role_id, version)``. No further index, and no index build
-  statement at all — both are created by their tables' constraints.
+* Reads by machine use the key-shaped predicates above
+  (``machine_key = '/' || lower($host)`` / ``machine_key = $device::text || '/'``);
+  history lookups ride the leading column of ``UNIQUE (role_id, version)``. No
+  further index, and no index build statement at all — both indexes are
+  created by their tables' constraints.
 * HAND-AUTHORED; ``alembic revision --autogenerate`` is never run here. Raw,
   static, ``coord.``-qualified ``op.execute`` with ``IF NOT EXISTS`` — the house
   convention for coord tables. Pure DDL, no app imports.
@@ -209,16 +220,11 @@ def upgrade() -> None:
             -- unambiguous.
             CONSTRAINT ck_machine_dispatch_roles_one_machine_key
                 CHECK (num_nonnulls(machine_device_id, ci_host_name) = 1),
-            -- Canonical host name: trimmed and non-empty. Case is folded by
-            -- machine_key.
+            -- Canonical host name: one or more printable ASCII characters,
+            -- no whitespace, no non-ASCII (so Postgres lower() and coord's
+            -- Unicode fold agree). Case is folded by machine_key.
             CONSTRAINT ck_machine_dispatch_roles_ci_host_name_canonical
-                CHECK (
-                    ci_host_name IS NULL
-                    OR (
-                        ci_host_name = btrim(ci_host_name, E' \\t\\n\\r\\f\\x0b')
-                        AND ci_host_name <> ''
-                    )
-                ),
+                CHECK (ci_host_name IS NULL OR ci_host_name ~ '^[\\x21-\\x7e]+$'),
             -- Named so a later widening (e.g. a session-host role, §D1) can
             -- replace it by name rather than hunting a generated one.
             CONSTRAINT ck_machine_dispatch_roles_dispatch_role
@@ -234,10 +240,12 @@ def upgrade() -> None:
             'dispatch on (workhorse = ci+agent, bench = none, ci_node = ci '
             'only). No row means unassigned, which behaves as workhorse. Keyed '
             'on the machine (workstation device or un-linked CI host), never '
-            'on one coord.devices row. ci_host_name is stored trimmed and is '
+            'on one coord.devices row. ci_host_name is '
             'unique case-insensitively via the derived machine_key: upsert '
             'with ON CONFLICT ON CONSTRAINT uq_machine_dispatch_roles_machine, '
-            'and match reads with lower() on both sides. Not '
+            'and read with key-shaped predicates (machine_key = ''/'' || '
+            'lower(host), or device::text || ''/''). ci_host_name is printable '
+            'ASCII only. Not '
             'coord.devices.role, which is what a '
             'process IS and is self-declared. Every write must INSERT the '
             'matching coord.machine_dispatch_roles_versions row in the SAME '

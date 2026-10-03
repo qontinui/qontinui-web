@@ -386,8 +386,9 @@ def test_table_shapes_checks_and_unique_machine_key() -> None:
         # The same device under ANOTHER tenant is a different row.
         _insert(engine, tenant_id=uuid.UUID(int=2), machine_device_id=device)
 
-        # The unique index treats the NULL half of the key as a value:
-        # a second row for the same machine is refused, by either key.
+        # The generated machine_key under the UNIQUE constraint treats the NULL
+        # half of the machine as a value: a second row for the same machine is
+        # refused, by either key.
         with _refused(_UNIQUE, _UQ_MACHINE):
             _insert(engine, tenant_id=tenant, machine_device_id=device)
         with _refused(_UNIQUE, _UQ_MACHINE):
@@ -474,6 +475,17 @@ def test_upsert_on_the_named_constraint_folds_host_case_onto_one_row() -> None:
             )
             == f"{device}/"
         )
+        # ... and the documented key-shaped device read finds exactly it.
+        assert (
+            scalar(
+                engine,
+                f"SELECT count(*) FROM {_SCHEMA}.{_TABLE} "
+                "WHERE tenant_id = :t AND machine_key = CAST(:d AS uuid)::text || '/'",
+                t=uuid.UUID(int=1),
+                d=device,
+            )
+            == 1
+        )
 
 
 @_needs_pg
@@ -502,7 +514,10 @@ def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
 
     A miss reads as unassigned, i.e. workhorse — which would silently break the
     Bench guarantee. So padding and emptiness are refused outright, and a second
-    case spelling of a host that already has a row collides on the index.
+    case spelling of a host that already has a row collides on the UNIQUE
+    constraint over the generated key. Names are printable ASCII only, so
+    PostgreSQL ``lower()`` (ASCII-only under a C ``LC_CTYPE``) and coord's
+    Unicode fold cannot disagree about which key a name has.
     """
     with ephemeral_database(admin_database_url(), "mdroles01_host") as (
         engine,
@@ -511,8 +526,14 @@ def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert(engine, machine_device_id=None, ci_host_name="hp2")
 
-        # Trim rule: any leading/trailing whitespace, or an empty name.
+        # Printable-ASCII rule: whitespace anywhere (padding or inner), an
+        # empty name, or any non-ASCII character.
         for bad in (
+            "hp 2",
+            "hôst",
+            "HÔST",
+            "hp2\u00a0",
+            "\u0130p2",
             "hp2 ",
             " hp2",
             "\thp2",
@@ -529,26 +550,44 @@ def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
         for same in ("HP2", "Hp2"):
             with _refused(_UNIQUE, _UQ_MACHINE):
                 _insert(engine, machine_device_id=None, ci_host_name=same)
-        # The same host under another tenant is a different machine, and an
-        # inner space is part of a name, not padding.
+        # The same host under another tenant is a different machine; every
+        # printable ASCII punctuation a host name might carry is accepted.
         _insert(
             engine,
             tenant_id=uuid.UUID(int=2),
             machine_device_id=None,
             ci_host_name="HP2",
         )
-        _insert(engine, machine_device_id=None, ci_host_name="hp 2")
-        # The stored case is kept; lookups fold it (coord matches with lower()).
+        _insert(
+            engine, machine_device_id=None, ci_host_name="gh-runner_spaceship.wsl~1"
+        )
+        # The stored case is kept; the documented key-shaped read folds it.
         assert (
             scalar(
                 engine,
-                f"SELECT count(*) FROM {_SCHEMA}.{_TABLE} "
-                "WHERE tenant_id = :t AND lower(ci_host_name) = lower(:h)",
+                f"SELECT ci_host_name FROM {_SCHEMA}.{_TABLE} "
+                "WHERE tenant_id = :t AND machine_key = '/' || lower(:h)",
                 t=uuid.UUID(int=1),
                 h="HP2",
             )
-            == 1
+            == "hp2"
         )
+
+
+@_needs_pg
+def test_non_ascii_and_inner_space_host_names_are_refused_by_the_canonical_check() -> (
+    None
+):
+    """The two shapes the ASCII rule exists for, each pinned to 23514 on the CHECK."""
+    with ephemeral_database(admin_database_url(), "mdroles01_ascii") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        for bad in ("hôst", "hp 2"):
+            with _refused(_CHECK, _CK_HOST):
+                _insert(engine, machine_device_id=None, ci_host_name=bad)
+        assert scalar(engine, f"SELECT count(*) FROM {_SCHEMA}.{_TABLE}") == 0
 
 
 @_needs_pg
