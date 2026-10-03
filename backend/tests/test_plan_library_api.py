@@ -1985,6 +1985,9 @@ class TestStrictQueryKeepsEveryDeclaredKey:
         # datetime, the ints have bounds, ``include_coord`` is a bool — a
         # single generic value would 422 on TYPE, not on the key.
         since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        # Every corpus read takes ``include_archived`` (plan
+        # ``2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent``).
+        archived = {"include_archived": "true"}
         corpus_filter = {
             "kind": "plan",
             "status": "VETTED",
@@ -1993,6 +1996,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             "since": since,
             "work_unit_slug": "any-stem",
             "slug": "any-slug",
+            **archived,
         }
         sent: dict[str, dict[str, str]] = {
             f"{API_PREFIX}": {
@@ -2001,21 +2005,23 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                 "offset": "0",
                 "limit": "5",
             },
-            f"{API_PREFIX}/divergent": {"kind": "plan"},
-            f"{API_PREFIX}/capture-health": {},
+            f"{API_PREFIX}/divergent": {"kind": "plan", **archived},
+            f"{API_PREFIX}/capture-health": {**archived},
             f"{API_PREFIX}/export": {**corpus_filter, "limit": "5"},
             f"{API_PREFIX}/candidates": {
                 "offset": "0",
                 "limit": "5",
                 "include_coord": "false",
+                **archived,
             },
             f"{API_PREFIX}/reconciliation": {
                 "offset": "0",
                 "limit": "5",
                 "include_coord": "false",
+                **archived,
             },
-            f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
-            f"{API_PREFIX}/difficulty": {},
+            f"{API_PREFIX}/followups": {"offset": "0", "limit": "5", **archived},
+            f"{API_PREFIX}/difficulty": {**archived},
             f"{API_PREFIX}/vocabulary": {},
             f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
             f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},

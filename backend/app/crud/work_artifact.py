@@ -34,6 +34,19 @@ stamps (``SHIPPED 2026-09-02``, ``shipped (PR #12)``) read as done while
 ``IN PROGRESS`` / ``NOT STARTED`` do not. :func:`_terminal_token_sql` is the
 SQL twin the candidate read uses, and the two MUST stay in step.
 
+Archive contract (``plan_library_10_archive``)
+----------------------------------------------
+A row is LIVE while ``archived_at IS NULL``. :func:`live_artifacts_clause` is
+the ONE spelling of that predicate, and every read that enumerates the corpus
+composes it through :func:`archived_scope` / :func:`exclude_archived` with an
+``include_archived`` flag that defaults to ``False``. A reader that can reach
+archived rows without asking makes the archive decorative, so a new corpus read
+takes the flag rather than a hand-written ``.where``. Two families are
+deliberately NOT filtered: identity lookups (:func:`get_by_identity`,
+:func:`list_by_scan_identity` — an upsert must find an archived row in order to
+un-archive it) and explicit by-id reads (:func:`get_artifact`,
+:func:`list_edges`, :func:`load_depends_on`) — an explicit id is an explicit ask.
+
 Kind-lock contract (``plan_library_02_kind_lock``)
 --------------------------------------------------
 ``upsert_artifact`` has TWO resolution modes, selected by
@@ -59,10 +72,11 @@ surfaces the fork instead.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import re
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -71,6 +85,7 @@ from sqlalchemy import (
     ColumnElement,
     Select,
     Text,
+    and_,
     cast,
     false,
     func,
@@ -81,9 +96,10 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
@@ -251,6 +267,30 @@ def _org_scope(org_id: UUID | None):
     ) == func.coalesce(org_id, NIL_ORGANIZATION_ID)
 
 
+def live_artifacts_clause() -> ColumnElement[bool]:
+    """The ONE predicate that says "this artifact is live (not archived)".
+
+    Every corpus read composes it — through :func:`archived_scope` or
+    :func:`exclude_archived` — so there is exactly one spelling to keep in step
+    with ``ix_work_artifacts_live_kind_status``'s ``WHERE archived_at IS NULL``.
+    """
+    return WorkArtifact.archived_at.is_(None)
+
+
+def archived_scope(include_archived: bool = False) -> tuple[ColumnElement[bool], ...]:
+    """The archive predicates to AND into a read: none, or the live clause.
+
+    Returned as a tuple so it splats into ``.where(*...)`` beside the other
+    predicates a read already builds as a tuple.
+    """
+    return () if include_archived else (live_artifacts_clause(),)
+
+
+def exclude_archived(stmt: Select, include_archived: bool = False) -> Select:
+    """``stmt`` restricted to live artifacts unless ``include_archived``."""
+    return stmt.where(*archived_scope(include_archived))
+
+
 #: Characters that glue words into one identifier — ``-``, ``_``, ``/``,
 #: ``\`` — plus whitespace, folded to a single space for the full-text arm.
 _Q_WORD_GLUE = re.compile(r"[-_/\\\s]+")
@@ -380,8 +420,12 @@ def _apply_filters(
     work_unit_slug: str | None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    include_archived: bool = False,
 ) -> Select:
     """Apply the shared list/count filters to a statement.
+
+    Archived rows are excluded unless ``include_archived`` — for the list, its
+    count, and the bulk export alike, since all three share this function.
 
     ``slug`` and ``work_unit_slug`` are DIFFERENT columns with different
     write rules, and a consumer has to know which to ask for
@@ -403,7 +447,7 @@ def _apply_filters(
     substring match on ``slug`` — so a pasted filename finds its plan; see
     :func:`_search_predicate`. It never reads ``work_unit_slug``.
     """
-    stmt = stmt.where(_org_scope(org_id))
+    stmt = exclude_archived(stmt.where(_org_scope(org_id)), include_archived)
     if kind is not None:
         stmt = stmt.where(WorkArtifact.kind == kind)
     if status is not None:
@@ -453,6 +497,7 @@ async def list_artifacts(
     slug: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    include_archived: bool = False,
 ) -> tuple[list[WorkArtifact], int]:
     """A filtered page of artifacts plus the unpaged total."""
     base = _apply_filters(
@@ -466,6 +511,7 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        include_archived=include_archived,
     )
 
     count_stmt = _apply_filters(
@@ -479,6 +525,7 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        include_archived=include_archived,
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -497,7 +544,11 @@ async def list_artifacts(
 
 
 async def count_artifacts(
-    db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    kind: str | None = None,
+    include_archived: bool = False,
 ) -> int:
     """How many artifacts this organization holds, optionally of one kind.
 
@@ -508,7 +559,11 @@ async def count_artifacts(
     is a measurement, which is the whole point: it is what distinguishes "this
     slug has no body" from "this principal's org has no corpus to miss in".
     """
-    stmt = select(func.count()).select_from(WorkArtifact).where(_org_scope(org_id))
+    stmt = (
+        select(func.count())
+        .select_from(WorkArtifact)
+        .where(_org_scope(org_id), *archived_scope(include_archived))
+    )
     if kind is not None:
         stmt = stmt.where(WorkArtifact.kind == kind)
     return int((await db.execute(stmt)).scalar_one())
@@ -520,6 +575,7 @@ async def work_unit_slugs_with_artifacts(
     org_id: UUID | None,
     slugs: Sequence[str],
     kind: str,
+    include_archived: bool = False,
 ) -> set[str]:
     """Which of ``slugs`` have an artifact of ``kind`` in this org's bucket.
 
@@ -543,6 +599,7 @@ async def work_unit_slugs_with_artifacts(
         select(WorkArtifact.work_unit_slug)
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifact.kind == kind,
             WorkArtifact.work_unit_slug.in_(list(slugs)),
         )
@@ -554,7 +611,11 @@ async def work_unit_slugs_with_artifacts(
 async def get_artifact(
     db: AsyncSession, artifact_id: UUID, *, org_id: UUID | None
 ) -> WorkArtifact | None:
-    """One artifact, scoped to the caller's organization bucket."""
+    """One artifact, scoped to the caller's organization bucket.
+
+    Returns an ARCHIVED row too: an explicit id is an explicit ask, and the
+    caller reads ``archived_at`` to tell it from a live one.
+    """
     stmt = select(WorkArtifact).where(
         WorkArtifact.id == artifact_id, _org_scope(org_id)
     )
@@ -627,7 +688,15 @@ def resolve_scan_target(
     arbitrarily would let the scanner silently overwrite whichever copy it
     happened to sort first, so it refuses — the fork stays visible in
     ``/plan-library/divergent`` and the rows are left untouched.
+
+    LIVE rows are preferred: the rules above run over the live matches, and
+    fall back to the archived ones only when no live row matches. An archived
+    twin (e.g. an archived kind-fork loser) must neither win the resolution
+    nor make a single live match ambiguous — while a scan of a file whose only
+    row is archived still finds that row, and so un-archives it.
     """
+    live = [row for row in matches if row.archived_at is None]
+    matches = live or matches
     if not matches:
         return None
     if len(matches) == 1:
@@ -679,6 +748,7 @@ async def list_for_export(
     work_unit_slug: str | None = None,
     slug: str | None = None,
     limit: int,
+    include_archived: bool = False,
 ) -> tuple[list[WorkArtifact], bool]:
     """Rows for a bulk export, plus whether ``limit`` truncated the result.
 
@@ -704,6 +774,7 @@ async def list_for_export(
         since=since,
         work_unit_slug=work_unit_slug,
         slug=slug,
+        include_archived=include_archived,
     )
     # Fetch one MORE than asked for: the presence of row limit+1 is what proves
     # truncation. A separate COUNT would race the SELECT on a live corpus.
@@ -777,6 +848,219 @@ async def list_edges(
         else:
             out.append((edge, "incoming", peers.get(edge.from_id)))
     return out
+
+
+class TargetArchived(Exception):
+    """An edge may not be pointed AT an archived artifact.
+
+    The inbound-edge invariant (no live row points at a hidden one) is
+    enforced at BOTH ends: archiving refuses while live inbound edges exist
+    (:class:`InboundEdgesExist`), and creating or claiming an edge refuses an
+    archived target. Surfaced as ``409 target_archived``.
+    """
+
+    def __init__(self, target_id: UUID) -> None:
+        self.target_id = target_id
+        super().__init__(f"artifact {target_id} is archived")
+
+
+class InboundEdgesExist(Exception):
+    """Live artifacts still point at the artifact being archived.
+
+    Raised by :func:`archive_artifact` from a check made UNDER the row lock, so
+    an edge created between a caller's pre-check and the write cannot slip in.
+    """
+
+    def __init__(self, edges: list[WorkArtifactEdge]) -> None:
+        self.edges = edges
+        super().__init__(f"{len(edges)} live inbound edge(s)")
+
+
+async def _lock_live_target(db: AsyncSession, target_id: UUID) -> None:
+    """Share-lock ``target_id``'s row and refuse it if archived.
+
+    ``FOR SHARE`` conflicts with :func:`archive_artifact`'s ``FOR UPDATE``, so
+    an edge write and an archive of its target serialize: whichever commits
+    second sees the other (the archive re-reads inbound edges under its lock).
+    """
+    archived_at = (
+        await db.execute(
+            select(WorkArtifact.archived_at)
+            .where(WorkArtifact.id == target_id)
+            .with_for_update(read=True)
+        )
+    ).scalar_one_or_none()
+    if archived_at is not None:
+        raise TargetArchived(target_id)
+
+
+async def live_inbound_edges(
+    db: AsyncSession, artifact_id: UUID
+) -> list[WorkArtifactEdge]:
+    """Edges pointing AT ``artifact_id`` from a LIVE (non-archived) artifact.
+
+    What blocks archiving: an inbound edge from a live row would silently point
+    a reader at a hidden row. A self-edge is not counted (it points at nothing
+    else), and neither is an edge from an already-archived row, which no
+    default read reaches. ``agent.work_artifact_edges`` has no retraction
+    column, so every stored edge counts.
+    """
+    stmt = (
+        select(WorkArtifactEdge)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
+        .where(
+            WorkArtifactEdge.to_id == artifact_id,
+            WorkArtifactEdge.from_id != artifact_id,
+            live_artifacts_clause(),
+        )
+        .order_by(WorkArtifactEdge.created_at, WorkArtifactEdge.id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def _scan_identity_lock_key(artifact: WorkArtifact) -> str:
+    return (
+        "plan-library-scan-identity:"
+        f"{artifact.organization_id or NIL_ORGANIZATION_ID}:"
+        f"{artifact.source_repo or ''}:{artifact.slug}"
+    )
+
+
+async def lock_scan_identity(db: AsyncSession, artifact: WorkArtifact) -> None:
+    """Serialize archives of one SCAN identity ``(organization, slug,
+    source_repo)`` with a transaction-scoped advisory lock.
+
+    Take it with ``artifact``'s row lock ALREADY held (lock order: row
+    ``FOR UPDATE``, then this), and BEFORE the file-backing guard's census and
+    sibling reads. Two concurrent archives of the last two live siblings
+    would otherwise each read the other as live and both stamp, leaving no
+    live row for the scanner to land on. The second waits here until the
+    first commits, and its later statements (READ COMMITTED: a fresh snapshot
+    per statement) then see that sibling archived. Released at commit or
+    rollback.
+    """
+    key = _scan_identity_lock_key(artifact)
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0))))
+
+
+async def live_scan_siblings(
+    db: AsyncSession, artifact: WorkArtifact
+) -> list[WorkArtifact]:
+    """LIVE rows sharing ``artifact``'s SCAN identity under another ``kind``.
+
+    The scan identity is ``(organization, slug, source_repo)`` with ``kind``
+    ignored (:func:`list_by_scan_identity`). A heuristic scan resolves among
+    the LIVE matches first (:func:`resolve_scan_target`), so while one of these
+    exists a re-push of the stem's file lands on it (or, with several unlocked,
+    refuses as ambiguous) and never on ``artifact`` once archived. Read it
+    under :func:`lock_scan_identity`. Ordered as :func:`list_by_scan_identity`.
+    """
+    # ``populate_existing``: a sibling already in this session's identity map
+    # must be re-read, or a stale in-memory ``archived_at`` would decide.
+    stmt = (
+        select(WorkArtifact)
+        .execution_options(populate_existing=True)
+        .where(
+            _org_scope(artifact.organization_id),
+            WorkArtifact.slug == artifact.slug,
+            func.coalesce(WorkArtifact.source_repo, "") == (artifact.source_repo or ""),
+            WorkArtifact.id != artifact.id,
+            WorkArtifact.kind != artifact.kind,
+            live_artifacts_clause(),
+        )
+        .order_by(
+            WorkArtifact.kind_locked.desc(), WorkArtifact.created_at, WorkArtifact.id
+        )
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def sibling_admits_archive(
+    artifact: WorkArtifact, siblings: Sequence[WorkArtifact]
+) -> bool:
+    """May ``artifact`` be archived as a wrong-kind DUPLICATE of ``siblings``?
+
+    The exemption exists to evict the WRONG-kind row, so it is not symmetric:
+
+    * ``artifact`` is NOT ``kind_locked`` — it is a heuristic guess; any live
+      sibling takes the scan, so pruning it holds (two unlocked rows may be
+      pruned either way).
+    * ``artifact`` IS ``kind_locked`` — someone asserted its kind. It may go
+      only when the row the scanner would pick from the live siblings
+      (:func:`resolve_scan_target`) is ALSO ``kind_locked``, i.e. another
+      asserted kind replaces it. Otherwise this is the CORRECT row beside an
+      unlocked guess, and archiving it would hand the stem to the guess.
+    """
+    if not siblings:
+        return False
+    if not artifact.kind_locked:
+        return True
+    try:
+        target = resolve_scan_target(
+            list(siblings), slug=artifact.slug, source_repo=artifact.source_repo
+        )
+    except AmbiguousArtifactKind:
+        return False
+    return target is not None and target.kind_locked
+
+
+async def archive_artifact(
+    db: AsyncSession,
+    artifact: WorkArtifact,
+    *,
+    archived_by: str,
+    reason: str,
+    guard: Callable[[WorkArtifact], Awaitable[None]] | None = None,
+) -> tuple[WorkArtifact, bool]:
+    """Soft-delete ``artifact``: stamp the three archive columns and commit.
+
+    Returns ``(row, already_archived)``. Idempotent: a row that is already
+    archived keeps its EXISTING stamp and is not written. The row and its
+    version log are never dropped.
+
+    EVERY check runs UNDER the row lock (``FOR UPDATE``), against the locked
+    state, closing the check-then-act race whatever an earlier unlocked read
+    saw — including a row that read archived there and was un-archived before
+    the lock:
+
+    * the already-archived test, so two concurrent archives cannot both stamp;
+    * ``guard`` — the caller's refusal (the route's file-backing guard), given
+      the locked row. It raises to refuse; the transaction is then ended,
+      writing nothing and releasing the lock, and its exception propagates;
+    * :func:`live_inbound_edges`, which raises :class:`InboundEdgesExist` the
+      same way — an edge write holds ``FOR SHARE`` on its target
+      (:func:`_lock_live_target`), so one that committed first is seen here,
+      and one that comes after sees the stamp.
+    """
+    await db.refresh(artifact, with_for_update=True)
+    if artifact.archived_at is not None:
+        await db.commit()
+        return artifact, True
+    if guard is not None:
+        try:
+            await guard(artifact)
+        except BaseException as exc:
+            # Nothing was written; ending the transaction releases the lock.
+            # A database failure inside the guard has already aborted the
+            # transaction, so COMMIT would raise and mask it — roll back
+            # there. An ordinary refusal commits, which (unlike a rollback)
+            # leaves the loaded instances readable by the caller.
+            if isinstance(exc, SQLAlchemyError):
+                await db.rollback()
+            else:
+                await db.commit()
+            raise
+    inbound = await live_inbound_edges(db, artifact.id)
+    if inbound:
+        # Nothing was written; ending the transaction releases the row lock.
+        await db.commit()
+        raise InboundEdgesExist(inbound)
+    artifact.archived_at = datetime.now(UTC)
+    artifact.archived_by = archived_by
+    artifact.archive_reason = reason
+    await db.commit()
+    await db.refresh(artifact)
+    return artifact, False
 
 
 #: The six columns :func:`difficulty_values` fills.
@@ -875,13 +1159,88 @@ def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bo
     return moved
 
 
+async def _clear_archive(db: AsyncSession, existing: WorkArtifact) -> bool:
+    """Un-archive ``existing`` in the database; ``True`` when it WAS archived.
+
+    Whatever wrote a live row back — a file that returned under a scan root,
+    or an agent re-posting — has re-asserted it, so an upsert onto an archived
+    identity clears all three archive columns. Without this the re-posted row
+    would stay hidden and its author would believe it was written.
+
+    A CONDITIONAL ``UPDATE ... WHERE archived_at IS NOT NULL RETURNING id``,
+    run on every upsert arm, rather than a test of the loaded attribute: the
+    in-memory stamp can be stale against a concurrent ``DELETE``, and the
+    statement's own row count is the only reading that cannot be. Under READ
+    COMMITTED the UPDATE matches against the latest COMMITTED version of the
+    row: an archive that committed first is seen, cleared and reported; an
+    archive still in flight is not — its uncommitted stamp is invisible, the
+    live committed version fails the predicate, and the UPDATE matches nothing
+    without waiting — so that archive simply commits after and wins. The
+    statement blocks only when the visible version is ALREADY archived and
+    another transaction holds its lock, and then re-evaluates the predicate
+    against the version that transaction left. Does not commit.
+    """
+    cleared = (
+        await db.execute(
+            update(WorkArtifact)
+            .where(
+                WorkArtifact.id == existing.id, WorkArtifact.archived_at.is_not(None)
+            )
+            .values(archived_at=None, archived_by=None, archive_reason=None)
+            .returning(WorkArtifact.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).first()
+    for column in ("archived_at", "archived_by", "archive_reason"):
+        set_committed_value(existing, column, None)
+    return cleared is not None
+
+
+async def outbound_edges_to_archived(db: AsyncSession, artifact_id: UUID) -> list[UUID]:
+    """Ids of edges FROM ``artifact_id`` whose target is archived.
+
+    An upsert that un-archives a row brings its outbound edges back into
+    view; any that point at an archived row are allowed to stand but are
+    reported (``edges_to_archived`` on the upsert response), since they now
+    point a reader at a hidden row.
+    """
+    stmt = (
+        select(WorkArtifactEdge.id)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.to_id)
+        .where(
+            WorkArtifactEdge.from_id == artifact_id,
+            WorkArtifact.archived_at.is_not(None),
+        )
+        .order_by(WorkArtifactEdge.created_at, WorkArtifactEdge.id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+@dataclass(frozen=True)
+class UpsertOutcome:
+    """What :func:`upsert_artifact_outcome` did.
+
+    ``unarchived`` is ``True`` when the write landed on an ARCHIVED identity
+    and cleared its archive stamp — reported so a resurrection is visible
+    rather than silent. It implies ``changed``. ``edges_to_archived`` lists the
+    un-archived row's outbound edges that point at archived rows (only ever
+    non-empty when ``unarchived``).
+    """
+
+    artifact: WorkArtifact
+    created: bool
+    changed: bool
+    unarchived: bool = False
+    edges_to_archived: list[UUID] = dataclasses.field(default_factory=list)
+
+
 async def _settle_unchanged_digest(
     db: AsyncSession,
     existing: WorkArtifact,
     *,
     metadata: _HeadMetadata,
     kind_is_heuristic: bool,
-) -> tuple[WorkArtifact, bool, bool]:
+) -> UpsertOutcome:
     """Finish an upsert whose body already matches the stored digest.
 
     No version bump and no snapshot — the version log is the body's history.
@@ -901,7 +1260,8 @@ async def _settle_unchanged_digest(
     An identical re-post issues no UPDATE at all and leaves it alone.
     """
     metadata_moved = _assign_head_metadata(existing, metadata)
-    if metadata_moved:
+    unarchived = await _clear_archive(db, existing)
+    if metadata_moved or unarchived:
         existing.updated_at = datetime.now(UTC)
     lock_asserted = not kind_is_heuristic and not existing.kind_locked
     if lock_asserted:
@@ -909,10 +1269,18 @@ async def _settle_unchanged_digest(
     # The rating is NOT refreshed here: an unchanged body cannot move it, and a
     # stale one (an older rubric) is healed by ``rerate_stale_plan_difficulty``,
     # which — unlike an ORM write here — leaves ``updated_at`` alone.
-    if metadata_moved or lock_asserted:
+    if metadata_moved or lock_asserted or unarchived:
         await db.commit()
         await db.refresh(existing)
-    return existing, False, metadata_moved
+    return UpsertOutcome(
+        artifact=existing,
+        created=False,
+        changed=metadata_moved or unarchived,
+        unarchived=unarchived,
+        edges_to_archived=(
+            await outbound_edges_to_archived(db, existing.id) if unarchived else []
+        ),
+    )
 
 
 async def upsert_artifact(
@@ -936,9 +1304,63 @@ async def upsert_artifact(
     kind_is_heuristic: bool = False,
     intent_refs: list[str] | None = None,
 ) -> tuple[WorkArtifact, bool, bool]:
+    """:func:`upsert_artifact_outcome` as ``(artifact, created, changed)``.
+
+    The tuple form every existing caller unpacks. A caller that must report an
+    un-archive (the POST route) calls :func:`upsert_artifact_outcome` instead.
+    """
+    outcome = await upsert_artifact_outcome(
+        db,
+        org_id=org_id,
+        user_id=user_id,
+        kind=kind,
+        slug=slug,
+        title=title,
+        status=status,
+        body=body,
+        source_path=source_path,
+        source_repo=source_repo,
+        work_unit_slug=work_unit_slug,
+        repos=repos,
+        authored_at=authored_at,
+        captured_by=captured_by,
+        change_description=change_description,
+        created_by=created_by,
+        kind_is_heuristic=kind_is_heuristic,
+        intent_refs=intent_refs,
+    )
+    return outcome.artifact, outcome.created, outcome.changed
+
+
+async def upsert_artifact_outcome(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    user_id: UUID | None,
+    kind: str,
+    slug: str,
+    title: str,
+    status: str,
+    body: str,
+    source_path: str | None,
+    source_repo: str | None,
+    work_unit_slug: str | None,
+    repos: list[str],
+    authored_at: datetime | None,
+    captured_by: str,
+    change_description: str | None,
+    created_by: str | None = None,
+    kind_is_heuristic: bool = False,
+    intent_refs: list[str] | None = None,
+) -> UpsertOutcome:
     """Insert-or-update by the functional unique key.
 
-    Returns ``(artifact, created, changed)``.
+    Returns an :class:`UpsertOutcome` (``artifact, created, changed,
+    unarchived``); :func:`upsert_artifact` is the tuple form.
+
+    An existing key that is ARCHIVED is un-archived by either update arm (see
+    :func:`_clear_archive`), and the outcome says so. Identity resolution
+    deliberately sees archived rows — that is what lets the write find one.
 
     * A brand-new key inserts the head row AND its version-1 snapshot →
       ``(row, True, True)``.
@@ -1044,7 +1466,7 @@ async def upsert_artifact(
             )
             await db.commit()
             await db.refresh(artifact)
-            return artifact, True, True
+            return UpsertOutcome(artifact=artifact, created=True, changed=True)
 
     assert existing is not None  # narrowed by both branches above
 
@@ -1097,6 +1519,8 @@ async def upsert_artifact(
     if not kind_is_heuristic:
         existing.kind_locked = True
 
+    # Under the row lock taken by the re-read above.
+    unarchived = await _clear_archive(db, existing)
     existing.current_version += 1
     _assign_head_metadata(existing, metadata)
     existing.body = body
@@ -1118,7 +1542,15 @@ async def upsert_artifact(
     )
     await db.commit()
     await db.refresh(existing)
-    return existing, False, True
+    return UpsertOutcome(
+        artifact=existing,
+        created=False,
+        changed=True,
+        unarchived=unarchived,
+        edges_to_archived=(
+            await outbound_edges_to_archived(db, existing.id) if unarchived else []
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -1148,8 +1580,11 @@ class RatedSnapshot:
 
 
 def _stale_rating(org_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    # Live rows only: an archived plan is rated by nothing, so leaving it in
+    # would keep ``rerate_pending`` counting rows no read will ever serve.
     return (
         _org_scope(org_id),
+        live_artifacts_clause(),
         WorkArtifact.kind == DIFFICULTY_RATED_KIND,
         WorkArtifact.difficulty_rubric_version.is_distinct_from(RUBRIC_VERSION),
     )
@@ -1255,7 +1690,7 @@ async def rerate_stale_plan_difficulty(
 
 
 async def list_plan_difficulties(
-    db: AsyncSession, *, org_id: UUID | None
+    db: AsyncSession, *, org_id: UUID | None, include_archived: bool = False
 ) -> list[WorkArtifact]:
     """Every plan row in scope, for the difficulty map — no bodies loaded.
 
@@ -1281,7 +1716,11 @@ async def list_plan_difficulties(
                 WorkArtifact.difficulty_signals,
             )
         )
-        .where(_org_scope(org_id), WorkArtifact.kind == DIFFICULTY_RATED_KIND)
+        .where(
+            _org_scope(org_id),
+            *archived_scope(include_archived),
+            WorkArtifact.kind == DIFFICULTY_RATED_KIND,
+        )
         .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
     )
     return list((await db.execute(stmt)).scalars())
@@ -1368,7 +1807,12 @@ async def create_edge(
     index ``uq_work_artifact_edges_open_followup`` exactly — keeps two DIFFERENT
     follow-ups off one plan legal (a plan can surface several) while collapsing
     a re-post of the same finding onto the existing row.
+
+    Raises :class:`TargetArchived` when ``to_artifact`` is archived — checked
+    under a share lock on the target row (:func:`_lock_live_target`).
     """
+    if to_artifact is not None:
+        await _lock_live_target(db, to_artifact.id)
     if to_artifact is None:
         # The note is the identity here, so it is also the dedup key. BOTH
         # sides are trimmed in SQL with :data:`NOTE_TRIM_CHARS` — the exact
@@ -1464,6 +1908,7 @@ async def list_open_followups(
     org_id: UUID | None,
     offset: int = 0,
     limit: int = 50,
+    include_archived: bool = False,
 ) -> tuple[list[tuple[WorkArtifactEdge, WorkArtifact]], int]:
     """Unclaimed ``spawned_followup`` edges + their originating artifact.
 
@@ -1477,12 +1922,17 @@ async def list_open_followups(
     unowned follow-up is work the fleet has known about and repeatedly not
     picked up, which is the interesting row. Returns the page plus the unpaged
     total, so a bounded page can never read as the whole queue.
+
+    A follow-up whose ORIGINATING artifact is archived is excluded unless
+    ``include_archived``: archiving a plan leaves its outbound edges attached
+    to a row that still exists, and they drop out of the queue here.
     """
     base = (
         select(WorkArtifactEdge, WorkArtifact)
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
             WorkArtifactEdge.to_id.is_(None),
         )
@@ -1494,6 +1944,7 @@ async def list_open_followups(
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
             WorkArtifactEdge.to_id.is_(None),
         )
@@ -1545,6 +1996,8 @@ async def claim_followup(
 
     if edge.to_id is not None:
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
+    # Raises TargetArchived: a claim is an edge pointed AT ``to_id``.
+    await _lock_live_target(db, to_id)
 
     edge.to_id = to_id
     try:
@@ -1577,6 +2030,9 @@ class CaptureDoorCensus:
     plan_count: int
     first_at: datetime | None
     last_touched_at: datetime | None
+    #: ARCHIVED rows under this door, counted by the same aggregate whatever
+    #: ``include_archived`` says — summed, it is the corpus's archived count.
+    archived_count: int = 0
 
 
 def corpus_totals(
@@ -1598,7 +2054,7 @@ def corpus_totals(
 
 
 async def capture_health(
-    db: AsyncSession, *, org_id: UUID | None
+    db: AsyncSession, *, org_id: UUID | None, include_archived: bool = False
 ) -> list[CaptureDoorCensus]:
     """Per-``captured_by`` corpus census.
 
@@ -1618,16 +2074,30 @@ async def capture_health(
     Returns only the doors actually present in the data. Folding in the
     never-used ones (as explicit zeros, which is the honest rendering) is the
     endpoint's job — the vocabulary lives in the schema layer, not here.
+
+    Archived rows are excluded from ``count`` / ``plan_count`` / the dates
+    unless ``include_archived``, and counted in ``archived_count`` by the SAME
+    aggregate (a ``FILTER``), so a drop in the totals explains itself at no
+    extra round trip. A door holding ONLY archived rows is returned with
+    ``count == 0`` so its archived rows are still summed; the endpoint does not
+    render it as a door of its own.
     """
+    scope = archived_scope(include_archived)
+    counted: ColumnElement[bool] = and_(*scope) if scope else true()
     stmt = (
         select(
             WorkArtifact.captured_by,
             # NOT labelled ``count``: ``Row`` is a tuple, so ``row.count`` would
             # resolve to ``tuple.count`` (the method) rather than the column.
-            func.count().label("artifact_count"),
-            func.count().filter(WorkArtifact.kind == "plan").label("plan_count"),
-            func.min(WorkArtifact.created_at).label("first_at"),
-            func.max(WorkArtifact.updated_at).label("last_touched_at"),
+            func.count().filter(counted).label("artifact_count"),
+            func.count()
+            .filter(counted, WorkArtifact.kind == "plan")
+            .label("plan_count"),
+            func.min(WorkArtifact.created_at).filter(counted).label("first_at"),
+            func.max(WorkArtifact.updated_at).filter(counted).label("last_touched_at"),
+            func.count()
+            .filter(WorkArtifact.archived_at.is_not(None))
+            .label("archived_count"),
         )
         .where(_org_scope(org_id))
         .group_by(WorkArtifact.captured_by)
@@ -1640,6 +2110,7 @@ async def capture_health(
             plan_count=int(row.plan_count),
             first_at=row.first_at,
             last_touched_at=row.last_touched_at,
+            archived_count=int(row.archived_count),
         )
         for row in (await db.execute(stmt)).all()
     ]
@@ -1672,7 +2143,11 @@ class CapturedPlanCorpus:
 
 
 async def captured_plan_corpus(
-    db: AsyncSession, *, org_id: UUID | None, source_repos: Iterable[str]
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    source_repos: Iterable[str],
+    include_archived: bool = False,
 ) -> CapturedPlanCorpus:
     """The plan stems this organization's corpus holds, per asked-for key.
 
@@ -1711,13 +2186,21 @@ async def captured_plan_corpus(
     scanner's own two-component form (``<repo>/<dir relative to the repo
     root>``), and a near-miss key is a different row that belongs in the
     out-of-scope count rather than being folded in.
+
+    Archived rows are excluded from BOTH facts unless ``include_archived``:
+    an archived row is not captured coverage, and counting it in only one of
+    the two would re-open the impossible-number class above.
     """
     wanted = sorted(set(source_repos))
 
     total_cte = (
         select(func.count().label("plan_row_count"))
         .select_from(WorkArtifact)
-        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .where(
+            _org_scope(org_id),
+            *archived_scope(include_archived),
+            WorkArtifact.kind == "plan",
+        )
         .cte("plan_row_total")
     )
     stems = (
@@ -1727,6 +2210,7 @@ async def captured_plan_corpus(
         )
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifact.kind == "plan",
             # An empty ``wanted`` renders as a false constant, so the join
             # contributes no rows and the aggregate's row survives alone.
@@ -1766,16 +2250,21 @@ async def find_divergent(
     *,
     org_id: UUID | None,
     kind: str | None = None,
+    include_archived: bool = False,
 ) -> list[tuple[str, str, list[WorkArtifact]]]:
     """``(kind, slug)`` groups whose copies disagree on ``content_sha256``.
 
     A plan mirrored into two repos, or scanned from two checkouts, produces
     two rows sharing ``(kind, slug)`` but with different digests — that is
     the drift the library exists to surface.
+
+    Archived rows are excluded from both the grouping and the variants unless
+    ``include_archived`` — an archived mis-keyed twin must stop reading as a
+    fork.
     """
     group_stmt = (
         select(WorkArtifact.kind, WorkArtifact.slug)
-        .where(_org_scope(org_id))
+        .where(_org_scope(org_id), *archived_scope(include_archived))
         .group_by(WorkArtifact.kind, WorkArtifact.slug)
         .having(func.count(func.distinct(WorkArtifact.content_sha256)) > 1)
         .order_by(WorkArtifact.kind, WorkArtifact.slug)
@@ -1792,6 +2281,7 @@ async def find_divergent(
         select(WorkArtifact)
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifact.kind.in_({k for k, _ in keys}),
             WorkArtifact.slug.in_({s for _, s in keys}),
         )
@@ -1811,7 +2301,7 @@ async def find_divergent(
 
 
 async def find_kind_forks(
-    db: AsyncSession, *, org_id: UUID | None
+    db: AsyncSession, *, org_id: UUID | None, include_archived: bool = False
 ) -> list[tuple[str, str | None, list[WorkArtifact]]]:
     """``(slug, source_repo)`` keys carrying MORE THAN ONE ``kind``.
 
@@ -1833,7 +2323,7 @@ async def find_kind_forks(
     repo_key = func.coalesce(WorkArtifact.source_repo, "").label("repo_key")
     group_stmt = (
         select(WorkArtifact.slug, repo_key)
-        .where(_org_scope(org_id))
+        .where(_org_scope(org_id), *archived_scope(include_archived))
         .group_by(WorkArtifact.slug, repo_key)
         .having(func.count(func.distinct(WorkArtifact.kind)) > 1)
         .order_by(WorkArtifact.slug, repo_key)
@@ -1847,6 +2337,7 @@ async def find_kind_forks(
         select(WorkArtifact)
         .where(
             _org_scope(org_id),
+            *archived_scope(include_archived),
             WorkArtifact.slug.in_({s for s, _ in keys}),
         )
         .order_by(
@@ -1989,7 +2480,9 @@ class PlanCandidateRow:
     work_unit: CandidateWorkUnit | None = None
 
 
-def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+def _plan_candidate_filters(
+    org_id: UUID | None, *, include_archived: bool = False
+) -> tuple[ColumnElement[bool], ...]:
     """The document layer's arm of the population, unchanged since Phase 6.
 
     Non-terminal ``kind='plan'`` artifacts in the caller's org scope, reading
@@ -2006,6 +2499,7 @@ def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], .
     """
     return (
         _org_scope(org_id),
+        *archived_scope(include_archived),
         WorkArtifact.kind == "plan",
         _terminal_token_sql().not_in(tuple(sorted(TERMINAL_STATUSES))),
     )
@@ -2029,7 +2523,11 @@ def _aware(moment: datetime) -> datetime:
 
 
 async def _slugs_claimed_by_plan_artifacts(
-    db: AsyncSession, *, org_id: UUID | None, slugs: Sequence[str]
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    slugs: Sequence[str],
+    include_archived: bool = False,
 ) -> set[str]:
     """Which of these coord slugs already have a plan artifact — ANY status.
 
@@ -2045,12 +2543,17 @@ async def _slugs_claimed_by_plan_artifacts(
     that decision is made. The alternative emits a second, id-less row for a
     plan the library says is done, and ``document_state`` would have to call it
     ``present`` while carrying nothing to fetch the body with.
+
+    An ARCHIVED artifact claims nothing unless ``include_archived``: it is not
+    in the artifact arm either, so letting it claim would drop the work unit
+    from BOTH arms and hide a plan coord still holds work for.
     """
     if not slugs:
         return set()
     wanted = set(slugs)
     stmt = select(WorkArtifact.slug, WorkArtifact.work_unit_slug).where(
         _org_scope(org_id),
+        *archived_scope(include_archived),
         WorkArtifact.kind == "plan",
         or_(
             WorkArtifact.slug.in_(wanted),
@@ -2127,6 +2630,7 @@ async def list_plan_candidates(
     offset: int = 0,
     limit: int = 25,
     work_units: Sequence[CandidateWorkUnit] | None = None,
+    include_archived: bool = False,
 ) -> tuple[list[PlanCandidateRow], int]:
     """The candidate population — the UNION of both corpus layers.
 
@@ -2166,7 +2670,7 @@ async def list_plan_candidates(
     window, so the artifact arm is read as ``(id, order_key)`` pairs to that
     bound — no bodies — and only the ids that survive the merge are hydrated.
     """
-    filters = _plan_candidate_filters(org_id)
+    filters = _plan_candidate_filters(org_id, include_archived=include_archived)
     order_key = _artifact_order_key()
     base = select(WorkArtifact).where(*filters)
 
@@ -2187,7 +2691,10 @@ async def list_plan_candidates(
         return [PlanCandidateRow(artifact=row) for row in rows], total
 
     claimed = await _slugs_claimed_by_plan_artifacts(
-        db, org_id=org_id, slugs=[unit.slug for unit in work_units]
+        db,
+        org_id=org_id,
+        slugs=[unit.slug for unit in work_units],
+        include_archived=include_archived,
     )
     extra = _unclaimed_work_units(work_units, claimed)
 
@@ -2247,6 +2754,14 @@ async def load_depends_on(
 
     Every target is returned; the caller filters to the UNMET ones with
     :func:`is_terminal_status` so the "met" reading stays in one place.
+
+    Archived targets are returned too, deliberately: an edge names its target
+    by id, and dropping an archived dependency here would report a blocked
+    plan as unblocked. A live row can hold such an edge only one way: an
+    upsert UN-archived it while its target stayed archived (archiving refuses
+    live inbound edges under the row lock, and an edge cannot be created or
+    claimed onto an archived target). That upsert reports the edge in
+    ``edges_to_archived``.
     """
     if not artifact_ids:
         return {}
@@ -2267,7 +2782,7 @@ async def load_depends_on(
 
 
 async def load_prompt_chains(
-    db: AsyncSession, artifact_ids: list[UUID]
+    db: AsyncSession, artifact_ids: list[UUID], *, include_archived: bool = False
 ) -> dict[UUID, list[tuple[WorkArtifact, str, int]]]:
     """Walk :data:`PROMPT_CHAIN_RELATIONS` BACKWARDS from each artifact.
 
@@ -2285,6 +2800,10 @@ async def load_prompt_chains(
     Implemented as one query per LEVEL (not per artifact): every root advances
     together, so a page of N candidates with a chain of depth D costs D
     queries, not N*D.
+
+    An ARCHIVED producer is not walked unless ``include_archived`` — archiving
+    a prompt leaves its outbound edges in place, and the chain is a corpus read
+    like any other.
     """
     if not artifact_ids:
         return {}
@@ -2307,6 +2826,7 @@ async def load_prompt_chains(
             .where(
                 WorkArtifactEdge.to_id.in_(list(frontier)),
                 WorkArtifactEdge.relation.in_(PROMPT_CHAIN_RELATIONS),
+                *archived_scope(include_archived),
             )
             .order_by(WorkArtifactEdge.to_id, WorkArtifact.kind, WorkArtifact.id)
         )
@@ -2368,6 +2888,7 @@ async def list_plan_artifacts_for_reconciliation(
     *,
     org_id: UUID | None,
     limit: int = RECONCILE_MAX_ARTIFACTS,
+    include_archived: bool = False,
 ) -> tuple[list[ReconcileArtifact], bool]:
     """Every ``kind='plan'`` artifact in the caller's org scope.
 
@@ -2375,6 +2896,8 @@ async def list_plan_artifacts_for_reconciliation(
     is larger than ``limit`` — read one row past the cap to tell "exactly at
     the cap" from "more than the cap", because those are different facts and
     only the second is a blind spot.
+
+    Archived rows are excluded unless ``include_archived``.
 
     Ordered by ``(slug, id)`` so the reconciliation page is stable: plan stems
     are date-prefixed, which makes slug order chronological, and unlike
@@ -2391,7 +2914,11 @@ async def list_plan_artifacts_for_reconciliation(
             WorkArtifact.work_unit_slug,
             WorkArtifact.updated_at,
         )
-        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .where(
+            _org_scope(org_id),
+            *archived_scope(include_archived),
+            WorkArtifact.kind == "plan",
+        )
         .order_by(WorkArtifact.slug.asc(), WorkArtifact.id.asc())
         .limit(limit + 1)
     )

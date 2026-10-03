@@ -85,8 +85,9 @@ to undo.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, case, func, literal_column, select, text
@@ -593,3 +594,190 @@ async def list_refusals(
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+# ═══════════ file backing — is a plan-library row still backed by a file? ═══════════
+#
+# ``DELETE /plan-library/{id}`` (plan
+# ``2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent`` Phase 2)
+# refuses to archive a row a FILE still backs: the runner's scanner re-pushes
+# every plan under its scan roots, so the next cycle would resurrect it and the
+# caller would believe it deleted something. The web cannot see a filesystem,
+# so the question is decided against the stem listings devices already report
+# here — no device round trip.
+
+#: What the census says about one artifact's stem.
+#:
+#: * ``not_scanner_backed`` — no device has EVER reported a scan source under
+#:   this ``source_repo`` (including a NULL one). Nothing scans it; archiving
+#:   holds.
+#: * ``file_backed`` — a FRESH, applied census LISTS the stem. Refuse.
+#: * ``unknown`` — a source is reported, no fresh census lists the stem, and
+#:   either NO device reporting it has a fresh, applied reading, or at least
+#:   one fresh side cannot speak to the stem (a NULL, withheld or truncated
+#:   census). Refuse: UNKNOWN is never "not backed", and one "absent" does not
+#:   outvote it.
+#: * ``not_listed`` — EVERY fresh side (each fresh, applied device × ``ref`` /
+#:   ``work_tree``) is a complete census that does not list the stem. Allow.
+#:
+#: The verdict is decided by FRESH, applied devices only (the scan-roots
+#: route's rule: ``received_at`` within ``FRESH_WITHIN_SECS`` and
+#: ``last_report_applied``). A stale or superseded device is IGNORED — neither
+#: a listing nor an unreadable side — so a dead device cannot block archiving
+#: under its ``source_repo`` forever; it is reported in ``ignored`` for the
+#: refusal body. The residual risk is accepted and visible: if that device
+#: returns and its scanner re-pushes the row, the upsert UN-archives it and
+#: answers ``unarchived: true``.
+FileBackingVerdict = Literal[
+    "not_scanner_backed", "file_backed", "unknown", "not_listed"
+]
+
+
+@dataclass(frozen=True)
+class CensusSide:
+    """One device's census of one side, as it bears on a stem."""
+
+    device_id: UUID
+    #: ``ref`` or ``work_tree`` — the ``SlugCensusSource`` vocabulary.
+    side: str
+    #: ``listed`` / ``absent`` / ``unreadable`` and why, for the refusal body.
+    reading: Literal["listed", "absent", "unreadable"]
+    detail: str
+
+
+@dataclass(frozen=True)
+class IgnoredReading:
+    """A relevant device whose reading was not consulted, and why."""
+
+    device_id: UUID
+    detail: str
+
+
+@dataclass(frozen=True)
+class FileBacking:
+    """The verdict, the fresh census sides it was drawn from, and the stale or
+    superseded devices it ignored."""
+
+    verdict: FileBackingVerdict
+    source_repo: str | None
+    stem: str
+    sides: tuple[CensusSide, ...]
+    ignored: tuple[IgnoredReading, ...] = ()
+
+    @property
+    def no_fresh_reading(self) -> bool:
+        """Devices report this source, but none of them freshly."""
+        return not self.sides and bool(self.ignored)
+
+    @property
+    def listing_sides(self) -> tuple[CensusSide, ...]:
+        return tuple(side for side in self.sides if side.reading == "listed")
+
+
+def _read_census_side(
+    census: dict[str, Any] | None, *, stem: str
+) -> tuple[Literal["listed", "absent", "unreadable"], str]:
+    """How one stored census bears on ``stem``.
+
+    A NULL column is UNKNOWN (no census reported). ``slugs: null`` inside it is
+    a withheld set the upsert could not carry forward — also UNKNOWN. A
+    ``truncated`` set is a FLOOR: membership proves existence, absence proves
+    nothing, so a stem it does not list is UNKNOWN rather than absent.
+    """
+    if census is None:
+        return "unreadable", "no census reported for this side"
+    slugs = census.get("slugs")
+    if not isinstance(slugs, list):
+        return "unreadable", "census stems withheld (slugs is null)"
+    if stem in slugs:
+        return "listed", "the census lists this stem"
+    if census.get("truncated"):
+        return "unreadable", "census is truncated and does not list this stem"
+    return "absent", "a complete census that does not list this stem"
+
+
+def judge_file_backing(
+    observations: Sequence[PlanScanRootObservation],
+    *,
+    source_repo: str | None,
+    stem: str,
+    now: datetime,
+) -> FileBacking:
+    """Decide whether ``stem`` under ``source_repo`` is still backed by a file.
+
+    ``observations`` must be the organization's readings WITH the census
+    columns loaded (:func:`list_observations_with_censuses`); only those whose
+    ``source_repo`` equals the artifact's are consulted, and of those only the
+    fresh, applied ones are READ (see :data:`FileBackingVerdict`). Pure, so the
+    verdict table is testable without a database.
+    """
+    # Imported here: ``app.services.plan_scan_root_health`` imports the crud
+    # layer, and the freshness rule must be the scan-roots route's own.
+    from app.services.plan_scan_root_health import (
+        FRESH_WITHIN_SECS,
+        observation_age_secs,
+    )
+
+    relevant = [
+        obs
+        for obs in observations
+        if source_repo is not None and obs.source_repo == source_repo
+    ]
+    if not relevant:
+        return FileBacking(
+            verdict="not_scanner_backed", source_repo=source_repo, stem=stem, sides=()
+        )
+    sides: list[CensusSide] = []
+    ignored: list[IgnoredReading] = []
+    for obs in relevant:
+        age = observation_age_secs(obs, now=now)
+        if age > FRESH_WITHIN_SECS:
+            ignored.append(
+                IgnoredReading(
+                    device_id=obs.device_id,
+                    detail=(
+                        f"reading is stale: last heard {age} s ago, past the "
+                        f"{FRESH_WITHIN_SECS} s freshness window"
+                    ),
+                )
+            )
+            continue
+        if not obs.last_report_applied:
+            ignored.append(
+                IgnoredReading(
+                    device_id=obs.device_id,
+                    detail=(
+                        "reading superseded: the device's latest report was not applied"
+                    ),
+                )
+            )
+            continue
+        for side, census in (
+            ("ref", obs.ref_census),
+            ("work_tree", obs.work_tree_census),
+        ):
+            reading, detail = _read_census_side(census, stem=stem)
+            sides.append(
+                CensusSide(
+                    device_id=obs.device_id, side=side, reading=reading, detail=detail
+                )
+            )
+    readings = {side.reading for side in sides}
+    verdict: FileBackingVerdict
+    if "listed" in readings:
+        verdict = "file_backed"
+    elif readings == {"absent"}:
+        verdict = "not_listed"
+    else:
+        # A fresh unreadable side is UNKNOWN, and one "absent" elsewhere does
+        # not outvote it. ``readings`` is empty when every relevant device was
+        # ignored as stale or superseded: a source IS reported, so this is
+        # UNKNOWN too — never "not scanner-backed".
+        verdict = "unknown"
+    return FileBacking(
+        verdict=verdict,
+        source_repo=source_repo,
+        stem=stem,
+        sides=tuple(sides),
+        ignored=tuple(ignored),
+    )

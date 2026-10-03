@@ -18,6 +18,7 @@ Routes
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
 ``GET   /plan-library/{id}/export`` one artifact's verbatim body (head or version)
 ``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
+``DELETE /plan-library/{id}``      ARCHIVE (soft delete) one artifact, body ``{reason}``
 ``PATCH /plan-library/edges/{id}`` claim an open follow-up (Phase 7)
 ``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
 ``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
@@ -64,6 +65,16 @@ Invariants this module is responsible for
    error, and the reason it exists at all is that ``/candidates`` walks
    ``depends_on`` through ``to_id`` — a null target there would drop the row
    out of the join and report a blocked plan as ready.
+6c. **An archived artifact is invisible unless asked for.** Every read that
+   enumerates the corpus — the list (and its ``slug`` / ``work_unit_slug`` /
+   ``q`` filters), ``/divergent``, ``/reconciliation``, ``/capture-health`` and
+   ``corpus_health``, ``/export``, ``/candidates``, ``/difficulty`` and
+   ``/followups`` — excludes rows with ``archived_at`` set unless the caller
+   passes ``include_archived=true``, through ONE predicate
+   (``crud.live_artifacts_clause``). The by-id reads (``GET /{id}`` and
+   ``GET /{id}/export``) still return an archived row, carrying
+   ``archived_at`` / ``archived_by`` / ``archive_reason``. Plan
+   ``2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent``.
 6a. **Export is verbatim, and one-way.** The two ``/export`` routes emit the
    stored body's bytes unmodified — no re-rendered status block, no normalized
    headings. Fidelity is the product: plan
@@ -114,6 +125,7 @@ Invariants this module is responsible for
 """
 
 import asyncio
+import functools
 import io
 import json
 import re
@@ -128,6 +140,7 @@ from uuid import UUID
 import structlog
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     HTTPException,
     Query,
@@ -154,6 +167,7 @@ from app.api.v1.endpoints.operations import (
 )
 from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
+from app.crud.plan_scan_root import FileBacking
 from app.models.user import User
 from app.models.work_artifact import (
     RELATIONS_ALLOWING_OPEN_TARGET,
@@ -190,6 +204,8 @@ from app.schemas.plan_library import (
     ReconciliationResponse,
     ReconciliationRow,
     ReconciliationVerdict,
+    WorkArtifactArchiveRequest,
+    WorkArtifactArchiveResponse,
     WorkArtifactDetail,
     WorkArtifactEdgeClaim,
     WorkArtifactEdgeCreate,
@@ -268,6 +284,13 @@ _EXPORT_MAX_ARTIFACTS = 5000
 #: also drops path separators and ``..`` segments, which is what keeps a hostile
 #: slug from writing outside its archive directory on extraction (zip-slip).
 _EXPORT_SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+#: The one description every corpus read's ``include_archived`` carries.
+_INCLUDE_ARCHIVED_DESCRIPTION = (
+    "Include ARCHIVED (soft-deleted) artifacts. Default false: an archived "
+    "row is excluded from this read and from every count it reports. A row "
+    "returned under true carries a non-null `archived_at`."
+)
 
 
 def _export_filename(slug: str) -> str:
@@ -566,6 +589,9 @@ def _detail(
         current_version=row.current_version,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        archived_at=row.archived_at,
+        archived_by=row.archived_by,
+        archive_reason=row.archive_reason,
         body=row.body,
         versions=[WorkArtifactVersionRead.model_validate(v) for v in versions],
         edges=edges,
@@ -2230,6 +2256,7 @@ async def list_work_artifacts(
     ),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactListResponse:
@@ -2266,6 +2293,7 @@ async def list_work_artifacts(
         slug=slug,
         offset=offset,
         limit=limit,
+        include_archived=include_archived,
     )
     items = [_summary(r) for r in rows]
     return WorkArtifactListResponse(
@@ -2274,7 +2302,9 @@ async def list_work_artifacts(
         total=total,
         offset=offset,
         limit=limit,
-        corpus_health=await _load_corpus_health(db, org_id=org_id),
+        corpus_health=await _load_corpus_health(
+            db, org_id=org_id, include_archived=include_archived
+        ),
         # Byte-identical on all three routes — one source, copied per response.
         model_tiers=dict(MODEL_TIERS),
         model_selectors=dict(MODEL_SELECTORS),
@@ -2283,7 +2313,7 @@ async def list_work_artifacts(
 
 
 def _capture_health_response(
-    census: Sequence[crud.CaptureDoorCensus],
+    census: Sequence[crud.CaptureDoorCensus], *, archived: int
 ) -> CaptureHealthResponse:
     """Fold the crud census onto the schema vocabulary — zeros included.
 
@@ -2317,17 +2347,22 @@ def _capture_health_response(
             last_touched_at=row.last_touched_at,
         )
         for row in census
-        if row.captured_by not in known_doors
+        # ``count == 0`` is a door holding only archived rows: counted in
+        # ``archived``, not rendered as a door of its own.
+        if row.captured_by not in known_doors and row.count > 0
     )
     _, _, newest = crud.corpus_totals(census)
     return CaptureHealthResponse(
         total=sum(d.count for d in doors),
         doors=doors,
+        archived=archived,
         newest_updated_at=newest,
     )
 
 
-async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> CorpusHealth:
+async def _load_corpus_health(
+    db: AsyncSession, *, org_id: UUID | None, include_archived: bool = False
+) -> CorpusHealth:
     """The ``corpus_health`` block for ``org_id`` — list pages and ``/candidates``.
 
     One function so the two routes that carry the block cannot drift: the
@@ -2352,8 +2387,14 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     DEFERRED ``list_observations``: the stem columns are never rendered here,
     and touching one after this savepoint has exited would raise
     ``MissingGreenlet`` and take down the page rather than degrade.
+
+    Archived artifacts are excluded from every count unless
+    ``include_archived``, and ``archived_count`` says how many there are.
     """
-    census = await crud.capture_health(db, org_id=org_id)
+    census = await crud.capture_health(
+        db, org_id=org_id, include_archived=include_archived
+    )
+    archived = sum(row.archived_count for row in census)
     try:
         async with db.begin_nested():
             observations = await scan_root_crud.list_observations(db, org_id=org_id)
@@ -2380,8 +2421,9 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     return CorpusHealth(
         artifact_count=artifact_count,
         plan_count=plan_count,
+        archived_count=archived,
         newest_updated_at=newest,
-        capture=_capture_health_response(census),
+        capture=_capture_health_response(census, archived=archived),
         scan_roots=scan_roots,
     )
 
@@ -2394,6 +2436,7 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
 )
 async def list_divergent_artifacts(
     kind: str | None = Query(None, description="Restrict to one artifact kind"),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> DivergentResponse:
@@ -2407,10 +2450,17 @@ async def list_divergent_artifacts(
     refuses to resolve on its own (it 409s rather than pick a winner). Grouping
     by ``(kind, slug)`` structurally cannot see these, which is why they are
     reported separately rather than folded into ``groups``.
+
+    Archived rows are excluded from both unless ``include_archived``, so an
+    archived mis-keyed twin stops reading as a fork.
     """
     org_id = await _resolve_org_id(db, current_user)
-    groups = await crud.find_divergent(db, org_id=org_id, kind=kind)
-    forks = await crud.find_kind_forks(db, org_id=org_id)
+    groups = await crud.find_divergent(
+        db, org_id=org_id, kind=kind, include_archived=include_archived
+    )
+    forks = await crud.find_kind_forks(
+        db, org_id=org_id, include_archived=include_archived
+    )
     if kind is not None:
         forks = [f for f in forks if any(row.kind == kind for row in f[2])]
 
@@ -2826,6 +2876,7 @@ async def reconcile_plan_status(
         "delivery verdict (axis C). Set false for a document-layer-only read, "
         "in which BOTH coord axes report UNKNOWN — never agreement.",
     ),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> ReconciliationResponse:
@@ -2887,7 +2938,7 @@ async def reconcile_plan_status(
 
     # ── the document layer (axis B), whole ──
     artifacts, artifacts_truncated = await crud.list_plan_artifacts_for_reconciliation(
-        db, org_id=org_id
+        db, org_id=org_id, include_archived=include_archived
     )
 
     # ── coord's work-unit list (axis A's population), whole ──
@@ -3060,6 +3111,7 @@ async def reconcile_plan_status(
     summary="Corpus census by capture door (scan / agent / operator)",
 )
 async def get_capture_health(
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> CaptureHealthResponse:
@@ -3075,9 +3127,17 @@ async def get_capture_health(
     unused door must render as ``0``, not as an absent row. A row with
     ``known: false`` is a value the CHECK constraint allows that this build
     does not recognise; it is surfaced rather than swallowed.
+
+    Archived artifacts are excluded from the census unless
+    ``include_archived``; ``archived`` reports how many there are either way.
     """
     org_id = await _resolve_org_id(db, current_user)
-    return _capture_health_response(await crud.capture_health(db, org_id=org_id))
+    census = await crud.capture_health(
+        db, org_id=org_id, include_archived=include_archived
+    )
+    return _capture_health_response(
+        census, archived=sum(row.archived_count for row in census)
+    )
 
 
 @router.get(
@@ -3109,6 +3169,7 @@ async def export_corpus(
         "response says so in `X-Export-Truncated` — a silently short export is "
         "indistinguishable from a short corpus.",
     ),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> Response:
@@ -3158,6 +3219,7 @@ async def export_corpus(
         work_unit_slug=work_unit_slug,
         slug=slug,
         limit=limit,
+        include_archived=include_archived,
     )
 
     buffer = io.BytesIO()
@@ -3247,6 +3309,7 @@ async def list_plan_candidates(
         description="Fetch the coord-owned signals (work unit + PR citations). "
         "Set false for a purely local, coord-free read.",
     ),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> PlanCandidateResponse:
@@ -3341,13 +3404,18 @@ async def list_plan_candidates(
     await _rerate_best_effort(db, org_id=org_id, route="candidates")
 
     rows, total = await crud.list_plan_candidates(
-        db, org_id=org_id, offset=offset, limit=limit, work_units=units
+        db,
+        org_id=org_id,
+        offset=offset,
+        limit=limit,
+        work_units=units,
+        include_archived=include_archived,
     )
 
     artifacts = [row.artifact for row in rows if row.artifact is not None]
     ids = [artifact.id for artifact in artifacts]
     depends = await crud.load_depends_on(db, ids)
-    chains = await crud.load_prompt_chains(db, ids)
+    chains = await crud.load_prompt_chains(db, ids, include_archived=include_archived)
 
     links: dict[str, CandidateCoordLink] = {}
     coord_available = True
@@ -3372,7 +3440,7 @@ async def list_plan_candidates(
     # next". Bounded by the same ``limit`` and reported alongside its own
     # unpaged total; ``items`` keeps its shape exactly.
     followup_rows, followup_total = await crud.list_open_followups(
-        db, org_id=org_id, offset=0, limit=limit
+        db, org_id=org_id, offset=0, limit=limit, include_archived=include_archived
     )
 
     now = datetime.now(UTC)
@@ -3470,7 +3538,9 @@ async def list_plan_candidates(
     corpus_health_unavailable_reason: str | None = None
     try:
         async with db.begin_nested():
-            corpus_health = await _load_corpus_health(db, org_id=org_id)
+            corpus_health = await _load_corpus_health(
+                db, org_id=org_id, include_archived=include_archived
+            )
     except SQLAlchemyError as exc:
         logger.warning(
             "plan_library.candidates_corpus_health_read_failed",
@@ -3536,6 +3606,7 @@ async def _rerate_best_effort(
     summary="Every plan's difficulty rating (the model tier it routes to)",
 )
 async def list_plan_difficulty(
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> PlanDifficultyResponse:
@@ -3558,7 +3629,9 @@ async def list_plan_difficulty(
     outcome, failed_reason = await _rerate_best_effort(
         db, org_id=org_id, route="difficulty"
     )
-    rows = await crud.list_plan_difficulties(db, org_id=org_id)
+    rows = await crud.list_plan_difficulties(
+        db, org_id=org_id, include_archived=include_archived
+    )
     items = [
         PlanDifficultyItem(
             id=row.id,
@@ -3602,6 +3675,7 @@ async def list_plan_difficulty(
 async def list_open_followups(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    include_archived: bool = Query(False, description=_INCLUDE_ARCHIVED_DESCRIPTION),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> OpenFollowupResponse:
@@ -3627,7 +3701,11 @@ async def list_open_followups(
     """
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_open_followups(
-        db, org_id=org_id, offset=offset, limit=limit
+        db,
+        org_id=org_id,
+        offset=offset,
+        limit=limit,
+        include_archived=include_archived,
     )
     now = datetime.now(UTC)
     items = [_open_followup(edge, origin, now) for edge, origin in rows]
@@ -3883,6 +3961,13 @@ async def upsert_work_artifact(
     a byte-identical re-post answers ``changed=false`` with
     ``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored
     body answers ``changed=true`` and no header, with the version untouched.
+
+    **An upsert onto an ARCHIVED identity un-archives it** and answers
+    ``unarchived=true``: whatever wrote the row back (a file that returned
+    under a scan root, an agent re-posting) has re-asserted it, and a re-post
+    that stayed hidden would leave its author believing it was written. When
+    the revived row's outbound edges point at archived rows they are left in
+    place and listed in ``edges_to_archived``.
     """
     computed = crud.compute_content_sha256(payload.body)
     if payload.content_sha256 is not None and payload.content_sha256 != computed:
@@ -3899,7 +3984,7 @@ async def upsert_work_artifact(
 
     org_id = await _resolve_org_id(db, current_user)
     try:
-        artifact, created, changed = await crud.upsert_artifact(
+        outcome = await crud.upsert_artifact_outcome(
             db,
             org_id=org_id,
             user_id=current_user.id,
@@ -3964,14 +4049,328 @@ async def upsert_work_artifact(
             },
         ) from exc
 
+    artifact = outcome.artifact
     response.headers["ETag"] = f'"{artifact.content_sha256}"'
-    if created:
+    if outcome.created:
         response.status_code = status.HTTP_201_CREATED
-    elif not changed:
+    elif not outcome.changed:
         response.headers["X-Artifact-Unchanged"] = "true"
+    if outcome.unarchived:
+        logger.info(
+            "plan_library.artifact_unarchived_by_upsert",
+            artifact_id=str(artifact.id),
+            slug=artifact.slug,
+            source_repo=artifact.source_repo,
+            captured_by=artifact.captured_by,
+        )
 
     return WorkArtifactUpsertResponse(
-        changed=changed, created=created, artifact=_summary(artifact)
+        changed=outcome.changed,
+        created=outcome.created,
+        artifact=_summary(artifact),
+        unarchived=outcome.unarchived,
+        edges_to_archived=outcome.edges_to_archived,
+    )
+
+
+def _target_archived(exc: crud.TargetArchived) -> HTTPException:
+    """``409 target_archived`` — an edge may not point AT an archived row."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": "target_archived",
+            "message": (
+                f"Artifact {exc.target_id} is archived; an edge pointing at it "
+                "would lead a reader to a hidden row. Un-archive it (re-post it "
+                "through the upsert) or point the edge elsewhere."
+            ),
+            "target_id": str(exc.target_id),
+        },
+    )
+
+
+def _file_backing_detail(backing: FileBacking) -> dict[str, object]:
+    """The refusal body's evidence: which census sides said what, per device."""
+    return {
+        "source_repo": backing.source_repo,
+        "stem": backing.stem,
+        "listed_by": [
+            {"device_id": str(side.device_id), "census": side.side}
+            for side in backing.listing_sides
+        ],
+        "sides": [
+            {
+                "device_id": str(side.device_id),
+                "census": side.side,
+                "reading": side.reading,
+                "detail": side.detail,
+            }
+            for side in backing.sides
+        ],
+        "ignored": [
+            {"device_id": str(item.device_id), "detail": item.detail}
+            for item in backing.ignored
+        ],
+    }
+
+
+async def _archive_file_guard(
+    db: AsyncSession, locked: WorkArtifact, *, org_id: UUID | None
+) -> None:
+    """The archive verb's file-backing guard, judged on the LOCKED row.
+
+    Runs inside :func:`crud.archive_artifact`, with the row lock held. The
+    per-scan-identity advisory lock is taken FIRST and unconditionally
+    (:func:`crud.lock_scan_identity`), so the census read and the sibling read
+    below are serialized per identity on every path — including the ones that
+    end without reading siblings.
+    """
+    await crud.lock_scan_identity(db, locked)
+    observations = await scan_root_crud.list_observations_with_censuses(
+        db, org_id=org_id
+    )
+    backing = scan_root_crud.judge_file_backing(
+        observations,
+        source_repo=locked.source_repo,
+        stem=locked.slug,
+        now=datetime.now(UTC),
+    )
+    if backing.verdict not in ("file_backed", "unknown"):
+        return
+    # A wrong-kind DUPLICATE is archivable whatever the file says: while
+    # another LIVE row holds this scan identity under a different kind, the
+    # scanner resolves to it (``resolve_scan_target`` prefers live rows) and
+    # never re-lands on this one. NOT symmetric: a kind_locked row goes only
+    # when the scanner's pick among the siblings is kind_locked too
+    # (``crud.sibling_admits_archive``), so the CORRECT asserted row cannot
+    # be archived out from under an unlocked guess.
+    siblings = await crud.live_scan_siblings(db, locked)
+    if crud.sibling_admits_archive(locked, siblings):
+        logger.info(
+            "plan_library.archive_wrong_kind_duplicate",
+            artifact_id=str(locked.id),
+            kind=locked.kind,
+            file_backing=backing.verdict,
+            live_sibling_ids=[str(row.id) for row in siblings],
+        )
+        return
+    sibling_note = ""
+    if siblings:
+        try:
+            crud.resolve_scan_target(
+                list(siblings), slug=locked.slug, source_repo=locked.source_repo
+            )
+        except crud.AmbiguousArtifactKind:
+            # No single row would take the scan, so there is no "wrong-kind
+            # row" to point at — the fork itself has to be resolved first.
+            sibling_note = (
+                " Live row(s) of another kind hold this stem, but the "
+                "scanner's pick among them is ambiguous (see "
+                "live_sibling_ids): resolve that kind fork first."
+            )
+        else:
+            sibling_note = (
+                " Live row(s) of another kind hold this stem, but this row's "
+                "kind is asserted (kind_locked) and the row the scanner would "
+                "pick among them is not, so this looks like the CORRECT row "
+                "beside an unlocked guess: archive the wrong-kind row instead."
+            )
+    if backing.verdict == "file_backed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "file_backed",
+                "message": (
+                    f"A plan file still backs this artifact: a fresh scan "
+                    f"census for source_repo {locked.source_repo!r} lists "
+                    f"stem {locked.slug!r}, so the runner's scanner would "
+                    "re-push it on its next cycle and un-archive it. To retire "
+                    "the plan, delete the file, then archive. If this row is "
+                    f"instead a wrong-kind duplicate (kind {locked.kind!r}), "
+                    "upsert the correct kind first (POST /plan-library), then "
+                    "archive this one." + sibling_note
+                ),
+                "live_sibling_ids": [str(row.id) for row in siblings],
+                **_file_backing_detail(backing),
+            },
+        )
+    if backing.no_fresh_reading:
+        why = (
+            f"no device reporting source_repo {locked.source_repo!r} "
+            "has a fresh census (every reading is stale or superseded; "
+            "see `ignored`), so nothing can say whether stem "
+            f"{locked.slug!r} still has a file."
+        )
+    else:
+        why = (
+            f"no fresh census for source_repo {locked.source_repo!r} "
+            f"lists stem {locked.slug!r}, but at least one fresh census "
+            "side cannot speak to it (null, withheld, or a truncated "
+            "floor; see `sides`)."
+        )
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": "file_backing_unknown",
+            "message": (
+                f"Whether a file still backs this artifact is UNKNOWN, "
+                f"never 'not backed': {why} Retry once a device "
+                "scanning this source has sent a fresh, complete census. "
+                "If this row is a wrong-kind duplicate, upsert the "
+                "correct kind first, then archive this one." + sibling_note
+            ),
+            "live_sibling_ids": [str(row.id) for row in siblings],
+            **_file_backing_detail(backing),
+        },
+    )
+
+
+@router.delete(
+    "/{artifact_id}",
+    response_model=WorkArtifactArchiveResponse,
+    summary="Archive (soft-delete) one work artifact — body {reason}",
+    responses={
+        404: {"description": "No such artifact in the caller's organization."},
+        409: {
+            "description": "Refused: `file_backed` (a scanned file still lists "
+            "this stem and no live row of another kind holds it), "
+            "`file_backing_unknown` (the scan census cannot say), or "
+            "`inbound_edges` (live artifacts still point at it)."
+        },
+    },
+)
+async def archive_work_artifact(
+    artifact_id: UUID,
+    payload: WorkArtifactArchiveRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactArchiveResponse:
+    """Archive one artifact: it disappears from every default read.
+
+    Plan ``2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent``
+    Phase 2. **Soft only**: sets ``archived_at`` / ``archived_by`` /
+    ``archive_reason`` and nothing else. The row and its version log survive —
+    ``GET /{id}``, ``GET /{id}/export?version_number=N`` and
+    ``include_archived=true`` still reach it — because a hard delete would
+    silently break every citation of it.
+
+    Same credential as the upsert (:func:`~app.api.deps.get_audit_actor_user`,
+    Cognito or a coord device JWT carrying ``user_id``), so an agent can clean
+    up after itself in-band. ``reason`` is required and non-blank (422).
+
+    Refusals, all ``409`` and none of them a partial write:
+
+    File backing is decided by FRESH, applied scan readings only (the
+    scan-roots route's freshness rule). A stale or superseded device is
+    IGNORED (listed under ``ignored``), so a dead device cannot block archiving
+    under its ``source_repo`` forever. If it later returns and its scanner
+    re-pushes the row, the upsert un-archives it visibly (``unarchived: true``).
+    All guards run under the row lock, against the locked row.
+
+    * ``file_backed`` — a fresh scan census (``ref`` or ``work_tree``) under
+      this row's ``source_repo`` still LISTS its stem, and no other live row
+      holds the stem (see below). The scanner would re-push it next cycle and
+      un-archive it. To retire the plan, delete the file first; to remove a
+      wrong-kind duplicate, upsert the correct kind first. The detail names
+      the ``source_repo``, the stem, the device(s) and the census side(s).
+    * ``file_backing_unknown`` — devices report this ``source_repo`` and no
+      fresh census lists the stem, but either NO reporting device has a fresh
+      census, or not EVERY fresh side (each fresh device × ``ref`` /
+      ``work_tree``) is a complete census confirming its absence (one is NULL,
+      withheld or a truncated floor). One "absent" never outvotes an unknown.
+      A row whose ``source_repo`` no device has ever reported (including NULL)
+      is not scanner-backed and is allowed.
+    * Neither file refusal applies to a **wrong-kind duplicate**: when another
+      LIVE row holds the same scan identity ``(organization, slug,
+      source_repo)`` under a different kind, the scanner resolves to that row
+      (live rows win ``resolve_scan_target``), so archiving this one holds.
+      The correction for a wrong kind is therefore: upsert the correct kind,
+      then archive the wrong-kind row. The target must BE the wrong-kind row,
+      and that is enforced: a ``kind_locked`` row is exempt only when the row
+      the scanner would pick among the live siblings is ``kind_locked`` too,
+      so the asserted (correct) row cannot be archived beside an unlocked
+      guess; an unlocked row is exempt beside any live sibling. Checked under
+      the row lock and a per-scan-identity advisory lock, taken before the
+      census read on every path.
+    * ``inbound_edges`` — live artifacts still have edges pointing AT this one;
+      the edge ids are listed. Checked under the row lock, so an edge created
+      concurrently cannot slip past it. Retract or re-point them first — this
+      verb never cascades. Outbound edges do not block: they stay attached to
+      a row that still exists and drop out of ``/followups`` with it. The
+      converse holds too: an edge cannot be created or claimed ONTO an
+      archived artifact (``409 target_archived``).
+
+    ``kind_locked`` does NOT block archiving: the lock stops a re-scan moving
+    ``kind``, which is a different concern from eviction.
+
+    **Idempotent.** Archiving an archived row answers ``200`` with the EXISTING
+    stamp and ``already_archived: true`` — not a 409, and the stored reason is
+    not overwritten. An upsert onto the same identity later un-archives it
+    (``unarchived: true`` on the POST).
+
+    Verify by read (the lost-write doctrine): the response carries the stored
+    ``archived_at``, and the row must be gone from ``GET /plan-library`` and
+    present under ``include_archived=true``.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    row = await crud.get_artifact(db, artifact_id, org_id=org_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work artifact not found: {artifact_id}",
+        )
+
+    try:
+        # Every guard — already-archived, file backing, live inbound edges —
+        # runs UNDER the row lock, against the locked row: an unlocked pre-read
+        # that saw the row archived cannot skip them.
+        archived, already = await crud.archive_artifact(
+            db,
+            row,
+            archived_by=_actor(current_user),
+            reason=payload.reason,
+            guard=functools.partial(_archive_file_guard, db, org_id=org_id),
+        )
+    except crud.InboundEdgesExist as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "inbound_edges",
+                "message": (
+                    f"{len(exc.edges)} edge(s) from live artifacts point at "
+                    "this one; archiving would leave them pointing a reader "
+                    "at a hidden row. Retract or re-point them first — "
+                    "this verb does not cascade."
+                ),
+                "edges": [
+                    {
+                        "id": str(edge.id),
+                        "from_id": str(edge.from_id),
+                        "relation": edge.relation,
+                    }
+                    for edge in exc.edges
+                ],
+                "edge_ids": [str(edge.id) for edge in exc.edges],
+            },
+        ) from exc
+    if not already:
+        logger.info(
+            "plan_library.artifact_archived",
+            artifact_id=str(archived.id),
+            kind=archived.kind,
+            slug=archived.slug,
+            source_repo=archived.source_repo,
+            archived_by=archived.archived_by,
+            reason=archived.archive_reason,
+        )
+    # Narrowed by ``archive_artifact``: the row is archived on both arms.
+    assert archived.archived_at is not None
+    return WorkArtifactArchiveResponse(
+        id=archived.id,
+        archived_at=archived.archived_at,
+        archived_by=archived.archived_by,
+        archive_reason=archived.archive_reason,
+        already_archived=already,
     )
 
 
@@ -4006,6 +4405,8 @@ async def claim_followup_edge(
     * **422 (relation)** — the edge is not a ``spawned_followup``. The other
       relations are two-ended already and there is nothing to claim.
     * **422 (target)** — ``to_id`` names no artifact the caller can see.
+    * **409 ``target_archived``** — ``to_id`` names an ARCHIVED artifact; a
+      claim is an edge pointed at it, and would lead a reader to a hidden row.
       Checked here so the message is actionable; the FK would otherwise
       surface it as a 500.
     * **409** — already claimed. Claiming is NOT idempotent across different
@@ -4050,6 +4451,8 @@ async def claim_followup_edge(
 
     try:
         claimed = await crud.claim_followup(db, edge_id, payload.to_id)
+    except crud.TargetArchived as exc:
+        raise _target_archived(exc) from exc
     except crud.FollowupAlreadyClaimed as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -4203,6 +4606,11 @@ async def create_work_artifact_edge(
     permanently-unmet blocker and can never be reported as ready — and the
     prompt-chain walk would have to defend against the same cycle. There is
     no provenance relation an artifact can meaningfully hold with itself.
+
+    An edge whose TARGET is archived is refused ``409 target_archived``: it
+    would lead a reader to a hidden row (the converse of ``DELETE``'s
+    ``inbound_edges`` refusal). An archived SOURCE is allowed — its edges drop
+    out of the default reads with it.
     """
     open_target_ok = payload.relation in RELATIONS_ALLOWING_OPEN_TARGET
 
@@ -4275,14 +4683,17 @@ async def create_work_artifact_edge(
     # No peer at all is the ONE-ENDED case, already narrowed to
     # ``spawned_followup`` above: the edge runs out of ``anchor`` into nothing.
     incoming = payload.from_id is not None
-    edge, created = await crud.create_edge(
-        db,
-        from_artifact=peer if incoming and peer is not None else anchor,
-        to_artifact=anchor if incoming else peer,
-        relation=payload.relation,
-        note=payload.note,
-        created_by=_actor(current_user),
-    )
+    try:
+        edge, created = await crud.create_edge(
+            db,
+            from_artifact=peer if incoming and peer is not None else anchor,
+            to_artifact=anchor if incoming else peer,
+            relation=payload.relation,
+            note=payload.note,
+            created_by=_actor(current_user),
+        )
+    except crud.TargetArchived as exc:
+        raise _target_archived(exc) from exc
 
     if created:
         response.status_code = status.HTTP_201_CREATED
