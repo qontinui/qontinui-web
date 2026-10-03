@@ -1,7 +1,7 @@
 """coord.session_census + coord.session_census_device — cross-account Claude session census
 
 Revision ID: coord_session_census_01
-Revises: coord_agent_sessions_context_01
+Revises: overview_04_timeline
 Create Date: 2026-10-01
 
 Phase 2 (qontinui-web half) of plan
@@ -31,7 +31,7 @@ Shape — a per-device snapshot, NOT an oplog
 Unlike its sibling ``coord.worktree_census`` (``twin_07_coord_worktree_census``,
 an append-only history), this store holds only the **latest** snapshot per
 device: each post upserts the device row and replaces that device's session
-rows wholesale (DELETE + INSERT in one transaction, coord side). Two tables:
+rows wholesale, in one transaction, coord side. Two tables:
 
 * ``coord.session_census_device`` — one row per device, the **freshness** half.
   ``observed_at`` is the runner's observation clock; ``received_at`` is coord's
@@ -46,7 +46,7 @@ rows wholesale (DELETE + INSERT in one transaction, coord side). Two tables:
   lookup a ``Session-Id`` trailer drives, which spans devices.
 
 ``device_id`` on ``session_census`` is a FOREIGN KEY to
-``session_census_device`` ``ON DELETE CASCADE``: a session row is meaningless
+``session_census_device`` that cascades on removal: a session row is meaningless
 without its device's freshness row (its liveness cannot be read without one),
 so the schema refuses an orphan, and retiring a device's snapshot takes its
 sessions with it.
@@ -81,8 +81,8 @@ Note on a killed CONCURRENTLY build: ``autocommit_block`` commits the two
 tables before the index is built, so a build killed partway leaves the tables
 committed, ``alembic_version`` unadvanced and an INVALID index of the same name,
 which ``IF NOT EXISTS`` then skips on the re-run. Recovery is manual (the
-classifier refuses a DROP on the upgrade path): ``DROP INDEX
-coord.ix_session_census_session_id`` and re-run the upgrade — the same note as
+classifier refuses a destructive op on the upgrade path): remove the invalid
+``coord.ix_session_census_session_id`` index by hand and re-run the upgrade — the same note as
 ``coord_pg_overload_idx_01``.
 """
 
@@ -92,7 +92,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_session_census_01"
-down_revision: str | Sequence[str] | None = "coord_agent_sessions_context_01"
+down_revision: str | Sequence[str] | None = "overview_04_timeline"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
