@@ -667,6 +667,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
             deps.get_authenticated_device,
             deps.get_authenticated_device_user,
             deps.get_audit_actor_principal,
+            deps.get_audit_actor_context,
             deps.get_audit_actor_user,
             deps.get_audit_actor_user_id,
             deps.get_audit_actor_user_optional,
