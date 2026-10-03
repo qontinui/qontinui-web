@@ -107,7 +107,7 @@ class TestRegistry:
         expected = {
             "github_billing": 24,
             "aws_cost_explorer": 48,
-            "vercel_billing": 24,
+            "vercel_billing": 48,
             "cloudflare_billing": 48,
             "anthropic_cost_report": 24,
             "google_play_earnings": 24 * 35,
@@ -122,8 +122,11 @@ class TestRegistry:
             assert spec.validate is not None, spec.key
             assert spec.credential_fields, spec.key
             assert spec.credential_help, spec.key
-            # Exactly one secret field or more: something must be kept secret.
-            assert any(f.secret for f in spec.credential_fields), spec.key
+            # Something must be kept secret — except AWS, whose cross-account
+            # arm holds a role ARN plus an ExternalId the SERVER issues.
+            assert any(f.secret for f in spec.credential_fields) or (
+                spec.issued_fields is not None
+            ), spec.key
 
     async def test_no_money_connectors_and_spike_opt_outs(self) -> None:
         assert {k for k, s in CONNECTORS.items() if not s.produces_money} == {
@@ -136,6 +139,7 @@ class TestRegistry:
             "namecheap_domains",
         }
         assert CONNECTORS["aws_cost_explorer"].complete_lag_days == 2
+        assert CONNECTORS["vercel_billing"].complete_lag_days == 2
         assert CONNECTORS["aws_cost_explorer"].min_pull_interval_hours == 12
 
 
@@ -218,19 +222,18 @@ class TestAwsCostExplorer:
         assert seen[-1][2:] == (date(2026, 9, 30), date(2026, 10, 3))
         assert later[0].query.days() == (date(2026, 9, 30), date(2026, 10, 2))
 
-    async def test_linked_arm_assumes_the_tenant_role_with_external_id(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @staticmethod
+    def _fake_boto(monkeypatch: pytest.MonkeyPatch, hosting: str = "047700000000"):
         import boto3
 
-        from app.spend.connectors import aws_cost_explorer as aws
-
-        assumed: list[dict[str, Any]] = []
-        ce_calls: list[dict[str, Any]] = []
+        record: dict[str, list[dict[str, Any]]] = {"assumed": [], "ce": []}
 
         class FakeSts:
+            def get_caller_identity(self) -> dict[str, str]:
+                return {"Account": hosting}
+
             def assume_role(self, **kw: Any) -> dict[str, Any]:
-                assumed.append(kw)
+                record["assumed"].append(kw)
                 return {
                     "Credentials": {
                         "AccessKeyId": "AKIAEXAMPLE",
@@ -241,7 +244,7 @@ class TestAwsCostExplorer:
 
         class FakeCe:
             def get_cost_and_usage(self, **kw: Any) -> dict[str, Any]:
-                ce_calls.append(kw)
+                record["ce"].append(kw)
                 if "NextPageToken" not in kw:
                     return {"ResultsByTime": [{"a": 1}], "NextPageToken": "p2"}
                 return {"ResultsByTime": [{"b": 2}]}
@@ -251,16 +254,29 @@ class TestAwsCostExplorer:
                 self.kw = kw
 
             def client(self, name: str, **kw: Any) -> Any:
+                if name == "sts":
+                    return FakeSts()
                 assert name == "ce"
                 assert kw["region_name"] == "us-east-1"
                 return FakeCe()
 
-        monkeypatch.setattr(boto3, "client", lambda name, **kw: FakeSts())
+        def no_default_session(*a: Any, **kw: Any) -> Any:
+            raise AssertionError("the thread-unsafe default session was used")
+
+        monkeypatch.setattr(boto3, "client", no_default_session)
         monkeypatch.setattr(boto3.session, "Session", FakeSession)
+        return record
+
+    async def test_linked_arm_assumes_the_tenant_role_with_external_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+
+        record = self._fake_boto(monkeypatch)
         raw = aws._read(
             {
-                "role_arn": "arn:aws:iam::210987654321:role/qontinui-spend",
-                "external_id": "ext-123",
+                "role_arn": "arn:aws:iam::210987654321:role/qontinui-spend-reader",
+                "external_id": "qontinui-abc",
             },
             "secret",
             date(2026, 10, 1),
@@ -270,12 +286,76 @@ class TestAwsCostExplorer:
             "account_id": "210987654321",
             "ResultsByTime": [{"a": 1}, {"b": 2}],
         }
-        assert assumed[0]["RoleArn"] == "arn:aws:iam::210987654321:role/qontinui-spend"
-        assert assumed[0]["ExternalId"] == "ext-123"
+        assumed = record["assumed"][0]
+        assert assumed["RoleArn"] == (
+            "arn:aws:iam::210987654321:role/qontinui-spend-reader"
+        )
+        assert assumed["ExternalId"] == "qontinui-abc"
+        ce_calls = record["ce"]
         assert ce_calls[0]["Granularity"] == "DAILY"
         assert ce_calls[0]["Metrics"] == ["UnblendedCost", "NetUnblendedCost"]
         assert ce_calls[0]["GroupBy"] == [{"Type": "DIMENSION", "Key": "SERVICE"}]
         assert ce_calls[0]["TimePeriod"] == {"Start": "2026-10-01", "End": "2026-10-03"}
+
+    async def test_a_role_in_the_hosting_account_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+
+        record = self._fake_boto(monkeypatch, hosting="047719635665")
+        with pytest.raises(CredentialRejected) as caught:
+            aws._read(
+                {
+                    "role_arn": "arn:aws:iam::047719635665:role/qontinui-spend-x",
+                    "external_id": "e",
+                },
+                "secret",
+                date(2026, 10, 1),
+                date(2026, 10, 2),
+            )
+        assert caught.value.reason == "forbidden"
+        assert record["assumed"] == []
+
+    async def test_a_role_outside_the_granted_name_is_refused(self) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+
+        with pytest.raises(CredentialRejected, match="qontinui-spend-"):
+            aws._read(
+                {
+                    "role_arn": "arn:aws:iam::210987654321:role/Admin",
+                    "external_id": "e",
+                },
+                "secret",
+                date(2026, 10, 1),
+                date(2026, 10, 2),
+            )
+
+    async def test_the_external_id_is_issued_per_tenant(self) -> None:
+        from app.spend.connectors.aws_cost_explorer import SPEC, external_id_for
+
+        a, b = uuid4(), uuid4()
+        assert external_id_for(a) == external_id_for(a)
+        assert external_id_for(a) != external_id_for(b)
+        assert external_id_for(a).startswith("qontinui-")
+        # Never a form field: the tenant cannot choose it.
+        assert "external_id" not in {f.name for f in SPEC.credential_fields}
+        assert SPEC.issued_fields is not None
+        assert SPEC.issued_fields(a) == {"external_id": external_id_for(a)}
+
+    async def test_a_gap_left_by_failed_pulls_is_refetched(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+
+        seen: list[date] = []
+
+        def fake_read(credential, arm, start, end_exclusive):
+            seen.append(start)
+            return {"account_id": "123456789012", "ResultsByTime": []}
+
+        monkeypatch.setattr(aws, "_read", fake_read)
+        await aws.fetch(_ctx({}, date(2026, 9, 20), arm="task_role"))
+        assert seen[-1] == date(2026, 9, 18)  # two before the last pulled day
 
     async def test_a_bad_role_arn_is_a_typed_refusal(self) -> None:
         from app.spend.connectors import aws_cost_explorer as aws
@@ -350,10 +430,11 @@ class TestVercel:
         assert calls[0].url.host == "api.vercel.com"
         assert calls[0].url.path == "/v1/billing/charges"
         assert calls[0].url.params["teamId"] == "team_x"
-        assert calls[0].url.params["from"] == "2026-10-02T00:00:00.000Z"
+        # Re-reads the last three days whatever was pulled last.
+        assert calls[0].url.params["from"] == "2026-10-01T00:00:00.000Z"
         assert calls[0].headers["authorization"] == f"Bearer {SENTINEL}"
         _assert_no_secret_in_urls(calls)
-        assert pulls[0].query.days() == (date(2026, 10, 2), date(2026, 10, 3))
+        assert pulls[0].query.days() == (date(2026, 10, 1), date(2026, 10, 3))
 
     async def test_a_refusal_is_typed_and_value_free(self, mock_http) -> None:
         from app.spend.connectors.vercel_billing import validate
@@ -440,6 +521,19 @@ class TestAnthropic:
         # there so a vanished line is dropped.
         assert "anthropic:2026-10-02:" in batch.extra_ref_prefixes
 
+    async def test_a_missing_daily_bucket_is_refused_and_a_trailing_one_unclaimed(
+        self,
+    ) -> None:
+        from app.spend.connectors.anthropic_cost_report import normalise
+
+        raw = _load("anthropic_cost_report_documented.json")
+        # 10-03 not in the report yet: the run states 10-01..10-02 only.
+        batch = normalise(raw, _range(date(2026, 10, 1), date(2026, 10, 3)), {})
+        assert batch.period_end == date(2026, 10, 2)
+        raw["data"].pop(0)
+        with pytest.raises(NormaliseError, match="2026-10-01"):
+            normalise(raw, _range(date(2026, 10, 1), date(2026, 10, 2)), {})
+
     async def test_a_currency_it_cannot_scale_is_refused(self) -> None:
         from app.spend.connectors.anthropic_cost_report import normalise
 
@@ -494,11 +588,23 @@ class TestUpstash:
 
         raw = _load("upstash_redis_stats_documented.json")
         batch = normalise(raw, _range(date(2026, 9, 25), date(2026, 10, 3)), {})
-        # 09-25..09-30 are not in the series: UNKNOWN, so not claimed.
+        # 09-25..09-30 are in no series, and QStash states nothing for 10-03:
+        # the run claims only the days EVERY resource states.
         assert (batch.period_start, batch.period_end) == (
             date(2026, 10, 1),
-            date(2026, 10, 3),
+            date(2026, 10, 2),
         )
+        assert all(e.period_start <= date(2026, 10, 2) for e in batch.entries)
+
+    async def test_a_resource_silent_on_a_day_inside_the_span_is_refused(
+        self,
+    ) -> None:
+        from app.spend.connectors.upstash_billing import normalise
+
+        raw = _load("upstash_redis_stats_documented.json")
+        raw["resources"][0]["stats"]["dailybilling"].pop(1)  # redis skips 10-02
+        with pytest.raises(NormaliseError, match="2026-10-02"):
+            normalise(raw, _range(date(2026, 10, 1), date(2026, 10, 3)), {})
 
     async def test_fetch_basic_auth_and_a_missing_qstash(self, mock_http) -> None:
         from app.spend.connectors.upstash_billing import fetch
@@ -542,14 +648,13 @@ class TestGooglePlay:
         assert by_type == {
             "Google fee": 3_120_000,  # 1.50 + 1.62, negated developer-side
             "Google fee refund": -1_620_000,
-            "Charge refund": 10_790_000,
         }
         assert all(e.period_start == date(2026, 9, 1) for e in batch.entries)
         assert batch.entries[0].source_ref.startswith(
             "play:01234567890123456789:202609:"
         )
-        # Revenue is context, never spend and never negative spend; tax ignored.
-        assert batch.facts["revenue_micros"] == {"USD": 20_780_000}
+        # Revenue and its refunds are context, never spend; tax ignored.
+        assert batch.facts["revenue_micros"] == {"USD": 9_990_000}
         assert "context, not spend" in batch.notices[0]
 
     async def test_a_month_with_no_report_is_unknown(self) -> None:
@@ -605,11 +710,7 @@ class TestGooglePlay:
         assert pulls[0].raw["developer_id"] == "01234567890123456789"
         assert pulls[0].query.days() == (date(2026, 9, 1), date(2026, 9, 30))
         batch = play.normalise(pulls[0].raw, pulls[0].query, {})
-        assert {e.sku for e in batch.entries} == {
-            "Google fee",
-            "Google fee refund",
-            "Charge refund",
-        }
+        assert {e.sku for e in batch.entries} == {"Google fee", "Google fee refund"}
         _assert_no_secret_in_urls(calls)
 
 
@@ -814,3 +915,54 @@ class TestGithubPull:
         assert calls[0].headers["authorization"] == f"Bearer {SENTINEL}"
         assert calls[0].url.path == "/organizations/example-org/settings/billing/usage"
         _assert_no_secret_in_urls(calls)
+
+
+# ===========================================================================
+# The HTTP door and the Sentry backstop
+# ===========================================================================
+
+
+class TestNoValueEscapes:
+    async def test_a_header_httpx_cannot_encode_is_a_typed_refusal(
+        self, mock_http
+    ) -> None:
+        from app.spend.connectors.vercel_billing import validate
+
+        mock_http(lambda r: httpx.Response(200, text=""))
+        with pytest.raises(CredentialRejected) as caught:
+            await validate({"token": SENTINEL + "”", "team_id": "t"}, {})
+        assert caught.value.reason == "invalid_credential"
+        assert caught.value.__cause__ is None  # no frame with headers chained
+        assert SENTINEL not in str(caught.value)
+
+    async def test_sentry_drops_spend_frame_vars_and_credential_bodies(self) -> None:
+        from app.core.sentry_config import before_send_filter
+
+        event: dict[str, Any] = {
+            "request": {
+                "url": "https://api.example/api/v1/overview/spend/connectors/x/credential",
+                "data": {"credential": {"token": SENTINEL}},
+            },
+            "exception": {
+                "values": [
+                    {
+                        "value": "boom",
+                        "stacktrace": {
+                            "frames": [
+                                {
+                                    "module": "app.spend.router",
+                                    "vars": {"raw": SENTINEL},
+                                },
+                                {"module": "app.other", "vars": {"x": 1}},
+                            ]
+                        },
+                    }
+                ]
+            },
+        }
+        out = before_send_filter(event, {})  # type: ignore[arg-type]
+        assert out is not None
+        assert SENTINEL not in json.dumps(out)
+        assert out["exception"]["values"][0]["stacktrace"]["frames"][1]["vars"] == {
+            "x": 1
+        }

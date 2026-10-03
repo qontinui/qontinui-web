@@ -434,6 +434,13 @@ async def list_connectors(
                 "linkable": spec.validate is not None and bool(spec.credential_fields),
                 "pulled_by_server": spec.fetch is not None,
                 "help": spec.credential_help,
+                # Values qontinui ISSUES this project (the AWS ExternalId) —
+                # not secrets, shown so the tenant can configure its side.
+                "issued": (
+                    spec.issued_fields(access.tenant_id)
+                    if spec.issued_fields is not None
+                    else {}
+                ),
                 "fields": [
                     {
                         "name": f.name,
@@ -501,11 +508,14 @@ async def link_credential(
         .limit(1)
     )
     config = dict(vendor.connector_config or {}) if vendor is not None else {}
+    # Only `submitted` holds the value from here on, and only until link()
+    # returns: no later frame (a change-log write, a commit) can carry it.
+    submitted: Any = body.pop("credential")
+    body = None
+    raw = b""
     before = await credentials.status(access.tenant_id, connector)
     try:
-        result = await credentials.link(
-            access.tenant_id, connector, body["credential"], config
-        )
+        result = await credentials.link(access.tenant_id, connector, submitted, config)
     except CredentialRejected as exc:
         return JSONResponse(
             status_code=422,
@@ -520,6 +530,18 @@ async def link_credential(
             status_code=503,
             content={"error": "credential_store_unavailable", "reason": exc.reason},
         )
+    except Exception as exc:  # noqa: BLE001 — handled here, never re-raised with the value
+        logger.warning(
+            "spend_credential_link_failed",
+            connector=connector,
+            error_type=type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "credential_link_failed", "reason": type(exc).__name__},
+        )
+    finally:
+        submitted = None
     await change_log.record(
         db,
         tenant_id=access.tenant_id,

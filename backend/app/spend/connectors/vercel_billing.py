@@ -44,6 +44,7 @@ from app.spend.connectors import (
 
 API = "https://api.vercel.com/v1/billing/charges"
 FIRST_PULL_DAYS = 35
+REREAD_DAYS = 3
 
 
 def _records(raw: Any) -> list[dict[str, Any]]:
@@ -231,10 +232,16 @@ async def fetch(ctx: FetchContext) -> list[Pull]:
     token, team = _http.require_fields(ctx.credential, "token", "team_id")
     today = ctx.now.astimezone(UTC).date()
     first = today - timedelta(days=FIRST_PULL_DAYS - 1)
+    # Re-read at least the last REREAD_DAYS days on every pull: Vercel's JSONL
+    # cannot tell "no charges" from "not published yet", so a late day is
+    # corrected by the next pulls (and is complete only two days later).
     start = (
         first
         if ctx.last_pulled_day is None
-        else max(first, min(ctx.last_pulled_day, today - timedelta(days=1)))
+        else max(
+            first,
+            min(ctx.last_pulled_day, today - timedelta(days=REREAD_DAYS - 1)),
+        )
     )
     body = await _charges(token, team, start, today)
     return [Pull(IngestQuery.for_range(start, today), {"team_id": team, "jsonl": body})]
@@ -243,7 +250,10 @@ async def fetch(ctx: FetchContext) -> list[Pull]:
 SPEC = ConnectorSpec(
     key="vercel_billing",
     provider="Vercel",
-    expected_lag_hours=24,
+    # An empty JSONL day may be "not published yet": trust a day only two
+    # days later, and allow for it before calling the vendor stale.
+    expected_lag_hours=48,
+    complete_lag_days=2,
     provenance="as reported by Vercel billing charges (FOCUS BilledCost)",
     normalise=normalise,
     credential_fields=(

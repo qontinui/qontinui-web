@@ -131,7 +131,10 @@ async def ingest_payload(
                     db, tenant_id, vendor.id, run.id, batch, source
                 )
             notices = list(batch.notices)
-            if spec.apply is not None:
+            # Only a SERVER pull may act on the tenant's own rows: a pushed
+            # payload (an import token) must not rewrite a recurring cost,
+            # which the API reserves for a project admin.
+            if spec.apply is not None and transport == "pull":
                 notices.extend(await spec.apply(db, tenant_id, vendor, batch))
             run.notices = [str(n)[:500] for n in notices[:50]]
     except Exception as exc:  # noqa: BLE001 — recorded on the run, never lost

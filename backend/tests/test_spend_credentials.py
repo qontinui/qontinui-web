@@ -852,3 +852,163 @@ class TestNoMoneyConnectors:
         )
         await async_db_session.refresh(entry)
         assert entry.version == 2
+
+
+# ===========================================================================
+# Review round: escape paths, issued ExternalId, duplicates, push vs pull
+# ===========================================================================
+
+
+class TestReviewRound:
+    async def test_a_crashing_validate_is_422_and_value_free(
+        self, admin, monkeypatch, _clock_and_vault, caplog
+    ) -> None:
+        from app.spend.connectors import CONNECTORS
+
+        async def boom(credential, config):
+            raise RuntimeError(f"leaky {credential['token']}")
+
+        object.__setattr__(CONNECTORS["vercel_billing"], "validate", boom)
+        try:
+            resp = await admin.put(
+                f"{SPEND}/connectors/vercel_billing/credential",
+                json={"credential": {"token": SENTINEL, "team_id": "t"}},
+            )
+        finally:
+            from app.spend.connectors import vercel_billing
+
+            object.__setattr__(
+                CONNECTORS["vercel_billing"], "validate", vercel_billing.validate
+            )
+        assert resp.status_code == 422
+        assert resp.json()["reason"] == "provider_error"
+        assert SENTINEL not in resp.text
+        assert SENTINEL not in caplog.text
+        assert _clock_and_vault.values == {}
+
+    async def test_a_non_ascii_character_is_refused_by_field_name(
+        self, admin, provider, _clock_and_vault
+    ) -> None:
+        calls = provider(_github_ok)
+        resp = await admin.put(
+            f"{SPEND}/connectors/github_billing/credential",
+            json={"credential": {"token": SENTINEL + "​", "org": "o"}},
+        )
+        assert resp.status_code == 422
+        assert "token" in resp.json()["message"]
+        assert SENTINEL not in resp.text
+        assert calls == []
+
+    async def test_aws_link_stores_the_issued_external_id(
+        self, admin, monkeypatch, _clock_and_vault
+    ) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+        from app.spend.credentials import secret_name
+
+        seen: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            aws, "_read", lambda c, arm, s, e: seen.append(dict(c)) or {}
+        )
+        listing = await admin.get(f"{SPEND}/connectors")
+        issued = next(
+            c for c in listing.json()["connectors"] if c["key"] == "aws_cost_explorer"
+        )["issued"]
+        assert issued == {"external_id": aws.external_id_for(TENANT_A)}
+        chosen = await admin.put(
+            f"{SPEND}/connectors/aws_cost_explorer/credential",
+            json={
+                "credential": {
+                    "role_arn": "arn:aws:iam::210987654321:role/qontinui-spend-r",
+                    "external_id": "i-choose-this",
+                }
+            },
+        )
+        assert chosen.status_code == 422  # not a field the tenant may send
+        resp = await admin.put(
+            f"{SPEND}/connectors/aws_cost_explorer/credential",
+            json={
+                "credential": {
+                    "role_arn": "arn:aws:iam::210987654321:role/qontinui-spend-r"
+                }
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert seen[-1]["external_id"] == issued["external_id"]
+        stored = json.loads(
+            _clock_and_vault.values[secret_name(TENANT_A, "aws_cost_explorer")]
+        )
+        assert stored["external_id"] == issued["external_id"]
+
+    async def test_only_the_oldest_vendor_per_connector_is_pulled(
+        self, async_db_session, admin, provider, _clock_and_vault
+    ) -> None:
+        from contextlib import asynccontextmanager
+
+        from app.models.overview import CostImportRun
+        from app.spend import collect
+        from app.spend.credentials import secret_name
+
+        first = await _vendor(
+            admin, "GitHub", "github_billing", "source_hosting", {"org": "o"}
+        )
+        second = await _vendor(
+            admin, "GitHub again", "github_billing", "source_hosting", {"org": "o"}
+        )
+        _clock_and_vault.values[secret_name(TENANT_A, "github_billing")] = json.dumps(
+            {"token": SENTINEL, "org": "o"}
+        )
+        provider(_github_ok)
+
+        @asynccontextmanager
+        async def factory():
+            yield async_db_session
+
+        result = await collect.collect_all_tenants(
+            session_factory=factory, now=NOW, evaluate=False
+        )
+        assert result["ok"] == 1 and result["skipped"] == 1
+        pulled = set(
+            (await async_db_session.execute(select(CostImportRun.vendor_id))).scalars()
+        )
+        assert pulled == {UUID(first)}
+        assert UUID(second) not in pulled
+
+    async def test_a_pushed_namecheap_payload_changes_no_recurring_cost(
+        self, async_db_session, admin
+    ) -> None:
+        from app.models.overview import RecurringCost, Vendor
+        from app.spend.connectors import IngestQuery
+        from app.spend.ingest import ingest_payload
+
+        vendor_id = await _vendor(admin, "Namecheap", "namecheap_domains", "saas")
+        resp = await admin.post(
+            f"{SPEND}/recurring-costs",
+            json={
+                "vendor_id": vendor_id,
+                "description": "example.io",
+                "unit_amount_micros": 1,
+                "currency": "USD",
+                "cadence": "annual",
+                "start_date": "2024-11-02",
+                "external_ref": "example.io",
+            },
+        )
+        entry_id = UUID(resp.json()["item"]["id"])
+        xml = (FIXTURES / "namecheap_domains_getlist_documented.xml").read_text()
+        vendor = await async_db_session.get(Vendor, UUID(vendor_id))
+        result = await ingest_payload(
+            async_db_session,
+            tenant_id=TENANT_A,
+            vendor=vendor,
+            connector="namecheap_domains",
+            query=IngestQuery(2026, 10, 3),
+            raw={"xml": xml},
+            source="import_token:x",
+            transport="push",
+        )
+        await async_db_session.commit()
+        assert result.status == "ok"
+        entry = await async_db_session.get(RecurringCost, entry_id)
+        await async_db_session.refresh(entry)
+        assert entry.renews_on is None and entry.auto_renew is None
+        assert entry.version == 1

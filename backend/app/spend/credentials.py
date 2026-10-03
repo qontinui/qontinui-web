@@ -35,8 +35,14 @@ from app.spend.connectors import CONNECTORS, CredentialRejected
 
 logger = structlog.get_logger(__name__)
 
-#: How long a resolved credential (or a resolved absence) is reused in process.
-CACHE_SECONDS = 3600.0
+#: How long a resolved credential is reused in process. Short, because the
+#: cache is per replica: an unlink or re-link on another replica reaches this
+#: one within this bound. Absence is never cached, and the server pull always
+#: reads the vault fresh.
+CACHE_SECONDS = 300.0
+#: How long a vault failure is remembered, so a degraded Secrets Manager does
+#: not stall every summary read.
+ERROR_CACHE_SECONDS = 60.0
 #: The largest single field value accepted (a service-account key is ~2.4 KB).
 MAX_FIELD_CHARS = 16_384
 AWS_TASK_ROLE_CONNECTOR = "aws_cost_explorer"
@@ -102,8 +108,17 @@ class AwsSecretsManagerStore:
     def _sm(self) -> Any:
         if self._client is None:
             import boto3
+            from botocore.config import Config
 
-            self._client = boto3.client("secretsmanager", region_name=self.region)
+            self._client = boto3.session.Session().client(
+                "secretsmanager",
+                region_name=self.region,
+                config=Config(
+                    connect_timeout=2,
+                    read_timeout=5,
+                    retries={"max_attempts": 2, "mode": "standard"},
+                ),
+            )
         return self._client
 
     @staticmethod
@@ -154,17 +169,30 @@ class AwsSecretsManagerStore:
                     raise
                 described = None
             if described is None or described.get("DeletedDate"):
-                self._sm().create_secret(
-                    Name=name,
-                    SecretString=value,
-                    Description="qontinui spend connector credential",
-                )
+                self._create(name, value)
             else:
                 self._sm().put_secret_value(SecretId=name, SecretString=value)
         except StoreUnavailable:
             raise
         except Exception as exc:  # noqa: BLE001 — translated, value-free
             raise self._translate(exc) from None
+
+    def _create(self, name: str, value: str) -> None:
+        # A secret deleted without recovery a moment ago may still be
+        # finishing its deletion; CreateSecret then answers
+        # InvalidRequestException for a few seconds. Retry briefly.
+        for attempt in range(4):
+            try:
+                self._sm().create_secret(
+                    Name=name,
+                    SecretString=value,
+                    Description="qontinui spend connector credential",
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                if self._code(exc) != "InvalidRequestException" or attempt == 3:
+                    raise
+                time.sleep(2.0 * (attempt + 1))
 
     def _delete(self, name: str) -> bool:
         try:
@@ -187,8 +215,10 @@ class AwsSecretsManagerStore:
 
 
 _store: SecretStore | None = None
-#: (tenant, connector) -> (monotonic expiry, value or None for "absent").
-_cache: dict[tuple[UUID, str], tuple[float, dict[str, Any] | None]] = {}
+#: (tenant, connector) -> (monotonic expiry, value). Only PRESENT values.
+_cache: dict[tuple[UUID, str], tuple[float, dict[str, Any]]] = {}
+#: (tenant, connector) -> (monotonic expiry, the vault's failure).
+_errors: dict[tuple[UUID, str], tuple[float, StoreUnavailable]] = {}
 
 
 def _settings() -> Any:
@@ -215,6 +245,7 @@ def set_store(store: SecretStore | None) -> None:
     global _store
     _store = store
     _cache.clear()
+    _errors.clear()
 
 
 def secret_name(tenant_id: UUID, connector: str) -> str:
@@ -249,12 +280,24 @@ class CredentialStatus:
         return {"connector": connector, "status": self.status, "arm": self.arm}
 
 
-async def _load(tenant_id: UUID, connector: str) -> dict[str, Any] | None:
+async def _load(
+    tenant_id: UUID, connector: str, *, fresh: bool = False
+) -> dict[str, Any] | None:
     key = (tenant_id, connector)
-    hit = _cache.get(key)
-    if hit is not None and hit[0] > time.monotonic():
-        return hit[1]
-    raw = await get_store().get(secret_name(tenant_id, connector))
+    now = time.monotonic()
+    if not fresh:
+        hit = _cache.get(key)
+        if hit is not None and hit[0] > now:
+            return hit[1]
+        failed = _errors.get(key)
+        if failed is not None and failed[0] > now:
+            raise failed[1]
+    try:
+        raw = await get_store().get(secret_name(tenant_id, connector))
+    except StoreUnavailable as exc:
+        _errors[key] = (now + ERROR_CACHE_SECONDS, exc)
+        raise
+    _errors.pop(key, None)
     value: dict[str, Any] | None = None
     if raw is not None:
         try:
@@ -266,14 +309,20 @@ async def _load(tenant_id: UUID, connector: str) -> dict[str, Any] | None:
                 "store_error", "the stored credential is not an object"
             )
         value = parsed
-    _cache[key] = (time.monotonic() + CACHE_SECONDS, value)
+    if value is None:
+        _cache.pop(key, None)
+    else:
+        _cache[key] = (now + CACHE_SECONDS, value)
     return value
 
 
-async def resolve(tenant_id: UUID, connector: str) -> tuple[dict[str, Any], str] | None:
+async def resolve(
+    tenant_id: UUID, connector: str, *, fresh: bool = False
+) -> tuple[dict[str, Any], str] | None:
     """The credential a pull uses and its arm, or ``None`` when not linked.
+    ``fresh`` bypasses the cache (the server pull always reads the vault).
     Raises :class:`StoreUnavailable` when the vault cannot answer."""
-    value = await _load(tenant_id, connector)
+    value = await _load(tenant_id, connector, fresh=fresh)
     if value is not None:
         return value, "secret"
     if task_role_serves(tenant_id, connector):
@@ -318,7 +367,15 @@ def clean_payload(connector: str, payload: Any) -> dict[str, str]:
             raise CredentialRejected("invalid_credential", f"{name} must be text")
         if len(value) > MAX_FIELD_CHARS:
             raise CredentialRejected("invalid_credential", f"{name} is too long")
-        out[name] = value.strip()
+        value = value.strip()
+        if not field_spec.multiline and not (value.isascii() and value.isprintable()):
+            # A zero-width space or a curly quote pasted with a token: name
+            # the field, never the character.
+            raise CredentialRejected(
+                "invalid_credential",
+                f"{name} contains a character that is not printable ASCII",
+            )
+        out[name] = value
     return out
 
 
@@ -332,10 +389,27 @@ async def link(
         raise CredentialRejected(
             "not_supported", f"{spec.provider} takes no linked credential"
         )
-    clean = clean_payload(connector, payload)
-    await spec.validate(clean, dict(config))
+    clean: dict[str, str] = clean_payload(connector, payload)
+    if spec.issued_fields is not None:
+        # Values the SERVER issues (the AWS ExternalId), never taken as input.
+        clean.update(spec.issued_fields(tenant_id))
+    try:
+        await spec.validate(clean, dict(config))
+    except CredentialRejected:
+        raise
+    except Exception as exc:  # noqa: BLE001 — never let a frame holding the value escape
+        logger.warning(
+            "spend_credential_validate_crashed",
+            connector=connector,
+            error_type=type(exc).__name__,
+        )
+        raise CredentialRejected(
+            "provider_error",
+            f"validating with {spec.provider} failed ({type(exc).__name__})",
+        ) from None
     await get_store().put(secret_name(tenant_id, connector), json.dumps(clean))
     _cache[(tenant_id, connector)] = (time.monotonic() + CACHE_SECONDS, clean)
+    _errors.pop((tenant_id, connector), None)
     logger.info(
         "spend_credential_linked", tenant_id=str(tenant_id), connector=connector
     )
@@ -346,6 +420,7 @@ async def unlink(tenant_id: UUID, connector: str) -> bool:
     """Delete the stored credential. True when one existed."""
     removed = await get_store().delete(secret_name(tenant_id, connector))
     _cache.pop((tenant_id, connector), None)
+    _errors.pop((tenant_id, connector), None)
     logger.info(
         "spend_credential_unlinked",
         tenant_id=str(tenant_id),

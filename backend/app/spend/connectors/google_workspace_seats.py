@@ -198,7 +198,9 @@ SPEC = ConnectorSpec(
     produces_money=False,
     spike_rule=False,
     credential_fields=(
-        CredentialField("service_account_json", "Service-account JSON key"),
+        CredentialField(
+            "service_account_json", "Service-account JSON key", multiline=True
+        ),
         CredentialField(
             "admin_email",
             "Admin email to impersonate",

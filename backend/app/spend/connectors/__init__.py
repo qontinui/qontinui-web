@@ -162,6 +162,9 @@ class CredentialField:
     secret: bool = True
     required: bool = True
     help: str = ""
+    #: A multi-line value (a service-account JSON key) — exempt from the
+    #: printable-ASCII check single-line tokens get.
+    multiline: bool = False
 
 
 @dataclass(frozen=True)
@@ -227,6 +230,9 @@ class ConnectorSpec:
     #: credential (GitHub, plan Phase 2). For every other connector a vendor
     #: with no credential and no run is "not linked", not merely "never".
     pushed_without_credential: bool = False
+    #: Fields the SERVER issues per tenant and adds to the stored credential
+    #: (the AWS ExternalId) — shown on the Link form, never accepted as input.
+    issued_fields: Callable[[UUID], dict[str, str]] | None = None
 
 
 #: The largest magnitude a ``bigint`` micros column holds.

@@ -66,14 +66,22 @@ async def request(
             response = await http.request(
                 method, url, headers=headers, params=params, data=data, auth=auth
             )
-    except httpx.TimeoutException as exc:
+    except httpx.TimeoutException:
         raise CredentialRejected(
             "unreachable", f"{provider} did not answer in time"
-        ) from exc
+        ) from None
     except httpx.HTTPError as exc:
         raise CredentialRejected(
             "unreachable", f"{provider} could not be reached ({type(exc).__name__})"
-        ) from exc
+        ) from None
+    except (httpx.InvalidURL, UnicodeError, ValueError, TypeError) as exc:
+        # A value httpx cannot put on the wire (a non-ASCII character pasted
+        # into a token, a bad character in an id). Raised from None: the
+        # original exception's frames hold the headers.
+        raise CredentialRejected(
+            "invalid_credential",
+            f"a credential field cannot be sent to {provider} ({type(exc).__name__})",
+        ) from None
     if not 200 <= response.status_code < 300:
         raise CredentialRejected(
             _reason(response.status_code),

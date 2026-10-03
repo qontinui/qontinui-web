@@ -117,6 +117,8 @@ def before_send_filter(event: "Event", hint: "Hint") -> "Event | None":
     Returns:
         Filtered event or None to drop the event
     """
+    _scrub_spend_credentials(event)
+
     # Don't send health check errors
     request = event.get("request")
     if request and isinstance(request, dict):
@@ -147,6 +149,33 @@ def before_send_filter(event: "Event", hint: "Hint") -> "Event | None":
                     return None
 
     return event
+
+
+def _scrub_spend_credentials(event: Any) -> None:
+    """Never ship a spend connector credential (plan
+    2026-10-03-provider-reported-spend-collection-alerts-and-mobile decision 7).
+
+    Frames inside ``app.spend`` (the vault, the connectors, the routes) drop
+    their local variables, and a request to the credential routes drops its
+    body — whatever path an exception took, a pasted token stays home.
+    """
+    request = event.get("request")
+    if isinstance(request, dict) and "/spend/connectors/" in str(
+        request.get("url", "")
+    ):
+        request.pop("data", None)
+    exception_data = event.get("exception")
+    values = (
+        exception_data.get("values", []) if isinstance(exception_data, dict) else []
+    )
+    for exception in values if isinstance(values, list) else []:
+        stack = exception.get("stacktrace") if isinstance(exception, dict) else None
+        frames = stack.get("frames", []) if isinstance(stack, dict) else []
+        for frame in frames if isinstance(frames, list) else []:
+            if isinstance(frame, dict) and str(frame.get("module", "")).startswith(
+                "app.spend"
+            ):
+                frame.pop("vars", None)
 
 
 def before_breadcrumb_filter(

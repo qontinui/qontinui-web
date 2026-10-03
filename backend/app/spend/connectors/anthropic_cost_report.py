@@ -85,11 +85,13 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
         raise NormaliseError("Anthropic payloads are day or range statements")
     start, end = query.days()
     sums: dict[str, dict[str, Any]] = {}
+    bucket_days: set[date] = set()
     items = 0
     for index, bucket in enumerate(raw["data"]):
         if not isinstance(bucket, dict):
             raise NormaliseError(f"data[{index}] is not an object")
         day = _bucket_day(bucket, index)
+        bucket_days.add(day)
         if not start <= day <= end:
             raise NormaliseError(
                 f"data[{index}] is dated {day}, outside {start}..{end}"
@@ -141,15 +143,27 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
         )
         for ref, b in sums.items()
     ]
+    # The report answers one bucket per day, an empty one for a $0 day. The
+    # statement runs from the first day through the last bucket answered (a
+    # day not yet in the report is UNKNOWN, not claimed); a day missing
+    # inside that span is refused, never read as $0.
+    if not bucket_days:
+        raise NormaliseError(f"the report answered no daily bucket for {start}..{end}")
+    last = max(bucket_days)
+    missing: list[str] = []
     prefixes: list[str] = []
     day = start
-    while day <= end:
+    while day <= last:
+        if day not in bucket_days:
+            missing.append(day.isoformat())
         prefixes.append(f"anthropic:{day.isoformat()}:")
         day += timedelta(days=1)
+    if missing:
+        raise NormaliseError(f"the report has no bucket for {', '.join(missing)}")
     return NormalisedBatch(
-        granularity="range" if end > start else "day",
+        granularity="range" if last > start else "day",
         period_start=start,
-        period_end=end,
+        period_end=last,
         items_seen=items,
         provider_endpoint=f"GET {API} bucket_width=1d {start}..{end}",
         entries=entries,

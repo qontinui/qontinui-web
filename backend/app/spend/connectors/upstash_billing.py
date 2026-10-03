@@ -100,12 +100,34 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
         if stats.get("total_monthly_billing") is not None:
             monthly[f"{kind}:{rid}"] = stats["total_monthly_billing"]
 
-    stated = sorted({p[3] for p in points if start <= p[3] <= end})
-    if points and not stated:
+    # Each resource's stated days inside the query range.
+    per_resource: dict[tuple[str, str], set[date]] = {}
+    for kind, rid, _name, day, _amount in points:
+        if start <= day <= end:
+            per_resource.setdefault((kind, rid), set()).add(day)
+    if points and not per_resource:
         raise NormaliseError(f"the series states no day within {start}..{end}")
-    # The statement is the days the series states. With no resource at all,
-    # the provider has stated the whole range: there is nothing to bill.
-    lo, hi = (stated[0], stated[-1]) if stated else (start, end)
+    if per_resource:
+        # The statement is the days EVERY resource states — a day one
+        # resource is silent on is UNKNOWN for it, never $0 — so the run is
+        # the intersection of the resources' spans, and inside it every
+        # resource must state every day.
+        lo = max(min(days) for days in per_resource.values())
+        hi = min(max(days) for days in per_resource.values())
+        if lo > hi:
+            raise NormaliseError(
+                "the resources' dailybilling series share no day — UNKNOWN"
+            )
+        for (kind, rid), days in sorted(per_resource.items()):
+            missing = [d.isoformat() for d in _days(lo, hi) if d not in days]
+            if missing:
+                raise NormaliseError(
+                    f"{kind} {rid} states no figure for {', '.join(missing)}"
+                )
+    else:
+        # No resource at all: the provider has stated the whole range, and
+        # there is nothing to bill.
+        lo, hi = start, end
 
     merged: dict[str, NormalisedEntry] = {}
     for kind, rid, name, day, amount in points:
@@ -126,15 +148,12 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
             category="cloud",
         )
     # The ref puts the day LAST, so a day's statement is addressed per
-    # resource: one "prefix" (the whole ref) per resource the payload names
-    # and day it states. A resource's day no longer reported is dropped; a
+    # resource: one "prefix" (the whole ref) per resource and stated day. A
     # resource the payload no longer names keeps its history (it was real).
     prefixes = sorted(
-        {
-            f"upstash:{kind}:{rid}:{day.isoformat()}"
-            for kind, rid, _name, _day, _amount in points
-            for day in _days(lo, hi)
-        }
+        f"upstash:{kind}:{rid}:{day.isoformat()}"
+        for (kind, rid) in per_resource
+        for day in _days(lo, hi)
     )
     return NormalisedBatch(
         granularity="range" if hi > lo else "day",

@@ -6,12 +6,13 @@ the developer's Cloud Storage bucket,
 ``gs://pubsite_prod_rev_<developer_id>/earnings/earnings_YYYYMM_*.zip``, read
 with a service account that Play Console granted "View financial data".
 
-* Only the **fee and refund** lines are stored as cost: ``Google fee``,
-  ``Google fee refund`` and ``Charge refund``. Their ``Amount (Merchant
+* Only Google's **fee lines and their refunds** are stored as cost:
+  ``Google fee`` and ``Google fee refund``. Their ``Amount (Merchant
   Currency)`` is signed from the developer's side (a fee is negative), so the
   cost is its negation — a fee refund is a negative cost.
-* Revenue (``Charge`` lines) is NEVER stored as spend, and never as negative
-  spend. Its sum is kept as a fact and a notice, as context.
+* Revenue (``Charge``) and its reversal (``Charge refund``, money returned to
+  a customer) are NEVER stored as spend, and never as negative spend. Their
+  net is kept as a fact and a notice, as context.
 * One entry per (month, transaction type, merchant currency), dated to the
   report's month: ``source_ref = play:<developer>:<YYYYMM>:<transaction type>``
   (plus ``:<currency>`` for a currency other than USD). A month with no report
@@ -55,8 +56,9 @@ from app.spend.connectors import (
 
 STORAGE = "https://storage.googleapis.com/storage/v1/b/{bucket}/o"
 SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
-COST_TYPES = ("Google fee", "Google fee refund", "Charge refund")
-REVENUE_TYPE = "Charge"
+COST_TYPES = ("Google fee", "Google fee refund")
+#: Revenue and its reversal — context only, NEVER spend.
+REVENUE_TYPES = ("Charge", "Charge refund")
 TYPE_COLUMN = "Transaction Type"
 AMOUNT_COLUMN = "Amount (Merchant Currency)"
 CURRENCY_COLUMN = "Merchant Currency"
@@ -105,7 +107,7 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
             kind = (row.get(TYPE_COLUMN) or "").strip()
             currency = (row.get(CURRENCY_COLUMN) or "").strip().upper()
             where = f"files[{f_index}] row {r_index + 2}"
-            if kind not in COST_TYPES and kind != REVENUE_TYPE:
+            if kind not in COST_TYPES and kind not in REVENUE_TYPES:
                 continue
             if len(currency) != 3:
                 raise NormaliseError(f"{where} has no merchant currency")
@@ -113,7 +115,7 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
                 (row.get(AMOUNT_COLUMN) or "").replace(",", "").strip(),
                 field_name=f"{where} {AMOUNT_COLUMN}",
             )
-            if kind == REVENUE_TYPE:
+            if kind in REVENUE_TYPES:
                 revenue[currency] += amount
             else:
                 # Developer-side signs: a fee is negative. Cost is the negation.
@@ -280,7 +282,9 @@ SPEC = ConnectorSpec(
     normalise=normalise,
     spike_rule=False,
     credential_fields=(
-        CredentialField("service_account_json", "Service-account JSON key"),
+        CredentialField(
+            "service_account_json", "Service-account JSON key", multiline=True
+        ),
         CredentialField(
             "bucket",
             "Reports bucket",

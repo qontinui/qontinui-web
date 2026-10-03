@@ -8,6 +8,7 @@ UNKNOWN vendor's own figures are ``None``; a total over one is marked
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -579,6 +580,16 @@ async def build_summary(
     )
 
     warnings = await _last_notices(db, tenant_id, ids)
+    # The vault's answer per connector, read concurrently (one call per
+    # connector, cached; a vault failure is remembered briefly).
+    keys = sorted({str(v.connector) for v in vendors if connector_spec(v.connector)})
+    vault = dict(
+        zip(
+            keys,
+            await asyncio.gather(*(credentials.status(tenant_id, k) for k in keys)),
+            strict=True,
+        )
+    )
     summaries: list[VendorSummary] = []
     unknown: list[str] = []
     for vendor in vendors:
@@ -586,7 +597,7 @@ async def build_summary(
         spec = connector_spec(vendor.connector)
         credential_status: str | None = None
         if spec is not None:
-            credential_status = (await credentials.status(tenant_id, spec.key)).status
+            credential_status = vault[spec.key].status
             if (
                 f.status == "never"
                 and credential_status == "not_linked"

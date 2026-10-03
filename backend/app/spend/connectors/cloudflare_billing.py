@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from app.spend.connectors import (
     ConnectorSpec,
@@ -138,7 +139,7 @@ def _headers(token: str) -> dict[str, str]:
 
 async def _page(token: str, account: str, page: int, per_page: int) -> dict[str, Any]:
     body = await _http.get_json(
-        API.format(account=account),
+        API.format(account=quote(account, safe="")),
         provider="Cloudflare",
         headers=_headers(token),
         params={
@@ -165,8 +166,15 @@ async def validate(credential: dict[str, Any], config: dict[str, Any]) -> None:
 async def fetch(ctx: FetchContext) -> list[Pull]:
     token, account = _http.require_fields(ctx.credential, "token", "account_id")
     today = ctx.now.astimezone(UTC).date()
-    days = FIRST_PULL_DAYS if ctx.last_pulled_day is None else TRAILING_DAYS
-    start = today - timedelta(days=days - 1)
+    first = today - timedelta(days=FIRST_PULL_DAYS - 1)
+    if ctx.last_pulled_day is None:
+        start = first
+    else:
+        # Trailing days, reaching back past any gap a failed pull left.
+        start = max(
+            first,
+            min(ctx.last_pulled_day, today - timedelta(days=TRAILING_DAYS - 1)),
+        )
     items: list[Any] = []
     for page in range(1, MAX_PAGES + 1):
         body = await _page(token, account, page, PER_PAGE)

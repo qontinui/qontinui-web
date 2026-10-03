@@ -38,6 +38,11 @@ logger = structlog.get_logger(__name__)
 
 SOURCE = "pull:server"
 
+#: vendor id -> when this process last attempted a pull. A pull that finds
+#: nothing published (Play before its monthly report) writes no run, and
+#: this keeps it to the connector's own cadence anyway.
+_last_attempt: dict[UUID, datetime] = {}
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -54,7 +59,7 @@ async def collect_vendor(db: AsyncSession, vendor: Vendor, now: datetime) -> str
     if spec is None or spec.fetch is None:
         return "skipped:not_pullable"
     try:
-        resolved = await credentials.resolve(vendor.tenant_id, spec.key)
+        resolved = await credentials.resolve(vendor.tenant_id, spec.key, fresh=True)
     except credentials.StoreUnavailable as exc:
         # The VAULT could not answer — nothing about the provider's data. No
         # run is written: a vendor the fleet importer also pushes (GitHub)
@@ -75,10 +80,14 @@ async def collect_vendor(db: AsyncSession, vendor: Vendor, now: datetime) -> str
             CostImportRun.transport == "pull",
         )
     )
+    attempted = _last_attempt.get(vendor.id)
+    if attempted is not None and (last_pull is None or attempted > last_pull):
+        last_pull = attempted
     if last_pull is not None and last_pull > now - timedelta(
         hours=spec.min_pull_interval_hours
     ):
         return "skipped:interval"
+    _last_attempt[vendor.id] = now
     last_pulled_day = await db.scalar(
         select(func.max(CostImportRun.period_end)).where(
             CostImportRun.tenant_id == vendor.tenant_id,
@@ -152,16 +161,26 @@ async def collect_all_tenants(
         session_factory = AsyncSessionLocal
     when = now or _now()
     async with session_factory() as db:
-        targets = [
-            (row.id, row.tenant_id)
-            for row in (
-                await db.execute(
-                    select(Vendor.id, Vendor.tenant_id).where(
-                        Vendor.connector.in_(pullable_connectors())
-                    )
-                )
-            ).all()
-        ]
+        rows = (
+            await db.execute(
+                select(Vendor.id, Vendor.tenant_id, Vendor.connector)
+                .where(Vendor.connector.in_(pullable_connectors()))
+                .order_by(Vendor.created_at, Vendor.id)
+            )
+        ).all()
+    # One credential per (tenant, connector), so ONE vendor per pair is
+    # pulled — the oldest, the same one the Link route validates against. A
+    # second vendor on the same connector would store the same account's
+    # spend again and double the totals.
+    targets: list[tuple[UUID, UUID]] = []
+    seen: set[tuple[UUID, str]] = set()
+    duplicates = 0
+    for vendor_id, tenant_id, connector in rows:
+        if (tenant_id, connector) in seen:
+            duplicates += 1
+            continue
+        seen.add((tenant_id, connector))
+        targets.append((vendor_id, tenant_id))
     outcomes: Counter[str] = Counter()
     pulled: set[UUID] = set()
     for vendor_id, tenant_id in targets:
@@ -191,4 +210,7 @@ async def collect_all_tenants(
                 logger.warning(
                     "spend_collect_evaluate_failed", tenant_id=str(tenant_id)
                 )
-    return {"vendors": len(targets), **dict(outcomes)}
+    if duplicates:
+        outcomes["skipped"] += duplicates
+        logger.warning("spend_collect_duplicate_connector_vendors", count=duplicates)
+    return {"vendors": len(targets) + duplicates, **dict(outcomes)}

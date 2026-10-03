@@ -25,6 +25,7 @@ import calendar
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 from app.spend.connectors import (
     ConnectorSpec,
@@ -231,7 +232,7 @@ def _org_of(credential: dict[str, Any], config: dict[str, Any]) -> str:
 
 async def _usage(token: str, org: str, params: dict[str, int]) -> Any:
     return await _http.get_json(
-        f"{API}/organizations/{org}/settings/billing/usage",
+        f"{API}/organizations/{quote(org, safe='')}/settings/billing/usage",
         provider="GitHub",
         headers=_headers(token),
         params=params,

@@ -28,7 +28,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.spend.connectors import (
     ConnectorSpec,
@@ -180,6 +180,7 @@ async def apply(
         ).scalars()
     )
     carried: set[str] = set()
+    conflicts: list[str] = []
     actor = "connector:namecheap_domains"
     for entry in entries:
         name = (entry.external_ref or "").lower()
@@ -192,11 +193,27 @@ async def apply(
         if entry.renews_on == expires and entry.auto_renew == auto:
             continue
         before = _recurring_read(entry)
-        entry.renews_on = expires
-        entry.auto_renew = auto
-        entry.version = (entry.version or 1) + 1
-        entry.updated_by = actor
-        await db.flush()
+        # Optimistic: only the version this read saw is updated, so an edit
+        # that landed in between is never silently overwritten.
+        result = await db.execute(
+            update(RecurringCost)
+            .where(
+                RecurringCost.id == entry.id,
+                RecurringCost.version == before.version,
+            )
+            .values(
+                renews_on=expires,
+                auto_renew=auto,
+                version=before.version + 1,
+                updated_by=actor,
+                updated_at=func.now(),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount == 0:  # type: ignore[attr-defined]
+            conflicts.append(name)
+            continue
+        await db.refresh(entry)
         await change_log.record(
             db,
             tenant_id=tenant_id,
@@ -211,7 +228,12 @@ async def apply(
             version_before=before.version,
             version_after=entry.version,
         )
-    return [
+    notes = [
+        f"{name}: the recurring cost changed while its renewal date was being "
+        "updated — it will be retried on the next read."
+        for name in conflicts
+    ]
+    return notes + [
         f"{name} (expires {by_name[name]['expires']}) has no recurring cost whose "
         "external_ref is the domain — add its renewal invoice amount."
         for name in sorted(set(by_name) - carried)

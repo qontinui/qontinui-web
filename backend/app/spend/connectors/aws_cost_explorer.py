@@ -26,9 +26,12 @@ Payload (both transports): ``{"account_id": "<12 digits>", "ResultsByTime":
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from app.spend.connectors import (
     ConnectorSpec,
@@ -48,7 +51,11 @@ ENDPOINT = "ce:GetCostAndUsage DAILY UnblendedCost,NetUnblendedCost by SERVICE"
 CE_REGION = "us-east-1"
 BACKFILL_DAYS = 90
 TRAILING_DAYS = 3
-_ROLE_ARN = re.compile(r"^arn:aws:iam::(\d{12}):role/[\w+=,.@/-]{1,512}$")
+#: The role NAME must start ``qontinui-spend-``: the web task role's
+#: ``sts:AssumeRole`` grant is scoped to that name (qontinui-stack
+#: ``task_cost_explorer``), so no other role in any account is assumable.
+ROLE_PREFIX = "qontinui-spend-"
+_ROLE_ARN = re.compile(r"^arn:aws:iam::(\d{12}):role/qontinui-spend-[\w+=,.@-]{1,48}$")
 _ACCOUNT = re.compile(r"^\d{12}$")
 
 
@@ -205,22 +212,31 @@ def _session_for(credential: dict[str, Any], arm: str) -> tuple[Any, str]:
     """A boto3 session and the account it reads, for this arm."""
     import boto3
 
+    # A fresh Session per call: the default session is not thread-safe, and
+    # this runs in worker threads (a link can race a pull).
+    session = boto3.session.Session()
+    hosting = str(session.client("sts").get_caller_identity()["Account"])
     if arm == "task_role":
-        session = boto3.session.Session()
-        account = session.client("sts").get_caller_identity()["Account"]
-        return session, str(account)
+        return session, hosting
     role_arn = str(credential.get("role_arn") or "").strip()
     external_id = str(credential.get("external_id") or "").strip()
     match = _ROLE_ARN.match(role_arn)
     if not match:
         raise CredentialRejected(
-            "invalid_credential", "role_arn is not an IAM role ARN"
+            "invalid_credential",
+            f"role_arn is not an IAM role ARN whose name starts {ROLE_PREFIX}",
+        )
+    if match.group(1) == hosting:
+        # The hosting account's bill belongs to the pinned tenant alone, and
+        # it reads it through the task-role arm (aws-account-is-per-tenant).
+        raise CredentialRejected(
+            "forbidden", "a role in the hosting AWS account cannot be linked"
         )
     if not external_id:
         raise CredentialRejected(
             "invalid_credential", "the credential has no external_id"
         )
-    assumed = boto3.client("sts").assume_role(
+    assumed = session.client("sts").assume_role(
         RoleArn=role_arn,
         RoleSessionName="qontinui-spend-collector",
         ExternalId=external_id,
@@ -270,6 +286,24 @@ def _read(
     return {"account_id": account, "ResultsByTime": results}
 
 
+def external_id_for(tenant_id: UUID) -> str:
+    """The ExternalId qontinui ISSUES to a tenant for its cross-account role.
+
+    Server-derived (HMAC of the tenant id under the backend's secret key), so
+    a tenant cannot choose another's: the confused-deputy guard AWS requires
+    of a third party assuming customer roles. Not secret — the Link form
+    shows it, and the tenant puts it in the role's trust policy.
+    """
+    from app.core.config import settings
+
+    digest = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        f"spend-aws-external-id:{tenant_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"qontinui-{digest[:32]}"
+
+
 async def validate(credential: dict[str, Any], config: dict[str, Any]) -> None:
     """Assume the linked role and read one day — one $0.01 request."""
     today = datetime.now(UTC).date()
@@ -284,8 +318,19 @@ async def validate(credential: dict[str, Any], config: dict[str, Any]) -> None:
 
 async def fetch(ctx: FetchContext) -> list[Pull]:
     today = ctx.now.astimezone(UTC).date()
-    days = BACKFILL_DAYS if ctx.last_pulled_day is None else TRAILING_DAYS
-    start = today - timedelta(days=days)
+    first = today - timedelta(days=BACKFILL_DAYS)
+    if ctx.last_pulled_day is None:
+        start = first
+    else:
+        # The trailing window, reaching back past any gap failed pulls left
+        # (two days before the last pulled day, which was not yet complete).
+        start = max(
+            first,
+            min(
+                ctx.last_pulled_day - timedelta(days=2),
+                today - timedelta(days=TRAILING_DAYS),
+            ),
+        )
     raw = await asyncio.to_thread(_read, ctx.credential, ctx.arm, start, today)
     return [Pull(IngestQuery.for_range(start, today - timedelta(days=1)), raw)]
 
@@ -304,15 +349,16 @@ SPEC = ConnectorSpec(
             "role_arn",
             "Role ARN",
             secret=False,
-            help="arn:aws:iam::<your account>:role/<role> granting ce:GetCostAndUsage",
+            help="arn:aws:iam::<your account>:role/qontinui-spend-<name>",
         ),
-        CredentialField("external_id", "External ID"),
     ),
+    issued_fields=lambda tenant_id: {"external_id": external_id_for(tenant_id)},
     credential_help=(
-        "In YOUR AWS account, create an IAM role whose only permission is "
-        'ce:GetCostAndUsage (Resource "*"), trusting the qontinui web task '
-        "role with the External ID you choose here. The hosting tenant needs "
-        "no link: it is read with the web task role."
+        "In YOUR AWS account, create an IAM role named qontinui-spend-<anything> "
+        'whose only permission is ce:GetCostAndUsage (Resource "*"), trusting '
+        "the qontinui web task role with the External ID shown here (qontinui "
+        "issues it for your project; it cannot be chosen). Link its ARN. The "
+        "hosting tenant needs no link: it is read with the web task role."
     ),
     validate=validate,
     fetch=fetch,
