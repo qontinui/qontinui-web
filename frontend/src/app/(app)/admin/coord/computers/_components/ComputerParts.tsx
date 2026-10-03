@@ -11,7 +11,7 @@
  */
 
 import type { ReactNode } from "react";
-import { StatCluster, StatusBadge } from "@/components/console";
+import { StatCluster, StatusBadge, type Stat } from "@/components/console";
 import { PressureSparkline } from "@/components/operations/PressureSparkline";
 import {
   formatAge,
@@ -21,6 +21,9 @@ import {
 import {
   FRESHNESS_PALETTE,
   freshnessStatus,
+  gpuText,
+  gpuTitle,
+  gpusNote,
   historyPoints,
   laneDiskUsed,
   laneFreshness,
@@ -28,6 +31,7 @@ import {
   laneMemoryUsed,
   emptyLanesText,
   lanePressureRatio,
+  readGpus,
   readIssueText,
   readLaneField,
   readingText,
@@ -35,6 +39,7 @@ import {
   type ComputerLaneWire,
   type ComputersReadIssue,
   type FreshnessReading,
+  type GpusReading,
   type LaneHistoryWire,
   type NormalizedComputer,
 } from "../_lib/computerStatus";
@@ -105,6 +110,60 @@ export function ReadIssueBanner({
   );
 }
 
+/**
+ * The GPU stats: one `gpu` badge per GPU (`model · VRAM`, vendor / driver /
+ * compute capability on hover), `none` for a MEASURED empty list, and
+ * `unknown` for `null` or a shape this page cannot read — never `0` or `none`
+ * for a GPU set nobody measured.
+ */
+export function gpuStats(r: GpusReading): Stat[] {
+  switch (r.kind) {
+    case "unknown":
+      return [
+        {
+          key: "gpus",
+          label: "gpus",
+          value: "unknown",
+          tone: "muted",
+          title: "not reported — UNKNOWN, which is not none",
+          "data-testid": "coord-computer-gpus",
+        },
+      ];
+    case "unrecognized":
+      return [
+        {
+          key: "gpus",
+          label: "gpus",
+          value: "unknown",
+          tone: "warning",
+          title: "coord sent a gpus value this page cannot read — UNKNOWN",
+          "data-testid": "coord-computer-gpus",
+        },
+      ];
+    case "none":
+      return [
+        {
+          key: "gpus",
+          label: "gpus",
+          value: "none",
+          title: "measured: no GPU",
+          "data-testid": "coord-computer-gpus",
+        },
+      ];
+    case "gpus":
+      return r.gpus.map(
+        (g, i): Stat => ({
+          key: `gpu-${i}`,
+          label: "gpu",
+          value: gpuText(g),
+          tone: g.model === null && g.vramBytes === null ? "muted" : "default",
+          title: gpuTitle(g),
+          "data-testid": `coord-computer-gpu-${i}`,
+        })
+      );
+  }
+}
+
 /** Capacity as a stat cluster. A capacity coord never received reads `unknown`, never `0`. */
 export function CapacityStats({
   computer,
@@ -114,53 +173,56 @@ export function CapacityStats({
   testId?: string;
 }) {
   const cap = computer.capacity;
-  const gpuCount = Array.isArray(cap.gpus) ? cap.gpus.length : null;
+  const gpus = readGpus(cap.gpus);
   return (
-    <StatCluster
-      data-testid={testId}
-      stats={[
-        {
-          key: "cores",
-          label: "cores",
-          value: cap.cpuCores ?? "unknown",
-          tone: cap.cpuCores === null ? "muted" : "default",
-        },
-        {
-          key: "memory",
-          label: "memory",
-          value:
-            cap.memoryTotalBytes === null
-              ? "unknown"
-              : formatBytes(cap.memoryTotalBytes),
-          tone: cap.memoryTotalBytes === null ? "muted" : "default",
-        },
-        {
-          key: "swap",
-          label: "swap",
-          value:
-            cap.swapTotalBytes === null
-              ? "unknown"
-              : formatBytes(cap.swapTotalBytes),
-          tone: cap.swapTotalBytes === null ? "muted" : "default",
-        },
-        {
-          key: "disk",
-          label: "disk",
-          value:
-            cap.diskTotalBytes === null
-              ? "unknown"
-              : formatBytes(cap.diskTotalBytes),
-          tone: cap.diskTotalBytes === null ? "muted" : "default",
-        },
-        {
-          key: "gpus",
-          label: "gpus",
-          // `null` gpus is "not reported", which is not "none".
-          value: gpuCount ?? "unknown",
-          tone: gpuCount === null ? "muted" : "default",
-        },
-      ]}
-    />
+    <div className="space-y-1">
+      <StatCluster
+        data-testid={testId}
+        stats={[
+          {
+            key: "cores",
+            label: "cores",
+            value: cap.cpuCores ?? "unknown",
+            tone: cap.cpuCores === null ? "muted" : "default",
+          },
+          {
+            key: "memory",
+            label: "memory",
+            value:
+              cap.memoryTotalBytes === null
+                ? "unknown"
+                : formatBytes(cap.memoryTotalBytes),
+            tone: cap.memoryTotalBytes === null ? "muted" : "default",
+          },
+          {
+            key: "swap",
+            label: "swap",
+            value:
+              cap.swapTotalBytes === null
+                ? "unknown"
+                : formatBytes(cap.swapTotalBytes),
+            tone: cap.swapTotalBytes === null ? "muted" : "default",
+          },
+          {
+            key: "disk",
+            label: "disk",
+            value:
+              cap.diskTotalBytes === null
+                ? "unknown"
+                : formatBytes(cap.diskTotalBytes),
+            tone: cap.diskTotalBytes === null ? "muted" : "default",
+          },
+          ...gpuStats(gpus),
+        ]}
+      />
+      <p
+        className="text-xs text-muted-foreground m-0"
+        data-testid="coord-computer-gpus-note"
+        data-ui-bridge-id="coord-computer-gpus-note"
+      >
+        {gpusNote(gpus)}
+      </p>
+    </div>
   );
 }
 
