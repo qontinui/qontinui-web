@@ -1014,7 +1014,7 @@ class ListRecordsResponse(BaseModel):
     next_cursor: str | None
 
 
-MemoryRecordState = Literal["live", "superseded", "tombstoned"]
+MemoryRecordState = Literal["live", "superseded", "tombstoned", "expired"]
 
 
 class MemoryRecordByIdResponse(BaseModel):
@@ -1027,13 +1027,19 @@ class MemoryRecordByIdResponse(BaseModel):
     ``superseded``, not as a lost write.
 
     ``state`` is derived from the row's own columns, in precedence order:
-    ``is_tombstone`` → ``tombstoned``; else a non-null ``superseded_by`` →
-    ``superseded``; else ``live``. ``live`` therefore means "neither
-    tombstoned nor superseded" — a row whose validity was ended by an
-    automatic sweep (decay invalidate, closed-session expiry) carries no
-    tombstone flag and no successor, so it reads ``live`` with a non-null
-    ``valid_until``. ``valid_until`` is the field that answers "is it still
-    retrievable", and it is echoed precisely so a reader can tell.
+
+    1. ``is_tombstone`` → ``tombstoned`` (deleted). ``title`` and
+       ``content`` are withheld as ``null``; id, state and ``valid_until``
+       are still returned.
+    2. a non-null ``superseded_by`` → ``superseded``.
+    3. ``valid_until`` at or before the effective now → ``expired`` — the
+       validity was ended without a tombstone or a successor (decay
+       invalidate, closed-session expiry, an anchor-gone sweep). "Now" is
+       the SAME clock-skew-safe effective now retrieval uses
+       (``memory_store._EFFECTIVE_NOW_ROW_SQL``).
+    4. otherwise → ``live``: retrievable now on the validity axis. A
+       session-scoped row whose ``valid_until`` is still in the future is
+       ``live`` until that instant passes.
 
     ``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a
     multi-bound device can be read as "the wrong tenant was minted" rather
@@ -1044,8 +1050,8 @@ class MemoryRecordByIdResponse(BaseModel):
 
     memory_id: UUID
     tenant_id: UUID
-    title: str
-    content: str
+    title: str | None
+    content: str | None
     kind: str
     scope: str
     scope_ref: str | None
