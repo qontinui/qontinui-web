@@ -407,9 +407,9 @@ const same = (a: unknown, b: unknown) =>
 /**
  * Something a merge could not settle, which the writer must. A note about one
  * of my day rows carries that row: it is settled once the working copy no
- * longer holds the row exactly as flagged (it was edited or removed). A note
- * about the whole merge (`row: null`) is settled only when the writer says
- * they have checked it.
+ * longer holds the row exactly as flagged (it was edited or removed), or when
+ * the writer says they have checked it and it is right as it stands. A note
+ * about the whole merge (`row: null`) is settled only by that check.
  */
 export interface MergeNote {
   message: string;
@@ -504,7 +504,7 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
         efforts.push({ ...row, task_number: target.to });
       } else if (edited) {
         unresolved.push({
-          message: `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed. Edit or remove that row.`,
+          message: `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed. Edit or remove that row, or mark it checked if it is right as it stands.`,
           row,
         });
         efforts.push(row);

@@ -456,7 +456,9 @@ function restoredDraft(
   if (!parsed || sameDraft(parsed.draft, saved)) return null;
   return {
     ...parsed,
-    notes: parsed.notes ?? [],
+    // A note is kept only while it is open, but the copy may have been
+    // written by a build that kept a settled one: re-check on the way in.
+    notes: openMergeNotes(parsed.notes ?? [], parsed.draft),
     baseVersion: stored.baseVersion,
     savedAt: stored.savedAt,
   };
@@ -609,7 +611,9 @@ function EstimateEditor({
       );
   };
 
-  /** Settle a note about the whole merge: the writer has checked it. */
+  /** Settle a note because the writer says they have checked it — a note
+   *  about the whole merge, or a flagged row they have decided is right as it
+   *  stands (editing or removing the row settles it too). */
   const settleNote = (note: MergeNote) => {
     const notes = mergeNotes.filter((n) => n !== note);
     setMergeNotes(notes);
@@ -793,21 +797,16 @@ function EstimateEditor({
                 key={note.message}
                 className="text-sm leading-relaxed text-destructive"
               >
-                {note.message}
-                {note.row === null && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => settleNote(note)}
-                      className="inline-flex min-h-9 items-center rounded-md text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      data-ui-bridge-id="overview.estimate-editor.merge-notes.checked"
-                    >
-                      I have checked this
-                    </button>
-                  </>
-                )}
+                {note.message}{" "}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => settleNote(note)}
+                  className="inline-flex min-h-9 items-center rounded-md text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-ui-bridge-id="overview.estimate-editor.merge-notes.checked"
+                >
+                  I have checked this
+                </button>
               </li>
             ))}
           </ul>
