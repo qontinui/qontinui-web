@@ -47,6 +47,7 @@ from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
 from app.overview.pages import router as pages_routes
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
+from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
 from app.overview.resource import (
     RecordNotFound,
@@ -523,7 +524,9 @@ for _spec in REGISTRY.values():
         _mount(_spec)
 
 # The routes beyond the generic contract, on the same prefix: the estimate's
-# rollup; page versions, revert and backlinks; file upload and download.
+# rollup and forecast; page versions, revert and backlinks; file upload and
+# download.
 router.include_router(estimates_routes)
+router.include_router(timeline_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)

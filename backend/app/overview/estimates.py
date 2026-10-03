@@ -61,6 +61,7 @@ from app.models.overview import (
     TaskEffort,
 )
 from app.overview import change_log
+from app.overview.milestones import detach_milestones
 from app.overview.permissions import OverviewAccess, get_overview_access
 from app.overview.resource import (
     ListResult,
@@ -70,6 +71,7 @@ from app.overview.resource import (
     StoreRefused,
 )
 from app.schemas.overview import (
+    PHASE_PROGRESS_FIELDS,
     AllocationRead,
     CalendarBreakRead,
     CostLineRead,
@@ -287,7 +289,12 @@ def _as_written(content: EstimateContent) -> EstimateContentWrite | None:
                 "phases": [
                     {
                         **p.model_dump(
-                            exclude={"id", "sort_order", "tasks"},
+                            exclude={
+                                "id",
+                                "sort_order",
+                                "tasks",
+                                *PHASE_PROGRESS_FIELDS,
+                            },
                         ),
                         "tasks": [
                             {
@@ -463,26 +470,60 @@ async def _take_the_baseline(ctx: StoreContext, *, keep_id: UUID | None) -> None
 
 
 async def _replace_content(
-    db: AsyncSession,
+    ctx: StoreContext,
     *,
     estimate: Estimate,
-    actor: str | None,
     content: EstimateContentWrite,
 ) -> None:
     """Replace an estimate's whole content graph. Leaves ``version`` alone —
     the caller moves it once per write, whatever the write carried.
 
-    Delete-then-insert rather than a diff: the payload is a complete
-    description of the estimate and every child is identified by a code the
-    client owns. Referential integrity between the parts is already
+    Delete-then-insert for everything but the PHASES: the payload is a
+    complete description of the estimate and every child is identified by a
+    code the client owns. Referential integrity between the parts is already
     guaranteed by ``EstimateContentWrite``'s validator, so nothing here has to
     re-check it.
+
+    **A phase whose code is kept keeps its row** — its id, and with it the
+    progress recorded against it on the Timeline (actual dates, the gate's
+    outcome, ``progress_version``) and the milestones tied to it. Only its
+    plan fields are rewritten. A content write owns the plan and never the
+    progress, so a Save in the estimate editor cannot put back a gate outcome
+    somebody recorded since the editor loaded. A phase whose code is gone is
+    deleted with its progress (the change log's ``before`` keeps both), and
+    the milestones tied to it are detached first, each as a logged write.
     """
+    db = ctx.db
+    actor = ctx.access.actor
     tenant_id = estimate.tenant_id
     now = _now()
 
-    # Everything hangs off the estimate, phases or roles, all of which cascade.
-    await db.execute(delete(Phase).where(Phase.estimate_id == estimate.id))
+    existing = {
+        p.code: p
+        for p in (
+            await db.execute(
+                select(Phase)
+                .where(Phase.estimate_id == estimate.id)
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    }
+    wanted = {p.code for p in content.phases}
+    removed = [p.id for code, p in existing.items() if code not in wanted]
+    kept_ids = [p.id for code, p in existing.items() if code in wanted]
+    await detach_milestones(ctx, removed)
+
+    # Tasks (and so their efforts) and allocations hang off phases; a kept
+    # phase's are rewritten like every other table, so they go first.
+    if kept_ids:
+        await db.execute(delete(PhaseTask).where(PhaseTask.phase_id.in_(kept_ids)))
+        await db.execute(
+            delete(PhaseAllocation).where(PhaseAllocation.phase_id.in_(kept_ids))
+        )
+    if removed:
+        await db.execute(delete(Phase).where(Phase.id.in_(removed)))
     await db.execute(
         delete(EstimateRole).where(EstimateRole.estimate_id == estimate.id)
     )
@@ -519,24 +560,33 @@ async def _replace_content(
 
     phases_by_code: dict[str, Phase] = {}
     for index, phase in enumerate(content.phases):
-        prow = Phase(
-            tenant_id=tenant_id,
-            estimate_id=estimate.id,
-            code=phase.code,
-            name=phase.name,
-            sort_order=index,
-            planned_start=phase.planned_start,
-            planned_end=phase.planned_end,
-            stated_working_weeks=phase.stated_working_weeks,
-            gate_criteria=phase.gate_criteria,
-            actual_start=phase.actual_start,
-            actual_end=phase.actual_end,
-            gate_status=phase.gate_status,
-            gate_decided_at=phase.gate_decided_at,
-            gate_notes=phase.gate_notes,
-            **audit,
-        )
-        db.add(prow)
+        plan = {
+            "name": phase.name,
+            "sort_order": index,
+            "planned_start": phase.planned_start,
+            "planned_end": phase.planned_end,
+            "stated_working_weeks": phase.stated_working_weeks,
+            "gate_criteria": phase.gate_criteria,
+        }
+        prow = existing.get(phase.code)
+        if prow is None:
+            prow = Phase(
+                tenant_id=tenant_id,
+                estimate_id=estimate.id,
+                code=phase.code,
+                **plan,
+                **audit,
+            )
+            db.add(prow)
+        else:
+            changed = False
+            for key, value in plan.items():
+                if getattr(prow, key) != value:
+                    setattr(prow, key, value)
+                    changed = True
+            if changed:
+                prow.updated_by = actor
+                prow.updated_at = now
         phases_by_code[phase.code] = prow
     await db.flush()
 
@@ -703,9 +753,7 @@ class EstimateStore:
         ctx.db.add(row)
         await ctx.db.flush()
         if payload.content is not None:
-            await _replace_content(
-                ctx.db, estimate=row, actor=ctx.access.actor, content=payload.content
-            )
+            await _replace_content(ctx, estimate=row, content=payload.content)
         return await self._fresh(ctx, row.id)
 
     async def update(
@@ -750,9 +798,7 @@ class EstimateStore:
         for key, value in head.items():
             setattr(row, key, value)
         if content is not None:
-            await _replace_content(
-                ctx.db, estimate=row, actor=ctx.access.actor, content=content
-            )
+            await _replace_content(ctx, estimate=row, content=content)
         row.updated_by = ctx.access.actor
         row.updated_at = _now()
         row.version += 1
@@ -769,6 +815,9 @@ class EstimateStore:
         before = _to_read(row, with_content=True)
         if row.version != expected_version:
             raise StaleVersion(before)
+        # The milestones tied to its phases outlive it, detached as writes of
+        # their own; the FK's SET NULL is the backstop, not the path.
+        await detach_milestones(ctx, [p.id for p in row.phases])
         # The children cascade in Postgres (ON DELETE CASCADE) and in the ORM
         # (delete-orphan), so one delete is enough.
         await ctx.db.delete(row)

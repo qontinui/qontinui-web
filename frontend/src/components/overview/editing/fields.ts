@@ -23,6 +23,19 @@ import { checkField } from "./validation";
 export type RowText = Record<string, string | boolean>;
 
 const DECIMAL = /^\d*(\.\d+)?$/;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A real calendar day in `YYYY-MM-DD`, not merely that shape. */
+export function isIsoDay(value: string): boolean {
+  if (!ISO_DAY.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
+  const day = new Date(Date.UTC(y, m - 1, d));
+  return (
+    day.getUTCFullYear() === y &&
+    day.getUTCMonth() === m - 1 &&
+    day.getUTCDate() === d
+  );
+}
 const CURRENCY = /^[A-Za-z]{3}$/;
 
 function get(row: object, field: string): unknown {
@@ -75,6 +88,42 @@ function readField<Row>(
       return problem
         ? { error: problem }
         : { values: { [field.field]: value } };
+    }
+    case "date": {
+      const value = str(text, field.field).trim();
+      if (value === "") {
+        return field.required
+          ? { error: `${field.label} can't be empty.` }
+          : { values: { [field.field]: null } };
+      }
+      if (!isIsoDay(value))
+        return { error: `${field.label} must be a date, e.g. 2026-03-31.` };
+      const problem = checkField(property, value, field.label);
+      return problem
+        ? { error: problem }
+        : { values: { [field.field]: value } };
+    }
+    case "select": {
+      const value = str(text, field.field);
+      if (value === "") {
+        return field.required
+          ? { error: `Choose a ${field.label.toLowerCase()}.` }
+          : { values: { [field.field]: null } };
+      }
+      // Matched by value, then by label: a pasted row names a choice the
+      // way a reader says it.
+      const option =
+        field.options.find((o) => o.value === value) ??
+        field.options.find(
+          (o) => o.label.toLowerCase() === value.trim().toLowerCase()
+        );
+      if (!option)
+        return {
+          error: `${field.label} must be one of: ${field.options
+            .map((o) => o.label)
+            .join(", ")}.`,
+        };
+      return { values: { [field.field]: option.value } };
     }
     case "decimal": {
       const value = str(text, field.field).trim();
@@ -171,6 +220,13 @@ export function cellText<Row extends object>(
   switch (field.kind) {
     case "flag":
       return value === true ? field.yes : field.no;
+    case "select":
+      return (
+        field.options.find((o) => o.value === value)?.label ??
+        (value === null || value === undefined || value === ""
+          ? (field.emptyLabel ?? "—")
+          : String(value))
+      );
     case "money":
       return (
         formatMicros(
@@ -198,5 +254,7 @@ export function sortValue<Row extends object>(
     return Number.isFinite(n) ? n : -1;
   }
   if (field.kind === "flag") return value === true ? 1 : 0;
+  // A select sorts by what the reader sees; a date's ISO text already sorts.
+  if (field.kind === "select") return cellText(field, row);
   return String(value ?? "");
 }

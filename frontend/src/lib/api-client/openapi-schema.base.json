@@ -23933,6 +23933,29 @@
         "title": "FolderCreateResponse",
         "type": "object"
       },
+      "ForecastUnavailable": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "figure": {
+            "title": "Figure",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "figure",
+          "reason",
+          "detail"
+        ],
+        "title": "ForecastUnavailable",
+        "type": "object"
+      },
       "ForkSkillRequest": {
         "properties": {
           "new_name": {
@@ -24166,6 +24189,35 @@
           "passed"
         ],
         "title": "GateEvaluationResult",
+        "type": "object"
+      },
+      "GateRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "criteria": {
+            "title": "Criteria",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "criteria"
+        ],
+        "title": "GateRef",
         "type": "object"
       },
       "GenerateDescriptionRequest": {
@@ -30217,6 +30269,374 @@
         "title": "MigrationAnchor",
         "type": "object"
       },
+      "MilestoneCreate": {
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "default": "milestone",
+            "enum": [
+              "milestone",
+              "pilot",
+              "first_value",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "default": "planned",
+            "enum": [
+              "planned",
+              "in_progress",
+              "done",
+              "at_risk"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Target Date",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "target_date"
+        ],
+        "title": "MilestoneCreate",
+        "type": "object"
+      },
+      "MilestoneRead": {
+        "description": "One milestone on the Timeline. Gates are phases, not milestones, so they\nare never duplicated here.",
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "milestone",
+              "pilot",
+              "first_value",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Code"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "in_progress",
+              "done",
+              "at_risk"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "format": "date",
+            "title": "Target Date",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "kind",
+          "phase_id",
+          "phase_code",
+          "target_date",
+          "completed_date",
+          "status",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "MilestoneRead",
+        "type": "object"
+      },
+      "MilestoneUpdate": {
+        "description": "Every field optional \u2014 an absent field is left alone. The done/date rule\nis checked on the milestone as it will be (by the store).",
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "milestone",
+                  "pilot",
+                  "first_value",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planned",
+                  "in_progress",
+                  "done",
+                  "at_risk"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "MilestoneUpdate",
+        "type": "object"
+      },
+      "MilestonesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/MilestoneRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "MilestonesItem",
+        "type": "object"
+      },
+      "MilestonesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "MilestonesList",
+        "type": "object"
+      },
       "MockExecutionRequest": {
         "description": "Request for mock execution",
         "properties": {
@@ -33858,6 +34278,373 @@
         "title": "PendingCountResponse",
         "type": "object"
       },
+      "PhaseForecast": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "finish_slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Slip Days"
+          },
+          "forecast_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast End"
+          },
+          "forecast_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Start"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Slip Days"
+          },
+          "state": {
+            "enum": [
+              "not_started",
+              "in_progress",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "state",
+          "forecast_start",
+          "forecast_end",
+          "start_slip_days",
+          "finish_slip_days"
+        ],
+        "title": "PhaseForecast",
+        "type": "object"
+      },
+      "PhaseProgressItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PhaseProgressRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PhaseProgressItem",
+        "type": "object"
+      },
+      "PhaseProgressList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseProgressRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "PhaseProgressList",
+        "type": "object"
+      },
+      "PhaseProgressRead": {
+        "description": "What actually happened in one phase: its actual dates and its gate's\noutcome \u2014 the ``phase_progress`` resource. ``id`` is the phase's id.\n\nThe plan fields beside them (code, name, planned dates, the gate's\ncriteria) are the estimate's, served here so a reader of progress needs\nno second request. They are read-only on this resource and ``version``\ndoes not cover them: it moves when PROGRESS is written, never when the\nestimate's plan is.",
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "estimate_id": {
+            "format": "uuid",
+            "title": "Estimate Id",
+            "type": "string"
+          },
+          "gate_criteria": {
+            "title": "Gate Criteria",
+            "type": "string"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "title": "Gate Notes",
+            "type": "string"
+          },
+          "gate_status": {
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "waived"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "estimate_id",
+          "code",
+          "name",
+          "sort_order",
+          "planned_start",
+          "planned_end",
+          "gate_criteria",
+          "actual_start",
+          "actual_end",
+          "gate_status",
+          "gate_decided_at",
+          "gate_notes",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "PhaseProgressRead",
+        "type": "object"
+      },
+      "PhaseProgressUpdate": {
+        "description": "Every field optional \u2014 an absent field is left alone; ``null`` clears a\ndate. The rules (a phase ends on or after it starts, and only once it has\nstarted; a gate has a decision date exactly when it has been decided) are\nchecked on the phase AS IT WILL BE, so a write may change one field\nwithout restating the others.",
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Notes"
+          },
+          "gate_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "passed",
+                  "failed",
+                  "waived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Status"
+          }
+        },
+        "title": "PhaseProgressUpdate",
+        "type": "object"
+      },
       "PhaseRead": {
         "properties": {
           "actual_end": {
@@ -33992,6 +34779,30 @@
           "tasks"
         ],
         "title": "PhaseRead",
+        "type": "object"
+      },
+      "PhaseRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "PhaseRef",
         "type": "object"
       },
       "PhaseResultIngestRequest": {
@@ -34422,31 +35233,8 @@
         "type": "object"
       },
       "PhaseWrite": {
+        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.",
         "properties": {
-          "actual_end": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual End"
-          },
-          "actual_start": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Start"
-          },
           "code": {
             "maxLength": 50,
             "minLength": 1,
@@ -34456,34 +35244,6 @@
           "gate_criteria": {
             "default": "",
             "title": "Gate Criteria",
-            "type": "string"
-          },
-          "gate_decided_at": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gate Decided At"
-          },
-          "gate_notes": {
-            "default": "",
-            "title": "Gate Notes",
-            "type": "string"
-          },
-          "gate_status": {
-            "default": "pending",
-            "enum": [
-              "pending",
-              "passed",
-              "failed",
-              "waived"
-            ],
-            "title": "Gate Status",
             "type": "string"
           },
           "name": {
@@ -52487,6 +53247,168 @@
           "data"
         ],
         "title": "TimelineEvent",
+        "type": "object"
+      },
+      "TimelineForecast": {
+        "description": "Where an estimate's delivery stands against its plan, computed on read\n(``app.services.overview_forecast`` documents the model). A figure the\nforecast cannot produce is ``None`` and named in ``unavailable`` \u2014 never 0.",
+        "properties": {
+          "calendar_weeks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Weeks"
+          },
+          "current_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimate_id": {
+            "format": "uuid",
+            "title": "Estimate Id",
+            "type": "string"
+          },
+          "estimate_version": {
+            "title": "Estimate Version",
+            "type": "integer"
+          },
+          "forecast_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Finish"
+          },
+          "next_gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseForecast"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "planned_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Finish"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "position": {
+            "enum": [
+              "no_phases",
+              "not_started",
+              "in_progress",
+              "between_phases",
+              "finished"
+            ],
+            "title": "Position",
+            "type": "string"
+          },
+          "slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slip Days"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastUnavailable"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          },
+          "working_weeks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Weeks"
+          }
+        },
+        "required": [
+          "estimate_id",
+          "estimate_version",
+          "today",
+          "planned_start",
+          "planned_finish",
+          "calendar_weeks",
+          "working_weeks",
+          "position",
+          "current_phase",
+          "next_phase",
+          "next_gate",
+          "forecast_finish",
+          "slip_days",
+          "phases",
+          "unavailable"
+        ],
+        "title": "TimelineForecast",
         "type": "object"
       },
       "TimingInfo": {
@@ -97897,6 +98819,54 @@
         ]
       }
     },
+    "/api/v1/overview/estimates/{estimate_id}/forecast": {
+      "get": {
+        "description": "Where the delivery stands against the plan: the current phase, the next\ngate, the forecast finish and its slip. Computed on read against today\n(UTC); readable by any member. A figure that cannot be produced is null\nand named in ``unavailable``, never 0.",
+        "operationId": "api_v1_overview_estimates_estimate_id_forecast_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineForecast"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Forecast",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/estimates/{estimate_id}/rollup": {
       "get": {
         "description": "Every derived planned figure, computed on read. Readable by any member.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
@@ -98581,6 +99551,271 @@
         ]
       }
     },
+    "/api/v1/overview/milestones": {
+      "get": {
+        "operationId": "api_v1_overview_milestones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_milestones_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MilestoneCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      }
+    },
+    "/api/v1/overview/milestones/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_milestones_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_milestones_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_milestones_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MilestoneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      }
+    },
     "/api/v1/overview/pages": {
       "get": {
         "operationId": "api_v1_overview_pages_get",
@@ -99072,6 +100307,153 @@
         "tags": [
           "overview",
           "overview:pages"
+        ]
+      }
+    },
+    "/api/v1/overview/phase-progress": {
+      "get": {
+        "operationId": "api_v1_overview_phase_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
+        ]
+      }
+    },
+    "/api/v1/overview/phase-progress/{record_id}": {
+      "get": {
+        "operationId": "api_v1_overview_phase_progress_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_phase_progress_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhaseProgressUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
         ]
       }
     },

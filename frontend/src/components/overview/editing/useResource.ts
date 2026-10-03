@@ -41,6 +41,8 @@ export interface UpdateOptions<T> {
   /** What the record will look like once saved, shown until the server
    *  answers. Omit to show nothing until then. */
   optimistic?: (item: T) => T;
+  /** Where the write comes from, for the change log. Default `ui`. */
+  source?: WriteSource;
 }
 
 function newKey(): string {
@@ -130,7 +132,8 @@ export function useResourceList<T extends VersionedRecord>(
           path,
           current.id,
           patch,
-          current.version
+          current.version,
+          options.source ?? "ui"
         );
         replace(saved);
         return { ok: true, item: saved };
@@ -173,9 +176,18 @@ export function useResourceList<T extends VersionedRecord>(
     [path]
   );
 
+  /** Take a record off the list once the server has deleted it. */
+  const drop = useCallback((id: string) => {
+    setList((prev) =>
+      prev.state === "ready"
+        ? { ...prev, items: prev.items.filter((i) => i.id !== id) }
+        : prev
+    );
+  }, []);
+
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { list, update, create, reload };
+  return { list, update, create, drop, replace, reload };
 }
 
 export type RecordState<T> =

@@ -65,6 +65,17 @@ export function checkField(
   if (value === null || value === undefined || value === "") return null;
   const type = schema.type;
   if (type === "string" && typeof value === "string") {
+    // A bounded date: ISO days compare as text, so the published
+    // `formatMinimum`/`formatMaximum` are checked as the strings they are.
+    if (schema.format === "date") {
+      const min = schema.formatMinimum;
+      const max = schema.formatMaximum;
+      if (typeof min === "string" && value < min)
+        return `${label} must be on or after ${min}.`;
+      if (typeof max === "string" && value > max)
+        return `${label} must be on or before ${max}.`;
+      return null;
+    }
     if (
       schema.minLength !== undefined &&
       value.trim().length < schema.minLength
