@@ -3,7 +3,9 @@
 Pins what a reviewer cannot read off the DDL at a glance:
 
 1. **Shape** — both tables and the ``session_id`` index exist after upgrade and
-   are gone after downgrade; the index is keyed on ``session_id`` alone.
+   are gone after downgrade; the index is keyed on ``session_id`` alone, is
+   ``indisvalid`` (it is built CONCURRENTLY), and a re-upgrade after the
+   downgrade applies cleanly.
 2. **The column contract, EXACTLY** — names, types and nullability are the
    cross-repo contract coord's ingest and read are written against, and the set
    is a privacy contract too (no transcript content, no environment values, no
@@ -166,6 +168,25 @@ def _non_pk_index_columns(engine: Engine) -> dict[str, tuple[str, ...]]:
     return parsed
 
 
+def _index_is_valid(engine: Engine, index_name: str) -> bool:
+    """``indisvalid`` — a half-built CONCURRENTLY index exists but cannot serve."""
+    with engine.connect() as conn:
+        return bool(
+            conn.execute(
+                text(
+                    """
+                    SELECT i.indisvalid
+                      FROM pg_index i
+                      JOIN pg_class c ON c.oid = i.indexrelid
+                      JOIN pg_namespace n ON n.oid = c.relnamespace
+                     WHERE n.nspname = 'coord' AND c.relname = :n
+                    """
+                ),
+                {"n": index_name},
+            ).scalar()
+        )
+
+
 _INSERT_DEVICE = text(
     """
     INSERT INTO coord.session_census_device
@@ -224,6 +245,9 @@ def test_coord_session_census_01_shape_key_fk_and_reversal() -> None:
         assert table_exists(engine, "coord", _SESSION_TABLE)
         assert index_exists(engine, _INDEX)
         assert _non_pk_index_columns(engine) == {_INDEX: ("session_id",)}
+        # Built CONCURRENTLY: "exists" alone would pass against an INVALID
+        # half-built index that a re-run's IF NOT EXISTS then skips.
+        assert _index_is_valid(engine, _INDEX)
 
         # 3. The column contract, exactly.
         assert _columns(engine, _DEVICE_TABLE) == _EXPECTED_DEVICE_COLUMNS
@@ -314,3 +338,9 @@ def test_coord_session_census_01_shape_key_fk_and_reversal() -> None:
         assert not table_exists(engine, "coord", _SESSION_TABLE)
         assert not table_exists(engine, "coord", _DEVICE_TABLE)
         assert not index_exists(engine, _INDEX)
+
+        # 9. Re-upgrade — the revision applies cleanly again after reversal.
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert table_exists(engine, "coord", _DEVICE_TABLE)
+        assert table_exists(engine, "coord", _SESSION_TABLE)
+        assert _index_is_valid(engine, _INDEX)
