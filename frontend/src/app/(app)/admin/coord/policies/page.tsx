@@ -61,6 +61,7 @@ import {
   rowAccentProps,
   type HealthBadge,
   type HealthStripLevel,
+  GlossaryTerm,
 } from "@/components/console";
 import {
   derivePolicyAutonomyStatus,
@@ -268,7 +269,9 @@ export default function CoordPoliciesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tenant</TableHead>
+                  <TableHead>
+                    <GlossaryTerm id="tenant">Tenant</GlossaryTerm>
+                  </TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>coord will</TableHead>
                   <TableHead>Updated</TableHead>

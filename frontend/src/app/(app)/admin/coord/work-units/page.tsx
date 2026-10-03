@@ -151,6 +151,7 @@ import {
   RecordList,
   RefreshButton,
   readIsUnknown,
+  GlossaryTerm,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import { planAuthoredAt } from "@/components/admin/coord/planStatus";
@@ -1152,15 +1153,17 @@ export default function CoordWorkUnitsListPage() {
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-stale"
             >
-              No work units matched status={status === "any" ? "any" : status}{" "}
-              at the last good read — this list has not refreshed since.
+              No <GlossaryTerm id="work_unit">work units</GlossaryTerm> matched
+              status={status === "any" ? "any" : status} at the last good read —
+              this list has not refreshed since.
             </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-empty"
             >
-              No work units matching status={status === "any" ? "any" : status}
+              No <GlossaryTerm id="work_unit">work units</GlossaryTerm> matching
+              status={status === "any" ? "any" : status}
               {shepherd === "exclude"
                 ? ", excluding coord's merge escalations."
                 : "."}

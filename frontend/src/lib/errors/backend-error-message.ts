@@ -13,6 +13,234 @@
  * to live here.
  */
 
+import { decodeRefusal, renderRefusal, type DecodedRefusal } from "./refusal";
+
+/**
+ * What one error body said, classified.
+ *
+ * ## The next-action contract (plan
+ * `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists`, D3)
+ *
+ * A producer that speaks the contract carries a `Refusal` envelope
+ * (`@qontinui/shared-types/refusal`) — NESTED as `body.refusal`, beside the
+ * `error` / `code` / `detail` it already sent, which stay unchanged for
+ * readers that predate the contract. That envelope wins: its sentence is
+ * `Refusal::render()`'s (mirrored in `./refusal`), and it names the next
+ * action as a typed field a surface can turn into a link or a command.
+ *
+ * Every other body is `unstructured` and reads EXACTLY as it did before the
+ * contract — same rungs, same sentence. The kind is what a surface stamps
+ * into `data-refusal`, so a scenario can count how many refusals an operator
+ * still meets without a next action (Phase E).
+ */
+export type BackendErrorReading =
+  | {
+      kind: "refusal";
+      /** The rendered sentence, bounded by the caller's limit. */
+      sentence: string;
+      refusal: DecodedRefusal;
+    }
+  | {
+      kind: "unstructured";
+      /** Today's sentence: the first readable rung, or `HTTP <status>`. */
+      sentence: string;
+    };
+
+/** Whether `value` is a {@link BackendErrorReading} — what a surface that
+ * keeps the reading (rather than the thrown error) in state passes back to
+ * `BackendErrorMessage`. */
+export function isBackendErrorReading(
+  value: unknown
+): value is BackendErrorReading {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as { kind?: unknown; sentence?: unknown; refusal?: unknown };
+  if (typeof v.sentence !== "string") return false;
+  if (v.kind === "unstructured") return true;
+  if (v.kind !== "refusal") return false;
+  // The fields the renderer reads, so a malformed reading is refused here
+  // rather than crashing a render.
+  const r = v.refusal as {
+    next_action?: unknown;
+    glossary_terms?: unknown;
+    unrecognised_glossary_terms?: unknown;
+  } | null;
+  return (
+    r !== null &&
+    typeof r === "object" &&
+    r.next_action !== null &&
+    typeof r.next_action === "object" &&
+    Array.isArray(r.glossary_terms) &&
+    Array.isArray(r.unrecognised_glossary_terms)
+  );
+}
+
+/**
+ * An `Error` carrying the reading it was built from, so a surface that
+ * catches it can render the structured half (`BackendErrorMessage`), while
+ * every surface that only prints `err.message` keeps working unchanged.
+ */
+export class BackendError extends Error {
+  readonly reading: BackendErrorReading;
+  readonly status: number;
+
+  constructor(reading: BackendErrorReading, status: number) {
+    super(reading.sentence);
+    this.name = "BackendError";
+    this.reading = reading;
+    this.status = status;
+  }
+}
+
+/** The classified reading of a backend error response. Consumes the body. */
+export async function readBackendError(
+  res: Response,
+  limit: number = MAX_SENTENCE_LENGTH
+): Promise<BackendErrorReading> {
+  return readErrorBody(await res.text(), res.status, limit);
+}
+
+/**
+ * {@link readBackendError} as a throwable: `throw await backendError(res)`
+ * where a call site used to `throw new Error(await backendErrorMessage(res))`.
+ * The message is the same sentence; the reading travels with it.
+ */
+export async function backendError(
+  res: Response,
+  limit: number = MAX_SENTENCE_LENGTH
+): Promise<BackendError> {
+  return new BackendError(await readBackendError(res, limit), res.status);
+}
+
+/** The shortest target prefix worth quoting; below it the cut target says
+ * nothing and the whole sentence is bounded instead. */
+const MIN_QUOTED_TARGET = 8;
+
+/**
+ * `renderRefusal`'s sentence within `limit`, without cutting into the
+ * next-action clause where that can be avoided.
+ *
+ * The clause after the headline is what the reader acts on, so an ellipsis
+ * landing at the end of the sentence can cut the action itself. When the full
+ * sentence is over the limit, the producer's TARGET is shortened inside its
+ * own quotes (`Set the "workspace_ro…" setting, then try again.`), so the
+ * clause keeps its shape and still says the producer named something. A
+ * target is never dropped: re-rendering with no target would produce the
+ * "it did not name one" sentence, which would be false. When even a short
+ * target does not fit, the whole sentence is bounded as before.
+ */
+function boundedRefusalSentence(
+  refusal: DecodedRefusal,
+  limit: number
+): string {
+  const full = renderRefusal(refusal);
+  if (full.length <= limit) return full;
+  const target = refusal.next_action.target;
+  if (target !== null) {
+    const withTarget = (t: string) =>
+      renderRefusal({
+        ...refusal,
+        next_action: { ...refusal.next_action, target: t },
+      });
+    // Longest prefix that fits, found by bisection: rendering is monotone in
+    // the target's length once the target is quotable.
+    let lo = MIN_QUOTED_TARGET;
+    let hi = target.length - 1;
+    let best: string | null = null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const candidate = withTarget(
+        `${bounded(target, mid).replace(/…$/, "")}…`
+      );
+      if (candidate.length <= limit) {
+        best = candidate;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best !== null) return best;
+  }
+  return bounded(full, limit);
+}
+
+/**
+ * The body-level half of {@link readBackendError}, for callers that have
+ * already consumed `res.text()`.
+ */
+export function readErrorBody(
+  text: string,
+  status: number,
+  limit: number = MAX_SENTENCE_LENGTH
+): BackendErrorReading {
+  const refusal = refusalFromErrorText(text, 0);
+  if (refusal !== null) {
+    return {
+      kind: "refusal",
+      sentence: boundedRefusalSentence(refusal, limit),
+      refusal,
+    };
+  }
+  const sentence = sentenceFromErrorText(text, 0, limit);
+  // Parsed as JSON and carries no READABLE candidate on any rung — `{}`, a
+  // shape this does not know, or a body whose every candidate was refused. The
+  // raw JSON is NOT a message: printing it puts `{}` or a brace-blob where the
+  // operator expects a reason, which is the same defect as `[object Object]`
+  // one shape along. The status is at least true, and it is what these call
+  // sites showed before they were routed here.
+  return { kind: "unstructured", sentence: sentence ?? `HTTP ${status}` };
+}
+
+/**
+ * The refusal envelope a body carries, or `null`.
+ *
+ * Where it is looked for, in order: `body.refusal` (the wire shape every
+ * producer emits), `body.detail.refusal` (the same body after FastAPI wraps a
+ * dict `detail`), then the body ITSELF when it carries both `code` and
+ * `next_action`. A candidate that does not decode — a string `next_action`,
+ * a missing `observed_at` — is not an envelope, and the search goes on; the
+ * body is then read the way it was before the contract. A string `detail` or
+ * `message` that is itself a JSON object is a nested body (a proxy relaying
+ * another service's answer) and is searched the same way, to the same depth
+ * {@link sentenceFromErrorText} unwraps.
+ */
+function refusalFromErrorText(
+  text: string,
+  depth: number
+): DecodedRefusal | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const detail = obj.detail;
+  const detailObj =
+    detail !== null && typeof detail === "object" && !Array.isArray(detail)
+      ? (detail as Record<string, unknown>)
+      : null;
+  const candidates: unknown[] = [obj.refusal, detailObj?.refusal];
+  if ("code" in obj && "next_action" in obj) candidates.push(obj);
+  for (const candidate of candidates) {
+    if (candidate === undefined) continue;
+    const refusal = decodeRefusal(candidate);
+    if (refusal !== null) return refusal;
+  }
+  if (depth < MAX_ERROR_UNWRAP) {
+    for (const nested of [detail, obj.message]) {
+      if (typeof nested !== "string" || !nested.trimStart().startsWith("{")) {
+        continue;
+      }
+      const refusal = refusalFromErrorText(nested, depth + 1);
+      if (refusal !== null) return refusal;
+    }
+  }
+  return null;
+}
+
 /**
  * The human sentence out of a backend error response.
  *
@@ -40,15 +268,7 @@ export function messageFromErrorBody(
   status: number,
   limit: number = MAX_SENTENCE_LENGTH
 ): string {
-  const sentence = sentenceFromErrorText(text, 0, limit);
-  if (sentence !== null) return sentence;
-  // Parsed as JSON and carries no READABLE candidate on any rung — `{}`, a
-  // shape this does not know, or a body whose every candidate was refused. The
-  // raw JSON is NOT a message: printing it puts `{}` or a brace-blob where the
-  // operator expects a reason, which is the same defect as `[object Object]`
-  // one shape along. The status is at least true, and it is what these call
-  // sites showed before they were routed here.
-  return `HTTP ${status}`;
+  return readErrorBody(text, status, limit).sentence;
 }
 
 /**

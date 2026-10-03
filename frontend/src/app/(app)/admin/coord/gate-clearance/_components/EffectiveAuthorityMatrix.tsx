@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
-import { RecordDetail } from "@/components/console";
+import { GlossaryTerm, RecordDetail } from "@/components/console";
 import type { CoordPolicyRow } from "../../_shared/coordPolicies";
 import {
   authorityForAudience,
@@ -65,7 +65,9 @@ export function EffectiveAuthorityMatrix({
       <Table data-testid="gate-clearance-matrix">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[16rem]">Gate class</TableHead>
+            <TableHead className="w-[16rem]">
+              <GlossaryTerm id="gate">Gate</GlossaryTerm> class
+            </TableHead>
             <TableHead>Effective authority</TableHead>
             <TableHead className="w-[14rem]">Decided by</TableHead>
           </TableRow>
