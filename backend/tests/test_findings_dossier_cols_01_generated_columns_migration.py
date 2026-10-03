@@ -178,6 +178,27 @@ _CASES: list[tuple[str, str, str | None, dict, tuple]] = [
         ("m30", None, None, None, _D(2026, 4, 30), None),
     ),
     (
+        "31st of June / September / November is invalid, 31 December is valid",
+        "dossier",
+        "dossier:m31",
+        {"first_seen": "2026-06-31", "last_seen": "2026-12-31"},
+        ("m31", None, None, None, _D(2026, 12, 31), None),
+    ),
+    (
+        "31st of September is invalid",
+        "dossier",
+        "dossier:sep31",
+        {"first_seen": "2026-09-31", "last_seen": "2026-11-31"},
+        ("sep31", None, None, None, None, None),
+    ),
+    (
+        "numeric slug ref reads as text, like the dedup predicate",
+        "dossier",
+        "dossier:ignored-topic",
+        {"dossier_slug": 123},
+        ("123", None, None, None, None, None),
+    ),
+    (
         "10-digit recurrence beyond int range stays NULL (regex is {1,9})",
         "dossier",
         "dossier:big",
