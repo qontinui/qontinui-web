@@ -141,7 +141,8 @@ def test_the_plan_library_upsert_is_admitted_through_the_claims_dependency(
     """``POST /plan-library`` reads the device claims (its tenant axis) via
     ``get_audit_actor_context``. That dependency must be in the admitting set,
     or the upsert silently drops out of the population and loses its row."""
-    assert "get_audit_actor_context" in population[("POST", "/api/v1/plan-library")]
+    admitted_by = population.get(("POST", "/api/v1/plan-library"), frozenset())
+    assert "get_audit_actor_context" in admitted_by, sorted(admitted_by)
 
 
 def test_the_walk_recurses_through_a_wrapper_dependency() -> None:
