@@ -2163,6 +2163,22 @@ class TestBaselineUnderConcurrency:
 
         sessions = async_sessionmaker(test_engine, expire_on_commit=False)
 
+        async def _clear() -> None:
+            # Before as well as after: a run killed mid-test leaves its
+            # committed rows in a test database kept between runs.
+            async with sessions() as session:
+                await session.execute(
+                    ChangeLog.__table__.delete().where(
+                        ChangeLog.tenant_id == self.TENANT
+                    )
+                )
+                await session.execute(
+                    Estimate.__table__.delete().where(Estimate.tenant_id == self.TENANT)
+                )
+                await session.commit()
+
+        await _clear()
+
         async def _fresh_session():
             async with sessions() as session:
                 yield session
@@ -2180,16 +2196,7 @@ class TestBaselineUnderConcurrency:
             async with _client(app) as client:
                 yield client, sessions
         finally:
-            async with sessions() as session:
-                await session.execute(
-                    ChangeLog.__table__.delete().where(
-                        ChangeLog.tenant_id == self.TENANT
-                    )
-                )
-                await session.execute(
-                    Estimate.__table__.delete().where(Estimate.tenant_id == self.TENANT)
-                )
-                await session.commit()
+            await _clear()
 
     async def test_concurrent_rebaselines_leave_exactly_one_baseline(
         self, separate_connections
@@ -2232,3 +2239,9 @@ class TestBaselineUnderConcurrency:
         by_id = {str(row.id): row for row in rows}
         assert by_id[old["id"]].is_baseline is False
         assert by_id[old["id"]].version == old["version"] + 1
+        created = [r.json()["item"] for r in responses]
+        unmarked = [item for item in created if not by_id[item["id"]].is_baseline]
+        assert len(unmarked) == racers - 1
+        assert all(
+            by_id[item["id"]].version == item["version"] + 1 for item in unmarked
+        )

@@ -1,4 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLeaveGuard } from "./leave-guard";
@@ -109,6 +110,48 @@ describe("the leave guard on the browser's Back", () => {
     expect(confirm).toHaveBeenCalledWith("First");
   });
 
+  it("knows a guard entry it arrives on, and does not push another", () => {
+    window.history.replaceState(
+      { router: true, [MARK]: true },
+      "",
+      "/overview/team/edit"
+    );
+    render(<Guarded active />);
+    expect(push).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    pressBack();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it("parks one entry under StrictMode's double mount", () => {
+    render(
+      <StrictMode>
+        <Guarded active />
+      </StrictMode>
+    );
+    expect(push).toHaveBeenCalledTimes(1);
+    confirm.mockReturnValue(false);
+    pressBack();
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts its mark back when the router rewrites the entry", () => {
+    const { rerender } = render(<Guarded active />);
+    window.history.replaceState({ router: true }, "", "/overview/team/edit");
+    rerender(<Guarded active message="Changed" />);
+    expect(window.history.state).toEqual({ router: true, [MARK]: true });
+  });
+
+  it("does not ask again on unload once Back was confirmed", () => {
+    render(<Guarded active />);
+    confirm.mockReturnValue(true);
+    pressBack();
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+  });
+
   it("stops listening once unmounted", () => {
     const { unmount } = render(<Guarded active />);
     unmount();
@@ -129,6 +172,18 @@ describe("the leave guard on links and unload", () => {
     link.dispatchEvent(click);
     expect(confirm).toHaveBeenCalledWith("Sure?");
     expect(click.defaultPrevented).toBe(true);
+    link.remove();
+  });
+
+  it("lets a link to a place on the same page through", () => {
+    render(<Guarded active />);
+    const link = document.createElement("a");
+    link.href = "#costs";
+    document.body.appendChild(link);
+    link.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true })
+    );
+    expect(confirm).not.toHaveBeenCalled();
     link.remove();
   });
 

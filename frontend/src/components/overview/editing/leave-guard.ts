@@ -17,9 +17,16 @@ import { useEffect, useRef } from "react";
  *   once nothing is unsaved is skipped the same way, so it never costs the
  *   reader a dead press of Back.
  *
- * Out of reach: a jump of several entries at once (a long-press on Back)
- * lands on another URL before anything can ask, so it is not stopped. Work
- * that must survive that is kept on the device (`drafts.ts`).
+ Known limits, each failing safe (nothing is lost that the device does not
+ * keep, `drafts.ts`):
+ *
+ * - a jump of several entries at once (a long-press on Back) lands on another
+ *   URL before anything can ask, so it is not stopped;
+ * - with nothing behind the page (a fresh tab), "leave" has nowhere to go
+ *   back to, and the reader stays where they are;
+ * - a guard that unmounts while its entry is on top (the editor replaced by
+ *   an error state, say) leaves that entry behind: the next Back lands on the
+ *   same URL once.
  *
  * Every mounted guard on a page shares one listener set and one history
  * entry, so two editors open at once ask once, in the words of the first
@@ -53,6 +60,9 @@ const guards = new Set<Guard>();
 /** The URL the current history entry guards, while the current entry is a
  *  guard entry; null otherwise. */
 let guardedHref: string | null = null;
+/** Set while a confirmed Back is finishing its trip, so a trip that leaves
+ *  the document is not asked about a second time by the browser. */
+let leaving = false;
 
 const armed = (): Guard | undefined =>
   [...guards].find((guard) => guard.active);
@@ -76,7 +86,19 @@ function pushGuardEntry() {
 
 /** Make sure a guard entry is on top while something is armed. */
 function armHistory() {
-  if (guardedHref !== null) return;
+  if (guardedHref !== null) {
+    // Some router writes (a refresh, a replace) rewrite the current entry
+    // without the mark; put it back, so a reload or a later Back onto this
+    // entry still knows it for ours.
+    const state = window.history.state as Record<string, unknown> | null;
+    if (window.location.href === guardedHref && !isGuardState(state))
+      window.history.replaceState(
+        { ...(state ?? {}), [GUARD_MARK]: true },
+        "",
+        window.location.href
+      );
+    return;
+  }
   if (isGuardState(window.history.state)) {
     // Already there — this page was reached by traversing onto one.
     guardedHref = window.location.href;
@@ -86,6 +108,7 @@ function armHistory() {
 }
 
 function onPopState(event: PopStateEvent) {
+  leaving = false;
   if (isGuardState(event.state)) {
     // Forward onto a guard entry: it guards again.
     guardedHref = window.location.href;
@@ -102,11 +125,12 @@ function onPopState(event: PopStateEvent) {
     return;
   }
   // Finish the trip Back started (also how a spent guard entry is skipped).
+  leaving = true;
   window.history.back();
 }
 
 function onBeforeUnload(event: BeforeUnloadEvent) {
-  if (!armed()) return;
+  if (!armed() || leaving) return;
   event.preventDefault();
   event.returnValue = "";
 }
@@ -125,16 +149,29 @@ function onClick(event: MouseEvent) {
     return;
   const anchor = (event.target as Element | null)?.closest?.("a[href]");
   if (!anchor || (anchor as HTMLAnchorElement).target === "_blank") return;
+  // A link to a place on this same page leaves nothing.
+  if (
+    withoutHash((anchor as HTMLAnchorElement).href) ===
+    withoutHash(window.location.href)
+  )
+    return;
   if (!window.confirm(guard.message)) {
     event.preventDefault();
     event.stopPropagation();
   }
 }
 
+const withoutHash = (href: string) => href.split("#")[0];
+
+function onPageShow() {
+  leaving = false;
+}
+
 function mount(guard: Guard) {
   if (guards.size === 0) {
     window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("click", onClick, true);
     // Arrived on a guard entry (Back from the next page, or a reload): Back
     // from here should skip it rather than land on the same page.
@@ -148,6 +185,8 @@ function unmount(guard: Guard) {
   if (guards.size > 0) return;
   window.removeEventListener("beforeunload", onBeforeUnload);
   window.removeEventListener("popstate", onPopState);
+  window.removeEventListener("pageshow", onPageShow);
   document.removeEventListener("click", onClick, true);
   guardedHref = null;
+  leaving = false;
 }
