@@ -7,7 +7,8 @@
  *
  * Shown only when something is at risk (`DropCheck` `at_risk`) or when that
  * could not be found out (`unknown`): a check that failed is said, never
- * passed off as "nothing to lose". Closing without a choice is Cancel —
+ * passed off as "nothing to lose". Shown again, with what each phase holds
+ * NOW, when the server refused the Save because that changed after the check. Closing without a choice is Cancel —
  * nothing has been written.
  */
 
@@ -90,6 +91,19 @@ export function DroppedPhasesDialog({
                 code brings in a new phase and drops the old one.
               </DialogDescription>
             </DialogHeader>
+            {check.fresh && (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/40 p-3 text-sm text-foreground"
+                data-ui-bridge-id={`${uiBridgeId}.changed`}
+              >
+                Nothing was saved: work was recorded on{" "}
+                {check.losses.length === 1 ? "this phase" : "these phases"}{" "}
+                since it was checked. What{" "}
+                {check.losses.length === 1 ? "it holds" : "each holds"} now is
+                below.
+              </p>
+            )}
             <ul
               className="space-y-3"
               data-ui-bridge-id={`${uiBridgeId}.losses`}

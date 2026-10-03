@@ -16,8 +16,10 @@ vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
 }));
 
 import {
+  acknowledgeDrops,
   assessDrops,
   checkDroppedPhases,
+  dropCheckFromRefusal,
   droppedPhases,
   recordedProgress,
   type SavedPhase,
@@ -205,6 +207,9 @@ describe("checkDroppedPhases", () => {
       losses: [
         { phase: SAVED[1], progress: ["gate outcome (Failed)"], milestones: 1 },
       ],
+      acknowledgements: [
+        { phase_id: "p1", progress_version: 1, milestone_count: 1 },
+      ],
     });
   });
 
@@ -214,11 +219,18 @@ describe("checkDroppedPhases", () => {
       .mockResolvedValueOnce(list([]));
     expect(await checkDroppedPhases("e1", [SAVED[1]!])).toEqual({
       kind: "clear",
+      // What was seen travels with the Save, so a change since refuses it.
+      acknowledgements: [
+        { phase_id: "p1", progress_version: 1, milestone_count: 0 },
+      ],
     });
   });
 
   it("reads nothing when nothing is dropped", async () => {
-    expect(await checkDroppedPhases("e1", [])).toEqual({ kind: "clear" });
+    expect(await checkDroppedPhases("e1", [])).toEqual({
+      kind: "clear",
+      acknowledgements: [],
+    });
     expect(mocks.listResource).not.toHaveBeenCalled();
   });
 
@@ -243,5 +255,88 @@ describe("checkDroppedPhases", () => {
       dropped: [SAVED[1]],
       reason: "store not ready",
     });
+  });
+});
+
+describe("checkDroppedPhases is total", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("answers unknown — never throws — when what it read is not what it expects", async () => {
+    // A row the assessment cannot read: before, the throw escaped the Save
+    // and left it stuck on "Checking…".
+    mocks.listResource
+      .mockResolvedValueOnce(list([null as unknown as PhaseProgress]))
+      .mockResolvedValueOnce(list([]));
+    const check = await checkDroppedPhases("e1", [SAVED[1]!]);
+    expect(check.kind).toBe("unknown");
+  });
+
+  it("names a gate status this build does not know as served", () => {
+    expect(
+      recordedProgress(
+        progress("p1", "A1", {
+          gate_status: "deferred" as PhaseProgress["gate_status"],
+          gate_decided_at: "2026-02-01",
+        })
+      )
+    ).toEqual(["gate outcome (deferred)"]);
+  });
+});
+
+describe("acknowledgeDrops", () => {
+  it("acknowledges each dropped phase it could find, as it was read", () => {
+    expect(
+      acknowledgeDrops(
+        [SAVED[1]!, { id: null, code: "A2", name: "Build" }, SAVED[0]!],
+        [progress("p1", "A1", { version: 3 }), progress("p2", "A2")],
+        [milestone("m1", "p2")]
+      )
+    ).toEqual([
+      { phase_id: "p1", progress_version: 3, milestone_count: 0 },
+      { phase_id: "p2", progress_version: 1, milestone_count: 1 },
+    ]);
+  });
+});
+
+describe("dropCheckFromRefusal", () => {
+  const refused = {
+    phase_id: "p1",
+    code: "A1",
+    name: "Discovery",
+    progress_version: 2,
+    milestone_count: 1,
+    actual_start: "2026-02-02",
+    actual_end: null,
+    gate_status: "pending",
+    gate_decided_at: null,
+    gate_notes: "",
+  };
+
+  it("asks about what each refused phase holds now, keeping what was confirmed for the others", () => {
+    const check = dropCheckFromRefusal({ phases: [refused] }, [
+      { phase_id: "p1", progress_version: 1, milestone_count: 0 },
+      { phase_id: "p2", progress_version: 4, milestone_count: 0 },
+    ]);
+    expect(check).toEqual({
+      kind: "at_risk",
+      fresh: true,
+      losses: [
+        {
+          phase: { id: "p1", code: "A1", name: "Discovery" },
+          progress: ["actual start date"],
+          milestones: 1,
+        },
+      ],
+      acknowledgements: [
+        { phase_id: "p2", progress_version: 4, milestone_count: 0 },
+        { phase_id: "p1", progress_version: 2, milestone_count: 1 },
+      ],
+    });
+  });
+
+  it("is null when the body does not say", () => {
+    expect(dropCheckFromRefusal(null)).toBeNull();
+    expect(dropCheckFromRefusal({ phases: [] })).toBeNull();
+    expect(dropCheckFromRefusal({ phases: "nope" })).toBeNull();
   });
 });

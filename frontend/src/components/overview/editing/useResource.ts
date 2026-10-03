@@ -34,8 +34,14 @@ export type SaveResult<T> =
   | { ok: true; item: T }
   | { ok: false; conflict: T }
   /** `code` is the server's machine reason when it gave one (e.g.
-   *  `source_page_not_found`), so a caller can offer the fix it implies. */
-  | { ok: false; error: string; code?: string | null };
+   *  `source_page_not_found`), so a caller can offer the fix it implies;
+   *  `details` the rest of the refusal's body, when it carried one. */
+  | {
+      ok: false;
+      error: string;
+      code?: string | null;
+      details?: Record<string, unknown> | null;
+    };
 
 export interface UpdateOptions<T> {
   /** What the record will look like once saved, shown until the server
@@ -268,6 +274,7 @@ export function useResourceRecord<T extends VersionedRecord>(
           ok: false,
           error: describeWriteFailure(err),
           code: err instanceof ResourceError ? err.code : null,
+          details: err instanceof ResourceError ? err.details : null,
         };
       }
     },

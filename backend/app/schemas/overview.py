@@ -239,9 +239,12 @@ class PhaseWrite(_WriteModel):
     ``id`` is the IDENTITY of a phase this estimate already has, when the
     client knows it: the write continues that phase (its row, its recorded
     progress, the milestones tied to it) under whatever code it now carries,
-    so renaming a code is not a delete and a create. It must name a phase of
-    THIS estimate, else the write is a 422. Absent, a phase continues the
-    saved one with the same code, as before; neither matching, it is new.
+    so renaming a code is not a delete and a create. On an UPDATE it must
+    name a phase of THIS estimate, else the write is a 422. Absent, a phase
+    continues the saved one with the same code, as before; neither matching,
+    it is new. On a CREATE it is ignored: a new estimate has no phases yet,
+    so every phase it is created with is a new one — which is what lets an
+    estimate read with ``GET`` be posted back as a copy.
     """
 
     id: UUID | None = None
@@ -451,6 +454,24 @@ class EstimateContentWrite(_WriteModel):
 # ---------------------------------------------------------------------------
 
 
+class AcknowledgedDrop(_WriteModel):
+    """The writer has seen what dropping one saved phase costs, and goes ahead.
+
+    A content write deletes every saved phase it does not continue, and with
+    it the progress recorded on the Timeline and the ties of its milestones.
+    A phase that holds either is dropped only when the write acknowledges it
+    with what the writer was SHOWN — the phase's progress ``version`` (the
+    ``phase_progress`` resource's) and how many milestones were tied to it.
+    If either has moved since (somebody recorded a gate meanwhile), the write
+    is refused as a 409 ``unacknowledged_drop`` carrying the fresh state, so
+    the writer is asked again rather than deleting work they never saw.
+    """
+
+    phase_id: UUID
+    progress_version: int = Field(ge=1)
+    milestone_count: int = Field(ge=0)
+
+
 class EstimateCreate(_WriteModel):
     name: str = Field(min_length=1, max_length=200)
     purpose: EstimatePurpose
@@ -464,8 +485,16 @@ class EstimateCreate(_WriteModel):
     contingency_pct: ContingencyPct | None = None
     notes: str = ""
     #: The content graph to start from, so an import can create a complete
-    #: estimate in one request. Absent: an empty estimate.
-    content: EstimateContentWrite | None = None
+    #: estimate in one request. Absent: an empty estimate. Phase ids in
+    #: it are ignored — every phase of a new estimate is new.
+    content: EstimateContentWrite | None = Field(
+        default=None,
+        description=(
+            "The content graph to start from. Phase ids in it are ignored: "
+            "every phase of a new estimate is a new phase, so an estimate "
+            "read with GET can be posted back as a copy."
+        ),
+    )
 
 
 class EstimateUpdate(_WriteModel):
@@ -486,6 +515,23 @@ class EstimateUpdate(_WriteModel):
     contingency_pct: ContingencyPct | None = None
     notes: str | None = None
     content: EstimateContentWrite | None = None
+    #: With ``content``: the saved phases it drops that the writer has seen
+    #: and agreed to lose. Required for each dropped phase that holds
+    #: recorded progress or tied milestones, else the write is a 409
+    #: ``unacknowledged_drop`` (:class:`AcknowledgedDrop`). Not a head field:
+    #: it is never stored.
+    acknowledged_drops: list[AcknowledgedDrop] = Field(
+        default_factory=list,
+        max_length=MAX_PHASES,
+        description=(
+            "The saved phases this content write drops that the writer has "
+            "seen and agreed to lose, each with the progress version and "
+            "milestone count they were shown. Needed for every dropped phase "
+            "holding recorded progress or tied milestones; a missing or "
+            "outdated one refuses the write as a 409 unacknowledged_drop "
+            "whose body carries the fresh state."
+        ),
+    )
 
     #: Fields whose column is NOT NULL (and ``content``, which has no "none").
     #: Every field here is typed `X | None` so that ABSENT can be told from

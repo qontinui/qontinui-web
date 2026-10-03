@@ -10,13 +10,12 @@
  * since moved is a conflict, shown side by side (`ConflictDialog`) — never a
  * silent overwrite. The form refuses, before sending, what the API would:
  * a finish before the start, a finish with no start, a decided gate with no
- * date, a pending one with a date, and any date after tomorrow.
+ * date, a pending one with a date, and any date after tomorrow (UTC).
  *
  * Controls are ABSENT for a reader who may not edit — `canEdit` is the served
  * permission for this project, never `isCoordAdmin`.
  */
 
-import { addDays } from "date-fns";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
@@ -35,7 +34,6 @@ import {
   PHASE_STATE_LABEL,
   describeSlip,
   formatDay,
-  isoDay,
 } from "../../_lib/timeline";
 import type { TimelinePhase } from "./model";
 
@@ -124,16 +122,22 @@ const DATE_LABEL = {
  * the form refuses first.
  *
  * Progress records what has HAPPENED, so no date may be later than tomorrow
- * — `today` in the browser's own calendar, plus the one day the server allows
- * because "today" east of UTC is already its tomorrow. A typo such as next
+ * — the server's rule exactly: today in UTC, plus the one day it allows
+ * because "today" east of UTC is already UTC's tomorrow. The browser's own
+ * calendar would not do: east of UTC it runs a day ahead in the evening and
+ * the form would accept a date the server then refuses. A typo such as next
  * year's date would otherwise mark the phase as running and push the whole
  * forecast out.
  */
 export function progressProblem(
   form: Form,
-  today: Date = new Date()
+  now: Date = new Date()
 ): string | null {
-  const latest = isoDay(addDays(today, 1));
+  const latest = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  )
+    .toISOString()
+    .slice(0, 10);
   for (const field of [
     "actual_start",
     "actual_end",
