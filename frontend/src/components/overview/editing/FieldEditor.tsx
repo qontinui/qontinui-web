@@ -4,8 +4,9 @@
  * One field of a record, as an input — the editor primitive `RecordTable`
  * builds its rows from. The kind comes from the registry declaration, so a
  * money field is always an amount beside its currency, a decimal is always
- * typed as exact text, and a flag is always a checkbox with the reader's
- * words for yes and no.
+ * typed as exact text, a flag is always a checkbox with the reader's words
+ * for yes and no, a date is the browser's date picker, and a select lists
+ * its choices by label.
  */
 
 import type { RowText } from "./fields";
@@ -56,6 +57,28 @@ export function FieldEditor<Row>({
     );
   }
 
+  if (field.kind === "select") {
+    return (
+      <select
+        aria-label={field.label}
+        value={value(field.field)}
+        onChange={(e) => set(field.field, e.target.value)}
+        className={`${INPUT} ${border}`}
+        data-ui-bridge-id={uiBridgeId}
+        {...described}
+      >
+        {(!field.required || value(field.field) === "") && (
+          <option value="">{field.emptyLabel ?? "—"}</option>
+        )}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   if (field.kind === "money") {
     return (
       <div className="flex gap-1">
@@ -87,6 +110,7 @@ export function FieldEditor<Row>({
   return (
     <input
       aria-label={field.label}
+      type={field.kind === "date" ? "date" : "text"}
       inputMode={field.kind === "decimal" ? "decimal" : undefined}
       value={value(field.field)}
       onChange={(e) => set(field.field, e.target.value)}

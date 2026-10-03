@@ -683,6 +683,58 @@ describe("the estimate editor", () => {
       expect(save.disabled).toBe(false);
     });
 
+    it("settles a flagged row the writer has checked, without editing it", async () => {
+      const save = await combineAfterEditingMyDays();
+      const notes = screen.getByRole("region", {
+        name: "Left to settle from combining",
+      });
+      fireEvent.click(
+        within(notes).getByRole("button", { name: "I have checked this" })
+      );
+      expect(
+        screen.queryByRole("region", { name: "Left to settle from combining" })
+      ).toBeNull();
+      expect(save.disabled).toBe(false);
+      // And the row stays as I wrote it.
+      expect(within(daysTable()).getAllByText(/^6(\.0+)?$/).length).toBe(1);
+    });
+
+    it("does not bring back a stored note whose row is no longer in the copy", async () => {
+      mocks.search = "";
+      const empty = {
+        roles: [],
+        phases: [],
+        allocations: [],
+        efforts: [],
+        priceTiers: [],
+        costLines: [],
+        calendarBreaks: [],
+      };
+      const gone = {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "BE",
+        planned_person_days: "6.00",
+      };
+      writeDraft(
+        draftKey("p1", "estimates", "e1", "u1"),
+        JSON.stringify({
+          schema: 1,
+          imported: false,
+          draft: empty,
+          base: empty,
+          notes: [{ message: "Settled by an older build.", row: gone }],
+        }),
+        6
+      );
+      const save = await showEditor();
+      expect(screen.getByText(/These are your unsaved changes/)).toBeTruthy();
+      expect(
+        screen.queryByRole("region", { name: "Left to settle from combining" })
+      ).toBeNull();
+      expect(save.disabled).toBe(false);
+    });
+
     it("keeps the notes, and the hold, across a reload", async () => {
       await combineAfterEditingMyDays();
       cleanup();

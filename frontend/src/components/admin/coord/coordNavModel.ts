@@ -607,9 +607,12 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-agent-registry",
       },
       {
-        // Per-tenant switches coord ENFORCES (today: transcript sync, the
-        // session-output ingest consent gate). Plan
-        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`.
+        // Per-tenant switches: transcript sync (the session-output ingest
+        // consent gate coord enforces; plan
+        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
+        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // spawn (plan
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

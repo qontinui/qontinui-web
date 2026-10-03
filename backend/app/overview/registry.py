@@ -23,14 +23,21 @@ from app.overview.intent_documents import (
     IntentDocumentUpdate,
     intent_document_store,
 )
+from app.overview.milestones import milestone_store
 from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
+from app.overview.phase_progress import phase_progress_store
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
     EstimateRead,
     EstimateUpdate,
+    MilestoneCreate,
+    MilestoneRead,
+    MilestoneUpdate,
     OverviewSettingsRead,
     OverviewSettingsWrite,
+    PhaseProgressRead,
+    PhaseProgressUpdate,
 )
 
 REGISTRY: dict[str, ResourceSpec] = {
@@ -63,8 +70,12 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "the phase x role FTE matrix, price tiers, cost lines, calendar "
                 "breaks). 'content' on a create or update replaces the whole "
                 "graph in the same version as the head fields beside it; a list "
-                "read carries no graph (content is null). Derived figures: GET "
-                "/estimates/{id}/rollup. Money is integer micros."
+                "read carries no graph (content is null). A phase whose code a "
+                "content write keeps keeps its id and its progress; progress "
+                "(actual dates, gate outcomes) is written through phase_progress, "
+                "never through content. Derived figures: GET "
+                "/estimates/{id}/rollup and /estimates/{id}/forecast. Money is "
+                "integer micros."
             ),
             permission="editing_roles",
             read_model=EstimateRead,
@@ -83,6 +94,49 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "cost_lines",
                 "calendar_breaks",
             ),
+        ),
+        ResourceSpec(
+            name="phase_progress",
+            path="phase-progress",
+            title="Phase progress",
+            description=(
+                "What actually happened in each phase of an estimate: actual "
+                "start and end, and the gate's outcome (pending / passed / "
+                "failed / waived, with the date it was decided and a note). "
+                "The id is the phase's id; the plan fields beside them are the "
+                "estimate's and read-only here. Versioned apart from the "
+                "estimate, so recording progress never conflicts with an "
+                "estimate save. A list reads one estimate's phases: "
+                "?estimate_id=, else the baseline. No create or delete — "
+                "phases come from the estimate's plan. The phases table itself "
+                "is owned by estimates."
+            ),
+            permission="editing_roles",
+            read_model=PhaseProgressRead,
+            update_model=PhaseProgressUpdate,
+            operations=frozenset({"list", "get", "update"}),
+            list_filters=("estimate_id",),
+            store=phase_progress_store,
+        ),
+        ResourceSpec(
+            name="milestones",
+            path="milestones",
+            title="Milestones",
+            description=(
+                "Dated markers on the Timeline — pilots, first value, any other "
+                "milestone — each optionally tied to a phase of this project's "
+                "estimate (a phase that goes detaches it, as a logged write). "
+                "A milestone is done exactly when it has a completed_date. "
+                "Filters: phase_id (repeatable; 'none' for unphased), status."
+            ),
+            permission="editing_roles",
+            read_model=MilestoneRead,
+            create_model=MilestoneCreate,
+            update_model=MilestoneUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("phase_id", "status"),
+            store=milestone_store,
+            tables=("milestones",),
         ),
         ResourceSpec(
             name="pages",

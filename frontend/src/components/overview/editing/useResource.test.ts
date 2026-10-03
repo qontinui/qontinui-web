@@ -91,7 +91,8 @@ describe("useResourceList", () => {
       "intent-documents",
       vision.id,
       { body: "new" },
-      3
+      3,
+      "ui"
     );
 
     await act(async () => {
@@ -103,6 +104,27 @@ describe("useResourceList", () => {
       body: "new (server)",
       version: 4,
     });
+  });
+
+  it("names an import as its source, and drops a deleted record", async () => {
+    const hook = await loaded();
+    api.updateResource.mockResolvedValue({ ...vision, version: 4 });
+    await act(async () => {
+      await hook.result.current.update(
+        vision,
+        { body: "pasted" },
+        { source: "import" }
+      );
+    });
+    expect(api.updateResource).toHaveBeenCalledWith(
+      "intent-documents",
+      vision.id,
+      { body: "pasted" },
+      3,
+      "import"
+    );
+    act(() => hook.result.current.drop(vision.id));
+    expect(items(hook)).toEqual([]);
   });
 
   it("rolls back a failed save and says why in plain words", async () => {

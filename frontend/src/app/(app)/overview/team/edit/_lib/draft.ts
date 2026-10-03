@@ -9,17 +9,22 @@
  * change log — is the overview authoring kit's, not this file's.
  *
  * **Everything this page does not edit still has to travel.** A content write
- * replaces an estimate's WHOLE graph, so any field absent from the payload
- * reverts to its default — which for a phase means every gate reset to
- * `pending`, gate notes and decision dates blanked, actual dates cleared and
- * the source plan's stated working weeks dropped, all from one Save on a page
- * that shows none of them. The Timeline page writes exactly those fields, so
- * this is a live cross-page data-loss path rather than a hypothetical one.
+ * replaces an estimate's WHOLE plan, so any field absent from the payload
+ * reverts to its default — for a phase, the gate's criteria and the source
+ * plan's stated working weeks, both dropped by one Save on a page that shows
+ * neither.
  *
  * The rule, therefore: the draft round-trips every field of every table a
  * content write owns. `DraftPhase` and `DraftTask` below mirror `PhaseWrite`
  * and `TaskWrite` field for field, and the cost lines and calendar breaks are
  * carried verbatim. Adding a field to the wire shape means adding it here too.
+ *
+ * A phase's PROGRESS — actual dates and the gate's outcome — is not the
+ * plan's and is deliberately absent: the Timeline records it through the
+ * `phase_progress` resource under its own version, a content write refuses
+ * it, and a phase whose code a Save keeps keeps its progress on the server.
+ * So no Save here can put back an outcome somebody recorded since the editor
+ * loaded, and recording one never makes this page's Save a conflict.
  */
 
 import type {
@@ -32,7 +37,6 @@ import { sumPersonDays } from "../../../_lib/csv";
 import type {
   EstimateContentWrite,
   EstimateRecord,
-  GateStatus,
   PhaseWrite,
   RoleWrite,
 } from "../../../_lib/estimate-api";
@@ -56,11 +60,6 @@ export interface DraftPhase {
   planned_end: string | null;
   stated_working_weeks: string | null;
   gate_criteria: string;
-  actual_start: string | null;
-  actual_end: string | null;
-  gate_status: GateStatus;
-  gate_decided_at: string | null;
-  gate_notes: string;
   tasks: DraftTask[];
 }
 
@@ -105,11 +104,6 @@ export function draftFromEstimate(record: EstimateRecord): Draft {
       planned_end: p.planned_end,
       stated_working_weeks: p.stated_working_weeks,
       gate_criteria: p.gate_criteria,
-      actual_start: p.actual_start,
-      actual_end: p.actual_end,
-      gate_status: p.gate_status,
-      gate_decided_at: p.gate_decided_at,
-      gate_notes: p.gate_notes,
       tasks: p.tasks.map((t) => ({
         number: t.number,
         title: t.title,
@@ -293,11 +287,6 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
     planned_end: phase.planned_end,
     stated_working_weeks: phase.stated_working_weeks,
     gate_criteria: phase.gate_criteria,
-    actual_start: phase.actual_start,
-    actual_end: phase.actual_end,
-    gate_status: phase.gate_status,
-    gate_decided_at: phase.gate_decided_at,
-    gate_notes: phase.gate_notes,
     tasks: phase.tasks.map((task) => ({
       number: task.number,
       title: task.title,
@@ -352,9 +341,7 @@ export function describeDraft(draft: Draft): string {
     lines.push(
       `  ${phase.code} ${phase.name} — ${phase.planned_start ?? "no start"} to ${
         phase.planned_end ?? "no end"
-      }, ${phase.tasks.length} task${
-        phase.tasks.length === 1 ? "" : "s"
-      }, gate ${phase.gate_status}`
+      }, ${phase.tasks.length} task${phase.tasks.length === 1 ? "" : "s"}`
     );
   }
   lines.push(`Roles (${draft.roles.length}):`);
@@ -390,16 +377,8 @@ export function describeDraft(draft: Draft): string {
   return lines.join("\n");
 }
 
-/** Everything a phase holds that this page never edits — the Timeline's. */
-const PHASE_CARRIED = [
-  "stated_working_weeks",
-  "gate_criteria",
-  "actual_start",
-  "actual_end",
-  "gate_status",
-  "gate_decided_at",
-  "gate_notes",
-] as const;
+/** Everything of a phase's plan that this page never edits. */
+const PHASE_CARRIED = ["stated_working_weeks", "gate_criteria"] as const;
 
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -407,9 +386,9 @@ const same = (a: unknown, b: unknown) =>
 /**
  * Something a merge could not settle, which the writer must. A note about one
  * of my day rows carries that row: it is settled once the working copy no
- * longer holds the row exactly as flagged (it was edited or removed). A note
- * about the whole merge (`row: null`) is settled only when the writer says
- * they have checked it.
+ * longer holds the row exactly as flagged (it was edited or removed), or when
+ * the writer says they have checked it and it is right as it stands. A note
+ * about the whole merge (`row: null`) is settled only by that check.
  */
 export interface MergeNote {
   message: string;
@@ -447,8 +426,9 @@ export interface Rebased {
  *   Timeline, an agent) may well have changed;
  * - a table I did change keeps mine;
  * - the phases: untouched, theirs; re-imported, my schedule — but each
- *   phase's gate, actual dates and stated weeks still come from theirs by
- *   code, since this page never edits those;
+ *   phase's gate criteria and stated weeks still come from theirs by code,
+ *   since this page never edits those (and its progress is not in the draft
+ *   at all — the server keeps it);
  * - my days of work, when THEY changed the schedule and I did not: each row
  *   names a task by its number, and their re-import may have renumbered the
  *   tasks, so every row is carried to the task it was written against
@@ -504,7 +484,7 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
         efforts.push({ ...row, task_number: target.to });
       } else if (edited) {
         unresolved.push({
-          message: `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed. Edit or remove that row.`,
+          message: `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed. Edit or remove that row, or mark it checked if it is right as it stands.`,
           row,
         });
         efforts.push(row);
@@ -715,11 +695,6 @@ export function applyGanttImport(
         planned_end: phase.planned_end,
         stated_working_weeks: existing?.stated_working_weeks ?? null,
         gate_criteria: existing?.gate_criteria ?? "",
-        actual_start: existing?.actual_start ?? null,
-        actual_end: existing?.actual_end ?? null,
-        gate_status: existing?.gate_status ?? "pending",
-        gate_decided_at: existing?.gate_decided_at ?? null,
-        gate_notes: existing?.gate_notes ?? "",
         tasks: phase.tasks.map((task, index) => ({
           number: task.number,
           title: task.title,

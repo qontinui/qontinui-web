@@ -1828,7 +1828,9 @@ class TestContentReplace:
 
         This pins the contract at the boundary the editor crosses: send
         everything, get everything back. `draft.test.ts` pins the other half,
-        that the editor's draft actually carries them.
+        that the editor's draft actually carries them. A phase's PROGRESS is
+        not among them — it is written through ``phase_progress`` and survives
+        a content write by other means (``tests/test_overview_timeline.py``).
         """
         estimate = await _create_estimate(admin_a, name="Full fidelity")
         content = {
@@ -1850,11 +1852,6 @@ class TestContentReplace:
                     "planned_end": "2026-01-30",
                     "stated_working_weeks": "3.6",
                     "gate_criteria": "Environments reachable",
-                    "actual_start": "2026-01-06",
-                    "actual_end": "2026-02-02",
-                    "gate_status": "passed",
-                    "gate_decided_at": "2026-02-03",
-                    "gate_notes": "Demonstrated to the sponsor",
                     "tasks": [
                         {
                             "number": "1.1",
@@ -1899,11 +1896,7 @@ class TestContentReplace:
 
         written = saved.json()["item"]["content"]
         phase = written["phases"][0]
-        assert phase["gate_status"] == "passed"
-        assert phase["gate_decided_at"] == "2026-02-03"
-        assert phase["gate_notes"] == "Demonstrated to the sponsor"
-        assert phase["actual_start"] == "2026-01-06"
-        assert phase["actual_end"] == "2026-02-02"
+        assert phase["gate_criteria"] == "Environments reachable"
         assert Decimal(phase["stated_working_weeks"]) == Decimal("3.60")
         task = phase["tasks"][0]
         assert task["requirement_refs"] == "R1, R2"
@@ -2131,3 +2124,117 @@ class TestContentSchemaValidation:
                     ],
                 }
             )
+
+
+class TestBaselineUnderConcurrency:
+    """Re-baselining under real concurrency: each request on its OWN
+    connection, committing for real — what the rolled-back single-session
+    fixtures above cannot show.
+
+    Without the per-project advisory lock in ``_take_the_baseline``, two
+    re-baselines racing over an existing baseline both lock and un-mark the
+    same old row; the one that waited re-checks it after the first commits,
+    finds nothing left to un-mark, and its insert collides with the first's
+    new baseline on the partial unique index — a 500 for a legitimate write.
+    """
+
+    #: Its own project, so the committed rows touch no other test's.
+    TENANT = UUID("cccccccc-0000-4000-8000-000000000003")
+
+    @pytest_asyncio.fixture()
+    async def separate_connections(self, test_engine):
+        """An admin client whose every request gets a fresh session — a
+        separate pooled connection — and the cleanup its commits need."""
+        from types import SimpleNamespace
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.api.deps import current_active_user, get_async_db
+        from app.models.overview import ChangeLog
+        from app.overview.permissions import OverviewCaller, get_overview_caller
+        from app.overview.router import router as authoring_router
+
+        sessions = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        async def _clear() -> None:
+            # Before as well as after: a run killed mid-test leaves its
+            # committed rows in a test database kept between runs.
+            async with sessions() as session:
+                await session.execute(
+                    ChangeLog.__table__.delete().where(
+                        ChangeLog.tenant_id == self.TENANT
+                    )
+                )
+                await session.execute(
+                    Estimate.__table__.delete().where(Estimate.tenant_id == self.TENANT)
+                )
+                await session.commit()
+
+        await _clear()
+
+        async def _fresh_session():
+            async with sessions() as session:
+                yield session
+
+        app = FastAPI()
+        app.dependency_overrides[current_active_user] = lambda: SimpleNamespace(
+            id=uuid4(), email="racer@example.com"
+        )
+        app.dependency_overrides[get_async_db] = _fresh_session
+        app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
+            tenant_id=self.TENANT, roles=("admin",)
+        )
+        app.include_router(authoring_router, prefix=API)
+        try:
+            async with _client(app) as client:
+                yield client, sessions
+        finally:
+            await _clear()
+
+    async def test_concurrent_rebaselines_leave_exactly_one_baseline(
+        self, separate_connections
+    ) -> None:
+        import asyncio
+
+        client, sessions = separate_connections
+        old = await _create_estimate(client, name="old", is_baseline=True)
+
+        racers = 6
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    f"{API}/estimates",
+                    json={
+                        "name": f"racer {n}",
+                        "purpose": "comparison",
+                        "is_baseline": True,
+                    },
+                )
+                for n in range(racers)
+            )
+        )
+        assert [r.status_code for r in responses] == [201] * racers, [
+            r.text for r in responses if r.status_code != 201
+        ]
+
+        async with sessions() as session:
+            rows = (
+                await session.execute(
+                    select(Estimate.id, Estimate.is_baseline, Estimate.version).where(
+                        Estimate.tenant_id == self.TENANT
+                    )
+                )
+            ).all()
+        assert len(rows) == racers + 1
+        assert sum(1 for row in rows if row.is_baseline) == 1
+        # Every racer but the last to run was un-marked by the next, as a
+        # versioned write; the old baseline was un-marked exactly once.
+        by_id = {str(row.id): row for row in rows}
+        assert by_id[old["id"]].is_baseline is False
+        assert by_id[old["id"]].version == old["version"] + 1
+        created = [r.json()["item"] for r in responses]
+        unmarked = [item for item in created if not by_id[item["id"]].is_baseline]
+        assert len(unmarked) == racers - 1
+        assert all(
+            by_id[item["id"]].version == item["version"] + 1 for item in unmarked
+        )
