@@ -35,10 +35,33 @@ for ``coord.machine_ci_hosts``. **That table is PENDING**: it is on no ``main``
 as of this revision, only in qontinui-web#1552 / qontinui-coord#2625. Note the
 naming split: its column is ``ci_host``, this table's is ``ci_host_name``.
 
-The unique index is spelled with ``COALESCE`` so the NULL half of the key still
-participates in uniqueness: a plain
-``UNIQUE (tenant_id, machine_device_id, ci_host_name)`` would admit any number
-of rows for one machine, because NULLs never compare equal.
+One row per machine: a generated key under a UNIQUE constraint, not an index
+==============================================================================
+
+A plain ``UNIQUE (tenant_id, machine_device_id, ci_host_name)`` would admit any
+number of rows for one machine, because the NULL half of the key never compares
+equal. So the table carries a STORED generated column
+
+    machine_key = COALESCE(machine_device_id::text, '') || '/'
+                  || COALESCE(lower(ci_host_name), '')
+
+and the table constraint ``uq_machine_dispatch_roles_machine UNIQUE (tenant_id,
+machine_key)``. The one-key CHECK makes every key unambiguous — it is either
+``<uuid>/`` or ``/<host>`` — and ``lower()`` folds host-name case into it.
+
+Why a constraint on a generated column rather than an expression index: the
+constraint is built inside the CREATE TABLE's own transaction, over an empty
+table. It can never be left INVALID and the upgrade stays one atomic
+transaction. The alternative coord's migration classifier would admit — a
+``CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS`` in an autocommit block —
+splits the upgrade into two transactions, and a killed concurrent build leaves
+an INVALID unique index that ``IF NOT EXISTS`` then keeps forever: an integrity
+hole under a name that looks enforced. It also gives coord a NAMED arbiter for
+``ON CONFLICT ON CONSTRAINT`` instead of an expression list to restate.
+
+``machine_key`` is DERIVED: nothing ever writes it (PostgreSQL refuses an
+explicit value for a GENERATED ALWAYS column), and the versions table does not
+mirror it.
 
 Host names are CANONICAL: compared trimmed and case-insensitively
 ====================================================================
@@ -53,11 +76,13 @@ guarantee (nothing coord sends lands on a Bench). So:
   The trim set is spelled out — space, tab, LF, CR, FF, VT — because
   ``btrim`` with one argument strips spaces only, and a tab-padded name is the
   same miss;
-* the unique index keys on ``lower(ci_host_name)``, so two case spellings of
-  one host cannot both hold a row;
-* **coord must match with ``lower()``** on both sides
+* ``machine_key`` folds ``lower(ci_host_name)``, so two case spellings of one
+  host collide on ``uq_machine_dispatch_roles_machine`` and cannot both hold a
+  row;
+* **coord must still match READS with ``lower()``** on both sides
   (``lower(ci_host_name) = lower($host)``), never ``=`` on the raw value — the
-  stored case is whatever the operator first typed.
+  stored case is whatever the operator first typed. (Upserts need no such care:
+  the constraint folds case for them.)
 
 Versioning — copied from ``fleet_res_tel_02`` / ``coord_sesscompl_02``
 ======================================================================
@@ -107,11 +132,9 @@ Write-path obligations on the coord side, since SQL cannot express them
 * Any later migration adding a column to the parent adds it to the versions
   table in the same migration. ``test_mdroles_01_machine_dispatch_roles_migration``
   enforces this at ``head``, so a parent-only widening fails CI.
-* An upsert must restate the unique index's EXACT expression list as its
-  conflict target —
-  ``ON CONFLICT (tenant_id, COALESCE(machine_device_id::text, ''),
-  COALESCE(lower(ci_host_name), ''))`` — or PostgreSQL cannot infer the
-  arbiter index and raises 42P10. There is no named constraint to target.
+* Upsert with ``ON CONFLICT ON CONSTRAINT uq_machine_dispatch_roles_machine``.
+  An upsert naming ``HP2`` over a stored ``hp2`` updates that one row (pinned
+  by the migration test). Never write ``machine_key``: it is derived.
 * When ``coord.machine_ci_hosts`` lands, linking a CI host to a workstation
   while that host still has its own ``ci_host_name`` role row leaves the
   machine with two roles. coord must either refuse the link until the host's
@@ -125,15 +148,17 @@ Other notes
   none to ``coord.devices`` — matching ``coord_sesscompl_02`` and
   ``cmtland_01``; device rows are reaped and re-registered independently of an
   operator's choice about the machine.
-* ``ci_host_name`` may not be empty: besides being no host name, ``''`` is the
-  ``COALESCE`` sentinel the unique index uses for the absent half of the key.
+* ``ci_host_name`` may not be empty: an empty name is no host name, and would
+  make ``machine_key`` the degenerate ``/``.
 * The ``workhorse``-for-a-host-only-machine refusal (``no_agent_host``, §D4) is
   a route-level guard in coord, not a CHECK: whether a host has a linked
   workstation lives in ``coord.machine_ci_hosts``, another table.
 * No per-table GRANT: the ``coord`` schema's privileges are granted at the
   schema level, and no sibling ``coord.*`` migration issues per-table grants.
-* Lookups by machine ride the unique index; history lookups ride the leading
-  column of ``UNIQUE (role_id, version)``. No further index.
+* Lookups by machine ride the constraint's backing index on
+  ``(tenant_id, machine_key)``; history lookups ride the leading column of
+  ``UNIQUE (role_id, version)``. No further index, and no index build
+  statement at all — both are created by their tables' constraints.
 * HAND-AUTHORED; ``alembic revision --autogenerate`` is never run here. Raw,
   static, ``coord.``-qualified ``op.execute`` with ``IF NOT EXISTS`` — the house
   convention for coord tables. Pure DDL, no app imports.
@@ -170,12 +195,22 @@ def upgrade() -> None:
             updated_by        TEXT,
             created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            -- Derived machine identity: '<uuid>/' or '/<lower(host)>'. Never
+            -- written; the UNIQUE constraint below is what enforces one row
+            -- per machine, case-insensitively on host names.
+            machine_key       TEXT GENERATED ALWAYS AS (
+                COALESCE(machine_device_id::text, '') || '/'
+                || COALESCE(lower(ci_host_name), '')
+            ) STORED,
+            CONSTRAINT uq_machine_dispatch_roles_machine
+                UNIQUE (tenant_id, machine_key),
             -- A machine is its workstation device OR an un-linked CI host,
-            -- never both and never neither.
+            -- never both and never neither — which also keeps machine_key
+            -- unambiguous.
             CONSTRAINT ck_machine_dispatch_roles_one_machine_key
                 CHECK (num_nonnulls(machine_device_id, ci_host_name) = 1),
-            -- Canonical host name: trimmed and non-empty ('' is the COALESCE
-            -- sentinel of the unique index below). Case is folded by the index.
+            -- Canonical host name: trimmed and non-empty. Case is folded by
+            -- machine_key.
             CONSTRAINT ck_machine_dispatch_roles_ci_host_name_canonical
                 CHECK (
                     ci_host_name IS NULL
@@ -192,27 +227,6 @@ def upgrade() -> None:
         """
     )
 
-    # CONCURRENTLY inside autocommit_block(), not a plain CREATE UNIQUE INDEX:
-    # coord's migration classifier (pr_merge/migration_classifier.rs) rejects
-    # every non-concurrent index build as a write lock on a populated table, and
-    # it cannot see that this table was created a few lines above and is empty.
-    # autocommit_block() commits the CREATE TABLE first, so the table exists
-    # when the build runs. No invalid-index repair (unlike
-    # agent_questions_alert_id_idx_01): that needs a DROP on the upgrade path,
-    # which the classifier rejects, and a build over an empty table has no
-    # realistic way to fail half-way.
-    with op.get_context().autocommit_block():
-        op.execute(
-            """
-            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_machine_dispatch_roles_machine
-                ON coord.machine_dispatch_roles (
-                    tenant_id,
-                    COALESCE(machine_device_id::text, ''),
-                    COALESCE(lower(ci_host_name), '')
-                )
-            """
-        )
-
     op.execute(
         """
         COMMENT ON TABLE coord.machine_dispatch_roles IS
@@ -221,11 +235,22 @@ def upgrade() -> None:
             'only). No row means unassigned, which behaves as workhorse. Keyed '
             'on the machine (workstation device or un-linked CI host), never '
             'on one coord.devices row. ci_host_name is stored trimmed and is '
-            'unique case-insensitively: coord must match it with lower() on '
-            'both sides. Not coord.devices.role, which is what a '
+            'unique case-insensitively via the derived machine_key: upsert '
+            'with ON CONFLICT ON CONSTRAINT uq_machine_dispatch_roles_machine, '
+            'and match reads with lower() on both sides. Not '
+            'coord.devices.role, which is what a '
             'process IS and is self-declared. Every write must INSERT the '
             'matching coord.machine_dispatch_roles_versions row in the SAME '
             'transaction, including the first one.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.machine_dispatch_roles.machine_key IS
+            'DERIVED, never written: machine_device_id || ''/'' || '
+            'lower(ci_host_name), each COALESCEd to empty. UNIQUE with '
+            'tenant_id as uq_machine_dispatch_roles_machine. Not mirrored in '
+            'machine_dispatch_roles_versions.'
         """
     )
     op.execute(
