@@ -80,6 +80,7 @@ import {
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
 import { StatusCurrencyBadge } from "../plan-library/_components/StatusCurrencyBadge";
+import type { StatusCurrency } from "../plan-library/types";
 import {
   CANDIDATE_PALETTE,
   deriveCandidateDisclosure,
@@ -98,6 +99,16 @@ const POLL_INTERVAL_MS = 60_000;
 /** The route's own ceiling is 100 (`Query(25, ge=1, le=100)`). */
 const PAGE_SIZES = [25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 25;
+
+/** What a null `status_currency` beside `doc: present` renders as. */
+const NULL_ON_PRESENT_ROW: StatusCurrency = {
+  state: "unknown",
+  as_of: null,
+  ref_sha: null,
+  ref_age_secs: null,
+  detail:
+    "status_currency is null on a row with document_state 'present' — the backend broke its own contract",
+};
 
 function CandidateRow({
   candidate,
@@ -171,12 +182,20 @@ function CandidateRow({
           </span>
           {/* `null` on a work-unit-only row — there is no stored body to be
               stale, and `doc:` above says why. An ABSENT key (a backend
-              predating the field) renders UNKNOWN, never nothing. */}
-          {candidate.status_currency !== null && (
-            <StatusCurrencyBadge
-              currency={candidate.status_currency}
-              testId="coord-candidate-currency"
-            />
+              predating the field), or a null beside `doc: present` (which
+              the contract rules out), renders UNKNOWN, never nothing. */}
+          {(candidate.status_currency !== null ||
+            documentState === "present") && (
+            <span className="hidden sm:inline-flex">
+              <StatusCurrencyBadge
+                currency={
+                  candidate.status_currency === null
+                    ? NULL_ON_PRESENT_ROW
+                    : candidate.status_currency
+                }
+                testId="coord-candidate-currency"
+              />
+            </span>
           )}
           <span
             className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
