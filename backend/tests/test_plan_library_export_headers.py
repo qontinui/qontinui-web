@@ -32,10 +32,20 @@ from tests.test_cors_expose_headers_cover_emitted import CORS_SAFELISTED
 
 
 class _Row:
-    """The two attributes the artifact producer reads. No DB, no model defaults."""
+    """The attributes the artifact producer reads. No DB, no model defaults.
+
+    ``tenant_id`` / ``tenant_source`` joined the set with the plan-corpus
+    tenant axis (plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``). They are stubbed
+    HERE rather than defaulted on the class so a producer that starts reading
+    a THIRD new attribute still fails loudly instead of silently picking up a
+    default nobody declared — which is the same reason this file exists.
+    """
 
     kind = "plan"
     slug = "2026-08-26-claude-code-session-repository-in-qontinui-web"
+    tenant_id = None
+    tenant_source = "unknown"
 
 
 def test_the_artifact_producer_emits_exactly_the_declared_names() -> None:
