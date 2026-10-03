@@ -42,7 +42,9 @@ export function resolveStatusCurrency(currency: StatusCurrency | undefined): {
   const detail = !currency
     ? "status currency not served by this backend"
     : !recognised
-      ? `unrecognised status currency '${served ?? ""}' — this console predates it`
+      ? `unrecognised status currency '${served ?? ""}' — this console predates it${
+          currency.detail ? `; served detail: ${currency.detail}` : ""
+        }`
       : (currency.detail ?? undefined);
   return { state, detail };
 }

@@ -561,4 +561,15 @@ describe("a candidate row states the currency of its own status", () => {
       screen.getByTestId("coord-candidate-document-state")
     ).toHaveAttribute("data-document-state", "unsynced");
   });
+
+  it("renders UNKNOWN when a present row's currency is null — a contract break, not fine", async () => {
+    get.mockResolvedValue(
+      response({ items: [candidate({ status_currency: null })] })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const badge = await screen.findByTestId("coord-candidate-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge.getAttribute("title")).toContain("broke its own contract");
+  });
 });

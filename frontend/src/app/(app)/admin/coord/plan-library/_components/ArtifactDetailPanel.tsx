@@ -40,6 +40,14 @@ function formatWhen(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+/** A duration in seconds at a readable grain (`5s`, `12m`, `11h`, `3d`). */
+function formatAge(secs: number): string {
+  if (secs < 120) return `${secs}s`;
+  if (secs < 7200) return `${Math.round(secs / 60)}m`;
+  if (secs < 172800) return `${Math.round(secs / 3600)}h`;
+  return `${Math.round(secs / 86400)}d`;
+}
+
 /**
  * The evidence behind the row's `status_currency` badge, spelled out: the
  * served detail, which reading it is as of, and the ref that reading saw.
@@ -51,7 +59,7 @@ function StatusCurrencyEvidence({ detail }: { detail: WorkArtifactDetail }) {
   const ref = currency?.ref_sha
     ? `ref ${currency.ref_sha.slice(0, 12)}${
         currency.ref_age_secs != null
-          ? `, ref age ${currency.ref_age_secs}s`
+          ? `, ref age ${formatAge(currency.ref_age_secs)}`
           : ""
       }`
     : "no ref reading";

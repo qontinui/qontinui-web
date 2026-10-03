@@ -384,6 +384,26 @@ describe("ArtifactDetailPanel — the status currency is shown with its evidence
     expect(evidence).toHaveTextContent("ref c0ffeec0ffee, ref age 5s");
   });
 
+  it("keeps the served detail beside an unrecognised state, and reads the age in hours", async () => {
+    renderDialog(
+      detail({
+        status_currency: {
+          state: "fed_from_the_future",
+          as_of: null,
+          ref_sha: "c0ffee",
+          ref_age_secs: 40000,
+          detail: "a newer backend's reason",
+        } as unknown as WorkArtifactDetail["status_currency"],
+      })
+    );
+    const badge = await screen.findByTestId("artifact-detail-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    const evidence = screen.getByTestId("artifact-detail-currency-evidence");
+    expect(evidence).toHaveTextContent("fed_from_the_future");
+    expect(evidence).toHaveTextContent("a newer backend's reason");
+    expect(evidence).toHaveTextContent("ref age 11h");
+  });
+
   it("renders an unserved currency as UNKNOWN and says it was not served", async () => {
     renderDialog(
       detail({
