@@ -155,6 +155,18 @@ describe("shippedPlans", () => {
     );
   });
 
+  it("orders by instant, not by how the instant is spelled", () => {
+    const s = shipped([
+      // As text "…T00:00Z" sorts before "…T09:00+10:00"; as instants the
+      // second is 23:00 the day before, so it is the earlier.
+      row("later", "shipped", { first_shipped_at: "2026-01-01T00:00:00Z" }),
+      row("earlier", "shipped", {
+        first_shipped_at: "2026-01-01T09:00:00+10:00",
+      }),
+    ]);
+    expect(s.items.map((i) => i.slug)).toEqual(["earlier", "later"]);
+  });
+
   it("leaves out merge-shepherd bookkeeping units", () => {
     const s = shipped([
       row("shepherd-pr-9", "shipped", {

@@ -496,6 +496,7 @@ export default function TimelinePage() {
                       phases={phases}
                       milestones={milestoneItems}
                       shipped={shipped}
+                      wholeProject={zoom === "project"}
                       breaks={breaks}
                       window={axis}
                       today={today}

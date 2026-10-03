@@ -79,6 +79,20 @@ export function titleOf(row: Pick<CoordPlanRow, "slug" | "title">): string {
 
 type ShippedRow = CoordPlanRow & { first_shipped_at: string };
 
+/** Ship instants compared as instants, not as text: two spellings of one
+ *  moment (`Z` against `+00:00`, with or without fractions) order correctly.
+ *  An unreadable one sorts last. */
+function shipTime(row: ShippedRow): number {
+  const t = Date.parse(row.first_shipped_at);
+  return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
+
+function byShipTime(a: ShippedRow, b: ShippedRow): number {
+  const ta = shipTime(a);
+  const tb = shipTime(b);
+  return ta === tb ? 0 : ta < tb ? -1 : 1;
+}
+
 /** A unit counted as done that also says when it first shipped. A done
  *  unit with no ship date is still done; it just has no day to be placed on. */
 function hasShipDate(row: CoordPlanRow): row is ShippedRow {
@@ -120,13 +134,11 @@ export function shippedPlans(
     .filter((r) => TONE_BUCKET[describePlanStatus(r.status).tone] === "done");
   const dated = done.filter(hasShipDate);
   return {
-    items: dated
-      .sort((a, b) => a.first_shipped_at.localeCompare(b.first_shipped_at))
-      .map((r) => ({
-        slug: r.slug,
-        title: titleOf(r),
-        shippedAt: r.first_shipped_at,
-      })),
+    items: dated.sort(byShipTime).map((r) => ({
+      slug: r.slug,
+      title: titleOf(r),
+      shippedAt: r.first_shipped_at,
+    })),
     undated: done.length - dated.length,
     truncated: allRows.length >= fetchLimit,
   };
@@ -158,7 +170,7 @@ export function summarizeProgress(
   }
 
   const recentlyFinished = finished
-    .sort((a, b) => b.first_shipped_at.localeCompare(a.first_shipped_at))
+    .sort((a, b) => byShipTime(b, a))
     .slice(0, recent)
     .map((r) => ({ title: titleOf(r), finishedAt: r.first_shipped_at }));
 

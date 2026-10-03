@@ -959,9 +959,16 @@ describe("the shipped-plans lane", () => {
     // Two plans shipped that day share one mark, both named.
     expect(mark.dataset.count).toBe("2");
     expect(mark.textContent).toContain("Intake form; Reporting");
-    // A plan shipped before the project's months is counted, not drawn.
+    // A plan shipped before the project's months is counted, not drawn —
+    // and, the axis being the whole project, not promised to another zoom.
     expect(byId("overview.timeline.chart.shipped.note")?.textContent).toBe(
-      "1 outside this view"
+      "1 outside the project's months"
+    );
+    fireEvent.change(byId("overview.timeline.zoom")!, {
+      target: { value: "quarter" },
+    });
+    expect(byId("overview.timeline.chart.shipped.note")?.textContent).toMatch(
+      /outside this view$/
     );
     // Unshipped work has no mark.
     expect(byId("overview.timeline.chart.shipped")?.textContent).not.toContain(

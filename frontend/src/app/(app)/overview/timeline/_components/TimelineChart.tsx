@@ -275,12 +275,26 @@ function PhaseLane({
 /** What the shipped-plans lane says beside its name. A read still under way
  *  or one that failed is said, never drawn as an empty lane; so are plans the
  *  lane holds but cannot place, and a read that may not hold them all. */
-function laneNote(shipped: ShippedPlansState, outside: number): string | null {
+function laneNote(
+  shipped: ShippedPlansState,
+  lane: { outside: number; unreadable: number } | null,
+  wholeProject: boolean
+): string | null {
   if (shipped.state === "loading") return "Reading…";
   if (shipped.state === "error") return "Could not be read";
   const { items, undated, truncated } = shipped.shipped;
   const parts: string[] = [];
-  if (outside > 0) parts.push(`${outside} outside this view`);
+  const outside = lane?.outside ?? 0;
+  const unreadable = lane?.unreadable ?? 0;
+  // Under "whole project" no zoom could show these: the axis is the
+  // schedule's months, so a plan shipped before or after them is said so.
+  if (outside > 0)
+    parts.push(
+      wholeProject
+        ? `${outside} outside the project's months`
+        : `${outside} outside this view`
+    );
+  if (unreadable > 0) parts.push(`${unreadable} with an unreadable ship date`);
   if (undated > 0) parts.push(`${undated} with no ship date`);
   if (truncated) parts.push("there may be more");
   else if (items.length === 0 && undated === 0) parts.push("None yet");
@@ -289,11 +303,13 @@ function laneNote(shipped: ShippedPlansState, outside: number): string | null {
 
 function ShippedPlansLane({
   shipped,
+  wholeProject,
   window,
   breaks,
   today,
 }: {
   shipped: ShippedPlansState;
+  wholeProject: boolean;
   window: AxisWindow;
   breaks: CalendarBreakRead[];
   today: Date;
@@ -302,7 +318,7 @@ function ShippedPlansLane({
     shipped.state === "ready"
       ? shippedLane(shipped.shipped.items, window)
       : null;
-  const note = laneNote(shipped, lane?.outside ?? 0);
+  const note = laneNote(shipped, lane, wholeProject);
   return (
     <div
       className={cn(LABEL_COLUMN, "border-t border-border/60")}
@@ -356,6 +372,7 @@ export function TimelineChart({
   phases,
   milestones,
   shipped,
+  wholeProject,
   breaks,
   window,
   today,
@@ -365,6 +382,8 @@ export function TimelineChart({
   phases: TimelinePhase[];
   milestones: Milestone[];
   shipped: ShippedPlansState;
+  /** The window is the whole project (no zoom), so nothing lies beyond it. */
+  wholeProject: boolean;
   breaks: CalendarBreakRead[];
   window: AxisWindow;
   today: Date;
@@ -452,6 +471,7 @@ export function TimelineChart({
       </div>
       <ShippedPlansLane
         shipped={shipped}
+        wholeProject={wholeProject}
         window={window}
         breaks={breaks}
         today={today}

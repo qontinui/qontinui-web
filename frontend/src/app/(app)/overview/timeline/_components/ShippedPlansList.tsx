@@ -8,7 +8,7 @@
  */
 
 import type { ShippedPlansState } from "../../_hooks/useShippedPlans";
-import { formatDay } from "../../_lib/timeline";
+import { formatDay, shipDay } from "../../_lib/timeline";
 
 export function ShippedPlansList({ shipped }: { shipped: ShippedPlansState }) {
   const id = "overview.timeline.list.shipped";
@@ -32,14 +32,17 @@ export function ShippedPlansList({ shipped }: { shipped: ShippedPlansState }) {
         )}
         {items.length > 0 && (
           <ul className="space-y-1 text-sm" data-ui-bridge-id={`${id}.items`}>
-            {items.map((plan) => (
-              <li key={plan.slug} data-ui-bridge-id={`${id}.${plan.slug}`}>
-                <span className="text-foreground">{plan.title}</span>{" "}
-                <span className="text-muted-foreground">
-                  · shipped {formatDay(plan.shippedAt.slice(0, 10))}
-                </span>
-              </li>
-            ))}
+            {items.map((plan) => {
+              const day = formatDay(shipDay(plan.shippedAt));
+              return (
+                <li key={plan.slug} data-ui-bridge-id={`${id}.${plan.slug}`}>
+                  <span className="text-foreground">{plan.title}</span>{" "}
+                  <span className="text-muted-foreground">
+                    · {day ? `shipped ${day}` : "ship date unreadable"}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
         {(undated > 0 || truncated) && (
