@@ -130,10 +130,33 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
-# Timeout for the ONE coord read that is not a small JSON payload: the
-# recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
-# resolves a deploy surface per repo and runs a git-ancestry probe per merged
-# PR, so it is slow by construction. Measured against prod on 2026-09-19
+# Timeout for the open-PR LISTING (``GET /pr-merge/prs`` without
+# ``include_merged``), the fleet pipeline's hot poll. It is not a small JSON
+# payload either: coord builds every open PR's row through several batched
+# passes (CI lifecycle, conflict clock, base verdicts) and answers with
+# 100-500 rows. Measured straight to coord (``curl -w %{time_total}`` with a
+# device JWT) after qontinui-coord#2414 removed the pr_events re-scan that was
+# hitting coord's 60s statement timeout: 2.9-12.3s over 5 calls on 2026-09-23
+# (coord finding 685356b1), 2.3-5.7s over 6 calls on 2026-10-01 (finding
+# addc9526). 3 of 5 and 1 of 6 of those would have answered 504 at
+# ``_COORD_TIMEOUT``, and the page kept showing the previous rows with nothing
+# on screen saying they were stale. 20s clears the observed ceiling (12.3s)
+# with headroom and stays under the merged read's budget. The frontend polls
+# it single-flight every 15s, so a slow read stretches the gap rather than
+# stacking. Connect stays short, as below.
+#
+# COST: ``/operations/pr-merge/prs`` holds no backend DB session across the
+# coord call (``get_tenant_id`` resolves identity without one). Its
+# ``/admin-dev/prs`` mirror does: the active-user dependency's session stays
+# checked out until teardown, so each of its reads now pins one pooled
+# connection for coord's real latency instead of at most 5s. That page polls
+# single-flight every 45s, so this is a longer hold, not more requests.
+_COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+
+# Timeout for the slowest coord read: the recently-merged ROWS
+# (``GET /pr-merge/prs?include_merged=<hours>``). coord resolves a deploy
+# surface per repo and runs a git-ancestry probe per merged PR, so it is slow
+# by construction. Measured against prod on 2026-09-19
 # straight to coord with this proxy's own call shape: a 1h window 1.7s, 12h
 # 3.0s, 18h 4.2s, and 24h/48h 14-21s (varying run to run) — so at
 # ``_COORD_TIMEOUT`` every window past roughly 18h answered 504 and the
@@ -145,10 +168,13 @@ _COORD_TIMEOUT = httpx.Timeout(5.0)
 # normal non-2xx path below rather than as a timeout. The connect phase stays
 # at the short default: an unreachable coord should still fail fast.
 #
-# COST: the operations proxy holds a pooled backend DB session across the coord
-# round trip (see the load-discipline note in useMergePipelineData.ts), so this
-# read pins one connection for its 14-21s instead of <5s. The frontend
-# therefore polls it single-flight, never retries it, and skips hidden tabs.
+# COST: on ``/operations/pr-merge/prs`` this read holds no backend DB session
+# (``get_tenant_id`` stopped depending on the active-user session in
+# ``d77d79072``, 2026-07-26), so its cost is coord's: 14-21s of coord work per
+# read. On the ``/admin-dev/prs`` mirror it also pins one pooled connection for
+# that long (see ``_COORD_PR_LIST_TIMEOUT``). The pipeline hook
+# (useMergePipelineData.ts) therefore polls it single-flight, never retries it,
+# and skips hidden tabs (its load-discipline note).
 _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
@@ -244,7 +270,21 @@ def capture_caller_bearer(request: Request) -> None:
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
-    """Dependency: resolve the current user's home tenant_id (UUID).
+    """Dependency: resolve the caller's EFFECTIVE coord tenant_id (UUID).
+
+    The effective tenant is the Project-selector choice when the request
+    carries ``X-Qontinui-Active-Tenant`` naming a tenant the operator is a
+    member of, and the operator's home tenant otherwise (no header, a
+    malformed one, or a non-member selection — coord never widens access and
+    never 403s the override). It is NOT always "home": ``get_coord_identity``
+    forwards the header to coord's ``GET /admin/coord/me``, whose
+    ``home_tenant_id`` field is ``ctx.tenant_id`` of the POST-override
+    ``OperatorContext`` (qontinui-coord ``routes_phase3.rs::get_me``, after
+    ``auth::apply_active_tenant_override``). Reading this value as "home" is
+    how whole families went unscoped: the frontend attaches the header only to
+    ``ACTIVE_TENANT_URL_PREFIXES`` (``frontend/src/services/http-client.ts``),
+    so a new route depending on this must be covered there —
+    ``tests/test_active_tenant_prefix_drift_guard.py`` fails until it is.
 
     Identity is sourced from coord's ``GET /admin/coord/me`` over the HTTP
     boundary (no cross-schema read). Coord 403s an operator that isn't a
@@ -277,11 +317,12 @@ async def require_coord_tenant_admin(
     request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
-    """Resolve the user's coord home tenant AND require admin on it.
+    """Resolve the caller's EFFECTIVE coord tenant AND require admin on it.
 
-    Returns the home tenant_id. Raises 403 ``not_coord_tenant_admin`` when
-    coord reports the operator is not an admin (``is_admin`` on
-    ``/admin/coord/me``).
+    Returns the same effective tenant_id as :func:`get_tenant_id` (coord's
+    ``/me`` ``home_tenant_id`` is post-override). Raises 403
+    ``not_coord_tenant_admin`` when the operator holds no admin role in that
+    tenant (per-tenant roles, below) and is not a qontinui superuser.
 
     Web-side gate posture (plan Phase 1 #4): the ``is_admin`` flag from
     coord is the source; the web-side gate is kept so the proxied
@@ -363,8 +404,12 @@ async def require_coord_tenant_admin_target(
 
     :func:`require_coord_tenant_admin` checks admin in the effective tenant
     (the switcher selection when the operator is a member of it, else home)
-    but returns the HOME tenant id. For a pass-through proxy that mismatch is
-    harmless: nothing names a tenant, and coord re-scopes the operator on the
+    and returns whatever coord's ``/me`` reports as ``home_tenant_id`` —
+    post-override, so the effective tenant too. This dependency resolves the
+    effective tenant explicitly, web-side, from the same membership list the
+    admin check used, so the tenant a body NAMES never rests on that coord
+    behaviour. Were the two to diverge, a pass-through proxy would not care:
+    nothing names a tenant, and coord re-scopes the operator on the
     forwarded ``X-Qontinui-Active-Tenant`` header. For a route that NAMES the
     target tenant in a body it writes, it is not — an operator viewing tenant
     B would be admin-checked in B and then written into A, which is either a
@@ -963,10 +1008,10 @@ async def _proxy_coord_get(
     Default ``None`` puts nothing extra on the wire.
 
     ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
-    construction (today only the recently-merged rows,
-    :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None`` keeps the 5s
-    fail-fast for every other proxy: coord answering a small JSON read slower
-    than that means something is wrong, and that is worth surfacing.
+    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, and the
+    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
+    keeps the 5s fail-fast for every other proxy: coord answering a small JSON
+    read slower than that means something is wrong, and that is worth surfacing.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1065,9 +1110,12 @@ async def get_pr_merge_prs(
         "/pr-merge/prs",
         params=params or None,
         tenant_id=tenant_id,
-        # Only the merged ROWS are slow; ``merged_count_hours`` is one indexed
-        # count and keeps the 5s fail-fast.
-        timeout=_COORD_MERGED_READ_TIMEOUT if include_merged > 0 else None,
+        # The merged ROWS are the slow read. The plain listing is cheaper but
+        # still measured past 5s (see ``_COORD_PR_LIST_TIMEOUT``);
+        # ``merged_count_hours`` adds only one indexed count to it.
+        timeout=(
+            _COORD_MERGED_READ_TIMEOUT if include_merged > 0 else _COORD_PR_LIST_TIMEOUT
+        ),
     )
 
 
@@ -3758,6 +3806,9 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
+# - GET    /operations/fleet/worktree-cap                — per-device worktree caps
+# - POST   /operations/fleet/worktree-cap                — set one (admin)
+# - POST   /operations/fleet/worktree-cap/clear          — remove one (admin)
 # - GET    /operations/claude-accounts                   — per-device Claude
 #                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
@@ -4824,6 +4875,231 @@ async def post_fleet_undrain(
     )
 
 
+# ---- Per-device worktree cap (plan 2026-09-18 amendment A3) ---------------
+#
+# The operator door for the override that beats coord's derived worktree cap on
+# ONE machine. Same three shapes as the drain pair above, and deliberately so:
+# the two are the same KIND of act — an operator changing what one machine will
+# accept — and coord runs them through one admission test.
+#
+# The one thing that differs, and it is the reason this is not a drain: there is
+# NO deadline. A drain is a temporary hold and coord requires an expiry because
+# a drain without one is how a machine silently leaves the fleet forever. A cap
+# is a standing decision about capacity; an expiry would make it revert at a
+# moment nobody chose. It is removed explicitly, through the clear route.
+
+#: The floor plan A3 specifies, which coord's write door will enforce once the
+#: coord half of A3 lands. Pinned here so a zero is a local 422 naming the trap,
+#: rather than a round trip that comes back as a Rust string.
+_MIN_WORKTREE_CAP = 1
+
+#: Coord's ``max_worktrees`` is an ``i64``. A value past this is a serde
+#: deserialize failure over there, so it is refused here where the message can
+#: say it is a RANGE and not a policy bound. The browser never reaches it
+#: (``validateWorktreeCap`` stops at ``Number.isSafeInteger``); a direct API
+#: caller does.
+_MAX_I64 = 2**63 - 1
+
+
+class WorktreeCapRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/worktree-cap``.
+
+    ``extra="forbid"`` is not decoration — coord's struct is
+    ``deny_unknown_fields``, so a stray key would return a 422 carrying a serde
+    message. There is deliberately no ``set_by``: coord stamps the author from
+    the authenticated operator context, and an audit trail with a
+    client-asserted author is not an audit trail.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    #: Worktrees coord will allow on this device.
+    #:
+    #: The FLOOR is published here and enforced in ``_at_least_one`` below,
+    #: which is not a redundancy — it is the only arrangement that gives a
+    #: direct API caller both. ``json_schema_extra`` rather than ``ge=``: a
+    #: pydantic field constraint is part of the core schema and runs BEFORE an
+    #: ``after``-mode ``field_validator``, so ``ge=1`` would answer "Input should
+    #: be greater than or equal to 1" and the validator's sentence about being
+    #: locked out of undoing a zero would become unreachable. The whole point of
+    #: that message is that a restated bound does not say what a zero DOES. So
+    #: the schema carries the number for a generated client, and the validator
+    #: keeps the prose for the human reading the 422.
+    #:
+    #: The ``i64`` range is deliberately NOT published as a ``maximum``, and the
+    #: reason is lossiness rather than taste: emitted through JSON Schema's
+    #: number type, ``2**63 - 1`` round-trips as ``9.223372036854776e+18``, which
+    #: is ``2**63`` — strictly ABOVE the largest value this door accepts. A
+    #: published maximum that admits a value the validator refuses is worse than
+    #: no published maximum, so the range stays where it can be stated exactly:
+    #: in ``_at_least_one``'s message. There is no policy ceiling to publish
+    #: either way.
+    max_worktrees: int = Field(
+        ...,
+        json_schema_extra={"minimum": _MIN_WORKTREE_CAP},
+    )
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        """Reject a whitespace-only reason.
+
+        ``min_length`` alone admits ``"   "``. The reason is what every refusal
+        this cap produces will say, so a blank one defeats the record the write
+        exists to leave.
+        """
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+    @field_validator("max_worktrees")
+    @classmethod
+    def _at_least_one(cls, v: int) -> int:
+        """Mirror the floor plan A3 specifies, and say WHY.
+
+        A cap of 0 refuses every allocation on that device — including the
+        worktree an operator would need in order to set it back. (No repo is
+        named here on purpose: `test_fleet_nouns_ratchet` forbids this fleet's
+        own layout nouns in backend app code, and the point does not need one.)
+        Coord's write door will reject it too; naming it here turns a 400
+        carrying a Rust string into a typed 422 at this door. There is
+        deliberately NO upper bound on the CAP: a no-build worktree costs disk
+        rather than RAM, and disk is carried by coord's own disk gate, so a
+        ceiling invented here would be a second policy nobody decided.
+
+        The ``i64`` guard below is a different thing and is NOT that ceiling: it
+        is coord's integer RANGE. A value past it is a serde deserialize failure
+        on coord's side — precisely the "400 with a Rust message" this validator
+        exists to convert into something an operator can read.
+        """
+        if v < _MIN_WORKTREE_CAP:
+            # The REQUESTED value, not a hardcoded ``0``. This route's audience
+            # is a direct API caller (see the i64 note below), and a message
+            # that says "a cap of 0" to somebody who sent ``-4`` describes a
+            # mistake they did not make — which sends them looking for a
+            # different one. The frontend's ``belowFloorMessage`` interpolates
+            # the typed value for exactly this reason; this is the same rule
+            # applied to the only caller that can reach this door directly.
+            raise ValueError(
+                f"max_worktrees must be >= {_MIN_WORKTREE_CAP}. A cap of {v} "
+                "refuses EVERY allocation on that device, including the "
+                "worktree you would need in order to set it back. To stop "
+                "sending a machine work, drain it instead — a drain carries a "
+                "mandatory deadline and this does not."
+            )
+        if v > _MAX_I64:
+            raise ValueError(
+                "max_worktrees is larger than coord's i64 field can hold. That "
+                "is coord's integer range, not a policy ceiling — there is "
+                "deliberately no upper bound on the cap itself."
+            )
+        return v
+
+
+class WorktreeCapClearRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/worktree-cap/clear``.
+
+    A reason is required here too, and for the same purpose: removing a cap is
+    as much an operator decision as setting one, and coord records both.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+
+@router.get("/fleet/worktree-cap")
+async def get_fleet_worktree_cap(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return which devices carry a per-device worktree-cap override.
+
+    Proxies coord's ``GET /coord/fleet/worktree-cap``, body passed through
+    untouched — this route declares no ``response_model``, so nothing here
+    filters a field coord adds.
+
+    **The one thing a caller must not do with a failure here.** Coord keeps
+    "the read succeeded and no device is capped" and "coord could not find out"
+    apart on purpose, in a ``state`` field, and so must every hop after it: a
+    404 (this coord predates the route), a 502/504 from the transport, or a body
+    in an unrecognised shape is UNKNOWN, never "no device is capped"
+    (``[policy: silent-empty-is-unknown]``,
+    ``[policy: unknown-must-not-render-as-a-default]``). The 404 arm in
+    particular is the EXPECTED reading during the window where this console is a
+    deploy ahead of coord, which for this feature is guaranteed to exist: the
+    alembic revision lands first, this console second, coord third.
+    """
+    return await _proxy_coord_get("/coord/fleet/worktree-cap", tenant_id=tenant_id)
+
+
+@router.post("/fleet/worktree-cap")
+async def post_fleet_worktree_cap(
+    body: WorktreeCapRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set how many agent worktrees coord will allow on ONE device.
+
+    Body is assembled from the closed model above — never forwarded verbatim —
+    because coord's request struct is ``deny_unknown_fields``.
+
+    Coord's refusals are typed and mean different things: ``admin_required``
+    (not an admin in your own tenant), ``device_not_in_tenant`` (a cap governs
+    what a shared MACHINE accepts, so the caller must be one of the tenants that
+    uses it), ``schema_pending`` (the qontinui-web alembic revision adding the
+    override column has not been APPLIED yet — nothing was written, and nothing
+    is being reported as capped; that revision is
+    ``wtcap_01_max_worktrees_by_device``, added by qontinui-web#1596, which at
+    the time of writing is open and not yet on ``main``), and a 400 from coord's
+    own floor check. They pass through with coord's own status code so the
+    console can tell them apart rather than rendering one "failed".
+
+    This does NOT stop work already running on the machine, and nothing on this
+    path may imply that it does. It is not a drain: it has no deadline and it
+    does not remove the device from dispatch.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/worktree-cap",
+        {
+            "device_id": str(body.device_id),
+            "max_worktrees": body.max_worktrees,
+            "reason": body.reason,
+        },
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/fleet/worktree-cap/clear")
+async def post_fleet_worktree_cap_clear(
+    body: WorktreeCapClearRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Remove one device's override, so coord derives its cap again.
+
+    Coord answers with ``changed: false`` when the request altered nothing — a
+    clear of a device that carried no override. That is passed through rather
+    than dressed up as a successful removal: "I removed it" and "there was
+    nothing to remove" are different outcomes and the operator is entitled to
+    tell them apart.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/worktree-cap/clear",
+        {"device_id": str(body.device_id), "reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
 # ---- CI-runner label mirror ----------------------------------------------
 #
 # Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2, and a
@@ -5697,6 +5973,81 @@ async def get_fleet_worktree_slots(
     """
     return await _proxy_coord_passthrough(
         "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
+
+
+# ---- Computers (the physical/virtual machine as a coord entity) -----------
+#
+# Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-
+# coord-has-no-resource-model` Phase 5. Backs `/admin/coord/computers` and its
+# `[computerId]` drill-down. The coord-side reads are that plan's Phase 3.2
+# (`GET /coord/computers`, `GET /coord/computers/:computer_id`), tenant-scoped
+# by coord through `coord.tenant_devices -> coord.devices.computer_id`.
+#
+# **Passthrough, not the generic helpers.** Both reads carry load-bearing
+# refusal and absence states the console renders specifically: a 404 from a
+# coord that predates Phase 3 (route not deployed), a 404 for a computer
+# outside the caller's tenant, and a `schema_pending` answer while the
+# qontinui-web migration has not reached the database coord reads. All three
+# must reach the browser with coord's status and JSON body intact — wrapped in
+# `HTTPException(detail=resp.text)` they collapse into one opaque error string
+# and the page can no longer render them as UNKNOWN rather than as a failure.
+#
+# **Admin-gated, like ``/fleet/ci-runners``.** Both payloads carry the
+# registrar's CI-runner rows (the same data ``get_fleet_ci_runners`` serves
+# only to a tenant admin) and each computer's ``access`` facts (tailnet name,
+# address, SSH user). A Developer-tier member must not read either through a
+# second, looser door, so both routes depend on ``require_coord_tenant_admin``
+# rather than ``get_tenant_id`` — a door is only as strict as its loosest twin.
+#
+# **Honesty (plan §3.5).** Coord computes `freshness.state` and never
+# synthesises a sample, a service row or a capacity figure. This proxy adds no
+# defaults and zero-fills nothing: a computer with no measured PSI axis stays
+# `null`/`not_supported`, and an upstream failure stays an error (502/504/
+# coord's status) rather than an empty computer list.
+
+
+@router.get("/computers")
+async def get_computers(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
+
+    The fleet list: per computer its identity (no raw OS ids), capacity,
+    ``freshness {last_report_at, age_secs, state, stale_after_secs}``, every
+    known lane's newest sample (``lanes``, ``samples_state``,
+    ``lanes_truncated``), ``services_reported`` / ``services_failed``,
+    ``last_event``, ``devices[]`` and ``ci_runners``. At list level:
+    ``unattributed_ci_runners`` (registrar rows no computer claims),
+    ``ambiguous_ci_runners`` (rows two or more computers claim, each with
+    ``claimed_by``), and ``registrar_read_ok``.
+
+    When ``registrar_read_ok`` is false coord's registrar read failed, and
+    every registrar-derived list — each computer's ``ci_runners``,
+    ``unattributed_ci_runners`` and ``ambiguous_ci_runners`` — is ``null``:
+    UNKNOWN, never "no runners". Response shape is coord-authored and passed
+    through untouched; this proxy adds no defaults.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/computers", tenant_id=tenant_id
+    )
+
+
+@router.get("/computers/{computer_id}")
+async def get_computer(
+    computer_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).
+
+    One computer's whole answer to "how is this machine": the list fields
+    plus ``services[]``, ``events`` (7 d, newest first), per-lane sample
+    ``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``
+    is validated as a UUID here so a malformed id is a 422 at the web edge
+    and never reaches coord as an arbitrary path segment.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", f"/coord/computers/{computer_id}", tenant_id=tenant_id
     )
 
 

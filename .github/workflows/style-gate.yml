@@ -738,9 +738,9 @@ jobs:
           set -euo pipefail
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
-      # Some alembic migrations reference the `runner` schema, created in dev by
-      # init-scripts/01-create-runner-schema.sql. CI service containers don't run
-      # those init scripts, so create it explicitly (same as e2e-tests.yml).
+      # Some alembic migrations reference the `runner` schema, and nothing creates
+      # it in a fresh CI service container, so create it explicitly (same as
+      # e2e-playwright-stack.yml).
       - name: Create runner schema
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external

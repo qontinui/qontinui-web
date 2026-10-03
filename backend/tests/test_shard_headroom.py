@@ -173,6 +173,42 @@ def test_skewed_when_slowest_over_twice_fastest():
     assert result.skew == pytest.approx(29.9 / 9.6)
 
 
+def test_skewed_names_the_durations_refresh_as_its_remedy():
+    """The alarm points at the artifact that fixes it, from the same run."""
+    result = headroom.evaluate(_run([29.9, 9.6, 15, 16, 17, 18]), 45)
+    assert result.verdict == "skewed"
+    assert headroom.DURATIONS_REF in result.reason
+    assert f"`{headroom.PROPOSAL_ARTIFACT}`" in result.reason
+
+
+def test_the_named_remedy_exists_in_the_workflow_and_the_tree():
+    """A remedy that names a renamed artifact or file would send people nowhere."""
+    assert (REPO_ROOT / headroom.DURATIONS_REF).is_file()
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    artifacts = {
+        (step.get("with") or {}).get("name")
+        for job in jobs.values()
+        for step in job.get("steps") or []
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    }
+    assert headroom.PROPOSAL_ARTIFACT in artifacts
+
+
+def test_a_balanced_over_margin_names_the_matrix_as_the_lever():
+    result = headroom.evaluate(_run([37.3, 30, 32, 33, 34, 35]), 45)
+    assert result.verdict == "over_margin"
+    assert "outgrown the matrix" in result.reason
+    assert "not the budget" in result.reason
+
+
+def test_a_skewed_over_margin_does_not_blame_the_matrix():
+    result = headroom.evaluate(_run([40, 10, 10, 10, 10, 10]), 45)
+    assert result.verdict == "over_margin"
+    assert "outgrown the matrix" not in result.reason
+    assert headroom.DURATIONS_REF in result.reason
+    assert f"`{headroom.PROPOSAL_ARTIFACT}`" in result.reason
+
+
 def test_skew_of_exactly_two_is_not_skewed():
     result = headroom.evaluate(_run([20, 10, 15, 15, 15, 15]), 45)
     assert result.verdict == "ok"

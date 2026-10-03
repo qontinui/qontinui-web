@@ -3,26 +3,8 @@ import {
   parseAllocationsCsv,
   parseEffortsCsv,
   parseRolesCsv,
-  splitCsvLine,
   sumPersonDays,
 } from "./csv";
-
-describe("splitCsvLine", () => {
-  it("honours quotes, embedded commas and doubled quotes", () => {
-    expect(
-      splitCsvLine('BE,"Engineer, backend","Says ""no"" a lot",750')
-    ).toEqual(["BE", "Engineer, backend", 'Says "no" a lot', "750"]);
-  });
-
-  it("accepts tabs, so a spreadsheet paste works", () => {
-    expect(splitCsvLine("BE\tBackend\t\t750")).toEqual([
-      "BE",
-      "Backend",
-      "",
-      "750",
-    ]);
-  });
-});
 
 describe("parseRolesCsv", () => {
   it("reads the table a delivery plan is written in", () => {
@@ -161,7 +143,11 @@ BE,,2,2
   });
 
   it("returns nothing for empty input, with nothing to report", () => {
-    expect(parseAllocationsCsv("   \n\n")).toEqual({ rows: [], issues: [] });
+    expect(parseAllocationsCsv("   \n\n")).toEqual({
+      rows: [],
+      issues: [],
+      lines: [],
+    });
   });
 });
 

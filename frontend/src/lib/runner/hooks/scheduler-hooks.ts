@@ -5,10 +5,10 @@ import type { RunnerTarget } from "../target";
 import {
   useDispatchRunnerTarget,
   useRunnerTarget,
+  type NewWorkOptions,
 } from "@/contexts/active-runner-context";
 import type {
   ScheduledTask,
-  SchedulerSettings,
   SchedulerStatus,
   TaskExecutionRecord,
   CreateScheduledTaskRequest,
@@ -22,23 +22,6 @@ import type {
 /** Fetch all scheduled tasks */
 export function useScheduledTasks() {
   return useRunnerQuery<ScheduledTask[]>(useRunnerTarget(), "/scheduler/tasks");
-}
-
-/** Fetch a single scheduled task by ID */
-export function useScheduledTask(id: string | null) {
-  return useRunnerQuery<ScheduledTask>(
-    useRunnerTarget(),
-    id != null ? `/scheduler/tasks/${id}` : null,
-    { enabled: id != null }
-  );
-}
-
-/** Fetch scheduler settings */
-export function useSchedulerSettings() {
-  return useRunnerQuery<SchedulerSettings>(
-    useRunnerTarget(),
-    "/scheduler/settings"
-  );
 }
 
 /** Fetch scheduler status with polling */
@@ -69,16 +52,20 @@ export function useTaskHistory(taskId: string | null) {
  * Create a new scheduled task — NEW work placed on a runner (it will fire
  * there), so it goes only to the explicit choice or coord's resolved pick.
  * `refusal` is coord's outcome when it may not be placed. Editing / deleting
- * an EXISTING task stays on the read target, where that task lives.
+ * an EXISTING task stays on the read target, where that task lives. A task
+ * that drives one machine's screen (a Workflow) passes
+ * `workClass: "machine_bound"`, so a refused pick is never re-targeted.
  */
-export function useCreateScheduledTask() {
-  const { target, refusal } = useDispatchRunnerTarget();
+export function useCreateScheduledTask(options: NewWorkOptions = {}) {
+  const { target, refusal } = useDispatchRunnerTarget(options);
   return {
     ...useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
       target,
       "/scheduler/tasks"
     ),
     refusal,
+    /** Where a create is sent; it can differ from the read target. */
+    target,
   };
 }
 
@@ -115,5 +102,20 @@ export async function runScheduledTaskNow(
 ): Promise<void> {
   return runnerFetch<void>(target, `/scheduler/tasks/${id}/run`, {
     method: "POST",
+  });
+}
+
+/**
+ * Turn the runner's scheduler on or off as a whole. While it is off no task
+ * fires, whatever its own `enabled` says. The runner reads this body without
+ * camelCase renaming; `enabled` has the same spelling in both cases.
+ */
+export async function setSchedulerEnabled(
+  target: RunnerTarget,
+  enabled: boolean
+): Promise<void> {
+  return runnerFetch<void>(target, "/scheduler/settings", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
   });
 }

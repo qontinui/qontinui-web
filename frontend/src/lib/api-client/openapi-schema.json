@@ -11612,6 +11612,7 @@
           "high_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -11638,6 +11639,7 @@
           "low_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -19333,13 +19335,71 @@
         "title": "ErrorMonitorSummary",
         "type": "object"
       },
+      "EstimateContent": {
+        "description": "The whole content graph as read back, every cross-reference resolved to\nits CODE as well as its id.",
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationRead"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "calendar_breaks": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarBreakRead"
+            },
+            "title": "Calendar Breaks",
+            "type": "array"
+          },
+          "cost_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostLineRead"
+            },
+            "title": "Cost Lines",
+            "type": "array"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseRead"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "price_tiers": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTierRead"
+            },
+            "title": "Price Tiers",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRead"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roles",
+          "phases",
+          "allocations",
+          "price_tiers",
+          "cost_lines",
+          "calendar_breaks"
+        ],
+        "title": "EstimateContent",
+        "type": "object"
+      },
       "EstimateContentWrite": {
-        "description": "The estimate's whole content graph, replaced in one transaction.\n\nReplace-the-whole-graph rather than per-row CRUD, because that is the\nshape every source actually has: a CSV paste is a whole table, a mermaid\n``gantt`` block is a whole schedule, and the editor shows the result for\nconfirmation before anything is saved. It also means an import can never\nhalf-land.",
+        "description": "The estimate's whole content graph, replaced in one transaction.\n\nReplace-the-whole-graph rather than per-row CRUD, because that is the\nshape every source actually has: a CSV paste is a whole table, a mermaid\n``gantt`` block is a whole schedule, and the editor shows the result for\nconfirmation before anything is saved. It also means an import can never\nhalf-land. It travels as the ``content`` field of an estimate create or\nupdate, so it shares that write's ``If-Match``, audit row and version.",
         "properties": {
           "allocations": {
             "items": {
               "$ref": "#/components/schemas/AllocationWrite"
             },
+            "maxItems": 20000,
             "title": "Allocations",
             "type": "array"
           },
@@ -19347,6 +19407,7 @@
             "items": {
               "$ref": "#/components/schemas/CalendarBreakWrite"
             },
+            "maxItems": 1000,
             "title": "Calendar Breaks",
             "type": "array"
           },
@@ -19354,24 +19415,15 @@
             "items": {
               "$ref": "#/components/schemas/CostLineWrite"
             },
+            "maxItems": 2000,
             "title": "Cost Lines",
             "type": "array"
-          },
-          "expected_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Version"
           },
           "phases": {
             "items": {
               "$ref": "#/components/schemas/PhaseWrite"
             },
+            "maxItems": 500,
             "title": "Phases",
             "type": "array"
           },
@@ -19379,6 +19431,7 @@
             "items": {
               "$ref": "#/components/schemas/PriceTierWrite"
             },
+            "maxItems": 50,
             "title": "Price Tiers",
             "type": "array"
           },
@@ -19386,6 +19439,7 @@
             "items": {
               "$ref": "#/components/schemas/RoleWrite"
             },
+            "maxItems": 500,
             "title": "Roles",
             "type": "array"
           }
@@ -19405,6 +19459,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContentWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19487,89 +19551,8 @@
         "title": "EstimateCreate",
         "type": "object"
       },
-      "EstimateDetail": {
-        "description": "The head row plus its whole content graph \u2014 what the editor loads.",
-        "properties": {
-          "allocations": {
-            "items": {
-              "$ref": "#/components/schemas/AllocationRead"
-            },
-            "title": "Allocations",
-            "type": "array"
-          },
-          "calendar_breaks": {
-            "items": {
-              "$ref": "#/components/schemas/CalendarBreakRead"
-            },
-            "title": "Calendar Breaks",
-            "type": "array"
-          },
-          "cost_lines": {
-            "items": {
-              "$ref": "#/components/schemas/CostLineRead"
-            },
-            "title": "Cost Lines",
-            "type": "array"
-          },
-          "estimate": {
-            "$ref": "#/components/schemas/EstimateSummary"
-          },
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/PhaseRead"
-            },
-            "title": "Phases",
-            "type": "array"
-          },
-          "price_tiers": {
-            "items": {
-              "$ref": "#/components/schemas/PriceTierRead"
-            },
-            "title": "Price Tiers",
-            "type": "array"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleRead"
-            },
-            "title": "Roles",
-            "type": "array"
-          }
-        },
-        "required": [
-          "estimate",
-          "roles",
-          "phases",
-          "allocations",
-          "price_tiers",
-          "cost_lines",
-          "calendar_breaks"
-        ],
-        "title": "EstimateDetail",
-        "type": "object"
-      },
-      "EstimateListResponse": {
-        "properties": {
-          "estimates": {
-            "items": {
-              "$ref": "#/components/schemas/EstimateSummary"
-            },
-            "title": "Estimates",
-            "type": "array"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "estimates",
-          "total"
-        ],
-        "title": "EstimateListResponse",
-        "type": "object"
-      },
-      "EstimateSummary": {
+      "EstimateRead": {
+        "description": "One estimate: its head row and, on a single-record read, its content.",
         "properties": {
           "accuracy_note": {
             "anyOf": [
@@ -19581,6 +19564,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19611,7 +19604,6 @@
             "title": "Created By"
           },
           "id": {
-            "format": "uuid",
             "title": "Id",
             "type": "string"
           },
@@ -19693,13 +19685,14 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "content"
         ],
-        "title": "EstimateSummary",
+        "title": "EstimateRead",
         "type": "object"
       },
       "EstimateUpdate": {
-        "description": "Every field optional \u2014 an absent field is left alone.\n\n``None`` is a real value for the nullable fields (it clears them), so the\nhandler distinguishes \"absent\" from \"null\" with\n``model_fields_set``/``exclude_unset``.",
+        "description": "Every field optional \u2014 an absent field is left alone.\n\n``None`` is a real value for the nullable fields (it clears them), so the\nstore distinguishes \"absent\" from \"null\" with ``exclude_unset``. ``content``\nreplaces the whole graph; it and the head fields land in ONE version, so a\nsave that also records its source document cannot half-land.",
         "properties": {
           "accuracy_note": {
             "anyOf": [
@@ -19711,6 +19704,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContentWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19736,17 +19739,6 @@
               }
             ],
             "title": "Contingency Pct"
-          },
-          "expected_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Version"
           },
           "is_baseline": {
             "anyOf": [
@@ -19830,6 +19822,60 @@
           }
         },
         "title": "EstimateUpdate",
+        "type": "object"
+      },
+      "EstimatesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/EstimateRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "EstimatesItem",
+        "type": "object"
+      },
+      "EstimatesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "EstimatesList",
         "type": "object"
       },
       "EvaluationDatasetCreate": {
@@ -24285,6 +24331,29 @@
         "title": "FolderCreateResponse",
         "type": "object"
       },
+      "ForecastUnavailable": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "figure": {
+            "title": "Figure",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "figure",
+          "reason",
+          "detail"
+        ],
+        "title": "ForecastUnavailable",
+        "type": "object"
+      },
       "ForkSkillRequest": {
         "properties": {
           "new_name": {
@@ -24518,6 +24587,35 @@
           "passed"
         ],
         "title": "GateEvaluationResult",
+        "type": "object"
+      },
+      "GateRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "criteria": {
+            "title": "Criteria",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "criteria"
+        ],
+        "title": "GateRef",
         "type": "object"
       },
       "GenerateDescriptionRequest": {
@@ -30729,6 +30827,374 @@
         "title": "MigrationAnchor",
         "type": "object"
       },
+      "MilestoneCreate": {
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "default": "milestone",
+            "enum": [
+              "milestone",
+              "pilot",
+              "first_value",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "default": "planned",
+            "enum": [
+              "planned",
+              "in_progress",
+              "done",
+              "at_risk"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Target Date",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "target_date"
+        ],
+        "title": "MilestoneCreate",
+        "type": "object"
+      },
+      "MilestoneRead": {
+        "description": "One milestone on the Timeline. Gates are phases, not milestones, so they\nare never duplicated here.",
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "milestone",
+              "pilot",
+              "first_value",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Code"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "in_progress",
+              "done",
+              "at_risk"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "format": "date",
+            "title": "Target Date",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "kind",
+          "phase_id",
+          "phase_code",
+          "target_date",
+          "completed_date",
+          "status",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "MilestoneRead",
+        "type": "object"
+      },
+      "MilestoneUpdate": {
+        "description": "Every field optional \u2014 an absent field is left alone. The done/date rule\nis checked on the milestone as it will be (by the store).",
+        "properties": {
+          "completed_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "milestone",
+                  "pilot",
+                  "first_value",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planned",
+                  "in_progress",
+                  "done",
+                  "at_risk"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "MilestoneUpdate",
+        "type": "object"
+      },
+      "MilestonesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/MilestoneRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "MilestonesItem",
+        "type": "object"
+      },
+      "MilestonesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "MilestonesList",
+        "type": "object"
+      },
       "MockExecutionRequest": {
         "description": "Request for mock execution",
         "properties": {
@@ -34100,12 +34566,33 @@
         "type": "object"
       },
       "PairConfirmResponse": {
-        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>``.",
+        "description": "Response body for ``POST /api/v1/devices/pair-confirm``.\n\nThe browser receives this and redirects the runner's local callback\nserver to\n``callback?state=<state>&token=<jwt>&token_id=<device_id>`` -- or, when\n``collect`` is true (multi-tenant flow), to\n``callback?state=<state>&token_id=<device_id>&collect=1`` with NO token,\nso no tenant credential ever rides a URL.",
         "properties": {
+          "collect": {
+            "default": false,
+            "description": "True when coord ran a multi-tenant (collect-mode) flow. The page then redirects the runner's callback WITHOUT a token param; the runner collects the per-tenant tokens from coord's pair-collect with its PKCE-style verifier.",
+            "title": "Collect",
+            "type": "boolean"
+          },
           "device_id": {
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PairConfirmTenantResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-tenant outcome of a collect-mode flow. Never carries tokens.",
+            "title": "Results"
           },
           "state": {
             "description": "Echoed pairing-flow nonce.",
@@ -34113,17 +34600,55 @@
             "type": "string"
           },
           "token": {
-            "description": "Coord-issued device-token JWT.",
-            "title": "Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord-issued device-token JWT. Always present in the legacy single-tenant flow; optional in collect mode, where the runner fetches every tenant's token itself over pair-collect.",
+            "title": "Token"
           }
         },
         "required": [
           "device_id",
-          "token",
           "state"
         ],
         "title": "PairConfirmResponse",
+        "type": "object"
+      },
+      "PairConfirmTenantResult": {
+        "description": "One tenant's outcome in a collect-mode (multi-tenant) pairing.\n\nMirrors coord's ``pair-complete`` ``results[]`` entry. Deliberately has no\ntoken field: the tokens reach the runner only over coord's\n``pair-collect``, never through the browser.",
+        "properties": {
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "status": {
+            "description": "\"minted\" or \"skipped\" (coord's vocabulary, passed through).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status"
+        ],
+        "title": "PairConfirmTenantResult",
         "type": "object"
       },
       "PathElement": {
@@ -34340,6 +34865,373 @@
         "title": "PendingCountResponse",
         "type": "object"
       },
+      "PhaseForecast": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "finish_slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Slip Days"
+          },
+          "forecast_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast End"
+          },
+          "forecast_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Start"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Slip Days"
+          },
+          "state": {
+            "enum": [
+              "not_started",
+              "in_progress",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "state",
+          "forecast_start",
+          "forecast_end",
+          "start_slip_days",
+          "finish_slip_days"
+        ],
+        "title": "PhaseForecast",
+        "type": "object"
+      },
+      "PhaseProgressItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/PhaseProgressRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "PhaseProgressItem",
+        "type": "object"
+      },
+      "PhaseProgressList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseProgressRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "PhaseProgressList",
+        "type": "object"
+      },
+      "PhaseProgressRead": {
+        "description": "What actually happened in one phase: its actual dates and its gate's\noutcome \u2014 the ``phase_progress`` resource. ``id`` is the phase's id.\n\nThe plan fields beside them (code, name, planned dates, the gate's\ncriteria) are the estimate's, served here so a reader of progress needs\nno second request. They are read-only on this resource and ``version``\ndoes not cover them: it moves when PROGRESS is written, never when the\nestimate's plan is.",
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "estimate_id": {
+            "format": "uuid",
+            "title": "Estimate Id",
+            "type": "string"
+          },
+          "gate_criteria": {
+            "title": "Gate Criteria",
+            "type": "string"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "title": "Gate Notes",
+            "type": "string"
+          },
+          "gate_status": {
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "waived"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "estimate_id",
+          "code",
+          "name",
+          "sort_order",
+          "planned_start",
+          "planned_end",
+          "gate_criteria",
+          "actual_start",
+          "actual_end",
+          "gate_status",
+          "gate_decided_at",
+          "gate_notes",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "PhaseProgressRead",
+        "type": "object"
+      },
+      "PhaseProgressUpdate": {
+        "description": "Every field optional \u2014 an absent field is left alone; ``null`` clears a\ndate. The rules (a phase ends on or after it starts, and only once it has\nstarted; a gate has a decision date exactly when it has been decided) are\nchecked on the phase AS IT WILL BE, so a write may change one field\nwithout restating the others.",
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Notes"
+          },
+          "gate_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "passed",
+                  "failed",
+                  "waived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Status"
+          }
+        },
+        "title": "PhaseProgressUpdate",
+        "type": "object"
+      },
       "PhaseRead": {
         "properties": {
           "actual_end": {
@@ -34474,6 +35366,30 @@
           "tasks"
         ],
         "title": "PhaseRead",
+        "type": "object"
+      },
+      "PhaseRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "PhaseRef",
         "type": "object"
       },
       "PhaseResultIngestRequest": {
@@ -34829,6 +35745,7 @@
             "items": {
               "$ref": "#/components/schemas/TaskEffortWrite"
             },
+            "maxItems": 500,
             "title": "Efforts",
             "type": "array"
           },
@@ -34903,31 +35820,8 @@
         "type": "object"
       },
       "PhaseWrite": {
+        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.",
         "properties": {
-          "actual_end": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual End"
-          },
-          "actual_start": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Start"
-          },
           "code": {
             "maxLength": 50,
             "minLength": 1,
@@ -34937,34 +35831,6 @@
           "gate_criteria": {
             "default": "",
             "title": "Gate Criteria",
-            "type": "string"
-          },
-          "gate_decided_at": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gate Decided At"
-          },
-          "gate_notes": {
-            "default": "",
-            "title": "Gate Notes",
-            "type": "string"
-          },
-          "gate_status": {
-            "default": "pending",
-            "enum": [
-              "pending",
-              "passed",
-              "failed",
-              "waived"
-            ],
-            "title": "Gate Status",
             "type": "string"
           },
           "name": {
@@ -35026,6 +35892,7 @@
             "items": {
               "$ref": "#/components/schemas/PhaseTaskWrite"
             },
+            "maxItems": 1000,
             "title": "Tasks",
             "type": "array"
           }
@@ -41158,6 +42025,7 @@
           "day_rate_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -53499,6 +54367,168 @@
         "title": "TimelineEvent",
         "type": "object"
       },
+      "TimelineForecast": {
+        "description": "Where an estimate's delivery stands against its plan, computed on read\n(``app.services.overview_forecast`` documents the model). A figure the\nforecast cannot produce is ``None`` and named in ``unavailable`` \u2014 never 0.",
+        "properties": {
+          "calendar_weeks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Weeks"
+          },
+          "current_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimate_id": {
+            "format": "uuid",
+            "title": "Estimate Id",
+            "type": "string"
+          },
+          "estimate_version": {
+            "title": "Estimate Version",
+            "type": "integer"
+          },
+          "forecast_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Finish"
+          },
+          "next_gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseForecast"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "planned_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Finish"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "position": {
+            "enum": [
+              "no_phases",
+              "not_started",
+              "in_progress",
+              "between_phases",
+              "finished"
+            ],
+            "title": "Position",
+            "type": "string"
+          },
+          "slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slip Days"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastUnavailable"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          },
+          "working_weeks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Weeks"
+          }
+        },
+        "required": [
+          "estimate_id",
+          "estimate_version",
+          "today",
+          "planned_start",
+          "planned_finish",
+          "calendar_weeks",
+          "working_weeks",
+          "position",
+          "current_phase",
+          "next_phase",
+          "next_gate",
+          "forecast_finish",
+          "slip_days",
+          "phases",
+          "unavailable"
+        ],
+        "title": "TimelineForecast",
+        "type": "object"
+      },
       "TimingInfo": {
         "description": "Precise timing information for an event.",
         "properties": {
@@ -59851,6 +60881,58 @@
           }
         },
         "title": "WorkflowPhaseConfigUpdate",
+        "type": "object"
+      },
+      "WorktreeCapClearRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap/clear``.\n\nA reason is required here too, and for the same purpose: removing a cap is\nas much an operator decision as setting one, and coord records both.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "WorktreeCapClearRequestBody",
+        "type": "object"
+      },
+      "WorktreeCapRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/worktree-cap``.\n\n``extra=\"forbid\"`` is not decoration \u2014 coord's struct is\n``deny_unknown_fields``, so a stray key would return a 422 carrying a serde\nmessage. There is deliberately no ``set_by``: coord stamps the author from\nthe authenticated operator context, and an audit trail with a\nclient-asserted author is not an audit trail.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "max_worktrees": {
+            "minimum": 1.0,
+            "title": "Max Worktrees",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "max_worktrees",
+          "reason"
+        ],
+        "title": "WorktreeCapRequestBody",
         "type": "object"
       },
       "WrapperAuthor": {
@@ -82386,7 +83468,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {
@@ -88083,6 +89165,78 @@
         ]
       }
     },
+    "/api/v1/operations/computers": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers`` (tenant-scoped).\n\nThe fleet list: per computer its identity (no raw OS ids), capacity,\n``freshness {last_report_at, age_secs, state, stale_after_secs}``, every\nknown lane's newest sample (``lanes``, ``samples_state``,\n``lanes_truncated``), ``services_reported`` / ``services_failed``,\n``last_event``, ``devices[]`` and ``ci_runners``. At list level:\n``unattributed_ci_runners`` (registrar rows no computer claims),\n``ambiguous_ci_runners`` (rows two or more computers claim, each with\n``claimed_by``), and ``registrar_read_ok``.\n\nWhen ``registrar_read_ok`` is false coord's registrar read failed, and\nevery registrar-derived list \u2014 each computer's ``ci_runners``,\n``unattributed_ci_runners`` and ``ambiguous_ci_runners`` \u2014 is ``null``:\nUNKNOWN, never \"no runners\". Response shape is coord-authored and passed\nthrough untouched; this proxy adds no defaults.",
+        "operationId": "api_v1_operations_computers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/computers/{computer_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).\n\nOne computer's whole answer to \"how is this machine\": the list fields\nplus ``services[]``, ``events`` (7 d, newest first), per-lane sample\n``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``\nis validated as a UUID here so a malformed id is a 422 at the web edge\nand never reaches coord as an arbitrary path segment.",
+        "operationId": "api_v1_operations_computers_computer_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "computer_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Computer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Computer",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/audit/recent": {
       "get": {
         "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
@@ -93421,6 +94575,120 @@
           }
         },
         "summary": "Get Fleet Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap": {
+      "get": {
+        "description": "Return which devices carry a per-device worktree-cap override.\n\nProxies coord's ``GET /coord/fleet/worktree-cap``, body passed through\nuntouched \u2014 this route declares no ``response_model``, so nothing here\nfilters a field coord adds.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n\"the read succeeded and no device is capped\" and \"coord could not find out\"\napart on purpose, in a ``state`` field, and so must every hop after it: a\n404 (this coord predates the route), a 502/504 from the transport, or a body\nin an unrecognised shape is UNKNOWN, never \"no device is capped\"\n(``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The 404 arm in\nparticular is the EXPECTED reading during the window where this console is a\ndeploy ahead of coord, which for this feature is guaranteed to exist: the\nalembic revision lands first, this console second, coord third.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Set how many agent worktrees coord will allow on ONE device.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim \u2014\nbecause coord's request struct is ``deny_unknown_fields``.\n\nCoord's refusals are typed and mean different things: ``admin_required``\n(not an admin in your own tenant), ``device_not_in_tenant`` (a cap governs\nwhat a shared MACHINE accepts, so the caller must be one of the tenants that\nuses it), ``schema_pending`` (the qontinui-web alembic revision adding the\noverride column has not been APPLIED yet \u2014 nothing was written, and nothing\nis being reported as capped; that revision is\n``wtcap_01_max_worktrees_by_device``, added by qontinui-web#1596, which at\nthe time of writing is open and not yet on ``main``), and a 400 from coord's\nown floor check. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on this\npath may imply that it does. It is not a drain: it has no deadline and it\ndoes not remove the device from dispatch.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Api V1 Operations Fleet Worktree Cap Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/worktree-cap/clear": {
+      "post": {
+        "description": "Remove one device's override, so coord derives its cap again.\n\nCoord answers with ``changed: false`` when the request altered nothing \u2014 a\nclear of a device that carried no override. That is passed through rather\nthan dressed up as a successful removal: \"I removed it\" and \"there was\nnothing to remove\" are different outcomes and the operator is entitled to\ntell them apart.",
+        "operationId": "api_v1_operations_fleet_worktree_cap_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorktreeCapClearRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Worktree Cap Clear Api V1 Operations Fleet Worktree Cap Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Worktree Cap Clear",
         "tags": [
           "operations"
         ]
@@ -99752,14 +101020,13 @@
     },
     "/api/v1/overview/estimates": {
       "get": {
-        "description": "This project's estimates, baseline first then newest.",
         "operationId": "api_v1_overview_estimates_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateListResponse"
+                  "$ref": "#/components/schemas/EstimatesList"
                 }
               }
             },
@@ -99773,12 +101040,30 @@
         ],
         "summary": "List Estimates",
         "tags": [
-          "overview"
+          "overview",
+          "overview:estimates"
         ]
       },
       "post": {
-        "description": "Create an estimate. The project's ``editing_roles`` only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
         "operationId": "api_v1_overview_estimates_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -99794,7 +101079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateSummary"
+                  "$ref": "#/components/schemas/EstimatesItem"
                 }
               }
             },
@@ -99816,63 +101101,23 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Create Estimate",
+        "summary": "Create Estimates",
         "tags": [
-          "overview"
+          "overview",
+          "overview:estimates"
         ]
       }
     },
-    "/api/v1/overview/estimates/{estimate_id}": {
-      "delete": {
-        "description": "Delete an estimate and everything under it. The project's\n``editing_roles`` only.\n\nThe change-log row keeps the whole graph as it was, so a deleted estimate\nis still answerable (\"what did it say, and who removed it\").",
-        "operationId": "api_v1_overview_estimates_estimate_id_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Delete Estimate",
-        "tags": [
-          "overview"
-        ]
-      },
+    "/api/v1/overview/estimates/{estimate_id}/forecast": {
       "get": {
-        "description": "The head row plus the whole content graph \u2014 what the editor loads.",
-        "operationId": "api_v1_overview_estimates_estimate_id_get",
+        "description": "Where the delivery stands against the plan: the current phase, the next\ngate, the forecast finish and its slip. Computed on read against today\n(UTC); readable by any member. A figure that cannot be produced is null\nand named in ``unavailable``, never 0.",
+        "operationId": "api_v1_overview_estimates_estimate_id_forecast_get",
         "parameters": [
           {
             "in": "path",
             "name": "estimate_id",
             "required": true,
             "schema": {
-              "format": "uuid",
               "title": "Estimate Id",
               "type": "string"
             }
@@ -99883,7 +101128,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateDetail"
+                  "$ref": "#/components/schemas/TimelineForecast"
                 }
               }
             },
@@ -99905,123 +101150,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Read Estimate",
-        "tags": [
-          "overview"
-        ]
-      },
-      "patch": {
-        "description": "Edit the head row. The project's ``editing_roles`` only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
-        "operationId": "api_v1_overview_estimates_estimate_id_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateSummary"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Patch Estimate",
-        "tags": [
-          "overview"
-        ]
-      }
-    },
-    "/api/v1/overview/estimates/{estimate_id}/content": {
-      "put": {
-        "description": "Replace the estimate's whole content graph. The project's\n``editing_roles`` only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
-        "operationId": "api_v1_overview_estimates_estimate_id_content_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateContentWrite"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Replace Estimate Content",
+        "summary": "Read Forecast",
         "tags": [
           "overview"
         ]
@@ -100029,7 +101158,7 @@
     },
     "/api/v1/overview/estimates/{estimate_id}/rollup": {
       "get": {
-        "description": "Every derived planned figure, computed on read.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
+        "description": "Every derived planned figure, computed on read. Readable by any member.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
         "operationId": "api_v1_overview_estimates_estimate_id_rollup_get",
         "parameters": [
           {
@@ -100037,7 +101166,6 @@
             "name": "estimate_id",
             "required": true,
             "schema": {
-              "format": "uuid",
               "title": "Estimate Id",
               "type": "string"
             }
@@ -100075,6 +101203,181 @@
         "summary": "Read Rollup",
         "tags": [
           "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_estimates_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_estimates_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_estimates_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
         ]
       }
     },
@@ -100534,6 +101837,271 @@
         "tags": [
           "overview",
           "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/milestones": {
+      "get": {
+        "operationId": "api_v1_overview_milestones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_milestones_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MilestoneCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      }
+    },
+    "/api/v1/overview/milestones/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_milestones_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_milestones_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_milestones_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MilestoneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestonesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Milestones",
+        "tags": [
+          "overview",
+          "overview:milestones"
         ]
       }
     },
@@ -101028,6 +102596,153 @@
         "tags": [
           "overview",
           "overview:pages"
+        ]
+      }
+    },
+    "/api/v1/overview/phase-progress": {
+      "get": {
+        "operationId": "api_v1_overview_phase_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
+        ]
+      }
+    },
+    "/api/v1/overview/phase-progress/{record_id}": {
+      "get": {
+        "operationId": "api_v1_overview_phase_progress_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_phase_progress_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhaseProgressUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseProgressItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Phase Progress",
+        "tags": [
+          "overview",
+          "overview:phase-progress"
         ]
       }
     },

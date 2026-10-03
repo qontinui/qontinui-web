@@ -1,6 +1,13 @@
 /**
- * The wire shapes of `/api/v1/overview/*` and the four reads the Team page
- * and the estimate editor make.
+ * The wire shapes of the `estimates` resource and the two reads beyond it —
+ * the project settings and an estimate's rollup.
+ *
+ * The estimate itself is read and written through the overview authoring kit
+ * (`@/components/overview/editing/api`: `listResource("estimates")`,
+ * `getResource`, `createResource`, `updateResource`), which carries the
+ * contract every resource shares: the version as `If-Match`, a 409 with the
+ * server's copy, an idempotent create, and the write's source for the change
+ * log. Nothing here duplicates it.
  *
  * Two conventions, both enforced by the backend rather than restated here:
  *
@@ -15,6 +22,7 @@
  */
 
 import { httpClient } from "@/services/service-factory";
+import { OVERVIEW_API } from "@/components/overview/editing/api";
 import type {
   EstimatePurpose,
   LabourBilling,
@@ -23,11 +31,8 @@ import type {
 /** Re-exported so the editor can name the choice without a second import. */
 export type EstimatePurposeOption = EstimatePurpose;
 
-export const OVERVIEW_API = "/api/v1/overview";
-
-/** Names this page as the source of a write in `overview.change_log`
- *  (`X-Overview-Source`); a write without it is recorded as `api`. */
-const FROM_THE_OVERVIEW = { headers: { "X-Overview-Source": "ui" } };
+/** The registry name and route segment of the estimate resource. */
+export const ESTIMATES = "estimates";
 
 export type EstimateStatus =
   | "draft"
@@ -52,7 +57,12 @@ export interface OverviewSettings {
   updated_by: string | null;
 }
 
-export interface EstimateSummary {
+/**
+ * One estimate as the `estimates` resource serves it: the head row, and — on
+ * a single-record read — its whole content graph. A list read carries
+ * `content: null` (graphs are not sent in bulk), never an empty graph.
+ */
+export interface EstimateRecord {
   id: string;
   name: string;
   purpose: EstimatePurpose;
@@ -67,6 +77,7 @@ export interface EstimateSummary {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  content: EstimateContent | null;
 }
 
 export interface RoleRead {
@@ -153,8 +164,7 @@ export interface CalendarBreakRead {
   end_date: string;
 }
 
-export interface EstimateDetail {
-  estimate: EstimateSummary;
+export interface EstimateContent {
   roles: RoleRead[];
   phases: PhaseRead[];
   allocations: AllocationRead[];
@@ -307,10 +317,14 @@ export interface TaskWrite {
 }
 
 /**
- * Every field the content endpoint owns for a phase. The endpoint replaces
- * the WHOLE graph, so an omitted field is not "leave it alone" — it is
- * "reset it to its default". Anything added here must also be round-tripped
- * by the editor's draft (`team/edit/_lib/draft.ts`).
+ * Every field a content write owns for a phase — its PLAN. It replaces the
+ * WHOLE graph, so an omitted field is not "leave it alone" — it is "reset it
+ * to its default". Anything added here must also be round-tripped by the
+ * editor's draft (`team/edit/_lib/draft.ts`).
+ *
+ * A phase's progress (actual dates, the gate's outcome) is NOT here: it is
+ * written through the `phase_progress` resource (`timeline-api.ts`), and a
+ * content write naming it is refused.
  */
 export interface PhaseWrite {
   code: string;
@@ -319,11 +333,6 @@ export interface PhaseWrite {
   planned_end?: string | null;
   stated_working_weeks?: string | null;
   gate_criteria?: string;
-  actual_start?: string | null;
-  actual_end?: string | null;
-  gate_status?: GateStatus;
-  gate_decided_at?: string | null;
-  gate_notes?: string;
   tasks?: TaskWrite[];
 }
 
@@ -343,72 +352,19 @@ export interface EstimateContentWrite {
     run_model?: string | null;
   }[];
   calendar_breaks: { label: string; start_date: string; end_date: string }[];
-  /** From the last read. A 409 means somebody else saved first. */
-  expected_version?: number;
 }
 
 // ---------------------------------------------------------------------------
-// Reads and writes
+// Reads beyond the resource contract
 // ---------------------------------------------------------------------------
 
 export function fetchSettings(): Promise<OverviewSettings> {
   return httpClient.get<OverviewSettings>(`${OVERVIEW_API}/settings`);
 }
 
-export function fetchEstimates(): Promise<{
-  estimates: EstimateSummary[];
-  total: number;
-}> {
-  return httpClient.get(`${OVERVIEW_API}/estimates`);
-}
-
-export function fetchEstimate(id: string): Promise<EstimateDetail> {
-  return httpClient.get<EstimateDetail>(
-    `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}`
-  );
-}
-
 export function fetchRollup(id: string): Promise<EstimateRollup> {
   return httpClient.get<EstimateRollup>(
     `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}/rollup`
-  );
-}
-
-export function createEstimate(body: {
-  name: string;
-  purpose: EstimatePurpose;
-  is_baseline: boolean;
-  contingency_pct?: string | null;
-  accuracy_note?: string | null;
-  /** The delivery-plan document it is built from (Documents). */
-  source_page_id?: string | null;
-}): Promise<EstimateSummary> {
-  return httpClient.post<EstimateSummary>(
-    `${OVERVIEW_API}/estimates`,
-    body,
-    FROM_THE_OVERVIEW
-  );
-}
-
-export function patchEstimate(
-  id: string,
-  body: Record<string, unknown>
-): Promise<EstimateSummary> {
-  return httpClient.patch<EstimateSummary>(
-    `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}`,
-    body,
-    FROM_THE_OVERVIEW
-  );
-}
-
-export function saveEstimateContent(
-  id: string,
-  body: EstimateContentWrite
-): Promise<EstimateDetail> {
-  return httpClient.put<EstimateDetail>(
-    `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}/content`,
-    body,
-    FROM_THE_OVERVIEW
   );
 }
 
@@ -419,7 +375,7 @@ export function saveEstimateContent(
  * find it rather than being an accident of ordering.
  */
 export function pickBaseline(
-  estimates: EstimateSummary[]
-): EstimateSummary | null {
+  estimates: EstimateRecord[]
+): EstimateRecord | null {
   return estimates.find((e) => e.is_baseline) ?? estimates[0] ?? null;
 }
