@@ -325,8 +325,15 @@ export interface TaskWrite {
  * A phase's progress (actual dates, the gate's outcome) is NOT here: it is
  * written through the `phase_progress` resource (`timeline-api.ts`), and a
  * content write naming it is refused.
+ *
+ * `id` is identity, not plan: the saved phase this one continues. Sent, the
+ * phase keeps its row — its recorded progress and tied milestones — even when
+ * its code changed; it must name a phase of THIS estimate or the write is a
+ * 422. Omitted, a phase continues the saved one with the same code, and
+ * otherwise is new (`droppedPhases` in the editor mirrors the rule).
  */
 export interface PhaseWrite {
+  id?: string;
   code: string;
   name: string;
   planned_start?: string | null;

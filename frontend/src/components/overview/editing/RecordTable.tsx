@@ -55,6 +55,7 @@ export function RecordTable<Row extends object>({
   rowSchema,
   onEditingChange,
   onPasteTextChange,
+  reopen = null,
   uiBridgeId,
 }: {
   table: TableDeclaration<Row>;
@@ -69,6 +70,12 @@ export function RecordTable<Row extends object>({
   onEditingChange?: (open: boolean) => void;
   /** Told whether the paste dialog holds uncommitted text. */
   onPasteTextChange?: (hasText: boolean) => void;
+  /**
+   * Open the editor on row `at`, holding `row` instead of what the table
+   * shows — a copy combined from mine and a peer's newer version after a
+   * conflict, for the writer to finish and save. A new object reopens it.
+   */
+  reopen?: { at: number; row: Row } | null;
   uiBridgeId: string;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -84,6 +91,20 @@ export function RecordTable<Row extends object>({
     setEditing(null);
     setRemoving(null);
   }, [rows]);
+  // Declared after the effect above, so a reopen arriving with new rows is
+  // not dropped by it.
+  useEffect(() => {
+    if (!reopen) return;
+    setRemoving(null);
+    setEditing({
+      at: reopen.at,
+      text: rowToText(table, reopen.row),
+      errors: {},
+    });
+    // `table` is deliberately not a dependency: a re-declared table must not
+    // re-open an editor the writer has since closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reopen]);
 
   const editorOpen = editing !== null;
   useEffect(() => {

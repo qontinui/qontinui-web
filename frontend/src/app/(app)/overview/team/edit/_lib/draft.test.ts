@@ -895,3 +895,65 @@ describe("what a combine leaves to settle", () => {
     expect(draftFromStorage(text)?.notes).toEqual(notes);
   });
 });
+
+describe("a phase's identity", () => {
+  const loaded = () => draftFromEstimate(LOADED);
+
+  it("is carried from the loaded estimate to the write", () => {
+    expect(loaded().phases[0]?.id).toBe("p1");
+    expect(draftToContent(loaded()).phases[0]?.id).toBe("p1");
+  });
+
+  it("is omitted from the write for a phase the working copy introduced", () => {
+    const draft = loaded();
+    draft.phases = [{ ...draft.phases[0]!, id: null, code: "B1" }];
+    expect(draftToContent(draft).phases[0]).not.toHaveProperty("id");
+  });
+
+  it("survives a re-import that keeps the code, and not one that renames it", () => {
+    const chart = (code: string) => [
+      {
+        code,
+        name: "Mobilisation",
+        planned_start: "2026-01-05",
+        planned_end: "2026-01-30",
+        tasks: [],
+      },
+    ];
+    expect(applyGanttImport(loaded(), chart("A0")).phases[0]?.id).toBe("p1");
+    // Never matched by name: a renamed code is a new phase.
+    expect(applyGanttImport(loaded(), chart("M0")).phases[0]?.id).toBeNull();
+  });
+
+  it("is kept through a merge while their version still has the phase", () => {
+    const mine = loaded();
+    mine.phases = [{ ...mine.phases[0]!, code: "A0-renamed" }];
+    const merged = rebaseDraft(mine, loaded(), loaded()).draft;
+    expect(merged.phases[0]?.id).toBe("p1");
+    expect(merged.phases[0]?.code).toBe("A0-renamed");
+  });
+
+  it("is let go in a merge when they deleted the phase, so the save is not refused", () => {
+    const mine = loaded();
+    mine.phases = [{ ...mine.phases[0]!, name: "Mine" }];
+    const theirs = loaded();
+    theirs.phases = [{ ...theirs.phases[0]!, id: "p9" }];
+    const phase = rebaseDraft(mine, loaded(), theirs).draft.phases[0]!;
+    // Matched by its code instead — theirs has A0 under a new id.
+    expect(phase.id).toBeNull();
+    expect(phase.gate_criteria).toBe("Environments reachable");
+  });
+
+  it("reads a copy kept before phases carried ids as phases without one", () => {
+    const draft = loaded();
+    const old = {
+      ...draft,
+      phases: draft.phases.map(({ id: _id, ...rest }) => rest),
+    };
+    const stored = draftFromStorage(
+      JSON.stringify({ schema: STORED_DRAFT_SCHEMA, draft: old, base: old })
+    );
+    expect(stored?.draft.phases[0]?.id).toBeNull();
+    expect(draftToContent(stored!.draft).phases[0]).not.toHaveProperty("id");
+  });
+});
