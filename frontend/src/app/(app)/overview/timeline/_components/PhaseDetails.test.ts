@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { progressProblem } from "./PhaseDetails";
 
-// A local date, so the test means the same thing in every timezone it runs in.
-const TODAY = new Date(2026, 9, 3, 12, 0);
+// Noon UTC on 3 Oct 2026: the 3rd in every timezone, so the test means the
+// same thing wherever it runs.
+const TODAY = new Date(Date.UTC(2026, 9, 3, 12, 0));
 
 const form = (
   patch: Partial<Parameters<typeof progressProblem>[0]> = {}
@@ -76,5 +77,23 @@ describe("progressProblem — progress records what has happened", () => {
       /hasn’t happened yet/
     );
     expect(progressProblem(form({ actual_start: "2000-01-01" }))).toBeNull();
+  });
+});
+
+describe("progressProblem — the server's day, not the browser's", () => {
+  // The server allows UTC today + 1. Whatever the browser's own calendar
+  // says, the form must accept exactly that.
+  it("late on the 3rd UTC (already the 4th east of UTC) refuses the 5th", () => {
+    const now = new Date(Date.UTC(2026, 9, 3, 23, 30));
+    expect(progressProblem(form({ actual_start: "2026-10-05" }), now)).toMatch(
+      /can be 4 Oct 2026 at the latest/
+    );
+  });
+
+  it("early on the 3rd UTC (still the 2nd west of UTC) accepts the 4th", () => {
+    const now = new Date(Date.UTC(2026, 9, 3, 0, 30));
+    expect(
+      progressProblem(form({ actual_start: "2026-10-04" }), now)
+    ).toBeNull();
   });
 });

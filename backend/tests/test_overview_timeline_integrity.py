@@ -331,10 +331,12 @@ class TestAMilestoneWriteRacingAPhaseDelete:
         content = _content("A0", "D2")
         content["phases"][0]["id"] = a0
         content["phases"][1]["id"] = a2
+        # A1 has a milestone tied to it, so dropping it is acknowledged.
+        ack = {"phase_id": a1, "progress_version": 1, "milestone_count": 1}
         save = asyncio.create_task(
             client.patch(
                 f"{API}/estimates/{estimate['id']}",
-                json={"content": content},
+                json={"content": content, "acknowledged_drops": [ack]},
                 headers=_if_match(1),
             )
         )
@@ -570,16 +572,21 @@ class TestALegacyIncoherentRowIsRefusedVisibly:
     async def test_a_save_dropping_the_incoherent_phase_is_not_refused(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        """A DELETE is not checked, so dropping the phase is still possible."""
+        """A DELETE is not checked, so dropping the phase is still possible
+        (acknowledged, since it holds recorded progress)."""
         estimate = await _estimate(admin, "A0", "A1")
+        a1 = _phase_id(estimate, "A1")
         await _store_legacy(
-            async_db_session,
-            _phase_id(estimate, "A1"),
-            "ck_overview_phases_gate_decision_dated",
+            async_db_session, a1, "ck_overview_phases_gate_decision_dated"
         )
         response = await admin.patch(
             f"{API}/estimates/{estimate['id']}",
-            json={"content": _content("A0")},
+            json={
+                "content": _content("A0"),
+                "acknowledged_drops": [
+                    {"phase_id": a1, "progress_version": 1, "milestone_count": 0}
+                ],
+            },
             headers=_if_match(1),
         )
         assert response.status_code == 200, response.text
@@ -630,6 +637,365 @@ class TestALegacyIncoherentRowIsRefusedVisibly:
         assert "(actual_start, actual_end)" in body["message"]
         read = (await admin.get(f"{API}/phase-progress/{a0}")).json()["item"]
         assert read["version"] == 1 and read["gate_notes"] in (None, "")
+
+
+# ===========================================================================
+# A refused write commits nothing — through a session that really commits
+# ===========================================================================
+
+
+@pytest_asyncio.fixture()
+async def committing(test_engine):
+    """An admin client on the REAL request-session shape: every request gets
+    its own session, which ``get_async_db``'s contract COMMITS when the route
+    returns normally — a refusal answered as a JSONResponse included. The
+    ``admin`` fixture above shares one never-committed session, which is why
+    a refusal that had already written could pass its tests. Read back here
+    through a separate session, after the request."""
+    from types import SimpleNamespace
+
+    from app.models.overview import ChangeLog, Estimate, Milestone
+
+    sessions = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _clear() -> None:
+        async with sessions() as session:
+            for table in (Milestone, ChangeLog, Estimate):
+                await session.execute(
+                    table.__table__.delete().where(table.tenant_id == TENANT)
+                )
+            await session.commit()
+
+    await _clear()
+
+    async def _committing_session() -> AsyncIterator[AsyncSession]:
+        # ``get_async_db``'s own shape: commit after a normal return.
+        async with sessions() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    user = SimpleNamespace(id=uuid4(), email="committing@example.com")
+    app = _app(_committing_session, user)
+    try:
+        async with _client(app) as client:
+            yield client, sessions, app
+    finally:
+        await _clear()
+
+
+async def _stored_estimate(
+    sessions: async_sessionmaker[AsyncSession], estimate_id: str
+) -> dict[str, Any]:
+    from app.models.overview import ChangeLog, Estimate, Phase
+
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                select(Estimate).where(Estimate.id == UUID(estimate_id))
+            )
+        ).scalar_one()
+        codes = (
+            (
+                await session.execute(
+                    select(Phase.code)
+                    .where(Phase.estimate_id == row.id)
+                    .order_by(Phase.sort_order)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        log = (
+            (
+                await session.execute(
+                    select(ChangeLog.action).where(
+                        ChangeLog.resource == "estimates",
+                        ChangeLog.record_id == estimate_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {
+            "name": row.name,
+            "version": row.version,
+            "is_baseline": row.is_baseline,
+            "codes": list(codes),
+            "log": sorted(log),
+        }
+
+
+@pytest.mark.asyncio
+class TestARefusedWriteCommitsNothing:
+    async def test_a_refused_estimate_save_keeps_its_head_and_the_baseline(
+        self, committing
+    ) -> None:
+        """A save carrying a head field, the baseline flag and content the
+        store refuses (here: a drop it did not acknowledge) used to answer
+        409/422 having already demoted the other baseline and set the new
+        name — and the request's session then committed both, with no
+        version bump and no change-log row."""
+        client, sessions, _ = committing
+        first = await _estimate(client, "A0", "A1")
+        second = await _estimate(client, "B0")  # takes the baseline from it
+        a1 = _phase_id(first, "A1")
+        recorded = await client.patch(
+            f"{API}/phase-progress/{a1}",
+            json={"gate_status": "passed", "gate_decided_at": "2026-01-30"},
+            headers=_if_match(1),
+        )
+        assert recorded.status_code == 200, recorded.text
+        before_first = await _stored_estimate(sessions, first["id"])
+        before_second = await _stored_estimate(sessions, second["id"])
+        assert before_first["is_baseline"] is False
+        assert before_second["is_baseline"] is True
+
+        response = await client.patch(
+            f"{API}/estimates/{first['id']}",
+            json={"name": "SNEAKY", "is_baseline": True, "content": _content("A0")},
+            headers=_if_match(before_first["version"]),
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"] == "unacknowledged_drop"
+
+        assert await _stored_estimate(sessions, first["id"]) == before_first
+        assert await _stored_estimate(sessions, second["id"]) == before_second
+
+    @pytest.mark.parametrize("verb", ["create", "update"])
+    async def test_a_store_that_writes_then_refuses_commits_nothing(
+        self, committing, verb: str
+    ) -> None:
+        """The choke point, for any resource: whatever a store wrote before
+        it refused is undone before the route answers — so a resource added
+        to the registry later cannot reintroduce this (``app.overview.http.refusable``)."""
+        from app.models.overview import ChangeLog, Milestone
+        from app.overview.milestones import MilestoneStore, milestone_store
+        from app.overview.resource import StoreRefused
+
+        client, sessions, app = committing
+        made = await client.post(
+            f"{API}/milestones",
+            json={"title": "Pilot", "target_date": "2026-03-02"},
+        )
+        assert made.status_code == 201, made.text
+        milestone = made.json()["item"]
+
+        class WritesThenRefuses(MilestoneStore):
+            async def create(self, ctx: Any, payload: Any) -> Any:
+                await super().create(ctx, payload)
+                raise StoreRefused(422, "refused_after_writing", "No.")
+
+            async def update(self, ctx: Any, *args: Any) -> Any:
+                await super().update(ctx, *args)
+                raise StoreRefused(422, "refused_after_writing", "No.")
+
+        app.dependency_overrides[milestone_store] = WritesThenRefuses
+        if verb == "create":
+            response = await client.post(
+                f"{API}/milestones",
+                json={"title": "Second", "target_date": "2026-03-09"},
+            )
+        else:
+            response = await client.patch(
+                f"{API}/milestones/{milestone['id']}",
+                json={"title": "Renamed"},
+                headers=_if_match(1),
+            )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"] == "refused_after_writing"
+
+        async with sessions() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(Milestone).where(Milestone.tenant_id == TENANT)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            logged = (
+                (
+                    await session.execute(
+                        select(ChangeLog.action).where(
+                            ChangeLog.tenant_id == TENANT,
+                            ChangeLog.resource == "milestones",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert [(r.title, r.version) for r in rows] == [("Pilot", 1)]
+        assert logged == ["create"]
+
+    async def test_posting_an_estimate_read_back_as_a_copy_ignores_its_phase_ids(
+        self, committing
+    ) -> None:
+        """GET → POST is a copy: the phase ids it carries name another
+        estimate's phases, and a new estimate's phases are all new. It used
+        to be refused AFTER the head row was written, leaving an orphan
+        estimate (and the baseline handed to it)."""
+        client, sessions, _ = committing
+        original = await _estimate(client, "A0", "A1")
+        copied = _content("A0", "A1")
+        for phase in copied["phases"]:
+            phase["id"] = _phase_id(original, phase["code"])
+        response = await client.post(
+            f"{API}/estimates",
+            json={
+                "name": "Copy",
+                "purpose": "budget",
+                "is_baseline": True,
+                "content": copied,
+            },
+        )
+        assert response.status_code == 201, response.text
+        copy = response.json()["item"]
+        assert [p["code"] for p in copy["content"]["phases"]] == ["A0", "A1"]
+        assert {_phase_id(copy, c) for c in ("A0", "A1")}.isdisjoint(
+            {_phase_id(original, c) for c in ("A0", "A1")}
+        )
+        # The original keeps its phases, by the same ids.
+        read = (await client.get(f"{API}/estimates/{original['id']}")).json()["item"]
+        assert [_phase_id(read, c) for c in ("A0", "A1")] == [
+            _phase_id(original, c) for c in ("A0", "A1")
+        ]
+
+
+@pytest.mark.asyncio
+class TestAnUnacknowledgedDropIsRefused:
+    async def test_a_phase_holding_nothing_needs_no_acknowledgement(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        estimate = await _estimate(admin, "A0", "A1")
+        response = await admin.patch(
+            f"{API}/estimates/{estimate['id']}",
+            json={"content": _content("A0")},
+            headers=_if_match(1),
+        )
+        assert response.status_code == 200, response.text
+
+    async def test_progress_recorded_after_the_check_refuses_the_save(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        """The race the client's own check cannot close: it found A1 clear
+        (or acknowledged it at progress version 1), then somebody recorded
+        A1's gate before Save. The save is refused with A1 as it now stands,
+        and nothing is written; acknowledging THAT state goes through."""
+        estimate = await _estimate(admin, "A0", "A1")
+        a1 = _phase_id(estimate, "A1")
+        seen = {"phase_id": a1, "progress_version": 1, "milestone_count": 0}
+        recorded = await admin.patch(
+            f"{API}/phase-progress/{a1}",
+            json={"gate_status": "passed", "gate_decided_at": "2026-01-30"},
+            headers=_if_match(1),
+        )
+        assert recorded.status_code == 200, recorded.text
+        made = await admin.post(
+            f"{API}/milestones",
+            json={"title": "Pilot", "target_date": "2026-03-02", "phase_id": a1},
+        )
+        assert made.status_code == 201, made.text
+
+        for acknowledged in ([], [seen]):
+            response = await admin.patch(
+                f"{API}/estimates/{estimate['id']}",
+                json={"content": _content("A0"), "acknowledged_drops": acknowledged},
+                headers=_if_match(1),
+            )
+            assert response.status_code == 409, response.text
+            body = response.json()
+            assert body["error"] == "unacknowledged_drop"
+            assert body["phases"] == [
+                {
+                    "phase_id": a1,
+                    "code": "A1",
+                    "name": "Phase A1",
+                    "progress_version": 2,
+                    "milestone_count": 1,
+                    "actual_start": None,
+                    "actual_end": None,
+                    "gate_status": "passed",
+                    "gate_decided_at": "2026-01-30",
+                    "gate_notes": "",
+                }
+            ]
+            head = (await admin.get(f"{API}/estimates/{estimate['id']}")).json()
+            assert head["item"]["version"] == 1
+            assert [p["code"] for p in head["item"]["content"]["phases"]] == [
+                "A0",
+                "A1",
+            ]
+
+        fresh = {"phase_id": a1, "progress_version": 2, "milestone_count": 1}
+        response = await admin.patch(
+            f"{API}/estimates/{estimate['id']}",
+            json={"content": _content("A0"), "acknowledged_drops": [fresh]},
+            headers=_if_match(1),
+        )
+        assert response.status_code == 200, response.text
+        assert [p["code"] for p in response.json()["item"]["content"]["phases"]] == [
+            "A0"
+        ]
+
+    async def test_a_milestone_tied_after_the_check_refuses_the_save(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        estimate = await _estimate(admin, "A0", "A1")
+        a1 = _phase_id(estimate, "A1")
+        made = await admin.post(
+            f"{API}/milestones",
+            json={"title": "Pilot", "target_date": "2026-03-02", "phase_id": a1},
+        )
+        assert made.status_code == 201, made.text
+        stale = {"phase_id": a1, "progress_version": 1, "milestone_count": 0}
+        response = await admin.patch(
+            f"{API}/estimates/{estimate['id']}",
+            json={"content": _content("A0"), "acknowledged_drops": [stale]},
+            headers=_if_match(1),
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["phases"][0]["milestone_count"] == 1
+
+    async def test_a_refused_incoherent_rename_keeps_the_head_and_the_baseline(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The review's reproduction: a head field and the baseline flag
+        beside content the database refuses (a rename of a legacy-incoherent
+        phase). The 422 used to leave the new name and the other estimate's
+        demotion in the session."""
+        first = await _estimate(admin, "A0", "A1")
+        second = await _estimate(admin, "B0")  # now the baseline
+        a0, a1 = _phase_id(first, "A0"), _phase_id(first, "A1")
+        await _store_legacy(
+            async_db_session, a1, "ck_overview_phases_gate_decision_dated"
+        )
+        renamed = _content("A0", "D1")
+        renamed["phases"][0]["id"], renamed["phases"][1]["id"] = a0, a1
+        version = (await admin.get(f"{API}/estimates/{first['id']}")).json()["item"][
+            "version"
+        ]
+        response = await admin.patch(
+            f"{API}/estimates/{first['id']}",
+            json={"name": "SNEAKY", "is_baseline": True, "content": renamed},
+            headers=_if_match(version),
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"] == "incoherent_recorded_progress"
+        head = (await admin.get(f"{API}/estimates/{first['id']}")).json()["item"]
+        assert (head["name"], head["version"], head["is_baseline"]) == (
+            "Plan",
+            version,
+            False,
+        )
+        other = (await admin.get(f"{API}/estimates/{second['id']}")).json()["item"]
+        assert (other["version"], other["is_baseline"]) == (1, True)
 
 
 # ===========================================================================

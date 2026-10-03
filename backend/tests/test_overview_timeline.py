@@ -477,7 +477,15 @@ class TestAMilestoneOutlivesItsPhase:
         a2 = _phase_id(estimate, "A2")
         made = await _milestone(admin, phase_id=a2)
         saved = await _patch(
-            admin, f"estimates/{estimate['id']}", {"content": _content("A0", "A1")}, 1
+            admin,
+            f"estimates/{estimate['id']}",
+            {
+                "content": _content("A0", "A1"),
+                "acknowledged_drops": [
+                    {"phase_id": a2, "progress_version": 1, "milestone_count": 1}
+                ],
+            },
+            1,
         )
         assert saved.status_code == 200, saved.text
         read = (await admin.get(f"{API}/milestones/{made['id']}")).json()["item"]
@@ -588,8 +596,18 @@ class TestARenamedPhaseKeepsItsIdentity:
         made = await _milestone(admin, phase_id=a1)
         content = _content("A0", "D1", "A2")
         content["phases"][1]["name"] = "Phase A1"  # the old name, a new code
-        saved = await _patch(
+        refused = await _patch(
             admin, f"estimates/{estimate['id']}", {"content": content}, 1
+        )
+        # A1 is dropped, and holds a milestone: that is said, not done.
+        assert refused.status_code == 409, refused.text
+        assert [p["code"] for p in refused.json()["phases"]] == ["A1"]
+        ack = {"phase_id": a1, "progress_version": 1, "milestone_count": 1}
+        saved = await _patch(
+            admin,
+            f"estimates/{estimate['id']}",
+            {"content": content, "acknowledged_drops": [ack]},
+            1,
         )
         assert saved.status_code == 200, saved.text
         assert _phase_id(saved.json()["item"], "D1") != a1

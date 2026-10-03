@@ -253,7 +253,8 @@ export function describePosition(
 
 /**
  * The next gate to be decided, in words; `null` value (shown "Not known")
- * only when there is no phase to have a gate.
+ * only when there is no phase to have a gate — and then with that reason,
+ * never a bare "Not known".
  */
 export function describeNextGate(
   forecast: Pick<TimelineForecast, "position" | "next_gate">
@@ -265,7 +266,7 @@ export function describeNextGate(
     };
   }
   return forecast.position === "no_phases"
-    ? { value: null, detail: null }
+    ? { value: null, detail: "No phases in the estimate yet." }
     : { value: "All gates decided", detail: null };
 }
 
