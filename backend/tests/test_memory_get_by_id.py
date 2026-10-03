@@ -14,17 +14,37 @@ unreachable, same posture as that suite.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Generator
+import base64
+import time
+from collections.abc import AsyncGenerator, Generator
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import jwt as pyjwt
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
+from app.api.deps import current_active_user_optional, get_async_db
+from app.api.v1.endpoints import memory as memory_ep
+from app.services.coord_jwks import CoordJWKSClient
 from tests.conftest import TEST_DATABASE_URL
-from tests.test_memory_api_db import _SETUP_SQL, MemoryClient, _exec, _record
+from tests.test_memory_api_db import (
+    _SETUP_SQL,
+    MemoryClient,
+    _exec,
+    _record,
+    _scalar,
+)
 
 _CONTRACT_KEYS = {
     "memory_id",
@@ -151,9 +171,74 @@ class TestGetRecordById:
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
+        assert set(body) == _CONTRACT_KEYS
+        assert body["memory_id"] == memory_id
         assert body["state"] == "tombstoned"
         assert body["superseded_by"] is None
         assert body["valid_until"] is not None
+        # A deletion's body is withheld; the receipt answer is id + state.
+        assert body["title"] is None
+        assert body["content"] is None
+
+    def test_validity_ended_row_reads_expired(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        """Neither tombstoned nor superseded, but ``valid_until`` has
+        passed (what decay invalidate / session expiry leave) → expired,
+        with the body still returned."""
+        memory_id = _write(mc, "content whose validity a sweep ended")
+        _exec(
+            memory_engine,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() - interval '1 hour' "
+                "WHERE memory_id = CAST(:mid AS uuid)"
+            ],
+            mid=memory_id,
+        )
+
+        body = _get(mc, memory_id).json()
+
+        assert body["state"] == "expired"
+        assert body["superseded_by"] is None
+        assert body["valid_until"] is not None
+        assert body["content"] == "content whose validity a sweep ended"
+
+    def test_future_valid_until_is_still_live(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        """A session-expiry boundary still in the future is retrievable
+        now, so the row reads live (the state means "retrievable now")."""
+        memory_id = _write(mc, "session row with a week of validity left")
+        _exec(
+            memory_engine,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() + interval '7 days' "
+                "WHERE memory_id = CAST(:mid AS uuid)"
+            ],
+            mid=memory_id,
+        )
+
+        body = _get(mc, memory_id).json()
+
+        assert body["state"] == "live"
+        assert body["valid_until"] is not None
+
+    def test_get_does_not_bump_access_count(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        memory_id = _write(mc, "reading a receipt is not an access")
+        sql = (
+            "SELECT access_count FROM coord.memory_records "
+            "WHERE memory_id = CAST(:mid AS uuid)"
+        )
+        before = _scalar(memory_engine, sql, mid=memory_id)
+
+        assert _get(mc, memory_id).status_code == 200
+        assert _get(mc, memory_id).status_code == 200
+
+        assert _scalar(memory_engine, sql, mid=memory_id) == before
 
     def test_other_tenants_id_is_404_without_disclosure(self, mc: MemoryClient) -> None:
         memory_id = _write(mc, "tenant A private knowledge for by-id read")
@@ -181,3 +266,100 @@ class TestGetRecordById:
         memory_id = _write(mc, "echo the tenant that served this read")
 
         assert _get(mc, memory_id).json()["tenant_id"] == str(tenant)
+
+
+# ---------------------------------------------------------------------------
+# Real auth path: a minted coord service token, get_memory_tenant NOT
+# overridden. The token is signed in-process with a fresh Ed25519 key and
+# verified by the real ``CoordJWKSClient.verify_token`` against a JWKS
+# serving the public half (only the HTTP fetch is stubbed, as in
+# tests/services/test_coord_jwks.py).
+# ---------------------------------------------------------------------------
+
+
+class _BakedJWKSClient(CoordJWKSClient):
+    def __init__(self, jwks: dict[str, Any]) -> None:
+        super().__init__(coord_url="http://test")
+        self._baked = jwks
+
+    async def _fetch_jwks(self) -> dict[str, Any]:
+        return self._baked
+
+
+def _mint_service_token(tenant_id: UUID) -> tuple[str, dict[str, Any]]:
+    private = Ed25519PrivateKey.generate()
+    x = base64.urlsafe_b64encode(private.public_key().public_bytes_raw())
+    jwks = {
+        "keys": [
+            {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "use": "sig",
+                "alg": "EdDSA",
+                "kid": "coord-ed25519-test",
+                "x": x.rstrip(b"=").decode("ascii"),
+            }
+        ]
+    }
+    now = int(time.time())
+    token = pyjwt.encode(
+        {
+            "iss": "qontinui-coord",
+            "sub": memory_ep.COORD_SERVICE_SUBJECT,
+            "token_kind": memory_ep.COORD_SERVICE_TOKEN_KIND,
+            "tenant_id": str(tenant_id),
+            "iat": now,
+            "exp": now + 300,
+        },
+        private,
+        algorithm="EdDSA",
+        headers={"kid": "coord-ed25519-test", "typ": "JWT"},
+    )
+    return token, jwks
+
+
+def test_minted_coord_service_token_reads_own_tenant_row(
+    mc: MemoryClient,
+    memory_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    memory_id = _write(mc, "written by tenant, read back over the service token")
+    token, jwks = _mint_service_token(mc.tenant_id)
+    monkeypatch.setattr(memory_ep, "coord_jwks_client", _BakedJWKSClient(jwks))
+
+    maker = async_sessionmaker(
+        memory_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async def _get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with maker() as session:
+            yield session
+
+    app = FastAPI()
+    app.include_router(memory_ep.router, prefix="/api/v1/memory")
+    # get_memory_tenant is deliberately NOT overridden. Only the ambient
+    # Cognito-user lookup is pinned to "no user", so the 200 below can only
+    # have come from the service-token arm.
+    app.dependency_overrides[current_active_user_optional] = lambda: None
+    app.dependency_overrides[get_async_db] = _get_db
+    client = TestClient(app)
+
+    resp = client.get(
+        f"/api/v1/memory/records/{memory_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["memory_id"] == memory_id
+    assert body["tenant_id"] == str(mc.tenant_id)
+    assert body["state"] == "live"
+
+    # A service token for ANOTHER tenant → the undisclosing 404.
+    other_token, other_jwks = _mint_service_token(uuid4())
+    monkeypatch.setattr(memory_ep, "coord_jwks_client", _BakedJWKSClient(other_jwks))
+    resp = client.get(
+        f"/api/v1/memory/records/{memory_id}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert resp.status_code == 404
+    assert resp.json() == _NOT_FOUND

@@ -29792,11 +29792,18 @@
       },
       "MemoryRecordByIdResponse": {
         "additionalProperties": false,
-        "description": "``GET /memory/records/{id}`` \u2014 one row, in WHATEVER state it is in.\n\nThe read-back half of a write receipt (plan\n``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``\nPhase 1). Unlike the list and query surfaces it does NOT filter to live\nrows: a receipt for a row a peer superseded a minute later must read as\n``superseded``, not as a lost write.\n\n``state`` is derived from the row's own columns, in precedence order:\n``is_tombstone`` \u2192 ``tombstoned``; else a non-null ``superseded_by`` \u2192\n``superseded``; else ``live``. ``live`` therefore means \"neither\ntombstoned nor superseded\" \u2014 a row whose validity was ended by an\nautomatic sweep (decay invalidate, closed-session expiry) carries no\ntombstone flag and no successor, so it reads ``live`` with a non-null\n``valid_until``. ``valid_until`` is the field that answers \"is it still\nretrievable\", and it is echoed precisely so a reader can tell.\n\n``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a\nmulti-bound device can be read as \"the wrong tenant was minted\" rather\nthan \"the write was lost\".",
+        "description": "``GET /memory/records/{id}`` \u2014 one row, in WHATEVER state it is in.\n\nThe read-back half of a write receipt (plan\n``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``\nPhase 1). Unlike the list and query surfaces it does NOT filter to live\nrows: a receipt for a row a peer superseded a minute later must read as\n``superseded``, not as a lost write.\n\n``state`` is derived from the row's own columns, in precedence order:\n\n1. ``is_tombstone`` \u2192 ``tombstoned`` (deleted). ``title`` and\n   ``content`` are withheld as ``null``; id, state and ``valid_until``\n   are still returned.\n2. a non-null ``superseded_by`` \u2192 ``superseded``.\n3. ``valid_until`` at or before the effective now \u2192 ``expired`` \u2014 the\n   validity was ended without a tombstone or a successor (decay\n   invalidate, closed-session expiry, an anchor-gone sweep). \"Now\" is\n   the SAME clock-skew-safe effective now retrieval uses\n   (``memory_store._EFFECTIVE_NOW_ROW_SQL``).\n4. otherwise \u2192 ``live``: retrievable now on the validity axis. A\n   session-scoped row whose ``valid_until`` is still in the future is\n   ``live`` until that instant passes.\n\n``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a\nmulti-bound device can be read as \"the wrong tenant was minted\" rather\nthan \"the write was lost\".",
         "properties": {
           "content": {
-            "title": "Content",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
           },
           "created_at": {
             "format": "date-time",
@@ -29842,7 +29849,8 @@
             "enum": [
               "live",
               "superseded",
-              "tombstoned"
+              "tombstoned",
+              "expired"
             ],
             "title": "State",
             "type": "string"
@@ -29865,8 +29873,15 @@
             "type": "string"
           },
           "title": {
-            "title": "Title",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "valid_until": {
             "anyOf": [
@@ -85430,7 +85445,7 @@
         ]
       },
       "get": {
-        "description": "One record by id, tenant-scoped, in WHATEVER state it is in.\n\nThe read-back half of a write receipt: a caller holding a ``memory_id``\nfrom ``POST /records`` (or coord's ``coord_memory_record``) resolves it\nhere deterministically, without FTS and without the list surface's\nlive-only, time-windowed filter. Superseded and tombstoned rows are\nreturned, with ``state`` derived from the row's own columns \u2014 see\n:class:`MemoryRecordByIdResponse` for the precedence.\n\n404 when the id does not exist OR belongs to another tenant \u2014 the two\nare deliberately indistinguishable. Read-only: does not bump\n``access_count``.",
+        "description": "One record by id, tenant-scoped, in WHATEVER state it is in.\n\nThe read-back half of a write receipt: a caller holding a ``memory_id``\nfrom ``POST /records`` (or coord's ``coord_memory_record``) resolves it\nhere deterministically, without FTS and without the list surface's\nlive-only, time-windowed filter. Superseded and tombstoned rows are\nreturned, with ``state`` derived from the row's own columns \u2014 see\n:class:`MemoryRecordByIdResponse` for the precedence. A tombstoned\nrow's ``title`` and ``content`` are withheld (``null``).\n\n404 when the id does not exist OR belongs to another tenant \u2014 the two\nare deliberately indistinguishable. Read-only: does not bump\n``access_count``.",
         "operationId": "api_v1_memory_records_memory_id_get",
         "parameters": [
           {
