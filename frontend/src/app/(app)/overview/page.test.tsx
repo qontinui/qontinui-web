@@ -199,6 +199,10 @@ describe("the Summary's schedule tiles", () => {
     render(<OverviewSummaryPage />);
     await waitFor(() => expect(tile("tiles")).not.toBeNull());
     expect(tile("next-gate")!.textContent).toContain("Not known");
+    // ...with the reason, never a bare "Not known".
+    expect(tile("next-gate")!.textContent).toContain(
+      "No phases in the estimate yet."
+    );
     expect(tile("forecast")!.textContent).toContain(
       "This estimate has no phases yet."
     );

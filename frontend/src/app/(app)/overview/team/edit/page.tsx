@@ -28,7 +28,10 @@
  *   code) is deleted by the write, with the progress recorded on the Timeline
  *   and its milestones untied. Before such a Save the page reads, fresh, what
  *   those phases hold, and names each one and its loss; a read that failed is
- *   said too (`DroppedPhasesDialog`, `_lib/dropped.ts`).
+ *   said too (`DroppedPhasesDialog`, `_lib/dropped.ts`). The Save carries
+ *   what was seen (`acknowledged_drops`), so work recorded on one of them
+ *   between the check and the Save refuses it (409 `unacknowledged_drop`)
+ *   and the writer is asked again, with what the phase now holds.
  */
 
 import Link from "next/link";
@@ -70,6 +73,7 @@ import { sumPersonDays } from "../../_lib/csv";
 import {
   ESTIMATES,
   pickBaseline,
+  type AcknowledgedDrop,
   type EstimatePurposeOption,
   type EstimateRecord,
 } from "../../_lib/estimate-api";
@@ -95,6 +99,7 @@ import {
 } from "./_lib/draft";
 import {
   checkDroppedPhases,
+  dropCheckFromRefusal,
   droppedPhases,
   type DropCheck,
 } from "./_lib/dropped";
@@ -533,7 +538,13 @@ function EstimateEditor({
    *  writer's answer to what the check found. */
   const [held, setHeld] = useState<
     | { state: "checking" }
-    | { state: "asking"; check: DropCheck; version: number; content: Draft }
+    | {
+        state: "asking";
+        check: DropCheck;
+        version: number;
+        content: Draft;
+        withSource: boolean;
+      }
     | null
   >(null);
   /** Their version, shown beside the working copy after "combine". */
@@ -680,11 +691,19 @@ function EstimateEditor({
     {
       withSource = linkSource,
       content = draft,
-    }: { withSource?: boolean; content?: Draft } = {}
+      acknowledgements = [],
+    }: {
+      withSource?: boolean;
+      content?: Draft;
+      /** The dropped phases' state the writer saw (`acknowledged_drops`). */
+      acknowledgements?: readonly AcknowledgedDrop[];
+    } = {}
   ) => {
     setStatus({ kind: "saving" });
     const patch: Record<string, unknown> = { content: draftToContent(content) };
     if (withSource && source !== null) patch.source_page_id = source.id;
+    if (acknowledgements.length > 0)
+      patch.acknowledged_drops = [...acknowledgements];
     const result = await update(patch, version, {
       source: imported ? "import" : "ui",
     });
@@ -696,6 +715,16 @@ function EstimateEditor({
       setConflict(result.conflict);
     } else if (result.code === "source_page_not_found") {
       setStatus({ kind: "source_refused" });
+    } else if (result.code === "unacknowledged_drop") {
+      // Somebody recorded work on a phase this save drops after it was
+      // checked. Nothing was written: ask again, with what it holds now.
+      const check = dropCheckFromRefusal(result.details, acknowledgements);
+      if (check) {
+        setStatus({ kind: "idle" });
+        setHeld({ state: "asking", check, version, content, withSource });
+      } else {
+        setStatus({ kind: "failed", message: result.error });
+      }
     } else {
       setStatus({ kind: "failed", message: result.error });
     }
@@ -711,20 +740,25 @@ function EstimateEditor({
     {
       content = draft,
       base = baseDraft,
-    }: { content?: Draft; base?: Draft } = {}
+      withSource = linkSource,
+    }: { content?: Draft; base?: Draft; withSource?: boolean } = {}
   ) => {
     const dropped = droppedPhases(base.phases, draftToContent(content).phases);
     if (dropped.length === 0) {
-      await save(version, { content });
+      await save(version, { content, withSource });
       return;
     }
     setHeld({ state: "checking" });
     const check = await checkDroppedPhases(record.id, dropped);
     if (check.kind === "clear") {
       setHeld(null);
-      await save(version, { content });
+      await save(version, {
+        content,
+        withSource,
+        acknowledgements: check.acknowledgements,
+      });
     } else {
-      setHeld({ state: "asking", check, version, content });
+      setHeld({ state: "asking", check, version, content, withSource });
     }
   };
 
@@ -1051,7 +1085,9 @@ function EstimateEditor({
                 type="button"
                 onClick={() => {
                   onSourceDropped();
-                  void save(baseVersion, { withSource: false });
+                  // Through the drop check like every Save: dropping the
+                  // source must not drop a phase's recorded work unasked.
+                  void guardedSave(baseVersion, { withSource: false });
                 }}
                 className="inline-flex min-h-9 items-center rounded-md text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 data-ui-bridge-id="overview.estimate-editor.save.without-source"
@@ -1135,9 +1171,17 @@ function EstimateEditor({
         onCancel={() => setHeld(null)}
         onConfirm={() => {
           if (held?.state !== "asking") return;
-          const { version, content } = held;
+          const { version, content, withSource, check } = held;
           setHeld(null);
-          void save(version, { content });
+          // What the writer was shown is what the save acknowledges; an
+          // unknown check acknowledges nothing, so the server says what is
+          // at stake if anything is.
+          void save(version, {
+            content,
+            withSource,
+            acknowledgements:
+              check.kind === "unknown" ? [] : check.acknowledgements,
+          });
         }}
       />
     </div>

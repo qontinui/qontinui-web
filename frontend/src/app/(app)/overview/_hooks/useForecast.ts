@@ -22,7 +22,12 @@ export function useForecast(
   hold: boolean,
   token: number = 0
 ): ForecastState {
-  const [value, setValue] = useState<ForecastState>({ state: "loading" });
+  // An error is kept with the estimate it was about, as a ready forecast
+  // carries its own `estimate_id`, so neither outlives a project switch.
+  const [value, setValue] = useState<
+    | Exclude<ForecastState, { state: "error" }>
+    | { state: "error"; message: string; about: string }
+  >({ state: "loading" });
   useEffect(() => {
     if (hold || estimateId === null) return;
     let live = true;
@@ -33,6 +38,7 @@ export function useForecast(
         setValue({
           state: "error",
           message: err instanceof Error ? err.message : String(err),
+          about: estimateId,
         })
     );
     return () => {
@@ -40,9 +46,15 @@ export function useForecast(
     };
   }, [estimateId, hold, token]);
   // A re-read (the token moved) keeps the figures on screen until the new
-  // ones land; another estimate's figures (the project changed) never show.
+  // ones land; another estimate's figures (the project changed) never show,
+  // and neither does the error another estimate's read ended in.
   if (value.state === "ready" && value.forecast.estimate_id !== estimateId) {
     return { state: "loading" };
+  }
+  if (value.state === "error") {
+    return value.about === estimateId
+      ? { state: "error", message: value.message }
+      : { state: "loading" };
   }
   return value;
 }

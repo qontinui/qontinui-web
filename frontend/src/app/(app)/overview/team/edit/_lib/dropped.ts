@@ -14,10 +14,21 @@
  * `phase-progress` and `milestones` resources at the moment of Save, because
  * a gate may have been recorded on the Timeline since this page loaded)?
  * A check that could not be made is said, never passed silently.
+ *
+ * The check is not the guard: a peer may record progress between it and
+ * the Save. So the Save carries what the check SAW (`acknowledgements`, the
+ * server's `acknowledged_drops`), and the server refuses a drop whose phase
+ * has moved since — a 409 `unacknowledged_drop` carrying what it now holds,
+ * which `dropCheckFromRefusal` turns back into a question for the writer.
  */
 
 import { listResource } from "@/components/overview/editing/api";
-import type { PhaseWrite } from "../../../_lib/estimate-api";
+import type {
+  AcknowledgedDrop,
+  GateStatus,
+  PhaseWrite,
+  UnacknowledgedDrop,
+} from "../../../_lib/estimate-api";
 import {
   MILESTONES_PATH,
   PHASE_PROGRESS_PATH,
@@ -73,22 +84,37 @@ export interface PhaseLoss {
 
 export type DropCheck =
   /** Nothing dropped holds recorded work: save without asking. */
-  | { kind: "clear" }
-  /** These would lose something: ask first. */
-  | { kind: "at_risk"; losses: PhaseLoss[] }
+  | { kind: "clear"; acknowledgements: AcknowledgedDrop[] }
+  /** These would lose something: ask first. `fresh` when the server refused
+   *  the save because they changed after the editor's own check. */
+  | {
+      kind: "at_risk";
+      losses: PhaseLoss[];
+      acknowledgements: AcknowledgedDrop[];
+      fresh?: boolean;
+    }
   /** Whether anything would be lost could not be found out: say so, and let
    *  the writer choose. Never treated as "clear". */
   | { kind: "unknown"; dropped: SavedPhase[]; reason: string };
 
-/** The progress a phase holds, in words — empty when nothing is recorded. */
-export function recordedProgress(progress: PhaseProgress): string[] {
+/** The progress fields a drop would delete. */
+type RecordedProgress = Pick<
+  PhaseProgress,
+  "actual_start" | "actual_end" | "gate_decided_at" | "gate_notes"
+> & { gate_status: GateStatus | string };
+
+/** The progress a phase holds, in words — empty when nothing is recorded.
+ *  Total: a gate status this build does not know is named as served. */
+export function recordedProgress(progress: RecordedProgress): string[] {
   const parts: string[] = [];
   if (progress.gate_status !== "pending") {
-    parts.push(`gate outcome (${GATE[progress.gate_status].label})`);
+    const label =
+      GATE[progress.gate_status as GateStatus]?.label ?? progress.gate_status;
+    parts.push(`gate outcome (${label})`);
   } else if (progress.gate_decided_at) {
     parts.push("gate decision date");
   }
-  if (progress.gate_notes.trim() !== "") parts.push("gate notes");
+  if ((progress.gate_notes ?? "").trim() !== "") parts.push("gate notes");
   if (progress.actual_start && progress.actual_end) {
     parts.push("actual start and end dates");
   } else if (progress.actual_start) {
@@ -126,19 +152,97 @@ export function assessDrops(
   return losses;
 }
 
+/**
+ * What the Save tells the server the writer saw: for each dropped phase the
+ * check could identify, its progress version and its tied milestones.
+ */
+export function acknowledgeDrops(
+  dropped: readonly SavedPhase[],
+  progress: readonly PhaseProgress[],
+  milestones: readonly Milestone[]
+): AcknowledgedDrop[] {
+  return dropped.flatMap((phase) => {
+    const row = progress.find((p) =>
+      phase.id !== null ? p.id === phase.id : p.code === phase.code
+    );
+    if (!row) return [];
+    return [
+      {
+        phase_id: row.id,
+        progress_version: row.version,
+        milestone_count: milestones.filter((m) => m.phase_id === row.id).length,
+      },
+    ];
+  });
+}
+
+/**
+ * The server's 409 `unacknowledged_drop` as a question for the writer: what
+ * each refused phase holds NOW, and the acknowledgements a Save confirming
+ * that must carry — `earlier` (what the writer already confirmed) kept for
+ * every phase the refusal does not name. `null` when the body does not say.
+ */
+export function dropCheckFromRefusal(
+  details: Record<string, unknown> | null | undefined,
+  earlier: readonly AcknowledgedDrop[] = []
+): DropCheck | null {
+  const phases = details?.phases;
+  if (!Array.isArray(phases) || phases.length === 0) return null;
+  try {
+    const rows = phases as UnacknowledgedDrop[];
+    const named = new Set(rows.map((row) => row.phase_id));
+    return {
+      kind: "at_risk",
+      fresh: true,
+      losses: rows.map((row) => ({
+        phase: { id: row.phase_id, code: row.code, name: row.name },
+        progress: recordedProgress(row),
+        milestones: row.milestone_count,
+      })),
+      acknowledgements: [
+        ...earlier.filter((ack) => !named.has(ack.phase_id)),
+        ...rows.map((row) => ({
+          phase_id: row.phase_id,
+          progress_version: row.progress_version,
+          milestone_count: row.milestone_count,
+        })),
+      ],
+    };
+  } catch {
+    return null;
+  }
+}
+
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
 /**
  * Read, now, what the `dropped` phases of `estimateId` hold. Any read that
- * fails or comes back degraded makes the answer `unknown`, never `clear`.
+ * fails or comes back degraded — or anything else that goes wrong while
+ * answering — makes the answer `unknown`, never `clear`, and never a throw:
+ * the Save waiting on it must always get an answer.
  */
 export async function checkDroppedPhases(
   estimateId: string,
   dropped: readonly SavedPhase[]
 ): Promise<DropCheck> {
-  if (dropped.length === 0) return { kind: "clear" };
+  if (dropped.length === 0) return { kind: "clear", acknowledgements: [] };
+  try {
+    return await readDroppedPhases(estimateId, dropped);
+  } catch (err) {
+    return {
+      kind: "unknown",
+      dropped: [...dropped],
+      reason: `What the dropped phases hold could not be worked out: ${message(err)}`,
+    };
+  }
+}
+
+async function readDroppedPhases(
+  estimateId: string,
+  dropped: readonly SavedPhase[]
+): Promise<DropCheck> {
   const unknown = (reason: string): DropCheck => ({
     kind: "unknown",
     dropped: [...dropped],
@@ -177,5 +281,8 @@ export async function checkDroppedPhases(
   }
 
   const losses = assessDrops(dropped, progress, milestones);
-  return losses.length === 0 ? { kind: "clear" } : { kind: "at_risk", losses };
+  const acknowledgements = acknowledgeDrops(dropped, progress, milestones);
+  return losses.length === 0
+    ? { kind: "clear", acknowledgements }
+    : { kind: "at_risk", losses, acknowledgements };
 }

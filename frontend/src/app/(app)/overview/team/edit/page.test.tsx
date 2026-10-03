@@ -952,6 +952,10 @@ describe("a Save that would drop a phase holding recorded work", () => {
     expect(patch.content.phases.map((p: { code: string }) => p.code)).toEqual([
       "M0",
     ]);
+    // It acknowledges what the writer was shown, so a later change refuses it.
+    expect(patch.acknowledged_drops).toEqual([
+      { phase_id: "ph0", progress_version: 1, milestone_count: 0 },
+    ]);
     expect(await screen.findByText(/Saved as version 8/)).toBeTruthy();
   });
 
@@ -1031,5 +1035,111 @@ describe("a Save that would drop a phase holding recorded work", () => {
       )
     );
     expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    // Nothing was seen, so nothing is acknowledged: the server says what is
+    // at stake, if anything is.
+    expect(mocks.updateResource.mock.calls[0]![2]).not.toHaveProperty(
+      "acknowledged_drops"
+    );
+  });
+
+  it("asks again, with what the phase holds now, when work was recorded on it after the check", async () => {
+    serve({}); // A0 held nothing when it was checked.
+    mocks.updateResource.mockRejectedValueOnce(
+      new ResourceError(409, "unacknowledged_drop", "Nothing was saved.", {
+        error: "unacknowledged_drop",
+        message: "Nothing was saved.",
+        phases: [
+          {
+            phase_id: "ph0",
+            code: "A0",
+            name: "Mobilisation",
+            progress_version: 2,
+            milestone_count: 0,
+            actual_start: null,
+            actual_end: null,
+            gate_status: "passed",
+            gate_decided_at: "2026-01-30",
+            gate_notes: "",
+          },
+        ],
+      })
+    );
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+    await waitFor(() => expect(mocks.updateResource).toHaveBeenCalledTimes(1));
+    expect(mocks.updateResource.mock.calls[0]![2].acknowledged_drops).toEqual([
+      { phase_id: "ph0", progress_version: 1, milestone_count: 0 },
+    ]);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/work was recorded on this phase since/)
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "Its recorded gate outcome (Passed) will be deleted."
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/It could not be saved/)).toBeNull();
+
+    await act(async () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Drop them and save" })
+      )
+    );
+    expect(mocks.updateResource).toHaveBeenCalledTimes(2);
+    expect(mocks.updateResource.mock.calls[1]![2].acknowledged_drops).toEqual([
+      { phase_id: "ph0", progress_version: 2, milestone_count: 0 },
+    ]);
+    expect(await screen.findByText(/Saved as version 8/)).toBeTruthy();
+  });
+
+  it("checks the drop again when saving without the refused source", async () => {
+    mocks.search = "from_document=doc-1";
+    mocks.getResource.mockImplementation(async (path: string) =>
+      path === "pages"
+        ? { item: DOC, can_edit: true }
+        : { item: PHASED, can_edit: true }
+    );
+    serve({ progress: [{ ...PROGRESS, gate_status: "passed" }] });
+    mocks.updateResource.mockRejectedValueOnce(
+      new ResourceError(422, "source_page_not_found", "not a document")
+    );
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+    await act(async () =>
+      fireEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Drop them and save",
+        })
+      )
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Save without recording a source",
+        })
+      )
+    );
+    // Asked again before anything is written — never a silent drop.
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/Saving drops a phase that holds/)
+    ).toBeTruthy();
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Drop them and save" })
+      )
+    );
+    expect(mocks.updateResource).toHaveBeenCalledTimes(2);
+    const patch = mocks.updateResource.mock.calls[1]![2];
+    expect(patch).not.toHaveProperty("source_page_id");
+    expect(patch.acknowledged_drops).toEqual([
+      { phase_id: "ph0", progress_version: 1, milestone_count: 0 },
+    ]);
   });
 });

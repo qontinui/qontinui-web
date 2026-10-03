@@ -255,6 +255,23 @@ describe("useResourceRecord", () => {
       ok: false,
       error: "Not a document here.",
       code: "source_page_not_found",
+      details: null,
+    });
+  });
+
+  it("passes the rest of the refusal's body through as details", async () => {
+    const hook = await record();
+    const body = { error: "unacknowledged_drop", message: "No.", phases: [] };
+    api.updateResource.mockRejectedValue(
+      new ResourceError(409, "unacknowledged_drop", "No.", body)
+    );
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.update({ content: {} }, 3);
+    });
+    expect(result).toMatchObject({
+      code: "unacknowledged_drop",
+      details: body,
     });
   });
 

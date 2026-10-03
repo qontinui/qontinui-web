@@ -46,11 +46,21 @@ class StoreRefused(Exception):
     """The store declined the write for a reason the caller can act on (a
     name already taken, content its own rules reject)."""
 
-    def __init__(self, status_code: int, error: str, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        error: str,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error = error
         self.message = message
+        #: Served beside ``error`` and ``message`` in the refusal's body —
+        #: what the caller needs to act on it (e.g. the fresh state of the
+        #: records it has to look at again).
+        self.detail: dict[str, Any] = dict(detail or {})
 
 
 @dataclass
