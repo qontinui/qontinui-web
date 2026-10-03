@@ -960,3 +960,573 @@ class OverviewFile(Base):
         default=_now,
         server_default=text("now()"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Provider-reported spend (overview_05_spend_collection)
+#
+# Plan ``2026-10-03-provider-reported-spend-collection-alerts-and-mobile``
+# Phase 1. Every amount is the PROVIDER'S OWN STATEMENT, copied as reported
+# (GitHub ``netAmount``…) or an operator-entered invoice amount (a recurring
+# cost). Nothing here is estimated. Money is integer micros + ``currency``.
+# ---------------------------------------------------------------------------
+
+#: Enforced by ``ck_overview_vendors_category``.
+VENDOR_CATEGORIES: tuple[str, ...] = (
+    "ai",
+    "cloud",
+    "source_hosting",
+    "saas",
+    "labour",
+    "other",
+)
+
+#: Every connector key the store admits. Enforced by
+#: ``ck_overview_vendors_connector``; the connector REGISTRY
+#: (``app.spend.connectors``) declares each one's lag and provenance, and a
+#: test pins the two lists together.
+SPEND_CONNECTORS: tuple[str, ...] = (
+    "github_billing",
+    "aws_cost_explorer",
+    "vercel_billing",
+    "cloudflare_billing",
+    "anthropic_cost_report",
+    "google_play_earnings",
+    "google_workspace_seats",
+    "upstash_billing",
+)
+
+#: Where a cost entry came from. Enforced by ``ck_overview_cost_entries_source``.
+COST_ENTRY_SOURCES: tuple[str, ...] = ("manual", "recurring", "connector")
+
+#: Enforced by ``ck_overview_recurring_costs_cadence``.
+RECURRING_CADENCES: tuple[str, ...] = ("monthly", "annual")
+
+#: Enforced by ``ck_overview_spend_alerts_rule``.
+SPEND_ALERT_RULES: tuple[str, ...] = ("mtd_threshold", "daily_abs", "spike", "stale")
+
+#: Push delivery state of an alert row. ``accepted`` means Expo took the
+#: message (a ticket ``ok``), NOT that a phone showed it; only a receipt moves
+#: it to ``delivered``. Enforced by ``ck_overview_spend_alerts_push_status``.
+SPEND_PUSH_STATUSES: tuple[str, ...] = (
+    "pending",
+    "accepted",
+    "delivered",
+    "failed",
+    "unknown_recipients",
+    "muted",
+)
+
+#: Coord delivery state of an alert row (``POST /coord/spend-alerts``).
+#: ``unsupported`` — coord answered 404/501 (the route is not deployed);
+#: ``disabled`` — this backend has no coord service credential.
+SPEND_COORD_STATUSES: tuple[str, ...] = (
+    "pending",
+    "sent",
+    "failed",
+    "unsupported",
+    "disabled",
+)
+
+_CONNECTOR_CHECK = (
+    "connector IS NULL OR connector IN ("
+    + ", ".join(f"'{c}'" for c in SPEND_CONNECTORS)
+    + ")"
+)
+
+
+class Vendor(_AuditMixin, Base):
+    """Someone the project pays. A vendor row carries no money."""
+
+    __tablename__ = "vendors"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('ai', 'cloud', 'source_hosting', 'saas', 'labour', 'other')",
+            name="ck_overview_vendors_category",
+        ),
+        CheckConstraint(_CONNECTOR_CHECK, name="ck_overview_vendors_connector"),
+        UniqueConstraint("tenant_id", "name", name="uq_overview_vendors_name"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    preset_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    connector: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: NON-SECRET connector settings only (an org name, an account id). A
+    #: credential never lands in a database row (plan decision 7).
+    connector_config: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class CostImportRun(_AuditMixin, Base):
+    """One import attempt for one vendor — the freshness signal (decision 5).
+
+    ``granularity``: ``day`` (one UTC day's statement), ``range`` (a pull over
+    several days), or ``month`` (a month query read ONLY as a reconciliation
+    check — it upserts nothing and never counts toward freshness).
+    """
+
+    __tablename__ = "cost_import_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ok', 'failed', 'partial')",
+            name="ck_overview_cost_import_runs_status",
+        ),
+        CheckConstraint(
+            "transport IN ('push', 'pull')",
+            name="ck_overview_cost_import_runs_transport",
+        ),
+        CheckConstraint(
+            "granularity IN ('day', 'range', 'month')",
+            name="ck_overview_cost_import_runs_granularity",
+        ),
+        Index(
+            "ix_overview_cost_import_runs_vendor",
+            "tenant_id",
+            "vendor_id",
+            "finished_at",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    connector: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Who sent it: ``import_token:<name>`` or ``session:<actor>``.
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transport: Mapped[str] = mapped_column(Text, nullable=False)
+    granularity: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rows_upserted: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    items_seen: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    #: Month query net − Σ stored day entries for that month (micros). Set on
+    #: ``month`` runs only; NULL means "not measured", never "no difference".
+    reconcile_delta_micros: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CostEntry(_AuditMixin, Base):
+    """One provider line item (or a manual entry). Unique per
+    ``(tenant_id, vendor_id, source_ref)`` so every import is an upsert."""
+
+    __tablename__ = "cost_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('manual', 'recurring', 'connector')",
+            name="ck_overview_cost_entries_source",
+        ),
+        CheckConstraint(
+            "period_end >= period_start", name="ck_overview_cost_entries_period"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "vendor_id",
+            "source_ref",
+            name="uq_overview_cost_entries_source_ref",
+        ),
+        Index(
+            "ix_overview_cost_entries_vendor_period",
+            "tenant_id",
+            "vendor_id",
+            "period_start",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    #: NET — the billed figure.
+    amount_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    fx_rate_to_base: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 8), nullable=True
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    phase_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.phases.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: NULL when the provider does not report them — never 0 for "unknown".
+    gross_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    discount_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    unit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The repo, service or project the line belongs to.
+    scope_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sku: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The provider's product (GitHub ``actions`` / ``packages``…), which a
+    #: rule's ``product_filter`` selects on.
+    product: Mapped[str | None] = mapped_column(Text, nullable=True)
+    import_run_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.cost_import_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class SpendRule(_AuditMixin, Base):
+    """Alert thresholds for one vendor, or org-wide when ``vendor_id`` is NULL.
+    At most one rule per (tenant, vendor) — ``uq_overview_spend_rules_vendor``."""
+
+    __tablename__ = "spend_rules"
+    __table_args__ = (
+        CheckConstraint(
+            "monthly_ceiling_micros IS NULL OR monthly_ceiling_micros > 0",
+            name="ck_overview_spend_rules_ceiling",
+        ),
+        CheckConstraint(
+            "daily_abs_micros IS NULL OR daily_abs_micros > 0",
+            name="ck_overview_spend_rules_daily_abs",
+        ),
+        CheckConstraint(
+            "spike_multiplier IS NULL OR spike_multiplier > 1",
+            name="ck_overview_spend_rules_spike_multiplier",
+        ),
+        CheckConstraint(
+            "median_window_days IS NULL OR "
+            "(median_window_days >= 7 AND median_window_days <= 90)",
+            name="ck_overview_spend_rules_window",
+        ),
+        Index(
+            "uq_overview_spend_rules_vendor",
+            text("tenant_id"),
+            text("COALESCE(vendor_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            unique=True,
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    currency: Mapped[str] = mapped_column(
+        CHAR(3), nullable=False, server_default=text("'USD'"), default="USD"
+    )
+    monthly_ceiling_micros: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    daily_abs_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    spike_multiplier: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    median_window_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mtd_thresholds_pct: Mapped[list[int] | None] = mapped_column(
+        ARRAY(Integer), nullable=True
+    )
+    product_filter: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    #: Why these values — e.g. the success metric they come from.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class RecurringCost(_AuditMixin, Base):
+    """A provider invoice amount with no billing API, entered once by the
+    operator (decision 10). Materialised into periods on READ, never by a cron."""
+
+    __tablename__ = "recurring_costs"
+    __table_args__ = (
+        CheckConstraint(
+            "cadence IN ('monthly', 'annual')",
+            name="ck_overview_recurring_costs_cadence",
+        ),
+        CheckConstraint(
+            "unit_amount_micros >= 0", name="ck_overview_recurring_costs_amount"
+        ),
+        CheckConstraint("quantity > 0", name="ck_overview_recurring_costs_quantity"),
+        CheckConstraint(
+            "end_date IS NULL OR end_date >= start_date",
+            name="ck_overview_recurring_costs_period",
+        ),
+        Index("ix_overview_recurring_costs_vendor", "tenant_id", "vendor_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    unit_amount_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), nullable=False, server_default=text("1"), default=Decimal("1")
+    )
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    cadence: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: The next charge date of an ``annual`` entry. NULL reads as the next
+    #: anniversary of ``start_date``. A connector may keep it current.
+    renews_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: e.g. a domain name, so a connector can find the entry to update.
+    external_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: e.g. "Workspace invoice 2026-09, 3 seats".
+    source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class SpendPushDelivery(_AuditMixin, Base):
+    """One Expo push send — a single alert's, or a day's digest. Holds the
+    per-token tickets so a later tick can poll their receipts."""
+
+    __tablename__ = "spend_push_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('single', 'digest')", name="ck_overview_spend_push_kind"
+        ),
+        CheckConstraint(
+            "status IN ('accepted', 'delivered', 'failed')",
+            name="ck_overview_spend_push_status",
+        ),
+        Index(
+            "ix_overview_spend_push_deliveries_tenant",
+            "tenant_id",
+            "kind",
+            "digest_day",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    digest_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    collapse_id: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    #: ``[{push_device_id, ticket_id, ticket_status, ticket_error,
+    #: receipt_status, receipt_error}]`` — never the push token itself.
+    tickets: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+    receipts_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SpendAlert(_AuditMixin, Base):
+    """One rule crossing — the durable record (decision 6). Push and coord
+    delivery are projections tracked on the row, retried on later ticks.
+
+    Unique per ``(tenant, rule, vendor_key, scope_key, period_key,
+    threshold_key)``: one row per crossing. ``vendor_key`` is the vendor id,
+    or ``*`` for an org-wide rule (two vendors' ``org`` scopes must not
+    collide); ``threshold_key`` is the crossed percentage for
+    ``mtd_threshold`` (so 50% and 100% in one month are two crossings) and 0
+    for every other rule.
+    """
+
+    __tablename__ = "spend_alerts"
+    __table_args__ = (
+        CheckConstraint(
+            "rule IN ('mtd_threshold', 'daily_abs', 'spike', 'stale')",
+            name="ck_overview_spend_alerts_rule",
+        ),
+        CheckConstraint(
+            "push_status IN ('pending', 'accepted', 'delivered', 'failed', "
+            "'unknown_recipients', 'muted')",
+            name="ck_overview_spend_alerts_push_status",
+        ),
+        CheckConstraint(
+            "coord_status IN ('pending', 'sent', 'failed', 'unsupported', 'disabled')",
+            name="ck_overview_spend_alerts_coord_status",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "rule",
+            "vendor_key",
+            "scope_key",
+            "period_key",
+            "threshold_key",
+            name="uq_overview_spend_alerts_crossing",
+        ),
+        Index("ix_overview_spend_alerts_tenant_fired", "tenant_id", "fired_at"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    vendor_key: Mapped[str] = mapped_column(Text, nullable=False)
+    rule: Mapped[str] = mapped_column(Text, nullable=False)
+    scope_key: Mapped[str] = mapped_column(Text, nullable=False)
+    period_key: Mapped[str] = mapped_column(Text, nullable=False)
+    threshold_key: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    observed_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    threshold_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str] = mapped_column(
+        CHAR(3), nullable=False, server_default=text("'USD'"), default="USD"
+    )
+    #: What the message says (vendor name, median, multiplier, day…).
+    detail: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    fired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+    push_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'pending'"), default="pending"
+    )
+    push_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Sends tried for this row (including "no device" attempts). A
+    #: pre-acceptance failure is retried until this reaches the cap; a
+    #: receipt-level failure sets it to the cap (terminal).
+    push_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    push_delivery_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.spend_push_deliveries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    coord_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'pending'"), default="pending"
+    )
+    coord_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ImportToken(_AuditMixin, Base):
+    """A bearer for the spend ingest endpoint of ONE tenant only. Hashed at
+    rest (``token_hash`` = sha256 hex); the value is shown once at creation."""
+
+    __tablename__ = "import_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_overview_import_tokens_hash"),
+        Index("ix_overview_import_tokens_tenant", "tenant_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    #: When set, the token may ingest for this vendor only.
+    vendor_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.vendors.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SpendAlertPreference(_AuditMixin, Base):
+    """A recipient's own spend-alert switch. No row = unmuted (the feature
+    ships on, served policy ``capability-ships-enabled``)."""
+
+    __tablename__ = "spend_alert_preferences"
+    __table_args__ = ({"schema": _SCHEMA},)
+
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    muted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
