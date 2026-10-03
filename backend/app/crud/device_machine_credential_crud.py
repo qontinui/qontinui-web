@@ -280,6 +280,46 @@ async def revoke(db: AsyncSession, device_id: UUID) -> DeviceMachineCredential |
     return cred
 
 
+async def delete_if_revoked(db: AsyncSession, device_id: UUID) -> bool:
+    """Delete ``device_id``'s credential row when (and only when) it is revoked.
+
+    An operator's ``authorize-redeem`` re-arms a revoked device. The runner's
+    unattended re-enrolment (``/self-mint``) refuses to mint over a REVOKED
+    row, by design — a device must not undo its own revocation — so the
+    operator's explicit act removes the dead row and lets the next self-mint
+    enrol a fresh key. A usable (unrevoked) row is left untouched. Returns
+    whether a row was deleted. Caller commits.
+    """
+    stmt = (
+        select(DeviceMachineCredential)
+        .where(DeviceMachineCredential.device_id == device_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    cred = (await db.execute(stmt)).scalar_one_or_none()
+    if cred is None or cred.revoked_at is None:
+        return False
+    await db.delete(cred)
+    await db.flush()
+    logger.info(
+        "devenv_device_machine_key_revoked_row_deleted", device_id=str(device_id)
+    )
+    return True
+
+
+async def list_for_devices(
+    db: AsyncSession, device_ids: list[UUID]
+) -> dict[UUID, DeviceMachineCredential]:
+    """Each listed device's credential row (one per device), for the overview."""
+    if not device_ids:
+        return {}
+    stmt = select(DeviceMachineCredential).where(
+        DeviceMachineCredential.device_id.in_(device_ids)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return {row.device_id: row for row in rows}
+
+
 async def bump_last_used(
     db: AsyncSession,
     cred: DeviceMachineCredential,

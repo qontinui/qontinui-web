@@ -41,6 +41,7 @@ from app.schemas.pair_code import (
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
 from app.services.coord_service_account import coord_service_account
+from app.services.device_credential_deny import refuse_if_credential_revoked
 
 logger = structlog.get_logger(__name__)
 
@@ -128,6 +129,12 @@ async def redeem_pair_code_endpoint(
     Returns:
 
     * **200** + :class:`PairCodeRedeemOut` on success.
+    * **404** for a device-bound code (operator ``authorize-redeem``) that
+      its device has not yet collected through ``/pending-redeem``.
+    * **403** ``pair_code_bound_to_other_device`` if a collected bound code
+      is presented for a different device; **403**
+      ``device_credential_revoked`` while the device's credentials are
+      revoked (a failed read of that state → **503**). Neither consumes it.
     * **404** if the code doesn't exist (or never did).
     * **409** if the code has already been redeemed (single-use).
     * **410** if the code has expired.
@@ -169,6 +176,40 @@ async def redeem_pair_code_endpoint(
             status_code=status.HTTP_410_GONE,
             detail={"code": "pair_code_expired", "message": "Pair code has expired."},
         )
+
+    # A code an operator's ``authorize-redeem`` bound to one device exists,
+    # as far as this door is concerned, only once the device collected it
+    # through ``/pending-redeem`` (which a device-JWT anchors). Until then it
+    # answers exactly like an unknown code, so a guess can neither use it nor
+    # learn that it is live.
+    if row.bound_device_id is not None and row.delivered_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "pair_code_not_found", "message": "Pair code not found."},
+        )
+
+    # A bound code is redeemable for its device only. Checked before any
+    # outbound call, and without consuming the code, so the rightful device
+    # can still use it.
+    if row.bound_device_id is not None and row.bound_device_id != payload.device_id:
+        logger.warning(
+            "pair_code_bound_to_other_device",
+            code_prefix=code_upper[:2],
+            bound_device_id=str(row.bound_device_id),
+            presented_device_id=str(payload.device_id),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "pair_code_bound_to_other_device",
+                "message": "This pair code was issued for a different device.",
+            },
+        )
+
+    # A device whose credentials an operator revoked is re-armed only by an
+    # operator's authorize-redeem (which clears the deny before its bound code
+    # can be collected), never by redeeming a code. A failed read refuses.
+    await refuse_if_credential_revoked(db, payload.device_id, door="pair_code_redeem")
 
     # Forward to coord's pair-cli endpoint to mint the device JWT,
     # reusing the same backend code path the authenticated /pair-cli
@@ -243,6 +284,24 @@ async def redeem_pair_code_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Coord pair-cli returned malformed device_id.",
         ) from exc
+
+    # Defence in depth: a bound code must yield a JWT for its own device. If
+    # coord answered for any other, withhold the token and leave the code
+    # unconsumed.
+    if row.bound_device_id is not None and coord_device_id != row.bound_device_id:
+        logger.error(
+            "pair_code_redeem_coord_device_mismatch",
+            code_prefix=code_upper[:2],
+            bound_device_id=str(row.bound_device_id),
+            coord_device_id=str(coord_device_id),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "coord_device_mismatch",
+                "message": "Coord paired a different device than the code is bound to.",
+            },
+        )
 
     # All-clear — mark the code redeemed. The row lock from
     # get_redeemable() guarantees this is the single successful

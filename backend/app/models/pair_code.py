@@ -30,7 +30,7 @@ The redeem endpoint enforces single-use at the DB level via a
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,7 +49,19 @@ class PairCode(Base):
     """
 
     __tablename__ = "pair_codes"
-    __table_args__ = {"schema": "auth"}
+    __table_args__ = (
+        # alembic ``paircode_bind_01``: serves the pending-redeem poll and the
+        # supersede sweep (a device's still-redeemable bound codes).
+        Index(
+            "idx_pair_codes_bound_device_pending",
+            "bound_device_id",
+            "expires_at",
+            postgresql_where=text(
+                "bound_device_id IS NOT NULL AND redeemed_at IS NULL"
+            ),
+        ),
+        {"schema": "auth"},
+    )
 
     # ---- Identity ---------------------------------------------------------
     code: Mapped[str] = mapped_column(
@@ -102,6 +114,21 @@ class PairCode(Base):
         PGUUID(as_uuid=True),
         nullable=True,
         comment="Device that redeemed this code (UUID claimed by the runner).",
+    )
+
+    # ---- Device binding (alembic ``paircode_bind_01``) ---------------------
+    bound_device_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+        comment=(
+            "The only device this code may be redeemed for (operator "
+            "authorize-redeem). NULL = an ordinary operator-typed code."
+        ),
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Set when /pending-redeem handed the code out (at most once).",
     )
 
     def __repr__(self) -> str:

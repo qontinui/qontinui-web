@@ -1139,3 +1139,103 @@ async def test_missing_bearer_detail_is_the_string_the_docs_promise() -> None:
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Not authenticated"
+
+
+# ---------------------------------------------------------------------------
+# Opt-in expired grace (``verify_token(..., expired_grace_s=...)``)
+#
+# Plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-
+# qontinui-web`` Phase 2: only the ``/pending-redeem`` poll opts in. Every
+# other caller omits the argument, and the default must stay byte-identical.
+# ---------------------------------------------------------------------------
+
+_DAY_S = 86400
+_GRACE_30D = 30 * _DAY_S
+
+
+def _expired_claims(*, expired_ago_s: int) -> dict[str, Any]:
+    """Claims whose ``exp`` was ``expired_ago_s`` seconds ago (4h token)."""
+    return _coord_claims(iat_offset=-(expired_ago_s + 14400), exp_in=14400)
+
+
+@pytest.mark.asyncio
+async def test_default_still_rejects_an_expired_token() -> None:
+    """No ``expired_grace_s`` → expiry enforced exactly as before, even for a
+    token only minutes past ``exp`` (outside the 30 s skew leeway)."""
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    token = _mint_jwt(private, _expired_claims(expired_ago_s=600))
+
+    with pytest.raises(CoordTokenExpiredError):
+        await client.verify_token(token)
+
+
+@pytest.mark.asyncio
+async def test_grace_admits_a_token_expired_inside_the_window() -> None:
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    token = _mint_jwt(private, _expired_claims(expired_ago_s=10 * _DAY_S))
+
+    claims = await client.verify_token(token, expired_grace_s=_GRACE_30D)
+
+    assert claims["device_id"] == "c79a07d5-7e40-49b4-87fa-554c749f9644"
+
+
+@pytest.mark.asyncio
+async def test_grace_rejects_a_token_expired_past_the_window() -> None:
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    token = _mint_jwt(private, _expired_claims(expired_ago_s=31 * _DAY_S))
+
+    with pytest.raises(CoordTokenExpiredError):
+        await client.verify_token(token, expired_grace_s=_GRACE_30D)
+
+
+@pytest.mark.asyncio
+async def test_grace_never_relaxes_the_signature() -> None:
+    """The grace widens EXPIRY only: a foreign-key signature still fails."""
+    minter_private, _ = _ed25519_keypair()
+    _, jwk_in_set = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk_in_set]})
+    token = _mint_jwt(minter_private, _expired_claims(expired_ago_s=_DAY_S))
+
+    with pytest.raises(CoordTokenInvalidError) as exc_info:
+        await client.verify_token(token, expired_grace_s=_GRACE_30D)
+    assert not isinstance(exc_info.value, CoordTokenExpiredError)
+
+
+@pytest.mark.asyncio
+async def test_grace_requires_an_exp_claim() -> None:
+    """A token with no ``exp`` is not "expired within grace" — it is invalid."""
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    claims = _coord_claims()
+    del claims["exp"]
+    token = _mint_jwt(private, claims)
+
+    with pytest.raises(CoordTokenInvalidError) as exc_info:
+        await client.verify_token(token, expired_grace_s=_GRACE_30D)
+    assert not isinstance(exc_info.value, CoordTokenExpiredError)
+
+
+@pytest.mark.asyncio
+async def test_grace_rejects_a_non_numeric_exp() -> None:
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    claims = _coord_claims()
+    claims["exp"] = "tomorrow"
+    token = _mint_jwt(private, claims)
+
+    with pytest.raises(CoordTokenInvalidError):
+        await client.verify_token(token, expired_grace_s=_GRACE_30D)
+
+
+@pytest.mark.asyncio
+async def test_grace_still_enforces_not_yet_valid() -> None:
+    """``iat`` beyond the skew leeway is still refused under the grace."""
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    token = _mint_jwt(private, _coord_claims(iat_offset=3600))
+
+    with pytest.raises(CoordTokenNotYetValidError):
+        await client.verify_token(token, expired_grace_s=_GRACE_30D)
