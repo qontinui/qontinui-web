@@ -1014,6 +1014,48 @@ class ListRecordsResponse(BaseModel):
     next_cursor: str | None
 
 
+MemoryRecordState = Literal["live", "superseded", "tombstoned"]
+
+
+class MemoryRecordByIdResponse(BaseModel):
+    """``GET /memory/records/{id}`` — one row, in WHATEVER state it is in.
+
+    The read-back half of a write receipt (plan
+    ``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``
+    Phase 1). Unlike the list and query surfaces it does NOT filter to live
+    rows: a receipt for a row a peer superseded a minute later must read as
+    ``superseded``, not as a lost write.
+
+    ``state`` is derived from the row's own columns, in precedence order:
+    ``is_tombstone`` → ``tombstoned``; else a non-null ``superseded_by`` →
+    ``superseded``; else ``live``. ``live`` therefore means "neither
+    tombstoned nor superseded" — a row whose validity was ended by an
+    automatic sweep (decay invalidate, closed-session expiry) carries no
+    tombstone flag and no successor, so it reads ``live`` with a non-null
+    ``valid_until``. ``valid_until`` is the field that answers "is it still
+    retrievable", and it is echoed precisely so a reader can tell.
+
+    ``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a
+    multi-bound device can be read as "the wrong tenant was minted" rather
+    than "the write was lost".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    tenant_id: UUID
+    title: str
+    content: str
+    kind: str
+    scope: str
+    scope_ref: str | None
+    importance: float | None
+    created_at: datetime
+    state: MemoryRecordState
+    superseded_by: UUID | None
+    valid_until: datetime | None
+
+
 # --------------------------------------------------------------------------
 # Memory jobs — backend enqueues, runner executes, backend applies
 # --------------------------------------------------------------------------
