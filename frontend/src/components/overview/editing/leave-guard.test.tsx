@@ -152,6 +152,21 @@ describe("the leave guard on the browser's Back", () => {
     expect(unload.defaultPrevented).toBe(false);
   });
 
+  it("prompts on unload again when a confirmed Back went nowhere", () => {
+    vi.useFakeTimers();
+    try {
+      render(<Guarded active />);
+      confirm.mockReturnValue(true);
+      pressBack(); // back() is a no-op here, as in a fresh tab
+      vi.advanceTimersByTime(1000);
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      expect(unload.defaultPrevented).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops listening once unmounted", () => {
     const { unmount } = render(<Guarded active />);
     unmount();

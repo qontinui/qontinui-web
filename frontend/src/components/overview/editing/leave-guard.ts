@@ -17,7 +17,7 @@ import { useEffect, useRef } from "react";
  *   once nothing is unsaved is skipped the same way, so it never costs the
  *   reader a dead press of Back.
  *
- Known limits, each failing safe (nothing is lost that the device does not
+ * Known limits, each failing safe (nothing is lost that the device does not
  * keep, `drafts.ts`):
  *
  * - a jump of several entries at once (a long-press on Back) lands on another
@@ -86,10 +86,12 @@ function pushGuardEntry() {
 
 /** Make sure a guard entry is on top while something is armed. */
 function armHistory() {
+  leaving = false;
   if (guardedHref !== null) {
     // Some router writes (a refresh, a replace) rewrite the current entry
-    // without the mark; put it back, so a reload or a later Back onto this
-    // entry still knows it for ours.
+    // without the mark. Re-arming puts it back, so a reload or a later Back
+    // onto this entry still knows it for ours; between re-arms the page
+    // itself is unaffected, since `guardedHref` drives Back while mounted.
     const state = window.history.state as Record<string, unknown> | null;
     if (window.location.href === guardedHref && !isGuardState(state))
       window.history.replaceState(
@@ -125,7 +127,12 @@ function onPopState(event: PopStateEvent) {
     return;
   }
   // Finish the trip Back started (also how a spent guard entry is skipped).
+  // A back() with nowhere to go fires nothing that would clear the flag, so
+  // it lapses by itself: an unload prompt must not stay switched off.
   leaving = true;
+  window.setTimeout(() => {
+    leaving = false;
+  }, 1000);
   window.history.back();
 }
 
