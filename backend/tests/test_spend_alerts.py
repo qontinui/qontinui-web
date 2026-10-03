@@ -825,6 +825,40 @@ class TestForeignCurrency:
         assert await _alerts(db) == []
 
 
+class TestForeignCurrencyStale:
+    async def test_stale_still_raises_and_resolves_for_a_foreign_vendor(
+        self, async_db_session
+    ) -> None:
+        from app.models.overview import CostEntry
+
+        db = async_db_session
+        vendor = await _vendor(db)
+        await _rule(db, vendor, daily_abs_micros=50 * M)
+        await _complete(db, vendor, date(2026, 9, 28))
+        db.add(
+            CostEntry(
+                tenant_id=TENANT,
+                vendor_id=vendor.id,
+                source="connector",
+                source_ref="eur",
+                amount_micros=500 * M,
+                currency="EUR",
+                period_start=date(2026, 9, 28),
+                period_end=date(2026, 9, 28),
+            )
+        )
+        await db.flush()
+        report = await _evaluate(db)
+        assert report.unknown_currency == ["GitHub"]
+        assert [a.rule for a in await _alerts(db)] == ["stale"]
+        await _complete(db, vendor, D)
+        await _spend(db, vendor, D, 900 * M)  # over daily_abs, but not evaluated
+        report = await _evaluate(db)
+        [stale] = await _alerts(db, "stale")
+        assert stale.resolved_at is not None
+        assert await _alerts(db, "daily_abs") == []
+
+
 class TestRecipients:
     async def test_a_subject_match_does_not_count_an_email_admin_matched(
         self, async_db_session, monkeypatch

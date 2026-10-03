@@ -149,8 +149,13 @@ def _vendor_crossings(
     today: date,
     existing_mtd: dict[tuple[str, str], int],
     report: EvaluationReport,
+    *,
+    money: bool = True,
 ) -> list[_Crossing]:
-    """Every crossing for one connector vendor. ``rows`` are its connector
+    """Every crossing for one connector vendor. ``money=False`` (a vendor
+    with figures in a foreign currency) runs only the stale rule — its money
+    rules would sum the wrong figures, but whether its data is fresh is
+    still known and still alerts. ``rows`` are its connector
     rows with scheduled renewals removed (what the daily and spike rules
     read); ``all_rows`` are all of them (what a ceiling reads — a connector
     charge is real spend against it even when it looks like a renewal)."""
@@ -206,6 +211,9 @@ def _vendor_crossings(
                 },
             )
         )
+
+    if not money:
+        return out
 
     by_day: dict[date, int] = defaultdict(int)
     for r in counted:
@@ -415,7 +423,7 @@ async def evaluate_tenant(
 
     crossings: list[_Crossing] = []
     for vendor in vendors:
-        if vendor.connector is None or vendor.id in foreign:
+        if vendor.connector is None:
             continue
         f = fresh[vendor.id]
         if f.status == "ok":
@@ -441,6 +449,9 @@ async def evaluate_tenant(
                 today,
                 existing_mtd,
                 report,
+                # Foreign-currency vendor: stale raise/resolve still run;
+                # the money rules (daily, spike, month-to-date) do not.
+                money=vendor.id not in foreign,
             )
         )
 
