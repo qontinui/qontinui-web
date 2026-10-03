@@ -579,7 +579,7 @@ class TestPush:
         self, async_db_session, recipient, expo, coord
     ) -> None:
         db = async_db_session
-        await _busy_day(db)
+        vendor = await _busy_day(db)
         await _deliver(db)
         alerts = await _alerts(db)
         assert sorted(a.rule for a in alerts) == [
@@ -601,7 +601,7 @@ class TestPush:
         )
         assert digest["data"]["kind"] == "spend_alert"
         assert digest["data"]["url"].startswith("/financials?vendor=")
-        single = calls["spend-mtd_threshold-org-2026-10"]
+        single = calls[f"spend-mtd_threshold-{vendor.id}-org-2026-10"]
         assert single["priority"] == "high"
         assert "of $500" in single["body"] and "GitHub" in single["body"]
         digest_rows = [a for a in alerts if a.rule != "mtd_threshold"]
@@ -732,6 +732,45 @@ class TestPush:
         expo["send"].assert_not_awaited()
 
 
+class TestRetryPolicy:
+    async def test_pre_acceptance_failures_are_retried_up_to_the_cap(
+        self, async_db_session, recipient, expo, coord
+    ) -> None:
+        from app.spend.deliver import MAX_PUSH_ATTEMPTS
+
+        db = async_db_session
+        await _busy_day(db)
+        expo["send"].side_effect = lambda tokens, **_: _tickets(tokens, ok=False)
+        for hour in range(MAX_PUSH_ATTEMPTS + 2):
+            await _deliver(db, NOW + timedelta(hours=hour))
+        # Two sends a tick (one digest, one single) for MAX ticks, then none.
+        assert expo["send"].await_count == 2 * MAX_PUSH_ATTEMPTS
+        alerts = await _alerts(db)
+        assert {a.push_status for a in alerts} == {"failed"}
+        assert {a.push_attempts for a in alerts} == {MAX_PUSH_ATTEMPTS}
+
+    async def test_a_receipt_failure_is_terminal(
+        self, async_db_session, recipient, expo, coord
+    ) -> None:
+        db = async_db_session
+        await _busy_day(db)
+        await _deliver(db)
+        sends = expo["send"].await_count
+        _, device = recipient
+        expo["receipts"].return_value = {
+            f"ticket-{device.push_token[-4:]}": {
+                "status": "error",
+                "error": "MessageRateExceeded",
+            }
+        }
+        await _deliver(db, NOW + timedelta(hours=1))
+        await _deliver(db, NOW + timedelta(hours=2))
+        assert expo["send"].await_count == sends  # never resent
+        assert {a.push_status for a in await _alerts(db)} == {"failed"}
+        await db.refresh(device)
+        assert device.is_active is True  # only DeviceNotRegistered deactivates
+
+
 class TestRecipients:
     async def test_email_matches_only_an_admin_with_no_subject(
         self, async_db_session, monkeypatch
@@ -758,7 +797,13 @@ class TestRecipients:
             return [{"operator_id": "o", "email": shared, "cognito_sub": None}], None
 
         monkeypatch.setattr(recipients, "fetch_tenant_admins", no_sub)
-        assert len((await recipients.resolve_recipients(db, TENANT)).devices) == 1
+        # An UNVERIFIED local email is not matched: recorded as unmatched.
+        who = await recipients.resolve_recipients(db, TENANT)
+        assert who.devices == [] and who.unmatched == 1
+        impostor.is_verified = True
+        await db.flush()
+        who = await recipients.resolve_recipients(db, TENANT)
+        assert len(who.devices) == 1 and who.unmatched == 0
 
 
 class TestCoordDelivery:
@@ -898,6 +943,45 @@ class TestExpoClient:
         assert receipts["t-2"]["error"] == "DeviceNotRegistered"
         assert "t-3" not in receipts
 
+    async def test_event_push_never_raises_on_housekeeping(self, monkeypatch) -> None:
+        from app.services import push_notifications
+        from app.services.push_notifications import PushTicket
+
+        monkeypatch.setattr(
+            push_notifications, "get_user_push_tokens", AsyncMock(return_value=["gone"])
+        )
+        monkeypatch.setattr(
+            push_notifications,
+            "send_push_notifications",
+            AsyncMock(
+                return_value=[
+                    PushTicket(
+                        token="gone", status="error", error="DeviceNotRegistered"
+                    )
+                ]
+            ),
+        )
+        monkeypatch.setattr(
+            push_notifications,
+            "deactivate_push_tokens",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        )
+        event = type(
+            "E",
+            (),
+            {
+                "event_type": "run_failed",
+                "user_id": uuid4(),
+                "runner_name": "r",
+                "summary": "s",
+                "run_id": "run-1",
+                "id": uuid4(),
+                "device_id": "d",
+            },
+        )()
+        tickets = await push_notifications.dispatch_push_for_event(AsyncMock(), event)
+        assert tickets[0].error == "DeviceNotRegistered"
+
     async def test_event_push_deactivates_an_unregistered_device(
         self, monkeypatch
     ) -> None:
@@ -1010,3 +1094,17 @@ async def test_the_tenant_lock_admits_one_evaluator(test_engine, monkeypatch) ->
             for model in (SpendAlert, CostImportRun, SpendRule, Vendor):
                 await db.execute(delete(model).where(model.tenant_id == tenant))
             await db.commit()
+
+
+async def test_a_failed_unlock_invalidates_the_lock_connection() -> None:
+    """A pooled connection still holding the tenant lock would turn every
+    later evaluator away; when the unlock fails the connection is dropped."""
+    from app.spend.evaluate import _release
+
+    connection = AsyncMock()
+    lock_db = AsyncMock()
+    lock_db.execute.side_effect = RuntimeError("connection lost")
+    lock_db.connection.return_value = connection
+    with pytest.raises(RuntimeError):
+        await _release(lock_db, {"tenant": str(TENANT)}, TENANT)
+    connection.invalidate.assert_awaited_once()

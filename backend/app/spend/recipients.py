@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.overview import SpendAlertPreference
@@ -38,6 +38,9 @@ class Recipients:
     #: Admins resolved to a local user (muted or not).
     users: int = 0
     muted_users: int = 0
+    #: Admins coord named that could not be matched to a local account (no
+    #: subject match, and no VERIFIED email match). Recorded, never guessed.
+    unmatched: int = 0
 
 
 async def fetch_tenant_admins(tenant_id: UUID) -> tuple[list[dict] | None, str | None]:
@@ -67,31 +70,55 @@ async def resolve_recipients(db: AsyncSession, tenant_id: UUID) -> Recipients:
     admins, reason = await fetch_tenant_admins(tenant_id)
     if admins is None:
         return Recipients(status="unknown", detail=reason)
-    # An admin is matched by Cognito subject. Email is used only for an admin
-    # coord knows no subject for, so a local account that merely shares an
-    # email with an admin is never handed that tenant's spend pushes.
+    # An admin is matched by Cognito subject. Email is a fallback only for an
+    # admin coord knows no subject for, and only onto a local account whose
+    # email is VERIFIED — an unverified account that merely claims an admin's
+    # address is never handed that tenant's spend pushes.
     subs = {str(a["cognito_sub"]) for a in admins if a.get("cognito_sub")}
     emails = {
         str(a["email"]).lower()
         for a in admins
         if a.get("email") and not a.get("cognito_sub")
     }
+    unmatchable = sum(
+        1 for a in admins if not a.get("cognito_sub") and not a.get("email")
+    )
     if not subs and not emails:
-        return Recipients(status="ok", detail="the tenant has no admins")
-    clauses = []
+        return Recipients(
+            status="ok",
+            detail="the tenant has no matchable admins",
+            unmatched=unmatchable,
+        )
+    clauses: list[ColumnElement[bool]] = []
     if subs:
         clauses.append(User.cognito_sub.in_(subs))
     if emails:
-        clauses.append(func.lower(User.email).in_(emails))
-    user_ids = list(
-        (
-            await db.execute(
-                select(User.id).where(or_(*clauses), User.is_active.is_(True))
+        clauses.append(
+            and_(func.lower(User.email).in_(emails), User.is_verified.is_(True))
+        )
+    matched = (
+        await db.execute(
+            select(User.id, User.cognito_sub, User.email).where(
+                or_(*clauses), User.is_active.is_(True)
             )
-        ).scalars()
-    )
+        )
+    ).all()
+    found_subs = {row.cognito_sub for row in matched if row.cognito_sub}
+    found_emails = {row.email.lower() for row in matched if row.email}
+    unmatched = unmatchable + len(subs - found_subs) + len(emails - found_emails)
+    if unmatched:
+        logger.info(
+            "spend_recipients_unmatched_admins",
+            tenant_id=str(tenant_id),
+            count=unmatched,
+        )
+    user_ids = [row.id for row in matched]
     if not user_ids:
-        return Recipients(status="ok", detail="no admin has a qontinui-web account")
+        return Recipients(
+            status="ok",
+            detail="no admin has a qontinui-web account",
+            unmatched=unmatched,
+        )
     muted = set(
         (
             await db.execute(
@@ -122,4 +149,5 @@ async def resolve_recipients(db: AsyncSession, tenant_id: UUID) -> Recipients:
         devices=devices,
         users=len(user_ids),
         muted_users=len(muted),
+        unmatched=unmatched,
     )

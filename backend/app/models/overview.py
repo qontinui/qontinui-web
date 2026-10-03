@@ -1464,6 +1464,12 @@ class SpendAlert(_AuditMixin, Base):
         Text, nullable=False, server_default=text("'pending'"), default="pending"
     )
     push_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Sends tried for this row (including "no device" attempts). A
+    #: pre-acceptance failure is retried until this reaches the cap; a
+    #: receipt-level failure sets it to the cap (terminal).
+    push_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
     push_delivery_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey(f"{_SCHEMA}.spend_push_deliveries.id", ondelete="SET NULL"),

@@ -38,6 +38,7 @@ Guards
 
 from __future__ import annotations
 
+import asyncio
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -55,7 +56,7 @@ from app.models.overview import RecurringCost, SpendAlert, SpendRule, Vendor
 from app.spend.connectors import connector_spec
 from app.spend.freshness import Freshness, vendor_freshness
 from app.spend.recurring import amount_micros, charge_dates
-from app.spend.summary import SpendRow, load_rows, month_bounds
+from app.spend.summary import SUMMARY_CURRENCY, SpendRow, load_rows, month_bounds
 
 logger = structlog.get_logger(__name__)
 
@@ -361,7 +362,6 @@ async def evaluate_tenant(
             await db.execute(select(SpendRule).where(SpendRule.tenant_id == tenant_id))
         ).scalars()
     }
-    fresh = await vendor_freshness(db, tenant_id, vendors, now)
     window = max(
         [DEFAULT_MEDIAN_WINDOW_DAYS]
         + [r.median_window_days for r in rules.values() if r.median_window_days]
@@ -369,7 +369,15 @@ async def evaluate_tenant(
     month_start, _ = month_bounds(today)
     start = min(today - timedelta(days=window + FIRST_RUN_GUARD_DAYS + 1), month_start)
     ids = [v.id for v in vendors]
-    rows = await load_rows(db, tenant_id, ids, start, today, "amortized")
+    fresh = await vendor_freshness(db, tenant_id, vendors, now, since=start)
+    # Rules are in the summary currency; a figure in another currency is never
+    # summed into one (recurring entries in another currency are refused at
+    # write time, so only a connector could carry one).
+    rows = [
+        r
+        for r in await load_rows(db, tenant_id, ids, start, today, "amortized")
+        if r.currency == SUMMARY_CURRENCY
+    ]
     recurring = list(
         (
             await db.execute(
@@ -515,6 +523,31 @@ _LOCK_SQL = text("SELECT pg_try_advisory_lock(hashtext('spend:' || :tenant))")
 _UNLOCK_SQL = text("SELECT pg_advisory_unlock(hashtext('spend:' || :tenant))")
 
 
+async def _release(
+    lock_db: AsyncSession, params: dict[str, str], tenant_id: UUID
+) -> None:
+    """Release the session-level lock — shielded, so a cancellation landing
+    here cannot skip it. If the unlock still does not complete, the
+    connection is INVALIDATED rather than returned to the pool: a pooled
+    connection still holding the lock would turn every later evaluator for
+    this tenant away until the process restarts."""
+
+    async def unlock() -> None:
+        await lock_db.execute(_UNLOCK_SQL, params)
+        await lock_db.commit()
+
+    try:
+        await asyncio.shield(unlock())
+    except BaseException:
+        logger.warning("spend_evaluate_unlock_failed", tenant_id=str(tenant_id))
+        try:
+            connection = await lock_db.connection()
+            await connection.invalidate()
+        except Exception:  # noqa: BLE001 — nothing more can be done here
+            logger.exception("spend_evaluate_lock_invalidate_failed")
+        raise
+
+
 async def evaluate_and_deliver_tenant(
     tenant_id: UUID, *, session_factory: Any = None, now: datetime | None = None
 ) -> EvaluationReport | None:
@@ -548,8 +581,7 @@ async def evaluate_and_deliver_tenant(
                 await db.commit()
                 return report
         finally:
-            await lock_db.execute(_UNLOCK_SQL, params)
-            await lock_db.commit()
+            await _release(lock_db, params, tenant_id)
 
 
 async def evaluate_all_tenants(*, session_factory: Any = None) -> dict[str, Any]:

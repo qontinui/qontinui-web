@@ -22,6 +22,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
+import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,8 @@ from app.spend.connectors import (
     NormaliseError,
 )
 
+logger = structlog.get_logger(__name__)
+
 
 @dataclass
 class IngestResult:
@@ -43,6 +46,9 @@ class IngestResult:
     items_seen: int
     reconcile_delta_micros: int | None
     error: str | None = None
+    #: Why a failed run failed: ``rejected`` — the payload (the caller's to
+    #: fix, a 422); ``storage`` — this server could not store it (a 5xx).
+    failure: str | None = None
 
 
 def _now() -> datetime:
@@ -89,7 +95,17 @@ async def ingest_payload(
         run.error = str(exc)[:2000]
         run.finished_at = _now()
         await db.flush()
-        return IngestResult(run.id, "failed", 0, _count_items(raw), None, run.error)
+        return IngestResult(
+            run.id, "failed", 0, _count_items(raw), None, run.error, "rejected"
+        )
+    except Exception as exc:  # noqa: BLE001 — a normaliser bug is still a recorded run
+        logger.exception("spend_normaliser_crashed", connector=connector)
+        run.error = f"the normaliser failed: {type(exc).__name__}"
+        run.finished_at = _now()
+        await db.flush()
+        return IngestResult(
+            run.id, "failed", 0, _count_items(raw), None, run.error, "storage"
+        )
 
     run.provider_endpoint = batch.provider_endpoint
     run.period_start = batch.period_start

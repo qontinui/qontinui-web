@@ -234,6 +234,7 @@ def upgrade() -> None:
             fired_at timestamptz NOT NULL,
             push_status text NOT NULL DEFAULT 'pending',
             push_detail text,
+            push_attempts integer NOT NULL DEFAULT 0,
             push_delivery_id uuid REFERENCES overview.spend_push_deliveries (id)
                 ON DELETE SET NULL,
             coord_status text NOT NULL DEFAULT 'pending',

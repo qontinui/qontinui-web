@@ -53,7 +53,13 @@ RETRY_WINDOW = timedelta(hours=48)
 RECEIPT_WINDOW = timedelta(hours=26)
 DIGEST_RULES = ("daily_abs", "spike")
 SINGLE_RULES = ("mtd_threshold", "stale")
+#: Statuses a later tick sends (again). ``failed`` is retried only while
+#: ``push_attempts`` is under :data:`MAX_PUSH_ATTEMPTS` — and a failure Expo
+#: reported in a RECEIPT (after it accepted the message) sets the attempts
+#: to the cap, so it is terminal: the message was delivered to Expo once, and
+#: resending would only repeat whatever refused it.
 _RETRYABLE_PUSH = ("pending", "failed", "unknown_recipients")
+MAX_PUSH_ATTEMPTS = 3
 _RETRYABLE_COORD = ("pending", "failed", "unsupported", "disabled")
 _DIGEST_LINES = 6
 #: Expo's getReceipts takes at most 1000 ids per call.
@@ -120,7 +126,9 @@ def _single_message(alert: SpendAlert) -> tuple[str, str, str, str]:
     d = alert.detail or {}
     vendor = d.get("vendor") or "Spend"
     provider = d.get("provider") or vendor
-    collapse = f"spend-{alert.rule}-{alert.scope_key}-{alert.period_key}"
+    collapse = (
+        f"spend-{alert.rule}-{alert.vendor_key}-{alert.scope_key}-{alert.period_key}"
+    )
     if alert.rule == "mtd_threshold":
         pct = int(d.get("pct") or alert.threshold_key)
         title = f"{vendor} spend at {pct}% of its monthly ceiling"
@@ -220,6 +228,7 @@ async def _send(
     for alert in alerts:
         alert.push_delivery_id = delivery.id
         alert.push_status = delivery.status
+        alert.push_attempts = (alert.push_attempts or 0) + 1
         alert.push_detail = (
             None if accepted else f"no ticket accepted: {delivery.detail}"
         )
@@ -304,6 +313,12 @@ async def poll_receipts(db: AsyncSession, tenant_id: UUID, now: datetime) -> int
                     push_detail=(
                         None if status == "delivered" else "every receipt was an error"
                     ),
+                    # A receipt-level failure is terminal (see _RETRYABLE_PUSH).
+                    **(
+                        {"push_attempts": MAX_PUSH_ATTEMPTS}
+                        if status == "failed"
+                        else {}
+                    ),
                     updated_at=now,
                 )
             )
@@ -325,6 +340,10 @@ async def push_pending(db: AsyncSession, tenant_id: UUID, now: datetime) -> None
                 .where(
                     SpendAlert.tenant_id == tenant_id,
                     SpendAlert.push_status.in_(_RETRYABLE_PUSH),
+                    or_(
+                        SpendAlert.push_status != "failed",
+                        SpendAlert.push_attempts < MAX_PUSH_ATTEMPTS,
+                    ),
                     SpendAlert.resolved_at.is_(None),
                     SpendAlert.fired_at >= now - RETRY_WINDOW,
                 )
@@ -368,6 +387,8 @@ async def push_pending(db: AsyncSession, tenant_id: UUID, now: datetime) -> None
         for a in targets:
             a.push_status = status
             a.push_detail = detail
+            if status == "failed":
+                a.push_attempts = (a.push_attempts or 0) + 1
             a.updated_at = now
         return
 

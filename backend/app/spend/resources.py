@@ -516,6 +516,18 @@ class RecurringCostStore(_OrmStore):
         return _recurring_read(row)
 
     def _check(self, row: Any) -> None:
+        from app.spend.summary import SUMMARY_CURRENCY
+
+        if row.currency != SUMMARY_CURRENCY:
+            # Totals are in one currency and no FX is applied, so an entry in
+            # another could only be summed wrongly or left out silently.
+            raise StoreRefused(
+                422,
+                "unsupported_currency",
+                f"Recurring costs are recorded in {SUMMARY_CURRENCY}, the "
+                f"currency every spend total is in; {row.currency} is not "
+                "supported yet. Enter the invoice's USD amount.",
+            )
         if row.end_date is not None and row.end_date < row.start_date:
             raise StoreRefused(422, "bad_period", "end_date is before start_date.")
         if row.renews_on is not None and row.renews_on < row.start_date:

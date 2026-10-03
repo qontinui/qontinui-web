@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.overview import CostEntry, CostImportRun, RecurringCost, Vendor
@@ -52,6 +52,10 @@ class Freshness:
     #: fetched but not complete). A connector day outside this set is
     #: UNKNOWN: a window containing one has no honest total.
     covered_days: set[date] = field(default_factory=set)
+    #: The first day any ok run covered — before it, the vendor has no data
+    #: at all; inside [oldest_covered_day, newest_complete_day] a day with no
+    #: row is a reported $0.
+    oldest_covered_day: date | None = None
     #: The finish time of the newest failed run, when the last run failed.
     last_failed_at: datetime | None = None
 
@@ -91,32 +95,70 @@ def _covered(run: CostImportRun) -> list[date]:
     return days
 
 
+_RUN_FACTS = text(
+    """
+    SELECT vendor_id,
+           max(finished_at) FILTER (WHERE status = 'ok') AS last_ok_at,
+           max(LEAST(period_end, (finished_at AT TIME ZONE 'UTC')::date - 1))
+               FILTER (WHERE status = 'ok'
+                       AND (finished_at AT TIME ZONE 'UTC')::date - 1 >= period_start)
+               AS newest_complete_day,
+           min(period_start) FILTER (WHERE status = 'ok') AS oldest_covered_day
+      FROM overview.cost_import_runs
+     WHERE tenant_id = :tenant
+       AND vendor_id = ANY(:ids)
+       AND granularity <> 'month'
+     GROUP BY vendor_id
+    """
+)
+
+_LAST_RUN = text(
+    """
+    SELECT DISTINCT ON (vendor_id)
+           vendor_id, status, error, period_end, finished_at, started_at
+      FROM overview.cost_import_runs
+     WHERE tenant_id = :tenant
+       AND vendor_id = ANY(:ids)
+       AND granularity <> 'month'
+     ORDER BY vendor_id, started_at DESC
+    """
+)
+
+
 async def vendor_freshness(
     db: AsyncSession,
     tenant_id: UUID,
     vendors: list[Vendor],
     now: datetime,
+    *,
+    since: date | None = None,
 ) -> dict[UUID, Freshness]:
+    """Freshness for these vendors.
+
+    The status, ``last_ok_at``, ``newest_complete_day`` and
+    ``oldest_covered_day`` are aggregates over EVERY run, computed in SQL.
+    The per-day sets (``complete_days``, ``covered_days``) are filled only
+    for runs reaching ``since`` or later — the window the caller reads — so
+    the work is bounded by the window, not by the vendor's whole history.
+    """
     ids = [v.id for v in vendors]
     if not ids:
         return {}
-    runs = (
-        (
-            await db.execute(
-                select(CostImportRun)
-                .where(
-                    CostImportRun.tenant_id == tenant_id,
-                    CostImportRun.vendor_id.in_(ids),
-                    CostImportRun.granularity != "month",
-                )
-                .order_by(CostImportRun.started_at)
-            )
-        )
-        .scalars()
-        .all()
+    params = {"tenant": tenant_id, "ids": ids}
+    facts = {row.vendor_id: row for row in (await db.execute(_RUN_FACTS, params)).all()}
+    last_runs = {
+        row.vendor_id: row for row in (await db.execute(_LAST_RUN, params)).all()
+    }
+    window = select(CostImportRun).where(
+        CostImportRun.tenant_id == tenant_id,
+        CostImportRun.vendor_id.in_(ids),
+        CostImportRun.granularity != "month",
+        CostImportRun.status == "ok",
     )
+    if since is not None:
+        window = window.where(CostImportRun.period_end >= since)
     by_vendor: dict[UUID, list[CostImportRun]] = defaultdict(list)
-    for run in runs:
+    for run in (await db.execute(window)).scalars().all():
         by_vendor[run.vendor_id].append(run)
 
     with_entries = set(
@@ -157,21 +199,19 @@ async def vendor_freshness(
                 ),
             )
             continue
-        vendor_runs = by_vendor.get(vendor.id, [])
-        if not vendor_runs:
+        last = last_runs.get(vendor.id)
+        if last is None:
             out[vendor.id] = Freshness(status="never", reason="no import has run")
             continue
+        fact = facts.get(vendor.id)
         fresh = Freshness(status="ok")
-        for run in vendor_runs:
-            if run.status == "ok":
-                fresh.complete_days.update(_covered(run))
-                fresh.covered_days.update(_fetched(run))
-                if run.finished_at and (
-                    fresh.last_ok_at is None or run.finished_at > fresh.last_ok_at
-                ):
-                    fresh.last_ok_at = run.finished_at
-        fresh.newest_complete_day = max(fresh.complete_days, default=None)
-        last = vendor_runs[-1]
+        if fact is not None:
+            fresh.last_ok_at = fact.last_ok_at
+            fresh.newest_complete_day = fact.newest_complete_day
+            fresh.oldest_covered_day = fact.oldest_covered_day
+        for run in by_vendor.get(vendor.id, []):
+            fresh.complete_days.update(_covered(run))
+            fresh.covered_days.update(_fetched(run))
         # A failed run decides the status only when it is about the present:
         # a rejected backfill of an old day says nothing about whether the
         # current days are known. A run whose period is unknown (its query

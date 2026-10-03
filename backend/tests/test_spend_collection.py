@@ -294,6 +294,14 @@ class TestGithubNormaliser:
             _micros(i["netAmount"]) for i in raw["usageItems"]
         )
 
+    async def test_unusable_numbers_are_a_normalise_error(self) -> None:
+        from app.spend.connectors import NormaliseError, micros
+
+        for bad in ("NaN", "Infinity", "1e30", 1e30, "abc", None, True):
+            with pytest.raises(NormaliseError):
+                micros(bad, field_name="netAmount")
+        assert micros("9223372036854.775807", field_name="x") == 2**63 - 1
+
     async def test_the_registry_admits_exactly_the_stored_connectors(self) -> None:
         from app.models.overview import SPEND_CONNECTORS
         from app.spend.connectors import CONNECTORS
@@ -435,6 +443,63 @@ class TestIngest:
                 headers={"Content-Type": "application/json"},
             )
         assert resp.status_code == 401
+
+    async def test_an_oversized_amount_is_422_and_a_failed_run(
+        self, async_db_session, api_user, admin
+    ) -> None:
+        vendor = await _vendor(admin)
+        token = await _token(admin)
+        raw = _fixture()
+        raw["usageItems"][0]["netAmount"] = 1e30
+        resp = await _ingest(async_db_session, api_user, token, vendor, raw)
+        assert resp.status_code == 422
+        assert "too large" in resp.json()["error"] or "usable" in resp.json()["error"]
+
+    async def test_a_normaliser_crash_is_500_with_the_run_recorded(
+        self, async_db_session, api_user, admin, monkeypatch
+    ) -> None:
+        import dataclasses
+
+        from app.models.overview import CostImportRun
+        from app.spend import connectors
+
+        def crash(raw: Any, query: Any, config: Any) -> Any:
+            raise RuntimeError("bug")
+
+        spec = connectors.CONNECTORS["github_billing"]
+        monkeypatch.setitem(
+            connectors.CONNECTORS,
+            "github_billing",
+            dataclasses.replace(spec, normalise=crash),
+        )
+        vendor = await _vendor(admin)
+        token = await _token(admin)
+        resp = await _ingest(async_db_session, api_user, token, vendor, _fixture())
+        assert resp.status_code == 500
+        run = await async_db_session.get(
+            CostImportRun, UUID(resp.json()["import_run_id"])
+        )
+        assert run is not None and run.status == "failed"
+        assert "RuntimeError" in (run.error or "")
+
+    async def test_a_storage_failure_is_500_with_the_run_recorded(
+        self, async_db_session, api_user, admin, monkeypatch
+    ) -> None:
+        import app.spend.ingest as ingest_module
+        from app.models.overview import CostImportRun
+
+        async def broken(*args: Any, **kwargs: Any) -> int:
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(ingest_module, "_upsert", broken)
+        vendor = await _vendor(admin)
+        token = await _token(admin)
+        resp = await _ingest(async_db_session, api_user, token, vendor, _fixture())
+        assert resp.status_code == 500
+        run = await async_db_session.get(
+            CostImportRun, UUID(resp.json()["import_run_id"])
+        )
+        assert run is not None and run.status == "failed"
 
     async def test_a_payload_over_2mb_is_413(
         self, async_db_session, api_user, admin
@@ -745,6 +810,93 @@ class TestRecurringViews:
         assert renewals[0]["external_ref"] == "example.io"
         assert renewals[0]["vendor_name"] == "Namecheap"
         assert renewals[0]["auto_renew"] is None
+
+
+class TestCurrencyAndCeiling:
+    async def test_a_recurring_cost_in_another_currency_is_refused(self, admin) -> None:
+        vendor = await _vendor(admin, "Workspace", None, "saas")
+        resp = await admin.post(
+            f"{SPEND}/recurring-costs",
+            json={
+                "vendor_id": vendor,
+                "description": "seats",
+                "unit_amount_micros": 10 * 1_000_000,
+                "currency": "EUR",
+                "cadence": "monthly",
+                "start_date": "2026-09-01",
+            },
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"] == "unsupported_currency"
+
+    async def test_a_connector_row_in_another_currency_is_left_out_and_named(
+        self, async_db_session, api_user, admin
+    ) -> None:
+        from app.models.overview import CostEntry
+
+        vendor = await _vendor(admin)
+        token = await _token(admin)
+        raw = _fixture()
+        await _ingest(async_db_session, api_user, token, vendor, raw)
+        async_db_session.add(
+            CostEntry(
+                tenant_id=TENANT_A,
+                vendor_id=UUID(vendor),
+                source="connector",
+                source_ref="eur-line",
+                amount_micros=999 * 1_000_000,
+                currency="EUR",
+                period_start=date(2026, 10, 2),
+                period_end=date(2026, 10, 2),
+            )
+        )
+        await async_db_session.commit()
+        summary = await _summary(admin, **{"from": "2026-10-02", "to": "2026-10-02"})
+        assert summary["totals"]["net_micros"] == sum(_per_repo(raw).values())
+        assert summary["totals"]["partial"] is True
+        assert summary["totals"]["unknown_vendors"] == ["GitHub"]
+
+    async def test_ceiling_basis_and_covered_range(
+        self, async_db_session, api_user, admin
+    ) -> None:
+        vendor = await _vendor(admin)
+        token = await _token(admin)
+        raw = _fixture()
+        packages = dict(
+            raw["usageItems"][0], product="packages", sku="Packages", netAmount=5.0
+        )
+        day2 = {"usageItems": [*raw["usageItems"], packages]}
+        day1 = {
+            "usageItems": [
+                dict(i, date="2026-10-01T00:00:00Z") for i in raw["usageItems"]
+            ]
+        }
+        await _ingest(
+            async_db_session,
+            api_user,
+            token,
+            vendor,
+            day1,
+            query={"year": 2026, "month": 10, "day": 1},
+        )
+        await _ingest(async_db_session, api_user, token, vendor, day2)
+        resp = await admin.post(
+            f"{SPEND}/rules",
+            json={
+                "vendor_id": vendor,
+                "monthly_ceiling_micros": 750_000_000,
+                "mtd_thresholds_pct": [100],
+                "product_filter": ["actions"],
+            },
+        )
+        assert resp.status_code == 201
+        github = (await _summary(admin))["vendors"][0]
+        actions = 2 * sum(_per_repo(raw).values())
+        assert github["ceiling_basis_micros"] == actions
+        assert github["month_to_date_micros"] == actions + 5_000_000
+        assert github["ceiling_pct"] == round(actions * 100 / 750_000_000, 1)
+        assert github["oldest_covered_day"] == "2026-10-01"
+        assert github["newest_complete_day"] == "2026-10-02"
 
 
 class TestVendorNarrowing:

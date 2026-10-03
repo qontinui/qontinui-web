@@ -337,6 +337,15 @@ async def dispatch_push_for_event(
             if isinstance(t, PushTicket) and t.error == "DeviceNotRegistered"
         ]
         if gone:
-            await deactivate_push_tokens(db, gone)
-            await db.commit()
+            # Housekeeping only: a failure here must never fail the event push
+            # that already went out.
+            try:
+                await deactivate_push_tokens(db, gone)
+                await db.commit()
+            except Exception as e:  # noqa: BLE001 — logged, never raised
+                logger.warning("push_device_deactivate_failed", error=type(e).__name__)
+                try:
+                    await db.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
     return tickets if isinstance(tickets, list) else []

@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 #: Money is integer micros.
@@ -95,22 +95,29 @@ class ConnectorSpec:
     normalise: Normaliser | None = None
 
 
+#: The largest magnitude a ``bigint`` micros column holds.
+MAX_MICROS = 2**63 - 1
+
+
 def micros(value: Any, *, field_name: str) -> int:
     """A provider decimal amount → integer micros, half away from zero.
 
-    ``float`` is read through ``str`` so ``0.1`` stays ``0.1``.
+    ``float`` is read through ``str`` so ``0.1`` stays ``0.1``. Anything that
+    is not a finite number, or does not fit a ``bigint`` once in micros, is a
+    :class:`NormaliseError` — recorded as a failed run, never a 500.
     """
     if isinstance(value, bool) or not isinstance(value, int | float | str | Decimal):
         raise NormaliseError(f"{field_name} is not a number")
     try:
         amount = Decimal(str(value))
-    except Exception as exc:  # noqa: BLE001 — decimal raises several kinds
-        raise NormaliseError(f"{field_name} is not a number") from exc
-    if not amount.is_finite():
-        raise NormaliseError(f"{field_name} is not a finite number")
-    from decimal import ROUND_HALF_UP
-
-    return int((amount * MICROS).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        if not amount.is_finite():
+            raise NormaliseError(f"{field_name} is not a finite number")
+        result = int((amount * MICROS).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, ArithmeticError) as exc:
+        raise NormaliseError(f"{field_name} is not a usable number") from exc
+    if abs(result) > MAX_MICROS:
+        raise NormaliseError(f"{field_name} is too large to store")
+    return result
 
 
 def _registry() -> dict[str, ConnectorSpec]:

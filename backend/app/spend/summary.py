@@ -16,7 +16,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.overview import CostEntry, RecurringCost, SpendAlert, SpendRule, Vendor
@@ -129,13 +129,6 @@ async def load_rows(
     return rows
 
 
-def _sum_optional(values: list[int | None]) -> int | None:
-    """A sum whose every part is known, else ``None`` (unknown ≠ 0)."""
-    if any(v is None for v in values):
-        return None
-    return sum(v for v in values if v is not None)
-
-
 def _group_key(row: SpendRow, group_by: GroupBy) -> str:
     if group_by == "day":
         return row.day.isoformat()
@@ -160,11 +153,17 @@ class VendorSummary(BaseModel):
     status_reason: str | None
     last_ok_at: datetime | None
     newest_complete_day: date | None
+    #: The first day an ok import covered. Inside [oldest_covered_day,
+    #: newest_complete_day] a day with no series row is a REPORTED $0.
+    oldest_covered_day: date | None
     expected_lag_hours: int | None
     provenance: str
     month_to_date_micros: int | None
     ceiling_micros: int | None
     ceiling_pct: float | None
+    #: The month-to-date amount ``ceiling_pct`` is computed from: connector
+    #: rows only, through the rule's product filter. ``null`` with the pct.
+    ceiling_basis_micros: int | None
     today_micros: int | None
     yesterday_micros: int | None
     last_month_micros: int | None
@@ -263,6 +262,203 @@ def _window(
     return sum(r.net_micros for r in vrows if lo <= r.day <= hi)
 
 
+#: The one currency every total is in. Recurring entries in any other
+#: currency are refused at write time; a connector row in another currency is
+#: left out of every total and its vendor named as partial.
+SUMMARY_CURRENCY = "USD"
+
+
+async def _day_totals(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vendor_ids: list[UUID],
+    start: date,
+    end: date,
+    view: View,
+) -> list[SpendRow]:
+    """One row per (vendor, day, source, product), summed in SQL, plus the
+    recurring entries materialised under ``view``."""
+    if not vendor_ids:
+        return []
+    stmt = (
+        select(
+            CostEntry.vendor_id,
+            CostEntry.period_start,
+            CostEntry.source,
+            CostEntry.product,
+            func.sum(CostEntry.amount_micros),
+        )
+        .where(
+            CostEntry.tenant_id == tenant_id,
+            CostEntry.vendor_id.in_(vendor_ids),
+            CostEntry.currency == SUMMARY_CURRENCY,
+            CostEntry.period_start >= start,
+            CostEntry.period_start <= end,
+        )
+        .group_by(
+            CostEntry.vendor_id,
+            CostEntry.period_start,
+            CostEntry.source,
+            CostEntry.product,
+        )
+    )
+    out = [
+        SpendRow(
+            day=day,
+            vendor_id=vid,
+            source=source,
+            net_micros=int(net),
+            gross_micros=None,
+            discount_micros=None,
+            scope_label=None,
+            sku=None,
+            product=product,
+            description="",
+            currency=SUMMARY_CURRENCY,
+        )
+        for vid, day, source, product, net in (await db.execute(stmt)).all()
+    ]
+    out.extend(await _recurring_rows(db, tenant_id, vendor_ids, start, end, view))
+    return out
+
+
+async def _recurring_rows(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vendor_ids: list[UUID],
+    start: date,
+    end: date,
+    view: View,
+) -> list[SpendRow]:
+    entries = (
+        await db.execute(
+            select(RecurringCost).where(
+                RecurringCost.tenant_id == tenant_id,
+                RecurringCost.vendor_id.in_(vendor_ids),
+                RecurringCost.currency == SUMMARY_CURRENCY,
+            )
+        )
+    ).scalars()
+    rows: list[SpendRow] = []
+    for r in entries:
+        for part in materialise(r, start, end, view):
+            rows.append(
+                SpendRow(
+                    day=part.day,
+                    vendor_id=r.vendor_id,
+                    source="recurring",
+                    net_micros=part.micros,
+                    gross_micros=None,
+                    discount_micros=None,
+                    scope_label=None,
+                    sku=None,
+                    product=None,
+                    description=r.description,
+                    currency=r.currency,
+                )
+            )
+    return rows
+
+
+async def _vendors_with_other_currency(
+    db: AsyncSession, tenant_id: UUID, vendor_ids: list[UUID], start: date, end: date
+) -> set[UUID]:
+    if not vendor_ids:
+        return set()
+    return set(
+        (
+            await db.execute(
+                select(CostEntry.vendor_id)
+                .where(
+                    CostEntry.tenant_id == tenant_id,
+                    CostEntry.vendor_id.in_(vendor_ids),
+                    CostEntry.currency != SUMMARY_CURRENCY,
+                    CostEntry.period_start >= start,
+                    CostEntry.period_start <= end,
+                )
+                .distinct()
+            )
+        ).scalars()
+    )
+
+
+async def _series(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vendor_ids: list[UUID],
+    start: date,
+    end: date,
+    group_by: GroupBy,
+    view: View,
+) -> list[SeriesPoint]:
+    """The series, grouped in SQL for stored entries (GROUP BY key, vendor,
+    source) and in Python for the materialised recurring entries."""
+    if not vendor_ids:
+        return []
+    key: Any
+    if group_by == "day":
+        key = func.to_char(CostEntry.period_start, "YYYY-MM-DD")
+    elif group_by == "month":
+        key = func.to_char(CostEntry.period_start, "YYYY-MM")
+    elif group_by == "scope":
+        key = func.coalesce(
+            CostEntry.scope_label, func.nullif(CostEntry.description, ""), "(unscoped)"
+        )
+    else:
+        key = func.coalesce(
+            CostEntry.sku, func.nullif(CostEntry.description, ""), "(no sku)"
+        )
+    key = key.label("key")
+    stmt = (
+        select(
+            key,
+            CostEntry.vendor_id,
+            CostEntry.source,
+            func.sum(CostEntry.amount_micros),
+            func.sum(CostEntry.gross_micros),
+            func.sum(CostEntry.discount_micros),
+            # A group with any NULL gross/discount has an UNKNOWN sum.
+            func.count() - func.count(CostEntry.gross_micros),
+            func.count() - func.count(CostEntry.discount_micros),
+        )
+        .where(
+            CostEntry.tenant_id == tenant_id,
+            CostEntry.vendor_id.in_(vendor_ids),
+            CostEntry.currency == SUMMARY_CURRENCY,
+            CostEntry.period_start >= start,
+            CostEntry.period_start <= end,
+        )
+        .group_by(key, CostEntry.vendor_id, CostEntry.source)
+    )
+    points: dict[tuple[str, str, str], SeriesPoint] = {}
+    for k, vid, source, net, gross, disc, gross_nulls, disc_nulls in (
+        await db.execute(stmt)
+    ).all():
+        points[(k, str(vid), source)] = SeriesPoint(
+            key=k,
+            vendor_id=str(vid),
+            net_micros=int(net),
+            gross_micros=None if gross_nulls else int(gross),
+            discount_micros=None if disc_nulls else int(disc),
+            source=source,
+        )
+    for row in await _recurring_rows(db, tenant_id, vendor_ids, start, end, view):
+        k = _group_key(row, group_by)
+        point = points.get((k, str(row.vendor_id), "recurring"))
+        if point is None:
+            points[(k, str(row.vendor_id), "recurring")] = SeriesPoint(
+                key=k,
+                vendor_id=str(row.vendor_id),
+                net_micros=row.net_micros,
+                gross_micros=None,
+                discount_micros=None,
+                source="recurring",
+            )
+        else:
+            point.net_micros += row.net_micros
+    return [points[k] for k in sorted(points)]
+
+
 async def build_summary(
     db: AsyncSession,
     tenant_id: UUID,
@@ -280,7 +476,6 @@ async def build_summary(
         vendor_stmt = vendor_stmt.where(Vendor.id == vendor_id)
     vendors = list((await db.execute(vendor_stmt.order_by(Vendor.name))).scalars())
     ids = [v.id for v in vendors]
-    fresh = await vendor_freshness(db, tenant_id, vendors, now)
 
     rules = {
         r.vendor_id: r
@@ -302,14 +497,15 @@ async def build_summary(
     last_month_start, last_month_end = month_bounds(month_start - timedelta(days=1))
     load_start = min(start, last_month_start)
     load_end = max(end, today)
-    rows = await load_rows(db, tenant_id, ids, load_start, load_end, view)
+    fresh = await vendor_freshness(db, tenant_id, vendors, now, since=load_start)
 
+    # Per-vendor DAY totals for the figures, aggregated in SQL; recurring
+    # entries are materialised (they are few) and folded in per day.
+    day_rows = await _day_totals(db, tenant_id, ids, load_start, load_end, view)
     by_vendor: dict[UUID, list[SpendRow]] = defaultdict(list)
-    for row in rows:
+    for row in day_rows:
         by_vendor[row.vendor_id].append(row)
-
-    def total(vrows: list[SpendRow], lo: date, hi: date) -> int:
-        return sum(r.net_micros for r in vrows if lo <= r.day <= hi)
+    other_currency = await _vendors_with_other_currency(db, tenant_id, ids, start, end)
 
     summaries: list[VendorSummary] = []
     unknown: list[str] = []
@@ -329,18 +525,19 @@ async def build_summary(
             f, has_connector, vrows, last_month_start, last_month_end, today
         )
         pct: float | None = None
+        basis: int | None = None
         if mtd is not None and ceiling:
             # A ceiling reads connector-reported spend for its own vendor,
             # through the rule's product filter (decisions 8 and 12): a yearly
             # renewal never moves it.
-            counted = sum(
+            basis = sum(
                 r.net_micros
                 for r in vrows
                 if r.source == "connector"
                 and month_start <= r.day <= today
                 and _matches(r.product, rule.product_filter if rule else None)
             )
-            pct = round(counted * 100 / ceiling, 1)
+            pct = round(basis * 100 / ceiling, 1)
         gap_in_range = (
             f.known
             and has_connector
@@ -349,7 +546,7 @@ async def build_summary(
             )
             is None
         )
-        if not f.known or gap_in_range:
+        if not f.known or gap_in_range or vendor.id in other_currency:
             unknown.append(vendor.name)
         summaries.append(
             VendorSummary(
@@ -358,37 +555,28 @@ async def build_summary(
                 category=vendor.category,
                 connector=vendor.connector,
                 status=f.status,
-                status_reason=f.reason,
+                status_reason=(
+                    f.reason
+                    if vendor.id not in other_currency
+                    else "has figures in a currency other than USD, left out of "
+                    "every total"
+                ),
                 last_ok_at=f.last_ok_at,
                 newest_complete_day=f.newest_complete_day,
+                oldest_covered_day=f.oldest_covered_day,
                 expected_lag_hours=spec.expected_lag_hours if spec else None,
                 provenance=_provenance(vendor, f, vendor.id in recurring_vendors),
                 month_to_date_micros=mtd,
                 ceiling_micros=ceiling,
                 ceiling_pct=pct,
+                ceiling_basis_micros=basis,
                 today_micros=today_m,
                 yesterday_micros=yesterday_m,
                 last_month_micros=last_month,
             )
         )
 
-    groups: dict[tuple[str, UUID, str], list[SpendRow]] = defaultdict(list)
-    for row in rows:
-        if start <= row.day <= end:
-            groups[(_group_key(row, group_by), row.vendor_id, row.source)].append(row)
-    series = [
-        SeriesPoint(
-            key=key,
-            vendor_id=str(vid),
-            net_micros=sum(r.net_micros for r in grp),
-            gross_micros=_sum_optional([r.gross_micros for r in grp]),
-            discount_micros=_sum_optional([r.discount_micros for r in grp]),
-            source=source,
-        )
-        for (key, vid, source), grp in sorted(
-            groups.items(), key=lambda kv: (kv[0][0], str(kv[0][1]), kv[0][2])
-        )
-    ]
+    series = await _series(db, tenant_id, ids, start, end, group_by, view)
 
     alert_stmt = (
         select(SpendAlert)

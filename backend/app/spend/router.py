@@ -293,7 +293,11 @@ async def ingest(
     }
     if result.status != "ok":
         payload["error"] = result.error
-        return JSONResponse(status_code=422, content=payload)
+        # The failed run is committed above either way. A payload the
+        # normaliser rejects is the caller's to fix (422); a failure to store
+        # it is this server's (500), and the caller should retry.
+        code = 422 if result.failure == "rejected" else 500
+        return JSONResponse(status_code=code, content=payload)
     background.add_task(after_ingest, principal.tenant_id)
     return payload
 
