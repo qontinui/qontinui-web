@@ -108,6 +108,14 @@ import {
   FINDING_AUTHOR_GLYPH_RETENTIONS,
   FINDING_RETENTION_CLASS,
 } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
+// The operator-touch aggregate — plan
+// `2026-08-27-operator-touch-read-and-surface` Phase C3. Same shape as
+// findings: a `*Status.ts` in a `_lib/` beside its own route.
+import {
+  TOUCH_ATTENTION_BY_KIND,
+  TOUCH_AUTHOR_GLYPH_KINDS,
+  TOUCH_KIND_CLASS,
+} from "@/app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -240,6 +248,15 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: FINDING_RETENTION_CLASS,
       authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "operator touches (/admin/coord/operator-touches)",
+    module: "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
+    attentionByKind: TOUCH_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: TOUCH_KIND_CLASS,
+      authorGlyphKinds: TOUCH_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

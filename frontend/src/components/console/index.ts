@@ -28,6 +28,7 @@
  * | `time` | supports R2 — `relativeTime` / `absoluteTime` |
  * | `useRetainedValue` | R6 — a KEPT value publishes whether the last read replaced it |
  * | `diff` / `DiffTable` | supports R5 — the version diff a detail panel shows |
+ * | `ShareBar` / `ShareList` / `share` | §6.4 (§3.6) — a part of a whole, and a ranked distribution of parts |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
  * route, and **no module under `console/` that is REACHABLE FROM A ROUTE has
@@ -88,6 +89,11 @@ export type { FilterChipOption, FilterChipsProps } from "./FilterChips";
 export { CollapsiblePanel } from "./CollapsiblePanel";
 
 export { RefreshButton } from "./RefreshButton";
+
+export { ShareBar, ShareList, rankShares, shareFraction } from "./ShareBar";
+export type { ShareBarProps, ShareListItem, ShareListProps } from "./ShareBar";
+
+export { SHARE_UNKNOWN, share, shareOfFraction } from "./share";
 export type { RefreshButtonProps } from "./RefreshButton";
 
 export {

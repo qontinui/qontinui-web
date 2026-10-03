@@ -2952,6 +2952,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -2995,8 +3003,14 @@ async def _proxy_coord_passthrough(
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -3020,7 +3034,7 @@ async def _proxy_coord_passthrough(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             if method == "GET":
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
@@ -4256,6 +4270,109 @@ async def get_pull_decisions(
         params["since"] = since
     return await _proxy_coord_get(
         "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: str | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
+    """
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 
