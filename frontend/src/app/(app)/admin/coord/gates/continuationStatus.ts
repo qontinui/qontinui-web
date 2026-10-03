@@ -314,17 +314,25 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
 /**
  * The COMPLETE `continuation_deferred_reason` vocabulary, transcribed from its
  * producer's own table (`post_continuation_deferred`, qontinui-runner
- * `agent_runtime.rs`) — every stamp comes from one of four constructors:
+ * `agent_runtime.rs`):
  *
  * | reason | meaning |
  * |---|---|
  * | `thread_pressure:<severity>:<observed>_over_<limit>` | the machine is out of OS threads |
+ * | `commit_pressure:<severity>:<observed>_under_<limit>` | the machine is short of free memory (bytes) |
  * | `duplicate_anchor:<terminal_id>` | a live session already owns the anchor |
- * | `at_cap:<cap>` | the runner's continuation concurrency cap |
+ * | `device_drain:<class>` | coord holds the device drained |
  * | `spawn_authorization_<label>` | the agent registry refused the spawn |
+ * | `at_cap:<cap>` | RETIRED — the runner's former fixed continuation cap |
  *
- * The first three follow `<class>:<detail>`; the fourth is `_`-delimited and
- * predates the grammar, which the producer documents as the exception rather
+ * `at_cap:` is no longer written by a current runner (the fixed cap was
+ * retired 2026-10-03: admission is decided by the memory and thread lanes),
+ * but older runner builds keep writing it until rebuilt and historical rows
+ * carry it, so it stays readable. `commit_pressure` is accepted with `_over_`
+ * as well as `_under_`: an unlanded runner branch spelled it `_over_`.
+ *
+ * All but `spawn_authorization_` follow `<class>:<detail>`; that one is
+ * `_`-delimited and predates the grammar, which the producer documents as the exception rather
  * than quietly fixing. coord itself also writes one non-runner reason directly
  * (`"no runner online"`, `gate_routes.rs`), which matches no constructor and
  * falls through to the verbatim arm below — correctly, since it is already
@@ -333,6 +341,11 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
  * Unrecognised input is returned VERBATIM, never blanked and never guessed at:
  * an unreadable reason the operator can still read beats a confident wrong one.
  */
+/** Bytes as GiB with two decimals — the precision the runner's floors are quoted in. */
+function gib(bytes: string): string {
+  return `${(Number(bytes) / 1024 ** 3).toFixed(2)} GiB`;
+}
+
 export function humanizeDeferralReason(raw: string | null | undefined): string | null {
   const reason = raw?.trim();
   if (!reason) return null;
@@ -343,9 +356,15 @@ export function humanizeDeferralReason(raw: string | null | undefined): string |
     return `the machine was out of OS threads (${severity}) — ${observed} observed against a limit of ${limit}`;
   }
 
+  const commit = /^commit_pressure:([^:]+):(\d+)_(?:under|over)_(\d+)$/.exec(reason);
+  if (commit) {
+    const [, severity, observed, limit] = commit;
+    return `the machine was low on memory (${severity}) — ${gib(observed)} free against a floor of ${gib(limit)}`;
+  }
+
   const cap = /^at_cap:(.+)$/.exec(reason);
   if (cap) {
-    return `the runner was already at its continuation cap of ${cap[1]}`;
+    return `the runner was already at its continuation cap of ${cap[1]} (a fixed cap since retired; this stamp came from an older runner build)`;
   }
 
   const anchor = /^duplicate_anchor:(.+)$/.exec(reason);

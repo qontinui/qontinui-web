@@ -684,10 +684,23 @@ describe("humanizeDeferralReason", () => {
     );
   });
 
-  it("expands the other three producer constructors", () => {
+  it("expands the memory-pressure grammar, in either comparison spelling", () => {
+    const gib = 1024 ** 3;
+    const expected =
+      "the machine was low on memory (warn) — 1.00 GiB free against a floor of 3.00 GiB";
+    expect(humanizeDeferralReason(`commit_pressure:warn:${gib}_under_${3 * gib}`)).toBe(
+      expected
+    );
+    expect(humanizeDeferralReason(`commit_pressure:warn:${gib}_over_${3 * gib}`)).toBe(
+      expected
+    );
+  });
+
+  it("expands the other producer constructors", () => {
     expect(humanizeDeferralReason("at_cap:4")).toContain(
       "continuation cap of 4"
     );
+    expect(humanizeDeferralReason("at_cap:4")).toContain("since retired");
     expect(humanizeDeferralReason("duplicate_anchor:term-9f")).toContain(
       "terminal term-9f"
     );
