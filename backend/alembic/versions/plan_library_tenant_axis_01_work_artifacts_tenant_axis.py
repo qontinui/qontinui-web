@@ -67,13 +67,16 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "plan_library_tenant_axis_01"
-down_revision: str | Sequence[str] | None = "coord_agent_sessions_context_01"
+down_revision: str | Sequence[str] | None = "overview_04_timeline"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 #: Value for value with ``ck_session_artifacts_tenant_source``. A second
-#: vocabulary would be drift, not design.
+#: vocabulary would be drift, not design. The CHECK in :func:`upgrade` spells
+#: these values out as a plain literal (no f-string, so a static reader of the
+#: DDL sees exactly what runs); ``tests/test_plan_library_tenant_axis_01_migration.py``
+#: pins that the literal and this tuple stay identical.
 _TENANT_SOURCE_VALUES = (
     "'declared', 'derived_repo', 'derived_sole_binding', 'ambiguous', 'unknown'"
 )
@@ -108,7 +111,9 @@ def upgrade() -> None:
         ") THEN "
         "ALTER TABLE agent.work_artifacts "
         "ADD CONSTRAINT ck_work_artifacts_tenant_source "
-        f"CHECK (tenant_source IN ({_TENANT_SOURCE_VALUES})); "
+        "CHECK (tenant_source IN ("
+        "'declared', 'derived_repo', 'derived_sole_binding', 'ambiguous', 'unknown'"
+        ")); "
         "END IF; "
         "END $$"
     )

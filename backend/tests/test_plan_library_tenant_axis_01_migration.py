@@ -190,6 +190,47 @@ def test_the_revision_does_not_touch_the_identity_index() -> None:
     assert "ix_work_artifacts_scan_identity" not in code
 
 
+def test_the_check_ddl_is_a_plain_literal_matching_the_vocabulary() -> None:
+    """The CHECK is spelled inline, not interpolated, and cannot drift.
+
+    coord's migration classifier reads the DDL statically and refuses an
+    f-string replacement field it cannot see, so the CHECK's value list is a
+    plain literal. ``_TENANT_SOURCE_VALUES`` stays as the named vocabulary;
+    this pins that the literal, the constant and ``_VOCABULARY`` agree.
+    """
+    import ast
+    import importlib.util
+
+    path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    assert not any(isinstance(node, ast.JoinedStr) for node in ast.walk(tree)), (
+        "the revision must build no SQL from an f-string"
+    )
+
+    spec = importlib.util.spec_from_file_location("_tenant_axis_01", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    upgrade = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+    )
+    literals = [
+        node.value
+        for node in ast.walk(upgrade)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    check_sql = next(sql for sql in literals if "CHECK (tenant_source IN (" in sql)
+    inline = re.search(r"CHECK \(tenant_source IN \((?P<values>[^)]*)\)\)", check_sql)
+    assert inline is not None, check_sql
+    assert inline.group("values") == module._TENANT_SOURCE_VALUES
+    assert {
+        value.strip().strip("'") for value in inline.group("values").split(",")
+    } == _VOCABULARY
+
+
 def test_the_vocabulary_matches_the_sibling_store() -> None:
     """One vocabulary, two tables. A second spelling is drift, not design."""
     sibling = (backend_root() / "app" / "models" / "session_artifact.py").read_text(
