@@ -6,6 +6,8 @@ import {
   dayOffset,
   describeSlip,
   projectWindow,
+  shipDay,
+  shippedLane,
   toDay,
   toMermaidGantt,
   zoomWindow,
@@ -189,5 +191,67 @@ describe("toMermaidGantt", () => {
     expect(a0?.tasks.map((t) => t.isCritical)).toEqual([true, false]);
     expect(a1?.code).toBe("A1");
     expect(a1?.plannedEnd).toBe("2026-03-13");
+  });
+});
+
+describe("shippedLane", () => {
+  const window = {
+    start: new Date(2026, 0, 1),
+    end: new Date(2026, 2, 31),
+  };
+  const plan = (slug: string, shippedAt: string) => ({
+    slug,
+    title: slug.toUpperCase(),
+    shippedAt,
+  });
+
+  it("puts plans shipped the same day on one mark, at that day", () => {
+    const { marks, outside } = shippedLane(
+      [
+        plan("a", "2026-02-01T08:00:00Z"),
+        plan("b", "2026-02-01T21:00:00Z"),
+        plan("c", "2026-03-15T10:00:00Z"),
+      ],
+      window
+    );
+    expect(outside).toBe(0);
+    expect(marks.map((m) => [m.day, m.plans.map((p) => p.slug)])).toEqual([
+      ["2026-02-01", ["a", "b"]],
+      ["2026-03-15", ["c"]],
+    ]);
+    expect(marks[0]!.left).toBe(dayOffset(new Date(2026, 1, 1), window));
+  });
+
+  it("dates a ship by its UTC day, whatever offset coord wrote it in", () => {
+    // 00:30 at +02:00 is still 31 January in UTC: a slice of the text would
+    // say 1 February, whatever zone the test runs in.
+    expect(shipDay("2026-02-01T00:30:00+02:00")).toBe("2026-01-31");
+    expect(shipDay("2026-02-01T23:59:00Z")).toBe("2026-02-01");
+    expect(shipDay("not a date")).toBeNull();
+    const { marks } = shippedLane(
+      [plan("a", "2026-02-01T00:30:00+02:00")],
+      window
+    );
+    expect(marks[0]!.day).toBe("2026-01-31");
+  });
+
+  it("counts, rather than drops, plans it cannot place", () => {
+    const { marks, outside, unreadable } = shippedLane(
+      [
+        plan("before", "2025-12-31T12:00:00Z"),
+        plan("in", "2026-01-01T00:00:00Z"),
+        plan("after", "2026-04-01T00:00:00Z"),
+        plan("unreadable", "not a date"),
+      ],
+      window
+    );
+    expect(marks.map((m) => m.day)).toEqual(["2026-01-01"]);
+    expect(outside).toBe(2);
+    expect(unreadable).toBe(1);
+  });
+
+  it("counts an unreadable ship time apart from one outside the view", () => {
+    const lane = shippedLane([plan("x", "not a date")], window);
+    expect(lane).toEqual({ marks: [], outside: 0, unreadable: 1 });
   });
 });
