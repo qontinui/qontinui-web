@@ -83,6 +83,7 @@ describe("the month axis", () => {
 
 const PHASES: ExportPhase[] = [
   {
+    id: "p0",
     code: "A0",
     name: "Mobilisation",
     planned_start: "2026-01-05",
@@ -107,6 +108,7 @@ const PHASES: ExportPhase[] = [
     ],
   },
   {
+    id: "p1",
     code: "A1",
     name: "Discovery",
     planned_start: "2026-02-02",
@@ -114,6 +116,7 @@ const PHASES: ExportPhase[] = [
     tasks: [],
   },
   {
+    id: "p2",
     code: "A2",
     name: "Undated",
     planned_start: null,
@@ -144,7 +147,14 @@ function milestone(over: Partial<Milestone>): Milestone {
 
 describe("toMermaidGantt", () => {
   const { text, skipped } = toMermaidGantt("Delivery: plan", PHASES, [
-    milestone({ phase_code: "A1", title: "Sign-off" }),
+    milestone({ phase_id: "p1", phase_code: "A1", title: "Sign-off" }),
+    // Another estimate's A1: same code, different phase.
+    milestone({
+      id: "m3",
+      phase_id: "elsewhere",
+      phase_code: "A1",
+      title: "Elsewhere",
+    }),
     milestone({ id: "m2", title: "First value", status: "done" }),
   ]);
 
@@ -160,6 +170,8 @@ describe("toMermaidGantt", () => {
     expect(text).toMatch(/Discovery :a1, 2026-02-02, 2026-03-13/);
     expect(text).toMatch(/Sign-off :milestone, m\d+, 2026-03-02, 0d/);
     expect(text).toContain("section Milestones");
+    const loose = text.slice(text.indexOf("section Milestones"));
+    expect(loose).toContain("Elsewhere");
   });
 
   it("names what it could not draw rather than dropping it silently", () => {

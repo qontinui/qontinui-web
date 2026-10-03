@@ -606,6 +606,53 @@ class TestPhaseProgress:
         assert progress["version"] == 2
         assert progress["planned_end"] == "2026-02-06"
 
+    async def test_a_kept_phase_has_its_tasks_rewritten_and_its_progress_kept(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        def content(task_title: str, fte: str) -> dict[str, Any]:
+            body = _content("A0", "A1")
+            body["roles"] = [{"code": "BE", "name": "Backend"}]
+            body["phases"][0]["tasks"] = [
+                {
+                    "number": "1.1",
+                    "title": task_title,
+                    "efforts": [{"role_code": "BE", "planned_person_days": "3"}],
+                }
+            ]
+            body["allocations"] = [{"phase_code": "A0", "role_code": "BE", "fte": fte}]
+            return body
+
+        estimate = await _estimate(admin)
+        first = await _patch(
+            admin,
+            f"estimates/{estimate['id']}",
+            {"content": content("Kick-off", "1")},
+            1,
+        )
+        assert first.status_code == 200, first.text
+        a0 = _phase_id(first.json()["item"], "A0")
+        await _patch(
+            admin,
+            f"phase-progress/{a0}",
+            {"actual_start": "2026-01-05", "gate_notes": "Kept"},
+            1,
+        )
+        again = await _patch(
+            admin,
+            f"estimates/{estimate['id']}",
+            {"content": content("Kick-off, re-planned", "2")},
+            2,
+        )
+        assert again.status_code == 200, again.text
+        item = again.json()["item"]
+        phase = item["content"]["phases"][0]
+        assert phase["id"] == a0
+        assert [t["title"] for t in phase["tasks"]] == ["Kick-off, re-planned"]
+        assert phase["tasks"][0]["efforts"][0]["role_code"] == "BE"
+        assert [a["fte"] for a in item["content"]["allocations"]] == ["2.000"]
+        assert phase["actual_start"] == "2026-01-05"
+        assert phase["gate_notes"] == "Kept"
+
     async def test_a_content_write_naming_progress_is_refused_whole(
         self, admin: httpx.AsyncClient
     ) -> None:

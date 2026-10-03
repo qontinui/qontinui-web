@@ -723,7 +723,10 @@ def phase_progress_problem(
     gate_decided_at: date | None,
 ) -> str | None:
     """Why a phase's progress, as it would stand, is not a coherent record —
-    or ``None``. One rule set for the API and the database CHECKs."""
+    or ``None``. Enforced by the API only: the database checks just the
+    actual-date order (``ck_overview_phases_actual_order``), so a row written
+    before this rule existed can break it, and its next progress write is
+    refused with this sentence until the record is made coherent."""
     if actual_end is not None and actual_start is None:
         return "a phase cannot have finished without having started — give actual_start"
     if actual_start and actual_end and actual_end < actual_start:

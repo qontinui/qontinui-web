@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { rowProblems, textToRow } from "@/components/overview/editing/fields";
+import {
+  cellText,
+  rowProblems,
+  rowToText,
+  textToRow,
+} from "@/components/overview/editing/fields";
 import type { JsonSchema } from "@/components/overview/editing/api";
 import {
   milestoneRowProblem,
   milestoneTable,
+  otherPhases,
   parseMilestonesCsv,
   planMilestoneWrites,
   type MilestoneRow,
@@ -194,5 +200,65 @@ describe("planMilestoneWrites", () => {
     ]);
     // "Beta" names two milestones, so it is a new one rather than a guess.
     expect(plan.creates.map((r) => r.title)).toEqual(["Beta", "Delta"]);
+  });
+});
+
+describe("a paste that updates", () => {
+  it("writes only the columns the line fills in", () => {
+    const done = row({
+      id: "m1",
+      title: "Pilot live",
+      status: "done",
+      completed_date: "2026-05-06",
+      phase_id: "p1",
+      description: "First site",
+    });
+    const { rows, issues } = parseMilestonesCsv(
+      "Pilot live,2026-05-04",
+      PHASES
+    );
+    expect(issues).toEqual([]);
+    const plan = planMilestoneWrites([done], rows, "import");
+    expect(plan.updates).toEqual([
+      { row: done, patch: { target_date: "2026-05-04" } },
+    ]);
+  });
+});
+
+describe("a milestone tied to another estimate's phase", () => {
+  it("is offered under its code rather than shown as an id", () => {
+    const foreign = {
+      id: "m9",
+      title: "Old gate",
+      description: "",
+      kind: "milestone" as const,
+      phase_id: "old-phase",
+      phase_code: "B2",
+      target_date: "2026-01-01",
+      completed_date: null,
+      status: "planned" as const,
+      version: 1,
+      created_at: "",
+      updated_at: "",
+      created_by: null,
+      updated_by: null,
+    };
+    const others = otherPhases([foreign], PHASES);
+    expect(others).toEqual([
+      { id: "old-phase", label: "B2 (another estimate)" },
+    ]);
+    const table = milestoneTable(PHASES, others);
+    const phase = table.fields.find((f) => f.field === "phase_id")!;
+    expect(cellText(phase, row({ phase_id: "old-phase" }))).toBe(
+      "B2 (another estimate)"
+    );
+    // And the row still edits without re-picking its phase.
+    const read = textToRow(
+      table,
+      rowToText(table, row({ phase_id: "old-phase" })),
+      CREATE_SCHEMA,
+      row({ phase_id: "old-phase" })
+    );
+    expect("row" in read && read.row.phase_id).toBe("old-phase");
   });
 });
