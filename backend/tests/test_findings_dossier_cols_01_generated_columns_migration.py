@@ -157,6 +157,48 @@ _CASES: list[tuple[str, str, str | None, dict, tuple]] = [
         (None, None, None, None, None, None),
     ),
     (
+        "empty topic suffix is not a slug (NULLIF guard)",
+        "dossier",
+        "dossier:",
+        {},
+        (None, None, None, None, None, None),
+    ),
+    (
+        "century leap rules: 1900-02-29 invalid, 2000-02-29 valid",
+        "dossier",
+        "dossier:leap",
+        {"first_seen": "1900-02-29", "last_seen": "2000-02-29"},
+        ("leap", None, None, None, _D(2000, 2, 29), None),
+    ),
+    (
+        "31st of a 30-day month is invalid, 30th of April is valid",
+        "dossier",
+        "dossier:m30",
+        {"first_seen": "2026-04-31", "last_seen": "2026-04-30"},
+        ("m30", None, None, None, _D(2026, 4, 30), None),
+    ),
+    (
+        "10-digit recurrence beyond int range stays NULL (regex is {1,9})",
+        "dossier",
+        "dossier:big",
+        {"recurrence_count": 2147483648},
+        ("big", None, None, None, None, None),
+    ),
+    (
+        "recurrence as exponent / padded strings is NULL",
+        "dossier",
+        "dossier:exp",
+        {"recurrence_count": "1e3", "readiness": "in_remediation"},
+        ("exp", "in_remediation", None, None, None, None),
+    ),
+    (
+        "array-valued slug ref is ignored; the topic suffix wins",
+        "dossier",
+        "dossier:from-topic",
+        {"dossier_slug": ["a"]},
+        ("from-topic", None, None, None, None, None),
+    ),
+    (
         "non-dossier row with a full ledger stays all NULL",
         "investigation",
         "dossier:nope",
@@ -302,7 +344,10 @@ def test_findings_dossier_cols_01_generated_columns_and_indexes() -> None:
             ).scalar()
         n_dossier = sum(1 for c in _CASES if c[1] == "dossier")
         assert live == 2 * n_dossier
-        assert with_slug == 2 * 9  # cases 1-9 carry a slug
+        expected_slugged = sum(
+            1 for c in _CASES if c[1] == "dossier" and c[4][0] is not None
+        )
+        assert with_slug == 2 * expected_slugged
 
         # 6a. Downgrade drops indexes then columns and keeps the rows;
         #     upgrade works again afterwards.

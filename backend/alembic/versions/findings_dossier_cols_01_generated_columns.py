@@ -14,7 +14,9 @@ from it, and every one is NULL for ``kind <> 'dossier'``.
 Columns (the SQL is the Phase 1 ACCEPTED form, plan section "Measured" 4,
 verified on PostgreSQL 16 against adversarial rows):
 
-- ``dossier_slug`` — ``artifact_refs.dossier_slug``, falling back to the
+- ``dossier_slug`` — ``artifact_refs.dossier_slug`` (only when it is a JSON
+  string; an array/object ref is ignored rather than stored as JSON text),
+  falling back to the
   ``topic`` suffix of ``dossier:<slug>``: 91 of 265 live heads carry the slug
   only in the topic.
 - ``dossier_readiness`` — text, only when the JSON value is a string.
@@ -39,8 +41,10 @@ Partial indexes ``WHERE kind = 'dossier'``:
 House form of ``findings_triage_01``: raw ``op.execute`` with ``ADD COLUMN IF
 NOT EXISTS`` / ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` in an
 ``autocommit_block()``, schema-qualified, rerunnable. ``ADD COLUMN ... STORED``
-rewrites the table (11.3k rows / 43 MB at Phase 1; ~10 ms on a same-shaped
-scratch table) under a brief ACCESS EXCLUSIVE lock behind ``lock_timeout``.
+rewrites the table (11.3k rows / 43 MB at Phase 1; ~10 ms per rewrite on a
+same-shaped scratch table) under an ACCESS EXCLUSIVE lock behind
+``lock_timeout``. The six columns are added in ONE ``ALTER TABLE`` so the table
+is rewritten once, not six times.
 A killed CONCURRENTLY build leaves an INVALID index that ``IF NOT EXISTS``
 would skip, so the upgrade drops any invalid one of these names first.
 
@@ -63,19 +67,22 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _date_expr(key: str) -> str:
-    """Immutable text->date for ``artifact_refs->>key`` (NULL when not a real date)."""
+    """Immutable text->date for ``artifact_refs->>key`` (NULL when not a real date).
+
+    The shape guard is the OUTER ``CASE`` and every ``::int`` cast sits inside
+    its ``THEN`` branch, so no cast can be evaluated on a non-matching value
+    (SQL does not promise left-to-right evaluation of an ``AND`` list).
+    """
     v = f"(artifact_refs->>'{key}')"
+    y, m, d = f"substr({v},1,4)::int", f"substr({v},6,2)::int", f"substr({v},9,2)::int"
     return (
         "CASE WHEN kind = 'dossier'"
         f" AND {v} ~ '^[0-9]{{4}}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([T ].*)?$'"
-        f" AND substr({v},1,4)::int >= 1"
-        f" AND substr({v},9,2)::int <= CASE substr({v},6,2)::int"
-        f" WHEN 2 THEN CASE WHEN (substr({v},1,4)::int % 4 = 0"
-        f" AND substr({v},1,4)::int % 100 <> 0)"
-        f" OR substr({v},1,4)::int % 400 = 0 THEN 29 ELSE 28 END"
+        f" THEN CASE WHEN {y} >= 1 AND {d} <= CASE {m}"
+        f" WHEN 2 THEN CASE WHEN ({y} % 4 = 0 AND {y} % 100 <> 0)"
+        f" OR {y} % 400 = 0 THEN 29 ELSE 28 END"
         " WHEN 4 THEN 30 WHEN 6 THEN 30 WHEN 9 THEN 30 WHEN 11 THEN 30 ELSE 31 END"
-        f" THEN make_date(substr({v},1,4)::int, substr({v},6,2)::int,"
-        f" substr({v},9,2)::int) END"
+        f" THEN make_date({y}, {m}, {d}) END END"
     )
 
 
@@ -84,7 +91,8 @@ _COLUMNS: tuple[tuple[str, str, str], ...] = (
         "dossier_slug",
         "text",
         "CASE WHEN kind = 'dossier' THEN"
-        " COALESCE(NULLIF(artifact_refs->>'dossier_slug', ''),"
+        " COALESCE(CASE WHEN jsonb_typeof(artifact_refs->'dossier_slug') = 'string'"
+        " THEN NULLIF(artifact_refs->>'dossier_slug', '') END,"
         " CASE WHEN left(topic, 8) = 'dossier:'"
         " THEN NULLIF(substr(topic, 9), '') END) END",
     ),
@@ -132,38 +140,51 @@ _INDEXES: tuple[tuple[str, str], ...] = (
 def upgrade() -> None:
     """Additive: six generated columns plus three partial indexes. Idempotent."""
     op.execute("SET LOCAL lock_timeout = '3s'")
-    for name, sql_type, expr in _COLUMNS:
-        op.execute(
-            f"ALTER TABLE coord.findings ADD COLUMN IF NOT EXISTS {name} "
-            f"{sql_type} GENERATED ALWAYS AS ({expr}) STORED"
-        )
+    # ONE statement: each STORED column is a full table rewrite, so six
+    # statements would rewrite six times under the ACCESS EXCLUSIVE lock.
+    clauses = ", ".join(
+        f"ADD COLUMN IF NOT EXISTS {name} {sql_type} GENERATED ALWAYS AS ({expr}) STORED"
+        for name, sql_type, expr in _COLUMNS
+    )
+    op.execute(f"ALTER TABLE coord.findings {clauses}")
 
     # CONCURRENTLY cannot run in a transaction; entering the block commits the
     # ALTERs, which is why each is individually idempotent.
     with op.get_context().autocommit_block():
-        for name, key in _INDEXES:
-            # A killed CONCURRENTLY build leaves an INVALID index that
-            # IF NOT EXISTS would skip forever: drop only an invalid one.
-            op.execute(
-                f"""
-                DO $$
-                BEGIN
-                  IF EXISTS (
-                    SELECT 1 FROM pg_index i
-                      JOIN pg_class c ON c.oid = i.indexrelid
-                      JOIN pg_namespace n ON n.oid = c.relnamespace
-                     WHERE n.nspname = 'coord' AND c.relname = '{name}'
-                       AND NOT i.indisvalid
-                  ) THEN
-                    DROP INDEX coord.{name};
-                  END IF;
-                END $$
-                """
-            )
-            op.execute(
-                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} "
-                f"ON coord.findings {key} WHERE kind = 'dossier'"
-            )
+        # The SET LOCAL above ended with its transaction. Without a bound a
+        # plain DROP INDEX (ACCESS EXCLUSIVE) queues behind any long reader and
+        # blocks every other reader and writer of coord.findings.
+        op.execute("SET lock_timeout = '3s'")
+        try:
+            _repair_and_build_indexes()
+        finally:
+            op.execute("RESET lock_timeout")
+
+
+def _repair_and_build_indexes() -> None:
+    for name, key in _INDEXES:
+        # A killed CONCURRENTLY build leaves an INVALID index that
+        # IF NOT EXISTS would skip forever: drop only an invalid one.
+        op.execute(
+            f"""
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = '{name}'
+                   AND NOT i.indisvalid
+              ) THEN
+                DROP INDEX coord.{name};
+              END IF;
+            END $$
+            """
+        )
+        op.execute(
+            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} "
+            f"ON coord.findings {key} WHERE kind = 'dossier'"
+        )
 
 
 def downgrade() -> None:
