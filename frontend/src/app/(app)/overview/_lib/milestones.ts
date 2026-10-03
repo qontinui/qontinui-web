@@ -33,6 +33,10 @@ export interface MilestoneRow {
   status: MilestoneStatus;
   completed_date: string | null;
   description: string;
+  /** Set on a row read from a paste: the columns the paste actually gave.
+   *  A paste that updates an existing milestone writes only these, so a
+   *  column left out is left alone rather than reset to its default. */
+  supplied?: Writable[];
 }
 
 /** The fields a write carries — everything the table edits. */
@@ -45,6 +49,7 @@ const WRITABLE = [
   "completed_date",
   "description",
 ] as const;
+type Writable = (typeof WRITABLE)[number];
 
 export function milestoneToRow(m: Milestone): MilestoneRow {
   return {
@@ -188,8 +193,19 @@ export function parseMilestonesCsv(
       status: statusValue,
       completed_date: doneOn || null,
       description: notes ?? "",
+      supplied: [
+        "title",
+        "target_date",
+        ...(status ? (["status"] as const) : []),
+        ...(kind ? (["kind"] as const) : []),
+        ...(phase ? (["phase_id"] as const) : []),
+        ...(doneOn ? (["completed_date"] as const) : []),
+        ...(notes ? (["description"] as const) : []),
+      ],
     };
-    const problem = milestoneRowProblem(row);
+    // A line that names neither its status nor a done-on date leaves both to
+    // the milestone it updates; the page checks the result as it will stand.
+    const problem = status || doneOn ? milestoneRowProblem(row) : null;
     if (problem) {
       fail(problem);
       continue;
@@ -202,7 +218,11 @@ export function parseMilestonesCsv(
 
 /** The table, declared for the kit — its phase choices are this estimate's. */
 export function milestoneTable(
-  phases: PhaseChoice[]
+  phases: PhaseChoice[],
+  /** Phases a milestone already names that are not among `phases` (another
+   *  estimate's, e.g. a former baseline's): offered so such a row still
+   *  reads and edits, never as a raw id. */
+  others: { id: string; label: string }[] = []
 ): TableDeclaration<MilestoneRow> {
   return {
     resource: "milestones",
@@ -232,10 +252,13 @@ export function milestoneTable(
         field: "phase_id",
         label: "Phase",
         kind: "select",
-        options: phases.map((p) => ({
-          value: p.id,
-          label: `${p.code} ${p.name}`,
-        })),
+        options: [
+          ...phases.map((p) => ({
+            value: p.id,
+            label: `${p.code} ${p.name}`,
+          })),
+          ...others.map((o) => ({ value: o.id, label: o.label })),
+        ],
         emptyLabel: "No phase",
       },
       { field: "completed_date", label: "Done on", kind: "date" },
@@ -254,7 +277,7 @@ export function milestoneTable(
     }),
     csv: {
       label: "Paste milestones",
-      help: "One milestone per line: title, due date, status, kind, phase code, done-on date, notes. Only the title and the due date are required. A line whose title matches exactly one existing milestone updates it; every other line adds one. A paste never removes a milestone.",
+      help: "One milestone per line: title, due date, status, kind, phase code, done-on date, notes. Only the title and the due date are required. A line whose title matches exactly one existing milestone updates it — only the columns the line fills in; every other line adds one. A paste never removes a milestone.",
       placeholder:
         "title,due,status,kind,phase,done on,notes\nPilot live,2026-05-04,planned,pilot,A3,,First site only",
       parse: (text) => parseMilestonesCsv(text, phases),
@@ -271,10 +294,11 @@ export interface MilestoneWrites {
 
 function changed(
   before: MilestoneRow,
-  after: MilestoneRow
+  after: MilestoneRow,
+  fields: readonly Writable[] = WRITABLE
 ): Partial<MilestoneRow> {
-  const patch: Partial<Record<(typeof WRITABLE)[number], unknown>> = {};
-  for (const field of WRITABLE) {
+  const patch: Partial<Record<Writable, unknown>> = {};
+  for (const field of fields) {
     if (before[field] !== after[field]) patch[field] = after[field];
   }
   return patch as Partial<MilestoneRow>;
@@ -308,7 +332,7 @@ export function planMilestoneWrites(
         (p) => p.title.trim().toLowerCase() === row.title.trim().toLowerCase()
       );
       if (same.length === 1) {
-        const patch = changed(same[0]!, row);
+        const patch = changed(same[0]!, row, row.supplied ?? WRITABLE);
         if (Object.keys(patch).length > 0)
           plan.updates.push({ row: same[0]!, patch });
       } else {
@@ -331,4 +355,19 @@ export function planMilestoneWrites(
   }
   plan.deletes = previous.filter((p) => !kept.has(p.id));
   return plan;
+}
+
+/** The phases milestones name that `phases` does not hold, labelled from
+ *  the code the server resolved. */
+export function otherPhases(
+  milestones: Milestone[],
+  phases: PhaseChoice[]
+): { id: string; label: string }[] {
+  const known = new Set(phases.map((p) => p.id));
+  const out = new Map<string, string>();
+  for (const m of milestones) {
+    if (m.phase_id && !known.has(m.phase_id))
+      out.set(m.phase_id, `${m.phase_code ?? "A phase"} (another estimate)`);
+  }
+  return [...out].map(([id, label]) => ({ id, label }));
 }

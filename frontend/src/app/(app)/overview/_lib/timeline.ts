@@ -266,6 +266,7 @@ export const MILESTONE_STATUS_LABEL: Record<MilestoneStatus, string> = {
 // ---------------------------------------------------------------------------
 
 export interface ExportPhase {
+  id: string;
   code: string;
   name: string;
   planned_start: string | null;
@@ -316,12 +317,14 @@ export function toMermaidGantt(
   const skipped: string[] = [];
   const byPhase = new Map<string, Milestone[]>();
   const loose: Milestone[] = [];
-  const drawn = new Set(phases.map((p) => p.code));
+  // By id, not code: codes are unique only within one estimate, and a
+  // milestone may belong to a phase of another.
+  const drawn = new Set(phases.map((p) => p.id));
   for (const milestone of milestones) {
-    if (milestone.phase_code && drawn.has(milestone.phase_code)) {
-      const list = byPhase.get(milestone.phase_code) ?? [];
+    if (milestone.phase_id && drawn.has(milestone.phase_id)) {
+      const list = byPhase.get(milestone.phase_id) ?? [];
       list.push(milestone);
-      byPhase.set(milestone.phase_code, list);
+      byPhase.set(milestone.phase_id, list);
     } else {
       loose.push(milestone);
     }
@@ -334,7 +337,7 @@ export function toMermaidGantt(
   for (const phase of phases) {
     const dated = phase.tasks.filter((t) => t.planned_start && t.planned_end);
     const own = phase.planned_start && phase.planned_end;
-    const theirs = byPhase.get(phase.code) ?? [];
+    const theirs = byPhase.get(phase.id) ?? [];
     if (dated.length === 0 && !own && theirs.length === 0) {
       skipped.push(`${phase.code} ${phase.name}`);
       continue;

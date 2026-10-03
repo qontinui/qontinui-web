@@ -31,6 +31,7 @@ import {
   milestoneRowProblem,
   milestoneTable,
   milestoneToRow,
+  otherPhases,
   planMilestoneWrites,
   type MilestoneRow,
   type PhaseChoice,
@@ -49,9 +50,9 @@ type Pending =
 
 function describe(
   row: MilestoneRow | Milestone,
-  phases: PhaseChoice[]
+  phases: { value: string; label: string }[]
 ): string {
-  const phase = phases.find((p) => p.id === row.phase_id);
+  const phase = phases.find((p) => p.value === row.phase_id);
   return [
     row.title,
     `Due ${formatDay(row.target_date) ?? row.target_date}`,
@@ -59,7 +60,7 @@ function describe(
       row.completed_date ? ` on ${formatDay(row.completed_date)}` : ""
     }`,
     MILESTONE_KIND_LABEL[row.kind],
-    phase ? `Phase ${phase.code} ${phase.name}` : "No phase",
+    phase ? `Phase ${phase.label}` : "No phase",
     row.description ? `Notes: ${row.description}` : "No notes",
   ].join("\n");
 }
@@ -88,7 +89,19 @@ export function MilestonesSection({
   drop: (id: string) => void;
   replace: (item: Milestone) => void;
 }) {
-  const table = useMemo(() => milestoneTable(phases), [phases]);
+  const others = useMemo(
+    () => otherPhases(milestones, phases),
+    [milestones, phases]
+  );
+  const table = useMemo(() => milestoneTable(phases, others), [phases, others]);
+  // Every phase a row can name, by id, for the conflict dialog's text.
+  const phaseOptions = useMemo(
+    () => [
+      ...phases.map((p) => ({ value: p.id, label: `${p.code} ${p.name}` })),
+      ...others.map((o) => ({ value: o.id, label: o.label })),
+    ],
+    [phases, others]
+  );
   const descriptor = useResourceDescriptor(MILESTONES);
   const rows = useMemo(() => milestones.map(milestoneToRow), [milestones]);
   const [busy, setBusy] = useState(false);
@@ -201,10 +214,10 @@ export function MilestonesSection({
           open
           mine={
             pending.kind === "update"
-              ? describe(pending.mine, phases)
+              ? describe(pending.mine, phaseOptions)
               : "(removed)"
           }
-          theirs={describe(pending.theirs, phases)}
+          theirs={describe(pending.theirs, phaseOptions)}
           theirsBy={pending.theirs.updated_by}
           theirsAt={pending.theirs.updated_at}
           onKeepMine={() => {
