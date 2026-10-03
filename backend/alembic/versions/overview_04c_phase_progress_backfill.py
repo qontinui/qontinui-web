@@ -64,8 +64,9 @@ CHECK since ``overview_01``, so no stored row can break it — and the filled
 start above is capped so that no repaired row does either.
 
 Then ``VALIDATE CONSTRAINT`` for both: a ``SHARE UPDATE EXCLUSIVE`` scan that
-blocks no reads and no writes, after which ``convalidated`` is true and the
-planner may rely on them.
+blocks no reads and no writes of its own, after which ``convalidated`` is true
+and the planner may rely on them. alembic runs the repair and both validations
+in one transaction, so the repaired rows stay row-locked until the scans end.
 
 Downgrade is a deliberate no-op. A validated constraint cannot meaningfully be
 returned to ``NOT VALID`` — dropping it is ``overview_04b``'s downgrade, not

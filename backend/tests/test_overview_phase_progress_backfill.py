@@ -462,3 +462,17 @@ def test_the_chain_repairs_validates_and_walks_back(_chain: tuple[Any, str]) -> 
     run_alembic(root, url, "upgrade", _REVISION)
     assert _convalidated(engine) == dict.fromkeys(_CHECKS, True)
     check()
+
+
+def test_the_sql_carries_no_bind_parameters() -> None:
+    """``op.execute`` wraps a string in ``text()``, so ``:name`` would be a bind.
+
+    Keep it ``text()`` — never ``exec_driver_sql`` — because ``REPAIR`` holds a
+    ``%`` that ``text()`` escapes for the driver's pyformat style.
+    """
+    module = _revision()
+    statements = [module.REPAIR]
+    validate = module.VALIDATE
+    statements.extend(validate if isinstance(validate, (list, tuple)) else [validate])
+    for sql in statements:
+        assert not text(sql)._bindparams, sql
