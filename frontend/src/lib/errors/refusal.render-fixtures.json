@@ -135,133 +135,133 @@
   },
   {
    "kind": "retry_later",
-   "render": "Try again later",
+   "render": "Try again later, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": null,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again now",
+   "render": "Try again now, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 0,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 1 second",
+   "render": "Try again in 1 second, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 1,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 45 seconds",
+   "render": "Try again in 45 seconds, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 45,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 119 seconds",
+   "render": "Try again in 119 seconds, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 119,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 minutes",
+   "render": "Try again in 2 minutes, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 120,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 3 minutes",
+   "render": "Try again in 3 minutes, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 121,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 120 minutes",
+   "render": "Try again in 120 minutes, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 7199,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 hours",
+   "render": "Try again in 2 hours, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 7200,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 48 hours",
+   "render": "Try again in 48 hours, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 172800,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again later; the suggested wait is more than two days",
+   "render": "Try again later; the suggested wait is more than two days, but first check \"workspace_root\": the earlier attempt may already have taken effect",
    "retry_after_s": 172801,
    "target": "workspace_root"
   },
   {
    "kind": "retry_later",
-   "render": "Try again later",
+   "render": "Try again later, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": null,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again now",
+   "render": "Try again now, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 0,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 1 second",
+   "render": "Try again in 1 second, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 1,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 45 seconds",
+   "render": "Try again in 45 seconds, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 45,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 119 seconds",
+   "render": "Try again in 119 seconds, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 119,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 minutes",
+   "render": "Try again in 2 minutes, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 120,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 3 minutes",
+   "render": "Try again in 3 minutes, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 121,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 120 minutes",
+   "render": "Try again in 120 minutes, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 7199,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 hours",
+   "render": "Try again in 2 hours, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 7200,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 48 hours",
+   "render": "Try again in 48 hours, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 172800,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
   {
    "kind": "retry_later",
-   "render": "Try again later; the suggested wait is more than two days",
+   "render": "Try again later; the suggested wait is more than two days, but first check \"a 'b' c d e\ufefff\": the earlier attempt may already have taken effect",
    "retry_after_s": 172801,
    "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
   },
@@ -333,67 +333,67 @@
   },
   {
    "kind": "retry_later",
-   "render": "Try again later",
+   "render": "Try again later, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": null,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again now",
+   "render": "Try again now, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 0,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 1 second",
+   "render": "Try again in 1 second, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 1,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 45 seconds",
+   "render": "Try again in 45 seconds, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 45,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 119 seconds",
+   "render": "Try again in 119 seconds, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 119,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 minutes",
+   "render": "Try again in 2 minutes, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 120,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 3 minutes",
+   "render": "Try again in 3 minutes, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 121,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 120 minutes",
+   "render": "Try again in 120 minutes, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 7199,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 2 hours",
+   "render": "Try again in 2 hours, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 7200,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again in 48 hours",
+   "render": "Try again in 48 hours, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 172800,
    "target": "https://example.com/settings"
   },
   {
    "kind": "retry_later",
-   "render": "Try again later; the suggested wait is more than two days",
+   "render": "Try again later; the suggested wait is more than two days, but first check \"https://example.com/settings\": the earlier attempt may already have taken effect",
    "retry_after_s": 172801,
    "target": "https://example.com/settings"
   },
