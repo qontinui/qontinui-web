@@ -56,6 +56,45 @@ export function FieldEditor<Row>({
     );
   }
 
+  if (field.kind === "choice") {
+    return (
+      <select
+        aria-label={field.label}
+        value={value(field.field)}
+        onChange={(e) => set(field.field, e.target.value)}
+        className={`${INPUT} ${border}`}
+        data-ui-bridge-id={uiBridgeId}
+        {...described}
+      >
+        {!field.required && <option value="">—</option>}
+        {field.required && value(field.field) === "" && (
+          <option value="" disabled>
+            Choose…
+          </option>
+        )}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (field.kind === "date") {
+    return (
+      <input
+        type="date"
+        aria-label={field.label}
+        value={value(field.field)}
+        onChange={(e) => set(field.field, e.target.value)}
+        className={`${INPUT} ${border}`}
+        data-ui-bridge-id={uiBridgeId}
+        {...described}
+      />
+    );
+  }
+
   if (field.kind === "money") {
     return (
       <div className="flex gap-1">

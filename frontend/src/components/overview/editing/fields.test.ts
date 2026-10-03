@@ -136,3 +136,76 @@ describe("how a row reads", () => {
     );
   });
 });
+
+describe("date and choice fields", () => {
+  const form = {
+    fields: [
+      {
+        field: "start_date",
+        label: "First charged on",
+        kind: "date",
+        required: true,
+      },
+      { field: "end_date", label: "Ends on", kind: "date" },
+      {
+        field: "cadence",
+        label: "Charged",
+        kind: "choice",
+        required: true,
+        options: [
+          { value: "monthly", label: "Every month" },
+          { value: "annual", label: "Every year" },
+        ],
+      },
+    ],
+  } as const;
+  type Row = { start_date: string; end_date: string | null; cadence: string };
+  const base: Row = { start_date: "", end_date: null, cadence: "" };
+  const fields = form.fields as unknown as Parameters<
+    typeof textToRow<Row>
+  >[0]["fields"];
+
+  it("reads a calendar day and leaves an empty optional date null", () => {
+    expect(
+      textToRow<Row>(
+        { fields },
+        { start_date: "2026-09-01", end_date: "", cadence: "annual" },
+        undefined,
+        base
+      )
+    ).toEqual({
+      row: { start_date: "2026-09-01", end_date: null, cadence: "annual" },
+    });
+  });
+
+  it("refuses a day that does not exist and a value outside the choices", () => {
+    const read = textToRow<Row>(
+      { fields },
+      { start_date: "2026-02-30", end_date: "", cadence: "weekly" },
+      undefined,
+      base
+    );
+    expect(read).toEqual({
+      errors: {
+        start_date: "First charged on must be a date, e.g. 2026-10-03.",
+        cadence: "Charged isn't one of the choices.",
+      },
+    });
+  });
+
+  it("asks for a required choice", () => {
+    const read = textToRow<Row>(
+      { fields },
+      { start_date: "2026-09-01", end_date: "", cadence: "" },
+      undefined,
+      base
+    );
+    expect(read).toEqual({ errors: { cadence: "Choose the charged." } });
+  });
+
+  it("shows a choice by its label", () => {
+    expect(cellText(fields[2]!, { ...base, cadence: "annual" })).toBe(
+      "Every year"
+    );
+  });
+});
