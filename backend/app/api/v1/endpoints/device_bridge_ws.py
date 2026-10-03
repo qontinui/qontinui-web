@@ -96,6 +96,14 @@ from fastapi.responses import JSONResponse
 from app.api.deps import current_active_user, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.core.config import settings
+from app.core.refusal import (
+    REFUSAL_KEY,
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    build_refusal,
+    refusal_payload,
+)
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
@@ -1151,9 +1159,19 @@ async def _runner_proxy_relay(
             "runner_proxy_relay_device_lookup_failed",
             device_id=str(device_uuid),
         )
+        refusal = build_refusal(
+            RefusalCode.internal_error,
+            NextActionKind.report_defect,
+            "device lookup failed",
+            discriminator="device_lookup_failed",
+            glossary_terms=[GlossaryTerm.device],
+        )
         return JSONResponse(
             status_code=500,
-            content={"detail": "device lookup failed"},
+            content={
+                "detail": "device lookup failed",
+                REFUSAL_KEY: refusal_payload(refusal),
+            },
         )
 
     if row is None:
@@ -1171,6 +1189,14 @@ async def _runner_proxy_relay(
             method=request.method,
             request_id=request_id,
         )
+        # A device this caller does not own becomes theirs by pairing it.
+        refusal = build_refusal(
+            RefusalCode.not_found,
+            NextActionKind.pair_device,
+            "device not found or not owned by caller",
+            discriminator="device_not_owned",
+            glossary_terms=[GlossaryTerm.device],
+        )
         return JSONResponse(
             status_code=404,
             # Additive, exactly as on the 503: ``detail`` keeps its prior value.
@@ -1178,6 +1204,7 @@ async def _runner_proxy_relay(
                 "detail": "device not found or not owned by caller",
                 "device_id": str(device_uuid),
                 "request_id": request_id,
+                REFUSAL_KEY: refusal_payload(refusal),
             },
         )
     if row.get("ws_session_id") is None:  # ws_session_id IS NULL
@@ -1216,11 +1243,32 @@ async def _runner_proxy_relay(
             if liveness.known
             else {}
         )
+        # A runner the relay has NEVER seen needs pairing; one that has
+        # connected before is expected back, so the same request later is the
+        # next step. An unknown liveness is not "never registered" — it takes
+        # the retry arm, the one that is right for every runner seen before.
+        never_registered = liveness.known and liveness.ws_connected_at is None
+        refusal = build_refusal(
+            RefusalCode.device_not_connected,
+            (
+                NextActionKind.pair_device
+                if never_registered
+                else NextActionKind.retry_later
+            ),
+            "runner not connected",
+            discriminator=(
+                "runner_never_registered"
+                if never_registered
+                else "runner_not_connected"
+            ),
+            glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+        )
         content: dict[str, object] = {
             "detail": "runner not connected",
             "device_id": str(device_uuid),
             "request_id": request_id,
             **liveness_fields,
+            REFUSAL_KEY: refusal_payload(refusal),
         }
         logger.warning(
             "runner_proxy_relay_not_connected",
