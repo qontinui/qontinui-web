@@ -28,16 +28,21 @@ from __future__ import annotations
 import ast
 import contextlib
 import importlib.util
+import io
+import logging
 import os
 import re
 import subprocess
 import sys
+import traceback
 import uuid
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+from alembic.config import CommandLine, Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -73,65 +78,222 @@ def backend_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+# The logging shape ``alembic.ini`` declares — ``[logger_root]`` at WARN with the
+# ``console`` handler, ``[logger_alembic]`` at INFO, ``[logger_sqlalchemy]``
+# (qualname ``sqlalchemy.engine``) at WARN, ``[formatter_generic]``. Installed
+# for the duration of an in-process call in place of ``fileConfig`` (see
+# ``_alembic_ini_logging``), so the captured stderr carries the same lines a
+# subprocess's stderr did — every revision logs through
+# ``alembic.runtime.migration``, and the migration tests assert on those lines.
+_ALEMBIC_LOG_FORMAT = "%(levelname)-5.5s [%(name)s] %(message)s"
+_ALEMBIC_ROOT_LEVEL = logging.WARNING
+_ALEMBIC_LOGGER_LEVELS = {"alembic": logging.INFO, "sqlalchemy.engine": logging.WARNING}
+
+
+@contextlib.contextmanager
+def _alembic_ini_logging(stream: io.StringIO) -> Iterator[None]:
+    """Route logging to ``stream`` exactly as ``alembic.ini`` would, then restore.
+
+    ``fileConfig`` itself cannot be used in-process: it closes every live
+    handler, replaces the root logger's handlers (pytest's capture handlers
+    included) and, through ``disable_existing_loggers``, sets ``disabled`` on
+    every ``app.*`` logger the test process already created — permanently, so a
+    later test's ``caplog`` assertion would fail for a reason nowhere near it.
+    ``alembic/env.py`` skips ``fileConfig`` when the harness says so, and this
+    applies the same levels and handler for the call only.
+    """
+    root = logging.getLogger()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter(_ALEMBIC_LOG_FORMAT))
+    saved_root = (root.level, root.handlers[:])
+    named = {name: logging.getLogger(name) for name in _ALEMBIC_LOGGER_LEVELS}
+    saved_named = {
+        name: (lg.level, lg.handlers[:], lg.propagate, lg.disabled)
+        for name, lg in named.items()
+    }
+    root.handlers[:] = [handler]
+    root.setLevel(_ALEMBIC_ROOT_LEVEL)
+    for name, lg in named.items():
+        lg.handlers[:] = []
+        lg.setLevel(_ALEMBIC_LOGGER_LEVELS[name])
+        lg.propagate = True
+        lg.disabled = False
+    try:
+        yield
+    finally:
+        handler.flush()
+        root.handlers[:] = saved_root[1]
+        root.setLevel(saved_root[0])
+        for name, lg in named.items():
+            level, handlers, propagate, disabled = saved_named[name]
+            lg.handlers[:] = handlers
+            lg.setLevel(level)
+            lg.propagate = propagate
+            lg.disabled = disabled
+
+
+@contextlib.contextmanager
+def _isolated_process_state(cwd: Path) -> Iterator[None]:
+    """Run the body in ``cwd``, then restore ``os.environ``, ``sys.path`` and cwd.
+
+    A subprocess got all three for free. In-process, ``alembic/env.py`` reads
+    ``DATABASE_URL`` from ``os.environ``, calls ``load_dotenv()`` (which ADDS any
+    key in ``backend/.env`` that is not already set — on a dev box that is the
+    developer's real settings) and inserts ``backend/`` into ``sys.path``; and
+    ``alembic.ini``'s ``script_location`` is relative to the process cwd. None
+    of that may outlive the call.
+    """
+    saved_env = os.environ.copy()
+    saved_path = sys.path[:]
+    saved_cwd = os.getcwd()
+    os.chdir(cwd)
+    try:
+        yield
+    finally:
+        os.chdir(saved_cwd)
+        sys.path[:] = saved_path
+        for key in set(os.environ) - set(saved_env):
+            del os.environ[key]
+        for key, value in saved_env.items():
+            if os.environ.get(key) != value:
+                os.environ[key] = value
+
+
+@contextlib.contextmanager
+def _warnings_to(stream: io.StringIO) -> Iterator[None]:
+    """Print Python warnings to ``stream`` for the call instead of raising them.
+
+    In-process, a warning raised by alembic or a revision would otherwise land
+    in pytest's warning collection — and under a ``-W error`` /
+    ``filterwarnings = error`` configuration it would become an exception, so a
+    deprecation alembic emits on EVERY call would turn every ``run_alembic`` into
+    exit 1. Here every warning is printed to the captured stderr and the call
+    carries on. That is somewhat MORE output than a child process gave: Python's
+    default filters hid library DeprecationWarnings there, and the ``default``
+    action shows them — deliberately, since a deprecation in the migration path
+    is worth seeing in a failing test's stderr. The previous filters and hook
+    are restored on exit.
+    """
+
+    def _show(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: object = None,
+        line: str | None = None,
+    ) -> None:
+        stream.write(warnings.formatwarning(message, category, filename, lineno, line))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        warnings.showwarning = _show
+        yield
+
+
+def _exit_status(code: object) -> int:
+    """The status a process would have exited with for ``sys.exit(code)``."""
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code & 0xFF
+    return 1
+
+
 def run_alembic(
     cwd: Path,
     db_url: str,
     *args: str,
     expect_success: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Run alembic against ``db_url`` and return the completed process.
+    """Run alembic against ``db_url`` IN-PROCESS and return a completed process.
 
-    Deliberately NOT ``check=True``: with ``capture_output=True`` a
-    ``CalledProcessError`` reports only the exit status, stranding alembic's
-    traceback in the captured streams. A migration test that fails only in CI is
-    exactly where that traceback is needed, so the failure is raised as an
-    assertion carrying both streams instead.
+    The return type is still ``subprocess.CompletedProcess`` — ``returncode``,
+    ``stdout`` and ``stderr`` — so no caller changes. What changed is that no
+    process is spawned. Backend CI makes ~285 of these calls per run, and each
+    used to pay a fresh interpreter plus the ``alembic`` / ``sqlalchemy`` /
+    ``app`` imports (~9 s per call in CI, plan
+    ``2026-09-12-backend-ci-pays-a-model-import-on-every-alembic-invocation``).
+    In-process those imports are paid once per test session.
+
+    Faithful to the CLI on the four things that matter:
+
+    * **argv** is parsed by alembic's own ``CommandLine`` parser and dispatched
+      by its own ``run_cmd``, and the parsed namespace is passed to ``Config``
+      as ``cmd_opts`` — which is what ``alembic/env.py``'s lazy model import
+      keys on, so ``upgrade`` / ``downgrade`` / ``stamp`` skip the model tree
+      exactly as from the command line.
+    * **The URL** is passed both ways (``-x db_url=`` and ``DATABASE_URL``) so
+      the call does not depend on which side ``alembic/env.py`` reads.
+    * **Output** — ``sys.stdout`` / ``sys.stderr`` are captured for the call,
+      ``Config(stdout=...)`` too (its default is bound at import time, so it
+      would escape a redirect), and logging is routed to the captured stderr in
+      the shape ``alembic.ini`` declares. Offline ``--sql`` output, revision
+      log lines and ``FAILED:`` messages all land where a subprocess put them.
+    * **Failure** — an exception becomes ``returncode=1`` with its full
+      traceback appended to ``stderr``; ``sys.exit`` keeps its status (alembic's
+      ``FAILED:`` path exits ``-1``, i.e. 255). ``KeyboardInterrupt`` and
+      ``pytest.fail`` / ``pytest.skip`` propagate. Python warnings are printed to
+      ``stderr`` rather than raised into pytest's warning machinery.
+
+    Process-global state ``env.py`` touches — ``os.environ``, ``sys.path``,
+    cwd, and logging — is restored after the call (see
+    ``_isolated_process_state`` and ``_alembic_ini_logging``).
+
+    Deliberately NOT raising on failure by default: the failure is raised as an
+    assertion carrying both streams instead, because a migration test that
+    fails only in CI is exactly where alembic's traceback is needed.
 
     ``expect_success=False`` INVERTS that assertion, for the migration that is
     supposed to refuse. A revision whose job is to fail closed — one that raises
     on a catalog state it must not accept — needs a test that drives it there,
     and the default assertion makes the correct outcome indistinguishable from a
     broken migration: the helper fires first and reports "alembic ... failed with
-    exit 1" for a refusal the test was asking for. Passing the expectation in
-    keeps that knowledge here rather than forking a second ``subprocess.run`` in
-    the test, which would re-introduce the ``sys.executable`` / double-URL /
-    Windows-PATH handling this docstring exists to explain.
-
-    The URL is passed both ways (``-x db_url=`` and ``DATABASE_URL``) so the
-    call does not depend on which side ``alembic/env.py`` reads.
-
-    ``sys.executable``, not a bare ``"python"``: the child must be the SAME
-    interpreter running the tests, or it is a different set of installed
-    packages. Under ``poetry run`` (CI) the two coincide and the distinction is
-    invisible; on a dev box they need not, and the bare name resolves to
-    whatever ``python.exe`` the OS finds first. Two things made that hard to
-    diagnose, so both are written down:
-
-    * The error was *"No module named alembic.__main__"*, not the
-      *"No module named alembic"* an interpreter without alembic should give.
-      ``cwd`` is ``backend/``, so ``sys.path[0]`` is ``backend/`` and
-      ``backend/alembic/`` — which has no ``__init__.py`` — is picked up as a
-      NAMESPACE package. The import succeeds against the migration directory
-      and only ``__main__`` is missing, which reads like a broken alembic
-      install rather than the wrong interpreter.
-    * Putting the virtualenv's ``Scripts`` dir first on ``PATH`` does not fix
-      it. Windows resolves an un-pathed executable against the calling
-      process's own search order, not the ``env=`` passed here, so the child is
-      chosen before our ``env`` is consulted. ``sys.executable`` is absolute
-      and sidesteps the lookup entirely.
-
-    A migration test that skips locally proves nothing; one that dies on the
-    wrong interpreter proves less.
+    exit 1" for a refusal the test was asking for.
     """
-    env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "-x", f"db_url={db_url}", *args],
-        cwd=str(cwd),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
+    argv = ["-x", f"db_url={db_url}", *args]
+    out, err = io.StringIO(), io.StringIO()
+    returncode = 0
+    with (
+        _isolated_process_state(cwd),
+        contextlib.redirect_stdout(out),
+        contextlib.redirect_stderr(err),
+        _alembic_ini_logging(err),
+        _warnings_to(err),
+    ):
+        os.environ["DATABASE_URL"] = db_url
+        cli = CommandLine(prog="alembic")
+        try:
+            options = cli.parser.parse_args(argv)
+            if not hasattr(options, "cmd"):
+                cli.parser.error("too few arguments")
+            # The same ini / pyproject.toml resolution `alembic` itself does
+            # (CommandLine.main), so ALEMBIC_CONFIG and `-c` behave identically.
+            toml_file, ini_file = cli._inis_from_config(options)
+            config = Config(
+                file_=ini_file,
+                toml_file=toml_file,
+                ini_section=options.name,
+                cmd_opts=options,
+                stdout=out,
+                attributes={"configure_logger": False},
+            )
+            cli.run_cmd(config, options)
+        except SystemExit as exc:
+            returncode = _exit_status(exc.code)
+            if not isinstance(exc.code, (int, type(None))):
+                print(exc.code, file=err)
+        except Exception:
+            # Not BaseException: `pytest.fail` / `pytest.skip` (and a timeout
+            # plugin's) must propagate, never be read as the migration
+            # refusing — which `expect_success=False` would pass.
+            traceback.print_exc(file=err)
+            returncode = 1
+    proc = subprocess.CompletedProcess(
+        args=["alembic", *argv],
+        returncode=returncode,
+        stdout=out.getvalue(),
+        stderr=err.getvalue(),
     )
     if expect_success:
         assert proc.returncode == 0, (

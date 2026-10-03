@@ -41,12 +41,15 @@ jobs:
     environment: production
     permissions:
       contents: read
+      # OIDC: configure-aws-credentials assumes the scoped
+      # qontinui-web-oneoff-task role (RunTask on qontinui-staging-web only).
+      id-token: write
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-oneoff-task
+          role-session-name: oneoff-seed-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Validate exactly one of email/device_id was given

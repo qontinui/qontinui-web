@@ -15,13 +15,14 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { listResource } from "@/components/overview/editing/api";
 import {
-  fetchEstimates,
+  ESTIMATES,
   fetchRollup,
   fetchSettings,
   pickBaseline,
+  type EstimateRecord,
   type EstimateRollup,
-  type EstimateSummary,
   type OverviewSettings,
 } from "../_lib/estimate-api";
 
@@ -31,10 +32,10 @@ export type Loadable<T> =
   | ({ state: "ready" } & T);
 
 export interface EstimateData {
-  /** `null` when this project has no estimate at all. */
-  estimate: EstimateSummary | null;
+  /** `null` when this project has no estimate at all. Head row only. */
+  estimate: EstimateRecord | null;
   /** Every estimate, so the editor can offer them. Baseline first. */
-  estimates: EstimateSummary[];
+  estimates: EstimateRecord[];
   /** `null` only when there is no estimate to roll up. */
   rollup: EstimateRollup | null;
   settings: OverviewSettings;
@@ -60,11 +61,11 @@ export function useEstimate(tenantId: string | null, hold: boolean) {
       // together; the rollup needs an id and follows.
       const [settings, listed] = await Promise.all([
         fetchSettings(),
-        fetchEstimates(),
+        listResource<EstimateRecord>(ESTIMATES),
       ]);
-      const estimate = pickBaseline(listed.estimates);
+      const estimate = pickBaseline(listed.items);
       const rollup = estimate ? await fetchRollup(estimate.id) : null;
-      return { settings, estimates: listed.estimates, estimate, rollup };
+      return { settings, estimates: listed.items, estimate, rollup };
     })().then(
       (loaded) => live && setData({ state: "ready", ...loaded }),
       (err) => live && setData({ state: "error", message: errorMessage(err) })

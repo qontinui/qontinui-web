@@ -1,6 +1,7 @@
 import type {
   ScheduleExpression,
   ScheduleConditions,
+  ScheduledTaskType,
 } from "@/lib/runner/types/scheduler";
 
 export type ScheduleType = "once" | "cron" | "interval";
@@ -116,24 +117,82 @@ export function buildSchedule(
   }
 }
 
+/**
+ * Build the conditions to save. The editor only owns `requireIdle` and
+ * `timeoutMinutes`; every other field of `existing` (`requireRepoInactive`,
+ * and any condition a newer runner reports that this form does not model) is
+ * carried forward untouched, so saving never removes a gate the user was not
+ * shown. The runner serializes conditions camelCase; a snake_case spelling of
+ * an owned field is dropped too, so the payload never carries both (serde
+ * refuses that as a duplicate field).
+ */
 export function buildConditions(
   showConditions: boolean,
   requireIdle: boolean,
-  timeoutMinutes: number | ""
+  timeoutMinutes: number | "",
+  existing?: ScheduleConditions | null
 ): ScheduleConditions | undefined {
-  if (
-    !showConditions &&
-    !requireIdle &&
-    (!timeoutMinutes || timeoutMinutes === 0)
-  ) {
-    return undefined;
-  }
-  const conditions: ScheduleConditions = {};
+  const {
+    requireIdle: _ownedIdle,
+    timeoutMinutes: _ownedTimeout,
+    require_idle: _ownedIdleAlias,
+    timeout_minutes: _ownedTimeoutAlias,
+    ...preserved
+  } = (existing ?? {}) as ScheduleConditions & {
+    require_idle?: unknown;
+    timeout_minutes?: unknown;
+  };
+  const conditions: ScheduleConditions = { ...preserved };
   if (requireIdle) {
-    conditions.require_idle = { enabled: true };
+    conditions.requireIdle = { enabled: true };
   }
   if (timeoutMinutes && timeoutMinutes > 0) {
-    conditions.timeout_minutes = Number(timeoutMinutes);
+    conditions.timeoutMinutes = Number(timeoutMinutes);
+  }
+  if (!showConditions && Object.keys(conditions).length === 0) {
+    return undefined;
   }
   return conditions;
+}
+
+/** Order-insensitive equality; absent, null and `{}` all mean "no conditions". */
+export function sameConditions(
+  a: ScheduleConditions | null | undefined,
+  b: ScheduleConditions | null | undefined
+): boolean {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, v]) => v !== undefined && v !== null)
+          .sort(([x], [y]) => x.localeCompare(y))
+          .map(([k, v]) => [k, canonical(v)])
+      );
+    }
+    return value;
+  };
+  return (
+    JSON.stringify(canonical(a ?? {})) === JSON.stringify(canonical(b ?? {}))
+  );
+}
+
+/**
+ * Build the Workflow task to save. Editing an existing Workflow task keeps its
+ * other fields (`config_path`, `monitor_index`); `workflow_id` is kept only
+ * while the workflow name is unchanged, because the runner runs by id first
+ * and a stale id would keep running the old workflow.
+ */
+export function buildWorkflowTask(
+  workflowName: string,
+  existing?: ScheduledTaskType | null
+): ScheduledTaskType {
+  if (existing?.task_type !== "Workflow") {
+    return { task_type: "Workflow", workflow_name: workflowName };
+  }
+  if (existing.workflow_name === workflowName) {
+    return { ...existing };
+  }
+  const { workflow_id: _staleId, ...rest } = existing;
+  return { ...rest, task_type: "Workflow", workflow_name: workflowName };
 }
