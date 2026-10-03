@@ -1087,6 +1087,11 @@ async def get_record_by_id(
     """
     row = await store.get_record_by_id(db, principal.tenant_id, memory_id)
     if row is None:
+        # This detail string is a WIRE CONTRACT: qontinui-coord's
+        # `coord_memory_get` (MEMORY_GET_NOT_FOUND_DETAIL in mcp/tools.rs)
+        # matches it byte for byte to tell "not in this tenant" from any other
+        # 404 (a misrouted base, a gateway). Rewording it here silently moves
+        # every real 404 into coord's errors / tool-error path.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="memory record not found in your tenant",
