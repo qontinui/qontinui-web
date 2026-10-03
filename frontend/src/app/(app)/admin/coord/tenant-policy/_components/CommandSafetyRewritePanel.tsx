@@ -39,10 +39,11 @@ const LEVEL_COPY: Record<
  * What is shown is the level coord RESOLVES, never the level last written
  * (`useTenantFleetPolicyDial` property 1). The states kept apart:
  *
- * * `resolved_scope: "none"` — no row exists. Runners use coord's per-domain
- *   default; the copy names the level coord actually reports rather than a
- *   literal, so a coord that predates the default cannot be painted as `on`.
- * * a `repo` band winning — a narrower row overrides a tenant write.
+ * * `resolved_scope: "none"` — no row answered. The copy names the level this
+ *   read returned without attributing it to coord: the backend floors a level
+ *   coord did not report to `off`, which looks identical here.
+ * * a `repo` band winning — a narrower row overrides a tenant write; a
+ *   `system` band answering — this tenant has no row, so a write takes effect.
  * * a level outside `on`/`off` (a hand-written row) — runners read it as `on`
  *   (plan D6), and the panel says so rather than guessing a button.
  * * a failed read-back after a write — the resolved value is UNKNOWN.
@@ -69,10 +70,17 @@ export function CommandSafetyRewritePanel() {
   const current = policy?.effective_level ?? null;
   const canEdit = policy?.can_edit === true;
   const noRow = policy?.resolved_scope === "none";
+  // Most-specific-wins (repo > tenant > system): a repo row keeps overriding a
+  // tenant write; a system row answering means this tenant has none, so a
+  // tenant write takes effect immediately.
   const overriddenByRepo = policy?.resolved_scope === "repo";
+  const fallingBackToSystem = policy?.resolved_scope === "system";
   const recognised =
     current !== null &&
     (COMMAND_SAFETY_REWRITE_LEVELS as readonly string[]).includes(current);
+  // Runners read any level other than `off` as on (plan D6), so the badge is
+  // filled for an unrecognised level too.
+  const runnersTreatAsOn = current !== null && current !== "off";
 
   return (
     <section
@@ -139,7 +147,7 @@ export function CommandSafetyRewritePanel() {
             <div className="ml-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span>Runners resolve</span>
               <Badge
-                variant={current === "on" ? "default" : "outline"}
+                variant={runnersTreatAsOn ? "default" : "outline"}
                 data-testid="command-safety-rewrite-effective"
               >
                 {current ?? "unknown"}
@@ -166,14 +174,21 @@ export function CommandSafetyRewritePanel() {
             </p>
           )}
 
+          {/* The backend floors a level coord did not report to `off` and a
+              missing band to `none`, and that is indistinguishable here from
+              a real no-row answer — so this copy names the level this read
+              returned without attributing it to coord. */}
           {noRow && current !== null && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="command-safety-rewrite-no-row"
             >
-              No policy row exists for this tenant yet, so runners use the
-              default, which coord reports as <code>{current}</code>. Nobody
-              chose it. Pick a level to write an explicit row.
+              No policy row answered for this tenant, so nobody chose this
+              level. This read returned <code>{current}</code>
+              {current === "off"
+                ? ", which is also what this console shows when coord reports no level at all; runners themselves default to on"
+                : ""}
+              . Pick a level to write an explicit row.
             </p>
           )}
 
@@ -189,6 +204,17 @@ export function CommandSafetyRewritePanel() {
                 but the repo row will keep overriding it.
               </p>
             </div>
+          )}
+
+          {fallingBackToSystem && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="command-safety-rewrite-system-fallback"
+            >
+              A fleet-wide <strong>system</strong>-band row is answering because
+              this tenant has none of its own. Coord resolves the most specific
+              band first, so writing here takes effect immediately.
+            </p>
           )}
 
           {readbackError && (
@@ -219,6 +245,21 @@ export function CommandSafetyRewritePanel() {
                   : "The current value is unknown."}
               </p>
             </div>
+          )}
+
+          {/* Coord returns `fleet_resources` blocks with any domain's read; the
+              backend strips them and this line says so. */}
+          {policy != null && policy.keys_not_shown.length > 0 && (
+            <p
+              className="text-[11px] text-muted-foreground"
+              data-testid="command-safety-rewrite-keys-not-shown"
+            >
+              Coord also returned {policy.keys_not_shown.join(", ")} with this
+              read.{" "}
+              {policy.keys_not_shown_source === "fleet_resources_row"
+                ? "Those belong to the fleet_resources row, not to this setting, and are not shown here."
+                : "Those are not shown here."}
+            </p>
           )}
 
           {/* `current === null` is a failed read, not `off` — say so. */}

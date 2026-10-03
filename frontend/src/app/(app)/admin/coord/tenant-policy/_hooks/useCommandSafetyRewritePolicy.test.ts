@@ -35,7 +35,6 @@ vi.mock("sonner", () => ({
 }));
 
 import { useCommandSafetyRewritePolicy } from "./useCommandSafetyRewritePolicy";
-import { COMMAND_SAFETY_REWRITE_DOMAIN } from "../types";
 
 // A tenant with no row: coord serves the per-domain default, `on` (plan D5).
 const ON_NO_ROW = {
@@ -70,7 +69,6 @@ describe("useCommandSafetyRewritePolicy", () => {
     const { result } = renderHook(() => useCommandSafetyRewritePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(COMMAND_SAFETY_REWRITE_DOMAIN).toBe("command_safety_rewrite");
     expect(getMock).toHaveBeenCalledWith(
       expect.stringContaining("domain=command_safety_rewrite")
     );
