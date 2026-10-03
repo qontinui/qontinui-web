@@ -227,6 +227,10 @@ async function ready(): Promise<HTMLElement> {
   return byId("overview.costs.figure.mtd.value");
 }
 
+function radio(id: string): HTMLInputElement {
+  return byId(id) as HTMLInputElement;
+}
+
 function byId(id: string): HTMLElement {
   const node = document.querySelector(`[data-ui-bridge-id="${id}"]`);
   if (!node) throw new Error(`no element ${id}`);
@@ -280,9 +284,8 @@ describe("the monthly-figures view", () => {
     expect(mocks.fetchSpendSummary).not.toHaveBeenCalledWith(
       expect.objectContaining({ view: "charged" })
     );
-    expect(
-      byId("overview.costs.view.amortized").getAttribute("aria-checked")
-    ).toBe("true");
+    expect(radio("overview.costs.view.amortized").checked).toBe(true);
+    expect(radio("overview.costs.view.amortized").type).toBe("radio");
     expect(byId("overview.costs.figure.mtd").textContent).toContain(
       "Yearly costs amortized monthly"
     );
@@ -300,9 +303,29 @@ describe("the monthly-figures view", () => {
     expect(mocks.fetchSpendSummary).toHaveBeenCalledWith(
       expect.objectContaining({ view: "charged", groupBy: "scope" })
     );
-    expect(
-      byId("overview.costs.view.charged").getAttribute("aria-checked")
-    ).toBe("true");
+    expect(radio("overview.costs.view.charged").checked).toBe(true);
+  });
+
+  it("keeps the previous figures on screen while the new view loads", async () => {
+    await ready();
+    let release: (value: SpendSummary) => void = () => undefined;
+    mocks.fetchSpendSummary.mockImplementation(
+      (q: SummaryQuery) =>
+        new Promise<SpendSummary>((resolve) => {
+          release = (v) => resolve(v);
+          void q;
+        })
+    );
+    fireEvent.click(byId("overview.costs.view.charged"));
+    await waitFor(() =>
+      expect(byId("overview.costs.refreshing").textContent).toBe("Updating…")
+    );
+    // Still the amortized answer, not a skeleton.
+    expect(byId("overview.costs.figure.mtd").textContent).toContain(
+      "Yearly costs amortized monthly"
+    );
+    const calls = mocks.fetchSpendSummary.mock.calls as [SummaryQuery][];
+    release(summary(calls[calls.length - 1]![0]));
   });
 
   it("labels each renewal as charged on renewal", async () => {
@@ -358,13 +381,17 @@ describe("adding a recurring cost", () => {
     fireEvent.change(within(form).getByLabelText("What it is"), {
       target: { value: "Business Starter" },
     });
-    fireEvent.change(within(form).getByLabelText("Amount per charge, amount"), {
+    // The currency is the summary's, shown and not editable.
+    expect(
+      byId("overview.costs.add-recurring.unit_amount_micros.currency")
+        .textContent
+    ).toContain("USD");
+    expect(
+      form.querySelector('input[aria-label="Amount per charge, currency"]')
+    ).toBeNull();
+    fireEvent.change(within(form).getByLabelText("Amount per charge"), {
       target: { value: "36" },
     });
-    fireEvent.change(
-      within(form).getByLabelText("Amount per charge, currency"),
-      { target: { value: "usd" } }
-    );
     fireEvent.change(within(form).getByLabelText("Charged"), {
       target: { value: "monthly" },
     });
@@ -395,6 +422,60 @@ describe("adding a recurring cost", () => {
     expect(
       byId("overview.costs.add-recurring.description.error").textContent
     ).toBe("What it is can't be empty.");
+    expect(mocks.createResource).not.toHaveBeenCalled();
+  });
+
+  it("announces the problems and focuses the first invalid field", async () => {
+    await ready();
+    fireEvent.click(byId("overview.costs.source.gw.add-recurring"));
+    fireEvent.click(byId("overview.costs.add-recurring.save"));
+    const summary = byId("overview.costs.add-recurring.summary");
+    expect(summary.getAttribute("aria-live")).toBe("assertive");
+    expect(summary.textContent).toMatch(/fields? needs? attention/);
+    const description = screen.getByLabelText("What it is");
+    await waitFor(() => expect(document.activeElement).toBe(description));
+    expect(description.getAttribute("aria-invalid")).toBe("true");
+    const error = byId("overview.costs.add-recurring.description.error");
+    expect(description.getAttribute("aria-describedby")).toContain(error.id);
+  });
+
+  it("links each help line to its field", async () => {
+    await ready();
+    fireEvent.click(byId("overview.costs.source.gw.add-recurring"));
+    const amount = screen.getByLabelText("Amount per charge");
+    const help = screen.getByText(/the amount on the provider's invoice/i);
+    expect(amount.getAttribute("aria-describedby")).toContain(help.id);
+  });
+
+  it("refuses an end date before the first charge", async () => {
+    await ready();
+    fireEvent.click(byId("overview.costs.source.gw.add-recurring"));
+    const form = byId("overview.costs.add-recurring");
+    fireEvent.change(within(form).getByLabelText("What it is"), {
+      target: { value: "Business Starter" },
+    });
+    fireEvent.change(within(form).getByLabelText("Amount per charge"), {
+      target: { value: "36" },
+    });
+    fireEvent.change(within(form).getByLabelText("Charged"), {
+      target: { value: "annual" },
+    });
+    fireEvent.change(within(form).getByLabelText("First charged on"), {
+      target: { value: "2026-09-01" },
+    });
+    fireEvent.change(within(form).getByLabelText("Ends on (optional)"), {
+      target: { value: "2026-08-01" },
+    });
+    fireEvent.change(within(form).getByLabelText("Next renewal (optional)"), {
+      target: { value: "2026-01-01" },
+    });
+    fireEvent.click(byId("overview.costs.add-recurring.save"));
+    expect(
+      byId("overview.costs.add-recurring.end_date.error").textContent
+    ).toBe("Ends on can't be before the first charge.");
+    expect(
+      byId("overview.costs.add-recurring.renews_on.error").textContent
+    ).toBe("Next renewal can't be before the first charge.");
     expect(mocks.createResource).not.toHaveBeenCalled();
   });
 

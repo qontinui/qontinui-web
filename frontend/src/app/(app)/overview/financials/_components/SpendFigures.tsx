@@ -62,27 +62,23 @@ function Figure({
           <span className="text-lg text-muted-foreground">Not available</span>
         )}
       </dd>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        {viewLabel(summary.view)}.
-      </p>
-      {provenance && (
-        <p
-          className="mt-1 text-xs leading-relaxed text-muted-foreground"
-          data-ui-bridge-id={`${uiBridgeId}.provenance`}
-        >
-          {provenance}
-        </p>
-      )}
-      {combined.missing.length > 0 && (
-        <ul
-          className="mt-1 space-y-0.5 text-xs leading-relaxed text-muted-foreground"
-          data-ui-bridge-id={`${uiBridgeId}.missing`}
-        >
-          {combined.missing.map((v) => (
-            <li key={v.id}>{missingReason(v)}</li>
-          ))}
-        </ul>
-      )}
+      {/* A <dl> group holds only <dt>/<dd>: the notes are a second <dd>. */}
+      <dd className="mt-1 space-y-1 text-xs leading-relaxed text-muted-foreground">
+        <p>{viewLabel(summary.view)}.</p>
+        {provenance && (
+          <p data-ui-bridge-id={`${uiBridgeId}.provenance`}>{provenance}</p>
+        )}
+        {combined.missing.length > 0 && (
+          <ul
+            className="space-y-0.5"
+            data-ui-bridge-id={`${uiBridgeId}.missing`}
+          >
+            {combined.missing.map((v) => (
+              <li key={v.id}>{missingReason(v)}</li>
+            ))}
+          </ul>
+        )}
+      </dd>
     </div>
   );
 }
@@ -99,6 +95,23 @@ const METER_WORD = {
   over: "At or over the ceiling",
 } as const;
 
+/**
+ * What the ceiling is measured against. The server's `ceiling_basis_micros`
+ * is the rule's own filtered, connector-reported month to date; it is `null`
+ * whenever `ceiling_pct` is (and absent on an older backend). Then the meter
+ * falls back to the vendor's month to date, which is still a known amount —
+ * shown without a percentage rather than as "not available".
+ */
+export function ceilingBasis(vendor: SpendVendor): {
+  micros: number | null;
+  explicit: boolean;
+} {
+  return vendor.ceiling_basis_micros !== undefined &&
+    vendor.ceiling_basis_micros !== null
+    ? { micros: vendor.ceiling_basis_micros, explicit: true }
+    : { micros: vendor.month_to_date_micros, explicit: false };
+}
+
 function CeilingMeter({
   vendor,
   summary,
@@ -107,11 +120,15 @@ function CeilingMeter({
   summary: SpendSummary;
 }) {
   const id = `overview.costs.meter.${vendor.id}`;
-  const spent = formatMicros(vendor.month_to_date_micros, summary.currency, {
+  const basis = ceilingBasis(vendor);
+  const spent = formatMicros(basis.micros, summary.currency, {
     maximumFractionDigits: 2,
   });
   const ceiling = formatMicros(vendor.ceiling_micros, summary.currency);
-  if (vendor.month_to_date_micros === null || vendor.ceiling_pct === null) {
+  const line = basis.explicit
+    ? `${vendor.name}: ${spent} counted against the ${ceiling} ceiling this month`
+    : `${vendor.name}: ${spent} of ${ceiling} this month`;
+  if (spent === null) {
     return (
       <div data-ui-bridge-id={id}>
         <p className="text-sm text-foreground">
@@ -126,13 +143,32 @@ function CeilingMeter({
       </div>
     );
   }
+  if (vendor.ceiling_pct === null) {
+    // The amount is known; only the share of the ceiling was not reported.
+    // That is not "not available" — say what is known.
+    return (
+      <div data-ui-bridge-id={id}>
+        <p className="text-sm text-foreground" data-ui-bridge-id={`${id}.text`}>
+          {line}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {[
+            "The share of the ceiling was not reported, so no meter is drawn.",
+            vendor.provenance,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        </p>
+      </div>
+    );
+  }
   const tone = meterTone(vendor, summary.alerts, monthKey(summary.to));
   const pct = vendor.ceiling_pct;
   return (
     <div data-ui-bridge-id={id} data-tone={tone}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm text-foreground">
-          {vendor.name}: {spent} of {ceiling} this month
+        <p className="text-sm text-foreground" data-ui-bridge-id={`${id}.text`}>
+          {line}
         </p>
         <p className="text-sm tabular-nums text-foreground">
           {Math.round(pct)}%
@@ -153,8 +189,13 @@ function CeilingMeter({
         />
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {METER_WORD[tone]}. {vendor.provenance ?? ""}
-        {isVendorUnknown(vendor) ? ` ${unavailableSentence(vendor)}.` : ""}
+        {[
+          `${METER_WORD[tone]}.`,
+          vendor.provenance,
+          isVendorUnknown(vendor) ? `${unavailableSentence(vendor)}.` : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
       </p>
     </div>
   );

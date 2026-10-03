@@ -21,6 +21,9 @@ export function FieldEditor<Row>({
   error,
   errorId,
   uiBridgeId,
+  inputId,
+  helpId,
+  currencyLocked = false,
 }: {
   field: FieldDeclaration<Row>;
   text: RowText;
@@ -29,11 +32,26 @@ export function FieldEditor<Row>({
   /** The id of the element that says `error`, for `aria-describedby`. */
   errorId: string;
   uiBridgeId: string;
+  /** The primary input's id, for a visible `<label htmlFor>`. Without it the
+   *  input is named by `aria-label` (a table cell has no room for a label). */
+  inputId?: string;
+  /** The id of a help line under the field, for `aria-describedby`. */
+  helpId?: string;
+  /** Show a money field's currency as fixed text instead of an input — for a
+   *  record whose currency the server decides. */
+  currencyLocked?: boolean;
 }) {
   const border = error ? "border-destructive" : "border-border";
-  const described = error
-    ? { "aria-invalid": true as const, "aria-describedby": errorId }
-    : {};
+  const describedBy = [error ? errorId : null, helpId ?? null]
+    .filter(Boolean)
+    .join(" ");
+  const described = {
+    ...(error ? { "aria-invalid": true as const } : {}),
+    ...(describedBy ? { "aria-describedby": describedBy } : {}),
+  };
+  /** Name the primary input by its label when it has one. */
+  const named = (ariaLabel: string) =>
+    inputId ? { id: inputId } : { "aria-label": ariaLabel };
   const value = (key: string) => {
     const v = text[key];
     return typeof v === "string" ? v : "";
@@ -46,6 +64,7 @@ export function FieldEditor<Row>({
       <label className="inline-flex min-h-9 items-center gap-2 text-sm text-foreground">
         <input
           type="checkbox"
+          id={inputId}
           checked={text[field.field] === true}
           onChange={(e) => set(field.field, e.target.checked)}
           data-ui-bridge-id={uiBridgeId}
@@ -59,7 +78,7 @@ export function FieldEditor<Row>({
   if (field.kind === "choice") {
     return (
       <select
-        aria-label={field.label}
+        {...named(field.label)}
         value={value(field.field)}
         onChange={(e) => set(field.field, e.target.value)}
         className={`${INPUT} ${border}`}
@@ -85,7 +104,7 @@ export function FieldEditor<Row>({
     return (
       <input
         type="date"
-        aria-label={field.label}
+        {...named(field.label)}
         value={value(field.field)}
         onChange={(e) => set(field.field, e.target.value)}
         className={`${INPUT} ${border}`}
@@ -99,7 +118,7 @@ export function FieldEditor<Row>({
     return (
       <div className="flex gap-1">
         <input
-          aria-label={`${field.label}, amount`}
+          {...named(`${field.label}, amount`)}
           inputMode="decimal"
           value={value(field.field)}
           onChange={(e) => set(field.field, e.target.value)}
@@ -107,25 +126,36 @@ export function FieldEditor<Row>({
           data-ui-bridge-id={`${uiBridgeId}.amount`}
           {...described}
         />
-        <input
-          aria-label={`${field.label}, currency`}
-          value={value(field.currencyField)}
-          maxLength={3}
-          placeholder="EUR"
-          onChange={(e) =>
-            set(field.currencyField, e.target.value.toUpperCase())
-          }
-          className={`${INPUT} ${border} w-16 shrink-0 uppercase`}
-          data-ui-bridge-id={`${uiBridgeId}.currency`}
-          {...described}
-        />
+        {currencyLocked ? (
+          <span
+            className="inline-flex shrink-0 items-center px-2 text-sm text-muted-foreground"
+            title="Recorded in the project's currency"
+            data-ui-bridge-id={`${uiBridgeId}.currency`}
+          >
+            <span className="sr-only">Currency: </span>
+            {value(field.currencyField)}
+          </span>
+        ) : (
+          <input
+            aria-label={`${field.label}, currency`}
+            value={value(field.currencyField)}
+            maxLength={3}
+            placeholder="EUR"
+            onChange={(e) =>
+              set(field.currencyField, e.target.value.toUpperCase())
+            }
+            className={`${INPUT} ${border} w-16 shrink-0 uppercase`}
+            data-ui-bridge-id={`${uiBridgeId}.currency`}
+            {...described}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <input
-      aria-label={field.label}
+      {...named(field.label)}
       inputMode={field.kind === "decimal" ? "decimal" : undefined}
       value={value(field.field)}
       onChange={(e) => set(field.field, e.target.value)}

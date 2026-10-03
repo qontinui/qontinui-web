@@ -177,9 +177,12 @@ function SourceCard({
 
 function AddRecurringCost({
   vendor,
+  currency,
   onDone,
 }: {
   vendor: SpendVendor;
+  /** The summary's currency — the only one the server accepts here. */
+  currency: string;
   onDone: (saved: boolean) => void;
 }) {
   const descriptor = useResourceDescriptor(RECURRING_COST_FORM.resource);
@@ -212,7 +215,8 @@ function AddRecurringCost({
   return (
     <RecordForm
       form={RECURRING_COST_FORM}
-      initial={blankRecurringCost(vendor.id)}
+      initial={blankRecurringCost(vendor.id, currency)}
+      currencyLocked
       schema={descriptor?.schemas.create}
       onSubmit={submit}
       onDone={onDone}
@@ -222,7 +226,8 @@ function AddRecurringCost({
           A recurring cost for <strong>{vendor.name}</strong>, entered from the
           provider&rsquo;s invoice. It is shown as &ldquo;entered manually —
           from the provider&rsquo;s invoice&rdquo;, never as a figure the
-          provider reported.
+          provider reported. Amounts are recorded in {currency}, the currency
+          this page reports in.
         </p>
       }
     />
@@ -269,6 +274,7 @@ export function SourcesStrip({
           <AddRecurringCost
             key={addingVendor.id}
             vendor={addingVendor}
+            currency={summary.currency}
             onDone={(saved) => {
               setAdding(null);
               if (saved) onChanged();

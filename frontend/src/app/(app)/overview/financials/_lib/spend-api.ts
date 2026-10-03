@@ -39,11 +39,30 @@ export interface SpendVendor {
   status_reason: string | null;
   last_ok_at: string | null;
   newest_complete_day: string | null;
+  /**
+   * The oldest day the connector's imports cover. Inside
+   * [oldest_covered_day, newest_complete_day] a day with no line is a
+   * reported $0. Absent (an older backend) means coverage is UNKNOWN, so a
+   * day with no line stays "no data".
+   */
+  oldest_covered_day?: string | null;
+  /**
+   * Days inside [oldest_covered_day, newest_complete_day] that no ok import
+   * covered — holes in the span, which stay "no data". Absent means the holes
+   * are UNKNOWN, so no day is treated as a reported $0 at all.
+   */
+  uncovered_days?: string[] | null;
   expected_lag_hours: number | null;
   /** e.g. "as reported by GitHub billing usage API". */
   provenance: string | null;
   month_to_date_micros: number | null;
   ceiling_micros: number | null;
+  /**
+   * What the ceiling is measured against — the vendor's own connector-
+   * reported month to date, filtered by the rule (decision 8), which can
+   * differ from `month_to_date_micros`. Absent on an older backend.
+   */
+  ceiling_basis_micros?: number | null;
   ceiling_pct: number | null;
   today_micros: number | null;
   yesterday_micros: number | null;

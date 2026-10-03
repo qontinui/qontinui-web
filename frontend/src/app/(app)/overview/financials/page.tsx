@@ -83,6 +83,12 @@ export default function CostsPage() {
     breakdownVendor,
   });
 
+  // A re-read for another view keeps the previous figures on screen, dimmed,
+  // until the new ones land.
+  const refreshing =
+    (summary.state === "ready" && summary.refreshing === true) ||
+    (breakdown.state === "ready" && breakdown.refreshing === true);
+
   if (tenantsError) {
     return (
       <div className="max-w-[42rem]" data-ui-bridge-id="overview.costs">
@@ -99,14 +105,23 @@ export default function CostsPage() {
     <div
       className="max-w-[64rem]"
       data-ui-bridge-id="overview.costs"
-      aria-busy={summary.state === "loading"}
+      aria-busy={summary.state === "loading" || refreshing}
     >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <p className="max-w-[40rem] text-[15px] leading-relaxed text-muted-foreground">
           What this project has actually been charged, as each provider reports
           it. Nothing here is estimated.
         </p>
-        <ViewSwitch view={view} onChange={setView} />
+        <div className="flex items-center gap-3">
+          <ViewSwitch view={view} onChange={setView} />
+          <span
+            aria-live="polite"
+            className="min-w-[5rem] text-xs text-muted-foreground"
+            data-ui-bridge-id="overview.costs.refreshing"
+          >
+            {refreshing ? "Updating…" : ""}
+          </span>
+        </div>
       </div>
 
       {summary.state === "loading" && <PageSkeleton />}
@@ -120,7 +135,11 @@ export default function CostsPage() {
       )}
 
       {summary.state === "ready" && (
-        <div className="space-y-14">
+        <div
+          className={`space-y-14 transition-opacity ${
+            summary.refreshing ? "opacity-60" : ""
+          }`}
+        >
           <section data-ui-bridge-id="overview.costs.header">
             <SpendFigures summary={summary.data} />
             <p className="mt-4 text-xs text-muted-foreground">

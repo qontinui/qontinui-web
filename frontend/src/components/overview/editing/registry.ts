@@ -93,6 +93,9 @@ export interface RecordFormDeclaration<Row> {
   hidden?: (text: Record<string, string | boolean>, field: string) => boolean;
   /** A line of help under a field, in the reader's words. */
   help?: Partial<Record<keyof Row & string, string>>;
+  /** Rules across fields (one date not before another), checked once every
+   *  field reads on its own. Answers the problem per field; empty if none. */
+  rules?: (row: Row) => Partial<Record<keyof Row & string, string>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +260,15 @@ export const RECURRING_COST_FORM: RecordFormDeclaration<RecurringCostWrite> = {
     { field: "external_ref", label: "Reference (e.g. a domain)", kind: "text" },
   ],
   hidden: (text, field) => field === "renews_on" && text.cadence !== "annual",
+  rules: (row) => {
+    const problems: Partial<Record<keyof RecurringCostWrite, string>> = {};
+    // ISO days compare correctly as strings.
+    if (row.start_date && row.end_date && row.end_date < row.start_date)
+      problems.end_date = "Ends on can't be before the first charge.";
+    if (row.start_date && row.renews_on && row.renews_on < row.start_date)
+      problems.renews_on = "Next renewal can't be before the first charge.";
+    return problems;
+  },
   help: {
     unit_amount_micros:
       "The amount on the provider's invoice — not a list price or an estimate.",
@@ -267,12 +279,17 @@ export const RECURRING_COST_FORM: RecordFormDeclaration<RecurringCostWrite> = {
   },
 };
 
-export function blankRecurringCost(vendorId: string): RecurringCostWrite {
+/** A blank entry for `vendorId`, in `currency` — the summary's currency,
+ *  which is the only one the server accepts for a recurring cost. */
+export function blankRecurringCost(
+  vendorId: string,
+  currency: string
+): RecurringCostWrite {
   return {
     vendor_id: vendorId,
     description: "",
     unit_amount_micros: null,
-    currency: null,
+    currency,
     quantity: null,
     cadence: "",
     start_date: "",

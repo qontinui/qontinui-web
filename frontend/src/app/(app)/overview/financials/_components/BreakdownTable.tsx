@@ -17,6 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { breakdownRows, formatDay } from "../_lib/spend";
 import type { SpendSummary, SpendVendor } from "../_lib/spend-api";
 import type { BreakdownBy, Loadable } from "../_lib/useSpend";
+import { SegmentedRadio } from "./SegmentedRadio";
+
+const BY_OPTIONS = [
+  ["scope", "Repository or service"],
+  ["sku", "SKU"],
+] as const;
 
 const SOURCE_WORD = {
   connector: "reported by the provider",
@@ -57,34 +63,13 @@ export function BreakdownTable({
   return (
     <div data-ui-bridge-id={id}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div
-          role="radiogroup"
-          aria-label="Break down by"
-          className="inline-flex rounded-md border border-border p-0.5"
-        >
-          {(
-            [
-              ["scope", "Repository or service"],
-              ["sku", "SKU"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={by === value}
-              onClick={() => onBy(value)}
-              className={`min-h-8 rounded px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                by === value
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              data-ui-bridge-id={`${id}.by.${value}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedRadio<BreakdownBy>
+          legend="Break down by"
+          value={by}
+          options={BY_OPTIONS}
+          onChange={onBy}
+          uiBridgeId={`${id}.by`}
+        />
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Provider
           <select
@@ -119,7 +104,13 @@ export function BreakdownTable({
         />
       )}
       {breakdown.state === "ready" && (
-        <BreakdownBody summary={breakdown.data} names={names} by={by} />
+        <div
+          className={
+            breakdown.refreshing ? "opacity-60 transition-opacity" : ""
+          }
+        >
+          <BreakdownBody summary={breakdown.data} names={names} by={by} />
+        </div>
       )}
     </div>
   );

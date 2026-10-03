@@ -272,3 +272,56 @@ describe("the month-to-date meter", () => {
     expect(meterTone(under, [alert], "2026-11")).toBe("normal");
   });
 });
+
+describe("a connector's covered days", () => {
+  const covered = vendor({
+    oldest_covered_day: "2026-10-02",
+    newest_complete_day: "2026-10-03",
+    uncovered_days: [],
+  });
+
+  it("reads a covered day with no line as a reported $0", () => {
+    const bars = dailyBars([], [covered], "2026-10-01", "2026-10-04");
+    expect(bars.map((b) => b.values.gh)).toEqual([null, 0, 0, null]);
+    expect(bars.map((b) => b.hasData)).toEqual([false, true, true, false]);
+  });
+
+  it("assumes nothing when the server does not say what it covers", () => {
+    const unknownCoverage = vendor({ newest_complete_day: "2026-10-03" });
+    expect("oldest_covered_day" in unknownCoverage).toBe(false);
+    const bars = dailyBars([], [unknownCoverage], "2026-10-02", "2026-10-03");
+    expect(bars.map((b) => b.values.gh)).toEqual([null, null]);
+  });
+
+  it("keeps a hole in the covered span as a gap", () => {
+    const holed = vendor({
+      oldest_covered_day: "2026-10-01",
+      newest_complete_day: "2026-10-03",
+      uncovered_days: ["2026-10-02"],
+    });
+    const bars = dailyBars([], [holed], "2026-10-01", "2026-10-03");
+    expect(bars.map((b) => b.values.gh)).toEqual([0, null, 0]);
+  });
+
+  it("fills nothing when the server does not list the span's holes", () => {
+    const noHoles = vendor({
+      oldest_covered_day: "2026-10-01",
+      newest_complete_day: "2026-10-03",
+    });
+    expect("uncovered_days" in noHoles).toBe(false);
+    const bars = dailyBars([], [noHoles], "2026-10-01", "2026-10-03");
+    expect(bars.map((b) => b.values.gh)).toEqual([null, null, null]);
+  });
+
+  it("never fills a manual vendor's days", () => {
+    const manual = vendor({
+      connector: null,
+      status: "manual",
+      oldest_covered_day: "2026-10-01",
+      newest_complete_day: "2026-10-03",
+      uncovered_days: [],
+    });
+    const bars = dailyBars([], [manual], "2026-10-01", "2026-10-02");
+    expect(bars.map((b) => b.values.gh)).toEqual([null, null]);
+  });
+});

@@ -302,9 +302,26 @@ export interface DailyBar {
 }
 
 /**
+ * True when a connector vendor's imports are known to cover `day`, so a day
+ * with no line is a REPORTED $0: inside [oldest_covered_day,
+ * newest_complete_day] and not one of the span's `uncovered_days`. Every
+ * piece must come from the server; without `uncovered_days` (an older
+ * backend) the holes are unknown, so nothing is filled.
+ */
+export function isCoveredDay(vendor: SpendVendor, day: string): boolean {
+  if (vendor.connector === null) return false;
+  const oldest = vendor.oldest_covered_day;
+  const newest = vendor.newest_complete_day;
+  const holes = vendor.uncovered_days;
+  if (!oldest || !newest || !Array.isArray(holes)) return false;
+  return day >= oldest && day <= newest && !holes.includes(day);
+}
+
+/**
  * One entry per day in [from, to]. A vendor's amount for a day is the sum of
  * its rows for that day (a connector row and a recurring row can share a
- * day); a day with no row for a vendor stays `null`.
+ * day). A day with no row for a vendor is $0 when its connector's imports
+ * cover that day ({@link isCoveredDay}); otherwise it stays `null` — a gap.
  */
 export function dailyBars(
   series: readonly SpendSeriesRow[],
@@ -325,16 +342,20 @@ export function dailyBars(
   return daysBetween(from, to).map((day) => {
     const reported = byDay.get(day);
     const values: Record<string, number | null> = {};
+    let hasData = false;
     for (const vendor of vendors) {
       const micros = reported?.get(vendor.id);
-      values[vendor.id] =
-        micros === undefined ? null : micros / MICROS_PER_UNIT;
+      if (micros !== undefined) {
+        values[vendor.id] = micros / MICROS_PER_UNIT;
+        hasData = true;
+      } else if (isCoveredDay(vendor, day)) {
+        values[vendor.id] = 0;
+        hasData = true;
+      } else {
+        values[vendor.id] = null;
+      }
     }
-    return {
-      day,
-      values,
-      hasData: reported !== undefined && reported.size > 0,
-    };
+    return { day, values, hasData };
   });
 }
 

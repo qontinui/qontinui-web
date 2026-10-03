@@ -73,6 +73,8 @@ export function chartSeries(
     .map((v, i) => ({
       key: v.id,
       name: v.name,
+      // CSS variables, not hex: the palette is validated against the dark
+      // surface and swaps per theme in one place (`.spend-viz`, components.css).
       color: `var(--spend-series-${i + 1})`,
       vendorIds: [v.id],
     }));

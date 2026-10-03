@@ -108,9 +108,12 @@ function readField<Row>(
           ? { error: `${field.label} can't be empty.` }
           : { values: { [field.field]: null } };
       }
-      return isCalendarDay(value)
-        ? { values: { [field.field]: value } }
-        : { error: `${field.label} must be a date, e.g. 2026-10-03.` };
+      if (!isCalendarDay(value))
+        return { error: `${field.label} must be a date, e.g. 2026-10-03.` };
+      const problem = checkField(property, value, field.label);
+      return problem
+        ? { error: problem }
+        : { values: { [field.field]: value } };
     }
     case "choice": {
       const value = str(text, field.field);
@@ -119,9 +122,14 @@ function readField<Row>(
           ? { error: `Choose the ${field.label.toLowerCase()}.` }
           : { values: { [field.field]: null } };
       }
-      return field.options.some((o) => o.value === value)
-        ? { values: { [field.field]: value } }
-        : { error: `${field.label} isn't one of the choices.` };
+      if (!field.options.some((o) => o.value === value))
+        return { error: `${field.label} isn't one of the choices.` };
+      // The served schema is the authority on which values it takes; a
+      // declared option it no longer accepts is refused here, not by a 422.
+      const problem = checkField(property, value, field.label);
+      return problem
+        ? { error: problem }
+        : { values: { [field.field]: value } };
     }
     case "money": {
       const amount = str(text, field.field).trim();
