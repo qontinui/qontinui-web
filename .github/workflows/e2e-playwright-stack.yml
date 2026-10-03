@@ -684,10 +684,8 @@ jobs:
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       # Some alembic migrations (unify_runner_concepts onward) reference
-      # the `runner` schema, which is created by
-      # qontinui-web/init-scripts/01-create-runner-schema.sql in dev's
-      # docker-entrypoint-initdb.d. CI service containers don't run
-      # those init scripts, so create the schema explicitly.
+      # the `runner` schema, and nothing creates it in a fresh CI service
+      # container, so create the schema explicitly.
       - name: Create runner schema
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
