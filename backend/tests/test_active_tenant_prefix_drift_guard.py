@@ -161,6 +161,12 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/workflows/{workflow_id}/dispatch": (
         "no dashboard caller; includes() cannot target it without workflow CRUD"
     ),
+    # The trace reaches coord_device_resolve through fire_scheduled_run, but
+    # that dispatch runs as ``NO_CALLER`` (a scheduled run has no request
+    # behind it), so the header is never read; the row is scoped by user_id.
+    "/api/v1/scheduled-runs/{run_id}/run-now": (
+        "dispatches as NO_CALLER: the scheduler path never reads the header"
+    ),
     # The designation PUT stamps AND overwrites ``coord.test_targets.tenant_id``
     # from ``get_tenant_id`` checking only device ownership and app existence,
     # while coord's own writer requires a ``coord.tenant_devices`` binding and
@@ -279,7 +285,8 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
     ),
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
-        "reconciliation and by-id add the coord overlay",
+        "reconciliation and by-id add the coord overlay; /vocabulary is a "
+        "static description of the write doors' closed fields (auth only)",
         frozenset(
             {
                 "/api/v1/plan-library",
@@ -289,6 +296,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/plan-library/edges/{edge_id}",
                 "/api/v1/plan-library/export",
                 "/api/v1/plan-library/followups",
+                "/api/v1/plan-library/vocabulary",
                 "/api/v1/plan-library/{artifact_id}/edges",
                 "/api/v1/plan-library/{artifact_id}/export",
                 "/api/v1/plan-library/{artifact_id}/kind",
@@ -435,8 +443,14 @@ def _local_imports(code: types.CodeType, package: str) -> Iterable[Any]:
 
     Read from the bytecode (``IMPORT_NAME`` then ``IMPORT_FROM``), because a
     deferred import never reaches ``__globals__`` — ``UserManager.update``'s
-    import of ``apply_activation_transition`` is the measured case. Only
-    already-loaded modules are consulted; nothing is imported here.
+    import of ``apply_activation_transition`` is the measured case.
+
+    An in-scope (``app.*``) module that is not loaded yet IS imported here.
+    Consulting only ``sys.modules`` made the verdict depend on which other
+    test files in the same shard had imported that module first:
+    ``/scheduled-runs/{run_id}/run-now``'s deferred import of
+    ``app.jobs.scheduled_dispatch`` was traced in one CI shard and invisible
+    in another. Out-of-scope modules are still never imported.
     """
     consts: list[Any] = []
     current: Any = None
@@ -447,6 +461,18 @@ def _local_imports(code: types.CodeType, package: str) -> Iterable[Any]:
             if isinstance(level, int) and level:
                 name = importlib.util.resolve_name("." * level + name, package)
             current = sys.modules.get(name)
+            if current is None and name.startswith("app."):
+                try:
+                    current = importlib.import_module(name)
+                except ModuleNotFoundError as err:
+                    # A deferred import of a module that does not exist
+                    # (``app.services.admin_notification_service``) can
+                    # never run, so it reaches nothing. Any OTHER import
+                    # failure inside an existing module is real breakage
+                    # and must not silently empty the trace.
+                    if err.name != name:
+                        raise
+                    current = None
             if current is not None:
                 yield current
         elif ins.opname == "IMPORT_FROM" and current is not None:

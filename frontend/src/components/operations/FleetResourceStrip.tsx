@@ -78,13 +78,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Line,
-  LineChart,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Activity, AlertTriangle, Gauge, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,6 +90,7 @@ import {
 } from "@/components/ui/tooltip";
 import { CollapsiblePanel } from "@/components/console";
 import { deviceStateBadgeVariant } from "./FleetHealthSummary";
+import { PressureSparkline } from "./PressureSparkline";
 import {
   buildMachineGroups,
   classifySaturation,
@@ -195,124 +189,6 @@ const TONE_BADGE: Record<
   critical: "destructive",
   unknown: "outline",
 };
-
-const SPARK_STROKE: Record<RowTone, string> = {
-  ok: "var(--chart-2, #22c55e)",
-  warn: "#eab308",
-  critical: "#ef4444",
-  unknown: "currentColor",
-};
-
-// ---------------------------------------------------------------------------
-// Sparkline — "spiky" vs "saturated" is the whole point
-// ---------------------------------------------------------------------------
-
-/**
- * A pressure sparkline over the retention window.
- *
- * The Y domain is **pinned to [0, 1]**. Auto-scaling would draw a machine flat
- * at 5% and a machine flat at 95% as the same picture — and "spiky vs
- * saturated" is exactly the distinction that decides whether to drain a
- * machine.
- *
- * There is **no threshold reference line**. There used to be one, drawn at a
- * client-side `SATURATED_AT`; the floor coord actually admits on is a byte
- * count on a different column, so it has no honest Y position on a pressure
- * axis. Drawing a line where nothing happens is the same lie as colouring a
- * row from it. The stroke colour carries the server's verdict instead.
- *
- * Null points are gaps (`connectNulls={false}`): a period where the server
- * had no pressure opinion must not be drawn as a straight line between two
- * readings that never met.
- */
-function PressureSparkline({
-  series,
-  tone,
-}: {
-  series: HistorySeries | undefined;
-  tone: RowTone;
-}) {
-  // Time is the X value, not the array index. With index spacing a three-hour
-  // publisher outage would draw as one 30-second-wide step between adjacent
-  // points — compressing a gap into a slope, which is precisely the "spiky vs
-  // saturated" distinction the chart exists to preserve. A numeric axis over
-  // real timestamps spaces the outage honestly (and gives the tooltip a real
-  // clock time instead of an array index reinterpreted as an epoch).
-  const points = useMemo(
-    () =>
-      (series?.points ?? []).map((p) => ({
-        t: Date.parse(p.sampled_at),
-        pressure: p.pressure,
-      })),
-    [series]
-  );
-  const usable = points.filter(
-    (p) => p.pressure != null && Number.isFinite(p.t)
-  ).length;
-
-  if (usable < 2) {
-    return (
-      <span
-        className="text-[11px] text-muted-foreground italic"
-        data-testid="fleet-resource-sparkline-empty"
-      >
-        no history
-      </span>
-    );
-  }
-
-  return (
-    <div data-testid="fleet-resource-sparkline" className="inline-block">
-      <LineChart
-        width={120}
-        height={28}
-        data={points}
-        margin={{ top: 2, right: 2, bottom: 2, left: 2 }}
-      >
-        <XAxis
-          hide
-          dataKey="t"
-          type="number"
-          scale="time"
-          domain={["dataMin", "dataMax"]}
-        />
-        <YAxis hide domain={[0, 1]} />
-        <RechartsTooltip
-          isAnimationActive={false}
-          // Both params are typed `unknown` and narrowed at RUNTIME on
-          // purpose. recharts types them loosely (`ValueType`, `ReactNode`),
-          // so annotating them as `number | string` would be an assertion
-          // about what the library passes rather than a check — and that is
-          // precisely how the first version of this tooltip ended up
-          // rendering an array index as a wall-clock time.
-          formatter={(v: unknown) =>
-            typeof v === "number" ? formatPercent(v) : "—"
-          }
-          labelFormatter={(l: unknown) =>
-            typeof l === "number" && Number.isFinite(l)
-              ? new Date(l).toLocaleTimeString()
-              : "—"
-          }
-          contentStyle={{
-            backgroundColor: "var(--surface-raised)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "6px",
-            fontSize: "11px",
-          }}
-        />
-        <Line
-          type="monotone"
-          dataKey="pressure"
-          stroke={SPARK_STROKE[tone]}
-          strokeWidth={1.5}
-          dot={false}
-          connectNulls={false}
-          isAnimationActive={false}
-        />
-      </LineChart>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Cells
@@ -1594,7 +1470,7 @@ export function FleetResourceStrip({
                             </span>
                           ) : (
                             <PressureSparkline
-                              series={historyByAnchor.get(row.key)}
+                              points={historyByAnchor.get(row.key)?.points}
                               tone={tone}
                             />
                           )}

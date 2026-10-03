@@ -5,9 +5,11 @@
  * the four merge endpoints (`/merge/queue`, `/pr-merge/prs`,
  * `/pr-merge/suggestions`, `/pr-merge/blast-radius-blocks`) plus one
  * WebSocket. The 2026-07-21 production incident made that a load invariant
- * rather than a preference: every in-flight request pins a backend DB
- * connection for its whole lifetime, so a second poller is a second draw on a
- * pool whose exhaustion 504'd sign-in.
+ * rather than a preference: then, every in-flight request held a backend DB
+ * connection, so a second poller was a second draw on a pool whose exhaustion
+ * 504'd sign-in. Since `d77d79072` (2026-07-26) these requests hold no DB
+ * connection, but a second poller still doubles the coord work behind every
+ * one of them.
  *
  * The invariant was silently broken for five weeks and nothing noticed,
  * because the second copy was UNREACHABLE rather than merely redundant. The

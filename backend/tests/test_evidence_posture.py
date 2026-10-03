@@ -320,6 +320,12 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_create": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
+    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_end": (
+        "relay frame handler reached from the device WebSocket, not an HTTP route"
+    ),
+    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._end_with_fresh_grant": (
+        "relay frame handler reached from the device WebSocket, not an HTTP route"
+    ),
     "app.services.runner.remote_terminal_relay.handle_source_frame": (
         "relay frame entry point reached from the device WebSocket, not an HTTP route"
     ),
