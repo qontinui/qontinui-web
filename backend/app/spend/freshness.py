@@ -84,10 +84,15 @@ def _fetched(run: CostImportRun) -> list[date]:
     return days
 
 
-def _covered(run: CostImportRun) -> list[date]:
+def _covered(run: CostImportRun, complete_lag_days: int = 1) -> list[date]:
+    """The days this run stated COMPLETELY: those that had ended at least
+    ``complete_lag_days`` days before it finished (AWS Cost Explorer's day is
+    complete only two days later, so its yesterday is fetched, not complete)."""
     if run.period_start is None or run.period_end is None or run.finished_at is None:
         return []
-    last_complete = run.finished_at.astimezone(UTC).date() - timedelta(days=1)
+    last_complete = run.finished_at.astimezone(UTC).date() - timedelta(
+        days=complete_lag_days
+    )
     last = min(run.period_end, last_complete)
     days: list[date] = []
     current = run.period_start
@@ -97,15 +102,32 @@ def _covered(run: CostImportRun) -> list[date]:
     return days
 
 
+def _lag_case() -> str:
+    """``CASE connector … END`` — each connector's ``complete_lag_days``, as SQL.
+
+    Built from the registry's own constant keys (never from input)."""
+    from app.spend.connectors import CONNECTORS
+
+    arms = " ".join(
+        f"WHEN '{key}' THEN {int(spec.complete_lag_days)}"
+        for key, spec in sorted(CONNECTORS.items())
+        if spec.complete_lag_days != 1
+    )
+    return f"(CASE connector {arms} ELSE 1 END)" if arms else "1"
+
+
+_LAG = _lag_case()
+
 _RUN_FACTS = text(
-    """
+    f"""
     SELECT vendor_id,
            max(finished_at) FILTER (WHERE status = 'ok') AS last_ok_at,
-           max(LEAST(period_end, (finished_at AT TIME ZONE 'UTC')::date - 1))
+           max(LEAST(period_end, (finished_at AT TIME ZONE 'UTC')::date - {_LAG}))
                FILTER (WHERE status = 'ok'
                        AND period_end IS NOT NULL
                        AND finished_at IS NOT NULL
-                       AND (finished_at AT TIME ZONE 'UTC')::date - 1 >= period_start)
+                       AND (finished_at AT TIME ZONE 'UTC')::date - {_LAG}
+                           >= period_start)
                AS newest_complete_day,
            min(period_start) FILTER (WHERE status = 'ok') AS oldest_covered_day
       FROM overview.cost_import_runs
@@ -214,7 +236,7 @@ async def vendor_freshness(
             fresh.newest_complete_day = fact.newest_complete_day
             fresh.oldest_covered_day = fact.oldest_covered_day
         for run in by_vendor.get(vendor.id, []):
-            fresh.complete_days.update(_covered(run))
+            fresh.complete_days.update(_covered(run, spec.complete_lag_days))
             fresh.covered_days.update(_fetched(run))
         # A failed run decides the status only when it is about the present:
         # a rejected backfill of an old day says nothing about whether the
@@ -228,6 +250,17 @@ async def vendor_freshness(
             fresh.status = "failed"
             fresh.reason = f"last import failed: {last.error or 'no reason recorded'}"
             fresh.last_failed_at = last.finished_at or last.started_at
+        elif not spec.produces_money:
+            # A no-money connector (a seat count, domain expiries) states a
+            # snapshot, not days: it is fresh while its last good read is
+            # within the connector's lag plus the slack.
+            horizon = now - timedelta(hours=spec.expected_lag_hours + STALE_SLACK_HOURS)
+            if fresh.last_ok_at is None or fresh.last_ok_at < horizon:
+                fresh.status = "stale"
+                fresh.reason = (
+                    f"no successful read since {fresh.last_ok_at or 'ever'} "
+                    f"(expected every {spec.expected_lag_hours} h)"
+                )
         else:
             need = required_day(now, spec.expected_lag_hours)
             if fresh.newest_complete_day is None or fresh.newest_complete_day < need:

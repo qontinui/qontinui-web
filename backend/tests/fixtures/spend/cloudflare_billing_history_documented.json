@@ -1,0 +1,54 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "b69a9f3492637782896352daae219e7d",
+      "type": "charge",
+      "action": "subscription",
+      "description": "Workers Paid",
+      "occurred_at": "2026-10-01T12:21:59.3456Z",
+      "amount": 5,
+      "currency": "USD",
+      "zone": {
+        "name": "example.com"
+      }
+    },
+    {
+      "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "type": "charge",
+      "action": "subscription",
+      "description": "Argo Smart Routing",
+      "occurred_at": "2026-10-02T03:00:00Z",
+      "amount": 20.99,
+      "currency": "USD"
+    },
+    {
+      "id": "c0ffee00c0ffee00c0ffee00c0ffee00",
+      "type": "refund",
+      "action": "subscription",
+      "description": "Prorated refund",
+      "occurred_at": "2026-10-02T04:00:00Z",
+      "amount": 2.5,
+      "currency": "USD"
+    },
+    {
+      "id": "0ld0ld0ld0ld0ld0ld0ld0ld0ld0ld00",
+      "type": "charge",
+      "action": "subscription",
+      "description": "Older charge",
+      "occurred_at": "2026-09-01T00:00:00Z",
+      "amount": 5,
+      "currency": "USD"
+    }
+  ],
+  "result_info": {
+    "page": 1,
+    "per_page": 50,
+    "count": 4,
+    "total_count": 4
+  }
+}

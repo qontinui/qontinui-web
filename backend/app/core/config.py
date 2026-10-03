@@ -189,6 +189,27 @@ class Settings(BaseSettings):
         description="Use AWS SES API instead of SMTP (recommended for AWS deployments)",
     )
 
+    # Provider-reported spend (plan
+    # 2026-10-03-provider-reported-spend-collection-alerts-and-mobile).
+    # The ONE tenant the AWS Cost Explorer task-role arm serves: this
+    # deployment's AWS account bill belongs to that tenant alone (policy
+    # aws-account-is-per-tenant). Unset/empty disables the arm; every other
+    # tenant links its own cross-account role. Set by IaC
+    # (qontinui-stack aws/modules/web, SPEND_AWS_TASK_ROLE_TENANT_ID).
+    SPEND_AWS_TASK_ROLE_TENANT_ID: str | None = Field(
+        default=None,
+        description="Tenant id the AWS Cost Explorer task-role arm serves",
+    )
+    # Where linked connector credentials live: "aws" (Secrets Manager, under
+    # qontinui/<ENVIRONMENT>/web/spend/) or "none" (no vault: nothing is
+    # linked, and a link is refused). Unset means "aws" under a production
+    # posture (staging/production) and "none" in development, so a dev box
+    # never reaches for AWS credentials it does not have.
+    SPEND_CREDENTIAL_STORE: str | None = Field(
+        default=None,
+        description="Spend connector credential vault: aws | none",
+    )
+
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60

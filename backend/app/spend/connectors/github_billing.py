@@ -22,15 +22,21 @@ are stored beside it.
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from app.spend.connectors import (
+    ConnectorSpec,
+    CredentialField,
+    CredentialRejected,
+    FetchContext,
     IngestQuery,
     NormalisedBatch,
     NormalisedEntry,
     NormaliseError,
+    Pull,
+    _http,
     micros,
 )
 
@@ -196,3 +202,98 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
         account=org,
         ref_prefix=f"github:{org}:{day.isoformat()}:",
     )
+
+
+# ---------------------------------------------------------------------------
+# Server pull (Phase 7): a linked token makes collection independent of a
+# fleet box. The fleet importer may keep running — it upserts the same keys.
+# ---------------------------------------------------------------------------
+
+API = "https://api.github.com"
+#: The most days a first pull fetches (the fleet importer's cap, too).
+FIRST_PULL_DAYS = 35
+
+
+def _headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _org_of(credential: dict[str, Any], config: dict[str, Any]) -> str:
+    org = config.get("org") or credential.get("org")
+    if not isinstance(org, str) or not org.strip():
+        raise CredentialRejected("not_configured", "no organization is named")
+    return org.strip()
+
+
+async def _usage(token: str, org: str, params: dict[str, int]) -> Any:
+    return await _http.get_json(
+        f"{API}/organizations/{org}/settings/billing/usage",
+        provider="GitHub",
+        headers=_headers(token),
+        params=params,
+    )
+
+
+async def validate(credential: dict[str, Any], config: dict[str, Any]) -> None:
+    (token,) = _http.require_fields(credential, "token")
+    org = _org_of(credential, config)
+    today = datetime.now(UTC).date()
+    raw = await _usage(
+        token, org, {"year": today.year, "month": today.month, "day": today.day}
+    )
+    if not isinstance(raw, dict) or "usageItems" not in raw:
+        raise CredentialRejected(
+            "invalid_response", "GitHub answered without usageItems"
+        )
+
+
+async def fetch(ctx: FetchContext) -> list[Pull]:
+    (token,) = _http.require_fields(ctx.credential, "token")
+    org = _org_of(ctx.credential, ctx.config)
+    today = ctx.now.astimezone(UTC).date()
+    first = today - timedelta(days=FIRST_PULL_DAYS - 1)
+    start = (
+        first
+        if ctx.last_pulled_day is None
+        else max(first, min(ctx.last_pulled_day, today - timedelta(days=1)))
+    )
+    pulls: list[Pull] = []
+    day = start
+    while day <= today:
+        raw = await _usage(
+            token, org, {"year": day.year, "month": day.month, "day": day.day}
+        )
+        pulls.append(Pull(IngestQuery(day.year, day.month, day.day), raw))
+        day += timedelta(days=1)
+    # The month query, read ONLY as a reconciliation check (decision 3).
+    month_raw = await _usage(token, org, {"year": today.year, "month": today.month})
+    pulls.append(Pull(IngestQuery(today.year, today.month), month_raw))
+    return pulls
+
+
+SPEC = ConnectorSpec(
+    key="github_billing",
+    provider="GitHub",
+    expected_lag_hours=24,
+    provenance="as reported by GitHub billing usage API",
+    normalise=normalise,
+    credential_fields=(
+        CredentialField("token", "Access token"),
+        CredentialField("org", "Organization", secret=False, help="e.g. qontinui"),
+    ),
+    credential_help=(
+        "A fine-grained personal access token: resource owner = your "
+        "organization, Organization permissions -> Administration: Read-only, "
+        "and nothing else; repository access none; expiry 1 year. If GitHub "
+        "refuses it on the billing endpoint, use a classic PAT with only "
+        "read:org."
+    ),
+    validate=validate,
+    fetch=fetch,
+    min_pull_interval_hours=1,
+    pushed_without_credential=True,
+)

@@ -1,0 +1,11 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "developer_id": "01234567890123456789",
+  "month": "202609",
+  "files": [
+    {
+      "name": "earnings/earnings_202609_01234567890123456789-0.zip/PlayApps_202609.csv",
+      "csv": "Description,Transaction Date,Transaction Time,Tax Type,Transaction Type,Refund Type,Product Title,Product id,Product Type,Sku Id,Hardware,Buyer Country,Buyer State,Buyer Postal Code,Buyer Currency,Amount (Buyer Currency),Currency Conversion Rate,Merchant Currency,Amount (Merchant Currency)\nGPA.0000-0000-0000-00001,\"Sep 3, 2026\",10:00:00 AM PDT,,Charge,,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,US,CA,,USD,9.99,1.000000,USD,9.99\nGPA.0000-0000-0000-00001,\"Sep 3, 2026\",10:00:00 AM PDT,,Google fee,,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,US,CA,,USD,-1.50,1.000000,USD,-1.50\nGPA.0000-0000-0000-00002,\"Sep 9, 2026\",11:00:00 AM PDT,,Charge,,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,DE,,,EUR,9.99,1.080000,USD,10.79\nGPA.0000-0000-0000-00002,\"Sep 9, 2026\",11:00:00 AM PDT,,Google fee,,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,DE,,,EUR,-1.50,1.080000,USD,-1.62\nGPA.0000-0000-0000-00002,\"Sep 20, 2026\",09:00:00 AM PDT,,Charge refund,Full,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,DE,,,EUR,-9.99,1.080000,USD,-10.79\nGPA.0000-0000-0000-00002,\"Sep 20, 2026\",09:00:00 AM PDT,,Google fee refund,Full,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,DE,,,EUR,1.50,1.080000,USD,1.62\nGPA.0000-0000-0000-00003,\"Sep 21, 2026\",09:00:00 AM PDT,VAT,Tax,,Qontinui Pro,io.qontinui.mobile,1,pro_monthly,,DE,,,EUR,1.90,1.080000,USD,2.05\n"
+    }
+  ]
+}

@@ -994,6 +994,7 @@ SPEND_CONNECTORS: tuple[str, ...] = (
     "google_play_earnings",
     "google_workspace_seats",
     "upstash_billing",
+    "namecheap_domains",
 )
 
 #: Where a cost entry came from. Enforced by ``ck_overview_cost_entries_source``.
@@ -1140,6 +1141,11 @@ class CostImportRun(_AuditMixin, Base):
         BigInteger, nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Warnings the provider's answer raised (a changed seat count, a domain
+    #: that will not auto-renew). Never a credential. (overview_06)
+    notices: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
 
 
 class CostEntry(_AuditMixin, Base):
@@ -1333,6 +1339,9 @@ class RecurringCost(_AuditMixin, Base):
     renews_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     #: e.g. a domain name, so a connector can find the entry to update.
     external_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Whether the provider renews it by itself — written only by a connector
+    #: that knows (Namecheap's ``AutoRenew``); NULL is "not known". (overview_06)
+    auto_renew: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     #: e.g. "Workspace invoice 2026-09, 3 seats".
     source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(

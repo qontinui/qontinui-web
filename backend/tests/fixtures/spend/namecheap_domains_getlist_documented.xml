@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DOCUMENTED SHAPE, NOT CAPTURED: built from Namecheap's published API documentation for namecheap.domains.getList (element and attribute names as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9). -->
+<ApiResponse Status="OK" xmlns="http://api.namecheap.com/xml.response">
+  <Errors />
+  <Warnings />
+  <RequestedCommand>namecheap.domains.getList</RequestedCommand>
+  <CommandResponse Type="namecheap.domains.getList">
+    <DomainGetListResult>
+      <Domain ID="127" Name="Example.io" User="exampleuser" Created="11/02/2024" Expires="11/02/2026" IsExpired="false" IsLocked="false" AutoRenew="false" WhoisGuard="ENABLED" IsPremium="false" IsOurDNS="true" />
+      <Domain ID="128" Name="example.com" User="exampleuser" Created="01/15/2020" Expires="01/15/2027" IsExpired="false" IsLocked="true" AutoRenew="true" WhoisGuard="ENABLED" IsPremium="false" IsOurDNS="true" />
+      <Domain ID="129" Name="example.dev" User="exampleuser" Created="10/20/2023" Expires="10/20/2026" IsExpired="false" IsLocked="false" AutoRenew="true" WhoisGuard="NOTPRESENT" IsPremium="false" IsOurDNS="false" />
+    </DomainGetListResult>
+    <Paging>
+      <TotalItems>3</TotalItems>
+      <CurrentPage>1</CurrentPage>
+      <PageSize>100</PageSize>
+    </Paging>
+  </CommandResponse>
+  <Server>WEB1-SANDBOX1</Server>
+  <GMTTimeDifference>--5:00</GMTTimeDifference>
+  <ExecutionTime>0.008</ExecutionTime>
+</ApiResponse>

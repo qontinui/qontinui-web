@@ -255,7 +255,10 @@ def _vendor_crossings(
     by_scope_day: dict[tuple[str, date], int] = defaultdict(int)
     for r in counted:
         by_scope_day[(r.scope_label or "(unscoped)", r.day)] += r.net_micros
-    for back in range(FIRST_RUN_GUARD_DAYS, 0, -1):
+    # A connector may opt out of the spike rule (Play's fees follow revenue;
+    # a no-money connector has nothing to spike).
+    spike_days = FIRST_RUN_GUARD_DAYS if spec is None or spec.spike_rule else 0
+    for back in range(spike_days, 0, -1):
         day = today - timedelta(days=back)
         if day not in fresh.complete_days:
             continue
