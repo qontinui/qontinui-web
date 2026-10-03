@@ -364,6 +364,44 @@ describe("ArtifactDetailPanel — the kind lock is visible", () => {
   });
 });
 
+describe("ArtifactDetailPanel — the status currency is shown with its evidence", () => {
+  it("renders the served state and spells out detail, as-of and ref", async () => {
+    renderDialog(
+      detail({
+        status_currency: {
+          state: "fed_in_step",
+          as_of: "2026-08-10T00:00:00Z",
+          ref_sha: "c0ffeec0ffeec0ffee",
+          ref_age_secs: 5,
+          detail: "1 fresh reading(s) read a fresh ref",
+        },
+      })
+    );
+    const badge = await screen.findByTestId("artifact-detail-currency");
+    expect(badge).toHaveAttribute("data-state", "fed_in_step");
+    const evidence = screen.getByTestId("artifact-detail-currency-evidence");
+    expect(evidence).toHaveTextContent("1 fresh reading(s) read a fresh ref");
+    expect(evidence).toHaveTextContent("ref c0ffeec0ffee, ref age 5s");
+  });
+
+  it("renders an unserved currency as UNKNOWN and says it was not served", async () => {
+    renderDialog(
+      detail({
+        status_currency:
+          undefined as unknown as WorkArtifactDetail["status_currency"],
+      })
+    );
+    const badge = await screen.findByTestId("artifact-detail-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    const evidence = screen.getByTestId("artifact-detail-currency-evidence");
+    expect(evidence).toHaveTextContent(
+      "status currency not served by this backend"
+    );
+    expect(evidence).toHaveTextContent("as of unknown");
+    expect(evidence).toHaveTextContent("no ref reading");
+  });
+});
+
 describe("ArtifactDetailPanel — a failed fetch is not a loading state", () => {
   it("shows an error with a retry instead of an eternal skeleton", async () => {
     // `fetchDetail` returns null on failure, which leaves `detail` null and

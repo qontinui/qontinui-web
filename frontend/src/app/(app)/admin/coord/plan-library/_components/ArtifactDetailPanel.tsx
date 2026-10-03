@@ -29,11 +29,41 @@ import {
   type WorkArtifactEdge,
   type WorkArtifactKind,
 } from "../types";
+import {
+  StatusCurrencyBadge,
+  resolveStatusCurrency,
+} from "./StatusCurrencyBadge";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "unknown";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/**
+ * The evidence behind the row's `status_currency` badge, spelled out: the
+ * served detail, which reading it is as of, and the ref that reading saw.
+ * Each absent piece says so rather than vanishing.
+ */
+function StatusCurrencyEvidence({ detail }: { detail: WorkArtifactDetail }) {
+  const currency = detail.status_currency;
+  const resolved = resolveStatusCurrency(currency);
+  const ref = currency?.ref_sha
+    ? `ref ${currency.ref_sha.slice(0, 12)}${
+        currency.ref_age_secs != null
+          ? `, ref age ${currency.ref_age_secs}s`
+          : ""
+      }`
+    : "no ref reading";
+  return (
+    <p
+      className="text-xs text-muted-foreground"
+      data-testid="artifact-detail-currency-evidence"
+    >
+      Status currency: {resolved.detail ?? "no detail served"} · as of{" "}
+      {formatWhen(currency?.as_of ?? null)} · {ref}
+    </p>
+  );
 }
 
 /**
@@ -503,6 +533,10 @@ export function ArtifactDetailPanel({
               {detail.status && (
                 <Badge variant="outline">{detail.status}</Badge>
               )}
+              <StatusCurrencyBadge
+                currency={detail.status_currency}
+                testId="artifact-detail-currency"
+              />
               {detail.repos.map((r) => (
                 <Badge key={r} variant="outline">
                   {r}
@@ -516,6 +550,7 @@ export function ArtifactDetailPanel({
               {formatWhen(detail.authored_at)} · updated{" "}
               {formatWhen(detail.updated_at)}
             </p>
+            <StatusCurrencyEvidence detail={detail} />
 
             {/* ── coord link ── */}
             <div>

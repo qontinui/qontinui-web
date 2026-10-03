@@ -79,6 +79,7 @@ import {
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
+import { StatusCurrencyBadge } from "../plan-library/_components/StatusCurrencyBadge";
 import {
   CANDIDATE_PALETTE,
   deriveCandidateDisclosure,
@@ -168,6 +169,15 @@ function CandidateRow({
           >
             doc: {documentState ?? "unstated"}
           </span>
+          {/* `null` on a work-unit-only row — there is no stored body to be
+              stale, and `doc:` above says why. An ABSENT key (a backend
+              predating the field) renders UNKNOWN, never nothing. */}
+          {candidate.status_currency !== null && (
+            <StatusCurrencyBadge
+              currency={candidate.status_currency}
+              testId="coord-candidate-currency"
+            />
+          )}
           <span
             className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
             data-testid="coord-candidate-coord"
