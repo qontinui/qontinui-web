@@ -98,13 +98,16 @@ async def ingest_payload(
         return IngestResult(
             run.id, "failed", 0, _count_items(raw), None, run.error, "rejected"
         )
-    except Exception as exc:  # noqa: BLE001 — a normaliser bug is still a recorded run
+    except Exception as exc:  # noqa: BLE001 — still a recorded run
+        # A normaliser is a pure function of the payload, so anything it
+        # raises was triggered by the payload: a 422 the caller can act on,
+        # with the failed run committed and the crash logged for a fix.
         logger.exception("spend_normaliser_crashed", connector=connector)
-        run.error = f"the normaliser failed: {type(exc).__name__}"
+        run.error = f"the payload broke the normaliser: {type(exc).__name__}"
         run.finished_at = _now()
         await db.flush()
         return IngestResult(
-            run.id, "failed", 0, _count_items(raw), None, run.error, "storage"
+            run.id, "failed", 0, _count_items(raw), None, run.error, "rejected"
         )
 
     run.provider_endpoint = batch.provider_endpoint

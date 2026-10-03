@@ -13,6 +13,7 @@ Expo and coord are the only things stubbed.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -601,7 +602,8 @@ class TestPush:
         )
         assert digest["data"]["kind"] == "spend_alert"
         assert digest["data"]["url"].startswith("/financials?vendor=")
-        single = calls[f"spend-mtd_threshold-{vendor.id}-org-2026-10"]
+        vendor_hash = hashlib.sha256(str(vendor.id).encode()).hexdigest()[:8]
+        single = calls[f"spend-mtd_threshold-org-2026-10-{vendor_hash}"]
         assert single["priority"] == "high"
         assert "of $500" in single["body"] and "GitHub" in single["body"]
         digest_rows = [a for a in alerts if a.rule != "mtd_threshold"]
@@ -771,7 +773,92 @@ class TestRetryPolicy:
         assert device.is_active is True  # only DeviceNotRegistered deactivates
 
 
+class TestCollapseId:
+    async def test_at_most_64_bytes_and_distinct_per_vendor(self) -> None:
+        from app.models.overview import SpendAlert
+        from app.spend.deliver import collapse_id
+
+        def alert(vendor_key: str, scope: str, period: str = "2026-10-02") -> Any:
+            return SpendAlert(
+                rule="spike", vendor_key=vendor_key, scope_key=scope, period_key=period
+            )
+
+        a = collapse_id(alert(str(uuid4()), "org"))
+        b = collapse_id(alert(str(uuid4()), "org"))
+        assert a != b and a.startswith("spend-spike-org-2026-10-02-")
+        long_scope = "qontinui-a-very-long-repository-name-é" * 4
+        key = str(uuid4())
+        c = collapse_id(alert(key, long_scope, "2026-09-29T06:00:00Z"))
+        assert len(c.encode("utf-8")) <= 64
+        assert c.endswith(
+            "-2026-09-29T06:00:00Z-" + hashlib.sha256(key.encode()).hexdigest()[:8]
+        )
+
+
+class TestForeignCurrency:
+    async def test_a_vendor_with_foreign_rows_is_skipped_and_reported(
+        self, async_db_session
+    ) -> None:
+        from app.models.overview import CostEntry
+
+        db = async_db_session
+        vendor = await _vendor(db)
+        await _complete(db, vendor, D)
+        await _rule(db, vendor, daily_abs_micros=50 * M)
+        await _rule(db, None, daily_abs_micros=1)
+        await _spend(db, vendor, D, 60 * M)
+        db.add(
+            CostEntry(
+                tenant_id=TENANT,
+                vendor_id=vendor.id,
+                source="connector",
+                source_ref="eur",
+                amount_micros=10 * M,
+                currency="EUR",
+                period_start=D,
+                period_end=D,
+            )
+        )
+        await db.flush()
+        report = await _evaluate(db)
+        assert report.unknown_currency == ["GitHub"]
+        assert await _alerts(db) == []
+
+
 class TestRecipients:
+    async def test_a_subject_match_does_not_count_an_email_admin_matched(
+        self, async_db_session, monkeypatch
+    ) -> None:
+        from app.models.user import User
+        from app.spend import recipients
+
+        db = async_db_session
+        email = f"both_{uuid4().hex[:8]}@example.com"
+        sub = f"sub-{uuid4().hex[:8]}"
+        db.add(
+            User(
+                email=email,
+                username=f"u_{uuid4().hex[:8]}",
+                cognito_sub=sub,
+                is_active=True,
+            )
+        )
+        await db.flush()
+
+        async def admins(tenant_id: UUID) -> tuple[list[dict] | None, str | None]:
+            return [
+                {"operator_id": "a", "email": None, "cognito_sub": sub},
+                # A second admin with no subject, whose email is the (unverified)
+                # account above: not a verified match, so it is unmatched.
+                {"operator_id": "b", "email": email, "cognito_sub": None},
+                {"operator_id": "c", "email": None, "cognito_sub": None},
+            ], None
+
+        monkeypatch.setattr(recipients, "fetch_tenant_admins", admins)
+        who = await recipients.resolve_recipients(db, TENANT)
+        assert who.users == 1
+        assert who.unmatched == 2
+
     async def test_email_matches_only_an_admin_with_no_subject(
         self, async_db_session, monkeypatch
     ) -> None:
@@ -943,6 +1030,34 @@ class TestExpoClient:
         assert receipts["t-2"]["error"] == "DeviceNotRegistered"
         assert "t-3" not in receipts
 
+    async def test_event_push_never_raises_on_token_lookup(self, monkeypatch) -> None:
+        from app.services import push_notifications
+
+        monkeypatch.setattr(
+            push_notifications,
+            "get_user_push_tokens",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        )
+        send = AsyncMock()
+        monkeypatch.setattr(push_notifications, "send_push_notifications", send)
+        event = type(
+            "E",
+            (),
+            {
+                "event_type": "run_failed",
+                "user_id": uuid4(),
+                "runner_name": "r",
+                "summary": "s",
+                "run_id": "r1",
+                "id": uuid4(),
+                "device_id": "d",
+            },
+        )()
+        assert (
+            await push_notifications.dispatch_push_for_event(AsyncMock(), event) == []
+        )
+        send.assert_not_awaited()
+
     async def test_event_push_never_raises_on_housekeeping(self, monkeypatch) -> None:
         from app.services import push_notifications
         from app.services.push_notifications import PushTicket
@@ -1108,3 +1223,39 @@ async def test_a_failed_unlock_invalidates_the_lock_connection() -> None:
     with pytest.raises(RuntimeError):
         await _release(lock_db, {"tenant": str(TENANT)}, TENANT)
     connection.invalidate.assert_awaited_once()
+
+
+class TestFreshnessBounds:
+    async def test_since_bounds_the_day_sets_not_the_aggregates(
+        self, async_db_session
+    ) -> None:
+        from app.models.overview import CostImportRun
+        from app.spend.freshness import vendor_freshness
+
+        db = async_db_session
+        vendor = await _vendor(db)
+        await _complete(db, vendor, date(2026, 6, 1), D)
+        # An ok run with no period must not move newest_complete_day.
+        db.add(
+            CostImportRun(
+                tenant_id=TENANT,
+                vendor_id=vendor.id,
+                connector="github_billing",
+                transport="push",
+                granularity="range",
+                status="ok",
+                started_at=NOW,
+                finished_at=NOW,
+                period_start=TODAY,
+                period_end=None,
+            )
+        )
+        await db.flush()
+        fresh = (
+            await vendor_freshness(db, TENANT, [vendor], NOW, since=date(2026, 9, 1))
+        )[vendor.id]
+        assert fresh.covered_days == {D}
+        assert fresh.oldest_covered_day == date(2026, 6, 1)
+        assert fresh.newest_complete_day == D
+        unbounded = (await vendor_freshness(db, TENANT, [vendor], NOW))[vendor.id]
+        assert unbounded.covered_days == {date(2026, 6, 1), D}

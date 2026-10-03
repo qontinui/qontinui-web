@@ -285,7 +285,11 @@ async def dispatch_push_for_event(
         )
         return []
 
-    tokens = await get_user_push_tokens(db, event.user_id)
+    try:
+        tokens = await get_user_push_tokens(db, event.user_id)
+    except Exception as e:  # noqa: BLE001 — a background push never raises
+        logger.warning("push_token_lookup_failed", error=type(e).__name__)
+        return []
     if not tokens:
         logger.debug(
             "no_push_tokens",

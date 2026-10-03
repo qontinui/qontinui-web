@@ -98,13 +98,20 @@ async def resolve_recipients(db: AsyncSession, tenant_id: UUID) -> Recipients:
         )
     matched = (
         await db.execute(
-            select(User.id, User.cognito_sub, User.email).where(
+            select(User.id, User.cognito_sub, User.email, User.is_verified).where(
                 or_(*clauses), User.is_active.is_(True)
             )
         )
     ).all()
     found_subs = {row.cognito_sub for row in matched if row.cognito_sub}
-    found_emails = {row.email.lower() for row in matched if row.email}
+    # An email admin counts as matched only through the clause that admits
+    # it — a VERIFIED account with that email. A row that matched by subject
+    # and happens to share an email must not mark an email admin matched.
+    found_emails = {
+        row.email.lower()
+        for row in matched
+        if row.email and row.is_verified and row.email.lower() in emails
+    }
     unmatched = unmatchable + len(subs - found_subs) + len(emails - found_emails)
     if unmatched:
         logger.info(

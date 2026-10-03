@@ -113,6 +113,8 @@ def micros(value: Any, *, field_name: str) -> int:
         if not amount.is_finite():
             raise NormaliseError(f"{field_name} is not a finite number")
         result = int((amount * MICROS).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    except NormaliseError:
+        raise
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
         raise NormaliseError(f"{field_name} is not a usable number") from exc
     if abs(result) > MAX_MICROS:

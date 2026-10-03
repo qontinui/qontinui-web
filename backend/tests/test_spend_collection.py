@@ -455,7 +455,7 @@ class TestIngest:
         assert resp.status_code == 422
         assert "too large" in resp.json()["error"] or "usable" in resp.json()["error"]
 
-    async def test_a_normaliser_crash_is_500_with_the_run_recorded(
+    async def test_a_normaliser_crash_is_422_with_the_run_recorded(
         self, async_db_session, api_user, admin, monkeypatch
     ) -> None:
         import dataclasses
@@ -475,7 +475,7 @@ class TestIngest:
         vendor = await _vendor(admin)
         token = await _token(admin)
         resp = await _ingest(async_db_session, api_user, token, vendor, _fixture())
-        assert resp.status_code == 500
+        assert resp.status_code == 422
         run = await async_db_session.get(
             CostImportRun, UUID(resp.json()["import_run_id"])
         )
@@ -829,6 +829,43 @@ class TestCurrencyAndCeiling:
         assert resp.status_code == 422
         assert resp.json()["error"] == "unsupported_currency"
 
+    async def test_a_rule_in_another_currency_is_refused(self, admin) -> None:
+        resp = await admin.post(
+            f"{SPEND}/rules", json={"currency": "EUR", "daily_abs_micros": 1}
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"] == "unsupported_currency"
+
+    async def test_series_groups_an_empty_scope_by_description(
+        self, async_db_session, admin
+    ) -> None:
+        from app.models.overview import CostEntry
+
+        vendor = await _vendor(admin)
+        for ref, scope, sku in (("a", "", ""), ("b", None, None)):
+            async_db_session.add(
+                CostEntry(
+                    tenant_id=TENANT_A,
+                    vendor_id=UUID(vendor),
+                    source="connector",
+                    source_ref=ref,
+                    description="Pro plan",
+                    amount_micros=1_000_000,
+                    currency="USD",
+                    period_start=date(2026, 10, 2),
+                    period_end=date(2026, 10, 2),
+                    scope_label=scope,
+                    sku=sku,
+                )
+            )
+        await async_db_session.commit()
+        window = {"from": "2026-10-02", "to": "2026-10-02"}
+        for group_by in ("scope", "sku"):
+            summary = await _summary(admin, group_by=group_by, **window)
+            assert [(p["key"], p["net_micros"]) for p in summary["series"]] == [
+                ("Pro plan", 2_000_000)
+            ]
+
     async def test_a_connector_row_in_another_currency_is_left_out_and_named(
         self, async_db_session, api_user, admin
     ) -> None:
@@ -853,6 +890,10 @@ class TestCurrencyAndCeiling:
         await async_db_session.commit()
         summary = await _summary(admin, **{"from": "2026-10-02", "to": "2026-10-02"})
         assert summary["totals"]["net_micros"] == sum(_per_repo(raw).values())
+        # A foreign row OUTSIDE [from, to] but inside the figures' window
+        # (last month) still makes the vendor partial.
+        later = await _summary(admin, **{"from": "2026-10-03", "to": "2026-10-03"})
+        assert later["totals"]["unknown_vendors"] == ["GitHub"]
         assert summary["totals"]["partial"] is True
         assert summary["totals"]["unknown_vendors"] == ["GitHub"]
 
@@ -897,6 +938,56 @@ class TestCurrencyAndCeiling:
         assert github["ceiling_pct"] == round(actions * 100 / 750_000_000, 1)
         assert github["oldest_covered_day"] == "2026-10-01"
         assert github["newest_complete_day"] == "2026-10-02"
+
+
+class TestUncoveredDays:
+    async def test_a_hole_between_covered_days_is_listed_and_unknown(
+        self, async_db_session, api_user, admin
+    ) -> None:
+        vendor = await _vendor(admin)
+        await _vendor(admin, "Namecheap", None, "saas")
+        token = await _token(admin)
+        raw = _fixture()
+
+        def on(day: int) -> dict[str, Any]:
+            return {
+                "usageItems": [
+                    dict(i, date=f"2026-09-{day:02d}T00:00:00Z")
+                    for i in raw["usageItems"]
+                ]
+            }
+
+        for day in (27, 30):  # 28 and 29 never fetched
+            await _ingest(
+                async_db_session,
+                api_user,
+                token,
+                vendor,
+                on(day),
+                query={"year": 2026, "month": 9, "day": day},
+            )
+        await _ingest(
+            async_db_session,
+            api_user,
+            token,
+            vendor,
+            {"usageItems": []},
+            query={"year": 2026, "month": 10, "day": 1},
+        )
+        await _ingest(async_db_session, api_user, token, vendor, raw)
+        summary = await _summary(admin, **{"from": "2026-09-25", "to": "2026-10-03"})
+        vendors = {v["name"]: v for v in summary["vendors"]}
+        github = vendors["GitHub"]
+        assert github["oldest_covered_day"] == "2026-09-27"
+        assert github["newest_complete_day"] == "2026-10-02"
+        # 09-25/26 are before the first covered day; 10-03 is after the newest
+        # complete one — neither is listed. 10-01 was fetched and stated $0.
+        assert github["uncovered_days"] == ["2026-09-28", "2026-09-29"]
+        assert vendors["Namecheap"]["uncovered_days"] is None
+        # Same rule as the figures: last month spans the hole, so it is null.
+        assert github["last_month_micros"] is None
+        narrow = await _summary(admin, **{"from": "2026-09-30", "to": "2026-10-02"})
+        assert narrow["vendors"][0]["uncovered_days"] == []
 
 
 class TestVendorNarrowing:

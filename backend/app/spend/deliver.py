@@ -9,7 +9,8 @@ delivered until Expo's receipt says so (served policy ``ux-priorities``
 Push
 ----
 * ``mtd_threshold`` and ``stale`` alerts push on their own
-  (``collapse_id = spend-<rule>-<scope>-<period>``).
+  (``collapse_id = spend-<rule>-<scope>-<period>-<sha256(vendor_key)[:8]>``,
+  at most 64 bytes — the APNs limit; see :func:`collapse_id`).
 * ``daily_abs`` and ``spike`` alerts go into ONE digest push per tenant per
   UTC day (``collapse_id = spend-digest-<day>``): at current spend the $50
   daily rule fires every day, and one buzz a day is the budget. A daily or
@@ -31,6 +32,7 @@ all but ``sent`` retried within the window.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -121,14 +123,35 @@ def _url(alert: SpendAlert) -> str:
     return f"/financials?vendor={vendor}&day={day}"
 
 
+#: APNs refuses an ``apns-collapse-id`` longer than 64 bytes.
+MAX_COLLAPSE_BYTES = 64
+
+
+def collapse_id(alert: SpendAlert) -> str:
+    """``spend-<rule>-<scope>-<period>-<vendor hash>``, at most 64 bytes.
+
+    The vendor key enters as the first 8 hex characters of its sha256, so
+    two vendors' ``org`` crossings never collapse into each other while the
+    id stays short. A scope too long to fit is cut (on a character boundary)
+    — the hash and the period always survive, so the id stays distinct per
+    crossing.
+    """
+    vendor = hashlib.sha256(alert.vendor_key.encode("utf-8")).hexdigest()[:8]
+    head = f"spend-{alert.rule}-"
+    tail = f"-{alert.period_key}-{vendor}"
+    room = MAX_COLLAPSE_BYTES - len(head.encode()) - len(tail.encode())
+    scope = alert.scope_key
+    while len(scope.encode("utf-8")) > max(room, 0):
+        scope = scope[:-1]
+    return f"{head}{scope}{tail}"
+
+
 def _single_message(alert: SpendAlert) -> tuple[str, str, str, str]:
     """``(title, body, priority, collapse_id)``."""
     d = alert.detail or {}
     vendor = d.get("vendor") or "Spend"
     provider = d.get("provider") or vendor
-    collapse = (
-        f"spend-{alert.rule}-{alert.vendor_key}-{alert.scope_key}-{alert.period_key}"
-    )
+    collapse = collapse_id(alert)
     if alert.rule == "mtd_threshold":
         pct = int(d.get("pct") or alert.threshold_key)
         title = f"{vendor} spend at {pct}% of its monthly ceiling"

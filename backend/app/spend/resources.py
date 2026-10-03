@@ -496,6 +496,15 @@ class SpendRuleStore(_OrmStore):
         )
 
     def _check(self, row: Any) -> None:
+        from app.spend.summary import SUMMARY_CURRENCY
+
+        if row.currency != SUMMARY_CURRENCY:
+            raise StoreRefused(
+                422,
+                "unsupported_currency",
+                f"Spend rules are in {SUMMARY_CURRENCY}, the currency every spend "
+                f"total is in; {row.currency} is not supported yet.",
+            )
         if row.mtd_thresholds_pct and row.monthly_ceiling_micros is None:
             raise StoreRefused(
                 422,

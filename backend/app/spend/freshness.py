@@ -43,18 +43,20 @@ class Freshness:
     reason: str | None = None
     last_ok_at: datetime | None = None
     newest_complete_day: date | None = None
-    #: Every day an ok run covered completely — the "observed" days a spike
-    #: median may use. A complete day with no entry for a scope is a real $0
-    #: for that scope (the provider stated the whole day); a day absent here
-    #: is UNKNOWN and is never filled with a zero.
+    #: Every day an ok run covered COMPLETELY (fetched after the day ended) —
+    #: the "observed" days a spike median may use. A complete day with no
+    #: entry for a scope is a stated $0 for that scope. A day absent here is
+    #: either unfetched or fetched only partly; the median never uses it and
+    #: never fills it with a zero. Filled only from ``since`` onwards.
     complete_days: set[date] = field(default_factory=set)
     #: Every day an ok run FETCHED at all, complete or not (today so far is
-    #: fetched but not complete). A connector day outside this set is
-    #: UNKNOWN: a window containing one has no honest total.
+    #: fetched but not complete). The summary's figures and ``uncovered_days``
+    #: read this: a connector day outside it is UNKNOWN, so a window
+    #: containing one has no honest total. Filled only from ``since`` onwards.
     covered_days: set[date] = field(default_factory=set)
-    #: The first day any ok run covered — before it, the vendor has no data
-    #: at all; inside [oldest_covered_day, newest_complete_day] a day with no
-    #: row is a reported $0.
+    #: The first day any ok run covered; before it the vendor has no data.
+    #: The range up to ``newest_complete_day`` can still have HOLES (days no
+    #: run fetched) — the summary lists them as ``uncovered_days``.
     oldest_covered_day: date | None = None
     #: The finish time of the newest failed run, when the last run failed.
     last_failed_at: datetime | None = None
@@ -101,6 +103,8 @@ _RUN_FACTS = text(
            max(finished_at) FILTER (WHERE status = 'ok') AS last_ok_at,
            max(LEAST(period_end, (finished_at AT TIME ZONE 'UTC')::date - 1))
                FILTER (WHERE status = 'ok'
+                       AND period_end IS NOT NULL
+                       AND finished_at IS NOT NULL
                        AND (finished_at AT TIME ZONE 'UTC')::date - 1 >= period_start)
                AS newest_complete_day,
            min(period_start) FILTER (WHERE status = 'ok') AS oldest_covered_day

@@ -79,6 +79,10 @@ class EvaluationReport:
     #: ``<vendor>:<scope>:<day>`` whose spike rule could not be evaluated —
     #: NOT a pass (fewer than 7 observed days, or a zero median).
     insufficient_history: list[str] = field(default_factory=list)
+    #: Vendors with figures in a currency other than the rules' — UNKNOWN at
+    #: alert time, so NO rule is evaluated for them (and the org-wide rule,
+    #: whose sum would silently drop them, is skipped too). Logged.
+    unknown_currency: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -373,11 +377,16 @@ async def evaluate_tenant(
     # Rules are in the summary currency; a figure in another currency is never
     # summed into one (recurring entries in another currency are refused at
     # write time, so only a connector could carry one).
-    rows = [
-        r
-        for r in await load_rows(db, tenant_id, ids, start, today, "amortized")
-        if r.currency == SUMMARY_CURRENCY
-    ]
+    loaded = await load_rows(db, tenant_id, ids, start, today, "amortized")
+    foreign = {r.vendor_id for r in loaded if r.currency != SUMMARY_CURRENCY}
+    report.unknown_currency = sorted(v.name for v in vendors if v.id in foreign)
+    if foreign:
+        logger.warning(
+            "spend_evaluate_unknown_currency",
+            tenant_id=str(tenant_id),
+            vendors=report.unknown_currency,
+        )
+    rows = [r for r in loaded if r.vendor_id not in foreign]
     recurring = list(
         (
             await db.execute(
@@ -406,7 +415,7 @@ async def evaluate_tenant(
 
     crossings: list[_Crossing] = []
     for vendor in vendors:
-        if vendor.connector is None:
+        if vendor.connector is None or vendor.id in foreign:
             continue
         f = fresh[vendor.id]
         if f.status == "ok":
@@ -436,7 +445,7 @@ async def evaluate_tenant(
         )
 
     org_rule = rules.get(None)
-    if org_rule is not None:
+    if org_rule is not None and not foreign:
         pf = org_rule.product_filter
         org_detail: dict[str, Any] = {
             "vendor": "All vendors",

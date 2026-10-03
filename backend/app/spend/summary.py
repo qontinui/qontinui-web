@@ -153,9 +153,14 @@ class VendorSummary(BaseModel):
     status_reason: str | None
     last_ok_at: datetime | None
     newest_complete_day: date | None
-    #: The first day an ok import covered. Inside [oldest_covered_day,
-    #: newest_complete_day] a day with no series row is a REPORTED $0.
+    #: The first day an ok import covered.
     oldest_covered_day: date | None
+    #: Connector vendors only (``null`` otherwise): the days of the summary
+    #: window inside [oldest_covered_day, newest_complete_day] that NO ok run
+    #: fetched. These are UNKNOWN — the same rule the figures use, so a total
+    #: over one is ``null``. Every OTHER day in that range with no series row
+    #: is a REPORTED $0 (the provider stated the whole day).
+    uncovered_days: list[date] | None
     expected_lag_hours: int | None
     provenance: str
     month_to_date_micros: int | None
@@ -402,11 +407,15 @@ async def _series(
         key = func.to_char(CostEntry.period_start, "YYYY-MM")
     elif group_by == "scope":
         key = func.coalesce(
-            CostEntry.scope_label, func.nullif(CostEntry.description, ""), "(unscoped)"
+            func.nullif(CostEntry.scope_label, ""),
+            func.nullif(CostEntry.description, ""),
+            "(unscoped)",
         )
     else:
         key = func.coalesce(
-            CostEntry.sku, func.nullif(CostEntry.description, ""), "(no sku)"
+            func.nullif(CostEntry.sku, ""),
+            func.nullif(CostEntry.description, ""),
+            "(no sku)",
         )
     key = key.label("key")
     stmt = (
@@ -459,6 +468,22 @@ async def _series(
     return [points[k] for k in sorted(points)]
 
 
+def _uncovered(f: Freshness, start: date, end: date) -> list[date]:
+    """Days in ``[start, end]`` ∩ ``[oldest_covered_day, newest_complete_day]``
+    that no ok run fetched — the holes :func:`_window` treats as UNKNOWN."""
+    if f.oldest_covered_day is None or f.newest_complete_day is None:
+        return []
+    lo = max(start, f.oldest_covered_day)
+    hi = min(end, f.newest_complete_day)
+    out: list[date] = []
+    day = lo
+    while day <= hi:
+        if day not in f.covered_days:
+            out.append(day)
+        day += timedelta(days=1)
+    return out
+
+
 async def build_summary(
     db: AsyncSession,
     tenant_id: UUID,
@@ -505,7 +530,11 @@ async def build_summary(
     by_vendor: dict[UUID, list[SpendRow]] = defaultdict(list)
     for row in day_rows:
         by_vendor[row.vendor_id].append(row)
-    other_currency = await _vendors_with_other_currency(db, tenant_id, ids, start, end)
+    # The whole loaded window: a foreign-currency row last month makes
+    # last_month and month-to-date as unknown as one inside [start, end].
+    other_currency = await _vendors_with_other_currency(
+        db, tenant_id, ids, load_start, load_end
+    )
 
     summaries: list[VendorSummary] = []
     unknown: list[str] = []
@@ -564,6 +593,7 @@ async def build_summary(
                 last_ok_at=f.last_ok_at,
                 newest_complete_day=f.newest_complete_day,
                 oldest_covered_day=f.oldest_covered_day,
+                uncovered_days=(_uncovered(f, start, end) if has_connector else None),
                 expected_lag_hours=spec.expected_lag_hours if spec else None,
                 provenance=_provenance(vendor, f, vendor.id in recurring_vendors),
                 month_to_date_micros=mtd,

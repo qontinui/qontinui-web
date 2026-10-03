@@ -29,6 +29,12 @@ beside a ``currency``; an amount a provider does not report is NULL, never 0.
 ``overview.import_tokens``      hashed, revocable bearers for the ingest door.
 ``overview.spend_alert_preferences`` a recipient's own mute switch.
 
+Development databases: every CREATE here is ``IF NOT EXISTS``, so a dev DB
+that ran an EARLIER draft of this revision (before ``push_attempts`` was
+added to ``spend_alerts``) keeps the old table shape. Recreate it with
+``alembic downgrade coord_agent_sessions_context_01`` then ``alembic upgrade
+head``. Production never ran a draft: this revision first ships complete.
+
 Provably additive for coord's migration classifier, like
 ``overview_03_documents_and_wiki``: guarded ``CREATE TABLE IF NOT EXISTS``
 with inline constraints (a new table holds no rows), and every index
