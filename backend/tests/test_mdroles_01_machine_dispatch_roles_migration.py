@@ -15,8 +15,9 @@ table mirroring every live column (§D4 "Versions mirror every column").
 
 With a database (``QONTINUI_TEST_PG=host:port``; skipped otherwise — a skip
 proves nothing): column shape of both tables, the exactly-one-machine-key
-CHECK, the role CHECK, the COALESCE unique index treating the NULL half of the
-key as a value, the canonical host name (trimmed, unique case-insensitively),
+CHECK, the role CHECK, the ``UNIQUE (tenant_id, machine_key)`` constraint over
+the generated key treating the NULL half of the machine as a value, an
+``ON CONFLICT ON CONSTRAINT`` upsert folding host-name case onto one row, the canonical host name (trimmed, unique case-insensitively),
 the version FK + ``UNIQUE (role_id, version)`` + ``ON DELETE CASCADE``, the
 comments, idempotent upgrade and an up/down/up round-trip. Every refusal is
 pinned to its SQLSTATE and constraint name, not a bare ``IntegrityError``.
@@ -46,7 +47,6 @@ from tests._alembic_harness import (
     can_connect,
     comment_body_from_source,
     ephemeral_database,
-    index_exists,
     load_revision_module,
     run_alembic,
     scalar,
@@ -63,7 +63,7 @@ _REVISION_FILENAME = "mdroles_01_machine_dispatch_roles.py"
 _SCHEMA = "coord"
 _TABLE = "machine_dispatch_roles"
 _VERSIONS = "machine_dispatch_roles_versions"
-_UNIQUE_INDEX = "uq_machine_dispatch_roles_machine"
+_UQ_MACHINE = "uq_machine_dispatch_roles_machine"
 
 # (name, information_schema data_type, nullable, default-substring or None)
 _LIVE_COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
@@ -77,6 +77,7 @@ _LIVE_COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
     ("updated_by", "text", True, None),
     ("created_at", "timestamp with time zone", False, "now()"),
     ("updated_at", "timestamp with time zone", False, "now()"),
+    ("machine_key", "text", True, None),
 )
 
 _VERSION_COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
@@ -93,9 +94,11 @@ _VERSION_COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
     ("created_at", "timestamp with time zone", False, "now()"),
 )
 
-# Live-row bookkeeping that a snapshot does not repeat: its own id, and the
-# pointer to the latest snapshot. Every OTHER live column is mirrored.
-_LIVE_ONLY = {"id", "current_version"}
+# Live-row bookkeeping that a snapshot does not repeat: its own id, the
+# pointer to the latest snapshot, and the DERIVED machine_key (a generated
+# column, recomputable from the mirrored machine_device_id / ci_host_name).
+# Every OTHER live column is mirrored.
+_LIVE_ONLY = {"id", "current_version", "machine_key"}
 
 _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
@@ -187,12 +190,21 @@ def test_ddl_is_coord_qualified_idempotent_and_drops_only_in_downgrade() -> None
     # The FK child is dropped first.
     dropped = re.findall(r"DROP\s+TABLE\s+IF\s+EXISTS\s+([A-Za-z_.]+)", down)
     assert dropped == [f"{_SCHEMA}.{_VERSIONS}", f"{_SCHEMA}.{_TABLE}"], dropped
-    # CONCURRENTLY + IF NOT EXISTS: the only index shape coord's migration
-    # classifier admits (pr_merge/migration_classifier.rs); a plain build is
-    # rejected as a write lock and parks the PR on `escalate-path-matched`.
+    # One row per machine is a table constraint over a generated key, built in
+    # the CREATE TABLE's own transaction — no index build statement at all
+    # (coord's migration classifier rejects a non-concurrent one, and a
+    # CONCURRENTLY one can be left INVALID).
+    assert not re.search(r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b", up, re.I)
+    assert not re.search(r"\bCONCURRENTLY\b", up, re.I)
     assert re.search(
-        rf"CREATE\s+UNIQUE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+{_UNIQUE_INDEX}\s+"
-        rf"ON\s+{_SCHEMA}\.{_TABLE}\b",
+        r"machine_key\s+TEXT\s+GENERATED\s+ALWAYS\s+AS\s*\(\s*"
+        r"COALESCE\(machine_device_id::text,\s*''\)\s*\|\|\s*'/'\s*"
+        r"\|\|\s*COALESCE\(lower\(ci_host_name\),\s*''\)\s*\)\s*STORED",
+        up,
+        re.I,
+    )
+    assert re.search(
+        rf"CONSTRAINT\s+{_UQ_MACHINE}\s+UNIQUE\s*\(\s*tenant_id,\s*machine_key\s*\)",
         up,
         re.I,
     )
@@ -216,59 +228,9 @@ def test_both_directions_are_static_op_execute() -> None:
         and node.func.value.id == "op"
     ]
     assert calls
-    # op.execute everywhere, plus the bare op.get_context() that opens the one
-    # autocommit_block() the CONCURRENTLY index build needs.
-    assert {c.func.attr for c in calls} == {"execute", "get_context"}  # type: ignore[attr-defined]
+    assert {c.func.attr for c in calls} == {"execute"}  # type: ignore[attr-defined]
     for call in calls:
-        if call.func.attr == "get_context":  # type: ignore[attr-defined]
-            assert not call.args and not call.keywords
-            continue
         assert len(call.args) == 1 and isinstance(call.args[0], ast.Constant)
-
-
-def _in_autocommit_block(node: ast.AST, fn: ast.FunctionDef) -> bool:
-    """True iff ``node`` sits inside ``with op.get_context().autocommit_block():`` in ``fn``."""
-    for w in ast.walk(fn):
-        if not isinstance(w, ast.With):
-            continue
-        for item in w.items:
-            expr = item.context_expr
-            if (
-                isinstance(expr, ast.Call)
-                and isinstance(expr.func, ast.Attribute)
-                and expr.func.attr == "autocommit_block"
-                and any(n is node for b in w.body for n in ast.walk(b))
-            ):
-                return True
-    return False
-
-
-def test_the_concurrent_index_build_runs_inside_autocommit_block() -> None:
-    """CONCURRENTLY cannot run in a transaction; the classifier also requires
-    the build to be lexically inside autocommit_block(). Every other statement
-    stays in the migration's transaction."""
-    up = _function("upgrade")
-    concurrent = [
-        c
-        for c in ast.walk(up)
-        if isinstance(c, ast.Call)
-        and isinstance(c.func, ast.Attribute)
-        and c.func.attr == "execute"
-        and c.args
-        and isinstance(c.args[0], ast.Constant)
-        and "CONCURRENTLY" in str(c.args[0].value).upper()
-    ]
-    assert len(concurrent) == 1, len(concurrent)
-    assert _in_autocommit_block(concurrent[0], up)
-    others = [
-        c
-        for c in ast.walk(up)
-        if isinstance(c, ast.Call)
-        and isinstance(c.func, ast.Attribute)
-        and c.func.attr == "execute"
-        and c not in concurrent
-    ]
-    assert others and not any(_in_autocommit_block(c, up) for c in others)
 
 
 def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
@@ -402,7 +364,18 @@ def test_table_shapes_checks_and_unique_machine_key() -> None:
 
         _assert_shape(engine, _TABLE, _LIVE_COLUMNS)
         _assert_shape(engine, _VERSIONS, _VERSION_COLUMNS)
-        assert index_exists(engine, _UNIQUE_INDEX)
+        assert _unique_constraint_columns(engine) == "tenant_id,machine_key"
+        assert (
+            scalar(
+                engine,
+                f"""
+                SELECT is_generated FROM information_schema.columns
+                 WHERE table_schema = '{_SCHEMA}' AND table_name = '{_TABLE}'
+                   AND column_name = 'machine_key'
+                """,
+            )
+            == "ALWAYS"
+        )
 
         tenant = uuid.UUID(int=1)
         device = uuid.uuid4()
@@ -415,9 +388,9 @@ def test_table_shapes_checks_and_unique_machine_key() -> None:
 
         # The unique index treats the NULL half of the key as a value:
         # a second row for the same machine is refused, by either key.
-        with _refused(_UNIQUE, _UNIQUE_INDEX):
+        with _refused(_UNIQUE, _UQ_MACHINE):
             _insert(engine, tenant_id=tenant, machine_device_id=device)
-        with _refused(_UNIQUE, _UNIQUE_INDEX):
+        with _refused(_UNIQUE, _UQ_MACHINE):
             _insert(engine, machine_device_id=None, ci_host_name="hp2")
         # Exactly one machine key: neither, or both, is refused.
         with _refused(_CHECK, _CK_ONE_KEY):
@@ -428,6 +401,99 @@ def test_table_shapes_checks_and_unique_machine_key() -> None:
         for bad in ("build", "standby", "Workhorse"):
             with _refused(_CHECK, _CK_ROLE):
                 _insert(engine, dispatch_role=bad)
+
+
+def _unique_constraint_columns(engine: Engine) -> object:
+    """Columns of ``uq_machine_dispatch_roles_machine`` iff it is a UNIQUE constraint."""
+    return scalar(
+        engine,
+        """
+        SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+          FROM pg_constraint c
+          CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+          JOIN pg_attribute a
+            ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+         WHERE c.conname = :c
+           AND c.contype = 'u'
+           AND c.conrelid = 'coord.machine_dispatch_roles'::regclass
+        """,
+        c=_UQ_MACHINE,
+    )
+
+
+_UPSERT = (
+    f"INSERT INTO {_SCHEMA}.{_TABLE} "
+    "(tenant_id, machine_device_id, ci_host_name, dispatch_role, reason) "
+    "VALUES (:t, NULL, :h, :role, :reason) "
+    f"ON CONFLICT ON CONSTRAINT {_UQ_MACHINE} DO UPDATE "
+    "SET dispatch_role = EXCLUDED.dispatch_role, reason = EXCLUDED.reason, "
+    "    updated_at = now() "
+    "RETURNING id"
+)
+
+
+@_needs_pg
+def test_upsert_on_the_named_constraint_folds_host_case_onto_one_row() -> None:
+    """coord's upsert shape: ``HP2`` over a stored ``hp2`` updates that row."""
+    with ephemeral_database(admin_database_url(), "mdroles01_upsert") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        tenant = uuid.UUID(int=1)
+        with engine.begin() as conn:
+            first = conn.execute(
+                text(_UPSERT),
+                {"t": tenant, "h": "hp2", "role": "ci_node", "reason": "a"},
+            ).scalar_one()
+        with engine.begin() as conn:
+            second = conn.execute(
+                text(_UPSERT),
+                {"t": tenant, "h": "HP2", "role": "bench", "reason": "b"},
+            ).scalar_one()
+        assert second == first
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT ci_host_name, dispatch_role, reason, machine_key "
+                    f"FROM {_SCHEMA}.{_TABLE}"
+                )
+            ).all()
+        # One row; the stored spelling is the first one, the payload the last.
+        assert [tuple(r) for r in rows] == [("hp2", "bench", "b", "/hp2")]
+
+        # A workstation device's key is '<uuid>/', and its upsert is separate.
+        device = uuid.uuid4()
+        _insert(engine, machine_device_id=device)
+        assert (
+            scalar(
+                engine,
+                f"SELECT machine_key FROM {_SCHEMA}.{_TABLE} "
+                "WHERE machine_device_id = :d",
+                d=device,
+            )
+            == f"{device}/"
+        )
+
+
+@_needs_pg
+def test_machine_key_is_derived_and_cannot_be_written() -> None:
+    with ephemeral_database(admin_database_url(), "mdroles01_derived") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        with pytest.raises(sqlalchemy.exc.DBAPIError) as exc, engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO {_SCHEMA}.{_TABLE} "
+                    "(tenant_id, ci_host_name, dispatch_role, machine_key) "
+                    "VALUES (:t, 'hp9', 'bench', '/other')"
+                ),
+                {"t": uuid.UUID(int=1)},
+            )
+        # 428C9 generated_always: an explicit value for a GENERATED ALWAYS column.
+        assert getattr(exc.value.orig, "pgcode", None) == "428C9", str(exc.value)
 
 
 @_needs_pg
@@ -461,7 +527,7 @@ def test_ci_host_name_is_canonical_trimmed_and_case_insensitive() -> None:
                 _insert(engine, machine_device_id=None, ci_host_name=bad)
         # Case rule: another spelling of the same host is the same machine.
         for same in ("HP2", "Hp2"):
-            with _refused(_UNIQUE, _UNIQUE_INDEX):
+            with _refused(_UNIQUE, _UQ_MACHINE):
                 _insert(engine, machine_device_id=None, ci_host_name=same)
         # The same host under another tenant is a different machine, and an
         # inner space is part of a name, not padding.
@@ -571,7 +637,10 @@ def test_at_head_versions_still_mirror_every_parent_column() -> None:
         parent = types(_TABLE)
         snapshot = types(_VERSIONS)
         assert parent and snapshot
-        mirrored = set(parent) - {"id", "current_version", "created_at"}
+        # machine_key is excluded because it is DERIVED (a generated column):
+        # a snapshot already carries machine_device_id and ci_host_name, and a
+        # copied key would be a second, unenforced spelling of them.
+        mirrored = set(parent) - {"id", "current_version", "created_at", "machine_key"}
         assert mirrored <= set(snapshot), sorted(mirrored - set(snapshot))
         for name in sorted(mirrored):
             # Same type ...
@@ -624,7 +693,14 @@ def test_upgrade_is_idempotent_and_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "downgrade", parent)
         assert not table_exists(engine, _SCHEMA, _TABLE)
         assert not table_exists(engine, _SCHEMA, _VERSIONS)
-        assert not index_exists(engine, _UNIQUE_INDEX)
+        assert (
+            scalar(
+                engine,
+                "SELECT count(*) FROM pg_constraint WHERE conname = :c",
+                c=_UQ_MACHINE,
+            )
+            == 0
+        )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _VERSIONS)
