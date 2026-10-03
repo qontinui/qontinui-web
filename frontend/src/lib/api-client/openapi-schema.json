@@ -35820,7 +35820,7 @@
         "type": "object"
       },
       "PhaseWrite": {
-        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.",
+        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.\n\n``id`` is the IDENTITY of a phase this estimate already has, when the\nclient knows it: the write continues that phase (its row, its recorded\nprogress, the milestones tied to it) under whatever code it now carries,\nso renaming a code is not a delete and a create. It must name a phase of\nTHIS estimate, else the write is a 422. Absent, a phase continues the\nsaved one with the same code, as before; neither matching, it is new.",
         "properties": {
           "code": {
             "maxLength": 50,
@@ -35832,6 +35832,18 @@
             "default": "",
             "title": "Gate Criteria",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "name": {
             "maxLength": 200,
