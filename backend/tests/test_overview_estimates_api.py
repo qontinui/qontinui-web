@@ -1828,7 +1828,9 @@ class TestContentReplace:
 
         This pins the contract at the boundary the editor crosses: send
         everything, get everything back. `draft.test.ts` pins the other half,
-        that the editor's draft actually carries them.
+        that the editor's draft actually carries them. A phase's PROGRESS is
+        not among them — it is written through ``phase_progress`` and survives
+        a content write by other means (``tests/test_overview_timeline.py``).
         """
         estimate = await _create_estimate(admin_a, name="Full fidelity")
         content = {
@@ -1850,11 +1852,6 @@ class TestContentReplace:
                     "planned_end": "2026-01-30",
                     "stated_working_weeks": "3.6",
                     "gate_criteria": "Environments reachable",
-                    "actual_start": "2026-01-06",
-                    "actual_end": "2026-02-02",
-                    "gate_status": "passed",
-                    "gate_decided_at": "2026-02-03",
-                    "gate_notes": "Demonstrated to the sponsor",
                     "tasks": [
                         {
                             "number": "1.1",
@@ -1899,11 +1896,7 @@ class TestContentReplace:
 
         written = saved.json()["item"]["content"]
         phase = written["phases"][0]
-        assert phase["gate_status"] == "passed"
-        assert phase["gate_decided_at"] == "2026-02-03"
-        assert phase["gate_notes"] == "Demonstrated to the sponsor"
-        assert phase["actual_start"] == "2026-01-06"
-        assert phase["actual_end"] == "2026-02-02"
+        assert phase["gate_criteria"] == "Environments reachable"
         assert Decimal(phase["stated_working_weeks"]) == Decimal("3.60")
         task = phase["tasks"][0]
         assert task["requirement_refs"] == "R1, R2"

@@ -37,10 +37,22 @@ interface BaseField<Row> {
  * - `money` — integer micros in `field`, its ISO currency in `currencyField`;
  *   the two travel together.
  * - `flag` — a yes/no, with the words a reader uses for each.
+ * - `date` — a calendar day, `YYYY-MM-DD` on the wire (no time, no zone).
+ * - `select` — one of a fixed set of `options`, shown by its label. A
+ *   phase reference is a select whose options the page builds from the
+ *   phases it has loaded; an empty choice stores `null`.
  */
 export type FieldDeclaration<Row> =
   | (BaseField<Row> & { kind: "code" | "text" })
   | (BaseField<Row> & { kind: "decimal" })
+  | (BaseField<Row> & { kind: "date" })
+  | (BaseField<Row> & {
+      kind: "select";
+      options: { value: string; label: string }[];
+      /** The label of the empty choice (stored as `null`); offered only
+       *  when the field is not required. */
+      emptyLabel?: string;
+    })
   | (BaseField<Row> & {
       kind: "money";
       currencyField: keyof Row & string;

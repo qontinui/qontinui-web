@@ -3,11 +3,16 @@ import { ALLOCATION_SCHEMA, ROLE_SCHEMA } from "./__fixtures__/estimate-schema";
 import {
   cellText,
   identityKey,
+  isIsoDay,
   rowProblems,
   rowToText,
   textToRow,
 } from "./fields";
-import { ESTIMATE_ALLOCATIONS, ESTIMATE_ROLES } from "./registry";
+import {
+  ESTIMATE_ALLOCATIONS,
+  ESTIMATE_ROLES,
+  type TableDeclaration,
+} from "./registry";
 
 /**
  * A row edited as text comes back as exactly what the API would accept — or
@@ -134,5 +139,85 @@ describe("how a row reads", () => {
     expect(identityKey(ESTIMATE_ALLOCATIONS, a)).not.toBe(
       identityKey(ESTIMATE_ALLOCATIONS, { ...a, phase_code: "A1" })
     );
+  });
+});
+
+describe("date and choice fields", () => {
+  interface Row {
+    when: string | null;
+    pick: string | null;
+  }
+  const table: TableDeclaration<Row> = {
+    resource: "x",
+    schemaDef: "X",
+    singular: "row",
+    plural: "rows",
+    emptyText: "",
+    identity: ["when"],
+    fields: [
+      { field: "when", label: "Due", kind: "date", required: true },
+      {
+        field: "pick",
+        label: "Phase",
+        kind: "select",
+        options: [{ value: "p1", label: "A1 Discovery" }],
+        emptyLabel: "No phase",
+      },
+    ],
+    blank: () => ({ when: null, pick: null }),
+    csv: {
+      label: "",
+      help: "",
+      placeholder: "",
+      parse: () => ({ rows: [], issues: [], lines: [] }),
+    },
+  };
+  const schema = {
+    type: "object",
+    properties: {
+      when: {
+        type: "string",
+        format: "date",
+        formatMinimum: "1970-01-01",
+        formatMaximum: "2200-12-31",
+      },
+    },
+  };
+  const read = (when: string, pick: string) =>
+    textToRow(table, { when, pick }, schema, table.blank());
+
+  it("takes a real day and refuses one that is not", () => {
+    expect(isIsoDay("2024-02-29")).toBe(true);
+    expect(isIsoDay("2026-02-29")).toBe(false);
+    expect(read("2026-03-31", "")).toEqual({
+      row: { when: "2026-03-31", pick: null },
+    });
+    expect(read("31/03/2026", "")).toMatchObject({
+      errors: { when: expect.stringMatching(/date/) },
+    });
+    expect(read("", "")).toMatchObject({
+      errors: { when: "Due can't be empty." },
+    });
+  });
+
+  it("applies the served date bounds", () => {
+    expect(read("1969-12-31", "")).toMatchObject({
+      errors: { when: "Due must be on or after 1970-01-01." },
+    });
+    expect(read("2201-01-01", "")).toMatchObject({
+      errors: { when: "Due must be on or before 2200-12-31." },
+    });
+  });
+
+  it("stores a choice by its value, names it by its label, and refuses others", () => {
+    expect(read("2026-03-31", "A1 discovery")).toEqual({
+      row: { when: "2026-03-31", pick: "p1" },
+    });
+    expect(read("2026-03-31", "zz")).toMatchObject({
+      errors: { pick: "Phase must be one of: A1 Discovery." },
+    });
+    const field = table.fields[1]!;
+    expect(cellText(field, { when: null, pick: "p1" })).toBe("A1 Discovery");
+    expect(cellText(field, { when: null, pick: null })).toBe("No phase");
   });
 });

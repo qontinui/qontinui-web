@@ -131,16 +131,27 @@ describe("the editor's draft round-trip", () => {
   it("returns every phase and task field it was given", () => {
     const content = draftToContent(draftFromEstimate(LOADED));
     const phase = content.phases[0]!;
-    // The four the Team editor never shows, which the Timeline page writes.
-    expect(phase.gate_status).toBe("passed");
-    expect(phase.gate_decided_at).toBe("2026-02-03");
-    expect(phase.gate_notes).toBe("Demonstrated to the sponsor");
-    expect(phase.actual_start).toBe("2026-01-06");
-    expect(phase.actual_end).toBe("2026-02-02");
+    // The gate's criteria, which the Team editor never shows.
+    expect(phase.gate_criteria).toBe("Environments reachable");
     // The number the source plan stated, kept beside the derived one.
     expect(phase.stated_working_weeks).toBe("3.60");
     // And the task's own unshown field.
     expect(phase.tasks?.[0]?.requirement_refs).toBe("R1, R2");
+  });
+
+  it("never writes a phase's progress, which the Timeline owns", () => {
+    // A content write naming any of these is refused by the server; the
+    // server keeps a kept phase's progress itself.
+    const phase = draftToContent(draftFromEstimate(LOADED)).phases[0]!;
+    for (const field of [
+      "actual_start",
+      "actual_end",
+      "gate_status",
+      "gate_decided_at",
+      "gate_notes",
+    ]) {
+      expect(phase).not.toHaveProperty(field);
+    }
   });
 
   it("carries cost lines and calendar breaks it does not edit", () => {
@@ -359,12 +370,7 @@ describe("applyGanttImport", () => {
   it("keeps everything a chart cannot express, matched by code", () => {
     const after = applyGanttImport(draftFromEstimate(LOADED), IMPORTED);
     const phase = after.phases[0]!;
-    expect(phase.gate_status).toBe("passed");
     expect(phase.gate_criteria).toBe("Environments reachable");
-    expect(phase.gate_decided_at).toBe("2026-02-03");
-    expect(phase.gate_notes).toBe("Demonstrated to the sponsor");
-    expect(phase.actual_start).toBe("2026-01-06");
-    expect(phase.actual_end).toBe("2026-02-02");
     expect(phase.stated_working_weeks).toBe("3.60");
   });
 
@@ -662,8 +668,7 @@ describe("applyGanttImport", () => {
     const after = applyGanttImport(draftFromEstimate(LOADED), [
       { ...IMPORTED[0]!, code: "B9", name: "New phase" },
     ]);
-    expect(after.phases[0]?.gate_status).toBe("pending");
-    expect(after.phases[0]?.gate_notes).toBe("");
+    expect(after.phases[0]?.gate_criteria).toBe("");
     expect(after.phases[0]?.tasks[0]?.requirement_refs).toBeNull();
   });
 
@@ -680,7 +685,7 @@ describe("applyGanttImport", () => {
       applyGanttImport(draftFromEstimate(LOADED), IMPORTED)
     );
     const phase = content.phases[0]!;
-    expect(phase.gate_status).toBe("passed");
+    expect(phase.gate_criteria).toBe("Environments reachable");
     expect(phase.tasks?.[0]?.requirement_refs).toBe("R1, R2");
   });
 });
@@ -701,17 +706,21 @@ describe("rebaseDraft", () => {
     expect(merged.allocations[0]?.fte).toBe("2");
   });
 
-  it("keeps my re-imported schedule but their gate on each phase", () => {
+  it("keeps my re-imported schedule but their gate criteria on each phase", () => {
     const mine = base();
     mine.phases = [{ ...mine.phases[0]!, name: "Renamed by my import" }];
     const theirs = base();
     theirs.phases = [
-      { ...theirs.phases[0]!, gate_status: "failed", gate_notes: "Missed" },
+      {
+        ...theirs.phases[0]!,
+        gate_criteria: "Two sites live",
+        stated_working_weeks: "4.00",
+      },
     ];
     const phase = rebaseDraft(mine, base(), theirs).draft.phases[0]!;
     expect(phase.name).toBe("Renamed by my import");
-    expect(phase.gate_status).toBe("failed");
-    expect(phase.gate_notes).toBe("Missed");
+    expect(phase.gate_criteria).toBe("Two sites live");
+    expect(phase.stated_working_weeks).toBe("4.00");
   });
 });
 
