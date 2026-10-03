@@ -97,9 +97,11 @@ export function DroppedPhasesDialog({
                 className="rounded-md border border-destructive/40 p-3 text-sm text-foreground"
                 data-ui-bridge-id={`${uiBridgeId}.changed`}
               >
-                Nothing was saved: work was recorded on{" "}
-                {check.losses.length === 1 ? "this phase" : "these phases"}{" "}
-                since it was checked. What{" "}
+                Nothing was saved:{" "}
+                {check.losses.length === 1
+                  ? "this phase holds"
+                  : "these phases hold"}{" "}
+                recorded work the save did not account for. What{" "}
                 {check.losses.length === 1 ? "it holds" : "each holds"} now is
                 below.
               </p>

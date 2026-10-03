@@ -542,7 +542,8 @@ class EstimateUpdate(_WriteModel):
 
     @model_validator(mode="after")
     def _no_explicit_nulls_on_required_fields(self) -> EstimateUpdate:
-        if not self.model_fields_set:
+        # acknowledged_drops qualifies a change; on its own it changes nothing.
+        if not self.model_fields_set - {"acknowledged_drops"}:
             raise ValueError("give at least one field to change")
         nulled = [
             field
