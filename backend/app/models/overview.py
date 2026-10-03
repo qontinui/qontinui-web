@@ -1173,6 +1173,16 @@ class CostEntry(_AuditMixin, Base):
             "vendor_id",
             "period_start",
         ),
+        # The ledger and the costs summary read every vendor by date
+        # (overview_07_costs_authoring).
+        Index("ix_overview_cost_entries_tenant_period", "tenant_id", "period_start"),
+        # Backs ON DELETE SET NULL from overview.phases: an estimate save that
+        # removes a phase would otherwise scan every cost entry.
+        Index(
+            "ix_overview_cost_entries_phase",
+            "phase_id",
+            postgresql_where=text("phase_id IS NOT NULL"),
+        ),
         {"schema": _SCHEMA},
     )
 
@@ -1222,6 +1232,15 @@ class CostEntry(_AuditMixin, Base):
         PGUUID(as_uuid=True),
         ForeignKey(f"{_SCHEMA}.cost_import_runs.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    #: The authoring contract's concurrency token (``costs/entries``). Moves
+    #: on every write — a manual edit, or an ingest upsert that changed a
+    #: provider-reported field. NULLABLE only so its migration
+    #: (``overview_07_costs_authoring``) is provably additive; the column's
+    #: constant default fills every existing row, and a reader maps a NULL
+    #: to 1 regardless.
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=True, server_default=text("1"), default=1
     )
 
 
@@ -1344,6 +1363,95 @@ class RecurringCost(_AuditMixin, Base):
     auto_renew: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     #: e.g. "Workspace invoice 2026-09, 3 seats".
     source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+#: Effort is logged in hours; a day holds at most this many per person.
+MAX_HOURS_PER_DAY = 24
+
+
+class EffortEntry(_AuditMixin, Base):
+    """Time somebody spent on the project (authoring-layer Phase 5).
+
+    Optional: a project that logs no effort shows "not recorded", never 0.
+    Under ``labour_billing = day_rates`` the entry SNAPSHOTS what it costs at
+    the moment it is logged — the role's day rate, its currency and the
+    project's hours per day — so a later rate edit never rewrites history.
+    Under any other setting the three snapshot columns stay NULL and nothing
+    derives a cost from the entry (``ck_overview_effort_entries_rate``).
+
+    ``role_code`` is a CODE, not a foreign key: an estimate save deletes and
+    re-inserts its roles, which would null a key on every save. ``phase_id``
+    is a key, ``ON DELETE SET NULL`` — phases keep their row across saves.
+    """
+
+    __tablename__ = "effort_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "hours > 0 AND hours <= 24", name="ck_overview_effort_entries_hours"
+        ),
+        CheckConstraint(
+            "(rate_micros_used IS NULL) = (rate_currency IS NULL) AND "
+            "(rate_micros_used IS NULL) = (hours_per_day_used IS NULL)",
+            name="ck_overview_effort_entries_rate",
+        ),
+        CheckConstraint(
+            "rate_micros_used IS NULL OR rate_micros_used >= 0",
+            name="ck_overview_effort_entries_rate_amount",
+        ),
+        CheckConstraint(
+            "hours_per_day_used IS NULL OR "
+            "(hours_per_day_used > 0 AND hours_per_day_used <= 24)",
+            name="ck_overview_effort_entries_hours_per_day",
+        ),
+        Index("ix_overview_effort_entries_tenant_date", "tenant_id", "work_date"),
+        Index(
+            "ix_overview_effort_entries_person",
+            "tenant_id",
+            "person_user_id",
+            "work_date",
+        ),
+        Index(
+            "ix_overview_effort_entries_phase",
+            "phase_id",
+            postgresql_where=text("phase_id IS NOT NULL"),
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    #: Who did the work, as the project names them.
+    person: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The qontinui user, when the person is one — what ``member_self``
+    #: ownership is decided on.
+    person_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    hours: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    role_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phase_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.phases.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    rate_micros_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rate_currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
+    hours_per_day_used: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )
