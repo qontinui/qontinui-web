@@ -192,16 +192,26 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_machine_dispatch_roles_machine
-            ON coord.machine_dispatch_roles (
-                tenant_id,
-                COALESCE(machine_device_id::text, ''),
-                COALESCE(lower(ci_host_name), '')
-            )
-        """
-    )
+    # CONCURRENTLY inside autocommit_block(), not a plain CREATE UNIQUE INDEX:
+    # coord's migration classifier (pr_merge/migration_classifier.rs) rejects
+    # every non-concurrent index build as a write lock on a populated table, and
+    # it cannot see that this table was created a few lines above and is empty.
+    # autocommit_block() commits the CREATE TABLE first, so the table exists
+    # when the build runs. No invalid-index repair (unlike
+    # agent_questions_alert_id_idx_01): that needs a DROP on the upgrade path,
+    # which the classifier rejects, and a build over an empty table has no
+    # realistic way to fail half-way.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_machine_dispatch_roles_machine
+                ON coord.machine_dispatch_roles (
+                    tenant_id,
+                    COALESCE(machine_device_id::text, ''),
+                    COALESCE(lower(ci_host_name), '')
+                )
+            """
+        )
 
     op.execute(
         """
