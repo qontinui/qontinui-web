@@ -35,8 +35,11 @@
  * and paged exactly like `red_main`. Such a repo would otherwise lose its
  * banner the moment it stopped being a red main, so the same poll asks for
  * both kinds and this banner renders each with its own wording: a red main
- * says what it holds, a red deploy says that THIS deploy failure does not
- * block merges and that the fix may be outside the repo. A repo can carry
+ * says what it holds; a red deploy says what coord's live
+ * `detail.blocks_merging` says — blocked (coord has not yet re-proved the
+ * workflow push-only, e.g. right after a land or a restart), THIS deploy
+ * failure does not block merges, or (an older coord) nothing about merges at
+ * all. It never defaults to "does not block". A repo can carry
  * both at once (coord's `Red` carries its deploy-side rows too, so main red
  * for `CI` and the deploy red for `Deploy backend` opens both alerts). Each
  * is its own row, and the deploy row then says merges ARE held — by the red
@@ -215,7 +218,8 @@ export interface RedMainAlert {
   alertKey: string;
   /**
    * `red_main` — main is red and PRs read `main-red`; `deploy_red` — a
-   * push-only deploy workflow is red and merges are NOT blocked.
+   * deploy workflow is red; whether merges are blocked on it is
+   * {@link RedMainAlert.blocksMerging}, never assumed.
    */
   kind: BannerAlertKind;
   repo: string;
@@ -235,6 +239,22 @@ export interface RedMainAlert {
   fixSession: FixSessionState;
   /** Whether an agent holds the alert's claim, and who. */
   claim: AlertClaimState;
+  /**
+   * `deploy_red` only — coord's LIVE answer to "is the merge gate blocked on
+   * this deploy right now" (alert `detail.blocks_merging`). It is `true` while
+   * coord cannot yet prove the workflow push-only (right after a land or a
+   * restart it keeps counting it red). `null` = absent or not a boolean (an
+   * older coord): UNKNOWN, and the banner then makes no merge claim at all.
+   * Always `null` on a `red_main` row.
+   */
+  blocksMerging: boolean | null;
+  /**
+   * `detail.blocking_reason` — a machine token such as
+   * `push_only_proof_pending`; shown only in a tooltip (R8).
+   */
+  blockingReason?: string;
+  /** `detail.blocking_since` — when the current blocking state began. */
+  blockingSince?: string;
 }
 
 /**
@@ -382,6 +402,15 @@ export function parseRedMainAlerts(
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
+      // Read only off a deploy row, and only a real boolean counts: anything
+      // else is UNKNOWN, never "does not block".
+      blocksMerging:
+        bannerKind.kind === DEPLOY_RED_KIND &&
+        typeof detail.blocks_merging === "boolean"
+          ? detail.blocks_merging
+          : null,
+      blockingReason: nonEmptyString(detail.blocking_reason),
+      blockingSince: nonEmptyString(detail.blocking_since),
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls;
@@ -433,12 +462,19 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
 /**
  * The headline for a `deploy_red` row. Pure — exported for the vitest suite.
  *
- * Its claim is scoped to the ALERT: this deploy failure does not block
- * merges. It must never say merges are unblocked outright, because the same
- * repo can carry a `red_main` alert at the same time — `mainAlsoRed` is that
- * case, and then the row says merges ARE held, by the red main. It must not
- * claim main is green, and it must not borrow the red-main wording, whose
- * "read main-red" describes a hold this alert does not cause.
+ * What it says about merges follows coord's live `detail.blocks_merging`
+ * ({@link RedMainAlert.blocksMerging}) and nothing else:
+ *
+ *   - `true`  — merges ARE blocked on it: coord has not yet re-proved the
+ *     workflow push-only (after a land or a restart), so it still counts red.
+ *   - `false` — scoped to the alert: THIS deploy failure does not block
+ *     merges. Never "merges are open", because the same repo can carry a
+ *     `red_main` at the same time; `mainAlsoRed` is that case, and the row
+ *     then says the red main above does block them.
+ *   - `null`  — an older coord that does not say: NO merge claim either way.
+ *
+ * It must not claim main is green, and it must not borrow the red-main
+ * wording ("read main-red", "a candidate lands only if…").
  */
 export function deployRedHeadline(
   a: RedMainAlert,
@@ -447,13 +483,36 @@ export function deployRedHeadline(
 ): string {
   const label = sinceLabel(a.since, nowMs);
   const since = a.since && label !== a.since ? ` for ${label}` : "";
-  const scope = mainAlsoRed
-    ? "this deploy failure does not block merges, but the red main above does"
-    : "this deploy failure does not block merges";
-  return (
-    `Deploy is red on ${a.repo}${since} — ${scope}; ` +
-    `the fix may be outside this repo — see the coord diagnosis`
-  );
+  const head = `Deploy is red on ${a.repo}${since}`;
+  if (a.blocksMerging === true) {
+    return (
+      `${head} — merges are currently BLOCKED on it until coord ` +
+      "re-proves it deploy-only; see the coord diagnosis"
+    );
+  }
+  if (a.blocksMerging === false) {
+    const scope = mainAlsoRed
+      ? "this deploy failure does not block merges, but the red main above does"
+      : "this deploy failure does not block merges";
+    return (
+      `${head} — ${scope}; ` +
+      "the fix may be outside this repo (see the coord diagnosis)"
+    );
+  }
+  return `${head}; see the coord diagnosis`;
+}
+
+/**
+ * The native tooltip for a BLOCKING deploy row: coord's reason and since,
+ * which are machine vocabulary (R8) and so stay off the headline itself.
+ */
+function blockingTitle(a: RedMainAlert): string | undefined {
+  if (a.blocksMerging !== true) return undefined;
+  const parts = [
+    a.blockingReason ? `reason: ${a.blockingReason}` : null,
+    a.blockingSince ? `blocking since ${a.blockingSince}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : undefined;
 }
 
 /**
@@ -724,14 +783,23 @@ export function RedMainBanner() {
           // text anyway, so the surface is darkened rather than just
           // re-colouring the text. The bright border + icon keep it loud.
           //
-          // A `deploy_red` row stays in the red family (R3: nothing clears it
-          // but a fix, and coord pages it like a red main) but is drawn darker
-          // with a DASHED edge, so a glance can tell "the deploy is red" from
-          // "main is red and PRs are held" before reading a word.
+          // A `deploy_red` row stays in the red family (R3: nothing clears
+          // it but a fix, and coord pages it like a red main). Only when coord
+          // SAYS it does not block merges is it drawn darker with a DASHED
+          // edge — the "not holding PRs" look. A blocking one gets the red
+          // main's full treatment, and an unknown one never borrows the
+          // not-blocking look.
+          data-blocks-merging={
+            a.kind === DEPLOY_RED_KIND
+              ? a.blocksMerging === null
+                ? "unknown"
+                : String(a.blocksMerging)
+              : undefined
+          }
           className={[
             "flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2",
             "text-white border-b-2 border-red-500",
-            a.kind === DEPLOY_RED_KIND
+            a.kind === DEPLOY_RED_KIND && a.blocksMerging === false
               ? "bg-red-950 border-dashed"
               : "bg-red-900",
           ].join(" ")}
@@ -740,7 +808,7 @@ export function RedMainBanner() {
             className="h-4 w-4 shrink-0 text-red-300"
             aria-hidden
           />
-          <span className="text-sm font-semibold">
+          <span className="text-sm font-semibold" title={blockingTitle(a)}>
             {bannerHeadline(a, nowMs, redMainRepos.has(a.repo))}
           </span>
           {a.workflows.length > 0 && (

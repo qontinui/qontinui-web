@@ -394,7 +394,7 @@ describe("CiRepoStrip main verdicts beyond green/red", () => {
     );
     expect(row.getAttribute("data-ci-tone")).toBe("amber");
     expect(row.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
-      "Main no baseline; 2 open-PR check(s) pending"
+      "Main: no baseline; 2 open-PR check(s) pending"
     );
   });
 });

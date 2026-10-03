@@ -66,6 +66,8 @@ describe("parseRedMainAlerts", () => {
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
         claim: { kind: "unknown", cause: "not-reported" },
+        // Never read off a red_main row.
+        blocksMerging: null,
       },
     ]);
   });
@@ -650,8 +652,10 @@ describe("deploy_red alerts", () => {
     const headline = deployRedHeadline(a, NOW);
     expect(headline).toBe(
       `Deploy is red on ${REPO} for 7h 29m — this deploy failure does not ` +
-        "block merges; the fix may be outside this repo — see the coord diagnosis"
+        "block merges; the fix may be outside this repo (see the coord diagnosis)"
     );
+    // One em dash at most.
+    expect(headline.split("—")).toHaveLength(2);
     // Scoped to the alert: never a blanket claim that merges are open.
     expect(headline).not.toMatch(/merges are NOT blocked/i);
     expect(headline).not.toContain("coord_diagnose");
@@ -709,7 +713,11 @@ describe("deploy_red beside a red_main for the same repo", () => {
       alert_key: `deploy_red:${REPO}`,
       kind: "deploy_red",
       first_seen_at: "2026-09-12T04:31:00Z",
-      detail: { repo: REPO, workflows: ["Deploy backend"] },
+      detail: {
+        repo: REPO,
+        workflows: ["Deploy backend"],
+        blocks_merging: false,
+      },
       claimed: false,
       claim: null,
     },
@@ -764,5 +772,103 @@ describe("deploy_red beside a red_main for the same repo", () => {
     expect(chips[1].getAttribute("title")).toBe(
       "No agent holds a claim on this deploy alert yet."
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// coord's live `detail.blocks_merging` on a deploy_red row. Right after a land
+// or a coord restart, coord cannot yet prove the workflow push-only, keeps
+// counting it red (merges ARE blocked), and leaves only the deploy_red alert
+// open — so "does not block merges" would be false there.
+// ---------------------------------------------------------------------------
+
+describe("deploy_red blocks_merging states", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  function row(detail: Record<string, unknown>) {
+    return {
+      alert_key: `deploy_red:${REPO}`,
+      kind: "deploy_red",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: { repo: REPO, workflows: ["Deploy backend"], ...detail },
+    };
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("true: says merges ARE blocked, styled as blocking", async () => {
+    const blocking = row({
+      blocks_merging: true,
+      blocking_reason: "push_only_proof_pending",
+      blocking_since: "2026-09-12T11:58:00Z",
+    });
+    const [a] = parseRedMainAlerts([blocking]);
+    expect(a.blocksMerging).toBe(true);
+    const headline = deployRedHeadline(a, NOW);
+    expect(headline).toBe(
+      `Deploy is red on ${REPO} for 7h 29m — merges are currently BLOCKED ` +
+        "on it until coord re-proves it deploy-only; see the coord diagnosis"
+    );
+    expect(headline).not.toMatch(/does not block/);
+    // Even beside a red main it never says "does not block".
+    expect(deployRedHeadline(a, NOW, true)).toBe(headline);
+
+    getMock.mockResolvedValue([blocking]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-alert-kind", "deploy_red");
+    expect(el).toHaveAttribute("data-blocks-merging", "true");
+    // The red main's severity treatment, not the dashed not-blocking look.
+    expect(el.className).toContain("bg-red-900");
+    expect(el.className).not.toContain("border-dashed");
+    // Coord's reason rides the tooltip, not the headline (R8).
+    expect(el.textContent).not.toContain("push_only_proof_pending");
+    expect(
+      el.querySelector("[title*='push_only_proof_pending']")
+    ).not.toBeNull();
+  });
+
+  it("false: keeps the scoped not-blocking wording and dashed look", async () => {
+    const open = row({ blocks_merging: false });
+    const [a] = parseRedMainAlerts([open]);
+    expect(a.blocksMerging).toBe(false);
+    expect(deployRedHeadline(a, NOW)).toContain(
+      "this deploy failure does not block merges;"
+    );
+
+    getMock.mockResolvedValue([open]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-blocks-merging", "false");
+    expect(el.className).toContain("border-dashed");
+  });
+
+  it("absent or non-boolean: makes NO merge claim either way", async () => {
+    for (const detail of [
+      {},
+      { blocks_merging: "false" },
+      { blocks_merging: null },
+    ]) {
+      const [a] = parseRedMainAlerts([row(detail)]);
+      expect(a.blocksMerging).toBeNull();
+      const headline = deployRedHeadline(a, NOW);
+      expect(headline).toBe(
+        `Deploy is red on ${REPO} for 7h 29m; see the coord diagnosis`
+      );
+      expect(headline).not.toMatch(/block/i);
+      // The red-main-beside variant makes no claim either.
+      expect(deployRedHeadline(a, NOW, true)).toBe(headline);
+    }
+
+    getMock.mockResolvedValue([row({})]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-blocks-merging", "unknown");
+    // Never the not-blocking look on an unknown.
+    expect(el.className).not.toContain("border-dashed");
   });
 });

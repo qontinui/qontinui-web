@@ -167,8 +167,9 @@ export interface SymbolClaimsResponse {
  * - `vacuously_green` — the merge gate treats main as green, but main has
  *   no CI baseline and positively CANNOT get one: coord's baselines come
  *   only from completed `push` runs, and this repo has no workflow that
- *   produces one. That covers a virgin repo, a default branch with no
- *   workflow files (which may still have CI history elsewhere), and a
+ *   produces one. That covers a virgin repo, a default branch whose
+ *   workflows declare no push or pull_request trigger (or has none; it may
+ *   still have CI history elsewhere), and a
  *   `pull_request`-only repo whose workflows gate PRs but none declares a
  *   `push` trigger (`ci_baseline.rs` `MainCiStatus::VacuouslyGreen`). The
  *   "green" is an absence of evidence, not a pass, and must never render as

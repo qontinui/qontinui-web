@@ -155,7 +155,7 @@ function dotLabel(tone: DotTone, row: RepoCiRow): string {
     case "green":
       return "Main green, no open-PR failures";
     case "amber":
-      return `Main ${verdictLabel(row)}; ${row.open_pr_checks.pending} open-PR check(s) pending`;
+      return `Main: ${verdictLabel(row)}; ${row.open_pr_checks.pending} open-PR check(s) pending`;
     case "red":
       return row.main_verdict === "red"
         ? "Main branch CI is red"
