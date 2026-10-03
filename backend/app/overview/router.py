@@ -41,6 +41,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
+from app.costs.router import router as costs_routes
 from app.overview import change_log
 from app.overview import http as contract_http
 from app.overview.estimates import router as estimates_routes
@@ -531,3 +532,6 @@ router.include_router(files_routes)
 # Provider-reported spend: summary, renewals, ingest, import tokens, alert
 # preferences (plan 2026-10-03-provider-reported-spend-collection-alerts-and-mobile).
 router.include_router(spend_routes)
+# Costs: the summary (base currency, labour, FX, the estimate comparison) and
+# the ledger (plan 2026-09-20-overview-authoring-layer Phase 5).
+router.include_router(costs_routes)

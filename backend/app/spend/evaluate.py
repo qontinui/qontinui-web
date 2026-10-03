@@ -34,6 +34,19 @@ Guards
 * **Ceilings** read connector-reported spend for their own vendor through the
   rule's ``product_filter``; an org-wide ceiling reads the amortized view of
   every vendor (decision 12).
+
+The org-wide rule is the project's spend LIMIT
+-----------------------------------------------
+(authoring-layer Phase 5: there is no separate limits table.) It is evaluated
+in the project's BASE currency: every figure is converted with the project's
+FX rates (``app.costs.fx`` — an entry's own rate first, then the settings'),
+the rule's own thresholds too, and its month-to-date is ACTUAL cost as the
+costs summary defines it — priced labour included under ``day_rates``, a
+``labour`` cost entry counted only under ``fixed_fee``
+(``app.costs.summary.month_to_date``). A figure no rate converts, or time
+logged without a price, is never summed as zero and never converted 1:1: the
+org-wide rule is skipped for the tick and the reason recorded
+(``EvaluationReport.org_rule_skipped``).
 """
 
 from __future__ import annotations
@@ -41,7 +54,7 @@ from __future__ import annotations
 import asyncio
 import statistics
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -79,10 +92,12 @@ class EvaluationReport:
     #: ``<vendor>:<scope>:<day>`` whose spike rule could not be evaluated —
     #: NOT a pass (fewer than 7 observed days, or a zero median).
     insufficient_history: list[str] = field(default_factory=list)
-    #: Vendors with figures in a currency other than the rules' — UNKNOWN at
-    #: alert time, so NO rule is evaluated for them (and the org-wide rule,
-    #: whose sum would silently drop them, is skipped too). Logged.
+    #: Vendors with figures in a currency other than their rules' (USD) —
+    #: UNKNOWN at alert time, so their money rules are not evaluated. Logged.
     unknown_currency: list[str] = field(default_factory=list)
+    #: Why the org-wide rule was not evaluated this tick (an amount no FX
+    #: rate converts to the base currency, unpriced time), or ``None``.
+    org_rule_skipped: str | None = None
 
 
 @dataclass(frozen=True)
@@ -357,6 +372,104 @@ def _mtd_crossing(
     ]
 
 
+async def _org_crossings(
+    db: AsyncSession,
+    tenant_id: UUID,
+    org_rule: SpendRule,
+    loaded: list[SpendRow],
+    recurring: list[RecurringCost],
+    today: date,
+    existing_mtd: dict[tuple[str, str], int],
+    report: EvaluationReport,
+) -> list[_Crossing]:
+    """The org-wide rule — the project's spend limit — in the base currency.
+
+    Daily: every vendor's connector-reported day (renewals excluded),
+    converted. Month to date: actual cost (:func:`month_to_date`). Anything
+    that cannot be converted or priced skips the rule for this tick."""
+    from app.costs.summary import month_to_date
+
+    pf = org_rule.product_filter
+    mtd = await month_to_date(db, tenant_id, today, product_filter=pf)
+    fx = mtd.fx
+    base = mtd.base_currency
+    skipped: list[str] = []
+
+    def threshold(micros: int | None) -> int | None:
+        if micros is None:
+            return None
+        converted = fx.to_base(micros, org_rule.currency, record=False)
+        if converted is None:
+            skipped.append(f"no {org_rule.currency}->{base} rate for the rule itself")
+        return converted
+
+    daily_abs = threshold(org_rule.daily_abs_micros)
+    ceiling = threshold(org_rule.monthly_ceiling_micros)
+    connector = [r for r in loaded if r.source == "connector"]
+    excluded = _renewal_exclusions(connector, recurring)
+    by_day: dict[date, int] = defaultdict(int)
+    seen_days: set[date] = set()
+    for index, row in enumerate(connector):
+        if index in excluded or not _matches(row.product, pf):
+            continue
+        if row.day not in (today - timedelta(days=1), today):
+            continue
+        converted = fx.to_base(
+            row.net_micros, row.currency, row.fx_rate_to_base, record=False
+        )
+        if converted is None:
+            skipped.append(f"no {row.currency}->{base} rate")
+            continue
+        by_day[row.day] += converted
+        seen_days.add(row.day)
+    skipped.extend(mtd.unknown)
+    if skipped:
+        report.org_rule_skipped = "; ".join(sorted(set(skipped)))
+        logger.warning(
+            "spend_evaluate_org_rule_skipped",
+            tenant_id=str(tenant_id),
+            reason=report.org_rule_skipped,
+        )
+        return []
+
+    detail: dict[str, Any] = {
+        "vendor": "All vendors",
+        "provider": "all providers",
+        "currency": base,
+    }
+    out: list[_Crossing] = []
+    if daily_abs:
+        for day in (today - timedelta(days=1), today):
+            if day in seen_days and by_day[day] > daily_abs:
+                out.append(
+                    _Crossing(
+                        rule="daily_abs",
+                        vendor_id=None,
+                        scope_key="org",
+                        period_key=day.isoformat(),
+                        observed_micros=by_day[day],
+                        threshold_micros=daily_abs,
+                        detail={**detail, "day": day.isoformat()},
+                        currency=base,
+                    )
+                )
+    if ceiling and org_rule.mtd_thresholds_pct:
+        out.extend(
+            replace(c, currency=base)
+            for c in _mtd_crossing(
+                None,
+                ORG_VENDOR_KEY,
+                mtd.micros,
+                ceiling,
+                org_rule.mtd_thresholds_pct,
+                today,
+                existing_mtd,
+                detail,
+            )
+        )
+    return out
+
+
 async def evaluate_tenant(
     db: AsyncSession, tenant_id: UUID, now: datetime
 ) -> EvaluationReport:
@@ -459,50 +572,19 @@ async def evaluate_tenant(
         )
 
     org_rule = rules.get(None)
-    if org_rule is not None and not foreign:
-        pf = org_rule.product_filter
-        org_detail: dict[str, Any] = {
-            "vendor": "All vendors",
-            "provider": "all providers",
-        }
-        if org_rule.daily_abs_micros:
-            for day in (today - timedelta(days=1), today):
-                total = [
-                    r.net_micros
-                    for r in evaluable
-                    if r.day == day and _matches(r.product, pf)
-                ]
-                if total and sum(total) > org_rule.daily_abs_micros:
-                    crossings.append(
-                        _Crossing(
-                            rule="daily_abs",
-                            vendor_id=None,
-                            scope_key="org",
-                            period_key=day.isoformat(),
-                            observed_micros=sum(total),
-                            threshold_micros=org_rule.daily_abs_micros,
-                            detail={**org_detail, "day": day.isoformat()},
-                        )
-                    )
-        if org_rule.monthly_ceiling_micros and org_rule.mtd_thresholds_pct:
-            # Org-wide: the amortized view of every source and vendor.
-            mtd = sum(
-                r.net_micros
-                for r in rows
-                if month_start <= r.day <= today and _matches(r.product, pf)
+    if org_rule is not None:
+        crossings.extend(
+            await _org_crossings(
+                db,
+                tenant_id,
+                org_rule,
+                loaded,
+                recurring,
+                today,
+                existing_mtd,
+                report,
             )
-            crossings.extend(
-                _mtd_crossing(
-                    None,
-                    ORG_VENDOR_KEY,
-                    mtd,
-                    org_rule.monthly_ceiling_micros,
-                    org_rule.mtd_thresholds_pct,
-                    today,
-                    existing_mtd,
-                    org_detail,
-                )
-            )
+        )
 
     for c in crossings:
         inserted = await db.execute(
