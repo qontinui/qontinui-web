@@ -91,13 +91,11 @@ describe("parseMilestonesCsv", () => {
         "No date,soon",
         "Bad status,2026-01-01,finished",
         "Bad phase,2026-01-01,,,Z9",
-        "Done undated,2026-01-01,done",
-        "Undone dated,2026-01-01,planned,,,2026-01-02",
       ].join("\n"),
       PHASES
     );
     expect(rows).toEqual([]);
-    expect(issues.map((i) => i.line)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(issues.map((i) => i.line)).toEqual([1, 2, 3, 4]);
     expect(issues[3]?.message).toContain("A0, A1");
   });
 });
@@ -260,5 +258,20 @@ describe("a milestone tied to another estimate's phase", () => {
       row({ phase_id: "old-phase" })
     );
     expect("row" in read && read.row.phase_id).toBe("old-phase");
+  });
+});
+
+describe("a paste completing an already-done milestone", () => {
+  it("is read, and checked against the milestone it updates", () => {
+    const done = row({ status: "done", completed_date: "2026-05-06" });
+    const { rows, issues } = parseMilestonesCsv(
+      "Pilot live,2026-05-04,done\nPilot live,2026-05-04,,,,2026-05-07",
+      PHASES
+    );
+    expect(issues).toEqual([]);
+    for (const pasted of rows) {
+      const [update] = planMilestoneWrites([done], [pasted], "import").updates;
+      expect(milestoneRowProblem({ ...done, ...update!.patch })).toBeNull();
+    }
   });
 });

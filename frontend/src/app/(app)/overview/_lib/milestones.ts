@@ -203,13 +203,10 @@ export function parseMilestonesCsv(
         ...(notes ? (["description"] as const) : []),
       ],
     };
-    // A line that names neither its status nor a done-on date leaves both to
-    // the milestone it updates; the page checks the result as it will stand.
-    const problem = status || doneOn ? milestoneRowProblem(row) : null;
-    if (problem) {
-      fail(problem);
-      continue;
-    }
+    // The done-means-dated rule is NOT checked here: a line may update a
+    // milestone whose stored status or date completes it. The page checks
+    // each write as the milestone will then stand, and refuses before
+    // sending.
     rows.push(row);
     rowLines.push(entry.line);
   }
@@ -277,7 +274,7 @@ export function milestoneTable(
     }),
     csv: {
       label: "Paste milestones",
-      help: "One milestone per line: title, due date, status, kind, phase code, done-on date, notes. Only the title and the due date are required. A line whose title matches exactly one existing milestone updates it — only the columns the line fills in; every other line adds one. A paste never removes a milestone.",
+      help: "One milestone per line: title, due date, status, kind, phase code, done-on date, notes. Only the title and the due date are required. A line whose title matches exactly one existing milestone updates it — only the columns the line fills in; every other line adds one. A paste never removes a milestone, and an empty cell never clears a value — use the table for that.",
       placeholder:
         "title,due,status,kind,phase,done on,notes\nPilot live,2026-05-04,planned,pilot,A3,,First site only",
       parse: (text) => parseMilestonesCsv(text, phases),
