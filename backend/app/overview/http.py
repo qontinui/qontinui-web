@@ -8,8 +8,12 @@ or a 428 looks like.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.overview.resource import StaleVersion, StoreRefused
 
@@ -65,10 +69,33 @@ def stale(exc: StaleVersion) -> JSONResponse:
 
 
 def refused(exc: StoreRefused) -> JSONResponse:
+    """The store's refusal as its status and body; ``exc.detail`` (e.g. the
+    fresh state a client must look at again) is served beside ``error`` and
+    ``message``."""
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.error, "message": exc.message},
+        content={**exc.detail, "error": exc.error, "message": exc.message},
     )
+
+
+@asynccontextmanager
+async def refusable(db: AsyncSession) -> AsyncIterator[None]:
+    """Run a store's write inside a SAVEPOINT, so a refusal leaves nothing.
+
+    A refusal (``StoreRefused``, ``StaleVersion``, ``RecordNotFound``) is an
+    ANSWER: the route catches it and returns a normal response — and
+    ``get_async_db`` COMMITS on a normal return. Whatever the store had changed
+    or flushed before deciding to refuse (an attribute set before a check, an
+    autoflush a lookup triggered) would then be committed with no version bump
+    and no change-log row. Every store write therefore runs in here: an
+    exception rolls the savepoint back (and expires what it touched) before
+    the route turns it into a response, so the request's eventual commit
+    carries nothing a refused write did. A savepoint rather than a session
+    rollback: it undoes exactly the store's work, whatever the request did
+    before it, and behaves the same under a test harness that runs each test
+    inside an outer transaction."""
+    async with db.begin_nested():
+        yield
 
 
 def not_found() -> HTTPException:

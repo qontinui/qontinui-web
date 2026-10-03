@@ -611,7 +611,8 @@ async def revert_page(
         owner=target.owner,
     )
     try:
-        before, after = await store.update(ctx, page_id, payload, expected)
+        async with contract_http.refusable(db):
+            before, after = await store.update(ctx, page_id, payload, expected)
     except StaleVersion as exc:
         return contract_http.stale(exc)
     if after.version != before.version:

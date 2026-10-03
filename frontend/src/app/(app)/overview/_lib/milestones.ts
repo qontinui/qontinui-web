@@ -17,6 +17,7 @@ import {
   type CsvResult,
 } from "@/components/overview/editing/csv";
 import { isIsoDay } from "@/components/overview/editing/fields";
+import { threeWayMerge } from "@/components/overview/editing/merge";
 import type { TableDeclaration } from "@/components/overview/editing/registry";
 import { MILESTONE_KIND_LABEL, MILESTONE_STATUS_LABEL } from "./timeline";
 import type { Milestone, MilestoneKind, MilestoneStatus } from "./timeline-api";
@@ -49,7 +50,7 @@ const WRITABLE = [
   "completed_date",
   "description",
 ] as const;
-type Writable = (typeof WRITABLE)[number];
+export type Writable = (typeof WRITABLE)[number];
 
 export function milestoneToRow(m: Milestone): MilestoneRow {
   return {
@@ -300,6 +301,53 @@ function changed(
   }
   return patch as Partial<MilestoneRow>;
 }
+
+/** A milestone write that met a newer version, rebuilt on it. */
+export interface RebasedMilestone {
+  /** Theirs, with every field I changed set to mine. */
+  merged: MilestoneRow;
+  /** What "save mine over theirs" sends: every field I changed, and only
+   *  those — a field only they changed is never written back. */
+  patch: Partial<MilestoneRow>;
+  /** Fields we both changed to different values: the writer's choice. */
+  both: Writable[];
+}
+
+/**
+ * My edit of a milestone (`mine`, built on `base`) rebuilt on THEIR newer
+ * version — the kit's three-way merge (`threeWayMerge`), field by field.
+ */
+export function rebaseMilestone(
+  base: MilestoneRow,
+  mine: MilestoneRow,
+  theirs: Milestone
+): RebasedMilestone {
+  const theirRow = milestoneToRow(theirs);
+  const { merged, mineOnly, both } = threeWayMerge(
+    base,
+    mine,
+    theirRow,
+    WRITABLE
+  );
+  const patch: Partial<Record<Writable, unknown>> = {};
+  for (const field of [...mineOnly, ...both]) patch[field] = mine[field];
+  return {
+    merged: { ...merged, id: theirs.id, version: theirs.version },
+    patch: patch as Partial<MilestoneRow>,
+    both,
+  };
+}
+
+/** A writable field's name as the table shows it. */
+export const MILESTONE_FIELD_LABEL: Record<Writable, string> = {
+  title: "Milestone",
+  kind: "Kind",
+  phase_id: "Phase",
+  target_date: "Due",
+  status: "Status",
+  completed_date: "Done on",
+  description: "Notes",
+};
 
 /** The fields a create sends. */
 export function createBody(row: MilestoneRow): Record<string, unknown> {

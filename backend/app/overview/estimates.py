@@ -36,13 +36,16 @@ another project reads as 404, never 403: existence is itself information.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -53,6 +56,7 @@ from app.models.overview import (
     CostLine,
     Estimate,
     EstimateRole,
+    Milestone,
     Page,
     Phase,
     PhaseAllocation,
@@ -63,6 +67,11 @@ from app.models.overview import (
 from app.overview import change_log
 from app.overview.milestones import detach_milestones
 from app.overview.permissions import OverviewAccess, get_overview_access
+from app.overview.phase_progress import (
+    incoherent_recorded_progress,
+    stored_progress_breaks,
+    violated_progress_check,
+)
 from app.overview.resource import (
     ListResult,
     RecordNotFound,
@@ -72,6 +81,7 @@ from app.overview.resource import (
 )
 from app.schemas.overview import (
     PHASE_PROGRESS_FIELDS,
+    AcknowledgedDrop,
     AllocationRead,
     CalendarBreakRead,
     CostLineRead,
@@ -341,10 +351,21 @@ def _same_content(stored: EstimateContent, incoming: EstimateContentWrite) -> bo
     """Whether writing ``incoming`` would leave the graph as it is. Order is
     part of the content (it is the order every table is shown in), except
     where the read sorts by something else: efforts by role and allocations
-    by phase then role, and cost lines and breaks by their own keys."""
+    by phase then role, and cost lines and breaks by their own keys.
+
+    A phase's ``id`` is identity, not content: a write that names each phase
+    by the id it already has (the editor's) and one that names none (a CSV or
+    API client matching by code) describe the same graph. What an id CAN
+    change is which row a code lands on — an id whose saved phase carries a
+    different code is a rename, and an id this estimate does not have is a
+    write to refuse — so either makes the write a real one."""
     current = _as_written(stored)
     if current is None:
         return False
+    stored_code = {p.id: p.code for p in stored.phases}
+    for phase in incoming.phases:
+        if phase.id is not None and stored_code.get(phase.id) != phase.code:
+            return False
 
     def canonical(content: EstimateContentWrite) -> dict[str, Any]:
         # Python mode: decimals stay Decimal, whose equality is numeric, so
@@ -352,6 +373,7 @@ def _same_content(stored: EstimateContent, incoming: EstimateContentWrite) -> bo
         # "1.10" stays a different string from "1.1".
         dumped = content.model_dump()
         for phase in dumped["phases"]:
+            phase.pop("id", None)
             for task in phase["tasks"]:
                 task["efforts"].sort(key=lambda e: e["role_code"])
         dumped["allocations"].sort(key=lambda a: (a["phase_code"], a["role_code"]))
@@ -469,11 +491,144 @@ async def _take_the_baseline(ctx: StoreContext, *, keep_id: UUID | None) -> None
         )
 
 
+def match_phases(
+    existing: list[Phase], content: EstimateContentWrite
+) -> list[Phase | None]:
+    """For each submitted phase, the saved phase it continues — or ``None``
+    for a new one. The one rule for which phase rows a content write keeps.
+
+    By ``id`` first: a submitted id names a phase of THIS estimate (anything
+    else — another estimate's phase, a deleted one, a made-up id — is refused
+    as a 422 before anything is written), and the row it names continues
+    under the submitted code, which is how a code is renamed without losing
+    the phase. Then by code, among the saved phases no id claimed: what every
+    client that sends no ids (a CSV paste, an API caller, a re-imported
+    gantt) has always got. Never by name — two phases can share one, and a
+    name says nothing about which recorded gate belongs to which.
+
+    Each saved phase continues at most one submitted phase (the write's own
+    validator refuses two submitted phases naming one id). A saved phase
+    nothing continues is dropped by the write.
+    """
+    by_id = {p.id: p for p in existing}
+    matched: list[Phase | None] = [None] * len(content.phases)
+    claimed: set[UUID] = set()
+    for index, phase in enumerate(content.phases):
+        if phase.id is None:
+            continue
+        row = by_id.get(phase.id)
+        if row is None:
+            raise StoreRefused(
+                422,
+                "phase_not_in_estimate",
+                f"Phase {phase.code} names phase id {phase.id}, which is not a "
+                "phase of this estimate. Reload the estimate and try again.",
+            )
+        matched[index] = row
+        claimed.add(row.id)
+    by_code = {p.code: p for p in existing if p.id not in claimed}
+    for index, phase in enumerate(content.phases):
+        if phase.id is not None:
+            continue
+        row = by_code.pop(phase.code, None)
+        if row is not None:
+            matched[index] = row
+            claimed.add(row.id)
+    return matched
+
+
+def has_recorded_progress(phase: Phase) -> bool:
+    """Whether a phase holds progress recorded on the Timeline — what a drop
+    would delete. The frontend's ``recordedProgress`` (``team/edit/_lib/
+    dropped.ts``) reads the same five fields the same way."""
+    return (
+        phase.gate_status != "pending"
+        or phase.gate_decided_at is not None
+        or bool((phase.gate_notes or "").strip())
+        or phase.actual_start is not None
+        or phase.actual_end is not None
+    )
+
+
+async def _require_acknowledged_drops(
+    ctx: StoreContext,
+    dropped: list[Phase],
+    acknowledged: Sequence[AcknowledgedDrop],
+) -> None:
+    """Refuse a write that would delete recorded work its writer never saw.
+
+    Every dropped phase holding recorded progress or tied milestones needs an
+    acknowledgement naming its CURRENT progress version and milestone count;
+    a phase holding neither needs none. Called with the phases already locked
+    (``FOR UPDATE``), so neither a progress write (which locks the row) nor a
+    milestone write (``FOR KEY SHARE`` on its phase) can land between this
+    check and the delete. A missing or outdated acknowledgement is a 409
+    ``unacknowledged_drop`` carrying the fresh state of every such phase, so
+    a client can show it and ask again — never a silent drop.
+    """
+    if not dropped:
+        return
+    counts: dict[UUID, int] = {
+        phase_id: count
+        for phase_id, count in (
+            await ctx.db.execute(
+                select(Milestone.phase_id, func.count())
+                .where(
+                    Milestone.tenant_id == ctx.access.tenant_id,
+                    Milestone.phase_id.in_([p.id for p in dropped]),
+                )
+                .group_by(Milestone.phase_id)
+            )
+        ).all()
+        if phase_id is not None
+    }
+    acks = {a.phase_id: a for a in acknowledged}
+    unacknowledged = []
+    for phase in dropped:
+        tied = counts.get(phase.id, 0)
+        if not has_recorded_progress(phase) and tied == 0:
+            continue
+        version = phase.progress_version or 1
+        ack = acks.get(phase.id)
+        if (
+            ack is not None
+            and ack.progress_version == version
+            and ack.milestone_count == tied
+        ):
+            continue
+        unacknowledged.append(
+            {
+                "phase_id": str(phase.id),
+                "code": phase.code,
+                "name": phase.name,
+                "progress_version": version,
+                "milestone_count": tied,
+                "actual_start": phase.actual_start,
+                "actual_end": phase.actual_end,
+                "gate_status": phase.gate_status,
+                "gate_decided_at": phase.gate_decided_at,
+                "gate_notes": phase.gate_notes,
+            }
+        )
+    if unacknowledged:
+        codes = ", ".join(str(p["code"]) for p in unacknowledged)
+        raise StoreRefused(
+            409,
+            "unacknowledged_drop",
+            f"This save would drop {codes}, holding recorded progress or tied "
+            "milestones it did not acknowledge as they stand now, so nothing "
+            "was saved. Look at what each holds (attached), then acknowledge "
+            "it in acknowledged_drops and save again.",
+            detail={"phases": jsonable_encoder(unacknowledged)},
+        )
+
+
 async def _replace_content(
     ctx: StoreContext,
     *,
     estimate: Estimate,
     content: EstimateContentWrite,
+    acknowledged: Sequence[AcknowledgedDrop] | None = None,
 ) -> None:
     """Replace an estimate's whole content graph. Leaves ``version`` alone —
     the caller moves it once per write, whatever the write carried.
@@ -484,35 +639,61 @@ async def _replace_content(
     guaranteed by ``EstimateContentWrite``'s validator, so nothing here has to
     re-check it.
 
-    **A phase whose code is kept keeps its row** — its id, and with it the
-    progress recorded against it on the Timeline (actual dates, the gate's
-    outcome, ``progress_version``) and the milestones tied to it. Only its
-    plan fields are rewritten. A content write owns the plan and never the
-    progress, so a Save in the estimate editor cannot put back a gate outcome
-    somebody recorded since the editor loaded. A phase whose code is gone is
-    deleted with its progress (the change log's ``before`` keeps both), and
-    the milestones tied to it are detached first, each as a logged write.
+    **A phase the write continues keeps its row** (:func:`match_phases`: by
+    the id it names, else by its code) — its id, and with it the progress
+    recorded against it on the Timeline (actual dates, the gate's outcome,
+    ``progress_version``) and the milestones tied to it. Only its plan fields
+    are rewritten, its code among them when the write renames it. A content
+    write owns the plan and never the progress, so a Save in the estimate
+    editor cannot put back a gate outcome somebody recorded since the editor
+    loaded. A phase nothing continues is deleted with its progress (the
+    change log's ``before`` keeps both), and the milestones tied to it are
+    detached first, each as a logged write — but only once the write has
+    acknowledged each such phase that holds recorded work, as it stands now
+    (:func:`_require_acknowledged_drops`; ``acknowledged=None`` skips that,
+    for a new estimate, which has nothing to drop).
+
+    **Every phase of the estimate is locked first** (``FOR UPDATE``, in id
+    order), before any milestone is touched. A rename rewrites ``code``, a
+    column of the unique ``(estimate_id, code)`` index, so its UPDATE needs
+    ``FOR UPDATE`` on that row — which conflicts with the ``FOR KEY SHARE`` a
+    milestone write takes on the phase it names (``_lock_phase`` in
+    :mod:`app.overview.milestones`). Taking that lock only at the rename
+    (after :func:`detach_milestones` had locked milestones) was a deadlock:
+    a milestone moving from a dropped phase to the renamed one held the
+    renamed phase and waited for its milestone row, while the save held the
+    milestone row and waited for the renamed phase. With every phase locked
+    up front the order is phases (id order) → milestones here,
+    in :func:`detach_milestones` and in every milestone write, so the two
+    serialise instead.
     """
     db = ctx.db
     actor = ctx.access.actor
     tenant_id = estimate.tenant_id
     now = _now()
 
-    existing = {
-        p.code: p
-        for p in (
+    rows = list(
+        (
             await db.execute(
                 select(Phase)
                 .where(Phase.estimate_id == estimate.id)
+                .order_by(Phase.id)
+                .with_for_update(of=Phase)
                 .execution_options(populate_existing=True)
             )
         )
         .scalars()
         .all()
-    }
-    wanted = {p.code for p in content.phases}
-    removed = [p.id for code, p in existing.items() if code not in wanted]
-    kept_ids = [p.id for code, p in existing.items() if code in wanted]
+    )
+    # Refused (422) here, before anything is written, when an id is foreign.
+    matched = match_phases(rows, content)
+    kept_ids = [row.id for row in matched if row is not None]
+    kept = set(kept_ids)
+    removed = [p.id for p in rows if p.id not in kept]
+    if acknowledged is not None:
+        await _require_acknowledged_drops(
+            ctx, [p for p in rows if p.id not in kept], acknowledged
+        )
     await detach_milestones(ctx, removed)
 
     # Tasks (and so their efforts) and allocations hang off phases; a kept
@@ -532,6 +713,16 @@ async def _replace_content(
     await db.execute(
         delete(CalendarBreak).where(CalendarBreak.estimate_id == estimate.id)
     )
+    # A renamed phase may take a code another kept phase is giving up (two
+    # codes swapped, say), and (estimate_id, code) is unique at every
+    # statement: park each renamed row on a code no phase can have first.
+    renamed = [
+        row
+        for row, phase in zip(matched, content.phases, strict=True)
+        if row is not None and row.code != phase.code
+    ]
+    for parked in renamed:
+        parked.code = f"~renaming~{parked.id.hex}"
     await db.flush()
 
     audit = {
@@ -559,8 +750,11 @@ async def _replace_content(
         roles_by_code[role.code] = row
 
     phases_by_code: dict[str, Phase] = {}
-    for index, phase in enumerate(content.phases):
+    for index, (phase, continued) in enumerate(
+        zip(content.phases, matched, strict=True)
+    ):
         plan = {
+            "code": phase.code,
             "name": phase.name,
             "sort_order": index,
             "planned_start": phase.planned_start,
@@ -568,12 +762,11 @@ async def _replace_content(
             "stated_working_weeks": phase.stated_working_weeks,
             "gate_criteria": phase.gate_criteria,
         }
-        prow = existing.get(phase.code)
+        prow = continued
         if prow is None:
             prow = Phase(
                 tenant_id=tenant_id,
                 estimate_id=estimate.id,
-                code=phase.code,
                 **plan,
                 **audit,
             )
@@ -732,7 +925,25 @@ class EstimateStore:
         return _to_read(await self._graph(ctx, record_id), with_content=True)
 
     async def create(self, ctx: StoreContext, payload: EstimateCreate) -> EstimateRead:
+        """A new estimate, with its content when the create carries one.
+
+        Phase ids in that content are dropped before anything else: a new
+        estimate has no phases for them to name, so each is a new phase —
+        what makes ``GET`` → ``POST`` a copy rather than a 422 (or, before
+        this, a refusal AFTER the head row and the baseline hand-over were
+        written).
+        """
         tenant_id = ctx.access.tenant_id
+        content = payload.content
+        if content is not None:
+            content = content.model_copy(
+                update={
+                    "phases": [
+                        phase.model_copy(update={"id": None})
+                        for phase in content.phases
+                    ]
+                }
+            )
         await _require_source_document(ctx.db, tenant_id, payload.source_page_id)
         if payload.is_baseline:
             await _take_the_baseline(ctx, keep_id=None)
@@ -752,8 +963,8 @@ class EstimateStore:
         )
         ctx.db.add(row)
         await ctx.db.flush()
-        if payload.content is not None:
-            await _replace_content(ctx, estimate=row, content=payload.content)
+        if content is not None:
+            await _replace_content(ctx, estimate=row, content=content)
         return await self._fresh(ctx, row.id)
 
     async def update(
@@ -768,7 +979,9 @@ class EstimateStore:
         if row.version != expected_version:
             raise StaleVersion(before)
 
-        changes = payload.model_dump(exclude_unset=True, exclude={"content"})
+        changes = payload.model_dump(
+            exclude_unset=True, exclude={"content", "acknowledged_drops"}
+        )
         # Checked only when it CHANGES: re-sending the recorded source (whose
         # document may since have been deleted or re-kinded) is not a new
         # claim and must not refuse an otherwise valid write.
@@ -792,18 +1005,82 @@ class EstimateStore:
             content = None
         if not head and content is None:
             return before, before
-
-        if head.get("is_baseline") is True:
-            await _take_the_baseline(ctx, keep_id=row.id)
-        for key, value in head.items():
-            setattr(row, key, value)
         if content is not None:
-            await _replace_content(ctx, estimate=row, content=content)
-        row.updated_by = ctx.access.actor
-        row.updated_at = _now()
-        row.version += 1
-        await ctx.db.flush()
+            # A foreign phase id refuses the write before ANY of it — the
+            # baseline hand-over below included — is applied.
+            match_phases(list(row.phases), content)
+
+        # The baseline hand-over, the head fields and the content land
+        # together or not at all: a refusal from the content (incoherent
+        # stored progress, an unacknowledged drop) rolls back the savepoint,
+        # and with it the head change and the OTHER estimate's demotion,
+        # whatever the route then does with the session.
+        async with ctx.db.begin_nested():
+            if head.get("is_baseline") is True:
+                await _take_the_baseline(ctx, keep_id=row.id)
+            for key, value in head.items():
+                setattr(row, key, value)
+            if content is not None:
+                await self._replace_or_refuse(
+                    ctx, row, content, payload.acknowledged_drops
+                )
+            row.updated_by = ctx.access.actor
+            row.updated_at = _now()
+            row.version += 1
+            await ctx.db.flush()
         return before, await self._fresh(ctx, row.id)
+
+    @staticmethod
+    async def _replace_or_refuse(
+        ctx: StoreContext,
+        row: Estimate,
+        content: EstimateContentWrite,
+        acknowledged: Sequence[AcknowledgedDrop],
+    ) -> None:
+        """:func:`_replace_content`, with a refusal by the database's progress
+        CHECKs answered as a 422 ``incoherent_recorded_progress`` instead of
+        a 500.
+
+        Those CHECKs were added ``NOT VALID``, so a phase whose progress was
+        stored incoherently before them refuses EVERY later UPDATE of its
+        row — and a content write updates a kept phase whenever its plan
+        changes (a rename, a new name, a moved position). The write is run in
+        a savepoint so only it is rolled back; the reply names the phase(s)
+        and sends the user to the Timeline, where progress is corrected.
+        """
+        # Read before the write, while the loaded rows still hold what is
+        # stored: the phases the write keeps (a dropped one is deleted, which
+        # no CHECK refuses), and which CHECKs each one's stored values break.
+        incoherent = {
+            phase.code: broken
+            for phase in match_phases(list(row.phases), content)
+            if phase is not None and (broken := stored_progress_breaks(phase))
+        }
+        try:
+            async with ctx.db.begin_nested():
+                await _replace_content(
+                    ctx, estimate=row, content=content, acknowledged=acknowledged
+                )
+        except IntegrityError as exc:
+            constraint = violated_progress_check(exc)
+            if constraint is None:
+                raise
+            culprits = {
+                code: broken
+                for code, broken in incoherent.items()
+                if constraint in broken
+            }
+            message = (
+                " ".join(
+                    incoherent_recorded_progress(code, broken)
+                    for code, broken in sorted(culprits.items())
+                )
+                if culprits
+                # Not one this write's rows showed before it ran (a peer wrote
+                # it meanwhile): still the same refusal, without a name.
+                else incoherent_recorded_progress(None, [constraint])
+            )
+            raise StoreRefused(422, "incoherent_recorded_progress", message) from exc
 
     async def delete(
         self, ctx: StoreContext, record_id: str, expected_version: int

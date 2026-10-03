@@ -6,8 +6,9 @@
  * progressing (plan `2026-09-19-project-overview-for-business-leaders`,
  * Phase 1).
  *
- * The prose comes from the project's intent documents; the progress column
- * from its work units. The prose is editable in place, through the overview's
+ * The prose comes from the project's intent documents; the side column's
+ * schedule tiles from the estimate's served forecast (the Timeline's
+ * figures), and its progress from the project's work units. The prose is editable in place, through the overview's
  * authoring contract (plan `2026-09-20-overview-authoring-layer`, Phase 1),
  * by whoever the server says may edit it for THIS project.
  */
@@ -15,11 +16,19 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useCanEdit } from "@/components/overview/editing/permissions";
+import { useResourceList } from "@/components/overview/editing/useResource";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
 import { IntentSection } from "./_components/IntentSection";
 import { ProgressPanel } from "./_components/ProgressPanel";
+import { ScheduleTiles } from "./_components/ScheduleTiles";
+import { useForecast } from "./_hooks/useForecast";
 import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
+import {
+  ESTIMATES,
+  pickBaseline,
+  type EstimateRecord,
+} from "./_lib/estimate-api";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
 
 function ProseSkeleton() {
@@ -47,6 +56,18 @@ export default function OverviewSummaryPage() {
     activeTenantId,
     tenantsLoading || tenantsError !== null
   );
+  // The schedule tiles read the estimate the Timeline reads: the baseline,
+  // else the newest.
+  const hold = tenantsLoading || tenantsError !== null;
+  const estimates = useResourceList<EstimateRecord>(ESTIMATES, {
+    hold,
+    reloadKey: activeTenantId,
+  });
+  const estimate =
+    estimates.list.state === "ready"
+      ? pickBaseline(estimates.list.items)
+      : null;
+  const forecast = useForecast(estimate?.id ?? null, hold);
   const actions = {
     canEdit,
     projectId: activeTenantId,
@@ -132,33 +153,53 @@ export default function OverviewSummaryPage() {
       </div>
 
       <aside
-        aria-labelledby="overview-progress-heading"
-        className="lg:border-l lg:border-border lg:pl-10"
-        aria-busy={progress.state === "loading"}
+        aria-label="Schedule and progress"
+        className="space-y-12 lg:border-l lg:border-border lg:pl-10"
       >
-        <h2
-          id="overview-progress-heading"
-          className="mb-5 font-[family-name:var(--font-overview-serif)] text-[1.625rem] leading-snug text-foreground"
+        <section
+          aria-labelledby="overview-schedule-heading"
+          aria-busy={
+            estimates.list.state === "loading" ||
+            (estimate !== null && forecast.state === "loading")
+          }
+          data-ui-bridge-id="overview.summary.schedule"
         >
-          Progress
-        </h2>
-        {progress.state === "loading" && (
-          <div className="space-y-3" aria-hidden>
-            <Skeleton className="h-12 w-28" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </div>
-        )}
-        {progress.state === "error" && (
-          <LoadFailure
-            what="the project's progress"
-            message={progress.message}
-            uiBridgeId="overview.summary.progress.error"
-          />
-        )}
-        {progress.state === "ready" && (
-          <ProgressPanel progress={progress.progress} />
-        )}
+          <h2
+            id="overview-schedule-heading"
+            className="mb-5 font-[family-name:var(--font-overview-serif)] text-[1.625rem] leading-snug text-foreground"
+          >
+            Schedule
+          </h2>
+          <ScheduleTiles estimates={estimates.list} forecast={forecast} />
+        </section>
+        <section
+          aria-labelledby="overview-progress-heading"
+          aria-busy={progress.state === "loading"}
+        >
+          <h2
+            id="overview-progress-heading"
+            className="mb-5 font-[family-name:var(--font-overview-serif)] text-[1.625rem] leading-snug text-foreground"
+          >
+            Progress
+          </h2>
+          {progress.state === "loading" && (
+            <div className="space-y-3" aria-hidden>
+              <Skeleton className="h-12 w-28" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )}
+          {progress.state === "error" && (
+            <LoadFailure
+              what="the project's progress"
+              message={progress.message}
+              uiBridgeId="overview.summary.progress.error"
+            />
+          )}
+          {progress.state === "ready" && (
+            <ProgressPanel progress={progress.progress} />
+          )}
+        </section>
       </aside>
     </div>
   );

@@ -94,12 +94,16 @@ export interface JsonSchema {
   [key: string]: unknown;
 }
 
-/** Any refusal: the status, the server's `error` code and a readable line. */
+/** Any refusal: the status, the server's `error` code and a readable line —
+ *  and the rest of the refusal's body (`details`), for a refusal that carries
+ *  what the caller must look at again (e.g. `unacknowledged_drop`'s fresh
+ *  state of the phases). */
 export class ResourceError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | null,
-    message: string
+    message: string,
+    readonly details: Record<string, unknown> | null = null
   ) {
     super(message);
     this.name = "ResourceError";
@@ -138,12 +142,14 @@ async function readError(response: Response): Promise<ResourceError> {
 /** A refusal from its status and body text. */
 function errorFrom(status: number, text: string): ResourceError {
   let code: string | null = null;
+  let details: Record<string, unknown> | null = null;
   let message = text || `The request failed (${status}).`;
   try {
     const body = JSON.parse(text) as Record<string, unknown>;
     const detail = (body.detail ?? body) as unknown;
     if (detail && typeof detail === "object" && !Array.isArray(detail)) {
       const d = detail as Record<string, unknown>;
+      details = d;
       if (typeof d.error === "string") code = d.error;
       if (typeof d.message === "string") message = d.message;
     } else if (Array.isArray(detail)) {
@@ -162,7 +168,7 @@ function errorFrom(status: number, text: string): ResourceError {
   } catch {
     // Not JSON — keep the raw text.
   }
-  return new ResourceError(status, code, message);
+  return new ResourceError(status, code, message, details);
 }
 
 /**

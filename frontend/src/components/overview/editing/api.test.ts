@@ -11,7 +11,9 @@ vi.mock("@/services/api-config", () => ({
 import {
   deleteFile,
   fetchFileBlob,
+  ResourceError,
   revertPage,
+  updateResource,
   uploadFile,
   VersionConflictError,
 } from "./api";
@@ -58,6 +60,24 @@ describe("overview write calls send what the server reads", () => {
     await expect(revertPage("p1", 1, 2)).rejects.toBeInstanceOf(
       VersionConflictError
     );
+  });
+
+  it("a refusal that is not a version conflict keeps its body as details", async () => {
+    const body = {
+      error: "unacknowledged_drop",
+      message: "Nothing was saved.",
+      phases: [{ phase_id: "p1", progress_version: 2 }],
+    };
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 409 })
+    );
+    const err = await updateResource("estimates", "e1", {}, 3).catch(
+      (e: unknown) => e
+    );
+    expect(err).toBeInstanceOf(ResourceError);
+    expect(err).not.toBeInstanceOf(VersionConflictError);
+    expect((err as ResourceError).code).toBe("unacknowledged_drop");
+    expect((err as ResourceError).details).toEqual(body);
   });
 
   it("deleteFile names the file and its version", async () => {

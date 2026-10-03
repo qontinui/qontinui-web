@@ -325,8 +325,16 @@ export interface TaskWrite {
  * A phase's progress (actual dates, the gate's outcome) is NOT here: it is
  * written through the `phase_progress` resource (`timeline-api.ts`), and a
  * content write naming it is refused.
+ *
+ * `id` is identity, not plan: the saved phase this one continues. Sent, the
+ * phase keeps its row — its recorded progress and tied milestones — even when
+ * its code changed; on an update it must name a phase of THIS estimate or
+ * the write is a 422. Omitted, a phase continues the saved one with the same
+ * code, and otherwise is new (`droppedPhases` in the editor mirrors the
+ * rule). A CREATE ignores it: every phase of a new estimate is new.
  */
 export interface PhaseWrite {
+  id?: string;
   code: string;
   name: string;
   planned_start?: string | null;
@@ -352,6 +360,34 @@ export interface EstimateContentWrite {
     run_model?: string | null;
   }[];
   calendar_breaks: { label: string; start_date: string; end_date: string }[];
+}
+
+/**
+ * `acknowledged_drops` on an estimate update (`AcknowledgedDrop`): the writer
+ * has seen what dropping one saved phase costs, as it stood then. Needed for
+ * each dropped phase holding recorded progress or tied milestones; missing or
+ * outdated, the write is a 409 `unacknowledged_drop` and nothing is written.
+ */
+export interface AcknowledgedDrop {
+  phase_id: string;
+  /** The phase's progress version (`phase_progress`'s `version`). */
+  progress_version: number;
+  milestone_count: number;
+}
+
+/** One phase in a 409 `unacknowledged_drop` body (its `phases`): what it
+ *  holds NOW, which is what a new acknowledgement must name. */
+export interface UnacknowledgedDrop {
+  phase_id: string;
+  code: string;
+  name: string;
+  progress_version: number;
+  milestone_count: number;
+  actual_start: string | null;
+  actual_end: string | null;
+  gate_status: GateStatus;
+  gate_decided_at: string | null;
+  gate_notes: string;
 }
 
 // ---------------------------------------------------------------------------

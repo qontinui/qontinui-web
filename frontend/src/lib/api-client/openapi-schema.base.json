@@ -420,6 +420,33 @@
         "title": "AIPromptTemplateUpdate",
         "type": "object"
       },
+      "AcknowledgedDrop": {
+        "description": "The writer has seen what dropping one saved phase costs, and goes ahead.\n\nA content write deletes every saved phase it does not continue, and with\nit the progress recorded on the Timeline and the ties of its milestones.\nA phase that holds either is dropped only when the write acknowledges it\nwith what the writer was SHOWN \u2014 the phase's progress ``version`` (the\n``phase_progress`` resource's) and how many milestones were tied to it.\nIf either has moved since (somebody recorded a gate meanwhile), the write\nis refused as a 409 ``unacknowledged_drop`` carrying the fresh state, so\nthe writer is asked again rather than deleting work they never saw.",
+        "properties": {
+          "milestone_count": {
+            "minimum": 0.0,
+            "title": "Milestone Count",
+            "type": "integer"
+          },
+          "phase_id": {
+            "format": "uuid",
+            "title": "Phase Id",
+            "type": "string"
+          },
+          "progress_version": {
+            "minimum": 1.0,
+            "title": "Progress Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase_id",
+          "progress_version",
+          "milestone_count"
+        ],
+        "title": "AcknowledgedDrop",
+        "type": "object"
+      },
       "ActionDataBatch": {
         "description": "Batch of action data from runner.",
         "properties": {
@@ -19070,7 +19097,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The content graph to start from. Phase ids in it are ignored: every phase of a new estimate is a new phase, so an estimate read with GET can be posted back as a copy."
           },
           "contingency_pct": {
             "anyOf": [
@@ -19306,6 +19334,15 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "acknowledged_drops": {
+            "description": "The saved phases this content write drops that the writer has seen and agreed to lose, each with the progress version and milestone count they were shown. Needed for every dropped phase holding recorded progress or tied milestones; a missing or outdated one refuses the write as a 409 unacknowledged_drop whose body carries the fresh state.",
+            "items": {
+              "$ref": "#/components/schemas/AcknowledgedDrop"
+            },
+            "maxItems": 500,
+            "title": "Acknowledged Drops",
+            "type": "array"
           },
           "content": {
             "anyOf": [
@@ -35233,7 +35270,7 @@
         "type": "object"
       },
       "PhaseWrite": {
-        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.",
+        "description": "A phase as the PLAN states it.\n\nProgress (actual dates, the gate's outcome) is not part of it: it is\nwritten through ``phase_progress``, with its own version, so the estimate\neditor and the Timeline can never overwrite each other's fields. A content\nwrite naming a progress field is refused rather than half-applied.\n\n``id`` is the IDENTITY of a phase this estimate already has, when the\nclient knows it: the write continues that phase (its row, its recorded\nprogress, the milestones tied to it) under whatever code it now carries,\nso renaming a code is not a delete and a create. On an UPDATE it must\nname a phase of THIS estimate, else the write is a 422. Absent, a phase\ncontinues the saved one with the same code, as before; neither matching,\nit is new. On a CREATE it is ignored: a new estimate has no phases yet,\nso every phase it is created with is a new one \u2014 which is what lets an\nestimate read with ``GET`` be posted back as a copy.",
         "properties": {
           "code": {
             "maxLength": 50,
@@ -35245,6 +35282,18 @@
             "default": "",
             "title": "Gate Criteria",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "name": {
             "maxLength": 200,
