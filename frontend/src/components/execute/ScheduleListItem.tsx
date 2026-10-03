@@ -14,6 +14,7 @@ import {
   XCircle,
   Loader2,
   AlertCircle,
+  History,
 } from "lucide-react";
 import type { ScheduledTask } from "@/lib/runner/types/scheduler";
 import { describeSchedule } from "@qontinui/workflow-utils";
@@ -28,6 +29,7 @@ interface ScheduleListItemProps {
   onDelete: (task: ScheduledTask) => void;
   onRunNow: (task: ScheduledTask) => void;
   onToggleEnabled: (task: ScheduledTask, enabled: boolean) => void;
+  onShowHistory: (task: ScheduledTask) => void;
 }
 
 function relativeTime(iso: string): string {
@@ -123,6 +125,7 @@ export function ScheduleListItem({
   onDelete,
   onRunNow,
   onToggleEnabled,
+  onShowHistory,
 }: ScheduleListItemProps) {
   const isWaitingOnConditions =
     task.conditionStatus && !task.conditionStatus.timedOut;
@@ -189,6 +192,15 @@ export function ScheduleListItem({
               title="Run now"
             >
               <Play className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-text-muted hover:text-text-secondary"
+              onClick={() => onShowHistory(task)}
+              title="Run history"
+            >
+              <History className="size-3.5" />
             </Button>
             <Button
               variant="ghost"

@@ -75,6 +75,12 @@ GATE_STATUSES: tuple[str, ...] = ("pending", "passed", "failed", "waived")
 #: Enforced by ``ck_overview_phase_tasks_status``.
 TASK_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
 
+#: What a milestone marks. Enforced by ``ck_overview_milestones_kind``.
+MILESTONE_KINDS: tuple[str, ...] = ("milestone", "pilot", "first_value", "other")
+
+#: Enforced by ``ck_overview_milestones_status``.
+MILESTONE_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done", "at_risk")
+
 #: Enforced by ``ck_overview_cost_lines_kind``.
 COST_LINE_KINDS: tuple[str, ...] = ("build_non_labour", "run_annual")
 
@@ -254,9 +260,10 @@ class Estimate(_AuditMixin, Base):
     notes: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
-    #: Bumped by every write to this estimate or its content graph. The
-    #: content-replace endpoint takes it as ``expected_version`` and refuses a
-    #: write built on a copy the server has moved past.
+    #: Bumped by every write to this estimate or its content graph. It is the
+    #: resource's version on the authoring contract: every write names it in
+    #: ``If-Match`` and is refused (409, with the server's copy) when it is
+    #: built on a copy the server has moved past.
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )
@@ -354,6 +361,23 @@ class Phase(_AuditMixin, Base):
     gate_notes: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
+    #: The version of the phase's PROGRESS (the five fields above, from
+    #: ``actual_start``) — the ``phase_progress`` resource's ``version``. It
+    #: is apart from the estimate's own version on purpose: progress is
+    #: recorded on the Timeline and the plan in the estimate editor, and
+    #: neither write may conflict with, or overwrite, the other.
+    #: NULLABLE only so ``overview_04_timeline`` is provably additive; its
+    #: constant default fills every existing row, and a reader maps a NULL
+    #: to 1.
+    progress_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, server_default=text("1"), default=1
+    )
+    #: Who last recorded progress, and when. ``updated_at``/``updated_by``
+    #: move with every estimate save, so they cannot answer that.
+    progress_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    progress_updated_by: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     estimate: Mapped[Estimate] = relationship(back_populates="phases")
     tasks: Mapped[list["PhaseTask"]] = relationship(
@@ -705,6 +729,64 @@ class CalendarBreak(_AuditMixin, Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     estimate: Mapped[Estimate] = relationship(back_populates="calendar_breaks")
+
+
+class Milestone(_AuditMixin, Base):
+    """A dated point on the Timeline: a pilot, the date of first value, or any
+    other marker. Gates are phases, not milestones.
+
+    ``phase_id`` is SET NULL, never cascaded, when its phase goes: a
+    milestone outlives a re-planned schedule. The estimate store detaches it
+    as a write of its own first (version moved, change-log row), so the FK
+    action is the backstop, not the path.
+    """
+
+    __tablename__ = "milestones"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('milestone', 'pilot', 'first_value', 'other')",
+            name="ck_overview_milestones_kind",
+        ),
+        CheckConstraint(
+            "status IN ('planned', 'in_progress', 'done', 'at_risk')",
+            name="ck_overview_milestones_status",
+        ),
+        CheckConstraint(
+            "(status = 'done') = (completed_date IS NOT NULL)",
+            name="ck_overview_milestones_done_has_date",
+        ),
+        Index("ix_overview_milestones_tenant", "tenant_id", "target_date"),
+        Index("ix_overview_milestones_phase", "phase_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    kind: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'milestone'"), default="milestone"
+    )
+    phase_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.phases.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    completed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'planned'"), default="planned"
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
 
 
 class ChangeLog(Base):
