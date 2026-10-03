@@ -187,8 +187,11 @@ def test_ddl_is_coord_qualified_idempotent_and_drops_only_in_downgrade() -> None
     # The FK child is dropped first.
     dropped = re.findall(r"DROP\s+TABLE\s+IF\s+EXISTS\s+([A-Za-z_.]+)", down)
     assert dropped == [f"{_SCHEMA}.{_VERSIONS}", f"{_SCHEMA}.{_TABLE}"], dropped
+    # CONCURRENTLY + IF NOT EXISTS: the only index shape coord's migration
+    # classifier admits (pr_merge/migration_classifier.rs); a plain build is
+    # rejected as a write lock and parks the PR on `escalate-path-matched`.
     assert re.search(
-        rf"CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+{_UNIQUE_INDEX}\s+"
+        rf"CREATE\s+UNIQUE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+{_UNIQUE_INDEX}\s+"
         rf"ON\s+{_SCHEMA}\.{_TABLE}\b",
         up,
         re.I,
@@ -213,9 +216,59 @@ def test_both_directions_are_static_op_execute() -> None:
         and node.func.value.id == "op"
     ]
     assert calls
-    assert {c.func.attr for c in calls} == {"execute"}  # type: ignore[attr-defined]
+    # op.execute everywhere, plus the bare op.get_context() that opens the one
+    # autocommit_block() the CONCURRENTLY index build needs.
+    assert {c.func.attr for c in calls} == {"execute", "get_context"}  # type: ignore[attr-defined]
     for call in calls:
+        if call.func.attr == "get_context":  # type: ignore[attr-defined]
+            assert not call.args and not call.keywords
+            continue
         assert len(call.args) == 1 and isinstance(call.args[0], ast.Constant)
+
+
+def _in_autocommit_block(node: ast.AST, fn: ast.FunctionDef) -> bool:
+    """True iff ``node`` sits inside ``with op.get_context().autocommit_block():`` in ``fn``."""
+    for w in ast.walk(fn):
+        if not isinstance(w, ast.With):
+            continue
+        for item in w.items:
+            expr = item.context_expr
+            if (
+                isinstance(expr, ast.Call)
+                and isinstance(expr.func, ast.Attribute)
+                and expr.func.attr == "autocommit_block"
+                and any(n is node for b in w.body for n in ast.walk(b))
+            ):
+                return True
+    return False
+
+
+def test_the_concurrent_index_build_runs_inside_autocommit_block() -> None:
+    """CONCURRENTLY cannot run in a transaction; the classifier also requires
+    the build to be lexically inside autocommit_block(). Every other statement
+    stays in the migration's transaction."""
+    up = _function("upgrade")
+    concurrent = [
+        c
+        for c in ast.walk(up)
+        if isinstance(c, ast.Call)
+        and isinstance(c.func, ast.Attribute)
+        and c.func.attr == "execute"
+        and c.args
+        and isinstance(c.args[0], ast.Constant)
+        and "CONCURRENTLY" in str(c.args[0].value).upper()
+    ]
+    assert len(concurrent) == 1, len(concurrent)
+    assert _in_autocommit_block(concurrent[0], up)
+    others = [
+        c
+        for c in ast.walk(up)
+        if isinstance(c, ast.Call)
+        and isinstance(c.func, ast.Attribute)
+        and c.func.attr == "execute"
+        and c not in concurrent
+    ]
+    assert others and not any(_in_autocommit_block(c, up) for c in others)
 
 
 def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
