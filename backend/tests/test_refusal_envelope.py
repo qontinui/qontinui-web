@@ -559,8 +559,8 @@ async def test_coord_proxy_write_transport_failures(
         assert target is None
     else:
         assert target == operations._REREAD_BEFORE_RETRY
-        # The human sentence carries it too: a reader rendering only the
-        # `retry_later` kind drops the target, and must still be warned.
+        # The human detail carries it too, for a reader that shows `detail`
+        # without the rendered next action.
         assert "re-read" in str(info.value.detail)
 
 
