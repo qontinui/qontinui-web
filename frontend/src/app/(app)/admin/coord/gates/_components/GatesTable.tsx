@@ -89,7 +89,11 @@ import {
   rowAccentProps,
   type Stat,
 } from "@/components/console";
-import { deriveGateStatus, GATE_STATUS_PALETTE } from "../gateStatus";
+import {
+  deriveGateStatus,
+  GATE_STATUS_PALETTE,
+  isSweepOverdue,
+} from "../gateStatus";
 import {
   CONTINUATION_STATUS_PALETTE,
   CONTINUATION_UNKNOWN_OUTCOME_KINDS,
@@ -158,7 +162,7 @@ function progressVariant(
     return "error";
   const f = g.progress.fraction;
   if (f !== null && f >= 1) return "success";
-  if (g.stale) return "warning";
+  if (isSweepOverdue(g)) return "warning";
   return "default";
 }
 
@@ -1081,12 +1085,14 @@ function GateDetail({
         <div className="space-y-1">
           {computedAt && (
             <p
-              className={`text-[11px] ${gate.stale ? "text-red-200" : "text-muted-foreground/70"}`}
+              className={`text-[11px] ${isSweepOverdue(gate) ? "text-red-200" : "text-muted-foreground/70"}`}
               title={`progress computed ${formatAbsolute(computedAt)}`}
               data-testid="gates-progress-freshness"
             >
               Progress computed {formatRelative(computedAt)}
-              {gate.stale ? " — coord's sweep is overdue on this gate." : "."}
+              {isSweepOverdue(gate)
+                ? " — coord's sweep is overdue on this gate."
+                : "."}
             </p>
           )}
           <ContinuationTimeline gate={gate} />
