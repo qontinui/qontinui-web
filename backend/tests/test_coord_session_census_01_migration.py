@@ -181,10 +181,19 @@ _INSERT_SESSION = text(
 )
 
 
-def _session_count(engine: Engine) -> int:
+def _session_count(engine: Engine, *, device: uuid.UUID) -> int:
+    """Session rows for ONE device — scoped to the test's own discriminator."""
     with engine.connect() as conn:
         return int(
-            conn.execute(text("SELECT COUNT(*) FROM coord.session_census")).scalar_one()
+            conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM coord.session_census
+                     WHERE device_id = :device
+                    """
+                ),
+                {"device": device},
+            ).scalar_one()
         )
 
 
@@ -271,7 +280,7 @@ def test_coord_session_census_01_shape_key_fk_and_reversal() -> None:
                     _INSERT_SESSION,
                     {"device": _DEVICE, "session": _SESSION, "pid": pid},
                 )
-        assert _session_count(engine) == 2
+        assert _session_count(engine, device=_DEVICE) == 2
         with pytest.raises(IntegrityError):
             with engine.begin() as conn:
                 conn.execute(
@@ -298,7 +307,7 @@ def test_coord_session_census_01_shape_key_fk_and_reversal() -> None:
                 ),
                 {"device": _DEVICE},
             )
-        assert _session_count(engine) == 0
+        assert _session_count(engine, device=_DEVICE) == 0
 
         # 8. Downgrade — both tables and the index gone.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
