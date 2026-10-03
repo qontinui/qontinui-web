@@ -162,6 +162,16 @@ class OverviewSettingsWrite(_WriteModel):
             )
         return sorted(set(v))
 
+    @model_validator(mode="after")
+    def _fx_rates(self) -> OverviewSettingsWrite:
+        # Typed here rather than in the field's annotation so the published
+        # schema keeps its shape; every reader of the column
+        # (``app.costs.fx``) relies on what this admits.
+        from app.costs.fx import validate_settings_rates
+
+        self.fx_rates = validate_settings_rates(self.fx_rates, self.base_currency)
+        return self
+
 
 # ---------------------------------------------------------------------------
 # The content graph — phases, tasks, efforts, roles, tiers, cost lines, breaks

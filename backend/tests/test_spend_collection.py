@@ -817,7 +817,13 @@ class TestRecurringViews:
 
 
 class TestCurrencyAndCeiling:
-    async def test_a_recurring_cost_in_another_currency_is_refused(self, admin) -> None:
+    async def test_a_recurring_cost_in_another_currency_is_named_not_summed(
+        self, admin
+    ) -> None:
+        """Accepted since authoring-layer Phase 5 (the costs summary converts
+        it to the base currency); THIS read applies no FX, so it leaves the
+        figure out and names the vendor partial — never sums euros as
+        dollars."""
         vendor = await _vendor(admin, "Workspace", None, "saas")
         resp = await admin.post(
             f"{SPEND}/recurring-costs",
@@ -830,15 +836,28 @@ class TestCurrencyAndCeiling:
                 "start_date": "2026-09-01",
             },
         )
-        assert resp.status_code == 422
-        assert resp.json()["error"] == "unsupported_currency"
+        assert resp.status_code == 201, resp.text
+        summary = await _summary(admin, **{"from": "2026-09-01", "to": "2026-09-30"})
+        assert summary["totals"]["net_micros"] == 0
+        assert summary["totals"]["partial"] is True
+        assert summary["totals"]["unknown_vendors"] == ["Workspace"]
 
-    async def test_a_rule_in_another_currency_is_refused(self, admin) -> None:
+    async def test_a_vendor_rule_in_another_currency_is_refused(self, admin) -> None:
+        vendor = await _vendor(admin)
         resp = await admin.post(
-            f"{SPEND}/rules", json={"currency": "EUR", "daily_abs_micros": 1}
+            f"{SPEND}/rules",
+            json={"vendor_id": vendor, "currency": "EUR", "daily_abs_micros": 1},
         )
         assert resp.status_code == 422
         assert resp.json()["error"] == "unsupported_currency"
+
+    async def test_the_org_wide_rule_may_be_in_any_currency(self, admin) -> None:
+        """It is the project's spend limit, evaluated in the base currency."""
+        resp = await admin.post(
+            f"{SPEND}/rules", json={"currency": "EUR", "daily_abs_micros": 1}
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["item"]["currency"] == "EUR"
 
     async def test_series_groups_an_empty_scope_by_description(
         self, async_db_session, admin

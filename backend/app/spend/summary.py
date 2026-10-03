@@ -13,11 +13,12 @@ import calendar
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.overview import (
@@ -51,12 +52,79 @@ class SpendRow:
     product: str | None
     description: str
     currency: str
+    #: The entry's own category (``None`` for a recurring entry, or an entry
+    #: that names none — its vendor's category then applies).
+    category: str | None = None
+    phase_id: UUID | None = None
+    #: The entry's own rate to the base currency (``app.costs.fx``).
+    fx_rate_to_base: Decimal | None = None
+    entry_id: UUID | None = None
 
 
 def month_bounds(day: date) -> tuple[date, date]:
     return day.replace(day=1), day.replace(
         day=calendar.monthrange(day.year, day.month)[1]
     )
+
+
+def spread(
+    amount: int, first: date, last: date, lo: date, hi: date, view: View
+) -> list[tuple[date, int]]:
+    """A multi-day manual entry's figures for each day in ``[lo, hi]``.
+
+    ``charged`` lands the whole amount on ``first`` (the invoice date);
+    ``amortized`` spreads it evenly over ``[first, last]`` in exact integer
+    micros — the per-day parts sum to ``amount``, negative amounts (credits)
+    included — the same split recurring entries use."""
+    if view == "charged":
+        return [(first, amount)] if lo <= first <= hi else []
+    days = (last - first).days + 1
+    out: list[tuple[date, int]] = []
+    day = max(first, lo)
+    stop = min(last, hi)
+    while day <= stop:
+        i = (day - first).days
+        out.append((day, amount * (i + 1) // days - amount * i // days))
+        day += timedelta(days=1)
+    return out
+
+
+def is_spread() -> ColumnElement[bool]:
+    """SQL: a manual entry covering more than one day — spread on read."""
+    return and_(
+        CostEntry.source == "manual", CostEntry.period_end > CostEntry.period_start
+    )
+
+
+def not_spread() -> ColumnElement[bool]:
+    return or_(
+        CostEntry.source != "manual", CostEntry.period_end == CostEntry.period_start
+    )
+
+
+def in_window(start: date, end: date) -> ColumnElement[bool]:
+    """SQL: an entry with a figure on some day of ``[start, end]`` — a
+    one-day entry on its ``period_start``, a spread one anywhere it covers."""
+    return and_(
+        CostEntry.period_start <= end,
+        or_(
+            CostEntry.period_start >= start,
+            and_(is_spread(), CostEntry.period_end >= start),
+        ),
+    )
+
+
+def entry_days(
+    entry: CostEntry, start: date, end: date, view: View
+) -> list[tuple[date, int]]:
+    """One stored entry's figures for the days of ``[start, end]``."""
+    if entry.source == "manual" and entry.period_end > entry.period_start:
+        return spread(
+            entry.amount_micros, entry.period_start, entry.period_end, start, end, view
+        )
+    if start <= entry.period_start <= end:
+        return [(entry.period_start, entry.amount_micros)]
+    return []
 
 
 async def load_rows(
@@ -69,9 +137,10 @@ async def load_rows(
 ) -> list[SpendRow]:
     """Every figure for these vendors with a day in ``[start, end]``.
 
-    Connector and manual entries are stored per day (a multi-day manual entry
-    is placed on its ``period_start``); recurring entries are materialised
-    here under ``view``.
+    Connector entries are stored per day. A manual entry covering several
+    days is spread over them under ``amortized`` and lands on its
+    ``period_start`` under ``charged`` (:func:`spread`); recurring entries
+    are materialised here under ``view``.
     """
     if not vendor_ids:
         return []
@@ -82,8 +151,7 @@ async def load_rows(
                 select(CostEntry).where(
                     CostEntry.tenant_id == tenant_id,
                     CostEntry.vendor_id.in_(vendor_ids),
-                    CostEntry.period_start >= start,
-                    CostEntry.period_start <= end,
+                    in_window(start, end),
                 )
             )
         )
@@ -91,21 +159,28 @@ async def load_rows(
         .all()
     )
     for e in entries:
-        rows.append(
-            SpendRow(
-                day=e.period_start,
-                vendor_id=e.vendor_id,
-                source=e.source,
-                net_micros=e.amount_micros,
-                gross_micros=e.gross_micros,
-                discount_micros=e.discount_micros,
-                scope_label=e.scope_label,
-                sku=e.sku,
-                product=e.product,
-                description=e.description,
-                currency=e.currency,
+        for day, micros in entry_days(e, start, end, view):
+            rows.append(
+                SpendRow(
+                    day=day,
+                    vendor_id=e.vendor_id,
+                    source=e.source,
+                    net_micros=micros,
+                    gross_micros=e.gross_micros if micros == e.amount_micros else None,
+                    discount_micros=(
+                        e.discount_micros if micros == e.amount_micros else None
+                    ),
+                    scope_label=e.scope_label,
+                    sku=e.sku,
+                    product=e.product,
+                    description=e.description,
+                    currency=e.currency,
+                    category=e.category,
+                    phase_id=e.phase_id,
+                    fx_rate_to_base=e.fx_rate_to_base,
+                    entry_id=e.id,
+                )
             )
-        )
     recurring = (
         (
             await db.execute(
@@ -288,9 +363,10 @@ def _window(
     return sum(r.net_micros for r in vrows if lo <= r.day <= hi)
 
 
-#: The one currency every total is in. Recurring entries in any other
-#: currency are refused at write time; a connector row in another currency is
-#: left out of every total and its vendor named as partial.
+#: The one currency every total in THIS read is in. A figure in any other
+#: currency — a connector row, a manual entry or a recurring cost — is left
+#: out of every total here and its vendor named as partial; the costs summary
+#: (``app.costs.summary``) converts them into the project's base currency.
 SUMMARY_CURRENCY = "USD"
 
 
@@ -320,6 +396,7 @@ async def _day_totals(
             CostEntry.currency == SUMMARY_CURRENCY,
             CostEntry.period_start >= start,
             CostEntry.period_start <= end,
+            not_spread(),
         )
         .group_by(
             CostEntry.vendor_id,
@@ -344,8 +421,52 @@ async def _day_totals(
         )
         for vid, day, source, product, net in (await db.execute(stmt)).all()
     ]
+    out.extend(await _spread_rows(db, tenant_id, vendor_ids, start, end, view))
     out.extend(await _recurring_rows(db, tenant_id, vendor_ids, start, end, view))
     return out
+
+
+async def _spread_rows(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vendor_ids: list[UUID],
+    start: date,
+    end: date,
+    view: View,
+) -> list[SpendRow]:
+    """The multi-day manual entries in the summary currency, spread under
+    ``view`` — the rows the SQL aggregates leave out (:func:`_not_spread`)."""
+    entries = (
+        await db.execute(
+            select(CostEntry).where(
+                CostEntry.tenant_id == tenant_id,
+                CostEntry.vendor_id.in_(vendor_ids),
+                CostEntry.currency == SUMMARY_CURRENCY,
+                is_spread(),
+                CostEntry.period_start <= end,
+                CostEntry.period_end >= start,
+            )
+        )
+    ).scalars()
+    rows: list[SpendRow] = []
+    for e in entries:
+        for day, micros in entry_days(e, start, end, view):
+            rows.append(
+                SpendRow(
+                    day=day,
+                    vendor_id=e.vendor_id,
+                    source="manual",
+                    net_micros=micros,
+                    gross_micros=None,
+                    discount_micros=None,
+                    scope_label=e.scope_label,
+                    sku=e.sku,
+                    product=e.product,
+                    description=e.description,
+                    currency=e.currency,
+                )
+            )
+    return rows
 
 
 async def _recurring_rows(
@@ -389,9 +510,13 @@ async def _recurring_rows(
 async def _vendors_with_other_currency(
     db: AsyncSession, tenant_id: UUID, vendor_ids: list[UUID], start: date, end: date
 ) -> set[UUID]:
+    """Vendors with a figure in ``[start, end]`` in a currency other than the
+    summary's — a cost entry, or a recurring cost running in the window.
+    Those figures are in no total here (this read applies no FX; the costs
+    summary, ``app.costs.summary``, converts them to the base currency)."""
     if not vendor_ids:
         return set()
-    return set(
+    entries = set(
         (
             await db.execute(
                 select(CostEntry.vendor_id)
@@ -399,13 +524,31 @@ async def _vendors_with_other_currency(
                     CostEntry.tenant_id == tenant_id,
                     CostEntry.vendor_id.in_(vendor_ids),
                     CostEntry.currency != SUMMARY_CURRENCY,
-                    CostEntry.period_start >= start,
-                    CostEntry.period_start <= end,
+                    in_window(start, end),
                 )
                 .distinct()
             )
         ).scalars()
     )
+    recurring = set(
+        (
+            await db.execute(
+                select(RecurringCost.vendor_id)
+                .where(
+                    RecurringCost.tenant_id == tenant_id,
+                    RecurringCost.vendor_id.in_(vendor_ids),
+                    RecurringCost.currency != SUMMARY_CURRENCY,
+                    RecurringCost.start_date <= end,
+                    or_(
+                        RecurringCost.end_date.is_(None),
+                        RecurringCost.end_date >= start,
+                    ),
+                )
+                .distinct()
+            )
+        ).scalars()
+    )
+    return entries | recurring
 
 
 async def _series(
@@ -457,6 +600,7 @@ async def _series(
             CostEntry.currency == SUMMARY_CURRENCY,
             CostEntry.period_start >= start,
             CostEntry.period_start <= end,
+            not_spread(),
         )
         .group_by(key, CostEntry.vendor_id, CostEntry.source)
     )
@@ -472,20 +616,26 @@ async def _series(
             discount_micros=None if disc_nulls else int(disc),
             source=source,
         )
-    for row in await _recurring_rows(db, tenant_id, vendor_ids, start, end, view):
+    folded = await _spread_rows(db, tenant_id, vendor_ids, start, end, view)
+    folded += await _recurring_rows(db, tenant_id, vendor_ids, start, end, view)
+    for row in folded:
         k = _group_key(row, group_by)
-        point = points.get((k, str(row.vendor_id), "recurring"))
+        point = points.get((k, str(row.vendor_id), row.source))
         if point is None:
-            points[(k, str(row.vendor_id), "recurring")] = SeriesPoint(
+            points[(k, str(row.vendor_id), row.source)] = SeriesPoint(
                 key=k,
                 vendor_id=str(row.vendor_id),
                 net_micros=row.net_micros,
                 gross_micros=None,
                 discount_micros=None,
-                source="recurring",
+                source=row.source,
             )
         else:
             point.net_micros += row.net_micros
+            # A spread part carries no gross/discount, so the group's sum of
+            # either is no longer known.
+            point.gross_micros = None
+            point.discount_micros = None
     return [points[k] for k in sorted(points)]
 
 

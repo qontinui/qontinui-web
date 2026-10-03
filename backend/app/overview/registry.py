@@ -15,6 +15,18 @@ without audit or permissions.
 
 from __future__ import annotations
 
+from app.costs.effort import (
+    EffortEntryCreate,
+    EffortEntryRead,
+    EffortEntryUpdate,
+    effort_entry_store,
+)
+from app.costs.entries import (
+    CostEntryCreate,
+    CostEntryRead,
+    CostEntryUpdate,
+    cost_entry_store,
+)
 from app.overview.estimates import estimate_store
 from app.overview.files import FileRead, file_store
 from app.overview.intent_documents import (
@@ -197,6 +209,63 @@ REGISTRY: dict[str, ResourceSpec] = {
             tables=("recurring_costs",),
         ),
         ResourceSpec(
+            name="cost_entries",
+            path="costs/entries",
+            title="Cost entries",
+            description=(
+                "Costs as entered from an invoice (source manual: fully "
+                "editable) and as providers reported them (source connector / "
+                "recurring: only phase_id and fx_rate_to_base can change, 422 "
+                "provider_reported_field; DELETE is 409 provider_reported). "
+                "Amount is signed integer micros in currency; fx_rate_to_base "
+                "is base units per unit of currency. A multi-day entry is "
+                "spread per day in the amortized view. Filters: vendor_id, "
+                "phase_id (or 'none'), source, from, to, limit (default 500, "
+                "at most 5000; every row: GET /costs/ledger)."
+            ),
+            permission="project_admin",
+            read_model=CostEntryRead,
+            create_model=CostEntryCreate,
+            update_model=CostEntryUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("vendor_id", "phase_id", "source", "from", "to", "limit"),
+            store=cost_entry_store,
+            tables=("cost_entries",),
+        ),
+        ResourceSpec(
+            name="effort_entries",
+            path="costs/effort-entries",
+            title="Logged time",
+            description=(
+                "Time worked on the project, in hours (at most 24 per person "
+                "per day). Any member may log, edit and delete their own time; "
+                "whoever may edit the overview may write anybody's (403 "
+                "not_your_entry otherwise; 'editable' on every entry says "
+                "which). Time for someone else is named by 'person' (free "
+                "text) or by account (person_user_id) — by account only for a "
+                "project admin, since coord answers membership to admins only "
+                "(422 membership_unverified otherwise; 422 not_a_member for a "
+                "non-member). Under labour_billing day_rates an entry names its "
+                "role_code and is priced from the baseline estimate's day rate "
+                "when logged (422 role_not_priced when it has none); the rate "
+                "is kept on the entry so later rate edits do not rewrite "
+                "history. Filters: from, to, phase_id (or 'none'), "
+                "person_user_id, mine=true, limit (default 500, at most "
+                "5000; every row: GET /costs/ledger)."
+            ),
+            permission="member_self",
+            read_model=EffortEntryRead,
+            create_model=EffortEntryCreate,
+            update_model=EffortEntryUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("from", "to", "phase_id", "person_user_id", "mine", "limit"),
+            store=effort_entry_store,
+            tables=("effort_entries",),
+            # Per-caller, not part of the record: who may edit it depends on
+            # who is reading.
+            audit_derived=frozenset({"editable"}),
+        ),
+        ResourceSpec(
             name="settings",
             path="settings",
             title="Project settings",
@@ -219,10 +288,6 @@ REGISTRY: dict[str, ResourceSpec] = {
 #: exhaustiveness test.
 EXCLUDED_TABLES: dict[str, str] = {
     "change_log": "the audit trail itself — every resource writes it, none edits it",
-    "cost_entries": (
-        "connector-written until authoring-layer Phase 5 adds manual entries "
-        "(POST /spend/ingest/{connector} writes them)"
-    ),
     "cost_import_runs": "system-written: one row per ingest attempt",
     "spend_alerts": "system-written by the spend_evaluate scheduler task",
     "spend_push_deliveries": "system-written: the alert pushes and their receipts",
