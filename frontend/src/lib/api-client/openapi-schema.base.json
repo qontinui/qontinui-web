@@ -85652,6 +85652,56 @@
         ]
       }
     },
+    "/api/v1/operations/alerts/fault-to-visibility": {
+      "get": {
+        "description": "Return coord's fault-to-visibility interval per alert kind.\n\nProxies coord ``GET /coord/alerts/fault-to-visibility`` (plan\n``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``\nPhase 4, G1). The interval is ``visible_at - onset_at`` over\n``coord.alerts`` episodes: how long a fault existed before anyone who can\nact on it could see it. p50/p90 are computed per kind **only over\nepisodes whose onset is known**, and coord ships ``onset_known_n`` beside\n``episodes_n`` so that share is read as the headline next to the\npercentile, never dropped. An episode whose ``onset_basis`` is ``none``\ncounts in ``episodes_n`` and not in the percentile \u2014 its onset is\nUNKNOWN, and ``first_seen_at`` is never substituted for it (that would\nreport a zero interval for exactly the faults this read exists to find).\nA ``null`` percentile is \"no known-onset episode\", not zero seconds.\n\n``window`` is forwarded verbatim when set; coord owns its grammar and its\ndefault, and a value it cannot parse comes back as coord's own 4xx rather\nthan being re-validated (and eventually mis-validated) here. The body is\npassed through untouched \u2014 no ``response_model`` \u2014 so a field coord adds\nreaches the console without a change in this module.",
+        "operationId": "api_v1_operations_alerts_fault_to_visibility_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Alerts Fault To Visibility Api V1 Operations Alerts Fault To Visibility Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Alerts Fault To Visibility",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/ci-status": {
       "get": {
         "description": "Return per-repo CI status for the caller's tenant.\n\nProxies coord's ``GET /coord/ci/status`` with the\n``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from\n``coord.tenant_repos`` for the tenant, so an operator with no\nregistered repos gets ``{\"repos\": []}`` \u2014 never 4xx.\n\nWire shape (coord ``CiStatusResponse``)::\n\n    { \"repos\": [RepoCiRow, ...] }",
@@ -90616,6 +90666,56 @@
           }
         },
         "summary": "Get Device Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/domain-cost": {
+      "get": {
+        "description": "Return coord's per-autonomy-domain cost ledger.\n\nProxies coord ``GET /coord/domain-cost`` (plan\n``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``\nPhase 2), the read the ``/overview`` Intent section's \"Domain cost\" card\nrenders. Per domain in the tenant's autonomy-domain roster (a\n``steering/autonomy-domains.toml`` coord reads from its repo mirror,\nnamed in the response's ``roster_source``) and for ``shared``, coord\nreports work units by\nstatus class, wall-clock, PRs, sessions, operator touches and tokens, each\nin the ``{value, coverage_n, population_n, basis}`` shape; the marginal\ncost ratio ``R`` per dimension with its coverage floor; and a ``verdict``\nby fixed comparison. Beside them: ``unmapped_areas``,\n``unattributed_units_n``, ``roster_source`` and ``computed_at``.\n\nUnknown is first-class on this wire and the proxy preserves it: a\ndimension with no producer arrives as ``value: null`` with a ``reason``\n(``tokens`` and the session-trailer arm ship ``\"no_producer\"``), a\ndimension below its coverage floor arrives with ``R: null``, and an\nunreadable roster arrives as HTTP 200 with ``roster: null`` plus\n``roster_error`` and every ratio ``null`` \u2014 never an empty domain list. A\ndatabase failure is coord's typed error, raised here, never zeros.\n\n``as_of`` is forwarded verbatim when set; coord owns its grammar. The body\nis passed through untouched \u2014 no ``response_model`` \u2014 so a field coord\nadds reaches the card without a change in this module.",
+        "operationId": "api_v1_operations_domain_cost_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Domain Cost Api V1 Operations Domain Cost Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Domain Cost",
         "tags": [
           "operations"
         ]
