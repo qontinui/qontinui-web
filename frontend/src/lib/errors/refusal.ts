@@ -329,12 +329,20 @@ export function renderNextAction(
   switch (na.kind) {
     case "retry_later": {
       const s = na.retry_after_s;
-      if (s === null) return "Try again later";
-      if (s === 0) return "Try again now";
-      if (s > RETRY_RENDER_CEILING_S) {
-        return "Try again later; the suggested wait is more than two days";
-      }
-      return `Try again in ${humaniseDelay(s)}`;
+      const when =
+        s === null
+          ? "Try again later"
+          : s === 0
+            ? "Try again now"
+            : s > RETRY_RENDER_CEILING_S
+              ? "Try again later; the suggested wait is more than two days"
+              : `Try again in ${humaniseDelay(s)}`;
+      // A target on `retry_later` is what to re-check first: the earlier
+      // attempt may already have taken effect, and a blind retry of a write
+      // can apply it twice.
+      return t !== null
+        ? `${when}, but first check "${t}": the earlier attempt may already have taken effect`
+        : when;
     }
     case "run_command":
       return t !== null
