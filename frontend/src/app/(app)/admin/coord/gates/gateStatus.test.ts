@@ -23,6 +23,7 @@ import {
   GATE_ATTENTION_BY_KIND,
   GATE_AUTHOR_GLYPH_KINDS,
   GATE_KIND_CLASS,
+  isSweepOverdue,
   isTerminalGateVerdict,
   type GateKind,
 } from "./gateStatus";
@@ -87,6 +88,39 @@ describe("the readings the palette audit cannot make", () => {
     expect(
       deriveGateStatus(gate({ verdict: "withdrawn", stale: true })).kind
     ).toBe("withdrawn");
+  });
+
+  it("does NOT read a MUTED or SNOOZED gate as stale — the sweep skips it", () => {
+    // coord flags `stale` on any open gate unevaluated for an hour, but
+    // `run_gate_sweep` skips muted gates and gates snoozed into the future.
+    const now = Date.parse("2026-10-01T00:00:00Z");
+    const muted = gate({ verdict: "open", stale: true, muted: true });
+    expect(isSweepOverdue(muted, now)).toBe(false);
+    expect(deriveGateStatus(muted, now).kind).toBe("pending");
+    expect(deriveGateStatus(muted, now).attention).toBe("none");
+
+    const snoozed = gate({
+      verdict: "open",
+      stale: true,
+      snoozed_until: "2026-10-02T00:00:00Z",
+    });
+    expect(isSweepOverdue(snoozed, now)).toBe(false);
+    expect(deriveGateStatus(snoozed, now).kind).toBe("pending");
+  });
+
+  it("still reads stale once a snooze has EXPIRED, or when it cannot be read", () => {
+    const now = Date.parse("2026-10-01T00:00:00Z");
+    expect(
+      isSweepOverdue(
+        gate({ stale: true, snoozed_until: "2026-09-30T00:00:00Z" }),
+        now
+      )
+    ).toBe(true);
+    expect(
+      isSweepOverdue(gate({ stale: true, snoozed_until: "not-a-date" }), now)
+    ).toBe(true);
+    expect(isSweepOverdue(gate({ stale: true, muted: false }), now)).toBe(true);
+    expect(isSweepOverdue(gate({ stale: false }), now)).toBe(false);
   });
 
   it("keeps `pending` CALM — it is the normal state of a healthy gate", () => {

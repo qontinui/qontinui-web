@@ -199,6 +199,28 @@ describe("GatesTable search + gate-id", () => {
     expect(screen.queryByTestId("gates-archived")).toBeNull();
   });
 
+  it("reads a stale row as overdue only while the sweep owes it one", () => {
+    // `run_gate_sweep` skips a muted gate, so coord's `stale` on it is not an
+    // overdue sweep and must not print the red "not re-evaluated" reading.
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            gate_id: "11111111-1111-1111-1111-111111111111",
+            stale: true,
+          }),
+          gate({
+            gate_id: "22222222-2222-2222-2222-222222222222",
+            stale: true,
+            muted: true,
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getAllByText(/not re-evaluated/)).toHaveLength(1);
+  });
+
   it("renders the gate-class chip when gate_class is set", () => {
     render(
       <GatesTable
