@@ -311,6 +311,11 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
 // The deferral reason grammar
 // ---------------------------------------------------------------------------
 
+/** Bytes as GiB with two decimals — the precision the runner's floors are quoted in. */
+function gib(bytes: string): string {
+  return `${(Number(bytes) / 1024 ** 3).toFixed(2)} GiB`;
+}
+
 /**
  * The COMPLETE `continuation_deferred_reason` vocabulary, transcribed from its
  * producer's own table (`post_continuation_deferred`, qontinui-runner
@@ -341,11 +346,6 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
  * Unrecognised input is returned VERBATIM, never blanked and never guessed at:
  * an unreadable reason the operator can still read beats a confident wrong one.
  */
-/** Bytes as GiB with two decimals — the precision the runner's floors are quoted in. */
-function gib(bytes: string): string {
-  return `${(Number(bytes) / 1024 ** 3).toFixed(2)} GiB`;
-}
-
 export function humanizeDeferralReason(raw: string | null | undefined): string | null {
   const reason = raw?.trim();
   if (!reason) return null;
