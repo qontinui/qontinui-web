@@ -190,13 +190,22 @@ def _parse_id(value: str) -> UUID:
         raise RecordNotFound(value) from exc
 
 
-async def project_member_emails(tenant_id: UUID) -> set[str] | None:
-    """The e-mail addresses of the project's members, lower-cased, as coord
-    answers them for the CALLER (its operator list, read with the caller's
-    own bearer and the active project named) — or ``None`` when coord does
-    not answer (unreachable, or the caller may not list members). ``None`` is
-    UNKNOWN: the caller decides, and an unverifiable member is never
-    assumed."""
+async def project_member_by_subject(tenant_id: UUID, subject: str) -> bool | None:
+    """Whether the coord operator with Cognito subject ``subject`` is a member
+    of the ACTIVE project — or ``None`` when coord does not answer.
+
+    Matched on the SUBJECT, never the e-mail: ``coord.operators`` is unique
+    on ``(sso_provider, sso_subject)`` while its e-mail is neither unique nor
+    stable (a user may rename themselves), so an e-mail match could name the
+    wrong person (coord ``routes_phase3.rs::get_operators_list``; the same
+    match ``app.services.coord_operator_activation`` makes). The
+    ``?sso_subject=`` filter is ANDed with membership coord-side, so at most
+    this one member comes back.
+
+    Coord serves this list to a project ADMIN only (``require_role("admin")``)
+    and offers no member-readable "is X a member" door, so it is read with the
+    caller's own bearer; a refusal or an unreachable coord is ``None`` —
+    UNKNOWN, never assumed either way."""
     from app.api.v1.endpoints.operations import (
         ACTIVE_TENANT_HEADER,
         _proxy_coord_get,
@@ -205,6 +214,7 @@ async def project_member_emails(tenant_id: UUID) -> set[str] | None:
     try:
         body = await _proxy_coord_get(
             "/admin/coord/operators",
+            params={"sso_subject": subject},
             tenant_id=tenant_id,
             headers={ACTIVE_TENANT_HEADER: str(tenant_id)},
         )
@@ -214,11 +224,18 @@ async def project_member_emails(tenant_id: UUID) -> set[str] | None:
     operators = body.get("operators") if isinstance(body, dict) else None
     if not isinstance(operators, list):
         return None
-    return {
-        str(op["email"]).strip().lower()
+    return any(
+        isinstance(op, dict) and str(op.get("sso_subject") or "").strip() == subject
         for op in operators
-        if isinstance(op, dict) and op.get("email")
-    }
+    )
+
+
+#: Why someone other than a project admin cannot name another member by
+#: account — the coord door that answers it is admin-only.
+NAME_BY_PERSON = (
+    "only a project admin can name another member by account (coord answers "
+    "membership to admins only); name them in `person` instead"
+)
 
 
 class EffortEntryStore:
@@ -323,25 +340,39 @@ class EffortEntryStore:
         row.hours_per_day_used = None
 
     async def _check_person(self, ctx: StoreContext, user_id: UUID) -> None:
-        """Time logged FOR someone else names a member of this project."""
+        """Time logged FOR someone else names a member of this project,
+        matched by account subject. Runs BEFORE any row lock is taken: it may
+        call coord."""
         user = await ctx.db.get(User, user_id)
-        if user is None or not user.email:
+        if user is None:
             raise StoreRefused(
                 422, "unknown_person", "There is no such user to log time for."
             )
-        members = await project_member_emails(ctx.access.tenant_id)
-        if members is None:
+        if not ctx.access.can_edit("project_admin"):
+            raise StoreRefused(
+                422,
+                "membership_unverified",
+                f"Whether that user is a member cannot be checked: {NAME_BY_PERSON}.",
+            )
+        subject = (user.cognito_sub or "").strip()
+        if not subject:
+            raise StoreRefused(
+                422,
+                "membership_unverified",
+                "That user has no sign-in account coord can match, so their "
+                "membership cannot be checked; name them in `person` instead.",
+            )
+        member = await project_member_by_subject(ctx.access.tenant_id, subject)
+        if member is None:
             raise StoreRefused(
                 422,
                 "membership_unverified",
                 "Whether that user is a member of this project cannot be checked "
-                "right now; log the time under their name (person) instead.",
+                "right now (coord did not answer); name them in `person` instead.",
             )
-        if user.email.strip().lower() not in members:
+        if not member:
             raise StoreRefused(
-                422,
-                "not_a_member",
-                "That user is not a member of this project.",
+                422, "not_a_member", "That user is not a member of this project."
             )
 
     async def _display_name(self, ctx: StoreContext) -> str | None:
@@ -499,6 +530,18 @@ class EffortEntryStore:
         expected_version: int,
     ) -> tuple[BaseModel, BaseModel]:
         access = ctx.access
+        named = payload.model_dump(exclude_unset=True).get("person_user_id")
+        checked: UUID | None = None
+        if named is not None and named != access.user_id:
+            # The membership check may call coord: never under the row lock.
+            current = await self._load(ctx, record_id)
+            if not editable_by(current, access):
+                raise _not_yours()
+            if not access.can_edit_others(RULE):
+                raise _not_yours()
+            if current.person_user_id != named:
+                await self._check_person(ctx, named)
+                checked = named
         row = await self._load(ctx, record_id, lock=True)
         before = _read(row, access)
         if not editable_by(row, access):
@@ -523,8 +566,11 @@ class EffortEntryStore:
         if (
             changes.get("person_user_id") is not None
             and changes["person_user_id"] != access.user_id
+            and changes["person_user_id"] != checked
         ):
-            await self._check_person(ctx, changes["person_user_id"])
+            # Only reachable when the row moved between the unlocked read and
+            # the lock; refuse rather than call coord under the lock.
+            raise StaleVersion(before)
         settings = await self._settings(ctx)
         role_after = changes.get("role_code", row.role_code)
         # A changed role always re-prices. Under day rates an entry with no

@@ -104575,7 +104575,7 @@
     },
     "/api/v1/overview/costs/ledger": {
       "get": {
-        "description": "Every cost entry, recurring charge and time entry in the window,\nnewest first. JSON is paged (``limit``/``offset``); ``format=csv``\nexports every matching row (up to 100,000, ``X-Ledger-Truncated`` when\nthere were more).",
+        "description": "Every cost entry, recurring charge and time entry in the window,\nnewest first. JSON is paged (``limit``/``offset``, offset at most\n100,000 \u2014 422 ``offset_too_large`` beyond); ``format=csv``\nexports every matching row (up to 100,000, ``X-Ledger-Truncated`` when\nthere were more).",
         "operationId": "api_v1_overview_costs_ledger_get",
         "parameters": [
           {
@@ -104734,12 +104734,13 @@
             }
           },
           {
+            "description": "At most 100,000: deeper than that, narrow the window or the filters (422 offset_too_large).",
             "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
               "default": 0,
-              "maximum": 100000,
+              "description": "At most 100,000: deeper than that, narrow the window or the filters (422 offset_too_large).",
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

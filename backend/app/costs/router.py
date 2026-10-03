@@ -152,14 +152,31 @@ async def read_ledger(
     ),
     format: Literal["json", "csv"] = Query(default="json"),
     limit: int = Query(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE),
-    offset: int = Query(default=0, ge=0, le=MAX_EXPORT_ROWS),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description=f"At most {MAX_EXPORT_ROWS:,}: deeper than that, narrow the "
+        "window or the filters (422 offset_too_large).",
+    ),
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> LedgerPage | Response:
     """Every cost entry, recurring charge and time entry in the window,
-    newest first. JSON is paged (``limit``/``offset``); ``format=csv``
+    newest first. JSON is paged (``limit``/``offset``, offset at most
+    100,000 — 422 ``offset_too_large`` beyond); ``format=csv``
     exports every matching row (up to 100,000, ``X-Ledger-Truncated`` when
     there were more)."""
+    if offset > MAX_EXPORT_ROWS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "offset_too_large",
+                "message": (
+                    f"offset is at most {MAX_EXPORT_ROWS:,}; narrow the window "
+                    "(from/to) or the filters to reach older rows."
+                ),
+            },
+        )
     end = to or _now().astimezone(UTC).date()
     start = from_ or end - timedelta(days=365)
     _window(start, end)

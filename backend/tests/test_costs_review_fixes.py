@@ -448,16 +448,18 @@ async def test_outside_day_rates_a_role_change_reprices_and_nothing_wipes(
 
 
 async def test_time_for_someone_else_names_a_member(
-    admin, users, monkeypatch: pytest.MonkeyPatch
+    admin, users, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import app.costs.effort as effort
 
-    members: set[str] | None = set()
+    answer: bool | None = False
+    asked: list[str] = []
 
-    async def lookup(tenant_id: UUID) -> set[str] | None:
-        return members
+    async def lookup(tenant_id: UUID, subject: str) -> bool | None:
+        asked.append(subject)
+        return answer
 
-    monkeypatch.setattr(effort, "project_member_emails", lookup)
+    monkeypatch.setattr(effort, "project_member_by_subject", lookup)
     base = f"{API}/costs/effort-entries"
     body = {
         "work_date": "2026-09-14",
@@ -465,16 +467,89 @@ async def test_time_for_someone_else_names_a_member(
         "person_user_id": str(users["ann"].id),
         "person": "Ann",
     }
+    # No sign-in subject: nothing coord could match, so not checkable.
+    no_sub = await admin.post(base, json=body)
+    assert no_sub.json()["error"] == "membership_unverified" and asked == []
+    users["ann"].cognito_sub = "sub-ann"
+    await async_db_session.commit()
     refused = await admin.post(base, json=body)
     assert refused.json()["error"] == "not_a_member"
-    members = None
+    assert asked == ["sub-ann"]
+    answer = None
     unknown = await admin.post(base, json=body)
     assert unknown.json()["error"] == "membership_unverified"
     nobody = await admin.post(base, json={**body, "person_user_id": str(uuid4())})
     assert nobody.json()["error"] == "unknown_person"
-    members = {users["ann"].email.lower()}
+    answer = True
     ok = await admin.post(base, json=body)
     assert ok.status_code == 201, ok.text
+
+
+async def test_a_non_admin_editor_names_others_by_person_only(
+    admin, ann, users, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.costs.effort as effort
+
+    called: list[str] = []
+
+    async def lookup(tenant_id: UUID, subject: str) -> bool | None:
+        called.append(subject)
+        return True
+
+    monkeypatch.setattr(effort, "project_member_by_subject", lookup)
+    users["admin"].cognito_sub = "sub-admin"
+    await async_db_session.commit()
+    await _settings(admin, editing_roles=["admin", "operator"])
+    base = f"{API}/costs/effort-entries"
+    by_account = await ann.post(
+        base,
+        json={
+            "work_date": "2026-09-14",
+            "hours": "1",
+            "person_user_id": str(users["admin"].id),
+        },
+    )
+    assert by_account.json()["error"] == "membership_unverified"
+    assert "only a project admin" in by_account.json()["message"]
+    assert called == []  # coord would refuse a non-admin anyway
+    by_name = await ann.post(
+        base, json={"work_date": "2026-09-14", "hours": "1", "person": "Carol"}
+    )
+    assert by_name.status_code == 201, by_name.text
+
+
+async def test_the_membership_check_runs_before_the_row_lock(
+    admin, ann, users, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.costs.effort as effort
+    from app.costs.effort import EffortEntryStore
+
+    users["ann"].cognito_sub = "sub-ann"
+    await async_db_session.commit()
+    base = f"{API}/costs/effort-entries"
+    item = (
+        await admin.post(base, json={"work_date": "2026-09-14", "hours": "1"})
+    ).json()["item"]
+    events: list[str] = []
+    real_load = EffortEntryStore._load
+
+    async def load(self: Any, ctx: Any, record_id: str, *, lock: bool = False) -> Any:
+        events.append("lock" if lock else "read")
+        return await real_load(self, ctx, record_id, lock=lock)
+
+    async def lookup(tenant_id: UUID, subject: str) -> bool | None:
+        events.append("coord")
+        return True
+
+    monkeypatch.setattr(EffortEntryStore, "_load", load)
+    monkeypatch.setattr(effort, "project_member_by_subject", lookup)
+    moved = await admin.patch(
+        f"{base}/{item['id']}",
+        json={"person_user_id": str(users["ann"].id)},
+        headers={"If-Match": '"1"'},
+    )
+    assert moved.status_code == 200, moved.text
+    assert events.index("coord") < events.index("lock")
 
 
 # 8 ---------------------------------------------------------------------------
@@ -548,28 +623,70 @@ async def test_a_vanished_phase_is_unknown_phase_not_name_taken(
     assert resp.json()["error"] == "unknown_phase"
 
 
-async def test_the_member_lookup_reads_coords_operators_and_never_guesses(
+async def test_the_member_lookup_matches_the_subject_never_the_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import app.api.v1.endpoints.operations as operations
-    from app.costs.effort import project_member_emails
+    from app.costs.effort import project_member_by_subject
 
     seen: dict[str, Any] = {}
+    rows: list[dict[str, Any]] = []
 
     async def answer(path: str, **kwargs: Any) -> Any:
         seen.update(path=path, **kwargs)
-        return {"operators": [{"email": " Ann@Example.com "}, {"email": None}]}
+        return {"operators": rows}
 
     monkeypatch.setattr(operations, "_proxy_coord_get", answer)
-    assert await project_member_emails(TENANT_A) == {"ann@example.com"}
+    # Same e-mail, another account: not this member.
+    rows[:] = [{"email": "ann@example.com", "sso_subject": "sub-other"}]
+    assert await project_member_by_subject(TENANT_A, "sub-ann") is False
     assert seen["path"] == "/admin/coord/operators"
+    assert seen["params"] == {"sso_subject": "sub-ann"}
     assert seen["headers"] == {"X-Qontinui-Active-Tenant": str(TENANT_A)}
+    rows[:] = [{"email": "renamed@example.com", "sso_subject": "sub-ann"}]
+    assert await project_member_by_subject(TENANT_A, "sub-ann") is True
 
     async def refuse(path: str, **kwargs: Any) -> Any:
         raise RuntimeError("403 from coord")
 
     monkeypatch.setattr(operations, "_proxy_coord_get", refuse)
-    assert await project_member_emails(TENANT_A) is None
+    assert await project_member_by_subject(TENANT_A, "sub-ann") is None
+
+
+# Round 2 ---------------------------------------------------------------------
+
+
+async def test_the_ledger_offset_cap_is_stated(admin) -> None:
+    resp = await admin.get(f"{API}/costs/ledger", params={"offset": 100_001})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "offset_too_large"
+    assert "100,000" in resp.json()["detail"]["message"]
+
+
+async def test_a_provider_row_editing_its_reference_gets_the_provider_error(
+    admin, async_db_session: AsyncSession
+) -> None:
+    from app.models.overview import CostEntry
+
+    vendor = await _vendor(admin)
+    row = CostEntry(
+        tenant_id=TENANT_A,
+        vendor_id=UUID(vendor),
+        source="connector",
+        source_ref="aws:1:2026-09-02:EC2",
+        amount_micros=M,
+        currency="USD",
+        period_start=date(2026, 9, 2),
+        period_end=date(2026, 9, 2),
+    )
+    async_db_session.add(row)
+    await async_db_session.commit()
+    resp = await admin.patch(
+        f"{API}/costs/entries/{row.id}",
+        json={"source_ref": "github:x"},
+        headers={"If-Match": '"1"'},
+    )
+    assert resp.json()["error"] == "provider_reported_field"
 
 
 # 11 --------------------------------------------------------------------------

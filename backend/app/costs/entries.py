@@ -359,8 +359,6 @@ class CostEntryStore:
         ):
             # The entry's rate was a rate FOR its old currency.
             changes["fx_rate_to_base"] = None
-        if "source_ref" in changes:
-            _check_reference(changes["source_ref"])
         if row.source != "manual":
             refused = sorted(set(changes) - PROVIDER_EDITABLE)
             if refused:
@@ -371,6 +369,8 @@ class CostEntryStore:
                     f"only phase_id and fx_rate_to_base can change, not "
                     f"{', '.join(refused)}.",
                 )
+        if "source_ref" in changes:
+            _check_reference(changes["source_ref"])
         if not changes:
             return before, before
         if "vendor_id" in changes:
