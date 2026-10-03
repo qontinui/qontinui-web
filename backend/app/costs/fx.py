@@ -78,6 +78,11 @@ def validate_settings_rates(raw: Mapping[str, Any], base_currency: str) -> dict:
             )
         if code in out:
             raise ValueError(f"fx_rates names {code} twice")
+        if not isinstance(value, Mapping):
+            # The legacy bare-number shape ({"USD": 0.92}) — the one shape the
+            # reader also accepts — is normalised rather than refused, so a
+            # settings save that round-trips stored legacy data still works.
+            value = {"rate": value}
         try:
             rate = FxRate.model_validate(value)
         except ValidationError as exc:

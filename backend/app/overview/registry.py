@@ -246,19 +246,20 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "when logged (422 role_not_priced when it has none); the rate "
                 "is kept on the entry so later rate edits do not rewrite "
                 "history. Filters: from, to, phase_id (or 'none'), "
-                "person_user_id, mine=true."
+                "person_user_id, mine=true, limit (default 500, at most "
+                "5000; every row: GET /costs/ledger)."
             ),
             permission="member_self",
             read_model=EffortEntryRead,
             create_model=EffortEntryCreate,
             update_model=EffortEntryUpdate,
             operations=frozenset({"list", "get", "create", "update", "delete"}),
-            list_filters=("from", "to", "phase_id", "person_user_id", "mine"),
+            list_filters=("from", "to", "phase_id", "person_user_id", "mine", "limit"),
             store=effort_entry_store,
             tables=("effort_entries",),
             # Per-caller, not part of the record: who may edit it depends on
             # who is reading.
-            audit_exclude=frozenset({"editable"}),
+            audit_derived=frozenset({"editable"}),
         ),
         ResourceSpec(
             name="settings",

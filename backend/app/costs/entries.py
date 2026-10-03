@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.costs.fx import Rate
+from app.costs.integrity import refusal_for
 from app.models.overview import CostEntry, Phase, Vendor
 from app.overview.resource import (
     ListResult,
@@ -41,6 +42,7 @@ from app.overview.resource import (
     StoreRefused,
 )
 from app.schemas.overview import MAX_MICROS, _WriteModel
+from app.spend.connectors import CONNECTOR_REF_NAMESPACES
 from app.spend.resources import Currency, VendorCategory
 
 #: A cost may be a credit or a refund, so the amount is signed; the bound is
@@ -162,6 +164,22 @@ def _read(row: CostEntry) -> CostEntryRead:
     )
 
 
+def _check_reference(source_ref: str | None) -> None:
+    """A manual reference may not look like a provider's: the ingest door
+    upserts on ``(vendor, source_ref)``, and an entry entered by hand must
+    never stand where a provider line will arrive (nor be mistaken for one)."""
+    if source_ref is None:
+        return
+    namespace, sep, _ = source_ref.partition(":")
+    if sep and namespace.strip().lower() in CONNECTOR_REF_NAMESPACES:
+        raise StoreRefused(
+            422,
+            "reserved_reference",
+            f"References starting {namespace}: are how provider imports name "
+            "their lines; use another reference for an entry entered by hand.",
+        )
+
+
 def _parse_id(value: str) -> UUID:
     try:
         return UUID(value)
@@ -227,11 +245,7 @@ class CostEntryStore:
                     ctx.db.add(add)
                 await ctx.db.flush()
         except IntegrityError as exc:
-            raise StoreRefused(
-                409,
-                "name_taken",
-                "This vendor already has an entry with that reference.",
-            ) from exc
+            raise refusal_for(exc) from exc
 
     async def list(
         self, ctx: StoreContext, filters: dict[str, list[str]]
@@ -294,6 +308,7 @@ class CostEntryStore:
         assert isinstance(payload, CostEntryCreate)
         await self._check_vendor(ctx, payload.vendor_id)
         await self._check_phase(ctx, payload.phase_id)
+        _check_reference(payload.source_ref)
         row = CostEntry(
             tenant_id=ctx.access.tenant_id,
             vendor_id=payload.vendor_id,
@@ -337,6 +352,15 @@ class CostEntryStore:
             # A one-day entry: it ends where it starts.
             changes["period_end"] = changes.get("period_start") or row.period_start
         changes = {k: v for k, v in changes.items() if getattr(row, k) != v}
+        if (
+            "currency" in changes
+            and "fx_rate_to_base" not in payload.model_fields_set
+            and row.fx_rate_to_base is not None
+        ):
+            # The entry's rate was a rate FOR its old currency.
+            changes["fx_rate_to_base"] = None
+        if "source_ref" in changes:
+            _check_reference(changes["source_ref"])
         if row.source != "manual":
             refused = sorted(set(changes) - PROVIDER_EDITABLE)
             if refused:
@@ -353,9 +377,14 @@ class CostEntryStore:
             await self._check_vendor(ctx, changes["vendor_id"])
         if "phase_id" in changes:
             await self._check_phase(ctx, changes["phase_id"])
+        # Every check runs on the would-be values BEFORE anything is applied,
+        # so a refusal leaves the row exactly as it was loaded.
+        if changes.get("period_end", row.period_end) < changes.get(
+            "period_start", row.period_start
+        ):
+            raise StoreRefused(422, "bad_period", "period_end is before period_start.")
         for key, value in changes.items():
             setattr(row, key, value)
-        self._check_period(row)
         row.version = (row.version or 1) + 1
         row.updated_by = ctx.access.actor
         await self._flush(ctx)

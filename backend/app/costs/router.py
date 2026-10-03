@@ -152,7 +152,7 @@ async def read_ledger(
     ),
     format: Literal["json", "csv"] = Query(default="json"),
     limit: int = Query(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=MAX_EXPORT_ROWS),
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> LedgerPage | Response:
@@ -174,21 +174,19 @@ async def read_ledger(
                     "message": "phase_id is a phase id or 'none'.",
                 },
             ) from exc
-    rows, fx, base_currency, billing = await ledger_rows(
-        db,
-        access,
-        LedgerQuery(
-            start=start,
-            end=end,
-            kinds=_KINDS[kind],
-            vendor_id=vendor_id,
-            category=category,
-            phase=phase_id,
-            source=source,
-        ),
+    query = LedgerQuery(
+        start=start,
+        end=end,
+        kinds=_KINDS[kind],
+        vendor_id=vendor_id,
+        category=category,
+        phase=phase_id,
+        source=source,
     )
     if format == "csv":
-        exported = rows[:MAX_EXPORT_ROWS]
+        exported, total, _fx, base_currency, _billing = await ledger_rows(
+            db, access, query, limit=MAX_EXPORT_ROWS
+        )
         headers = {
             "Content-Disposition": (
                 f'attachment; filename="ledger-{start.isoformat()}-'
@@ -196,20 +194,23 @@ async def read_ledger(
             ),
             "X-Ledger-Rows": str(len(exported)),
         }
-        if len(rows) > len(exported):
-            headers["X-Ledger-Truncated"] = str(len(rows) - len(exported))
+        if total > len(exported):
+            headers["X-Ledger-Truncated"] = str(total - len(exported))
         return Response(
             content=to_csv(exported, base_currency),
             media_type="text/csv; charset=utf-8",
             headers=headers,
         )
+    rows, total, fx, base_currency, billing = await ledger_rows(
+        db, access, query, limit=limit, offset=offset
+    )
     return LedgerPage(
         base_currency=base_currency,
         labour_billing=billing,
         **{"from": start},
         to=end,
-        rows=rows[offset : offset + limit],
-        total_rows=len(rows),
+        rows=rows,
+        total_rows=total,
         offset=offset,
         limit=limit,
         fx_applied=fx.applied(),

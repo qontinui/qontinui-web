@@ -498,11 +498,16 @@ async def evaluate_tenant(
     start = min(today - timedelta(days=window + FIRST_RUN_GUARD_DAYS + 1), month_start)
     ids = [v.id for v in vendors]
     fresh = await vendor_freshness(db, tenant_id, vendors, now, since=start)
-    # Rules are in the summary currency; a figure in another currency is never
-    # summed into one (recurring entries in another currency are refused at
-    # write time, so only a connector could carry one).
+    # A vendor's rules are in the summary currency and read its CONNECTOR rows
+    # only, so only a connector row in another currency makes them unknown. A
+    # manual entry or recurring cost in another currency is not what they read
+    # and must not switch them off (the org-wide rule converts those itself).
     loaded = await load_rows(db, tenant_id, ids, start, today, "amortized")
-    foreign = {r.vendor_id for r in loaded if r.currency != SUMMARY_CURRENCY}
+    foreign = {
+        r.vendor_id
+        for r in loaded
+        if r.source == "connector" and r.currency != SUMMARY_CURRENCY
+    }
     report.unknown_currency = sorted(v.name for v in vendors if v.id in foreign)
     if foreign:
         logger.warning(

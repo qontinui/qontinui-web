@@ -127,10 +127,12 @@ async def ingest_payload(
                 )
                 run.rows_upserted = 0
             else:
-                run.rows_upserted = await _upsert(
+                run.rows_upserted, collided = await _upsert(
                     db, tenant_id, vendor.id, run.id, batch, source
                 )
             notices = list(batch.notices)
+            if batch.granularity != "month" and collided:
+                notices.append(_collision_notice(collided))
             # Only a SERVER pull may act on the tenant's own rows: a pushed
             # payload (an import token) must not rewrite a recurring cost,
             # which the API reserves for a project admin.
@@ -219,7 +221,13 @@ async def _upsert(
     run_id: UUID,
     batch: NormalisedBatch,
     actor: str,
-) -> int:
+) -> tuple[int, list[str]]:
+    """Upsert the batch; returns ``(rows written, refs left untouched)``.
+
+    A provider line whose ``source_ref`` is already held by an entry the
+    project ENTERED BY HAND (``source != connector``) is never written over:
+    the ``ON CONFLICT`` update applies to connector rows only, and the refs it
+    skipped are returned for the run's notices."""
     refs = [e.source_ref for e in batch.entries]
     prefixes = [p for p in (batch.ref_prefix, *batch.extra_ref_prefixes) if p]
     for prefix in prefixes:
@@ -234,7 +242,7 @@ async def _upsert(
             stale = stale.where(CostEntry.source_ref.not_in(refs))
         await db.execute(stale)
     if not batch.entries:
-        return 0
+        return 0, []
     values = [
         {
             "tenant_id": tenant_id,
@@ -260,9 +268,22 @@ async def _upsert(
         }
         for e in batch.entries
     ]
+    written: set[str] = set()
     for start in range(0, len(values), _INSERT_CHUNK):
-        await _upsert_chunk(db, values[start : start + _INSERT_CHUNK])
-    return len(values)
+        written |= await _upsert_chunk(db, values[start : start + _INSERT_CHUNK])
+    skipped = sorted({str(v["source_ref"]) for v in values} - written)
+    return len(written), skipped
+
+
+def _collision_notice(refs: list[str]) -> str:
+    shown = ", ".join(refs[:3]) + (
+        f" and {len(refs) - 3} more" if len(refs) > 3 else ""
+    )
+    return (
+        f"{len(refs)} provider line(s) were not stored: an entry entered by hand "
+        f"already uses the same reference ({shown}). Rename that entry's "
+        "reference to let the provider's figure in."
+    )
 
 
 #: Rows per INSERT: 20 binds a row stays far under asyncpg's 32,767 limit.
@@ -289,7 +310,8 @@ _PROVIDER_FIELDS: tuple[str, ...] = (
 )
 
 
-async def _upsert_chunk(db: AsyncSession, values: list[dict[str, Any]]) -> None:
+async def _upsert_chunk(db: AsyncSession, values: list[dict[str, Any]]) -> set[str]:
+    """Insert or update one chunk; returns the refs actually written."""
     stmt = insert(CostEntry).values(values)
     table = CostEntry.__table__.c
     updated: dict[str, Any] = {
@@ -310,11 +332,22 @@ async def _upsert_chunk(db: AsyncSession, values: list[dict[str, Any]]) -> None:
         ),
         else_=func.coalesce(table.version, 1),
     )
-    await db.execute(
-        stmt.on_conflict_do_update(
-            constraint="uq_overview_cost_entries_source_ref", set_=updated
-        )
+    # A project's rate for the entry is a rate FOR ITS CURRENCY: when the
+    # provider restates the line in another currency the rate no longer
+    # applies, and keeping it would convert the new amount at the old rate.
+    updated["fx_rate_to_base"] = case(
+        (table.currency.is_distinct_from(stmt.excluded.currency), None),
+        else_=table.fx_rate_to_base,
     )
+    result = await db.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_overview_cost_entries_source_ref",
+            set_=updated,
+            # Never over a row entered by hand that shares the reference.
+            where=table.source == "connector",
+        ).returning(CostEntry.source_ref)
+    )
+    return {str(ref) for ref in result.scalars()}
 
 
 async def _reconcile(

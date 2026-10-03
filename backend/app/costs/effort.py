@@ -32,9 +32,13 @@ from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
+from app.costs.entries import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
+from app.costs.integrity import refusal_for
 from app.costs.labour import entry_cost_micros, person_key
 from app.crud import overview_settings
 from app.models.overview import (
@@ -45,6 +49,7 @@ from app.models.overview import (
     OverviewSettings,
     Phase,
 )
+from app.models.user import User
 from app.overview.permissions import OverviewAccess, PermissionRule
 from app.overview.precision import numeric
 from app.overview.resource import (
@@ -55,6 +60,8 @@ from app.overview.resource import (
     StoreRefused,
 )
 from app.schemas.overview import _WriteModel
+
+logger = structlog.get_logger(__name__)
 
 Hours = Annotated[Decimal, numeric(5, 2, gt=0, le=MAX_HOURS_PER_DAY)]
 
@@ -183,6 +190,37 @@ def _parse_id(value: str) -> UUID:
         raise RecordNotFound(value) from exc
 
 
+async def project_member_emails(tenant_id: UUID) -> set[str] | None:
+    """The e-mail addresses of the project's members, lower-cased, as coord
+    answers them for the CALLER (its operator list, read with the caller's
+    own bearer and the active project named) — or ``None`` when coord does
+    not answer (unreachable, or the caller may not list members). ``None`` is
+    UNKNOWN: the caller decides, and an unverifiable member is never
+    assumed."""
+    from app.api.v1.endpoints.operations import (
+        ACTIVE_TENANT_HEADER,
+        _proxy_coord_get,
+    )
+
+    try:
+        body = await _proxy_coord_get(
+            "/admin/coord/operators",
+            tenant_id=tenant_id,
+            headers={ACTIVE_TENANT_HEADER: str(tenant_id)},
+        )
+    except Exception:  # noqa: BLE001 — any refusal is "cannot tell"
+        logger.info("effort_member_lookup_unavailable", tenant_id=str(tenant_id))
+        return None
+    operators = body.get("operators") if isinstance(body, dict) else None
+    if not isinstance(operators, list):
+        return None
+    return {
+        str(op["email"]).strip().lower()
+        for op in operators
+        if isinstance(op, dict) and op.get("email")
+    }
+
+
 class EffortEntryStore:
     async def _settings(self, ctx: StoreContext) -> OverviewSettings:
         row = await overview_settings.get_settings(
@@ -220,12 +258,17 @@ class EffortEntryStore:
     async def _price(
         self, ctx: StoreContext, row: EffortEntry, settings: OverviewSettings
     ) -> None:
-        """Snapshot what the entry costs, or clear the snapshot when labour is
-        not billed by day rate."""
-        if settings.labour_billing != "day_rates":
-            row.rate_micros_used = None
-            row.rate_currency = None
-            row.hours_per_day_used = None
+        """Snapshot what the entry costs at its role's rate today.
+
+        Under ``day_rates`` the price is required: no role, or a role the
+        baseline does not price, is refused. Under any other setting this runs
+        only when the entry's ROLE changes: the old snapshot no longer
+        describes it, so it is replaced by the new role's rate where the
+        baseline has one and cleared where it does not — never refused, since
+        nothing is billed by it now."""
+        strict = settings.labour_billing == "day_rates"
+        if row.role_code is None and not strict:
+            self._clear_price(row)
             return
         if row.role_code is None:
             raise StoreRefused(
@@ -255,6 +298,9 @@ class EffortEntryStore:
             or role.day_rate_micros is None
             or role.currency is None
         ):
+            if not strict:
+                self._clear_price(row)
+                return
             where = (
                 "the baseline estimate has no such role"
                 if role is None
@@ -269,6 +315,52 @@ class EffortEntryStore:
         row.rate_micros_used = role.day_rate_micros
         row.rate_currency = role.currency
         row.hours_per_day_used = Decimal(settings.hours_per_day)
+
+    @staticmethod
+    def _clear_price(row: EffortEntry) -> None:
+        row.rate_micros_used = None
+        row.rate_currency = None
+        row.hours_per_day_used = None
+
+    async def _check_person(self, ctx: StoreContext, user_id: UUID) -> None:
+        """Time logged FOR someone else names a member of this project."""
+        user = await ctx.db.get(User, user_id)
+        if user is None or not user.email:
+            raise StoreRefused(
+                422, "unknown_person", "There is no such user to log time for."
+            )
+        members = await project_member_emails(ctx.access.tenant_id)
+        if members is None:
+            raise StoreRefused(
+                422,
+                "membership_unverified",
+                "Whether that user is a member of this project cannot be checked "
+                "right now; log the time under their name (person) instead.",
+            )
+        if user.email.strip().lower() not in members:
+            raise StoreRefused(
+                422,
+                "not_a_member",
+                "That user is not a member of this project.",
+            )
+
+    async def _display_name(self, ctx: StoreContext) -> str | None:
+        """The caller as people know them: their name, else their e-mail."""
+        if ctx.access.user_id is None:
+            return ctx.access.actor
+        user = await ctx.db.get(User, ctx.access.user_id)
+        if user is not None and (user.full_name or "").strip():
+            return str(user.full_name).strip()
+        return ctx.access.actor
+
+    async def _flush(self, ctx: StoreContext, add: Any = None) -> None:
+        try:
+            async with ctx.db.begin_nested():
+                if add is not None:
+                    ctx.db.add(add)
+                await ctx.db.flush()
+        except IntegrityError as exc:
+            raise refusal_for(exc) from exc
 
     async def _check_day(self, ctx: StoreContext, row: EffortEntry) -> None:
         """At most 24 hours per person per day, across all their entries."""
@@ -320,13 +412,17 @@ class EffortEntryStore:
                 )
             for raw in filters.get("person_user_id", []):
                 stmt = stmt.where(EffortEntry.person_user_id == UUID(raw))
+            limits = [int(raw) for raw in filters.get("limit", [])]
         except ValueError as exc:
             raise StoreRefused(
                 422,
                 "bad_filter",
                 "from/to are dates (YYYY-MM-DD); phase_id and person_user_id "
-                "are ids (phase_id may be 'none').",
+                "are ids (phase_id may be 'none'); limit is a number.",
             ) from exc
+        limit = (
+            min(max(limits[-1], 1), MAX_LIST_LIMIT) if limits else DEFAULT_LIST_LIMIT
+        )
         if "true" in filters.get("mine", []):
             stmt = stmt.where(EffortEntry.person_user_id == ctx.access.user_id)
         rows = (
@@ -335,10 +431,19 @@ class EffortEntryStore:
                     EffortEntry.work_date.desc(),
                     EffortEntry.created_at.desc(),
                     EffortEntry.id,
-                )
+                ).limit(limit + 1)
             )
         ).scalars()
-        return ListResult(items=[_read(r, ctx.access) for r in rows.all()])
+        found = rows.all()
+        items: list[BaseModel] = [_read(r, ctx.access) for r in found[:limit]]
+        degraded = None
+        if len(found) > limit:
+            degraded = (
+                f"truncated: only the newest {limit} entries are listed; narrow "
+                "with from/to/person_user_id, raise limit (at most "
+                f"{MAX_LIST_LIMIT}), or page through GET /costs/ledger"
+            )
+        return ListResult(items=items, degraded=degraded)
 
     async def get(self, ctx: StoreContext, record_id: str) -> BaseModel:
         return _read(await self._load(ctx, record_id), ctx.access)
@@ -352,7 +457,11 @@ class EffortEntryStore:
         )
         if not others and (access.user_id is None or user_id != access.user_id):
             raise _not_yours()
-        person = payload.person or (access.actor if user_id == access.user_id else None)
+        if user_id is not None and user_id != access.user_id:
+            await self._check_person(ctx, user_id)
+        person = payload.person or (
+            await self._display_name(ctx) if user_id == access.user_id else None
+        )
         if person is None:
             raise StoreRefused(
                 422,
@@ -374,10 +483,11 @@ class EffortEntryStore:
             created_by=access.actor,
             updated_by=access.actor,
         )
-        await self._price(ctx, row, await self._settings(ctx))
+        settings = await self._settings(ctx)
+        if settings.labour_billing == "day_rates":
+            await self._price(ctx, row, settings)
         await self._check_day(ctx, row)
-        ctx.db.add(row)
-        await ctx.db.flush()
+        await self._flush(ctx, add=row)
         await ctx.db.refresh(row)
         return _read(row, access)
 
@@ -410,27 +520,53 @@ class EffortEntryStore:
             and changes["person_user_id"] != access.user_id
         ):
             raise _not_yours()
+        if (
+            changes.get("person_user_id") is not None
+            and changes["person_user_id"] != access.user_id
+        ):
+            await self._check_person(ctx, changes["person_user_id"])
         settings = await self._settings(ctx)
+        role_after = changes.get("role_code", row.role_code)
+        # A changed role always re-prices. Under day rates an entry with no
+        # price is priced on its next edit — when it names a role: a legacy
+        # role-less entry can still have its note fixed.
         reprice = "role_code" in changes or (
-            settings.labour_billing == "day_rates" and row.rate_micros_used is None
+            settings.labour_billing == "day_rates"
+            and row.rate_micros_used is None
+            and role_after is not None
         )
         if not changes and not reprice:
             return before, before
         if "phase_id" in changes:
             await self._check_phase(ctx, changes["phase_id"])
-        for key, value in changes.items():
-            setattr(row, key, value)
-        if reprice:
-            await self._price(ctx, row, settings)
-        if _read(row, access) == before:
-            # Nothing moved — e.g. a re-price that found the same rate. The
-            # attributes were set to their own values, so no UPDATE is issued.
-            return before, before
-        if {"hours", "work_date", "person", "person_user_id"} & set(changes):
-            await self._check_day(ctx, row)
+        # The price and the day cap are checks on the NEW values, so they run
+        # on the row with the changes applied — with autoflush off (their
+        # lookups must not write the half-checked row) and every attribute
+        # put back if one refuses, so a refusal leaves nothing behind.
+        touched = set(changes) | {
+            "rate_micros_used",
+            "rate_currency",
+            "hours_per_day_used",
+        }
+        original = {key: getattr(row, key) for key in touched}
+        with ctx.db.no_autoflush:
+            try:
+                for key, value in changes.items():
+                    setattr(row, key, value)
+                if reprice:
+                    await self._price(ctx, row, settings)
+                if _read(row, access) == before:
+                    # Nothing moved — e.g. a re-price that found the same rate.
+                    return before, before
+                if {"hours", "work_date", "person", "person_user_id"} & set(changes):
+                    await self._check_day(ctx, row)
+            except StoreRefused:
+                for key, value in original.items():
+                    setattr(row, key, value)
+                raise
         row.version += 1
         row.updated_by = access.actor
-        await ctx.db.flush()
+        await self._flush(ctx)
         await ctx.db.refresh(row)
         return before, _read(row, access)
 

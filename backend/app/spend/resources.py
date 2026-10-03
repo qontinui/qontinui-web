@@ -428,14 +428,21 @@ class _OrmStore:
         for name in self.vendor_fields:
             if name in changes:
                 await self._check_vendor(ctx, changes[name])
-        changed = False
-        for key, value in changes.items():
-            if getattr(row, key) != value:
-                setattr(row, key, value)
-                changed = True
+        changed = {k: v for k, v in changes.items() if getattr(row, k) != v}
         if not changed:
             return before, before
-        self._check(row)
+        original = {key: getattr(row, key) for key in changed}
+        for key, value in changed.items():
+            setattr(row, key, value)
+        try:
+            # The cross-field rules read the row as it would be; a refusal
+            # puts every attribute back, so nothing half-applied can reach a
+            # later flush or the request's commit.
+            self._check(row)
+        except StoreRefused:
+            for key, value in original.items():
+                setattr(row, key, value)
+            raise
         row.version += 1
         row.updated_by = ctx.access.actor
         await self._flush(ctx)

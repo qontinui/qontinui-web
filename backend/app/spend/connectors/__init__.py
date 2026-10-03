@@ -294,6 +294,14 @@ def _registry() -> dict[str, ConnectorSpec]:
 
 CONNECTORS: dict[str, ConnectorSpec] = _registry()
 
+#: The first segment of every ``source_ref`` a normaliser writes
+#: (``github:<org>:<day>:…``). A reference entered by hand may not start with
+#: one (``app.costs.entries``), so it can never collide with a provider line;
+#: ``tests/test_costs_review_fixes.py`` pins this list against the sources.
+CONNECTOR_REF_NAMESPACES: frozenset[str] = frozenset(
+    {"anthropic", "aws", "cloudflare", "github", "play", "upstash", "vercel"}
+)
+
 
 def connector_spec(key: str | None) -> ConnectorSpec | None:
     return CONNECTORS.get(key) if key else None

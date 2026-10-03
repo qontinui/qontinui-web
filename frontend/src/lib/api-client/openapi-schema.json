@@ -12361,6 +12361,33 @@
             ],
             "title": "Monthly Micros"
           },
+          "rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "rate_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "entry",
+                  "settings"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Source"
+          },
           "rule_currency": {
             "title": "Rule Currency",
             "type": "string"
@@ -104712,6 +104739,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

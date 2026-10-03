@@ -136,3 +136,7 @@ class ResourceSpec:
     #: (a page's body is in ``page_versions``). A DELETE snapshot keeps every
     #: field, because the record and whatever kept its history go with it.
     audit_exclude: frozenset[str] = frozenset()
+    #: Read-model fields that describe the READER, not the record (whether
+    #: the caller may edit it). Never in ``overview.change_log`` — on create,
+    #: update or delete — since they would record whoever happened to write.
+    audit_derived: frozenset[str] = frozenset()

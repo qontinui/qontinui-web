@@ -507,7 +507,7 @@ class TestMemberSelf:
         assert mine.status_code == 201, mine.text
         entry = mine.json()["item"]
         assert entry["person_user_id"] == str(users["ann"].id)
-        assert entry["person"] == users["ann"].email
+        assert entry["person"] == users["ann"].full_name == "Ann"
         assert entry["editable"] is True
 
         # Bob reads it, is told he cannot edit it, and is refused if he tries.
@@ -629,13 +629,20 @@ class TestRateSnapshot:
         # Editing the note keeps the price…
         noted = await ann.patch(url, json={"note": "x"}, headers={"If-Match": '"1"'})
         assert noted.json()["item"]["rate_micros_used"] == 800 * M
-        # …changing the role re-prices it at today's rate.
-        await ann.patch(url, json={"role_code": "PO"}, headers={"If-Match": '"2"'})
-        repriced = await ann.patch(
-            url, json={"role_code": "BE"}, headers={"If-Match": '"2"'}
+        # …a role the baseline does not price is refused, and leaves the entry
+        # exactly as it was (the refused write is rolled back)…
+        refused = await ann.patch(
+            url, json={"role_code": "PO"}, headers={"If-Match": '"2"'}
         )
-        assert repriced.status_code == 200, repriced.text
-        assert repriced.json()["item"]["rate_micros_used"] == 1000 * M
+        assert refused.json()["error"] == "role_not_priced"
+        kept = (await ann.get(url)).json()["item"]
+        assert (kept["role_code"], kept["version"]) == ("BE", 2)
+        assert kept["rate_micros_used"] == 800 * M
+        # …and time logged now is priced at today's rate.
+        fresh = await ann.post(
+            base, json={"work_date": "2026-09-15", "hours": "4", "role_code": "BE"}
+        )
+        assert fresh.json()["item"]["rate_micros_used"] == 1000 * M
 
     async def test_unbilled_carries_no_price_and_a_later_switch_prices_on_edit(
         self, admin, ann

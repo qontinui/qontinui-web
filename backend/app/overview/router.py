@@ -76,8 +76,9 @@ _MAX_IDEMPOTENCY_KEY = 200
 # upload — speak exactly the same contract.
 parse_if_match = contract_http.parse_if_match
 _etag = contract_http.etag
-_stale = contract_http.stale
 _refused = contract_http.refused
+_stale = contract_http.stale
+_refusable = contract_http.refusable
 _not_found = contract_http.not_found
 
 
@@ -235,7 +236,15 @@ def _audit(spec: ResourceSpec, record: BaseModel | None) -> dict[str, Any] | Non
     fields another table already holds in full (``ResourceSpec.audit_exclude``)."""
     if record is None:
         return None
-    return record.model_dump(mode="json", exclude=set(spec.audit_exclude))
+    return record.model_dump(
+        mode="json", exclude=set(spec.audit_exclude) | set(spec.audit_derived)
+    )
+
+
+def _audit_deleted(spec: ResourceSpec, record: BaseModel) -> dict[str, Any]:
+    """A record as the change log keeps it on DELETE: every field of the
+    record (whatever kept its history goes with it), never a per-reader one."""
+    return record.model_dump(mode="json", exclude=set(spec.audit_derived))
 
 
 def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
@@ -326,7 +335,8 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                     return await _replay(prior.record_id, context, store, response)
             adopted = False
             try:
-                created = await store.create(context, payload)
+                async with _refusable(db):
+                    created = await store.create(context, payload)
             except StoreRefused as exc:
                 # A keyed create refused as a duplicate may be refusing its OWN
                 # earlier attempt, whose answer (and so its change-log row) was
@@ -344,7 +354,10 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                     )
 
                 try:
-                    existing = await adopt(context, payload, created_through_overview)
+                    async with _refusable(db):
+                        existing = await adopt(
+                            context, payload, created_through_overview
+                        )
                 except StoreRefused as adopt_exc:
                     return _refused(adopt_exc)
                 if existing is None:
@@ -432,9 +445,10 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             expected = parse_if_match(if_match)
             context = ctx(access, db, request)
             try:
-                before, after = await store.update(
-                    context, record_id, payload, expected
-                )
+                async with _refusable(db):
+                    before, after = await store.update(
+                        context, record_id, payload, expected
+                    )
             except RecordNotFound as exc:
                 raise _not_found() from exc
             except StaleVersion as exc:
@@ -483,7 +497,8 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             expected = parse_if_match(if_match)
             context = ctx(access, db, request)
             try:
-                before = await store.delete(context, record_id, expected)
+                async with _refusable(db):
+                    before = await store.delete(context, record_id, expected)
             except RecordNotFound as exc:
                 raise _not_found() from exc
             except StaleVersion as exc:
@@ -499,7 +514,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 source=change_log.change_source(request),
                 actor=access.actor,
                 actor_user_id=access.user_id,
-                before=before,
+                before=_audit_deleted(spec, before),
                 after=None,
                 version_before=before.version,
             )

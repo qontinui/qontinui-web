@@ -192,6 +192,11 @@ class CostLimitLine(BaseModel):
     monthly_micros: int | None
     rule_currency: str
     rule_micros: int
+    #: The rate that converted it (``null`` when it is in the base currency
+    #: or no rate converts it). Stated here rather than in ``fx.applied``,
+    #: which counts the cost figures' conversions only.
+    rate: Decimal | None = None
+    rate_source: Literal["entry", "settings"] | None = None
     detail: str | None = None
 
 
@@ -1164,12 +1169,15 @@ async def _limit(db: AsyncSession, tenant_id: UUID, fx: FxBook) -> CostLimitLine
     )
     if rule is None or rule.monthly_ceiling_micros is None:
         return None
-    converted = fx.to_base(rule.monthly_ceiling_micros, rule.currency, record=True)
+    converted = fx.to_base(rule.monthly_ceiling_micros, rule.currency, record=False)
+    found = fx.rate_for(rule.currency) if rule.currency != fx.base_currency else None
     return CostLimitLine(
         rule_id=str(rule.id),
         monthly_micros=converted,
         rule_currency=rule.currency,
         rule_micros=rule.monthly_ceiling_micros,
+        rate=found[0] if found else None,
+        rate_source=found[1] if found else None,
         detail=(
             None
             if converted is not None
