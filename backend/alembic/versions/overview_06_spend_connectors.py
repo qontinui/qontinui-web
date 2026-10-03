@@ -17,8 +17,10 @@ Phases 7–9 of ``2026-10-03-provider-reported-spend-collection-alerts-and-mobil
   "not known", which the renewals read returns as ``null``.
 
 Additive: two nullable / constant-default columns (metadata-only in PG 11+),
-and a CHECK widened by adding the new constraint ``NOT VALID`` then
-validating it — every existing row already satisfies the narrower one.
+and a CHECK widened by adding the new constraint ``NOT VALID`` (a brief
+catalogue lock) and then validating it in a SEPARATE autocommit transaction
+(``autocommit_block``), which scans under SHARE UPDATE EXCLUSIVE and leaves
+the table writable. Every existing row already satisfies the narrower one.
 """
 
 from collections.abc import Sequence
@@ -47,9 +49,15 @@ def _connector_check(values: str) -> None:
         "ALTER TABLE overview.vendors ADD CONSTRAINT ck_overview_vendors_connector "
         f"CHECK (connector IS NULL OR connector IN ({values})) NOT VALID"
     )
-    op.execute(
-        "ALTER TABLE overview.vendors VALIDATE CONSTRAINT ck_overview_vendors_connector"
-    )
+    # VALIDATE in its OWN transaction: it takes only SHARE UPDATE EXCLUSIVE,
+    # so the table stays writable while existing rows are checked; the
+    # ACCESS EXCLUSIVE lock of the ADD ... NOT VALID above is held only for
+    # that catalogue change.
+    with op.get_context().autocommit_block():
+        op.execute(
+            "ALTER TABLE overview.vendors "
+            "VALIDATE CONSTRAINT ck_overview_vendors_connector"
+        )
 
 
 def upgrade() -> None:

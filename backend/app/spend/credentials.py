@@ -11,7 +11,9 @@ web task role's ``task_spend_secrets`` grant is scoped to (qontinui-stack
 **A credential value is never returned, logged, or put in a database row.**
 Errors carry a typed reason and a value-free sentence; the change log records
 that a link happened, never what was linked. The server pull reads the value
-through :func:`resolve`, which caches it in process for an hour.
+fresh through :func:`resolve`; other reads (status, the summary) use an
+in-process cache of five minutes for a present value — absence is never
+cached, and a vault failure is remembered for 60 seconds.
 
 **The AWS task-role arm** (Phase 8) needs no stored value: the web task role
 itself reads the hosting account's Cost Explorer. It serves exactly one

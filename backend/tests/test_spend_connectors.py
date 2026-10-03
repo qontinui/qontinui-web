@@ -342,6 +342,45 @@ class TestAwsCostExplorer:
         assert SPEC.issued_fields is not None
         assert SPEC.issued_fields(a) == {"external_id": external_id_for(a)}
 
+    async def test_the_external_id_key_is_dedicated_or_derived(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import hashlib
+        import hmac
+
+        from app.core.config import settings
+        from app.spend.connectors.aws_cost_explorer import external_id_for
+
+        tenant = uuid4()
+        monkeypatch.setattr(settings, "SPEND_EXTERNAL_ID_KEY", None)
+        derived = external_id_for(tenant)
+        # Never the JWT signing key used directly.
+        direct = hmac.new(
+            settings.SECRET_KEY.encode(),
+            f"spend-aws-external-id:{tenant}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        assert derived != f"qontinui-{direct[:32]}"
+        monkeypatch.setattr(settings, "SPEND_EXTERNAL_ID_KEY", "a-dedicated-key")
+        dedicated = external_id_for(tenant)
+        assert dedicated != derived  # rotating the key changes the ExternalId
+        assert external_id_for(tenant) == dedicated
+
+    async def test_a_boto_failure_chains_no_frame(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.spend.connectors import aws_cost_explorer as aws
+
+        def explode(credential, arm):
+            raise RuntimeError(SENTINEL)
+
+        monkeypatch.setattr(aws, "_session_for", explode)
+        with pytest.raises(CredentialRejected) as caught:
+            aws._read({}, "task_role", date(2026, 10, 1), date(2026, 10, 2))
+        assert caught.value.__cause__ is None
+        assert caught.value.__suppress_context__ is True
+        assert SENTINEL not in str(caught.value)
+
     async def test_a_gap_left_by_failed_pulls_is_refetched(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -605,6 +644,18 @@ class TestUpstash:
         raw["resources"][0]["stats"]["dailybilling"].pop(1)  # redis skips 10-02
         with pytest.raises(NormaliseError, match="2026-10-02"):
             normalise(raw, _range(date(2026, 10, 1), date(2026, 10, 3)), {})
+
+    async def test_a_resource_silent_on_the_whole_range_is_unknown(self) -> None:
+        from app.spend.connectors.upstash_billing import normalise
+
+        raw = _load("upstash_redis_stats_documented.json")
+        raw["resources"][1]["stats"]["dailybilling"] = []  # QStash says nothing
+        with pytest.raises(NormaliseError, match="qstash"):
+            normalise(raw, _range(date(2026, 10, 1), date(2026, 10, 3)), {})
+        raw = _load("upstash_redis_stats_documented.json")
+        with pytest.raises(NormaliseError, match="UNKNOWN"):
+            # Only days outside the range: silent on it.
+            normalise(raw, _range(date(2026, 9, 1), date(2026, 9, 5)), {})
 
     async def test_fetch_basic_auth_and_a_missing_qstash(self, mock_http) -> None:
         from app.spend.connectors.upstash_billing import fetch

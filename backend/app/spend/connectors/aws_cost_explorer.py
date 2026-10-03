@@ -282,26 +282,55 @@ def _read(
     except CredentialRejected:
         raise
     except Exception as exc:  # noqa: BLE001 — every boto failure is typed
-        raise _reject_from_boto(exc) from exc
+        # From None: boto's frames hold the assumed-role credentials.
+        raise _reject_from_boto(exc) from None
     return {"account_id": account, "ResultsByTime": results}
 
 
 def external_id_for(tenant_id: UUID) -> str:
     """The ExternalId qontinui ISSUES to a tenant for its cross-account role.
 
-    Server-derived (HMAC of the tenant id under the backend's secret key), so
+    Server-derived (HMAC of the tenant id under :func:`_external_id_key`), so
     a tenant cannot choose another's: the confused-deputy guard AWS requires
     of a third party assuming customer roles. Not secret — the Link form
     shows it, and the tenant puts it in the role's trust policy.
     """
-    from app.core.config import settings
-
     digest = hmac.new(
-        settings.SECRET_KEY.encode("utf-8"),
+        _external_id_key(),
         f"spend-aws-external-id:{tenant_id}".encode(),
         hashlib.sha256,
     ).hexdigest()
     return f"qontinui-{digest[:32]}"
+
+
+#: The HKDF label that separates this derivation from every other use of
+#: SECRET_KEY. Changing it changes every tenant's ExternalId.
+_EXTERNAL_ID_HKDF_INFO = b"qontinui/spend/aws-external-id/v1"
+
+
+def _external_id_key() -> bytes:
+    """The key ExternalIds are derived from.
+
+    ``SPEND_EXTERNAL_ID_KEY`` when set; otherwise HKDF-SHA256 of
+    ``SECRET_KEY`` under a fixed label, so the JWT signing key is never used
+    directly. ROTATING EITHER CHANGES EVERY TENANT'S EXTERNALID: every linked
+    cross-account role then refuses the assume until its trust policy is
+    updated with the new value shown on the Link form.
+    """
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    from app.core.config import settings
+
+    dedicated = (settings.SPEND_EXTERNAL_ID_KEY or "").strip()
+    if dedicated:
+        return dedicated.encode("utf-8")
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=_EXTERNAL_ID_HKDF_INFO,
+    ).derive(settings.SECRET_KEY.encode("utf-8"))
 
 
 async def validate(credential: dict[str, Any], config: dict[str, Any]) -> None:

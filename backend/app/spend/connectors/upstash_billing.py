@@ -105,8 +105,16 @@ def normalise(raw: Any, query: IngestQuery, config: dict[str, Any]) -> Normalise
     for kind, rid, _name, day, _amount in points:
         if start <= day <= end:
             per_resource.setdefault((kind, rid), set()).add(day)
-    if points and not per_resource:
-        raise NormaliseError(f"the series states no day within {start}..{end}")
+    # Every resource the payload names must state a day in the range: one that
+    # is silent (an empty series, or only days outside it) is UNKNOWN, and
+    # leaving it out would read as $0 for it.
+    for index, resource in enumerate(raw["resources"]):
+        key = (str(resource.get("type")), str(resource.get("id")))
+        if key not in per_resource:
+            raise NormaliseError(
+                f"resources[{index}] ({key[0]} {key[1]}) states no day "
+                f"within {start}..{end} — UNKNOWN, not $0"
+            )
     if per_resource:
         # The statement is the days EVERY resource states — a day one
         # resource is silent on is UNKNOWN for it, never $0 — so the run is

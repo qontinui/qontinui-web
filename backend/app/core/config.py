@@ -200,6 +200,15 @@ class Settings(BaseSettings):
         default=None,
         description="Tenant id the AWS Cost Explorer task-role arm serves",
     )
+    # The key the AWS ExternalId issued to each tenant is derived from (an
+    # HMAC of the tenant id). Unset: HKDF of SECRET_KEY under a fixed label.
+    # ROTATING IT (or SECRET_KEY while it is unset) CHANGES EVERY TENANT'S
+    # ExternalId, and each linked cross-account role refuses the assume until
+    # its trust policy is updated.
+    SPEND_EXTERNAL_ID_KEY: str | None = Field(
+        default=None,
+        description="Derivation key for spend AWS ExternalIds (rotation changes them)",
+    )
     # Where linked connector credentials live: "aws" (Secrets Manager, under
     # qontinui/<ENVIRONMENT>/web/spend/) or "none" (no vault: nothing is
     # linked, and a link is refused). Unset means "aws" under a production
