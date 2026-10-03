@@ -12,7 +12,8 @@ and the served ``can_edit``. What this module adds:
 
 * **A phase reference is checked.** ``phase_id`` names a phase of THIS
   project (any of its estimates) or nothing; anything else is a 422
-  ``phase_not_found``, checked when it changes.
+  ``phase_not_found``, checked when it changes — under a lock on the phase,
+  so the check cannot go stale before the write commits (:func:`_lock_phase`).
 * **Done means dated.** A milestone is ``done`` exactly when it has a
   ``completed_date`` — checked on the milestone as a partial write would
   leave it, and by a CHECK in the database.
@@ -96,24 +97,59 @@ async def _read(db: AsyncSession, row: Milestone) -> MilestoneRead:
     return _to_read(row, codes)
 
 
+async def _lock_phase(db: AsyncSession, tenant_id: UUID, phase_id: UUID) -> bool:
+    """Whether ``phase_id`` is a phase of this project — read under a
+    ``FOR KEY SHARE`` lock on it, held to the end of the write.
+
+    **Why the lock.** The estimate store deletes a phase only after
+    :func:`detach_milestones` has untied its milestones, and that function
+    takes ``FOR UPDATE`` on the phases first. ``FOR KEY SHARE`` conflicts
+    with ``FOR UPDATE`` (and with the DELETE itself), so a milestone write
+    naming the phase cannot slip in between the detach and the delete:
+
+    * if the estimate store got there first, this waits for it to commit and
+      then finds the phase gone — a clean ``phase_not_found``;
+    * if this got there first, the detach waits for this write to commit and
+      then sees the milestone, and detaches it as a logged, versioned write.
+
+    Either way the FK's ``ON DELETE SET NULL`` never nulls a milestone
+    silently. A content write to the phase's estimate locks EVERY phase of it
+    ``FOR UPDATE`` before touching a milestone (it may rename a code, a key
+    UPDATE), so a milestone write naming one of its phases waits for that
+    save, or the save waits for it — always phases before milestones, never
+    the reverse, so the wait is never a deadlock. ``FOR KEY SHARE`` is still
+    the weakest lock that blocks a delete; it does not conflict with a
+    Timeline progress write (a non-key UPDATE of the phase).
+    """
+    found = (
+        await db.execute(
+            select(Phase.id)
+            .where(Phase.id == phase_id, Phase.tenant_id == tenant_id)
+            .with_for_update(read=True, key_share=True)
+        )
+    ).first()
+    return found is not None
+
+
+def _phase_not_found() -> StoreRefused:
+    return StoreRefused(
+        422,
+        "phase_not_found",
+        "A milestone's phase must be a phase of this project's estimate.",
+    )
+
+
 async def _require_phase(
     db: AsyncSession, tenant_id: UUID, phase_id: UUID | None
 ) -> None:
-    """``phase_id`` names a phase of this project, or nothing. The FK alone
-    would accept another project's phase."""
+    """``phase_id`` names a phase of this project, or nothing — and, when it
+    names one, that phase is locked against deletion until the write commits
+    (:func:`_lock_phase`). The FK alone would accept another project's
+    phase."""
     if phase_id is None:
         return
-    found = (
-        await db.execute(
-            select(Phase.id).where(Phase.id == phase_id, Phase.tenant_id == tenant_id)
-        )
-    ).first()
-    if found is None:
-        raise StoreRefused(
-            422,
-            "phase_not_found",
-            "A milestone's phase must be a phase of this project's estimate.",
-        )
+    if not await _lock_phase(db, tenant_id, phase_id):
+        raise _phase_not_found()
 
 
 async def detach_milestones(ctx: StoreContext, phase_ids: list[UUID]) -> None:
@@ -124,9 +160,27 @@ async def detach_milestones(ctx: StoreContext, phase_ids: list[UUID]) -> None:
     schedule, or the whole estimate). Each detached milestone's version moves
     and the change log gets a row, so a client holding the old copy gets a
     409 with the new one instead of a silently changed ``phase_id``.
+
+    **The phases are locked first** (``FOR UPDATE``, in id order), and stay
+    locked until the caller's delete commits. Without that, a milestone write
+    naming one of them could commit after the milestones below were read and
+    before the delete — and the FK's ``ON DELETE SET NULL`` would then null
+    it with no version bump and no change-log row. A milestone write takes
+    ``FOR KEY SHARE`` on its phase (:func:`_lock_phase`), which conflicts
+    with this lock, so the two serialise.
+
+    **Lock order, which is what keeps this deadlock-free:** phases, then
+    milestones — here, and in every milestone write (a create or an update
+    locks the phase it names BEFORE the milestone row).
     """
     if not phase_ids:
         return
+    await ctx.db.execute(
+        select(Phase.id)
+        .where(Phase.tenant_id == ctx.access.tenant_id, Phase.id.in_(phase_ids))
+        .order_by(Phase.id)
+        .with_for_update()
+    )
     rows = (
         (
             await ctx.db.execute(
@@ -249,6 +303,18 @@ class MilestoneStore:
         payload: MilestoneUpdate,
         expected_version: int,
     ) -> tuple[MilestoneRead, MilestoneRead]:
+        # The phase the write names is locked BEFORE the milestone row — the
+        # order detach_milestones takes them in, so the two cannot deadlock.
+        # Whether it exists is acted on only once the write is known to change
+        # it, after the version check, so a stale write is still a 409.
+        named_phase = (
+            payload.phase_id if "phase_id" in payload.model_fields_set else None
+        )
+        phase_found = (
+            await _lock_phase(ctx.db, ctx.access.tenant_id, named_phase)
+            if named_phase is not None
+            else True
+        )
         row = await self._load(ctx, record_id, lock=True)
         before = await _read(ctx.db, row)
         if row.version != expected_version:
@@ -260,8 +326,8 @@ class MilestoneStore:
         }
         if not changes:
             return before, before
-        if "phase_id" in changes:
-            await _require_phase(ctx.db, row.tenant_id, changes["phase_id"])
+        if changes.get("phase_id") is not None and not phase_found:
+            raise _phase_not_found()
         problem = milestone_problem(
             status=changes.get("status", row.status),
             completed_date=changes.get("completed_date", row.completed_date),

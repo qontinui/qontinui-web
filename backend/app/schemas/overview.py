@@ -23,7 +23,7 @@ Two conventions run through every model here:
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -235,8 +235,16 @@ class PhaseWrite(_WriteModel):
     written through ``phase_progress``, with its own version, so the estimate
     editor and the Timeline can never overwrite each other's fields. A content
     write naming a progress field is refused rather than half-applied.
+
+    ``id`` is the IDENTITY of a phase this estimate already has, when the
+    client knows it: the write continues that phase (its row, its recorded
+    progress, the milestones tied to it) under whatever code it now carries,
+    so renaming a code is not a delete and a create. It must name a phase of
+    THIS estimate, else the write is a 422. Absent, a phase continues the
+    saved one with the same code, as before; neither matching, it is new.
     """
 
+    id: UUID | None = None
     code: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=200)
     planned_start: date | None = None
@@ -389,6 +397,9 @@ class EstimateContentWrite(_WriteModel):
         phase_codes = [p.code for p in self.phases]
         if len(phase_codes) != len(set(phase_codes)):
             raise ValueError("two phases share a code")
+        phase_ids = [p.id for p in self.phases if p.id is not None]
+        if len(phase_ids) != len(set(phase_ids)):
+            raise ValueError("two phases name the same phase id")
         tier_names = [t.name for t in self.price_tiers]
         if len(tier_names) != len(set(tier_names)):
             raise ValueError("two price tiers share a name")
@@ -715,18 +726,46 @@ class PhaseProgressUpdate(_WriteModel):
         return self
 
 
+#: How far past today (UTC) a recorded actual or decision date may lie: one
+#: day, because "today" east of UTC is already tomorrow there. Anything later
+#: is a typo or a plan, not something that has happened.
+PROGRESS_DATE_TOLERANCE = timedelta(days=1)
+
+
 def phase_progress_problem(
     *,
     actual_start: date | None,
     actual_end: date | None,
     gate_status: str,
     gate_decided_at: date | None,
+    today: date,
 ) -> str | None:
     """Why a phase's progress, as it would stand, is not a coherent record —
-    or ``None``. Enforced by the API only: the database checks just the
-    actual-date order (``ck_overview_phases_actual_order``), so a row written
-    before this rule existed can break it, and its next progress write is
-    refused with this sentence until the record is made coherent."""
+    or ``None``.
+
+    The coherence rules are also CHECKs in the database
+    (``ck_overview_phases_actual_order``, ``…_actual_end_has_start``,
+    ``…_gate_decision_dated``), but those were added ``NOT VALID``, so a row
+    written before them can still break one; its next progress write is then
+    refused with this sentence until the record is made coherent.
+
+    **Progress is what has happened**, so no actual date and no decision date
+    may lie after ``today`` (UTC) plus :data:`PROGRESS_DATE_TOLERANCE`: a typo
+    like ``actual_start=2027-01-05`` would otherwise mark a 2026 phase as
+    running and push the whole forecast a year out. This rule is the API's
+    alone — it depends on the clock, which a CHECK must not."""
+    latest = today + PROGRESS_DATE_TOLERANCE
+    for name, value in (
+        ("actual_start", actual_start),
+        ("actual_end", actual_end),
+        ("gate_decided_at", gate_decided_at),
+    ):
+        if value is not None and value > latest:
+            return (
+                f"{name} is {value.isoformat()}, which has not happened yet — "
+                f"progress records what has happened, so it can be at most "
+                f"{latest.isoformat()}"
+            )
     if actual_end is not None and actual_start is None:
         return "a phase cannot have finished without having started — give actual_start"
     if actual_start and actual_end and actual_end < actual_start:
