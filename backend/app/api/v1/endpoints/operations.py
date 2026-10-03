@@ -968,9 +968,9 @@ def _coord_timeout(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
-        # The sentence carries the re-read too: a reader rendering only
-        # `retry_later` drops its target, so the warning must not live there
-        # alone.
+        # The detail carries the re-read too, for a reader that shows
+        # `detail` without the rendered next action (or predates
+        # qontinui-schemas#204, whose render drops a `retry_later` target).
         (
             "timeout waiting for coord; the change may have been applied, "
             "so re-read the current state before retrying"
@@ -985,7 +985,11 @@ def _coord_timeout(
 
 
 #: The ``next_action.target`` of every refusal whose write may have landed.
-_REREAD_BEFORE_RETRY = "re-read the current state before retrying"
+#: On ``retry_later`` the target names WHAT to re-check before retrying
+#: (qontinui-schemas#204), so ``Refusal::render`` reads: "Try again later, but
+#: first check "whether the change was applied": the earlier attempt may
+#: already have taken effect".
+_REREAD_BEFORE_RETRY = "whether the change was applied"
 
 
 def _coord_answer_lost(detail: str, *, not_json: bool) -> RefusalHTTPException:
