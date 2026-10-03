@@ -1,121 +1,131 @@
 import { describe, expect, it } from "vitest";
 import {
   applyGanttImport,
+  describeDraft,
   draftFromEstimate,
   draftProblems,
   draftToContent,
+  draftFromStorage,
+  draftToStorage,
+  keepMineBlockers,
+  openMergeNotes,
+  rebaseDraft,
+  sameDraft,
+  STORED_DRAFT_SCHEMA,
 } from "./draft";
-import type { EstimateDetail } from "../../../_lib/estimate-api";
+import type { EstimateRecord } from "../../../_lib/estimate-api";
 
 /**
- * A loaded estimate carrying a value in EVERY field the content endpoint
+ * A loaded estimate carrying a value in EVERY field a content write
  * owns — including the ones the Team editor never shows, which the Timeline
  * page (Phase 3) writes and which one Save from here would otherwise reset.
  */
-const LOADED: EstimateDetail = {
-  estimate: {
-    id: "e1",
-    name: "Estimate v0.1",
-    purpose: "budget",
-    status: "approved",
-    is_baseline: true,
-    source_page_id: null,
-    accuracy_note: "±25%",
-    contingency_pct: "10",
-    notes: "notes",
-    version: 7,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-02T00:00:00Z",
-    created_by: null,
-    updated_by: null,
+const LOADED: EstimateRecord = {
+  id: "e1",
+  name: "Estimate v0.1",
+  purpose: "budget",
+  status: "approved",
+  is_baseline: true,
+  source_page_id: null,
+  accuracy_note: "±25%",
+  contingency_pct: "10",
+  notes: "notes",
+  version: 7,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z",
+  created_by: null,
+  updated_by: null,
+  content: {
+    roles: [
+      {
+        id: "r1",
+        code: "BE",
+        name: "Backend",
+        responsibility: "Builds it",
+        day_rate_micros: 750_000_000,
+        currency: "EUR",
+        client_side: false,
+        sort_order: 0,
+      },
+    ],
+    phases: [
+      {
+        id: "p1",
+        code: "A0",
+        name: "Mobilisation",
+        sort_order: 0,
+        planned_start: "2026-01-05",
+        planned_end: "2026-01-30",
+        stated_working_weeks: "3.60",
+        gate_criteria: "Environments reachable",
+        actual_start: "2026-01-06",
+        actual_end: "2026-02-02",
+        gate_status: "passed",
+        gate_decided_at: "2026-02-03",
+        gate_notes: "Demonstrated to the sponsor",
+        tasks: [
+          {
+            id: "t1",
+            number: "1.1",
+            title: "Kick-off",
+            requirement_refs: "R1, R2",
+            planned_start: "2026-01-05",
+            planned_end: "2026-01-09",
+            is_critical: true,
+            status: "done",
+            sort_order: 0,
+            efforts: [
+              { role_id: "r1", role_code: "BE", planned_person_days: "4.00" },
+            ],
+          },
+        ],
+      },
+    ],
+    allocations: [
+      {
+        phase_id: "p1",
+        phase_code: "A0",
+        role_id: "r1",
+        role_code: "BE",
+        fte: "0.500",
+      },
+    ],
+    price_tiers: [
+      {
+        id: "pt1",
+        name: "Midpoint",
+        multiplier: "1.0",
+        is_primary: true,
+        sort_order: 0,
+      },
+    ],
+    cost_lines: [
+      {
+        id: "c1",
+        kind: "build_non_labour",
+        label: "Licences",
+        basis: "12 seats",
+        low_micros: 1_000_000_000,
+        high_micros: 2_000_000_000,
+        currency: "EUR",
+        phase_id: "p1",
+        phase_code: "A0",
+        run_model: null,
+        sort_order: 0,
+      },
+    ],
+    calendar_breaks: [
+      {
+        id: "b1",
+        label: "Easter",
+        start_date: "2026-04-03",
+        end_date: "2026-04-06",
+      },
+    ],
   },
-  roles: [
-    {
-      id: "r1",
-      code: "BE",
-      name: "Backend",
-      responsibility: "Builds it",
-      day_rate_micros: 750_000_000,
-      currency: "EUR",
-      client_side: false,
-      sort_order: 0,
-    },
-  ],
-  phases: [
-    {
-      id: "p1",
-      code: "A0",
-      name: "Mobilisation",
-      sort_order: 0,
-      planned_start: "2026-01-05",
-      planned_end: "2026-01-30",
-      stated_working_weeks: "3.60",
-      gate_criteria: "Environments reachable",
-      actual_start: "2026-01-06",
-      actual_end: "2026-02-02",
-      gate_status: "passed",
-      gate_decided_at: "2026-02-03",
-      gate_notes: "Demonstrated to the sponsor",
-      tasks: [
-        {
-          id: "t1",
-          number: "1.1",
-          title: "Kick-off",
-          requirement_refs: "R1, R2",
-          planned_start: "2026-01-05",
-          planned_end: "2026-01-09",
-          is_critical: true,
-          status: "done",
-          sort_order: 0,
-          efforts: [
-            { role_id: "r1", role_code: "BE", planned_person_days: "4.00" },
-          ],
-        },
-      ],
-    },
-  ],
-  allocations: [
-    {
-      phase_id: "p1",
-      phase_code: "A0",
-      role_id: "r1",
-      role_code: "BE",
-      fte: "0.500",
-    },
-  ],
-  price_tiers: [
-    {
-      id: "pt1",
-      name: "Midpoint",
-      multiplier: "1.0",
-      is_primary: true,
-      sort_order: 0,
-    },
-  ],
-  cost_lines: [
-    {
-      id: "c1",
-      kind: "build_non_labour",
-      label: "Licences",
-      basis: "12 seats",
-      low_micros: 1_000_000_000,
-      high_micros: 2_000_000_000,
-      currency: "EUR",
-      phase_id: "p1",
-      phase_code: "A0",
-      run_model: null,
-      sort_order: 0,
-    },
-  ],
-  calendar_breaks: [
-    {
-      id: "b1",
-      label: "Easter",
-      start_date: "2026-04-03",
-      end_date: "2026-04-06",
-    },
-  ],
 };
+
+const CONTENT = LOADED.content!;
 
 describe("the editor's draft round-trip", () => {
   it("returns every phase and task field it was given", () => {
@@ -150,8 +160,32 @@ describe("the editor's draft round-trip", () => {
     ]);
   });
 
-  it("sends the version it loaded, so a peer's save is refused not overwritten", () => {
-    expect(draftToContent(draftFromEstimate(LOADED)).expected_version).toBe(7);
+  it("reads a record with no content (a list read) as an empty estimate", () => {
+    const draft = draftFromEstimate({ ...LOADED, content: null });
+    expect(draftToContent(draft)).toEqual({
+      roles: [],
+      phases: [],
+      allocations: [],
+      price_tiers: [],
+      cost_lines: [],
+      calendar_breaks: [],
+    });
+  });
+
+  it("knows an untouched draft from an edited one", () => {
+    const a = draftFromEstimate(LOADED);
+    expect(sameDraft(a, draftFromEstimate(LOADED))).toBe(true);
+    expect(sameDraft(a, { ...a, allocations: [] })).toBe(false);
+  });
+
+  it("describes a draft in lines a reader can compare", () => {
+    const text = describeDraft(draftFromEstimate(LOADED));
+    expect(text).toContain("Phases (1):");
+    expect(text).toContain(
+      "A0 Mobilisation — 2026-01-05 to 2026-01-30, 1 task"
+    );
+    expect(text).toContain("BE Backend");
+    expect(text).toContain("Days of work: 4 across 1 line");
   });
 
   it("detaches — and warns about — a cost line whose phase the import removed", () => {
@@ -441,33 +475,36 @@ describe("applyGanttImport", () => {
   it("pairs duplicate titles in order instead of all onto the first", () => {
     const twoReviews = {
       ...LOADED,
-      phases: [
-        {
-          ...LOADED.phases[0]!,
-          tasks: [
-            {
-              ...LOADED.phases[0]!.tasks[0]!,
-              number: "1.1",
-              title: "Review",
-              requirement_refs: "R1",
-            },
-            {
-              ...LOADED.phases[0]!.tasks[0]!,
-              number: "1.2",
-              title: "Review",
-              requirement_refs: "R2",
-              efforts: [],
-            },
-            {
-              ...LOADED.phases[0]!.tasks[0]!,
-              number: "1.3",
-              title: "Build",
-              requirement_refs: "R3",
-              efforts: [],
-            },
-          ],
-        },
-      ],
+      content: {
+        ...CONTENT,
+        phases: [
+          {
+            ...CONTENT.phases[0]!,
+            tasks: [
+              {
+                ...CONTENT.phases[0]!.tasks[0]!,
+                number: "1.1",
+                title: "Review",
+                requirement_refs: "R1",
+              },
+              {
+                ...CONTENT.phases[0]!.tasks[0]!,
+                number: "1.2",
+                title: "Review",
+                requirement_refs: "R2",
+                efforts: [],
+              },
+              {
+                ...CONTENT.phases[0]!.tasks[0]!,
+                number: "1.3",
+                title: "Build",
+                requirement_refs: "R3",
+                efforts: [],
+              },
+            ],
+          },
+        ],
+      },
     };
     const reimported = [
       {
@@ -520,18 +557,21 @@ describe("applyGanttImport", () => {
     // because it is indistinguishable from one; see `matchTasks`.
     const savedThree = {
       ...LOADED,
-      phases: [
-        {
-          ...LOADED.phases[0]!,
-          tasks: ["A", "B", "C"].map((title, i) => ({
-            ...LOADED.phases[0]!.tasks[0]!,
-            number: `1.${i + 1}`,
-            title,
-            requirement_refs: `R${title}`,
-            efforts: [],
-          })),
-        },
-      ],
+      content: {
+        ...CONTENT,
+        phases: [
+          {
+            ...CONTENT.phases[0]!,
+            tasks: ["A", "B", "C"].map((title, i) => ({
+              ...CONTENT.phases[0]!.tasks[0]!,
+              number: `1.${i + 1}`,
+              title,
+              requirement_refs: `R${title}`,
+              efforts: [],
+            })),
+          },
+        ],
+      },
     };
     const reimported = [
       {
@@ -566,27 +606,30 @@ describe("applyGanttImport", () => {
     // more often than discarding it would.
     const savedThree = {
       ...LOADED,
-      phases: [
-        {
-          ...LOADED.phases[0]!,
-          tasks: ["A", "B", "C"].map((title, i) => ({
-            ...LOADED.phases[0]!.tasks[0]!,
-            number: `1.${i + 1}`,
-            title,
-            requirement_refs: `R${title}`,
-            efforts:
-              title === "B"
-                ? [
-                    {
-                      role_id: "r1",
-                      role_code: "BE",
-                      planned_person_days: "99.00",
-                    },
-                  ]
-                : [],
-          })),
-        },
-      ],
+      content: {
+        ...CONTENT,
+        phases: [
+          {
+            ...CONTENT.phases[0]!,
+            tasks: ["A", "B", "C"].map((title, i) => ({
+              ...CONTENT.phases[0]!.tasks[0]!,
+              number: `1.${i + 1}`,
+              title,
+              requirement_refs: `R${title}`,
+              efforts:
+                title === "B"
+                  ? [
+                      {
+                        role_id: "r1",
+                        role_code: "BE",
+                        planned_person_days: "99.00",
+                      },
+                    ]
+                  : [],
+            })),
+          },
+        ],
+      },
     };
     const oneInOneOut = [
       {
@@ -630,7 +673,6 @@ describe("applyGanttImport", () => {
     // And leaves everything that is not the schedule alone.
     expect(after.roles).toHaveLength(1);
     expect(after.costLines).toHaveLength(1);
-    expect(after.version).toBe(7);
   });
 
   it("survives the round trip to the wire shape", () => {
@@ -640,5 +682,207 @@ describe("applyGanttImport", () => {
     const phase = content.phases[0]!;
     expect(phase.gate_status).toBe("passed");
     expect(phase.tasks?.[0]?.requirement_refs).toBe("R1, R2");
+  });
+});
+
+describe("rebaseDraft", () => {
+  const base = () => draftFromEstimate(LOADED);
+
+  it("takes theirs for every part I did not change, mine for what I did", () => {
+    const mine = { ...base(), roles: [] };
+    const theirs = {
+      ...base(),
+      costLines: [],
+      allocations: [{ phase_code: "A0", role_code: "BE", fte: "2" }],
+    };
+    const merged = rebaseDraft(mine, base(), theirs).draft;
+    expect(merged.roles).toEqual([]);
+    expect(merged.costLines).toEqual([]);
+    expect(merged.allocations[0]?.fte).toBe("2");
+  });
+
+  it("keeps my re-imported schedule but their gate on each phase", () => {
+    const mine = base();
+    mine.phases = [{ ...mine.phases[0]!, name: "Renamed by my import" }];
+    const theirs = base();
+    theirs.phases = [
+      { ...theirs.phases[0]!, gate_status: "failed", gate_notes: "Missed" },
+    ];
+    const phase = rebaseDraft(mine, base(), theirs).draft.phases[0]!;
+    expect(phase.name).toBe("Renamed by my import");
+    expect(phase.gate_status).toBe("failed");
+    expect(phase.gate_notes).toBe("Missed");
+  });
+});
+
+describe("the copy kept on this device", () => {
+  it("round-trips with its base", () => {
+    const draft = draftFromEstimate(LOADED);
+    const text = draftToStorage({
+      schema: STORED_DRAFT_SCHEMA,
+      draft,
+      base: draft,
+      imported: true,
+    });
+    expect(draftFromStorage(text)).toEqual({
+      schema: STORED_DRAFT_SCHEMA,
+      draft,
+      base: draft,
+      imported: true,
+      notes: [],
+    });
+  });
+
+  it("drops a copy kept by another build, or a damaged one", () => {
+    const draft = draftFromEstimate(LOADED);
+    expect(
+      draftFromStorage(JSON.stringify({ draft, imported: false }))
+    ).toBeNull();
+    expect(
+      draftFromStorage(JSON.stringify({ schema: 1, draft, base: { roles: 1 } }))
+    ).toBeNull();
+    expect(draftFromStorage("{not json")).toBeNull();
+  });
+});
+
+describe("rebaseDraft — my days on their re-imported schedule", () => {
+  const base = () => draftFromEstimate(LOADED);
+  const kickOff = () => CONTENT.phases[0]!.tasks[0]!;
+  /** Their version: the schedule re-imported with the given tasks. */
+  const theirsWith = (tasks: { number: string; title: string }[]) => {
+    const theirs = base();
+    theirs.phases = [
+      {
+        ...theirs.phases[0]!,
+        tasks: tasks.map((t) => ({
+          ...theirs.phases[0]!.tasks[0]!,
+          ...t,
+        })),
+      },
+    ];
+    return theirs;
+  };
+  /** Mine: the days on Kick-off changed, the schedule untouched. */
+  const mine = () => {
+    const draft = base();
+    draft.efforts = [{ ...draft.efforts[0]!, planned_person_days: "6" }];
+    return draft;
+  };
+
+  it("carries my days to the task they were written against after a renumber", () => {
+    // They inserted "Prep" above Kick-off, which moved it from 1.1 to 1.2.
+    const theirs = theirsWith([
+      { number: "1.1", title: "Prep" },
+      { number: "1.2", title: kickOff().title },
+    ]);
+    const rebased = rebaseDraft(mine(), base(), theirs);
+    expect(rebased.unresolved).toEqual([]);
+    expect(rebased.draft.phases).toEqual(theirs.phases);
+    expect(rebased.draft.efforts).toEqual([
+      {
+        phase_code: "A0",
+        task_number: "1.2",
+        role_code: "BE",
+        planned_person_days: "6",
+      },
+    ]);
+    expect(keepMineBlockers(rebased)).toEqual([]);
+  });
+
+  it("refuses to guess when my edited row's task cannot be found in theirs", () => {
+    // Kick-off renamed AND a task added: nothing proves which is which.
+    const rebased = rebaseDraft(
+      mine(),
+      base(),
+      theirsWith([
+        { number: "1.1", title: "Start" },
+        { number: "1.2", title: "Review" },
+      ])
+    );
+    expect(rebased.unresolved).toHaveLength(1);
+    expect(rebased.unresolved[0]!.message).toContain("task 1.1 of phase A0");
+    expect(rebased.unresolved[0]!.row).toEqual(mine().efforts[0]);
+    expect(keepMineBlockers(rebased)).toEqual(
+      rebased.unresolved.map((n) => n.message)
+    );
+  });
+
+  it("treats a pairing by position alone (a rename) as unproven for my edits", () => {
+    const rebased = rebaseDraft(
+      mine(),
+      base(),
+      theirsWith([{ number: "1.1", title: "Renamed kick-off" }])
+    );
+    expect(rebased.unresolved).toHaveLength(1);
+  });
+
+  it("blocks keeping mine when the merge breaks a cross-reference", () => {
+    // Base has no days; I removed the role; they gave that role days.
+    const start = { ...base(), efforts: [] };
+    const myCopy = { ...start, roles: [] };
+    const theirs = {
+      ...start,
+      efforts: [
+        {
+          phase_code: "A0",
+          task_number: "1.1",
+          role_code: "BE",
+          planned_person_days: "2",
+        },
+      ],
+    };
+    const rebased = rebaseDraft(myCopy, start, theirs);
+    expect(rebased.unresolved).toEqual([]);
+    expect(keepMineBlockers(rebased).join(" ")).toContain('"BE"');
+  });
+});
+
+describe("what a combine leaves to settle", () => {
+  const base = () => draftFromEstimate(LOADED);
+
+  it("blocks keeping mine when we both re-imported and they changed the days", () => {
+    const mine = base();
+    mine.phases = [{ ...mine.phases[0]!, name: "My re-import" }];
+    const theirs = base();
+    theirs.phases = [{ ...theirs.phases[0]!, name: "Their re-import" }];
+    theirs.efforts = [{ ...theirs.efforts[0]!, planned_person_days: "9" }];
+    const rebased = rebaseDraft(mine, base(), theirs);
+    expect(rebased.unresolved).toHaveLength(1);
+    expect(rebased.unresolved[0]!.row).toBeNull();
+    expect(keepMineBlockers(rebased)[0]).toContain("both changed the schedule");
+    // Without their day change there is nothing to reconcile.
+    theirs.efforts = base().efforts;
+    expect(rebaseDraft(mine, base(), theirs).unresolved).toEqual([]);
+  });
+
+  it("settles a row's note once the row is edited or removed, never by itself", () => {
+    const draft = base();
+    const row = draft.efforts[0]!;
+    const notes = [
+      { message: "row", row },
+      { message: "whole", row: null },
+    ];
+    expect(openMergeNotes(notes, draft)).toEqual(notes);
+    const edited = {
+      ...draft,
+      efforts: [{ ...row, task_number: "1.2" }],
+    };
+    expect(openMergeNotes(notes, edited)).toEqual([notes[1]]);
+    expect(openMergeNotes(notes, { ...draft, efforts: [] })).toEqual([
+      notes[1],
+    ]);
+  });
+
+  it("keeps its notes with the copy on this device", () => {
+    const draft = base();
+    const notes = [{ message: "row", row: draft.efforts[0]! }];
+    const text = draftToStorage({
+      schema: STORED_DRAFT_SCHEMA,
+      draft,
+      base: draft,
+      imported: false,
+      notes,
+    });
+    expect(draftFromStorage(text)?.notes).toEqual(notes);
   });
 });

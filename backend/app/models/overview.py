@@ -254,9 +254,10 @@ class Estimate(_AuditMixin, Base):
     notes: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
-    #: Bumped by every write to this estimate or its content graph. The
-    #: content-replace endpoint takes it as ``expected_version`` and refuses a
-    #: write built on a copy the server has moved past.
+    #: Bumped by every write to this estimate or its content graph. It is the
+    #: resource's version on the authoring contract: every write names it in
+    #: ``If-Match`` and is refused (409, with the server's copy) when it is
+    #: built on a copy the server has moved past.
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )

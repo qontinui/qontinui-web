@@ -112,3 +112,15 @@ export function checkFields(
   }
   return problems;
 }
+
+/**
+ * A named definition inside a served schema — the row shape of a table nested
+ * in a write body (`$defs.RoleWrite` inside the estimate's update schema).
+ */
+export function schemaDefinition(
+  schema: JsonSchema | undefined,
+  name: string
+): JsonSchema | undefined {
+  const defs = schema?.["$defs"] as Record<string, JsonSchema> | undefined;
+  return defs?.[name];
+}

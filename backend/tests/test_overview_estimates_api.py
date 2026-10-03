@@ -32,11 +32,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud import overview_estimate as crud
+from app.crud import overview_settings
 from app.models.overview import Estimate
+from app.overview.estimates import load_estimate_graph
 from app.schemas.overview import EstimateContentWrite
 from app.services.overview_rollup import (
     compute_rollup,
@@ -338,12 +339,67 @@ async def admin_b(async_db_session: AsyncSession, api_user):
         yield c
 
 
-async def _create_estimate(client: httpx.AsyncClient, **overrides) -> dict:
-    body = {"name": "Estimate v0.1", "purpose": "comparison", "is_baseline": True}
+async def _create_estimate(
+    client: httpx.AsyncClient,
+    *,
+    headers: dict[str, str] | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "Estimate v0.1",
+        "purpose": "comparison",
+        "is_baseline": True,
+    }
     body.update(overrides)
-    response = await client.post(f"{API}/estimates", json=body)
+    response = await client.post(f"{API}/estimates", json=body, headers=headers)
     assert response.status_code == 201, response.text
-    return response.json()
+    item: dict[str, Any] = response.json()["item"]
+    return item
+
+
+async def _write(
+    client: httpx.AsyncClient,
+    estimate_id: str,
+    body: dict[str, Any],
+    *,
+    version: int | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    """PATCH an estimate on the contract: ``If-Match`` names the version the
+    write is built on — the one given, else the one a fresh read serves."""
+    if version is None:
+        read = await client.get(f"{API}/estimates/{estimate_id}")
+        version = read.json()["item"]["version"] if read.status_code == 200 else 1
+    return await client.patch(
+        f"{API}/estimates/{estimate_id}",
+        json=body,
+        headers={"If-Match": f'"{version}"', **(headers or {})},
+    )
+
+
+async def _save_content(
+    client: httpx.AsyncClient,
+    estimate_id: str,
+    content: dict[str, Any],
+    *,
+    version: int | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    """Replace the content graph — the write the editor's Save makes."""
+    return await _write(
+        client, estimate_id, {"content": content}, version=version, headers=headers
+    )
+
+
+async def _log_rows(db: AsyncSession, record_id: str) -> list[Any]:
+    from app.models.overview import ChangeLog
+
+    stmt = (
+        select(ChangeLog)
+        .where(ChangeLog.resource == "estimates", ChangeLog.record_id == record_id)
+        .order_by(ChangeLog.created_at, ChangeLog.id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 # ===========================================================================
@@ -549,14 +605,9 @@ class TestRollupArithmetic:
             },
         )
         assert settings.status_code == 200, settings.text
-        patched = await admin_a.patch(
-            f"{API}/estimates/{estimate['id']}",
-            json={"contingency_pct": "10"},
-        )
+        patched = await _write(admin_a, estimate["id"], {"contingency_pct": "10"})
         assert patched.status_code == 200, patched.text
-        saved = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=_fixture_content()
-        )
+        saved = await _save_content(admin_a, estimate["id"], _fixture_content())
         assert saved.status_code == 200, saved.text
         response = await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")
         assert response.status_code == 200, response.text
@@ -748,9 +799,7 @@ class TestRollupHonesty:
                 }
             ],
         }
-        saved = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=content
-        )
+        saved = await _save_content(admin_a, estimate["id"], content)
         assert saved.status_code == 200, saved.text
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
         unpriced = next(r for r in body["roles"] if r["code"] == "XX")
@@ -795,9 +844,7 @@ class TestRollupHonesty:
                 }
             ],
         }
-        saved = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=content
-        )
+        saved = await _save_content(admin_a, estimate["id"], content)
         assert saved.status_code == 200, saved.text
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
         assert body["money"]["currency"] is None
@@ -853,7 +900,7 @@ class TestRollupHonesty:
             ],
         }
         assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+            await _save_content(admin_a, estimate["id"], content)
         ).status_code == 200
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
 
@@ -909,7 +956,7 @@ class TestRollupHonesty:
             ],
         }
         assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+            await _save_content(admin_a, estimate["id"], content)
         ).status_code == 200
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
 
@@ -948,7 +995,7 @@ class TestRollupHonesty:
             ],
         }
         assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+            await _save_content(admin_a, estimate["id"], content)
         ).status_code == 200
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
         assert body["money"]["tiers"][0]["labour_micros"] is None
@@ -986,7 +1033,7 @@ class TestRollupHonesty:
             ],
         }
         assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+            await _save_content(admin_a, estimate["id"], content)
         ).status_code == 200
         response = await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")
         assert response.status_code == 200, response.text
@@ -1010,7 +1057,7 @@ class TestRollupHonesty:
             ]
         }
         assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+            await _save_content(admin_a, estimate["id"], content)
         ).status_code == 200
         body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
         phase = body["phases"][0]
@@ -1087,43 +1134,104 @@ class TestEstimateCrud:
         created = await _create_estimate(admin_a)
         listed = await member_a.get(f"{API}/estimates")
         assert listed.status_code == 200
-        assert [e["id"] for e in listed.json()["estimates"]] == [created["id"]]
+        assert [e["id"] for e in listed.json()["items"]] == [created["id"]]
+        # The read serves the same answer the writes below enforce.
+        assert listed.json()["can_edit"] is False
+        read = await member_a.get(f"{API}/estimates/{created['id']}")
+        assert read.status_code == 200
+        assert read.json()["can_edit"] is False
 
+        if_match = {"If-Match": f'"{created["version"]}"'}
         assert (
             await member_a.post(
                 f"{API}/estimates", json={"name": "x", "purpose": "budget"}
             )
         ).status_code == 403
         assert (
-            await member_a.patch(f"{API}/estimates/{created['id']}", json={"name": "y"})
-        ).status_code == 403
-        assert (
-            await member_a.put(
-                f"{API}/estimates/{created['id']}/content", json={"roles": []}
+            await member_a.patch(
+                f"{API}/estimates/{created['id']}",
+                json={"name": "y"},
+                headers=if_match,
             )
         ).status_code == 403
         assert (
-            await member_a.delete(f"{API}/estimates/{created['id']}")
+            await member_a.patch(
+                f"{API}/estimates/{created['id']}",
+                json={"content": {"roles": []}},
+                headers=if_match,
+            )
         ).status_code == 403
+        assert (
+            await member_a.delete(f"{API}/estimates/{created['id']}", headers=if_match)
+        ).status_code == 403
+
+    async def test_editing_roles_lets_a_member_write(
+        self, admin_a: httpx.AsyncClient, member_a: httpx.AsyncClient
+    ) -> None:
+        """The project's ``editing_roles`` widens who may write, through the
+        same function the catalog serves."""
+        widened = await admin_a.put(
+            f"{API}/settings", json={"editing_roles": ["admin", "operator"]}
+        )
+        assert widened.status_code == 200, widened.text
+        created = await member_a.post(
+            f"{API}/estimates", json={"name": "by an operator", "purpose": "budget"}
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["can_edit"] is True
 
     async def test_only_one_estimate_is_the_baseline(
         self, admin_a: httpx.AsyncClient
     ) -> None:
         first = await _create_estimate(admin_a, name="v0.1", is_baseline=True)
         second = await _create_estimate(admin_a, name="v0.2", is_baseline=True)
-        listed = (await admin_a.get(f"{API}/estimates")).json()["estimates"]
+        listed = (await admin_a.get(f"{API}/estimates")).json()["items"]
         baselines = [e["id"] for e in listed if e["is_baseline"]]
         assert baselines == [second["id"]]
         assert first["id"] not in baselines
         # And the baseline is listed first, which is how the Team page picks it.
         assert listed[0]["id"] == second["id"]
 
+        # Re-baselining the first by an update un-marks the second.
+        moved = await _write(admin_a, first["id"], {"is_baseline": True})
+        assert moved.status_code == 200, moved.text
+        listed = (await admin_a.get(f"{API}/estimates")).json()["items"]
+        assert [e["id"] for e in listed if e["is_baseline"]] == [first["id"]]
+
+    async def test_a_list_read_carries_no_graph_and_a_record_read_does(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        assert (
+            await _save_content(admin_a, created["id"], _fixture_content())
+        ).status_code == 200
+        listed = (await admin_a.get(f"{API}/estimates")).json()
+        assert listed["items"][0]["content"] is None
+        assert listed["total"] == 1
+        read = (await admin_a.get(f"{API}/estimates/{created['id']}")).json()
+        assert len(read["item"]["content"]["phases"]) == len(_PHASE_SHAPE)
+
+    async def test_create_can_carry_the_whole_graph(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """An import (or an agent) creates a complete estimate in one request."""
+        created = await _create_estimate(admin_a, content=_fixture_content())
+        assert created["version"] == 1
+        assert [r["code"] for r in created["content"]["roles"]] == [
+            r[0] for r in _ROLE_SHAPE
+        ]
+        rollup = await admin_a.get(f"{API}/estimates/{created['id']}/rollup")
+        assert rollup.status_code == 200, rollup.text
+        assert Decimal(rollup.json()["effort"]["total_person_days"]) == (
+            STATED_TOTAL_PERSON_DAYS
+        )
+
     async def test_the_source_is_a_document_of_this_project_or_nothing(
         self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         # Phase 2c of 2026-09-20-overview-authoring-layer: "Use as the project
         # estimate" records the delivery-plan document an estimate was built
-        # from. The column has no FK, so the endpoints check it.
+        # from. The column has no FK, so the store checks it.
         from app.models.overview import Page
 
         def page(tenant: UUID, kind: str, slug: str) -> Page:
@@ -1139,62 +1247,125 @@ class TestEstimateCrud:
         assert created["source_page_id"] == str(plan.id)
 
         for bad in (wiki.id, foreign.id, uuid4()):
-            refused = await admin_a.patch(
-                f"{API}/estimates/{created['id']}",
-                json={"source_page_id": str(bad)},
-            )
+            refused = await _write(admin_a, created["id"], {"source_page_id": str(bad)})
             assert refused.status_code == 422, refused.text
-            assert refused.json()["detail"]["error"] == "source_page_not_found"
+            assert refused.json()["error"] == "source_page_not_found"
             made = await admin_a.post(
                 f"{API}/estimates",
                 json={"name": "x", "purpose": "budget", "source_page_id": str(bad)},
             )
             assert made.status_code == 422, made.text
+            assert made.json()["error"] == "source_page_not_found"
 
         other = page(TENANT_A, "document", "delivery-plan-v2")
         async_db_session.add(other)
         await async_db_session.flush()
-        relinked = await admin_a.patch(
-            f"{API}/estimates/{created['id']}",
-            json={"source_page_id": str(other.id)},
+        relinked = await _write(
+            admin_a, created["id"], {"source_page_id": str(other.id)}
         )
         assert relinked.status_code == 200, relinked.text
-        assert relinked.json()["source_page_id"] == str(other.id)
+        assert relinked.json()["item"]["source_page_id"] == str(other.id)
 
-        cleared = await admin_a.patch(
-            f"{API}/estimates/{created['id']}", json={"source_page_id": None}
-        )
+        cleared = await _write(admin_a, created["id"], {"source_page_id": None})
         assert cleared.status_code == 200, cleared.text
-        assert cleared.json()["source_page_id"] is None
+        assert cleared.json()["item"]["source_page_id"] is None
+
+    async def test_re_sending_the_recorded_source_is_not_re_checked(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The source is checked when it changes. A write that re-sends the
+        recorded one — whose document has since been deleted — still lands."""
+        from app.models.overview import Page
+
+        plan = Page(tenant_id=TENANT_A, kind="document", slug="gone", title="Gone")
+        async_db_session.add(plan)
+        await async_db_session.flush()
+        created = await _create_estimate(admin_a, source_page_id=str(plan.id))
+        await async_db_session.delete(plan)
+        await async_db_session.flush()
+
+        same = await _write(
+            admin_a,
+            created["id"],
+            {"name": "Renamed", "source_page_id": str(plan.id)},
+        )
+        assert same.status_code == 200, same.text
+        assert same.json()["item"]["name"] == "Renamed"
+        # A different one is still checked.
+        other = await _write(admin_a, created["id"], {"source_page_id": str(uuid4())})
+        assert other.status_code == 422, other.text
+
+    async def test_content_and_its_source_land_in_one_version(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The editor's Save records the source document beside the content it
+        saves: one write, one version, one change-log row — so a concurrent
+        writer can never land between the two halves, and a refused source
+        writes no content either."""
+        from app.models.overview import Page
+
+        plan = Page(tenant_id=TENANT_A, kind="document", slug="plan", title="Plan")
+        async_db_session.add(plan)
+        await async_db_session.flush()
+        created = await _create_estimate(admin_a)
+
+        refused = await _write(
+            admin_a,
+            created["id"],
+            {"content": _fixture_content(), "source_page_id": str(uuid4())},
+        )
+        assert refused.status_code == 422, refused.text
+        unchanged = (await admin_a.get(f"{API}/estimates/{created['id']}")).json()
+        assert unchanged["item"]["version"] == created["version"]
+        assert unchanged["item"]["content"]["roles"] == []
+
+        saved = await _write(
+            admin_a,
+            created["id"],
+            {"content": _fixture_content(), "source_page_id": str(plan.id)},
+        )
+        assert saved.status_code == 200, saved.text
+        item = saved.json()["item"]
+        assert item["version"] == created["version"] + 1
+        assert item["source_page_id"] == str(plan.id)
+        assert len(item["content"]["roles"]) == len(_ROLE_SHAPE)
+        rows = await _log_rows(async_db_session, created["id"])
+        assert [r.action for r in rows] == ["create", "update"]
 
     async def test_patch_leaves_absent_fields_alone(
         self, admin_a: httpx.AsyncClient
     ) -> None:
         created = await _create_estimate(admin_a, notes="keep me")
-        patched = await admin_a.patch(
-            f"{API}/estimates/{created['id']}", json={"status": "approved"}
-        )
+        assert (
+            await _save_content(admin_a, created["id"], _fixture_content())
+        ).status_code == 200
+        patched = await _write(admin_a, created["id"], {"status": "approved"})
         assert patched.status_code == 200, patched.text
-        assert patched.json()["notes"] == "keep me"
-        assert patched.json()["status"] == "approved"
+        item = patched.json()["item"]
+        assert item["notes"] == "keep me"
+        assert item["status"] == "approved"
+        # A head-row edit leaves the graph alone.
+        assert len(item["content"]["phases"]) == len(_PHASE_SHAPE)
 
     async def test_delete_takes_the_content_with_it(
         self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         created = await _create_estimate(admin_a)
-        assert (
-            await admin_a.put(
-                f"{API}/estimates/{created['id']}/content", json=_fixture_content()
-            )
-        ).status_code == 200
-        assert (
-            await admin_a.delete(f"{API}/estimates/{created['id']}")
-        ).status_code == 204
+        saved = await _save_content(admin_a, created["id"], _fixture_content())
+        assert saved.status_code == 200
+        deleted = await admin_a.delete(
+            f"{API}/estimates/{created['id']}",
+            headers={"If-Match": f'"{saved.json()["item"]["version"]}"'},
+        )
+        assert deleted.status_code == 204, deleted.text
         remaining = await async_db_session.execute(
             text("SELECT count(*) FROM overview.phases WHERE estimate_id = :id"),
             {"id": UUID(created["id"])},
         )
         assert remaining.scalar_one() == 0
+        assert (
+            await admin_a.get(f"{API}/estimates/{created['id']}")
+        ).status_code == 404
 
     async def test_clearing_a_required_field_is_a_422_not_a_500(
         self, admin_a: httpx.AsyncClient
@@ -1204,18 +1375,20 @@ class TestEstimateCrud:
         value on the way in. For a NOT NULL column that would reach Postgres
         and come back as a 500."""
         created = await _create_estimate(admin_a)
-        for field in ("name", "purpose", "status", "is_baseline", "notes"):
-            response = await admin_a.patch(
-                f"{API}/estimates/{created['id']}", json={field: None}
-            )
+        for field in ("name", "purpose", "status", "is_baseline", "notes", "content"):
+            response = await _write(admin_a, created["id"], {field: None})
             assert response.status_code == 422, f"{field}: {response.text}"
         # The nullable ones still clear.
-        cleared = await admin_a.patch(
-            f"{API}/estimates/{created['id']}",
-            json={"accuracy_note": None, "contingency_pct": None},
+        cleared = await _write(
+            admin_a, created["id"], {"accuracy_note": None, "contingency_pct": None}
         )
         assert cleared.status_code == 200, cleared.text
-        assert cleared.json()["accuracy_note"] is None
+        assert cleared.json()["item"]["accuracy_note"] is None
+
+    async def test_an_empty_patch_is_a_422(self, admin_a: httpx.AsyncClient) -> None:
+        created = await _create_estimate(admin_a)
+        response = await _write(admin_a, created["id"], {})
+        assert response.status_code == 422, response.text
 
     async def test_an_unknown_purpose_is_a_422_not_a_500(
         self, admin_a: httpx.AsyncClient
@@ -1224,6 +1397,342 @@ class TestEstimateCrud:
             f"{API}/estimates", json={"name": "x", "purpose": "guesswork"}
         )
         assert response.status_code == 422
+
+    async def test_an_id_that_is_not_a_uuid_is_404_not_500(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        assert (await admin_a.get(f"{API}/estimates/not-a-uuid")).status_code == 404
+        assert (
+            await admin_a.get(f"{API}/estimates/not-a-uuid/rollup")
+        ).status_code == 404
+
+
+class TestTheContract:
+    """What the estimate gets by being on the authoring contract: versions as
+    ETags, If-Match on every write, a 409 that carries the server's copy,
+    idempotent create, and one change-log row per write path."""
+
+    async def test_the_catalog_serves_the_row_shapes_the_editor_validates(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """The editor's record tables check each row against a definition
+        inside the served update schema, by name
+        (``frontend/src/components/overview/editing/registry.ts``,
+        ``schemaDef``). Renaming one here would silently switch that check off,
+        so the names are pinned."""
+        catalog = (await admin_a.get(f"{API}/resources")).json()
+        estimates = next(r for r in catalog["resources"] if r["name"] == "estimates")
+        assert estimates["can_edit"] is True
+        assert set(estimates["operations"]) == {
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+        }
+        defs = estimates["schemas"]["update"]["$defs"]
+        for name in ("RoleWrite", "AllocationWrite", "TaskEffortWrite"):
+            assert name in defs, name
+        assert defs["AllocationWrite"]["properties"]["fte"]["x-numeric"] == {
+            "precision": 8,
+            "scale": 3,
+        }
+
+    async def test_a_read_serves_its_version_as_the_etag(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        read = await admin_a.get(f"{API}/estimates/{created['id']}")
+        assert read.headers["ETag"] == f'"{created["version"]}"'
+
+    async def test_a_write_without_if_match_is_428(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        patched = await admin_a.patch(
+            f"{API}/estimates/{created['id']}", json={"name": "no version"}
+        )
+        assert patched.status_code == 428, patched.text
+        deleted = await admin_a.delete(f"{API}/estimates/{created['id']}")
+        assert deleted.status_code == 428, deleted.text
+
+    async def test_a_stale_write_is_a_409_carrying_the_servers_copy(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        theirs = await _save_content(
+            admin_a, created["id"], _fixture_content(), version=created["version"]
+        )
+        assert theirs.status_code == 200, theirs.text
+
+        # Mine, built on the version both of us loaded.
+        mine = await _save_content(
+            admin_a,
+            created["id"],
+            {"roles": [{"code": "BE", "name": "Backend"}]},
+            version=created["version"],
+        )
+        assert mine.status_code == 409, mine.text
+        body = mine.json()
+        assert body["error"] == "version_conflict"
+        assert body["current_version"] == created["version"] + 1
+        assert mine.headers["ETag"] == f'"{created["version"] + 1}"'
+        # The server's copy, whole — so a client can show both sides.
+        assert len(body["current"]["content"]["roles"]) == len(_ROLE_SHAPE)
+        # And nothing of mine was written.
+        now = (await admin_a.get(f"{API}/estimates/{created['id']}")).json()
+        assert len(now["item"]["content"]["roles"]) == len(_ROLE_SHAPE)
+
+    async def test_a_stale_delete_deletes_nothing(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        assert (
+            await _write(admin_a, created["id"], {"name": "moved"})
+        ).status_code == 200
+        response = await admin_a.delete(
+            f"{API}/estimates/{created['id']}",
+            headers={"If-Match": f'"{created["version"]}"'},
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["current"]["name"] == "moved"
+        assert (
+            await admin_a.get(f"{API}/estimates/{created['id']}")
+        ).status_code == 200
+
+    async def test_create_is_idempotent_under_a_retry(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        body = {"name": "Retried", "purpose": "budget", "content": _fixture_content()}
+        headers = {"Idempotency-Key": f"retry-{uuid4()}"}
+        first = await admin_a.post(f"{API}/estimates", json=body, headers=headers)
+        assert first.status_code == 201, first.text
+        again = await admin_a.post(f"{API}/estimates", json=body, headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.headers["Idempotent-Replayed"] == "true"
+        assert again.json()["item"]["id"] == first.json()["item"]["id"]
+        listed = (await admin_a.get(f"{API}/estimates")).json()["items"]
+        assert [e["id"] for e in listed] == [first.json()["item"]["id"]]
+        rows = await _log_rows(async_db_session, first.json()["item"]["id"])
+        assert [r.action for r in rows] == ["create"]
+
+    async def test_an_unchanged_head_write_moves_nothing(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        created = await _create_estimate(admin_a, name="Same")
+        response = await _write(admin_a, created["id"], {"name": "Same"})
+        assert response.status_code == 200, response.text
+        assert response.json()["item"]["version"] == created["version"]
+        rows = await _log_rows(async_db_session, created["id"])
+        assert [r.action for r in rows] == ["create"]
+
+    async def test_every_write_path_leaves_a_change_log_row_with_its_source(
+        self,
+        admin_a: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        api_user,
+    ) -> None:
+        created = await _create_estimate(
+            admin_a, name="Logged", headers={"X-Overview-Source": "ui"}
+        )
+        imported = await _save_content(
+            admin_a,
+            created["id"],
+            {"roles": [{"code": "BE", "name": "Backend"}]},
+            headers={"X-Overview-Source": "import"},
+        )
+        assert imported.status_code == 200, imported.text
+        renamed = await _write(admin_a, created["id"], {"name": "Renamed"})
+        assert renamed.status_code == 200, renamed.text
+        deleted = await admin_a.delete(
+            f"{API}/estimates/{created['id']}",
+            headers={"If-Match": f'"{renamed.json()["item"]["version"]}"'},
+        )
+        assert deleted.status_code == 204, deleted.text
+
+        rows = await _log_rows(async_db_session, created["id"])
+        assert [(r.action, r.source) for r in rows] == [
+            ("create", "ui"),
+            ("update", "import"),
+            ("update", "api"),
+            ("delete", "api"),
+        ]
+        assert all(r.actor == api_user.email for r in rows)
+        assert [(r.version_before, r.version_after) for r in rows] == [
+            (None, 1),
+            (1, 2),
+            (2, 3),
+            (3, None),
+        ]
+        # Who changed this number, and from what.
+        assert rows[1].before["content"]["roles"] == []
+        assert rows[1].after["content"]["roles"][0]["code"] == "BE"
+        assert (rows[2].before["name"], rows[2].after["name"]) == ("Logged", "Renamed")
+        # A deleted estimate is still answerable: the row keeps what it said.
+        assert rows[3].before["name"] == "Renamed"
+        assert rows[3].before["content"]["roles"][0]["code"] == "BE"
+        assert rows[3].after is None
+
+        # And the history route serves it to any member.
+        history = await admin_a.get(
+            f"{API}/change-log",
+            params={"resource": "estimates", "record_id": created["id"]},
+        )
+        assert history.status_code == 200, history.text
+        assert [e["action"] for e in history.json()["entries"]] == [
+            "delete",
+            "update",
+            "update",
+            "create",
+        ]
+
+    async def test_unmarking_the_old_baseline_is_a_versioned_logged_write(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Re-baselining writes to ANOTHER estimate too. That write follows
+        the contract: its version moves (an ETag held on it goes stale) and
+        it gets its own change-log row."""
+        old = await _create_estimate(admin_a, name="old", is_baseline=True)
+        await _create_estimate(admin_a, name="new", is_baseline=True)
+        now = (await admin_a.get(f"{API}/estimates/{old['id']}")).json()["item"]
+        assert now["is_baseline"] is False
+        assert now["version"] == old["version"] + 1
+        rows = await _log_rows(async_db_session, old["id"])
+        assert [r.action for r in rows] == ["create", "update"]
+        assert (rows[1].before["is_baseline"], rows[1].after["is_baseline"]) == (
+            True,
+            False,
+        )
+        stale = await _write(admin_a, old["id"], {"name": "x"}, version=old["version"])
+        assert stale.status_code == 409, stale.text
+
+    async def test_resending_the_graph_as_it_stands_writes_nothing(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        created = await _create_estimate(admin_a, content=_fixture_content())
+        again = await _save_content(admin_a, created["id"], _fixture_content())
+        assert again.status_code == 200, again.text
+        assert again.json()["item"]["version"] == created["version"]
+        rows = await _log_rows(async_db_session, created["id"])
+        assert [r.action for r in rows] == ["create"]
+
+        # Figures written with other trailing zeros are the same figures…
+        same = _fixture_content()
+        same["allocations"][0]["fte"] = "0.500"
+        assert (await _save_content(admin_a, created["id"], same)).json()["item"][
+            "version"
+        ] == created["version"]
+        # …and a real change is still a write.
+        changed = _fixture_content()
+        changed["allocations"][0]["fte"] = "0.75"
+        moved = await _save_content(admin_a, created["id"], changed)
+        assert moved.json()["item"]["version"] == created["version"] + 1
+
+    async def test_a_nul_character_is_a_422_not_a_500(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        created = await _create_estimate(admin_a)
+        for body in (
+            {"name": "bad\x00name"},
+            {"content": {"roles": [{"code": "BE", "name": "Back\x00end"}]}},
+        ):
+            response = await _write(admin_a, created["id"], body)
+            assert response.status_code == 422, response.text
+        made = await admin_a.post(
+            f"{API}/estimates", json={"name": "x", "purpose": "budget", "notes": "\x00"}
+        )
+        assert made.status_code == 422, made.text
+
+    async def test_numeric_overflow_is_a_422_naming_the_field_not_a_500(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """Numeric bounds belong to the contract: every figure a direct API
+        caller can send is refused as a 422 before it reaches a column it
+        does not fit."""
+        created = await _create_estimate(admin_a)
+
+        def content(**role: Any) -> dict[str, Any]:
+            return {
+                "roles": [{"code": "BE", "name": "Backend", **role}],
+                "phases": [{"code": "P1", "name": "Build"}],
+            }
+
+        cases: list[tuple[dict[str, Any], str]] = [
+            (
+                {"content": content(day_rate_micros=2**53, currency="EUR")},
+                "day_rate_micros",
+            ),
+            (
+                {
+                    "content": {
+                        **content(),
+                        "allocations": [
+                            {"phase_code": "P1", "role_code": "BE", "fte": "100000"}
+                        ],
+                    }
+                },
+                "fte",
+            ),
+            (
+                {
+                    "content": {
+                        **content(),
+                        "cost_lines": [
+                            {
+                                "kind": "run_annual",
+                                "label": "Hosting",
+                                "low_micros": 1,
+                                "high_micros": 2**63,
+                                "currency": "EUR",
+                            }
+                        ],
+                    }
+                },
+                "high_micros",
+            ),
+            (
+                {
+                    "content": {
+                        **content(),
+                        "price_tiers": [
+                            {"name": "Mid", "multiplier": "10000", "is_primary": True}
+                        ],
+                    }
+                },
+                "multiplier",
+            ),
+            ({"contingency_pct": "1000"}, "contingency_pct"),
+        ]
+        for body, field in cases:
+            response = await _write(admin_a, created["id"], body)
+            assert response.status_code == 422, f"{field}: {response.text}"
+            assert field in response.text, response.text
+        oversized_create = await admin_a.post(
+            f"{API}/estimates",
+            json={"name": "x", "purpose": "budget", "contingency_pct": "1000"},
+        )
+        assert oversized_create.status_code == 422, oversized_create.text
+
+    async def test_a_partially_invalid_import_is_refused_whole_naming_the_row(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """A CSV paste arrives as one content write marked ``import``. One bad
+        row refuses the whole write — the 422 names that row — and the content
+        already saved is left exactly as it was."""
+        created = await _create_estimate(admin_a)
+        saved = await _save_content(admin_a, created["id"], _fixture_content())
+        assert saved.status_code == 200
+        bad = _fixture_content()
+        bad["roles"][3]["currency"] = "euros"
+        response = await _save_content(
+            admin_a, created["id"], bad, headers={"X-Overview-Source": "import"}
+        )
+        assert response.status_code == 422, response.text
+        locs = [e["loc"] for e in response.json()["detail"]]
+        assert ["body", "content", "roles", 3, "currency"] in locs
+        current = (await admin_a.get(f"{API}/estimates/{created['id']}")).json()
+        assert current["item"]["version"] == saved.json()["item"]["version"]
+        assert current["item"]["content"]["roles"][3]["currency"] == "EUR"
 
 
 class TestTenantIsolation:
@@ -1234,28 +1743,45 @@ class TestTenantIsolation:
         self, admin_a: httpx.AsyncClient, admin_b: httpx.AsyncClient
     ) -> None:
         created = await _create_estimate(admin_a, name="A's estimate")
+        if_match = {"If-Match": f'"{created["version"]}"'}
 
         listed = await admin_b.get(f"{API}/estimates")
         assert listed.status_code == 200
-        assert listed.json()["estimates"] == []
+        assert listed.json()["items"] == []
 
         for response in (
             await admin_b.get(f"{API}/estimates/{created['id']}"),
             await admin_b.get(f"{API}/estimates/{created['id']}/rollup"),
             await admin_b.patch(
-                f"{API}/estimates/{created['id']}", json={"name": "mine now"}
+                f"{API}/estimates/{created['id']}",
+                json={"name": "mine now"},
+                headers=if_match,
             ),
-            await admin_b.put(
-                f"{API}/estimates/{created['id']}/content", json={"roles": []}
+            await admin_b.patch(
+                f"{API}/estimates/{created['id']}",
+                json={"content": {"roles": []}},
+                headers=if_match,
             ),
-            await admin_b.delete(f"{API}/estimates/{created['id']}"),
+            await admin_b.delete(f"{API}/estimates/{created['id']}", headers=if_match),
         ):
             assert response.status_code == 404, response.text
 
         # And A still has it, unchanged.
         still = await admin_a.get(f"{API}/estimates/{created['id']}")
         assert still.status_code == 200
-        assert still.json()["estimate"]["name"] == "A's estimate"
+        assert still.json()["item"]["name"] == "A's estimate"
+        assert still.json()["item"]["version"] == created["version"]
+
+    async def test_an_idempotency_key_is_per_project(
+        self, admin_a: httpx.AsyncClient, admin_b: httpx.AsyncClient
+    ) -> None:
+        """B reusing A's key creates B's own estimate; it never replays A's."""
+        headers = {"Idempotency-Key": "shared-key"}
+        body = {"name": "Mine", "purpose": "budget"}
+        a = await admin_a.post(f"{API}/estimates", json=body, headers=headers)
+        b = await admin_b.post(f"{API}/estimates", json=body, headers=headers)
+        assert (a.status_code, b.status_code) == (201, 201)
+        assert a.json()["item"]["id"] != b.json()["item"]["id"]
 
     async def test_settings_are_per_project(
         self, admin_a: httpx.AsyncClient, admin_b: httpx.AsyncClient
@@ -1281,11 +1807,9 @@ class TestTenantIsolation:
 class TestContentReplace:
     async def test_the_graph_round_trips(self, admin_a: httpx.AsyncClient) -> None:
         estimate = await _create_estimate(admin_a)
-        saved = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=_fixture_content()
-        )
+        saved = await _save_content(admin_a, estimate["id"], _fixture_content())
         assert saved.status_code == 200, saved.text
-        body = saved.json()
+        body = saved.json()["item"]["content"]
         assert [p["code"] for p in body["phases"]] == [p[0] for p in _PHASE_SHAPE]
         assert [r["code"] for r in body["roles"]] == [r[0] for r in _ROLE_SHAPE]
         assert len(body["allocations"]) == 14
@@ -1294,11 +1818,11 @@ class TestContentReplace:
         first_task = body["phases"][0]["tasks"][0]
         assert all(e["role_code"] for e in first_task["efforts"])
 
-    async def test_every_field_the_endpoint_owns_survives_a_round_trip(
+    async def test_every_field_the_store_owns_survives_a_round_trip(
         self, admin_a: httpx.AsyncClient
     ) -> None:
-        """The editor reads an estimate, edits part of it, and PUTs the whole
-        graph back. Any field the server accepts on the way in but the
+        """The editor reads an estimate, edits part of it, and writes the
+        whole graph back. Any field the server accepts on the way in but the
         payload omits reverts to its default — so the fields no page shows
         are exactly the ones that go missing silently.
 
@@ -1370,12 +1894,11 @@ class TestContentReplace:
                 }
             ],
         }
-        saved = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=content
-        )
+        saved = await _save_content(admin_a, estimate["id"], content)
         assert saved.status_code == 200, saved.text
 
-        phase = saved.json()["phases"][0]
+        written = saved.json()["item"]["content"]
+        phase = written["phases"][0]
         assert phase["gate_status"] == "passed"
         assert phase["gate_decided_at"] == "2026-02-03"
         assert phase["gate_notes"] == "Demonstrated to the sponsor"
@@ -1386,25 +1909,23 @@ class TestContentReplace:
         assert task["requirement_refs"] == "R1, R2"
         assert task["is_critical"] is True
         assert task["status"] == "done"
-        line = saved.json()["cost_lines"][0]
+        line = written["cost_lines"][0]
         assert line["phase_code"] == "A0"
         assert line["basis"] == "12 seats"
 
         # And a second read agrees with the write's own response.
         fetched = await admin_a.get(f"{API}/estimates/{estimate['id']}")
         assert fetched.status_code == 200
-        assert fetched.json()["phases"] == saved.json()["phases"]
+        assert fetched.json()["item"]["content"]["phases"] == written["phases"]
 
     async def test_replacing_twice_does_not_accumulate(
         self, admin_a: httpx.AsyncClient
     ) -> None:
         estimate = await _create_estimate(admin_a)
         for _ in range(2):
-            response = await admin_a.put(
-                f"{API}/estimates/{estimate['id']}/content", json=_fixture_content()
-            )
+            response = await _save_content(admin_a, estimate["id"], _fixture_content())
             assert response.status_code == 200, response.text
-        body = response.json()
+        body = response.json()["item"]["content"]
         assert len(body["phases"]) == len(_PHASE_SHAPE)
         assert len(body["roles"]) == len(_ROLE_SHAPE)
 
@@ -1413,19 +1934,15 @@ class TestContentReplace:
     ) -> None:
         estimate = await _create_estimate(admin_a)
         assert (
-            await admin_a.put(
-                f"{API}/estimates/{estimate['id']}/content", json=_fixture_content()
-            )
+            await _save_content(admin_a, estimate["id"], _fixture_content())
         ).status_code == 200
         bad = _fixture_content()
         bad["phases"][0]["tasks"][0]["efforts"][0]["role_code"] = "NOPE"
-        response = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=bad
-        )
+        response = await _save_content(admin_a, estimate["id"], bad)
         assert response.status_code == 422, response.text
         # The earlier content survives: a rejected import lands nothing.
         current = (await admin_a.get(f"{API}/estimates/{estimate['id']}")).json()
-        assert len(current["phases"]) == len(_PHASE_SHAPE)
+        assert len(current["item"]["content"]["phases"]) == len(_PHASE_SHAPE)
 
     async def test_two_primary_tiers_are_refused(
         self, admin_a: httpx.AsyncClient
@@ -1434,36 +1951,19 @@ class TestContentReplace:
         content = _fixture_content()
         for tier in content["price_tiers"]:
             tier["is_primary"] = True
-        response = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=content
-        )
+        response = await _save_content(admin_a, estimate["id"], content)
         assert response.status_code == 422
 
     async def test_a_rate_without_a_currency_is_refused(
         self, admin_a: httpx.AsyncClient
     ) -> None:
         estimate = await _create_estimate(admin_a)
-        response = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content",
-            json={"roles": [{"code": "BE", "name": "B", "day_rate_micros": 1}]},
+        response = await _save_content(
+            admin_a,
+            estimate["id"],
+            {"roles": [{"code": "BE", "name": "B", "day_rate_micros": 1}]},
         )
         assert response.status_code == 422
-
-    async def test_a_stale_expected_version_is_refused(
-        self, admin_a: httpx.AsyncClient
-    ) -> None:
-        estimate = await _create_estimate(admin_a)
-        content = _fixture_content()
-        content["expected_version"] = estimate["version"]
-        assert (
-            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
-        ).status_code == 200
-        # The same payload again, still claiming the old version.
-        response = await admin_a.put(
-            f"{API}/estimates/{estimate['id']}/content", json=content
-        )
-        assert response.status_code == 409
-        assert response.json()["detail"]["current_version"] == estimate["version"] + 1
 
 
 class TestTenantResolution:
@@ -1571,15 +2071,13 @@ class TestRollupIsPure:
     ) -> None:
         estimate = await _create_estimate(admin_a)
         assert (
-            await admin_a.put(
-                f"{API}/estimates/{estimate['id']}/content", json=_fixture_content()
-            )
+            await _save_content(admin_a, estimate["id"], _fixture_content())
         ).status_code == 200
-        loaded = await crud.load_estimate_graph(
+        loaded = await load_estimate_graph(
             async_db_session, tenant_id=TENANT_A, estimate_id=UUID(estimate["id"])
         )
         assert isinstance(loaded, Estimate)
-        settings = crud.default_settings_row(TENANT_A)
+        settings = overview_settings.default_settings_row(TENANT_A)
         moment = datetime(2026, 9, 20, tzinfo=UTC)
         first = compute_rollup(loaded, settings, generated_at=moment)
         second = compute_rollup(loaded, settings, generated_at=moment)

@@ -11287,6 +11287,7 @@
           "high_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -11313,6 +11314,7 @@
           "low_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -18935,13 +18937,71 @@
         "title": "ErrorMonitorSummary",
         "type": "object"
       },
+      "EstimateContent": {
+        "description": "The whole content graph as read back, every cross-reference resolved to\nits CODE as well as its id.",
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationRead"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "calendar_breaks": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarBreakRead"
+            },
+            "title": "Calendar Breaks",
+            "type": "array"
+          },
+          "cost_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostLineRead"
+            },
+            "title": "Cost Lines",
+            "type": "array"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseRead"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "price_tiers": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTierRead"
+            },
+            "title": "Price Tiers",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRead"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roles",
+          "phases",
+          "allocations",
+          "price_tiers",
+          "cost_lines",
+          "calendar_breaks"
+        ],
+        "title": "EstimateContent",
+        "type": "object"
+      },
       "EstimateContentWrite": {
-        "description": "The estimate's whole content graph, replaced in one transaction.\n\nReplace-the-whole-graph rather than per-row CRUD, because that is the\nshape every source actually has: a CSV paste is a whole table, a mermaid\n``gantt`` block is a whole schedule, and the editor shows the result for\nconfirmation before anything is saved. It also means an import can never\nhalf-land.",
+        "description": "The estimate's whole content graph, replaced in one transaction.\n\nReplace-the-whole-graph rather than per-row CRUD, because that is the\nshape every source actually has: a CSV paste is a whole table, a mermaid\n``gantt`` block is a whole schedule, and the editor shows the result for\nconfirmation before anything is saved. It also means an import can never\nhalf-land. It travels as the ``content`` field of an estimate create or\nupdate, so it shares that write's ``If-Match``, audit row and version.",
         "properties": {
           "allocations": {
             "items": {
               "$ref": "#/components/schemas/AllocationWrite"
             },
+            "maxItems": 20000,
             "title": "Allocations",
             "type": "array"
           },
@@ -18949,6 +19009,7 @@
             "items": {
               "$ref": "#/components/schemas/CalendarBreakWrite"
             },
+            "maxItems": 1000,
             "title": "Calendar Breaks",
             "type": "array"
           },
@@ -18956,24 +19017,15 @@
             "items": {
               "$ref": "#/components/schemas/CostLineWrite"
             },
+            "maxItems": 2000,
             "title": "Cost Lines",
             "type": "array"
-          },
-          "expected_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Version"
           },
           "phases": {
             "items": {
               "$ref": "#/components/schemas/PhaseWrite"
             },
+            "maxItems": 500,
             "title": "Phases",
             "type": "array"
           },
@@ -18981,6 +19033,7 @@
             "items": {
               "$ref": "#/components/schemas/PriceTierWrite"
             },
+            "maxItems": 50,
             "title": "Price Tiers",
             "type": "array"
           },
@@ -18988,6 +19041,7 @@
             "items": {
               "$ref": "#/components/schemas/RoleWrite"
             },
+            "maxItems": 500,
             "title": "Roles",
             "type": "array"
           }
@@ -19007,6 +19061,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContentWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19089,89 +19153,8 @@
         "title": "EstimateCreate",
         "type": "object"
       },
-      "EstimateDetail": {
-        "description": "The head row plus its whole content graph \u2014 what the editor loads.",
-        "properties": {
-          "allocations": {
-            "items": {
-              "$ref": "#/components/schemas/AllocationRead"
-            },
-            "title": "Allocations",
-            "type": "array"
-          },
-          "calendar_breaks": {
-            "items": {
-              "$ref": "#/components/schemas/CalendarBreakRead"
-            },
-            "title": "Calendar Breaks",
-            "type": "array"
-          },
-          "cost_lines": {
-            "items": {
-              "$ref": "#/components/schemas/CostLineRead"
-            },
-            "title": "Cost Lines",
-            "type": "array"
-          },
-          "estimate": {
-            "$ref": "#/components/schemas/EstimateSummary"
-          },
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/PhaseRead"
-            },
-            "title": "Phases",
-            "type": "array"
-          },
-          "price_tiers": {
-            "items": {
-              "$ref": "#/components/schemas/PriceTierRead"
-            },
-            "title": "Price Tiers",
-            "type": "array"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleRead"
-            },
-            "title": "Roles",
-            "type": "array"
-          }
-        },
-        "required": [
-          "estimate",
-          "roles",
-          "phases",
-          "allocations",
-          "price_tiers",
-          "cost_lines",
-          "calendar_breaks"
-        ],
-        "title": "EstimateDetail",
-        "type": "object"
-      },
-      "EstimateListResponse": {
-        "properties": {
-          "estimates": {
-            "items": {
-              "$ref": "#/components/schemas/EstimateSummary"
-            },
-            "title": "Estimates",
-            "type": "array"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "estimates",
-          "total"
-        ],
-        "title": "EstimateListResponse",
-        "type": "object"
-      },
-      "EstimateSummary": {
+      "EstimateRead": {
+        "description": "One estimate: its head row and, on a single-record read, its content.",
         "properties": {
           "accuracy_note": {
             "anyOf": [
@@ -19183,6 +19166,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19213,7 +19206,6 @@
             "title": "Created By"
           },
           "id": {
-            "format": "uuid",
             "title": "Id",
             "type": "string"
           },
@@ -19295,13 +19287,14 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "content"
         ],
-        "title": "EstimateSummary",
+        "title": "EstimateRead",
         "type": "object"
       },
       "EstimateUpdate": {
-        "description": "Every field optional \u2014 an absent field is left alone.\n\n``None`` is a real value for the nullable fields (it clears them), so the\nhandler distinguishes \"absent\" from \"null\" with\n``model_fields_set``/``exclude_unset``.",
+        "description": "Every field optional \u2014 an absent field is left alone.\n\n``None`` is a real value for the nullable fields (it clears them), so the\nstore distinguishes \"absent\" from \"null\" with ``exclude_unset``. ``content``\nreplaces the whole graph; it and the head fields land in ONE version, so a\nsave that also records its source document cannot half-land.",
         "properties": {
           "accuracy_note": {
             "anyOf": [
@@ -19313,6 +19306,16 @@
               }
             ],
             "title": "Accuracy Note"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimateContentWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contingency_pct": {
             "anyOf": [
@@ -19338,17 +19341,6 @@
               }
             ],
             "title": "Contingency Pct"
-          },
-          "expected_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Version"
           },
           "is_baseline": {
             "anyOf": [
@@ -19432,6 +19424,60 @@
           }
         },
         "title": "EstimateUpdate",
+        "type": "object"
+      },
+      "EstimatesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/EstimateRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "EstimatesItem",
+        "type": "object"
+      },
+      "EstimatesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "EstimatesList",
         "type": "object"
       },
       "EvaluationDatasetCreate": {
@@ -34301,6 +34347,7 @@
             "items": {
               "$ref": "#/components/schemas/TaskEffortWrite"
             },
+            "maxItems": 500,
             "title": "Efforts",
             "type": "array"
           },
@@ -34498,6 +34545,7 @@
             "items": {
               "$ref": "#/components/schemas/PhaseTaskWrite"
             },
+            "maxItems": 1000,
             "title": "Tasks",
             "type": "array"
           }
@@ -40448,6 +40496,7 @@
           "day_rate_micros": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -97760,14 +97809,13 @@
     },
     "/api/v1/overview/estimates": {
       "get": {
-        "description": "This project's estimates, baseline first then newest.",
         "operationId": "api_v1_overview_estimates_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateListResponse"
+                  "$ref": "#/components/schemas/EstimatesList"
                 }
               }
             },
@@ -97781,12 +97829,30 @@
         ],
         "summary": "List Estimates",
         "tags": [
-          "overview"
+          "overview",
+          "overview:estimates"
         ]
       },
       "post": {
-        "description": "Create an estimate. The project's ``editing_roles`` only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
         "operationId": "api_v1_overview_estimates_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -97802,7 +97868,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateSummary"
+                  "$ref": "#/components/schemas/EstimatesItem"
                 }
               }
             },
@@ -97824,220 +97890,16 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Create Estimate",
+        "summary": "Create Estimates",
         "tags": [
-          "overview"
-        ]
-      }
-    },
-    "/api/v1/overview/estimates/{estimate_id}": {
-      "delete": {
-        "description": "Delete an estimate and everything under it. The project's\n``editing_roles`` only.\n\nThe change-log row keeps the whole graph as it was, so a deleted estimate\nis still answerable (\"what did it say, and who removed it\").",
-        "operationId": "api_v1_overview_estimates_estimate_id_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Delete Estimate",
-        "tags": [
-          "overview"
-        ]
-      },
-      "get": {
-        "description": "The head row plus the whole content graph \u2014 what the editor loads.",
-        "operationId": "api_v1_overview_estimates_estimate_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Read Estimate",
-        "tags": [
-          "overview"
-        ]
-      },
-      "patch": {
-        "description": "Edit the head row. The project's ``editing_roles`` only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
-        "operationId": "api_v1_overview_estimates_estimate_id_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateSummary"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Patch Estimate",
-        "tags": [
-          "overview"
-        ]
-      }
-    },
-    "/api/v1/overview/estimates/{estimate_id}/content": {
-      "put": {
-        "description": "Replace the estimate's whole content graph. The project's\n``editing_roles`` only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
-        "operationId": "api_v1_overview_estimates_estimate_id_content_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "estimate_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Estimate Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateContentWrite"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Replace Estimate Content",
-        "tags": [
-          "overview"
+          "overview",
+          "overview:estimates"
         ]
       }
     },
     "/api/v1/overview/estimates/{estimate_id}/rollup": {
       "get": {
-        "description": "Every derived planned figure, computed on read.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
+        "description": "Every derived planned figure, computed on read. Readable by any member.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
         "operationId": "api_v1_overview_estimates_estimate_id_rollup_get",
         "parameters": [
           {
@@ -98045,7 +97907,6 @@
             "name": "estimate_id",
             "required": true,
             "schema": {
-              "format": "uuid",
               "title": "Estimate Id",
               "type": "string"
             }
@@ -98083,6 +97944,181 @@
         "summary": "Read Rollup",
         "tags": [
           "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_estimates_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_estimates_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_estimates_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Estimates",
+        "tags": [
+          "overview",
+          "overview:estimates"
         ]
       }
     },
