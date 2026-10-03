@@ -27,6 +27,7 @@ import type {
   MilestoneKind,
   MilestoneStatus,
   PhaseState,
+  TimelineForecast,
 } from "./timeline-api";
 
 // ---------------------------------------------------------------------------
@@ -203,6 +204,69 @@ export function describeSlip(
   return days > 0
     ? { text: `${duration(days)} late`, tone: "late" }
     : { text: `${duration(-days)} early`, tone: "early" };
+}
+
+/** The colour classes a slip pill takes, by tone. */
+export const SLIP_TONE_CLASS: Record<SlipTone, string> = {
+  late: "border-red-600/40 text-red-700 dark:text-red-400",
+  early: "border-emerald-600/40 text-emerald-700 dark:text-emerald-400",
+  on_plan: "border-border text-muted-foreground",
+};
+
+/**
+ * Where the delivery is now, in words: the served position, and the phase
+ * it names. Shared by the Timeline header and the Summary's tiles, so the
+ * two cannot describe one forecast differently.
+ */
+export function describePosition(
+  forecast: Pick<TimelineForecast, "position" | "current_phase" | "next_phase">
+): { value: string; detail: string | null } {
+  const named = (p: { code: string; name: string }) => `${p.code} ${p.name}`;
+  switch (forecast.position) {
+    case "in_progress":
+      return forecast.current_phase
+        ? {
+            value: named(forecast.current_phase),
+            detail: "The phase under way now.",
+          }
+        : { value: "In progress", detail: null };
+    case "between_phases":
+      return {
+        value: "Between phases",
+        detail: forecast.next_phase
+          ? `${named(forecast.next_phase)} is next and has not started.`
+          : null,
+      };
+    case "not_started":
+      return {
+        value: "Not started",
+        detail: forecast.next_phase
+          ? `${named(forecast.next_phase)} comes first.`
+          : null,
+      };
+    case "finished":
+      return { value: "Finished", detail: "Every phase has ended." };
+    default:
+      return { value: "No phases", detail: "The estimate has no phases yet." };
+  }
+}
+
+/**
+ * The next gate to be decided, in words; `null` value (shown "Not known")
+ * only when there is no phase to have a gate.
+ */
+export function describeNextGate(
+  forecast: Pick<TimelineForecast, "position" | "next_gate">
+): { value: string | null; detail: string | null } {
+  if (forecast.next_gate) {
+    return {
+      value: `${forecast.next_gate.code} ${forecast.next_gate.name}`,
+      detail: forecast.next_gate.criteria || null,
+    };
+  }
+  return forecast.position === "no_phases"
+    ? { value: null, detail: null }
+    : { value: "All gates decided", detail: null };
 }
 
 export const PHASE_STATE_LABEL: Record<PhaseState, string> = {
