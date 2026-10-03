@@ -164,11 +164,15 @@ export interface SymbolClaimsResponse {
  * open-PR-check counts (see `CiRepoStrip`, which was `CiStatusPanel` until
  * 2026-09-19), never a backend verdict.
  *
- * - `vacuously_green` — coord's zero-baseline arm: the merge gate treats main
- *   as green, but coord never OBSERVED a green (a virgin repo, or one whose
- *   default branch carries no workflow files at all). The "green" is an
- *   absence of evidence, not a pass, and must never render as a measured
- *   green.
+ * - `vacuously_green` — the merge gate treats main as green, but main has
+ *   no CI baseline and positively CANNOT get one: coord's baselines come
+ *   only from completed `push` runs, and this repo has no workflow that
+ *   produces one. That covers a virgin repo, a default branch with no
+ *   workflow files (which may still have CI history elsewhere), and a
+ *   `pull_request`-only repo whose workflows gate PRs but none declares a
+ *   `push` trigger (`ci_baseline.rs` `MainCiStatus::VacuouslyGreen`). The
+ *   "green" is an absence of evidence, not a pass, and must never render as
+ *   a measured green.
  * - `deploy_red` — green FOR MERGING while a push-only (deploy-side) workflow
  *   is red: a repo with no readable required checks whose only failing main
  *   workflows no pull request can run. It does NOT block merges, and its fix

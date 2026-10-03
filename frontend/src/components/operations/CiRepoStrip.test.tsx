@@ -324,7 +324,12 @@ describe("CiRepoStrip main verdicts beyond green/red", () => {
     expect(row.getAttribute("data-ci-tone")).toBe("deploy_red");
     expect(row.getAttribute("data-ci-main-verdict")).toBe("deploy_red");
     const badge = row.querySelector("[data-ci-verdict-badge]");
-    expect(badge?.textContent).toBe("Deploy red (does not block merges)");
+    // Short on the badge (it does not shrink), red ⇔ ✕ (style guide §4.1),
+    // and the full sentence on its tooltip.
+    expect(badge?.textContent).toBe("✕ deploy: red");
+    expect(badge?.getAttribute("title")).toMatch(
+      /^Deploy red \(does not block merges\)/
+    );
     // Red family (R3), from the shared palette literal.
     expect(badge?.className).toContain("text-red-200");
     const dot = row.querySelector("[aria-label]");
@@ -347,7 +352,7 @@ describe("CiRepoStrip main verdicts beyond green/red", () => {
     expect(row.getAttribute("data-ci-tone")).toBe("red");
     // The badge still says what main's verdict is.
     expect(row.querySelector("[data-ci-verdict-badge]")?.textContent).toBe(
-      "Deploy red (does not block merges)"
+      "✕ deploy: red"
     );
   });
 
@@ -369,11 +374,27 @@ describe("CiRepoStrip main verdicts beyond green/red", () => {
     );
   });
 
-  it("says a vacuously-green main was never observed green", () => {
+  it("says a vacuously-green main has no baseline, without the raw token", () => {
     const row = renderRow(ciRow({ main_verdict: "vacuously_green" }));
     expect(row.getAttribute("data-ci-tone")).toBe("unknown");
     expect(row.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
-      "No CI ever observed on main (the merge gate treats it as green)"
+      "No main-branch CI baseline (the merge gate treats it as green)"
+    );
+    const badge = row.querySelector("[data-ci-verdict-badge]");
+    expect(badge?.textContent).toBe("main: no baseline");
+    expect(row.textContent).not.toContain("vacuously_green");
+  });
+
+  it("labels the amber tooltip in words, not the wire token", () => {
+    const row = renderRow(
+      ciRow({
+        main_verdict: "vacuously_green",
+        open_pr_checks: { success: 0, failure: 0, pending: 2 },
+      })
+    );
+    expect(row.getAttribute("data-ci-tone")).toBe("amber");
+    expect(row.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
+      "Main no baseline; 2 open-PR check(s) pending"
     );
   });
 });

@@ -13,19 +13,21 @@
  * D4). This banner is the loud surface for that state on every coord console
  * page.
  *
- * Driven SOLELY by the coord `red_main:<repo>` alert rows (single source
- * of truth): coord's `stuck_pr_watcher` detector 6 upserts one live
- * `coord.alerts` row per (repo, red-episode) and self-resolves it when
- * main goes green, so the banner can never disagree with coord. Fetched
- * over `/api/v1/operations/alerts?kind=red_main`, a raw pass-through of
- * coord's `/coord/alerts` read API.
+ * Driven SOLELY by the coord `red_main:<repo>` and `deploy_red:<repo>`
+ * alert rows (single source of truth): coord's `stuck_pr_watcher`
+ * detector 6 upserts one live `coord.alerts` row per (repo, red-episode)
+ * and self-resolves it when the red clears, so the banner can never
+ * disagree with coord. Fetched in ONE poll over
+ * `/api/v1/operations/alerts?kind=red_main&kind=deploy_red`, a raw
+ * pass-through of coord's `/coord/alerts` read API.
  *
  * Deliberately NOT dismissable and NOT a toast — it clears only when the
  * alert row resolves.
  *
- * ## It also carries `deploy_red:<repo>` rows — and says they do NOT block
+ * ## It also carries `deploy_red:<repo>` rows, scoped to what they block
  *
- * Plan `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`
+ * Plan
+ * `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`
  * Phase 2 (Option A) moved one class of red OFF coord's merge verdict: in a
  * repo with no readable required checks, a failing workflow that no pull
  * request can run (push-only, deploy-side) no longer reds main. Coord raises
@@ -33,9 +35,12 @@
  * and paged exactly like `red_main`. Such a repo would otherwise lose its
  * banner the moment it stopped being a red main, so the same poll asks for
  * both kinds and this banner renders each with its own wording: a red main
- * says what it holds, a red deploy says plainly that merges are NOT blocked
- * and that the fix may be outside the repo. A repo can carry both at once
- * (main red for one workflow, the deploy red beside it); each is its own row.
+ * says what it holds, a red deploy says that THIS deploy failure does not
+ * block merges and that the fix may be outside the repo. A repo can carry
+ * both at once (coord's `Red` carries its deploy-side rows too, so main red
+ * for `CI` and the deploy red for `Deploy backend` opens both alerts). Each
+ * is its own row, and the deploy row then says merges ARE held — by the red
+ * main above it — so the two rows can never contradict each other.
  *
  * ## It reports who is fixing it; it does not offer to fix it
  *
@@ -428,24 +433,40 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
 /**
  * The headline for a `deploy_red` row. Pure — exported for the vitest suite.
  *
- * It must say both halves truthfully, as coord's own alert summary does: the
- * deploy IS red, and merges are NOT blocked. It must not claim main is green,
- * and it must not borrow the red-main wording, whose "read main-red" and
- * "a candidate lands only if…" describe a hold that does not exist here.
+ * Its claim is scoped to the ALERT: this deploy failure does not block
+ * merges. It must never say merges are unblocked outright, because the same
+ * repo can carry a `red_main` alert at the same time — `mainAlsoRed` is that
+ * case, and then the row says merges ARE held, by the red main. It must not
+ * claim main is green, and it must not borrow the red-main wording, whose
+ * "read main-red" describes a hold this alert does not cause.
  */
-export function deployRedHeadline(a: RedMainAlert, nowMs: number): string {
+export function deployRedHeadline(
+  a: RedMainAlert,
+  nowMs: number,
+  mainAlsoRed = false
+): string {
   const label = sinceLabel(a.since, nowMs);
   const since = a.since && label !== a.since ? ` for ${label}` : "";
+  const scope = mainAlsoRed
+    ? "this deploy failure does not block merges, but the red main above does"
+    : "this deploy failure does not block merges";
   return (
-    `Deploy is red on ${a.repo}${since} — merges are NOT blocked; ` +
-    `the fix may be outside this repo (see coord_diagnose)`
+    `Deploy is red on ${a.repo}${since} — ${scope}; ` +
+    `the fix may be outside this repo — see the coord diagnosis`
   );
 }
 
-/** The headline for one banner row, by its kind. */
-export function bannerHeadline(a: RedMainAlert, nowMs: number): string {
+/**
+ * The headline for one banner row, by its kind. `mainAlsoRed` says whether
+ * the same repo also has a live `red_main` row in this answer.
+ */
+export function bannerHeadline(
+  a: RedMainAlert,
+  nowMs: number,
+  mainAlsoRed = false
+): string {
   return a.kind === DEPLOY_RED_KIND
-    ? deployRedHeadline(a, nowMs)
+    ? deployRedHeadline(a, nowMs, mainAlsoRed)
     : redMainHeadline(a, nowMs);
 }
 
@@ -453,7 +474,13 @@ export function bannerHeadline(a: RedMainAlert, nowMs: number): string {
  * The claim chip on one banner row: whether an agent holds the episode, and
  * which one. Pure render of {@link AlertClaimState}.
  */
-function ClaimBadge({ claim }: { claim: AlertClaimState }) {
+function ClaimBadge({
+  claim,
+  alertKind,
+}: {
+  claim: AlertClaimState;
+  alertKind: BannerAlertKind;
+}) {
   if (claim.kind === "claimed") {
     const by = claim.claimedBy;
     return (
@@ -481,7 +508,11 @@ function ClaimBadge({ claim }: { claim: AlertClaimState }) {
         className="badge badge-warning"
         data-testid="red-main-claim"
         data-claim-state="unclaimed"
-        title="No agent holds a claim on this alert yet."
+        title={
+          alertKind === DEPLOY_RED_KIND
+            ? "No agent holds a claim on this deploy alert yet."
+            : "No agent holds a claim on this red main yet."
+        }
       >
         no agent has claimed it
       </span>
@@ -550,7 +581,8 @@ function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
 export function RedMainBanner() {
   const [reds, setReds] = useState<RedMainAlert[]>([]);
   /**
-   * Consecutive polls that came back with no `red_main` row. See
+   * Consecutive polls that came back with no `red_main` or `deploy_red` row
+   * (one streak for both kinds, since they arrive in one answer). See
    * {@link EMPTY_POLLS_BEFORE_CLEAR} — the banner clears only once this
    * crosses the threshold, so one evicted or dropped answer cannot blank it.
    */
@@ -667,6 +699,11 @@ export function RedMainBanner() {
   const staleMs =
     lastSuccessAt === null ? 0 : Math.max(0, nowMs - lastSuccessAt);
   const stale = staleMs > STALE_AFTER_MS;
+  // Repos with a live red main in this answer: their deploy row must not
+  // read as if merges were open.
+  const redMainRepos = new Set(
+    reds.filter((r) => r.kind === RED_MAIN_KIND).map((r) => r.repo)
+  );
 
   return (
     <div data-testid="red-main-banner" className="shrink-0">
@@ -691,18 +728,20 @@ export function RedMainBanner() {
           // but a fix, and coord pages it like a red main) but is drawn darker
           // with a DASHED edge, so a glance can tell "the deploy is red" from
           // "main is red and PRs are held" before reading a word.
-          className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 text-white border-b-2 border-red-500 ${
+          className={[
+            "flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2",
+            "text-white border-b-2 border-red-500",
             a.kind === DEPLOY_RED_KIND
               ? "bg-red-950 border-dashed"
-              : "bg-red-900"
-          }`}
+              : "bg-red-900",
+          ].join(" ")}
         >
           <AlertTriangle
             className="h-4 w-4 shrink-0 text-red-300"
             aria-hidden
           />
           <span className="text-sm font-semibold">
-            {bannerHeadline(a, nowMs)}
+            {bannerHeadline(a, nowMs, redMainRepos.has(a.repo))}
           </span>
           {a.workflows.length > 0 && (
             <span className="text-xs font-mono text-red-100">
@@ -723,7 +762,7 @@ export function RedMainBanner() {
           )}
           <RemediationNote fixSession={a.fixSession} />
           <span className="ml-auto">
-            <ClaimBadge claim={a.claim} />
+            <ClaimBadge claim={a.claim} alertKind={a.kind} />
           </span>
         </div>
       ))}

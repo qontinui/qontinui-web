@@ -645,13 +645,16 @@ describe("deploy_red alerts", () => {
     expect(got.map((a) => a.kind)).toEqual(["red_main", "deploy_red"]);
   });
 
-  it("says the deploy is red AND that merges are NOT blocked", () => {
+  it("says the deploy is red AND that this failure does not block merges", () => {
     const [a] = parseRedMainAlerts([deployRow()]);
     const headline = deployRedHeadline(a, NOW);
     expect(headline).toBe(
-      `Deploy is red on ${REPO} for 7h 29m — merges are NOT blocked; ` +
-        "the fix may be outside this repo (see coord_diagnose)"
+      `Deploy is red on ${REPO} for 7h 29m — this deploy failure does not ` +
+        "block merges; the fix may be outside this repo — see the coord diagnosis"
     );
+    // Scoped to the alert: never a blanket claim that merges are open.
+    expect(headline).not.toMatch(/merges are NOT blocked/i);
+    expect(headline).not.toContain("coord_diagnose");
     // It must not borrow the red-main wording, which describes a hold.
     expect(headline).not.toMatch(/main is RED/);
     expect(headline).not.toMatch(/main-red/);
@@ -687,8 +690,79 @@ describe("deploy_red alerts", () => {
     expect(row).toHaveAttribute("data-alert-kind", "deploy_red");
     expect(row.className).toContain("border-dashed");
     expect(row.textContent).toContain(`Deploy is red on ${REPO}`);
-    expect(row.textContent).toContain("merges are NOT blocked");
+    expect(row.textContent).toContain(
+      "this deploy failure does not block merges;"
+    );
     expect(row.textContent).toContain("failing: Deploy backend");
     expect(row.textContent).not.toContain("main is RED");
+  });
+});
+
+describe("deploy_red beside a red_main for the same repo", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  // coord's `Red` carries its deploy-side rows too, so
+  // Red{workflows:[CI], deploy_red:[Deploy backend]} opens BOTH alerts.
+  const both = [
+    {
+      alert_key: `deploy_red:${REPO}`,
+      kind: "deploy_red",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: { repo: REPO, workflows: ["Deploy backend"] },
+      claimed: false,
+      claim: null,
+    },
+    {
+      alert_key: `red_main:${REPO}`,
+      kind: "red_main",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: { repo: REPO, workflows: ["CI"], blocked_pr_count: 2 },
+      claimed: false,
+      claim: null,
+    },
+  ];
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("says merges ARE held by the red main, never that they are open", () => {
+    const [, deploy] = parseRedMainAlerts(both);
+    expect(deploy.kind).toBe("deploy_red");
+    const headline = bannerHeadline(deploy, NOW, true);
+    expect(headline).toContain(
+      "this deploy failure does not block merges, but the red main above does"
+    );
+    expect(headline).not.toMatch(/merges are NOT blocked/i);
+  });
+
+  it("renders both rows without contradicting each other", async () => {
+    getMock.mockResolvedValue(both);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const rows = screen.getAllByTestId("red-main-banner-row");
+    expect(rows.map((r) => r.getAttribute("data-alert-kind"))).toEqual([
+      "red_main",
+      "deploy_red",
+    ]);
+    expect(rows[0].textContent).toContain(`${REPO} main is RED`);
+    expect(rows[1].textContent).toContain("but the red main above does");
+  });
+
+  it("names the alert kind in the unclaimed tooltip", async () => {
+    getMock.mockResolvedValue(both);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const chips = screen.getAllByTestId("red-main-claim");
+    expect(chips[0].getAttribute("title")).toBe(
+      "No agent holds a claim on this red main yet."
+    );
+    expect(chips[1].getAttribute("title")).toBe(
+      "No agent holds a claim on this deploy alert yet."
+    );
   });
 });

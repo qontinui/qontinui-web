@@ -71,7 +71,7 @@ const log = createLogger("CiRepoStrip");
 // The backend `main_verdict` (see `MainCiVerdict`) has no amber. Amber is a
 // *frontend* tone derived purely from open-PR-check counts: "main is fine but a
 // PR has CI in flight." Per the plan, the dot is:
-//   red        — main is red OR any open-PR check failed (most urgent → wins)
+//   red        — main is red OR any open-PR check failed (most urgent wins)
 //   deploy_red — main is green FOR MERGING but a push-only deploy workflow is
 //                red (coord's `deploy_red` verdict). Red family, because
 //                nothing clears it but a fix (R3: amber promises it will clear
@@ -83,8 +83,35 @@ const log = createLogger("CiRepoStrip");
 
 type DotTone = "green" | "amber" | "red" | "deploy_red" | "unknown";
 
-/** The one wording for a deploy-side red, shared by the dot and the badge. */
+/**
+ * The one full wording for a deploy-side red, shared by the dot's label and
+ * the badge's tooltip. The badge itself carries only the short form.
+ */
 const DEPLOY_RED_LABEL = "Deploy red (does not block merges)";
+
+const DEPLOY_RED_TOOLTIP =
+  `${DEPLOY_RED_LABEL} — a push-only workflow no PR can run is failing on ` +
+  "main; the fix may be outside this repo";
+
+const VACUOUS_LABEL =
+  "No main-branch CI baseline (the merge gate treats it as green)";
+
+/**
+ * Human labels for coord's `main_verdict` tokens. A wire token never reaches
+ * the screen raw; one this build does not know falls back to "unknown",
+ * never to green.
+ */
+const VERDICT_LABEL: Record<RepoCiRow["main_verdict"], string> = {
+  green: "green",
+  red: "red",
+  unknown: "unknown",
+  vacuously_green: "no baseline",
+  deploy_red: "deploy red",
+};
+
+function verdictLabel(row: RepoCiRow): string {
+  return VERDICT_LABEL[row.main_verdict] ?? "unknown";
+}
 
 function deriveDotTone(row: RepoCiRow): DotTone {
   const { main_verdict, open_pr_checks } = row;
@@ -128,29 +155,38 @@ function dotLabel(tone: DotTone, row: RepoCiRow): string {
     case "green":
       return "Main green, no open-PR failures";
     case "amber":
-      return `Main ${row.main_verdict}; ${row.open_pr_checks.pending} open-PR check(s) pending`;
+      return `Main ${verdictLabel(row)}; ${row.open_pr_checks.pending} open-PR check(s) pending`;
     case "red":
       return row.main_verdict === "red"
         ? "Main branch CI is red"
         : `${row.open_pr_checks.failure} open-PR check(s) failing`;
     case "deploy_red":
-      return `${DEPLOY_RED_LABEL} — a push-only workflow no PR can run is failing on main; the fix may be outside this repo`;
+      return DEPLOY_RED_TOOLTIP;
     case "unknown":
       return row.main_verdict === "vacuously_green"
-        ? "No CI ever observed on main (the merge gate treats it as green)"
+        ? VACUOUS_LABEL
         : "No CI verdict yet for main";
   }
 }
 
 /**
- * The verdict badge's text. `deploy_red` gets a sentence rather than the raw
- * token: "main: deploy_red" would read as "main is red", which is exactly the
- * mis-reading the verdict exists to prevent — merges are NOT blocked.
+ * The verdict badge's text. `deploy_red` is NOT `main: …`: "main: deploy
+ * red" would read as "main is red", the mis-reading this verdict exists to
+ * prevent. It stays short (the badge does not shrink); the full sentence is
+ * the badge's tooltip. It is the only badge painted red (`AUTHOR_RED`), so
+ * it is the only one carrying `✕` — style guide §4.1, red ⇔ ✕. (A red main
+ * keeps its plain outline badge; `RedMainBanner` is its loud surface.)
  */
 function verdictBadgeLabel(row: RepoCiRow): string {
-  return row.main_verdict === "deploy_red"
-    ? DEPLOY_RED_LABEL
-    : `main: ${row.main_verdict}`;
+  if (row.main_verdict === "deploy_red") return "✕ deploy: red";
+  return `main: ${verdictLabel(row)}`;
+}
+
+/** The badge's native tooltip, where the short label needs one. */
+function verdictBadgeTitle(row: RepoCiRow): string | undefined {
+  if (row.main_verdict === "deploy_red") return DEPLOY_RED_TOOLTIP;
+  if (row.main_verdict === "vacuously_green") return VACUOUS_LABEL;
+  return undefined;
 }
 
 /** GitHub pull-requests page for a repo, filtered to the open queue.
@@ -406,6 +442,7 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
           row.main_verdict === "deploy_red" ? ` ${AUTHOR_RED}` : ""
         }`}
         data-ci-verdict-badge={row.main_verdict}
+        title={verdictBadgeTitle(row)}
       >
         {verdictBadgeLabel(row)}
       </Badge>
