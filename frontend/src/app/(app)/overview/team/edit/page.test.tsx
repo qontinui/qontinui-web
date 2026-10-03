@@ -1073,7 +1073,9 @@ describe("a Save that would drop a phase holding recorded work", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText(/work was recorded on this phase since/)
+      within(dialog).getByText(
+        /this phase holds recorded work the save did not account for/
+      )
     ).toBeTruthy();
     expect(
       within(dialog).getByText(
