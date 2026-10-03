@@ -18,6 +18,7 @@ from app.schemas.capture import (
     LearnedWorkflowResponse,
     ScreenshotStateMatchResponse,
 )
+from app.services.storage import object_storage
 
 
 class CaptureResponseBuilder:
@@ -63,8 +64,10 @@ class CaptureResponseBuilder:
             id=screenshot.id,
             session_id=screenshot.session_id,
             sequence_number=screenshot.sequence_number,
-            image_url=screenshot.image_url,
-            thumbnail_url=screenshot.thumbnail_url,
+            # The row stores upload_file's bare object address, which no
+            # private store serves: presign on every read.
+            image_url=object_storage.presign_stored_url(screenshot.image_url),
+            thumbnail_url=object_storage.presign_stored_url(screenshot.thumbnail_url),
             width=screenshot.width,
             height=screenshot.height,
             timestamp=screenshot.timestamp,
