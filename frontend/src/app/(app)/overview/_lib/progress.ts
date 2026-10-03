@@ -77,6 +77,61 @@ export function titleOf(row: Pick<CoordPlanRow, "slug" | "title">): string {
   return bare.charAt(0).toUpperCase() + bare.slice(1);
 }
 
+type ShippedRow = CoordPlanRow & { first_shipped_at: string };
+
+/** A unit counted as done that also says when it first shipped. A done
+ *  unit with no ship date is still done; it just has no day to be placed on. */
+function hasShipDate(row: CoordPlanRow): row is ShippedRow {
+  return Boolean(row.first_shipped_at);
+}
+
+function isWorkUnit(row: CoordPlanRow): boolean {
+  return !row.slug.startsWith(SHEPHERD_SLUG_PREFIX);
+}
+
+export interface ShippedPlan {
+  slug: string;
+  title: string;
+  /** When the unit first shipped (a timestamp; the day is what is drawn). */
+  shippedAt: string;
+}
+
+export interface ShippedPlans {
+  /** Oldest first, the order a calendar reads in. */
+  items: ShippedPlan[];
+  /** Done units with no ship date: counted, but with no day to place. */
+  undated: number;
+  /** As in `Progress`: the read may not hold every unit. */
+  truncated: boolean;
+}
+
+/**
+ * The project's shipped plans for the Timeline's lane: every unit the Coord
+ * Console's tone calls shipped, at the day it first shipped, titled by its
+ * plan title. Done-ness is the same judgement `summarizeProgress` makes, so
+ * the lane and the Summary's "Done" figure count the same units.
+ */
+export function shippedPlans(
+  allRows: CoordPlanRow[],
+  { fetchLimit }: { fetchLimit: number }
+): ShippedPlans {
+  const done = allRows
+    .filter(isWorkUnit)
+    .filter((r) => TONE_BUCKET[describePlanStatus(r.status).tone] === "done");
+  const dated = done.filter(hasShipDate);
+  return {
+    items: dated
+      .sort((a, b) => a.first_shipped_at.localeCompare(b.first_shipped_at))
+      .map((r) => ({
+        slug: r.slug,
+        title: titleOf(r),
+        shippedAt: r.first_shipped_at,
+      })),
+    undated: done.length - dated.length,
+    truncated: allRows.length >= fetchLimit,
+  };
+}
+
 export function summarizeProgress(
   allRows: CoordPlanRow[],
   { fetchLimit, recent = 5 }: { fetchLimit: number; recent?: number }
@@ -84,7 +139,7 @@ export function summarizeProgress(
   // The proxy's server-side exclusion of merge-shepherd bookkeeping units is
   // best-effort, so it is applied again here. Truncation is judged on the
   // rows the server actually returned, before this filter.
-  const rows = allRows.filter((r) => !r.slug.startsWith(SHEPHERD_SLUG_PREFIX));
+  const rows = allRows.filter(isWorkUnit);
 
   const counts: Record<ProgressBucket, number> = {
     done: 0,
@@ -94,14 +149,12 @@ export function summarizeProgress(
     planned: 0,
     unknown: 0,
   };
-  const finished: (CoordPlanRow & { first_shipped_at: string })[] = [];
+  const finished: ShippedRow[] = [];
   for (const row of rows) {
     const bucket = TONE_BUCKET[describePlanStatus(row.status).tone];
     if (bucket === null) continue;
     counts[bucket] += 1;
-    if (bucket === "done" && row.first_shipped_at) {
-      finished.push(row as CoordPlanRow & { first_shipped_at: string });
-    }
+    if (bucket === "done" && hasShipDate(row)) finished.push(row);
   }
 
   const recentlyFinished = finished

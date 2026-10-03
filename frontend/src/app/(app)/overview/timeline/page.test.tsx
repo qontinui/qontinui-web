@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   deleteMilestone: vi.fn(),
   fetchChangeLog: vi.fn(),
   fetchForecast: vi.fn(),
+  fetchPlanRows: vi.fn(),
 }));
 
 vi.mock("../_hooks/useOverviewProject", () => ({
@@ -71,6 +72,11 @@ vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
 vi.mock("../_lib/timeline-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   fetchForecast: mocks.fetchForecast,
+}));
+
+vi.mock("../_lib/plans-api", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  fetchPlanRows: mocks.fetchPlanRows,
 }));
 
 import { VersionConflictError } from "@/components/overview/editing/api";
@@ -234,6 +240,28 @@ function forecast(slip: number): TimelineForecast {
   };
 }
 
+const PLANS = [
+  {
+    slug: "2026-01-10-intake-form",
+    status: "shipped",
+    title: "Intake form",
+    first_shipped_at: "2026-02-03T10:00:00Z",
+  },
+  {
+    slug: "2026-01-11-reporting",
+    status: "shipped",
+    title: "Reporting",
+    first_shipped_at: "2026-02-03T16:00:00Z",
+  },
+  {
+    slug: "2025-06-01-old-work",
+    status: "shipped",
+    title: "Old work",
+    first_shipped_at: "2025-06-20T10:00:00Z",
+  },
+  { slug: "2026-02-01-not-yet", status: "in_progress", title: "Not yet" },
+];
+
 const list = (items: unknown[]) => ({
   items,
   total: items.length,
@@ -254,6 +282,7 @@ beforeEach(() => {
   mocks.getResource.mockResolvedValue({ item: ESTIMATE, can_edit: true });
   mocks.fetchForecast.mockResolvedValue(forecast(10));
   mocks.fetchChangeLog.mockResolvedValue({ entries: [], truncated: false });
+  mocks.fetchPlanRows.mockResolvedValue(PLANS);
 });
 
 afterEach(cleanup);
@@ -916,5 +945,69 @@ describe("copy as mermaid gantt", () => {
     expect(text).toContain("section A1 Discovery");
     expect(text).toMatch(/Interview the sponsors :crit, /);
     expect(text).toMatch(/Pilot live :milestone, /);
+  });
+});
+
+describe("the shipped-plans lane", () => {
+  it("marks each day plans shipped, and counts what falls outside the view", async () => {
+    await shown();
+    const mark = await waitFor(() => {
+      const el = byId("overview.timeline.chart.shipped.2026-02-03");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    // Two plans shipped that day share one mark, both named.
+    expect(mark.dataset.count).toBe("2");
+    expect(mark.textContent).toContain("Intake form; Reporting");
+    // A plan shipped before the project's months is counted, not drawn.
+    expect(byId("overview.timeline.chart.shipped.note")?.textContent).toBe(
+      "1 outside this view"
+    );
+    // Unshipped work has no mark.
+    expect(byId("overview.timeline.chart.shipped")?.textContent).not.toContain(
+      "Not yet"
+    );
+  });
+
+  it("lists every shipped plan with its day in the list view", async () => {
+    await shown();
+    await waitFor(() =>
+      expect(byId("overview.timeline.list.shipped")?.dataset.state).toBe(
+        "ready"
+      )
+    );
+    const items = byId("overview.timeline.list.shipped.items")!;
+    expect(
+      [...items.querySelectorAll("li")].map((li) => li.textContent)
+    ).toEqual([
+      "Old work · shipped 20 Jun 2025",
+      "Intake form · shipped 3 Feb 2026",
+      "Reporting · shipped 3 Feb 2026",
+    ]);
+  });
+
+  it("says a failed read, rather than drawing an empty lane", async () => {
+    mocks.fetchPlanRows.mockRejectedValue(new Error("coord is unreachable"));
+    await shown();
+    await waitFor(() =>
+      expect(byId("overview.timeline.chart.shipped")?.dataset.state).toBe(
+        "error"
+      )
+    );
+    expect(byId("overview.timeline.chart.shipped.note")?.textContent).toBe(
+      "Could not be read"
+    );
+    expect(byId("overview.timeline.list.shipped")?.textContent).toContain(
+      "could not be read: coord is unreachable"
+    );
+  });
+
+  it("still lists shipped plans when there is no estimate", async () => {
+    mocks.estimates = [];
+    render(<TimelinePage />);
+    await screen.findByText("This project has no schedule yet");
+    await waitFor(() =>
+      expect(byId("overview.timeline.list.shipped.items")).not.toBeNull()
+    );
   });
 });

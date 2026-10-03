@@ -12,6 +12,8 @@
  * - `phase_progress` — each phase's actual dates and gate outcome, with the
  *   version a write must name;
  * - `milestones`;
+ * - the project's shipped plans (`/api/v1/operations/plans`), for the lane
+ *   that closes the chart;
  * - `GET /estimates/{id}/forecast` — the current phase, the next gate, the
  *   forecast finish and its slip. This page does no schedule arithmetic; it
  *   places what the server says.
@@ -39,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useForecast } from "../_hooks/useForecast";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
+import { useShippedPlans } from "../_hooks/useShippedPlans";
 import {
   ESTIMATES,
   pickBaseline,
@@ -66,6 +69,7 @@ import { MilestonesSection } from "./_components/MilestonesSection";
 import { assemblePhases, phaseKey } from "./_components/model";
 import { PhaseDetails } from "./_components/PhaseDetails";
 import { PhaseList } from "./_components/PhaseList";
+import { ShippedPlansList } from "./_components/ShippedPlansList";
 import { TimelineChart } from "./_components/TimelineChart";
 import { TimelineHeader } from "./_components/TimelineHeader";
 
@@ -252,6 +256,7 @@ export default function TimelinePage() {
     });
   }
   const forecast = useForecast(estimateId, hold, forecastToken.n);
+  const shipped = useShippedPlans(projectId, hold);
 
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [zoom, setZoom] = useState<Zoom>("project");
@@ -363,6 +368,7 @@ export default function TimelinePage() {
       <div className="space-y-14" data-ui-bridge-id="overview.timeline">
         <NoEstimate canEdit={canEditEstimate} />
         {milestonesSection}
+        <ShippedPlansList shipped={shipped} />
       </div>
     );
   }
@@ -489,6 +495,7 @@ export default function TimelinePage() {
                     <TimelineChart
                       phases={phases}
                       milestones={milestoneItems}
+                      shipped={shipped}
                       breaks={breaks}
                       window={axis}
                       today={today}
@@ -519,13 +526,19 @@ export default function TimelinePage() {
                 )}
               </div>
             )}
-            <div className={view === "calendar" ? "md:hidden" : undefined}>
+            <div
+              className={cn(
+                "space-y-8",
+                view === "calendar" ? "md:hidden" : undefined
+              )}
+            >
               <PhaseList
                 phases={phases}
                 milestones={milestoneItems}
                 canEdit={canEditProgress}
                 onSave={progress.update}
               />
+              <ShippedPlansList shipped={shipped} />
             </div>
           </>
         )}

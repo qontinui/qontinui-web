@@ -11,7 +11,8 @@
  * gate marker sits at the phase's end, shaped and coloured by its outcome;
  * choosing it shows the gate's criteria and outcome below the chart. Calendar
  * breaks are shaded and today is a line through every lane. A milestone lane
- * closes the chart.
+ * follows, and a lane of the project's shipped plans (coord's work units, at
+ * the day each first shipped) closes the chart.
  *
  * The chart is the visual reading; the list view holds the same facts as
  * text, and is what a screen reader and a phone get.
@@ -19,6 +20,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import type { ShippedPlansState } from "../../_hooks/useShippedPlans";
 import type { CalendarBreakRead } from "../../_lib/estimate-api";
 import type { Milestone } from "../../_lib/timeline-api";
 import {
@@ -29,6 +31,7 @@ import {
   dayOffset,
   formatDay,
   isoDay,
+  shippedLane,
   toDay,
   type AxisWindow,
 } from "../../_lib/timeline";
@@ -269,6 +272,79 @@ function PhaseLane({
   );
 }
 
+/** What the shipped-plans lane says beside its name. A read still under way
+ *  or one that failed is said, never drawn as an empty lane; so are plans the
+ *  lane holds but cannot place, and a read that may not hold them all. */
+function laneNote(shipped: ShippedPlansState, outside: number): string | null {
+  if (shipped.state === "loading") return "Reading…";
+  if (shipped.state === "error") return "Could not be read";
+  const { items, undated, truncated } = shipped.shipped;
+  const parts: string[] = [];
+  if (outside > 0) parts.push(`${outside} outside this view`);
+  if (undated > 0) parts.push(`${undated} with no ship date`);
+  if (truncated) parts.push("there may be more");
+  else if (items.length === 0 && undated === 0) parts.push("None yet");
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function ShippedPlansLane({
+  shipped,
+  window,
+  breaks,
+  today,
+}: {
+  shipped: ShippedPlansState;
+  window: AxisWindow;
+  breaks: CalendarBreakRead[];
+  today: Date;
+}) {
+  const lane =
+    shipped.state === "ready"
+      ? shippedLane(shipped.shipped.items, window)
+      : null;
+  const note = laneNote(shipped, lane?.outside ?? 0);
+  return (
+    <div
+      className={cn(LABEL_COLUMN, "border-t border-border/60")}
+      data-ui-bridge-id="overview.timeline.chart.shipped"
+      data-state={shipped.state}
+    >
+      <div className="flex min-h-10 flex-col justify-center py-1 pr-2">
+        <span className="text-sm text-foreground">Shipped plans</span>
+        {note && (
+          <span
+            className="text-xs text-muted-foreground"
+            title={shipped.state === "error" ? shipped.message : undefined}
+            data-ui-bridge-id="overview.timeline.chart.shipped.note"
+          >
+            {note}
+          </span>
+        )}
+      </div>
+      <div className="relative min-h-10 overflow-hidden">
+        <Backdrop window={window} breaks={breaks} today={today} />
+        {lane?.marks.map((mark) => {
+          const names = mark.plans.map((p) => p.title).join("; ");
+          return (
+            <span
+              key={mark.day}
+              title={`Shipped ${formatDay(mark.day)}: ${names}`}
+              className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-emerald-600"
+              style={{ left: `${mark.left}%` }}
+              data-ui-bridge-id={`overview.timeline.chart.shipped.${mark.day}`}
+              data-count={mark.plans.length}
+            >
+              <span className="sr-only">
+                Shipped {formatDay(mark.day)}: {names}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const MILESTONE_MARK: Record<Milestone["status"], string> = {
   planned: "border-foreground/70 bg-background",
   in_progress: "border-primary bg-primary/40",
@@ -279,6 +355,7 @@ const MILESTONE_MARK: Record<Milestone["status"], string> = {
 export function TimelineChart({
   phases,
   milestones,
+  shipped,
   breaks,
   window,
   today,
@@ -287,6 +364,7 @@ export function TimelineChart({
 }: {
   phases: TimelinePhase[];
   milestones: Milestone[];
+  shipped: ShippedPlansState;
   breaks: CalendarBreakRead[];
   window: AxisWindow;
   today: Date;
@@ -372,6 +450,12 @@ export function TimelineChart({
           })}
         </div>
       </div>
+      <ShippedPlansLane
+        shipped={shipped}
+        window={window}
+        breaks={breaks}
+        today={today}
+      />
       <Legend />
     </div>
   );
@@ -398,6 +482,10 @@ function Legend() {
       <span className="inline-flex items-center gap-1.5">
         <span className="h-3 w-4 bg-muted/70" />
         Break
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-3 w-1 rounded-sm bg-emerald-600" />
+        Plan shipped
       </span>
       {(["pending", "passed", "failed", "waived"] as const).map((status) => (
         <span key={status} className="inline-flex items-center gap-1.5">

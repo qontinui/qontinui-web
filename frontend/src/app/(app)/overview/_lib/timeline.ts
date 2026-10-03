@@ -179,6 +179,54 @@ export function axisMonths(
 }
 
 // ---------------------------------------------------------------------------
+// The shipped-plans lane
+// ---------------------------------------------------------------------------
+
+/** A shipped plan as the lane takes it: its title and when it first shipped. */
+export interface LanePlan {
+  slug: string;
+  title: string;
+  shippedAt: string;
+}
+
+export interface ShippedMark {
+  /** The wire day the mark stands for. */
+  day: string;
+  left: number;
+  /** Every plan that shipped that day, in the order given. */
+  plans: LanePlan[];
+}
+
+/**
+ * The lane's marks: one per day on which plans shipped, so plans landing the
+ * same day share a mark rather than hiding under each other. A ship time is
+ * a UTC timestamp; its UTC day is the day it is drawn on, the same day the
+ * Coord Console dates it. Plans outside the window, or with an unreadable
+ * ship time, are counted rather than dropped, so the lane can say how many it
+ * is not showing.
+ */
+export function shippedLane(
+  plans: LanePlan[],
+  window: AxisWindow
+): { marks: ShippedMark[]; outside: number } {
+  const byDay = new Map<string, ShippedMark>();
+  let outside = 0;
+  for (const plan of plans) {
+    const day = plan.shippedAt.slice(0, 10);
+    const parsed = toDay(day);
+    const left = parsed ? dayOffset(parsed, window) : null;
+    if (left === null) {
+      outside += 1;
+      continue;
+    }
+    const mark = byDay.get(day);
+    if (mark) mark.plans.push(plan);
+    else byDay.set(day, { day, left, plans: [plan] });
+  }
+  return { marks: [...byDay.values()], outside };
+}
+
+// ---------------------------------------------------------------------------
 // Words
 // ---------------------------------------------------------------------------
 
