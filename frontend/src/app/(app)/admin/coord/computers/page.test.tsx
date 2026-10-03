@@ -252,6 +252,84 @@ describe("/admin/coord/computers", () => {
   });
 });
 
+describe("/admin/coord/computers/[computerId] — the gpus capacity", () => {
+  async function capacityOf(gpus: unknown) {
+    httpGet.mockResolvedValue(
+      detailFx({
+        capacity: {
+          cpu_cores: 48,
+          memory_total_bytes: 64 * 1024 ** 3,
+          swap_total_bytes: 8 * 1024 ** 3,
+          disk_total_bytes: 1024 ** 4,
+          gpus,
+        },
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const cap = await screen.findByTestId("coord-computer-capacity");
+    return { cap, note: screen.getByTestId("coord-computer-gpus-note") };
+  }
+
+  it("renders null gpus as unknown — not reported, never none or 0", async () => {
+    const { cap, note } = await capacityOf(null);
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusunknown"
+    );
+    expect(note.textContent).toBe("GPUs not reported — UNKNOWN, not none.");
+  });
+
+  it("renders a measured [] as none", async () => {
+    const { cap, note } = await capacityOf([]);
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusnone"
+    );
+    expect(note.textContent).toBe("GPUs: measured none.");
+  });
+
+  it("renders each GPU's model and VRAM", async () => {
+    const { cap, note } = await capacityOf([
+      {
+        vendor: "nvidia",
+        model: "Example GPU A",
+        vram_bytes: 32 * 1024 ** 3,
+        driver: "999.10",
+        compute_capability: "12.0",
+      },
+      {
+        vendor: "nvidia",
+        model: "Example GPU B",
+        vram_bytes: null,
+        driver: null,
+        compute_capability: null,
+      },
+    ]);
+    expect(within(cap).queryByTestId("coord-computer-gpus")).toBeNull();
+    expect(within(cap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpuExample GPU A · 32.0 GB"
+    );
+    expect(note.textContent).toContain(
+      "gpu 0 (Example GPU A): vendor: nvidia · driver: 999.10 · compute capability: 12.0"
+    );
+    expect(note.textContent).toContain("gpu 1 (Example GPU B)");
+    expect(note.textContent).toContain("may be present and unlisted");
+    expect(within(cap).getByTestId("coord-computer-gpu-1").textContent).toBe(
+      "gpuExample GPU B · VRAM unknown"
+    );
+  });
+
+  it("renders a gpus value it cannot read as unknown, not as a count", async () => {
+    const { cap, note } = await capacityOf({ count: 1 });
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusunknown"
+    );
+    // Told apart from null in words, and floored at amber (R3), not calm.
+    expect(note.textContent).toContain("cannot read");
+    expect(within(cap).getByTestId("coord-computer-gpus").className).toContain(
+      "amber"
+    );
+  });
+});
+
 describe("/admin/coord/computers/[computerId]", () => {
   it("renders unknown and not-supported readings as words in the lane table", async () => {
     httpGet.mockResolvedValue(
