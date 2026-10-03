@@ -78,9 +78,22 @@ describe("CommandSafetyRewritePanel", () => {
     expect(state.setLevel).toHaveBeenCalledWith("off");
   });
 
-  it("names the level coord reports for a tenant with no row, not a literal", () => {
-    // A coord predating the `on` default could answer `off` for no row; the
-    // copy must name that, not claim `on`.
+  it("a fresh tenant (no row, resolving on) shows on with no-row copy", () => {
+    usePolicyMock.mockReturnValue(
+      hookState({ ...ON_TENANT, resolved_scope: "none" })
+    );
+    render(<CommandSafetyRewritePanel />);
+
+    expect(
+      screen.getByTestId("command-safety-rewrite-effective").textContent
+    ).toBe("on");
+    const copy = screen.getByTestId("command-safety-rewrite-no-row");
+    expect(copy.querySelector("code")?.textContent).toBe("on");
+    expect(copy.textContent).toMatch(/nobody chose this level/);
+    expect(copy.textContent).not.toMatch(/runners themselves default/);
+  });
+
+  it("does not attribute a no-row `off` to coord — it may be the display floor", () => {
     usePolicyMock.mockReturnValue(
       hookState({
         ...ON_TENANT,
@@ -92,7 +105,56 @@ describe("CommandSafetyRewritePanel", () => {
 
     const copy = screen.getByTestId("command-safety-rewrite-no-row");
     expect(copy.querySelector("code")?.textContent).toBe("off");
-    expect(copy.textContent).toMatch(/Nobody chose it/);
+    expect(copy.textContent).not.toMatch(/coord reports as/);
+    expect(copy.textContent).toMatch(/runners themselves default to on/);
+  });
+
+  it("explains that a system-band answer means a tenant write takes effect", () => {
+    usePolicyMock.mockReturnValue(
+      hookState({ ...ON_TENANT, resolved_scope: "system" })
+    );
+    render(<CommandSafetyRewritePanel />);
+
+    expect(
+      screen.getByTestId("command-safety-rewrite-system-fallback").textContent
+    ).toMatch(/takes effect immediately/);
+    expect(
+      screen.queryByTestId("command-safety-rewrite-overridden-by-repo")
+    ).toBeNull();
+  });
+
+  it("names the fleet_resources keys it does not show", () => {
+    usePolicyMock.mockReturnValue(
+      hookState({
+        ...ON_TENANT,
+        keys_not_shown: ["controls", "drain"],
+        keys_not_shown_source: "fleet_resources_row",
+      })
+    );
+    render(<CommandSafetyRewritePanel />);
+
+    expect(
+      screen.getByTestId("command-safety-rewrite-keys-not-shown").textContent
+    ).toMatch(/controls, drain.*fleet_resources row/);
+  });
+
+  it("fills the badge for an unrecognised level, which runners read as on", () => {
+    usePolicyMock.mockReturnValue(
+      hookState({ ...ON_TENANT, effective_level: "maybe" })
+    );
+    render(<CommandSafetyRewritePanel />);
+    const filled = screen
+      .getByTestId("command-safety-rewrite-effective")
+      .getAttribute("class");
+    usePolicyMock.mockReturnValue(
+      hookState({ ...ON_TENANT, effective_level: "on" })
+    );
+    const { getAllByTestId } = render(<CommandSafetyRewritePanel />);
+    expect(
+      getAllByTestId("command-safety-rewrite-effective")[1].getAttribute(
+        "class"
+      )
+    ).toBe(filled);
   });
 
   it("does not render the no-row copy once a real band answers", () => {
