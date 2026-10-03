@@ -15,6 +15,7 @@ without audit or permissions.
 
 from __future__ import annotations
 
+from app.overview.estimates import estimate_store
 from app.overview.files import FileRead, file_store
 from app.overview.intent_documents import (
     IntentDocumentCreate,
@@ -26,7 +27,7 @@ from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
-    EstimateSummary,
+    EstimateRead,
     EstimateUpdate,
     OverviewSettingsRead,
     OverviewSettingsWrite,
@@ -57,16 +58,20 @@ REGISTRY: dict[str, ResourceSpec] = {
             path="estimates",
             title="Estimates",
             description=(
-                "The estimate a project is approved against. Its routes are "
-                "hand-written in app/api/v1/endpoints/overview.py until the "
-                "plan's Phase 3 refits it onto this contract; the entry is "
-                "here so its permission is served like every other resource's."
+                "The estimate a project is approved against: a head row and its "
+                "content graph (roles, phases with tasks and per-role efforts, "
+                "the phase x role FTE matrix, price tiers, cost lines, calendar "
+                "breaks). 'content' on a create or update replaces the whole "
+                "graph in the same version as the head fields beside it; a list "
+                "read carries no graph (content is null). Derived figures: GET "
+                "/estimates/{id}/rollup. Money is integer micros."
             ),
             permission="editing_roles",
-            read_model=EstimateSummary,
+            read_model=EstimateRead,
             create_model=EstimateCreate,
             update_model=EstimateUpdate,
             operations=frozenset({"list", "get", "create", "update", "delete"}),
+            store=estimate_store,
             tables=(
                 "estimates",
                 "phases",

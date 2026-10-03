@@ -29,6 +29,7 @@ import type { WikiLinkOptions } from "@/components/overview/wiki-links";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { clearDraft, draftKey, readDraft, writeDraft } from "./drafts";
 import { useFocusAfterRender } from "./focus";
+import { useLeaveGuard } from "./leave-guard";
 import type { SaveResult } from "./useResource";
 
 /** The slice of a record this component edits and reports on. */
@@ -52,39 +53,6 @@ type Mode =
       /** Their text, shown beside the editor after "Combine them myself". */
       theirs: EditableText | null;
     };
-
-/**
- * Warn before the page is left with unsaved text: the browser's own prompt on
- * close/reload, and a confirm on an in-app link, which the browser does not
- * catch because the App Router never unloads the page.
- */
-function useLeaveGuard(active: boolean) {
-  useEffect(() => {
-    if (!active) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const onClick = (event: MouseEvent) => {
-      const anchor = (event.target as Element | null)?.closest?.("a[href]");
-      if (!anchor || (anchor as HTMLAnchorElement).target === "_blank") return;
-      if (
-        !window.confirm(
-          "You have unsaved changes. Leave this page and lose them? (A draft is kept on this device.)"
-        )
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [active]);
-}
 
 export function EditableSection({
   projectId,
@@ -149,7 +117,10 @@ export function EditableSection({
 
   const initial = startText ?? record.text;
   const dirty = mode.kind === "edit" && mode.text !== initial;
-  useLeaveGuard(dirty);
+  useLeaveGuard(
+    dirty,
+    "You have unsaved changes. Leave this page and lose them? (A draft is kept on this device.)"
+  );
 
   const open = () => {
     const draft = readDraft(key);

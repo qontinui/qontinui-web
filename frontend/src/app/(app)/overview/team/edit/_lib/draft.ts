@@ -1,28 +1,25 @@
 /**
- * The editor's working copy of an estimate, and the two conversions around
- * it: a loaded estimate into a draft, and a draft into the content payload.
+ * The editor's working copy of an estimate, and the conversions around it: a
+ * loaded estimate into a draft, a draft into the content a save writes, and a
+ * draft into the plain summary the conflict dialog shows beside a peer's.
  *
  * Pure, and deliberately outside the component: the editor holds one plain
- * object, every import replaces part of it, and saving sends the whole thing.
- * There is no autosave, no per-field PATCH and no conflict-resolution scheme
- * here — the shared overview authoring layer (plan
- * `2026-09-20-overview-authoring-layer`) owns all of that, and duplicating it
- * now would mean deleting it later.
+ * object, every table edit and import replaces part of it, and saving sends
+ * the whole thing. The save itself — `If-Match`, the conflict dialog, the
+ * change log — is the overview authoring kit's, not this file's.
  *
- * **Everything this page does not edit still has to travel.** The content
- * endpoint replaces an estimate's WHOLE graph, so any field absent from the
- * payload reverts to its default — which for a phase means every gate reset
- * to `pending`, gate notes and decision dates blanked, actual dates cleared
- * and the source plan's stated working weeks dropped, all from one Save on a
- * page that shows none of them. The Timeline page (Phase 3) writes exactly
- * those fields, so this is a live cross-page data-loss path rather than a
- * hypothetical one.
+ * **Everything this page does not edit still has to travel.** A content write
+ * replaces an estimate's WHOLE graph, so any field absent from the payload
+ * reverts to its default — which for a phase means every gate reset to
+ * `pending`, gate notes and decision dates blanked, actual dates cleared and
+ * the source plan's stated working weeks dropped, all from one Save on a page
+ * that shows none of them. The Timeline page writes exactly those fields, so
+ * this is a live cross-page data-loss path rather than a hypothetical one.
  *
- * The rule, therefore: the draft round-trips every field of every table the
- * content endpoint owns. `DraftPhase` and `DraftTask` below mirror
- * `PhaseWrite` and `TaskWrite` field for field, and the cost lines and
- * calendar breaks are carried verbatim. Adding a field to the wire shape
- * means adding it here too.
+ * The rule, therefore: the draft round-trips every field of every table a
+ * content write owns. `DraftPhase` and `DraftTask` below mirror `PhaseWrite`
+ * and `TaskWrite` field for field, and the cost lines and calendar breaks are
+ * carried verbatim. Adding a field to the wire shape means adding it here too.
  */
 
 import type {
@@ -30,9 +27,11 @@ import type {
   ParsedEffortRow,
   ParsedRoleRow,
 } from "../../../_lib/csv";
+import { formatMicros } from "@/components/overview/money";
+import { sumPersonDays } from "../../../_lib/csv";
 import type {
   EstimateContentWrite,
-  EstimateDetail,
+  EstimateRecord,
   GateStatus,
   PhaseWrite,
   RoleWrite,
@@ -75,11 +74,21 @@ export interface Draft {
   costLines: EstimateContentWrite["cost_lines"];
   /** Carried, not edited. */
   calendarBreaks: EstimateContentWrite["calendar_breaks"];
-  /** The version the draft was loaded from, for optimistic concurrency. */
-  version: number;
 }
 
-export function draftFromEstimate(detail: EstimateDetail): Draft {
+const NO_CONTENT: NonNullable<EstimateRecord["content"]> = {
+  roles: [],
+  phases: [],
+  allocations: [],
+  price_tiers: [],
+  cost_lines: [],
+  calendar_breaks: [],
+};
+
+/** A record read WITH its content (a single-record read); a list read's
+ *  record has none and reads as an empty estimate. */
+export function draftFromEstimate(record: EstimateRecord): Draft {
+  const detail = record.content ?? NO_CONTENT;
   return {
     roles: detail.roles.map((r) => ({
       code: r.code,
@@ -146,7 +155,6 @@ export function draftFromEstimate(detail: EstimateDetail): Draft {
       start_date: b.start_date,
       end_date: b.end_date,
     })),
-    version: detail.estimate.version,
   };
 }
 
@@ -322,7 +330,117 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
           : null,
     })),
     calendar_breaks: draft.calendarBreaks,
-    expected_version: draft.version,
+  };
+}
+
+/** Two drafts say the same thing — the test for "nothing unsaved". */
+export function sameDraft(a: Draft, b: Draft): boolean {
+  return (
+    JSON.stringify(draftToContent(a)) === JSON.stringify(draftToContent(b))
+  );
+}
+
+/**
+ * A draft in plain lines, for the conflict dialog: enough to see what each
+ * side holds — every phase, every role and its rate, and how much effort and
+ * team each states — without reading a payload.
+ */
+export function describeDraft(draft: Draft): string {
+  const lines: string[] = [];
+  lines.push(`Phases (${draft.phases.length}):`);
+  for (const phase of draft.phases) {
+    lines.push(
+      `  ${phase.code} ${phase.name} — ${phase.planned_start ?? "no start"} to ${
+        phase.planned_end ?? "no end"
+      }, ${phase.tasks.length} task${
+        phase.tasks.length === 1 ? "" : "s"
+      }, gate ${phase.gate_status}`
+    );
+  }
+  lines.push(`Roles (${draft.roles.length}):`);
+  for (const role of draft.roles) {
+    const rate =
+      formatMicros(role.day_rate_micros, role.currency, {
+        maximumFractionDigits: 2,
+      }) ?? "not priced";
+    lines.push(
+      `  ${role.code} ${role.name} — ${rate}${role.client_side ? " (client’s)" : ""}`
+    );
+  }
+  lines.push(
+    `Allocations: ${draft.allocations.length} role-and-phase entr${
+      draft.allocations.length === 1 ? "y" : "ies"
+    }`
+  );
+  const days = sumPersonDays(draft.efforts.map((e) => e.planned_person_days));
+  lines.push(
+    `Days of work: ${days ?? "an unreadable number"} across ${
+      draft.efforts.length
+    } line${draft.efforts.length === 1 ? "" : "s"}`
+  );
+  const count = (n: number, one: string, many: string) =>
+    `${n} ${n === 1 ? one : many}`;
+  lines.push(
+    `Also: ${count(draft.priceTiers.length, "price", "prices")}, ${count(
+      draft.costLines.length,
+      "cost line",
+      "cost lines"
+    )}, ${count(draft.calendarBreaks.length, "calendar break", "calendar breaks")}`
+  );
+  return lines.join("\n");
+}
+
+/** Everything a phase holds that this page never edits — the Timeline's. */
+const PHASE_CARRIED = [
+  "stated_working_weeks",
+  "gate_criteria",
+  "actual_start",
+  "actual_end",
+  "gate_status",
+  "gate_decided_at",
+  "gate_notes",
+] as const;
+
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * My working copy, rebuilt on THEIR version: what saving it over theirs
+ * should write. A three-way merge against the version mine was built on
+ * (`base`), so that a save after a conflict replaces only what I changed:
+ *
+ * - every table I did not touch takes theirs — including the ones this page
+ *   only carries (prices, cost lines, calendar breaks), which a peer (the
+ *   Timeline, an agent) may well have changed;
+ * - a table I did change keeps mine;
+ * - the phases: untouched, theirs; re-imported, my schedule — but each
+ *   phase's gate, actual dates and stated weeks still come from theirs by
+ *   code, since this page never edits those.
+ *
+ * Without it, "keep mine" would silently put back the old copy of every
+ * field the dialog does not even show.
+ */
+export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Draft {
+  const pick = <K extends keyof Draft>(part: K): Draft[K] =>
+    same(mine[part], base[part]) ? theirs[part] : mine[part];
+  const phases = same(mine.phases, base.phases)
+    ? theirs.phases
+    : mine.phases.map((phase) => {
+        const their = theirs.phases.find((t) => t.code === phase.code);
+        if (!their) return phase;
+        const carried = Object.fromEntries(
+          PHASE_CARRIED.map((field) => [field, their[field]])
+        ) as Pick<DraftPhase, (typeof PHASE_CARRIED)[number]>;
+        return { ...phase, ...carried };
+      });
+  return {
+    roles: pick("roles"),
+    phases,
+    allocations: pick("allocations"),
+    efforts: pick("efforts"),
+    priceTiers: pick("priceTiers"),
+    costLines: pick("costLines"),
+    calendarBreaks: pick("calendarBreaks"),
   };
 }
 
@@ -505,4 +623,86 @@ export function applyGanttImport(
       };
     }),
   };
+}
+
+/** The parts of a working copy a writer can take from a peer's version. */
+export type DraftPart = "schedule" | "roles" | "allocations" | "efforts";
+
+/**
+ * `mine` with one part replaced by `theirs`' — how a writer combines two
+ * versions after a conflict, table by table, before saving. The schedule is
+ * the phases with their tasks; the days stay with `efforts`, so taking their
+ * schedule can leave my days naming tasks theirs does not have, which
+ * `draftProblems` then names before Save.
+ */
+export function takePart(mine: Draft, theirs: Draft, part: DraftPart): Draft {
+  switch (part) {
+    case "schedule":
+      return { ...mine, phases: theirs.phases };
+    case "roles":
+      return { ...mine, roles: theirs.roles };
+    case "allocations":
+      return { ...mine, allocations: theirs.allocations };
+    case "efforts":
+      return { ...mine, efforts: theirs.efforts };
+  }
+}
+
+/** A working copy as this device keeps it between visits. */
+/** Bumped whenever `Draft` changes shape: a copy kept by an older build is
+ *  dropped rather than saved with fields it never had (which would reset
+ *  them to their defaults on the server). */
+export const STORED_DRAFT_SCHEMA = 1;
+
+export interface StoredDraft {
+  schema: typeof STORED_DRAFT_SCHEMA;
+  draft: Draft;
+  /** The estimate as it was when the working copy was started, so a save
+   *  that meets a newer version can merge three ways (`rebaseDraft`). */
+  base: Draft;
+  /** Whether it holds an import, so its save is recorded as one. */
+  imported: boolean;
+}
+
+export function draftToStorage(stored: StoredDraft): string {
+  return JSON.stringify(stored);
+}
+
+/**
+ * A stored working copy, or null when there is none or it is not one this
+ * editor can use (written by an older build, or damaged). Storage is the
+ * device's, so nothing read from it is trusted to have the right shape.
+ */
+export function draftFromStorage(text: string): StoredDraft | null {
+  const lists: (keyof Draft)[] = [
+    "roles",
+    "phases",
+    "allocations",
+    "efforts",
+    "priceTiers",
+    "costLines",
+    "calendarBreaks",
+  ];
+  const isDraft = (value: unknown): value is Draft =>
+    typeof value === "object" &&
+    value !== null &&
+    lists.every((name) => Array.isArray((value as Partial<Draft>)[name]));
+  try {
+    const parsed = JSON.parse(text) as Partial<StoredDraft>;
+    if (
+      parsed.schema !== STORED_DRAFT_SCHEMA ||
+      !isDraft(parsed.draft) ||
+      !isDraft(parsed.base)
+    ) {
+      return null;
+    }
+    return {
+      schema: STORED_DRAFT_SCHEMA,
+      draft: parsed.draft,
+      base: parsed.base,
+      imported: parsed.imported === true,
+    };
+  } catch {
+    return null;
+  }
 }
