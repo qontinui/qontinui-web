@@ -24,6 +24,15 @@
 #     it would have caught 0 of the 3 forks on record, all post-authoring
 #     races; what it buys is the correct `down_revision` token, locally)
 #
+# This job also runs a second, unrelated offline scan: "Check lock_timeout is
+# restored" (scripts/ci/check_lock_timeout_restored.py). It shares this job
+# rather than getting its own workflow because it is the same shape: an
+# offline textual scan of backend/alembic/versions/*.py that must run on
+# every PR with no paths filter, and adding it here needs no branch
+# protection change, unlike a new required-check job would. See that
+# script's docstring for what it checks and why (coord finding
+# b4782f88-49f2-464e-92f9-4f44194dee34, qontinui-web#1423).
+#
 # The extraction collapsed the old "Count alembic heads" + "Fail if chain has
 # more than one head" pair into a single step: the two existed only so the
 # count could round-trip through $GITHUB_OUTPUT and gate the second step's
@@ -141,3 +150,11 @@ jobs:
         # files, no parseable revisions, or a zero-head chain (a cycle). None
         # of those are a pass.
         run: python scripts/ci/count_alembic_heads.py --baseline-ref origin/main
+
+      - name: Check lock_timeout is restored
+        # Exits 1 when a revision's upgrade()/downgrade() sets
+        # SET LOCAL lock_timeout without restoring it in the same function —
+        # env.py runs the whole batch in one transaction, so an unrestored
+        # bound leaks into whatever revision runs next. Exits 2 when the scan
+        # proved nothing (no revision files found).
+        run: python scripts/ci/check_lock_timeout_restored.py
