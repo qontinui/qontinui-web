@@ -404,15 +404,37 @@ const PHASE_CARRIED = [
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/**
+ * Something a merge could not settle, which the writer must. A note about one
+ * of my day rows carries that row: it is settled once the working copy no
+ * longer holds the row exactly as flagged (it was edited or removed). A note
+ * about the whole merge (`row: null`) is settled only when the writer says
+ * they have checked it.
+ */
+export interface MergeNote {
+  message: string;
+  row: ParsedEffortRow | null;
+}
+
+/** The notes still open against `draft`, in their order. */
+export function openMergeNotes(notes: MergeNote[], draft: Draft): MergeNote[] {
+  return notes.filter(
+    (note) =>
+      note.row === null ||
+      draft.efforts.some((effort) => same(effort, note.row))
+  );
+}
+
 export interface Rebased {
   /** My working copy rebuilt on their version. */
   draft: Draft;
   /**
    * Why `draft` cannot be saved over theirs as it stands — each a sentence a
    * writer can act on. Non-empty means "keep mine" must not be applied
-   * automatically: the writer combines the two by hand instead.
+   * automatically: the writer combines the two by hand instead, and each
+   * note holds Save until it is settled.
    */
-  unresolved: string[];
+  unresolved: MergeNote[];
 }
 
 /**
@@ -453,7 +475,7 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
         return { ...phase, ...carried };
       });
 
-  const unresolved: string[] = [];
+  const unresolved: MergeNote[] = [];
   let efforts = pick("efforts");
   const theirSchedule = !same(theirs.phases, base.phases);
   if (!mySchedule && theirSchedule && !same(mine.efforts, base.efforts)) {
@@ -481,13 +503,25 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
       if (target && (target.byTitle || !edited)) {
         efforts.push({ ...row, task_number: target.to });
       } else if (edited) {
-        unresolved.push(
-          `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed.`
-        );
+        unresolved.push({
+          message: `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed. Edit or remove that row.`,
+          row,
+        });
         efforts.push(row);
       }
       // An untouched row whose task they removed goes with the task.
     }
+  }
+
+  if (mySchedule && theirSchedule && !same(theirs.efforts, base.efforts)) {
+    // Both of us re-imported the schedule. Mine is kept, but their days of
+    // work were written against THEIR tasks, which mine replaces: nothing
+    // can say which of my tasks each of their rows belongs to.
+    unresolved.push({
+      message:
+        "You and they both changed the schedule, and they also changed the days of work, which were written against their tasks. Check the days table against your schedule, then mark this checked.",
+      row: null,
+    });
   }
 
   return {
@@ -512,7 +546,7 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
  */
 export function keepMineBlockers(rebased: Rebased): string[] {
   return [
-    ...rebased.unresolved,
+    ...rebased.unresolved.map((note) => note.message),
     ...draftProblems(rebased.draft)
       .filter((p) => p.severity === "error")
       .map((p) => p.message),
@@ -737,6 +771,9 @@ export interface StoredDraft {
   base: Draft;
   /** Whether it holds an import, so its save is recorded as one. */
   imported: boolean;
+  /** What a "combine" left for the writer to settle, so a reload still says
+   *  why Save is held. */
+  notes?: MergeNote[];
 }
 
 export function draftToStorage(stored: StoredDraft): string {
@@ -771,11 +808,21 @@ export function draftFromStorage(text: string): StoredDraft | null {
     ) {
       return null;
     }
+    const notes = Array.isArray(parsed.notes)
+      ? parsed.notes.filter(
+          (n): n is MergeNote =>
+            typeof n === "object" &&
+            n !== null &&
+            typeof n.message === "string" &&
+            (n.row === null || (typeof n.row === "object" && n.row !== null))
+        )
+      : [];
     return {
       schema: STORED_DRAFT_SCHEMA,
       draft: parsed.draft,
       base: parsed.base,
       imported: parsed.imported === true,
+      notes,
     };
   } catch {
     return null;

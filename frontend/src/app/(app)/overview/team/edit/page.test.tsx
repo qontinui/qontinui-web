@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  cleanup,
   waitFor,
   within,
 } from "@testing-library/react";
@@ -566,5 +567,182 @@ describe("the estimate editor", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm.mock.calls[0]![0]).toMatch(/NOT kept on this device/);
     confirm.mockRestore();
+  });
+
+  describe("rows a combine could not settle", () => {
+    const task = (number: string, title: string, efforts: unknown[] = []) => ({
+      id: `t-${number}`,
+      number,
+      title,
+      requirement_refs: null,
+      planned_start: null,
+      planned_end: null,
+      is_critical: false,
+      status: "planned" as const,
+      sort_order: 0,
+      efforts,
+    });
+    const phase = (tasks: ReturnType<typeof task>[]) => ({
+      id: "p1",
+      code: "A0",
+      name: "Mobilisation",
+      sort_order: 0,
+      planned_start: null,
+      planned_end: null,
+      stated_working_weeks: null,
+      gate_criteria: "",
+      actual_start: null,
+      actual_end: null,
+      gate_status: "pending" as const,
+      gate_decided_at: null,
+      gate_notes: "",
+      tasks,
+    });
+    const effort = (days: string) => ({
+      role_id: "r1",
+      role_code: "BE",
+      planned_person_days: days,
+    });
+    const PLANNED = {
+      ...ESTIMATE,
+      content: {
+        ...ESTIMATE.content!,
+        phases: [phase([task("1.1", "Kick-off", [effort("4.00")])])],
+      },
+    };
+    // They renamed Kick-off AND added a task: nothing proves where my row goes.
+    const THEIRS = {
+      ...PLANNED,
+      version: 9,
+      content: {
+        ...PLANNED.content,
+        phases: [
+          phase([
+            task("1.1", "Start", [effort("4.00")]),
+            task("1.2", "Review"),
+          ]),
+        ],
+      },
+    };
+    const daysTable = () =>
+      screen
+        .getByRole("heading", { name: "Days of work per task" })
+        .closest("section")!;
+
+    async function combineAfterEditingMyDays() {
+      mocks.search = "";
+      mocks.getResource.mockImplementation(async (path: string) =>
+        path === "pages"
+          ? { item: DOC, can_edit: true }
+          : { item: PLANNED, can_edit: true }
+      );
+      const save = await showEditor();
+      fireEvent.click(
+        within(daysTable()).getByRole("button", { name: "Edit" })
+      );
+      fireEvent.change(within(daysTable()).getByLabelText("Days"), {
+        target: { value: "6" },
+      });
+      fireEvent.click(
+        within(daysTable()).getByRole("button", { name: "Done" })
+      );
+      mocks.updateResource.mockRejectedValueOnce(
+        new VersionConflictError(THEIRS)
+      );
+      await act(async () => fireEvent.click(save));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Combine them myself" })
+      );
+      return save;
+    }
+
+    it("holds Save until each flagged row is edited, and its note clears", async () => {
+      const save = await combineAfterEditingMyDays();
+      const notes = screen.getByRole("region", {
+        name: "Left to settle from combining",
+      });
+      expect(
+        within(notes).getByText(/task 1.1 of phase A0 \(BE\)/)
+      ).toBeTruthy();
+      expect(save.disabled).toBe(true);
+      expect(screen.getByText(/Settle what combining left/)).toBeTruthy();
+
+      // I put my days on the task they belong to now.
+      fireEvent.click(
+        within(daysTable()).getByRole("button", { name: "Edit" })
+      );
+      fireEvent.change(within(daysTable()).getByLabelText("Task"), {
+        target: { value: "1.2" },
+      });
+      fireEvent.click(
+        within(daysTable()).getByRole("button", { name: "Done" })
+      );
+      expect(
+        screen.queryByRole("region", { name: "Left to settle from combining" })
+      ).toBeNull();
+      expect(save.disabled).toBe(false);
+    });
+
+    it("keeps the notes, and the hold, across a reload", async () => {
+      await combineAfterEditingMyDays();
+      cleanup();
+      const save = await showEditor();
+      expect(
+        screen.getByRole("region", { name: "Left to settle from combining" })
+      ).toBeTruthy();
+      expect(save.disabled).toBe(true);
+    });
+  });
+
+  describe("the leave guard", () => {
+    const leaving = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    it("is not armed by the source document's own, untouched gantt chart", async () => {
+      mocks.getResource.mockImplementation(async (path: string) =>
+        path === "pages"
+          ? {
+              item: {
+                ...DOC,
+                body_md:
+                  "```mermaid\ngantt\n  dateFormat YYYY-MM-DD\n  section A0 X\n  T :a, 2026-01-05, 5d\n```",
+              },
+              can_edit: true,
+            }
+          : { item: ESTIMATE, can_edit: true }
+      );
+      await showEditor();
+      expect(
+        (screen.getByLabelText(/Import the schedule/) as HTMLTextAreaElement)
+          .value
+      ).toContain("gantt");
+      expect(leaving()).toBe(false);
+      fireEvent.change(screen.getByLabelText(/Import the schedule/), {
+        target: { value: "gantt\n  section B0 Typed" },
+      });
+      expect(leaving()).toBe(true);
+    });
+
+    it("is disarmed when the CSV paste box is closed", async () => {
+      mocks.search = "";
+      await showEditor();
+      const roles = screen
+        .getByRole("heading", { name: "Roles and rates" })
+        .closest("section")!;
+      fireEvent.click(
+        roles.querySelector(
+          '[data-ui-bridge-id="overview.estimate-editor.roles.paste.open"]'
+        )!
+      );
+      fireEvent.change(screen.getByLabelText("The pasted table"), {
+        target: { value: "code,name\nQA,Tester" },
+      });
+      expect(leaving()).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(leaving()).toBe(false);
+    });
   });
 });

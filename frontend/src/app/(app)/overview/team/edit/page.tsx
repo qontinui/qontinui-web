@@ -78,12 +78,14 @@ import {
   draftToContent,
   draftToStorage,
   keepMineBlockers,
+  openMergeNotes,
   rebaseDraft,
   sameDraft,
   STORED_DRAFT_SCHEMA,
   takePart,
   type Draft,
   type DraftPart,
+  type MergeNote,
 } from "./_lib/draft";
 import { useSourceDocument, type SourceDocument } from "./_lib/source";
 import { statusAfterEdit, type Status } from "./_lib/status";
@@ -444,6 +446,7 @@ function restoredDraft(
   draft: Draft;
   base: Draft;
   imported: boolean;
+  notes: MergeNote[];
   baseVersion: number;
   savedAt: string;
 } | null {
@@ -453,6 +456,7 @@ function restoredDraft(
   if (!parsed || sameDraft(parsed.draft, saved)) return null;
   return {
     ...parsed,
+    notes: parsed.notes ?? [],
     baseVersion: stored.baseVersion,
     savedAt: stored.savedAt,
   };
@@ -497,6 +501,7 @@ function EstimateEditor({
       draft: restored?.draft ?? saved,
       base: restored?.base ?? saved,
       imported: restored?.imported ?? false,
+      notes: restored?.notes ?? [],
       baseVersion: restored?.baseVersion ?? record.version,
       restoredFrom: restored?.savedAt ?? null,
     };
@@ -553,8 +558,10 @@ function EstimateEditor({
   const onRolesPaste = useMemo(() => trackBox("roles"), [trackBox]);
   const onAllocationsPaste = useMemo(() => trackBox("allocations"), [trackBox]);
   const onEffortsPaste = useMemo(() => trackBox("efforts"), [trackBox]);
-  /** Why "keep mine" was not applied, shown with their version. */
-  const [mergeNotes, setMergeNotes] = useState<string[]>([]);
+  /** What a "combine" left for the writer to settle. Each holds Save until
+   *  it is settled (`openMergeNotes`), and they are kept with the copy on
+   *  this device, so a reload still says why. */
+  const [mergeNotes, setMergeNotes] = useState<MergeNote[]>(initial.notes);
   const vocabulary = estimateVocabulary(record.purpose);
 
   // Recorded as part of Save, in the same write as the content.
@@ -578,9 +585,16 @@ function EstimateEditor({
     next: Draft,
     nextImported: boolean,
     version: number,
-    base: Draft = baseDraft
+    base: Draft = baseDraft,
+    notes: MergeNote[] = mergeNotes
   ) => {
-    if (sameDraft(next, base) && version === record.version) clearDraft(key);
+    const open = openMergeNotes(notes, next);
+    if (
+      sameDraft(next, base) &&
+      version === record.version &&
+      open.length === 0
+    )
+      clearDraft(key);
     else
       writeDraft(
         key,
@@ -589,9 +603,17 @@ function EstimateEditor({
           draft: next,
           base,
           imported: nextImported,
+          notes: open,
         }),
         version
       );
+  };
+
+  /** Settle a note about the whole merge: the writer has checked it. */
+  const settleNote = (note: MergeNote) => {
+    const notes = mergeNotes.filter((n) => n !== note);
+    setMergeNotes(notes);
+    keep(draft, imported, baseVersion, baseDraft, notes);
   };
 
   /**
@@ -605,10 +627,13 @@ function EstimateEditor({
   ) => {
     const next = change(draft);
     const nextImported = imported || how === "import";
+    // A row a note flagged, once edited or removed, settles that note.
+    const notes = openMergeNotes(mergeNotes, next);
     setDraft(next);
     setImported(nextImported);
+    setMergeNotes(notes);
     setStatus(statusAfterEdit);
-    keep(next, nextImported, baseVersion);
+    keep(next, nextImported, baseVersion, baseDraft, notes);
   };
 
   /** Make `fresh` the record the working copy is built on, and the copy. */
@@ -731,16 +756,6 @@ function EstimateEditor({
             Saving now replaces it with your working copy. Bring over what you
             want to keep first.
           </p>
-          {mergeNotes.length > 0 && (
-            <ul
-              className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-destructive"
-              data-ui-bridge-id="overview.estimate-editor.theirs.notes"
-            >
-              {mergeNotes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
           <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
             {describeDraft(theirsDraft)}
           </pre>
@@ -760,6 +775,42 @@ function EstimateEditor({
               </button>
             ))}
           </div>
+        </section>
+      )}
+
+      {mergeNotes.length > 0 && (
+        <section
+          className="max-w-[46rem] border-l-2 border-destructive pl-4"
+          aria-label="Left to settle from combining"
+          data-ui-bridge-id="overview.estimate-editor.merge-notes"
+        >
+          <h3 className="text-sm font-medium text-foreground">
+            Left to settle before this can be saved
+          </h3>
+          <ul className="mt-2 space-y-1.5">
+            {mergeNotes.map((note) => (
+              <li
+                key={note.message}
+                className="text-sm leading-relaxed text-destructive"
+              >
+                {note.message}
+                {note.row === null && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => settleNote(note)}
+                      className="inline-flex min-h-9 items-center rounded-md text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      data-ui-bridge-id="overview.estimate-editor.merge-notes.checked"
+                    >
+                      I have checked this
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -902,6 +953,7 @@ function EstimateEditor({
             busy ||
             blocking.length > 0 ||
             openEditors.size > 0 ||
+            mergeNotes.length > 0 ||
             (!dirty && !linkSource)
           }
           className="inline-flex min-h-9 items-center rounded-md bg-primary px-4 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -924,6 +976,11 @@ function EstimateEditor({
           {openEditors.size > 0 && (
             <span className="text-muted-foreground">
               Finish or cancel the row you are editing before saving.{" "}
+            </span>
+          )}
+          {mergeNotes.length > 0 && (
+            <span className="text-muted-foreground">
+              Settle what combining left above before saving.{" "}
             </span>
           )}
           {status.kind === "saved" && (
@@ -979,7 +1036,7 @@ function EstimateEditor({
           setBaseVersion(current.version);
           setTheirs(null);
           setMergeNotes([]);
-          keep(rebased.draft, imported, current.version, theirsOfConflict);
+          keep(rebased.draft, imported, current.version, theirsOfConflict, []);
           void save(current.version, { content: rebased.draft });
         }}
         onTakeTheirs={() => {
@@ -1001,8 +1058,17 @@ function EstimateEditor({
           setBaseDraft(theirsOfConflict);
           setBaseVersion(current.version);
           setTheirs(current);
-          setMergeNotes(blockers);
-          keep(rebased.draft, imported, current.version, theirsOfConflict);
+          // The rows and checks the merge could not settle hold Save until
+          // the writer settles them. (Broken cross-references are already
+          // held by the problem list.)
+          setMergeNotes(rebased.unresolved);
+          keep(
+            rebased.draft,
+            imported,
+            current.version,
+            theirsOfConflict,
+            rebased.unresolved
+          );
         }}
       />
     </div>

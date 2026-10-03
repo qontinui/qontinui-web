@@ -8,6 +8,7 @@ import {
   draftFromStorage,
   draftToStorage,
   keepMineBlockers,
+  openMergeNotes,
   rebaseDraft,
   sameDraft,
   STORED_DRAFT_SCHEMA,
@@ -728,6 +729,7 @@ describe("the copy kept on this device", () => {
       draft,
       base: draft,
       imported: true,
+      notes: [],
     });
   });
 
@@ -798,8 +800,11 @@ describe("rebaseDraft — my days on their re-imported schedule", () => {
       ])
     );
     expect(rebased.unresolved).toHaveLength(1);
-    expect(rebased.unresolved[0]).toContain("task 1.1 of phase A0");
-    expect(keepMineBlockers(rebased)).toEqual(rebased.unresolved);
+    expect(rebased.unresolved[0]!.message).toContain("task 1.1 of phase A0");
+    expect(rebased.unresolved[0]!.row).toEqual(mine().efforts[0]);
+    expect(keepMineBlockers(rebased)).toEqual(
+      rebased.unresolved.map((n) => n.message)
+    );
   });
 
   it("treats a pairing by position alone (a rename) as unproven for my edits", () => {
@@ -829,5 +834,55 @@ describe("rebaseDraft — my days on their re-imported schedule", () => {
     const rebased = rebaseDraft(myCopy, start, theirs);
     expect(rebased.unresolved).toEqual([]);
     expect(keepMineBlockers(rebased).join(" ")).toContain('"BE"');
+  });
+});
+
+describe("what a combine leaves to settle", () => {
+  const base = () => draftFromEstimate(LOADED);
+
+  it("blocks keeping mine when we both re-imported and they changed the days", () => {
+    const mine = base();
+    mine.phases = [{ ...mine.phases[0]!, name: "My re-import" }];
+    const theirs = base();
+    theirs.phases = [{ ...theirs.phases[0]!, name: "Their re-import" }];
+    theirs.efforts = [{ ...theirs.efforts[0]!, planned_person_days: "9" }];
+    const rebased = rebaseDraft(mine, base(), theirs);
+    expect(rebased.unresolved).toHaveLength(1);
+    expect(rebased.unresolved[0]!.row).toBeNull();
+    expect(keepMineBlockers(rebased)[0]).toContain("both changed the schedule");
+    // Without their day change there is nothing to reconcile.
+    theirs.efforts = base().efforts;
+    expect(rebaseDraft(mine, base(), theirs).unresolved).toEqual([]);
+  });
+
+  it("settles a row's note once the row is edited or removed, never by itself", () => {
+    const draft = base();
+    const row = draft.efforts[0]!;
+    const notes = [
+      { message: "row", row },
+      { message: "whole", row: null },
+    ];
+    expect(openMergeNotes(notes, draft)).toEqual(notes);
+    const edited = {
+      ...draft,
+      efforts: [{ ...row, task_number: "1.2" }],
+    };
+    expect(openMergeNotes(notes, edited)).toEqual([notes[1]]);
+    expect(openMergeNotes(notes, { ...draft, efforts: [] })).toEqual([
+      notes[1],
+    ]);
+  });
+
+  it("keeps its notes with the copy on this device", () => {
+    const draft = base();
+    const notes = [{ message: "row", row: draft.efforts[0]! }];
+    const text = draftToStorage({
+      schema: STORED_DRAFT_SCHEMA,
+      draft,
+      base: draft,
+      imported: false,
+      notes,
+    });
+    expect(draftFromStorage(text)?.notes).toEqual(notes);
   });
 });
