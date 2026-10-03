@@ -14,7 +14,13 @@
 import { formatDecimal } from "@/components/overview/money";
 import { UnavailableNotes } from "@/components/overview/UnavailableNotes";
 import type { TimelineForecast } from "../../_lib/timeline-api";
-import { describeSlip, formatDay } from "../../_lib/timeline";
+import {
+  SLIP_TONE_CLASS,
+  describeNextGate,
+  describePosition,
+  describeSlip,
+  formatDay,
+} from "../../_lib/timeline";
 
 function Fact({
   label,
@@ -48,41 +54,6 @@ function Fact({
   );
 }
 
-const TONE: Record<string, string> = {
-  late: "border-red-600/40 text-red-700 dark:text-red-400",
-  early: "border-emerald-600/40 text-emerald-700 dark:text-emerald-400",
-  on_plan: "border-border text-muted-foreground",
-};
-
-function where(forecast: TimelineForecast): { value: string; detail: string } {
-  const named = (p: { code: string; name: string }) => `${p.code} ${p.name}`;
-  switch (forecast.position) {
-    case "in_progress":
-      return {
-        value: named(forecast.current_phase!),
-        detail: "The phase under way now.",
-      };
-    case "between_phases":
-      return {
-        value: `Between phases`,
-        detail: forecast.next_phase
-          ? `${named(forecast.next_phase)} is next and has not started.`
-          : "",
-      };
-    case "not_started":
-      return {
-        value: "Not started",
-        detail: forecast.next_phase
-          ? `${named(forecast.next_phase)} comes first.`
-          : "",
-      };
-    case "finished":
-      return { value: "Finished", detail: "Every phase has ended." };
-    default:
-      return { value: "No phases", detail: "The estimate has no phases yet." };
-  }
-}
-
 export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
   const planned =
     forecast.planned_start && forecast.planned_finish
@@ -98,7 +69,8 @@ export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
   ]
     .filter(Boolean)
     .join(", ");
-  const now = where(forecast);
+  const now = describePosition(forecast);
+  const gate = describeNextGate(forecast);
   const slip = describeSlip(forecast.slip_days);
 
   return (
@@ -113,7 +85,7 @@ export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
         <Fact
           label="Where it is now"
           value={now.value}
-          detail={now.detail || null}
+          detail={now.detail}
           uiBridgeId="overview.timeline.header.now"
         />
         <Fact
@@ -128,7 +100,7 @@ export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
         >
           {slip && (
             <span
-              className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${TONE[slip.tone]}`}
+              className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${SLIP_TONE_CLASS[slip.tone]}`}
               data-ui-bridge-id="overview.timeline.header.slip"
               data-tone={slip.tone}
             >
@@ -138,14 +110,8 @@ export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
         </Fact>
         <Fact
           label="Next gate"
-          value={
-            forecast.next_gate
-              ? `${forecast.next_gate.code} ${forecast.next_gate.name}`
-              : forecast.position === "no_phases"
-                ? null
-                : "All gates decided"
-          }
-          detail={forecast.next_gate?.criteria || null}
+          value={gate.value}
+          detail={gate.detail}
           uiBridgeId="overview.timeline.header.next-gate"
         />
       </dl>

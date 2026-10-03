@@ -798,3 +798,238 @@ describe("the estimate editor", () => {
     });
   });
 });
+
+describe("a Save that would drop a phase holding recorded work", () => {
+  const PHASED: EstimateRecord = {
+    ...ESTIMATE,
+    content: {
+      ...ESTIMATE.content!,
+      phases: [
+        {
+          id: "ph0",
+          code: "A0",
+          name: "Mobilisation",
+          sort_order: 0,
+          planned_start: "2026-01-05",
+          planned_end: "2026-01-30",
+          stated_working_weeks: null,
+          gate_criteria: "",
+          actual_start: null,
+          actual_end: null,
+          gate_status: "pending",
+          gate_decided_at: null,
+          gate_notes: "",
+          tasks: [],
+        },
+      ],
+    },
+  };
+  const PROGRESS = {
+    id: "ph0",
+    estimate_id: "e1",
+    code: "A0",
+    name: "Mobilisation",
+    sort_order: 0,
+    planned_start: "2026-01-05",
+    planned_end: "2026-01-30",
+    gate_criteria: "",
+    actual_start: null,
+    actual_end: null,
+    gate_status: "pending",
+    gate_decided_at: null,
+    gate_notes: "",
+    version: 1,
+    updated_at: null,
+    updated_by: null,
+  };
+  const MILESTONE = {
+    id: "m1",
+    title: "Pilot live",
+    description: "",
+    kind: "pilot",
+    phase_id: "ph0",
+    phase_code: "A0",
+    target_date: "2026-01-20",
+    completed_date: null,
+    status: "planned",
+    version: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    created_by: null,
+    updated_by: null,
+  };
+  const list = (items: unknown[]) => ({
+    items,
+    total: items.length,
+    can_edit: true,
+    degraded: null,
+  });
+
+  /** The project's resources as the server lists them. A function stands
+   *  for a read that fails. */
+  function serve({
+    progress = [PROGRESS],
+    milestones = [] as unknown[],
+  }: {
+    progress?: unknown[] | (() => never);
+    milestones?: unknown[] | (() => never);
+  }) {
+    mocks.listResource.mockImplementation(async (path: string) => {
+      if (path === "phase-progress") {
+        return typeof progress === "function" ? progress() : list(progress);
+      }
+      if (path === "milestones") {
+        return typeof milestones === "function"
+          ? milestones()
+          : list(milestones);
+      }
+      return list([{ ...PHASED, content: null }]);
+    });
+  }
+
+  beforeEach(() => {
+    mocks.search = "";
+    mocks.getResource.mockResolvedValue({ item: PHASED, can_edit: true });
+    mocks.updateResource.mockResolvedValue({ ...PHASED, version: 8 });
+  });
+
+  /** Re-import the schedule with the section's code changed: the chart
+   *  cannot carry the phase's identity, so A0 is dropped and M0 is new. */
+  async function reimportUnderANewCode(code = "M0") {
+    const save = await showEditor();
+    fireEvent.change(screen.getByLabelText(/Import the schedule/), {
+      target: {
+        value: `gantt\n  dateFormat YYYY-MM-DD\n  section ${code} Mobilisation\n  Kick-off :a, 2026-01-05, 5d`,
+      },
+    });
+    const gantt = screen.getByLabelText(/Import the schedule/).closest("div")!;
+    fireEvent.click(within(gantt).getByRole("button", { name: "Read it" }));
+    fireEvent.click(
+      within(gantt).getByRole("button", { name: "Use this schedule" })
+    );
+    return save;
+  }
+
+  it("names the phase and the recorded progress it would delete, and saves only when confirmed", async () => {
+    serve({
+      progress: [
+        {
+          ...PROGRESS,
+          gate_status: "passed",
+          gate_decided_at: "2026-01-30",
+          actual_start: "2026-01-05",
+          actual_end: "2026-01-30",
+        },
+      ],
+    });
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/Saving drops a phase that holds/)
+    ).toBeTruthy();
+    expect(within(dialog).getByText("A0")).toBeTruthy();
+    expect(within(dialog).getByText(/Mobilisation/)).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "Its recorded gate outcome (Passed) and actual start and end dates will be deleted."
+      )
+    ).toBeTruthy();
+    expect(mocks.updateResource).not.toHaveBeenCalled();
+    expect(mocks.listResource).toHaveBeenCalledWith("phase-progress", {
+      estimate_id: "e1",
+    });
+
+    await act(async () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Drop them and save" })
+      )
+    );
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    const [, , patch, version] = mocks.updateResource.mock.calls[0]!;
+    expect(version).toBe(7);
+    expect(patch.content.phases.map((p: { code: string }) => p.code)).toEqual([
+      "M0",
+    ]);
+    expect(await screen.findByText(/Saved as version 8/)).toBeTruthy();
+  });
+
+  it("counts the milestones it would untie, and Cancel writes nothing", async () => {
+    serve({ milestones: [MILESTONE, { ...MILESTONE, id: "m2" }] });
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/2 milestones will be untied from it/)
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/Its recorded/)).toBeNull();
+    expect(mocks.listResource).toHaveBeenCalledWith("milestones", {
+      phase_id: ["ph0"],
+    });
+
+    await act(async () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Cancel, keep editing" })
+      )
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.updateResource).not.toHaveBeenCalled();
+    // The working copy is untouched, ready to be corrected.
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("saves without asking when the dropped phase holds nothing", async () => {
+    serve({});
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+    await waitFor(() => expect(mocks.updateResource).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("reads nothing and asks nothing when no phase is dropped", async () => {
+    serve({ progress: [{ ...PROGRESS, gate_status: "passed" }] });
+    const save = await reimportUnderANewCode("A0");
+    await act(async () => fireEvent.click(save));
+    await waitFor(() => expect(mocks.updateResource).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.listResource).not.toHaveBeenCalledWith(
+      "phase-progress",
+      expect.anything()
+    );
+    // The kept phase is named by its id, so it keeps its progress.
+    expect(mocks.updateResource.mock.calls[0]![2].content.phases[0].id).toBe(
+      "ph0"
+    );
+  });
+
+  it("says so when what the phase holds could not be checked, and lets the writer choose", async () => {
+    serve({
+      progress: () => {
+        throw new Error("The server did not answer");
+      },
+    });
+    const save = await reimportUnderANewCode();
+    await act(async () => fireEvent.click(save));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(
+        "What the dropped phases hold could not be checked"
+      )
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(/Saving drops A0 Mobilisation/)
+    ).toBeTruthy();
+    expect(within(dialog).getByText(/The server did not answer/)).toBeTruthy();
+    expect(mocks.updateResource).not.toHaveBeenCalled();
+
+    await act(async () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Save anyway" })
+      )
+    );
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+  });
+});

@@ -27,7 +27,7 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadFailure } from "@/components/overview/LoadFailure";
@@ -37,6 +37,7 @@ import {
   useResourceRecord,
 } from "@/components/overview/editing/useResource";
 import { cn } from "@/lib/utils";
+import { useForecast } from "../_hooks/useForecast";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
 import {
   ESTIMATES,
@@ -50,11 +51,8 @@ import {
   MILESTONES_PATH,
   PHASE_PROGRESS,
   PHASE_PROGRESS_PATH,
-  fetchForecast,
   type Milestone,
   type PhaseProgress,
-  type PhaseProgressPatch,
-  type TimelineForecast,
 } from "../_lib/timeline-api";
 import {
   ZOOMS,
@@ -70,34 +68,6 @@ import { PhaseDetails } from "./_components/PhaseDetails";
 import { PhaseList } from "./_components/PhaseList";
 import { TimelineChart } from "./_components/TimelineChart";
 import { TimelineHeader } from "./_components/TimelineHeader";
-
-type ForecastState =
-  | { state: "loading" }
-  | { state: "error"; message: string }
-  | { state: "ready"; forecast: TimelineForecast };
-
-/** The forecast for `estimateId`, re-read whenever `token` moves (after a
- *  progress write, which is what changes it). */
-function useForecast(estimateId: string | null, hold: boolean, token: number) {
-  const [value, setValue] = useState<ForecastState>({ state: "loading" });
-  useEffect(() => {
-    if (hold || estimateId === null) return;
-    let live = true;
-    fetchForecast(estimateId).then(
-      (forecast) => live && setValue({ state: "ready", forecast }),
-      (err: unknown) =>
-        live &&
-        setValue({
-          state: "error",
-          message: err instanceof Error ? err.message : String(err),
-        })
-    );
-    return () => {
-      live = false;
-    };
-  }, [estimateId, hold, token]);
-  return value;
-}
 
 function Section({
   id,
@@ -262,23 +232,30 @@ export default function TimelinePage() {
     hold,
     reloadKey: projectId,
   });
-  const [forecastToken, setForecastToken] = useState(0);
-  const forecast = useForecast(estimateId, hold, forecastToken);
+  // The forecast is computed from progress, so it is re-read whenever the
+  // served progress moves: a save, and equally a conflict — the list has
+  // already taken the peer's newer copy. Its first arrival is not a move (the
+  // forecast is being read for it anyway), so that does not read it twice.
+  const progressStamp =
+    progress.list.state === "ready"
+      ? progress.list.items.map((p) => `${p.id}@${p.version}`).join(",")
+      : null;
+  const [forecastToken, setForecastToken] = useState({
+    stamp: progressStamp,
+    n: 0,
+  });
+  if (forecastToken.stamp !== progressStamp) {
+    const moved = forecastToken.stamp !== null && progressStamp !== null;
+    setForecastToken({
+      stamp: progressStamp,
+      n: moved ? forecastToken.n + 1 : forecastToken.n,
+    });
+  }
+  const forecast = useForecast(estimateId, hold, forecastToken.n);
 
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [zoom, setZoom] = useState<Zoom>("project");
   const [selected, setSelected] = useState<string | null>(null);
-
-  const updateProgress = progress.update;
-  const onSaveProgress = useCallback(
-    async (current: PhaseProgress, patch: PhaseProgressPatch) => {
-      const result = await updateProgress(current, patch);
-      // Progress is what the forecast is computed from.
-      if (result.ok) setForecastToken((n) => n + 1);
-      return result;
-    },
-    [updateProgress]
-  );
 
   const content =
     record.record.state === "ready" ? record.record.item.content : null;
@@ -529,10 +506,13 @@ export default function TimelinePage() {
                       Gate {selectedPhase.progress.code} &middot;{" "}
                       {selectedPhase.progress.name}
                     </h3>
+                    {/* Keyed on the phase: choosing another gate is another
+                        form, never this one's working copy under its name. */}
                     <PhaseDetails
+                      key={selectedPhase.progress.id}
                       phase={selectedPhase}
                       canEdit={canEditProgress}
-                      onSave={onSaveProgress}
+                      onSave={progress.update}
                       uiBridgeId="overview.timeline.gate-panel.details"
                     />
                   </div>
@@ -544,7 +524,7 @@ export default function TimelinePage() {
                 phases={phases}
                 milestones={milestoneItems}
                 canEdit={canEditProgress}
-                onSave={onSaveProgress}
+                onSave={progress.update}
               />
             </div>
           </>

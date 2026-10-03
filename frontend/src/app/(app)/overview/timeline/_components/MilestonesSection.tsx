@@ -11,7 +11,7 @@
  * overwrite. Controls are absent for a reader who may not edit.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
@@ -33,8 +33,11 @@ import {
   milestoneToRow,
   otherPhases,
   planMilestoneWrites,
+  rebaseMilestone,
+  MILESTONE_FIELD_LABEL,
   type MilestoneRow,
   type PhaseChoice,
+  type Writable,
 } from "../../_lib/milestones";
 import { MILESTONES, type Milestone } from "../../_lib/timeline-api";
 import {
@@ -43,10 +46,24 @@ import {
   formatDay,
 } from "../../_lib/timeline";
 
-/** A write a peer overtook, waiting for the writer's choice. */
+/** A write a peer overtook, waiting for the writer's choice. `base` is the
+ *  row my edit was built on, so a choice can merge three ways. */
 type Pending =
-  | { kind: "update"; mine: MilestoneRow; theirs: Milestone }
+  | {
+      kind: "update";
+      base: MilestoneRow;
+      mine: MilestoneRow;
+      theirs: Milestone;
+    }
   | { kind: "delete"; theirs: Milestone };
+
+/** A combined copy open in the table's editor, and what we both changed. */
+interface Combining {
+  id: string;
+  title: string;
+  reopen: { at: number; row: MilestoneRow };
+  both: { field: Writable; mine: string; theirs: string }[];
+}
 
 function describe(
   row: MilestoneRow | Milestone,
@@ -106,7 +123,31 @@ export function MilestonesSection({
   const rows = useMemo(() => milestones.map(milestoneToRow), [milestones]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [pending, setPending] = useState<Pending | null>(null);
+  // Every overtaken write waits its turn here: a paste can meet several, and
+  // each is put to the writer in order — none is dropped for a later one.
+  const [pending, setPending] = useState<Pending[]>([]);
+  const enqueue = (conflict: Pending) =>
+    setPending((queue) => [...queue, conflict]);
+  const head = pending[0] ?? null;
+  const settle = () => setPending((queue) => queue.slice(1));
+  const [combining, setCombining] = useState<Combining | null>(null);
+  // Stable, so the table calls it only when its editor opens or closes —
+  // closing it (Done or Cancel) ends the combine.
+  const endCombining = useCallback((open: boolean) => {
+    if (!open) setCombining(null);
+  }, []);
+
+  /** A field's value in words, for the "you both changed" note. */
+  const valueText = (row: MilestoneRow, field: Writable): string => {
+    const value = row[field];
+    if (field === "target_date" || field === "completed_date")
+      return formatDay(value as string | null) ?? "none";
+    if (field === "status") return MILESTONE_STATUS_LABEL[row.status];
+    if (field === "kind") return MILESTONE_KIND_LABEL[row.kind];
+    if (field === "phase_id")
+      return phaseOptions.find((p) => p.value === value)?.label ?? "No phase";
+    return (value as string) || "none";
+  };
 
   const recordOf = (id: string) => milestones.find((m) => m.id === id);
 
@@ -119,7 +160,7 @@ export function MilestonesSection({
       if (err instanceof VersionConflictError) {
         const theirs = err.current as Milestone;
         replace(theirs);
-        setPending({ kind: "delete", theirs });
+        enqueue({ kind: "delete", theirs });
         return null;
       }
       return `${record.title}: ${describeWriteFailure(err)}`;
@@ -127,6 +168,7 @@ export function MilestonesSection({
   };
 
   const apply = async (next: MilestoneRow[], how: "edit" | "import") => {
+    setCombining(null);
     const source: WriteSource = how === "import" ? "import" : "ui";
     const plan = planMilestoneWrites(rows, next, how);
     const problems: string[] = [];
@@ -154,8 +196,9 @@ export function MilestonesSection({
       if (!record) continue;
       const result = await update(record, patch, { source });
       if (!result.ok && "conflict" in result) {
-        setPending({
+        enqueue({
           kind: "update",
+          base: row,
           mine: { ...row, ...patch },
           theirs: result.conflict,
         });
@@ -180,6 +223,37 @@ export function MilestonesSection({
 
   return (
     <div className="space-y-3" data-ui-bridge-id="overview.timeline.milestones">
+      {combining && (
+        <div
+          role="note"
+          className="space-y-1 rounded-md border border-border bg-muted/40 p-2 text-sm"
+          data-ui-bridge-id="overview.timeline.milestones.combining"
+        >
+          <p className="text-foreground">
+            “{combining.title}” is open with your changes on top of theirs —
+            what only they changed is kept. Check it, then choose Done.
+          </p>
+          {combining.both.length > 0 && (
+            <>
+              <p className="font-medium text-foreground">
+                You both changed these; the editor holds yours — set theirs if
+                theirs is right:
+              </p>
+              <ul className="list-disc pl-5 text-muted-foreground">
+                {combining.both.map((b) => (
+                  <li
+                    key={b.field}
+                    data-ui-bridge-id={`overview.timeline.milestones.combining.both.${b.field}`}
+                  >
+                    {MILESTONE_FIELD_LABEL[b.field]}: yours {b.mine} · theirs{" "}
+                    {b.theirs}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
       <RecordTable
         table={table}
         rows={rows}
@@ -187,6 +261,8 @@ export function MilestonesSection({
         busy={busy}
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
+        onEditingChange={endCombining}
+        reopen={combining?.reopen ?? null}
         uiBridgeId="overview.timeline.milestones.table"
       />
       {errors.length > 0 && (
@@ -209,28 +285,44 @@ export function MilestonesSection({
           uiBridgeId="overview.timeline.milestones.history"
         />
       )}
-      {pending && (
+      {head && (
         <ConflictDialog
+          // One dialog per conflict, so the next never inherits this one's state.
+          key={`${head.kind}:${head.theirs.id}:${head.theirs.version}`}
           open
           mine={
-            pending.kind === "update"
-              ? describe(pending.mine, phaseOptions)
+            head.kind === "update"
+              ? describe(head.mine, phaseOptions)
               : "(removed)"
           }
-          theirs={describe(pending.theirs, phaseOptions)}
-          theirsBy={pending.theirs.updated_by}
-          theirsAt={pending.theirs.updated_at}
+          theirs={describe(head.theirs, phaseOptions)}
+          theirsBy={head.theirs.updated_by}
+          theirsAt={head.theirs.updated_at}
           onKeepMine={() => {
-            const chosen = pending;
-            setPending(null);
+            const chosen = head;
+            settle();
             void (async () => {
               if (chosen.kind === "update") {
-                const result = await update(
-                  chosen.theirs,
-                  createBody(chosen.mine)
+                // Mine over theirs — but only the fields I changed: a field
+                // only they changed is left as they wrote it.
+                const { merged, patch } = rebaseMilestone(
+                  chosen.base,
+                  chosen.mine,
+                  chosen.theirs
                 );
+                const problem = milestoneRowProblem(merged);
+                if (problem) {
+                  setErrors([`${merged.title}: ${problem}`]);
+                  return;
+                }
+                if (Object.keys(patch).length === 0) return;
+                const result = await update(chosen.theirs, patch);
+                // Overtaken again: it is asked again, ahead of the rest.
                 if (!result.ok && "conflict" in result)
-                  setPending({ ...chosen, theirs: result.conflict });
+                  setPending((queue) => [
+                    { ...chosen, theirs: result.conflict },
+                    ...queue,
+                  ]);
                 else if (!result.ok) setErrors([result.error]);
               } else {
                 const failure = await remove(chosen.theirs);
@@ -238,9 +330,32 @@ export function MilestonesSection({
               }
             })();
           }}
-          onTakeTheirs={() => setPending(null)}
-          // Their version is already in the table; combining is editing it.
-          onMerge={() => setPending(null)}
+          onTakeTheirs={settle}
+          // Their version is already in the table; combining opens its row
+          // in the editor holding the three-way merge of mine onto theirs.
+          onMerge={() => {
+            const chosen = head;
+            settle();
+            if (chosen.kind !== "update") return;
+            const at = rows.findIndex((r) => r.id === chosen.theirs.id);
+            if (at < 0) return;
+            const { merged, both } = rebaseMilestone(
+              chosen.base,
+              chosen.mine,
+              chosen.theirs
+            );
+            const theirs = milestoneToRow(chosen.theirs);
+            setCombining({
+              id: chosen.theirs.id,
+              title: merged.title,
+              reopen: { at, row: merged },
+              both: both.map((field) => ({
+                field,
+                mine: valueText(merged, field),
+                theirs: valueText(theirs, field),
+              })),
+            });
+          }}
           uiBridgeId="overview.timeline.milestones.conflict"
         />
       )}

@@ -25,6 +25,13 @@
  * it, and a phase whose code a Save keeps keeps its progress on the server.
  * So no Save here can put back an outcome somebody recorded since the editor
  * loaded, and recording one never makes this page's Save a conflict.
+ *
+ * A phase's `id` IS carried: it is identity, not a field anyone edits. It
+ * tells the server which saved phase a phase of the draft continues, so a
+ * phase whose code changed keeps its row — and with it that progress and the
+ * milestones tied to it. A phase the schedule introduces has none (`null`);
+ * it is then matched by its code, or is new. `droppedPhases` (`./dropped`)
+ * says, before Save, which saved phases nothing continues.
  */
 
 import type {
@@ -32,6 +39,7 @@ import type {
   ParsedEffortRow,
   ParsedRoleRow,
 } from "../../../_lib/csv";
+import { sameValue, threeWayMerge } from "@/components/overview/editing/merge";
 import { formatMicros } from "@/components/overview/money";
 import { sumPersonDays } from "../../../_lib/csv";
 import type {
@@ -54,6 +62,9 @@ export interface DraftTask {
 
 /** Mirrors `PhaseWrite` field for field — see the module docstring. */
 export interface DraftPhase {
+  /** The saved phase this one continues, or `null` for one the working copy
+   *  introduced. Identity: carried through every edit, never edited. */
+  id: string | null;
   code: string;
   name: string;
   planned_start: string | null;
@@ -98,6 +109,7 @@ export function draftFromEstimate(record: EstimateRecord): Draft {
       client_side: r.client_side,
     })),
     phases: detail.phases.map((p) => ({
+      id: p.id,
       code: p.code,
       name: p.name,
       planned_start: p.planned_start,
@@ -281,6 +293,8 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
 
   const phaseCodes = new Set(draft.phases.map((p) => p.code));
   const phases: PhaseWrite[] = draft.phases.map((phase) => ({
+    // Omitted rather than null: absent means "match me by my code".
+    ...(phase.id ? { id: phase.id } : {}),
     code: phase.code,
     name: phase.name,
     planned_start: phase.planned_start,
@@ -380,8 +394,7 @@ export function describeDraft(draft: Draft): string {
 /** Everything of a phase's plan that this page never edits. */
 const PHASE_CARRIED = ["stated_working_weeks", "gate_criteria"] as const;
 
-const same = (a: unknown, b: unknown) =>
-  JSON.stringify(a) === JSON.stringify(b);
+const same = sameValue;
 
 /**
  * Something a merge could not settle, which the writer must. A note about one
@@ -426,9 +439,12 @@ export interface Rebased {
  *   Timeline, an agent) may well have changed;
  * - a table I did change keeps mine;
  * - the phases: untouched, theirs; re-imported, my schedule — but each
- *   phase's gate criteria and stated weeks still come from theirs by code,
- *   since this page never edits those (and its progress is not in the draft
- *   at all — the server keeps it);
+ *   phase's gate criteria and stated weeks still come from theirs (the phase
+ *   with my phase's id, else my phase's code), since this page never edits
+ *   those (and its progress is not in the draft at all — the server keeps
+ *   it). A phase of mine keeps its id only while theirs still has that
+ *   phase: an id they deleted would make the save a 422, so that phase falls
+ *   back to matching by its code;
  * - my days of work, when THEY changed the schedule and I did not: each row
  *   names a task by its number, and their re-import may have renumbered the
  *   tasks, so every row is carried to the task it was written against
@@ -441,18 +457,31 @@ export interface Rebased {
  * field the dialog does not even show, or file my days under other tasks.
  */
 export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
-  const pick = <K extends keyof Draft>(part: K): Draft[K] =>
-    same(mine[part], base[part]) ? theirs[part] : mine[part];
+  // Every whole table: untouched by me, theirs; changed by me, mine.
+  const { merged: tables } = threeWayMerge(base, mine, theirs, [
+    "roles",
+    "allocations",
+    "efforts",
+    "priceTiers",
+    "costLines",
+    "calendarBreaks",
+  ]);
+  const pick = <K extends keyof Draft>(part: K): Draft[K] => tables[part];
   const mySchedule = !same(mine.phases, base.phases);
   const phases = !mySchedule
     ? theirs.phases
     : mine.phases.map((phase) => {
-        const their = theirs.phases.find((t) => t.code === phase.code);
-        if (!their) return phase;
+        const byId =
+          phase.id === null
+            ? undefined
+            : theirs.phases.find((t) => t.id === phase.id);
+        const id = byId ? phase.id : null;
+        const their = byId ?? theirs.phases.find((t) => t.code === phase.code);
+        if (!their) return { ...phase, id };
         const carried = Object.fromEntries(
           PHASE_CARRIED.map((field) => [field, their[field]])
         ) as Pick<DraftPhase, (typeof PHASE_CARRIED)[number]>;
-        return { ...phase, ...carried };
+        return { ...phase, ...carried, id };
       });
 
   const unresolved: MergeNote[] = [];
@@ -630,11 +659,14 @@ function matchTasks(
  * A chart states the SCHEDULE and nothing else. Everything it cannot express
  * is carried across from the row that matches — a phase by its CODE, and a
  * task by its TITLE (its number encodes position in the chart, so it moves
- * whenever anything is inserted above it). A phase's gate, its actual dates
- * and the working weeks the source plan stated come across, and so do a
- * task's requirement refs, which are one level down and were being nulled on
- * every re-import. A phase the chart does not mention is dropped, which is
- * what importing a corrected schedule means.
+ * whenever anything is inserted above it). A phase's identity (its id, which
+ * keeps its recorded progress and milestones), its gate criteria and the
+ * working weeks the source plan stated come across, and so do a task's
+ * requirement refs, which are one level down and were being nulled on every
+ * re-import. A phase is NEVER matched by its name: a chart that renames a
+ * code introduces a new phase, and the saved one is dropped — which is what
+ * importing a corrected schedule means, and what the editor warns about
+ * before Save when the dropped phase holds recorded work.
  */
 export function applyGanttImport(
   draft: Draft,
@@ -689,6 +721,7 @@ export function applyGanttImport(
       // title cannot both take the first one's refs.
       const continues = matchTasks(existing?.tasks ?? [], phase.tasks);
       return {
+        id: existing?.id ?? null,
         code: phase.code,
         name: phase.name,
         planned_start: phase.planned_start,
@@ -760,6 +793,18 @@ export function draftToStorage(stored: StoredDraft): string {
  * editor can use (written by an older build, or damaged). Storage is the
  * device's, so nothing read from it is trusted to have the right shape.
  */
+/** A copy kept before phases carried their id reads as phases with none:
+ *  matched by code on Save, exactly as that build would have saved them. */
+function withPhaseIds(draft: Draft): Draft {
+  return {
+    ...draft,
+    phases: draft.phases.map((phase) => ({
+      ...phase,
+      id: typeof phase.id === "string" ? phase.id : null,
+    })),
+  };
+}
+
 export function draftFromStorage(text: string): StoredDraft | null {
   const lists: (keyof Draft)[] = [
     "roles",
@@ -794,8 +839,8 @@ export function draftFromStorage(text: string): StoredDraft | null {
       : [];
     return {
       schema: STORED_DRAFT_SCHEMA,
-      draft: parsed.draft,
-      base: parsed.base,
+      draft: withPhaseIds(parsed.draft),
+      base: withPhaseIds(parsed.base),
       imported: parsed.imported === true,
       notes,
     };
