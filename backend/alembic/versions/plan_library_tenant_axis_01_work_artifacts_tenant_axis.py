@@ -76,7 +76,7 @@ depends_on: str | Sequence[str] | None = None
 #: vocabulary would be drift, not design. The CHECK in :func:`upgrade` spells
 #: these values out as a plain literal (no f-string, so a static reader of the
 #: DDL sees exactly what runs); ``tests/test_plan_library_tenant_axis_01_migration.py``
-#: pins that the literal and this tuple stay identical.
+#: pins that the literal and this string stay identical.
 _TENANT_SOURCE_VALUES = (
     "'declared', 'derived_repo', 'derived_sole_binding', 'ambiguous', 'unknown'"
 )
