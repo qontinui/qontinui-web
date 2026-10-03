@@ -64,14 +64,15 @@ from app.core.evidence_posture import (
 #: THE RATCHET. The number of ``Gap`` corrections in ``ROUTE_POSTURE`` (row
 #: corrections and aspect corrections alike). Raise it only by adding a gap
 #: that is really there; LOWER it in the PR that lands the verb and swaps the
-#: row. The seven at landing (2026-09-30):
+#: row. Seven at landing (2026-09-30); six since the junk-row plan's
+#: soft-delete (#1545) turned ``POST /plan-library`` [kind] into a ``Verb``
+#: (upsert the correct kind, then archive the wrong-kind row):
 #:
-#: * ``POST /plan-library`` [kind] — the junk-row plan's soft-delete (#1545);
 #: * ``POST /plan-library/{artifact_id}/edges`` — the edge verbs (#1459);
 #: * ``PATCH /plan-library/edges/{edge_id}`` — the edge verbs (#1459);
 #: * ``POST /session-repository`` [identity] — this plan;
 #: * ``POST /testing/runs``, ``…/deficiencies``, ``…/screenshots`` — this plan.
-GAP_COUNT_PIN = 7
+GAP_COUNT_PIN = 6
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;

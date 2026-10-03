@@ -198,6 +198,15 @@ class WorkArtifact(Base):
             postgresql_where=text("kind_locked"),
         ),
         Index("ix_work_artifacts_kind_status", "kind", "status"),
+        # The default read path: every corpus read excludes archived rows
+        # (``crud.work_artifact.live_artifacts_clause``). Mirrors
+        # ``plan_library_10_archive``.
+        Index(
+            "ix_work_artifacts_live_kind_status",
+            "kind",
+            "status",
+            postgresql_where=text("archived_at IS NULL"),
+        ),
         Index("ix_work_artifacts_work_unit_slug", "work_unit_slug"),
         Index("ix_work_artifacts_kind_slug", "kind", "slug"),
         Index("ix_work_artifacts_repos", "repos", postgresql_using="gin"),
@@ -353,6 +362,22 @@ class WorkArtifact(Base):
     authored_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # ── Soft delete (``plan_library_10_archive``) ─────────────────────────
+    #
+    # ``archived_at IS NULL`` is a LIVE row. Every corpus read excludes
+    # archived rows by default through ONE predicate,
+    # ``crud.work_artifact.live_artifacts_clause``, and takes
+    # ``include_archived=true`` to see them; a by-id read returns the row with
+    # these three fields so the caller cannot mistake it for live. Set only by
+    # ``DELETE /plan-library/{id}``, cleared by an upsert onto the identity.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: The actor stamp of whoever archived it (``email`` or user id).
+    archived_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The caller's stated cause — required and non-blank at the route.
+    archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     captured_by: Mapped[str] = mapped_column(
         Text,
