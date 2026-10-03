@@ -45,6 +45,17 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
+    def key_from_object_url(self, url: str) -> str | None:
+        """The storage key an object URL from this backend names, else ``None``.
+
+        The inverse of :meth:`upload_file`'s return value (and of
+        :meth:`generate_presigned_url`, whose query string is ignored), so a
+        row that stored the URL rather than the key can still be presigned on
+        read. ``None`` for any URL this backend did not mint.
+        """
+        pass
+
+    @abstractmethod
     def file_exists(self, key: str) -> bool:
         """Check if file exists."""
         pass
