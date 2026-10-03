@@ -503,12 +503,18 @@ class SpendRuleStore(_OrmStore):
     def _check(self, row: Any) -> None:
         from app.spend.summary import SUMMARY_CURRENCY
 
-        if row.currency != SUMMARY_CURRENCY:
+        # A vendor's rule reads that vendor's connector rows, which are in the
+        # provider's currency. The org-wide rule is the project's spend LIMIT:
+        # it is evaluated in the base currency over every converted figure and
+        # priced labour (``app.spend.evaluate``), so it may be set in any
+        # currency the project can convert.
+        if row.vendor_id is not None and row.currency != SUMMARY_CURRENCY:
             raise StoreRefused(
                 422,
                 "unsupported_currency",
-                f"Spend rules are in {SUMMARY_CURRENCY}, the currency every spend "
-                f"total is in; {row.currency} is not supported yet.",
+                f"A vendor's spend rule is in {SUMMARY_CURRENCY}, the currency its "
+                f"connector reports; {row.currency} is not supported. The "
+                "org-wide rule (no vendor) may be in any currency.",
             )
         if row.mtd_thresholds_pct and row.monthly_ceiling_micros is None:
             raise StoreRefused(
@@ -530,18 +536,9 @@ class RecurringCostStore(_OrmStore):
         return _recurring_read(row)
 
     def _check(self, row: Any) -> None:
-        from app.spend.summary import SUMMARY_CURRENCY
-
-        if row.currency != SUMMARY_CURRENCY:
-            # Totals are in one currency and no FX is applied, so an entry in
-            # another could only be summed wrongly or left out silently.
-            raise StoreRefused(
-                422,
-                "unsupported_currency",
-                f"Recurring costs are recorded in {SUMMARY_CURRENCY}, the "
-                f"currency every spend total is in; {row.currency} is not "
-                "supported yet. Enter the invoice's USD amount.",
-            )
+        # Any currency: the costs summary converts it to the project's base
+        # currency (``app.costs.fx``), and the USD-only spend read names its
+        # vendor as partial rather than summing it wrongly.
         if row.end_date is not None and row.end_date < row.start_date:
             raise StoreRefused(422, "bad_period", "end_date is before start_date.")
         if row.renews_on is not None and row.renews_on < row.start_date:

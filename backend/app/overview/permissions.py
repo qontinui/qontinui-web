@@ -10,7 +10,7 @@ controls on project B, only to have the save refused. The server gate was
 right; the affordance lied. Every overview surface now renders its controls
 from :class:`OverviewAccess`, resolved for the ACTIVE tenant only.
 
-Three rules, chosen by what a resource is and where it is stored:
+Four rules, chosen by what a resource is and where it is stored:
 
 * ``editing_roles`` — web-owned content. The tenant's
   ``overview.settings.editing_roles`` (default ``{admin}``) names the coord
@@ -24,6 +24,12 @@ Three rules, chosen by what a resource is and where it is stored:
   so that is the only honest answer here: promising a member an edit that
   coord will refuse is the defect this module closes. ``editing_roles`` does
   not widen it and a superuser flag does not bypass it — coord knows neither.
+* ``member_self`` — a record that belongs to one PERSON (logged time). Any
+  member of the project may write their own; whoever ``editing_roles``
+  admits may write anybody's. The rule here answers "may this caller write
+  ANY record of the resource"; which records are theirs is the store's
+  decision (``app.costs.effort``), served per record as ``editable`` and
+  refused as ``403 not_your_entry``.
 """
 
 from __future__ import annotations
@@ -45,7 +51,7 @@ from app.models.overview import OverviewSettings
 from app.models.user import User as UserModel
 from app.services.coord_identity import get_coord_identity
 
-PermissionRule = Literal["editing_roles", "project_admin", "coord_admin"]
+PermissionRule = Literal["editing_roles", "project_admin", "coord_admin", "member_self"]
 
 
 @dataclass(frozen=True)
@@ -72,7 +78,18 @@ class OverviewAccess:
             return True
         if rule == "project_admin":
             return False
+        if rule == "member_self":
+            # A member is someone holding a role in THIS project; a missing
+            # membership row grants nothing (``get_overview_caller``).
+            return bool(self.roles)
         return any(role in self.editing_roles for role in self.roles)
+
+    def can_edit_others(self, rule: PermissionRule) -> bool:
+        """For a ``member_self`` resource: may the caller write records that
+        are not their own? Whoever may edit the overview's content may."""
+        if rule == "member_self":
+            return self.can_edit("editing_roles")
+        return self.can_edit(rule)
 
 
 @dataclass(frozen=True)

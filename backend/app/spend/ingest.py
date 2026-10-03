@@ -23,7 +23,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -269,29 +269,47 @@ async def _upsert(
 _INSERT_CHUNK = 500
 
 
+#: The provider-reported fields an upsert rewrites. ``phase_id`` and
+#: ``fx_rate_to_base`` are NOT among them: those are the project's own
+#: annotations of a provider row (``costs/entries``), and a re-import keeps them.
+_PROVIDER_FIELDS: tuple[str, ...] = (
+    "category",
+    "description",
+    "amount_micros",
+    "currency",
+    "period_start",
+    "period_end",
+    "gross_micros",
+    "discount_micros",
+    "quantity",
+    "unit",
+    "scope_label",
+    "sku",
+    "product",
+)
+
+
 async def _upsert_chunk(db: AsyncSession, values: list[dict[str, Any]]) -> None:
     stmt = insert(CostEntry).values(values)
+    table = CostEntry.__table__.c
     updated: dict[str, Any] = {
         col: stmt.excluded[col]
-        for col in (
-            "category",
-            "description",
-            "amount_micros",
-            "currency",
-            "period_start",
-            "period_end",
-            "gross_micros",
-            "discount_micros",
-            "quantity",
-            "unit",
-            "scope_label",
-            "sku",
-            "product",
-            "import_run_id",
-            "updated_by",
-        )
+        for col in (*_PROVIDER_FIELDS, "import_run_id", "updated_by")
     }
     updated["updated_at"] = func.now()
+    # The row is a resource on the authoring contract (``costs/entries``):
+    # its version moves when what the provider stated changed, so an editor
+    # holding the old copy is refused rather than overwriting the new figure.
+    # A re-import of the same statement leaves it alone.
+    updated["version"] = case(
+        (
+            tuple_(*(table[c] for c in _PROVIDER_FIELDS)).is_distinct_from(
+                tuple_(*(stmt.excluded[c] for c in _PROVIDER_FIELDS))
+            ),
+            func.coalesce(table.version, 1) + 1,
+        ),
+        else_=func.coalesce(table.version, 1),
+    )
     await db.execute(
         stmt.on_conflict_do_update(
             constraint="uq_overview_cost_entries_source_ref", set_=updated
