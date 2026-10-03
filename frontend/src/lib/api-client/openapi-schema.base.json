@@ -30758,12 +30758,6 @@
             "title": "Email Shares",
             "type": "boolean"
           },
-          "email_team_invites": {
-            "default": true,
-            "description": "Email for team invites",
-            "title": "Email Team Invites",
-            "type": "boolean"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -30781,12 +30775,6 @@
             "title": "In App Mentions",
             "type": "boolean"
           },
-          "in_app_project_updates": {
-            "default": true,
-            "description": "In-app for project updates",
-            "title": "In App Project Updates",
-            "type": "boolean"
-          },
           "in_app_replies": {
             "default": true,
             "description": "In-app for replies",
@@ -30797,12 +30785,6 @@
             "default": true,
             "description": "In-app for shares",
             "title": "In App Shares",
-            "type": "boolean"
-          },
-          "in_app_team_invites": {
-            "default": true,
-            "description": "In-app for team invites",
-            "title": "In App Team Invites",
             "type": "boolean"
           },
           "updated_at": {
@@ -30871,17 +30853,6 @@
             ],
             "title": "Email Shares"
           },
-          "email_team_invites": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Team Invites"
-          },
           "in_app_comments": {
             "anyOf": [
               {
@@ -30904,17 +30875,6 @@
             ],
             "title": "In App Mentions"
           },
-          "in_app_project_updates": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Project Updates"
-          },
           "in_app_replies": {
             "anyOf": [
               {
@@ -30936,17 +30896,6 @@
               }
             ],
             "title": "In App Shares"
-          },
-          "in_app_team_invites": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Team Invites"
           }
         },
         "title": "NotificationPreferencesUpdate",
