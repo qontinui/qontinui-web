@@ -56,6 +56,7 @@ import {
   ExternalLink,
   GitPullRequest,
 } from "lucide-react";
+import { AUTHOR_RED } from "@/components/console/statusRow";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { CI_STATUS_NOTIFY_API } from "./utils";
@@ -67,21 +68,33 @@ const log = createLogger("CiRepoStrip");
 // ----------------------------------------------------------------------------
 // Status classification (frontend-derived tri-state dot)
 //
-// The backend `main_verdict` is a 3-state enum (green / red / unknown) with no
-// amber. Amber is a *frontend* tone derived purely from open-PR-check counts:
-// "main is fine but a PR has CI in flight." Per the plan, the dot is:
-//   red   — main is red OR any open-PR check failed (most urgent → wins)
-//   amber — main is green/unknown but an open-PR check is still pending
-//   green — main is green AND no open-PR failures (and nothing pending)
+// The backend `main_verdict` (see `MainCiVerdict`) has no amber. Amber is a
+// *frontend* tone derived purely from open-PR-check counts: "main is fine but a
+// PR has CI in flight." Per the plan, the dot is:
+//   red        — main is red OR any open-PR check failed (most urgent → wins)
+//   deploy_red — main is green FOR MERGING but a push-only deploy workflow is
+//                red (coord's `deploy_red` verdict). Red family, because
+//                nothing clears it but a fix (R3: amber promises it will clear
+//                itself, and this will not), but drawn as a hollow ring so it
+//                cannot be mistaken for a red main that holds the train.
+//   amber      — main is green/unknown but an open-PR check is still pending
+//   green      — main is green AND no open-PR failures (and nothing pending)
 // ----------------------------------------------------------------------------
 
-type DotTone = "green" | "amber" | "red" | "unknown";
+type DotTone = "green" | "amber" | "red" | "deploy_red" | "unknown";
+
+/** The one wording for a deploy-side red, shared by the dot and the badge. */
+const DEPLOY_RED_LABEL = "Deploy red (does not block merges)";
 
 function deriveDotTone(row: RepoCiRow): DotTone {
   const { main_verdict, open_pr_checks } = row;
   // Red dominates: an actual failure (main or any open PR) is the headline.
   if (main_verdict === "red" || open_pr_checks.failure > 0) {
     return "red";
+  }
+  // A red deploy outranks in-flight PR checks: it will not clear by waiting.
+  if (main_verdict === "deploy_red") {
+    return "deploy_red";
   }
   // Amber: main isn't red, but a PR check is still running.
   if (open_pr_checks.pending > 0) {
@@ -102,6 +115,9 @@ function dotClass(tone: DotTone): string {
       return "bg-yellow-500";
     case "red":
       return "bg-red-500";
+    case "deploy_red":
+      // Hollow: red family, visibly not the filled dot of a red main.
+      return "bg-transparent border-2 border-red-500";
     case "unknown":
       return "bg-muted-foreground/50";
   }
@@ -117,9 +133,24 @@ function dotLabel(tone: DotTone, row: RepoCiRow): string {
       return row.main_verdict === "red"
         ? "Main branch CI is red"
         : `${row.open_pr_checks.failure} open-PR check(s) failing`;
+    case "deploy_red":
+      return `${DEPLOY_RED_LABEL} — a push-only workflow no PR can run is failing on main; the fix may be outside this repo`;
     case "unknown":
-      return "No CI verdict yet for main";
+      return row.main_verdict === "vacuously_green"
+        ? "No CI ever observed on main (the merge gate treats it as green)"
+        : "No CI verdict yet for main";
   }
+}
+
+/**
+ * The verdict badge's text. `deploy_red` gets a sentence rather than the raw
+ * token: "main: deploy_red" would read as "main is red", which is exactly the
+ * mis-reading the verdict exists to prevent — merges are NOT blocked.
+ */
+function verdictBadgeLabel(row: RepoCiRow): string {
+  return row.main_verdict === "deploy_red"
+    ? DEPLOY_RED_LABEL
+    : `main: ${row.main_verdict}`;
 }
 
 /** GitHub pull-requests page for a repo, filtered to the open queue.
@@ -371,9 +402,12 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
 
       <Badge
         variant="outline"
-        className="font-mono text-[10px] uppercase tracking-wide shrink-0"
+        className={`font-mono text-[10px] uppercase tracking-wide shrink-0${
+          row.main_verdict === "deploy_red" ? ` ${AUTHOR_RED}` : ""
+        }`}
+        data-ci-verdict-badge={row.main_verdict}
       >
-        main: {row.main_verdict}
+        {verdictBadgeLabel(row)}
       </Badge>
 
       <span

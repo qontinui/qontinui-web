@@ -288,3 +288,92 @@ describe("CiRepoStrip structure", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// coord's `deploy_red` verdict — plan
+// `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`
+// Phase 2 (Option A). Before this, any verdict other than "red"/"green" fell
+// through to the grey "No CI verdict yet for main" dot, so a red deploy was
+// rendered as an absence of information.
+// ---------------------------------------------------------------------------
+
+describe("CiRepoStrip main verdicts beyond green/red", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function renderRow(row: RepoCiRow) {
+    useCiStatusStreamMock.mockReturnValue({
+      byRepo: new Map([[row.repo, row]]),
+      connected: true,
+      seeded: true,
+      error: null,
+    });
+    const view = render(
+      <TooltipProvider>
+        <CiRepoStrip />
+      </TooltipProvider>
+    );
+    const el = view.container.querySelector<HTMLElement>("[data-ci-repo]");
+    expect(el).not.toBeNull();
+    return el!;
+  }
+
+  it("renders deploy_red as its own tone, saying merges are not blocked", () => {
+    const row = renderRow(ciRow({ main_verdict: "deploy_red" }));
+    expect(row.getAttribute("data-ci-tone")).toBe("deploy_red");
+    expect(row.getAttribute("data-ci-main-verdict")).toBe("deploy_red");
+    const badge = row.querySelector("[data-ci-verdict-badge]");
+    expect(badge?.textContent).toBe("Deploy red (does not block merges)");
+    // Red family (R3), from the shared palette literal.
+    expect(badge?.className).toContain("text-red-200");
+    const dot = row.querySelector("[aria-label]");
+    expect(dot?.getAttribute("aria-label")).toMatch(
+      /^Deploy red \(does not block merges\)/
+    );
+    // Hollow ring, not the filled dot of a red main.
+    expect(dot?.className).toContain("border-red-500");
+    expect(dot?.className).not.toContain("bg-red-500");
+    expect(row.textContent).not.toContain("No CI verdict yet");
+  });
+
+  it("a failing open-PR check still outranks a red deploy", () => {
+    const row = renderRow(
+      ciRow({
+        main_verdict: "deploy_red",
+        open_pr_checks: { success: 0, failure: 2, pending: 0 },
+      })
+    );
+    expect(row.getAttribute("data-ci-tone")).toBe("red");
+    // The badge still says what main's verdict is.
+    expect(row.querySelector("[data-ci-verdict-badge]")?.textContent).toBe(
+      "Deploy red (does not block merges)"
+    );
+  });
+
+  it("a red deploy outranks pending open-PR checks", () => {
+    const row = renderRow(
+      ciRow({
+        main_verdict: "deploy_red",
+        open_pr_checks: { success: 0, failure: 0, pending: 3 },
+      })
+    );
+    expect(row.getAttribute("data-ci-tone")).toBe("deploy_red");
+  });
+
+  it("leaves a red main's badge as `main: red`", () => {
+    const row = renderRow(ciRow({ main_verdict: "red" }));
+    expect(row.getAttribute("data-ci-tone")).toBe("red");
+    expect(row.querySelector("[data-ci-verdict-badge]")?.textContent).toBe(
+      "main: red"
+    );
+  });
+
+  it("says a vacuously-green main was never observed green", () => {
+    const row = renderRow(ciRow({ main_verdict: "vacuously_green" }));
+    expect(row.getAttribute("data-ci-tone")).toBe("unknown");
+    expect(row.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
+      "No CI ever observed on main (the merge gate treats it as green)"
+    );
+  });
+});

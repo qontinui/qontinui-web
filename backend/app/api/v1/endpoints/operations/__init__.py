@@ -4410,11 +4410,11 @@ async def get_coord_alerts(
     Exposes ALL alert kinds. Its operator PAGE is gone (plan
     ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
     D7), but the read API stays for its consumers: the console's
-    ``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /
-    ``claim`` fields) and agent tooling. The kind vocabulary is **served by
-    the API** — coord returns the distinct kind list in the response, so
-    neither this proxy nor a caller hardcodes it (an enumeration here went
-    stale the moment a new watcher shipped).
+    ``RedMainBanner`` (``?kind=red_main&kind=deploy_red``, reading each
+    row's ``claimed`` / ``claim`` fields) and agent tooling. The kind
+    vocabulary is **served by the API** — coord returns the distinct kind
+    list in the response, so neither this proxy nor a caller hardcodes it
+    (an enumeration here went stale the moment a new watcher shipped).
 
     ``severity`` and ``kind`` are REPEATABLE
     (``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they
@@ -8019,8 +8019,11 @@ class RepoCiRow(BaseModel):
     """One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
 
     ``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /
-    ``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend
-    derivation from ``open_pr_checks`` counts, not a backend value.
+    ``red`` / ``unknown`` / ``vacuously_green`` / ``deploy_red``); any amber
+    tone is a frontend derivation from ``open_pr_checks`` counts, not a backend
+    value. ``deploy_red`` means main is green FOR MERGING while a push-only
+    deploy workflow is red, so it does NOT block merges; the field stays a
+    plain string so a token coord adds later is not refused here.
     ``vacuously_green`` is coord's zero-baseline arm — no required check has
     ever reported on main, so "green" is an absence of evidence, not a pass.
 
@@ -8044,7 +8047,8 @@ class RepoCiRow(BaseModel):
 
     repo: str
     main_verdict: str = Field(
-        ..., description='"green" | "red" | "unknown" | "vacuously_green"'
+        ...,
+        description='"green" | "red" | "unknown" | "vacuously_green" | "deploy_red"',
     )
     open_pr_checks: dict[str, int] = Field(
         ..., description="counts keyed by 'success' | 'failure' | 'pending'"
