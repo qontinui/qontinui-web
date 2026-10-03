@@ -95,6 +95,18 @@ SPAWNED_FOLLOWUP_RELATION = "spawned_followup"
 #: than a bare IntegrityError 500.
 RELATIONS_ALLOWING_OPEN_TARGET: frozenset[str] = frozenset({SPAWNED_FOLLOWUP_RELATION})
 
+#: The one value ``WorkArtifactEdge.source`` may carry. ``NULL`` means the edge
+#: is exactly as it was first recorded ("recorded"); this value means the row
+#: was overwritten in place by ``PUT /plan-library/edges/{id}`` — a correction,
+#: not a fresh observation. Mirrors ``ck_work_artifact_edges_source`` and the
+#: shape coord's own ``delivery_scope`` correction uses
+#: (``{"source": "corrected", "corrected_by": ..., "corrected_at": ...}``):
+#: this is that same provenance idea, adopted rather than reinvented, for the
+#: sibling defect in THIS store (plan
+#: ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+#: Phase 5).
+EDGE_SOURCE_CORRECTED = "corrected"
+
 #: Whitespace stripped from a follow-up ``note`` before it is compared —
 #: by the blank-note CHECK, by the duplicate-guard index, and by the CRUD
 #: dedup lookup, all three of which MUST agree.
@@ -452,12 +464,21 @@ class WorkArtifactEdge(Base):
 
     __tablename__ = "work_artifact_edges"
     __table_args__ = (
+        # PARTIAL since ``plan_library_08_edge_correction``: ``WHERE
+        # retracted_at IS NULL``. A retracted edge is a dead row kept only for
+        # its audit trail (see ``retracted_*`` below) — it must not block
+        # re-recording the SAME ``(from, to, relation)`` triple, which is
+        # exactly the shape a false ``supersedes`` correction needs (retract
+        # the wrong one, then either POST or PUT the right one). Mirrors the
+        # migration's index exactly; the two MUST agree, because Postgres
+        # matches an index by its parsed expression, not by resemblance.
         Index(
             "uq_work_artifact_edges_from_to_relation",
             "from_id",
             "to_id",
             "relation",
             unique=True,
+            postgresql_where=text("retracted_at IS NULL"),
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
@@ -468,13 +489,26 @@ class WorkArtifactEdge(Base):
         # identical re-post must not become a second queue entry. Keyed on the
         # note, therefore, and PARTIAL so it can never touch the four shipped
         # relations. Mirrors ``uq_work_artifact_edges_open_followup``.
+        # Also excludes retracted rows, for the same reason the sibling index
+        # above does — see ``plan_library_08_edge_correction``.
         Index(
             "uq_work_artifact_edges_open_followup",
             "from_id",
             "relation",
             text(NOTE_TRIM_SQL),
             unique=True,
-            postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
+            postgresql_where=text(
+                "to_id IS NULL AND relation = 'spawned_followup' "
+                "AND retracted_at IS NULL"
+            ),
+        ),
+        # Mirrors ``ck_work_artifact_edges_source``. ``NULL`` is the ordinary
+        # case (a recorded edge, never touched); ``'corrected'`` is the only
+        # other value a row may carry, set by ``PUT /edges/{id}``. See
+        # ``EDGE_SOURCE_CORRECTED``.
+        CheckConstraint(
+            "source IS NULL OR source = 'corrected'",
+            name="ck_work_artifact_edges_source",
         ),
         # Mirrors ``ck_work_artifact_edges_open_target``. The four shipped
         # relations keep the target guarantee they had before this revision:
@@ -534,3 +568,40 @@ class WorkArtifactEdge(Base):
         default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
+
+    # ── Correction / retraction (``plan_library_08_edge_correction``) ────
+    #
+    # A recorded edge is otherwise permanent: the shipped ``POST .../edges``
+    # is the only write verb, re-posting an identical triple is idempotent,
+    # and a DIFFERENT triple appends a second edge rather than replacing the
+    # first. Two permanent FALSE ``supersedes`` edges on a real artifact
+    # (``e5090437-ccd1-4349-b360-01e1a8267f19``) are what this fixes — see
+    # plan ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+    # Phase 5.
+    #
+    # ``retracted_*`` is a SOFT delete — the row survives with these three
+    # filled in, so "this edge is wrong" is itself provenance, not erased
+    # history. ``DELETE /plan-library/edges/{id}`` is the one writer.
+    retracted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retracted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retracted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ``corrected_*`` + ``source`` mark an edge that was REPLACED in place by
+    # ``PUT /plan-library/edges/{id}`` — ``relation`` / ``to_id`` / ``note``
+    # moved, but the row's ``id`` (and its ``created_at`` / ``created_by``,
+    # the ORIGINAL recording) did not. Adopts the same shape coord's own
+    # ``delivery_scope`` correction uses
+    # (``{"source": "corrected", "corrected_by": ..., "corrected_at": ...}``)
+    # rather than inventing a second design for the same idea.
+    corrected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    corrected_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why the correction was made — the same audit-trail rationale
+    #: ``retracted_reason`` carries, required on every ``PUT`` request.
+    corrected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: ``None`` (recorded, untouched) or :data:`EDGE_SOURCE_CORRECTED`.
+    #: Enforced by ``ck_work_artifact_edges_source``.
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
