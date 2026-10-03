@@ -54,6 +54,7 @@ export function RecordTable<Row extends object>({
   busy = false,
   rowSchema,
   onEditingChange,
+  onPasteTextChange,
   uiBridgeId,
 }: {
   table: TableDeclaration<Row>;
@@ -66,6 +67,8 @@ export function RecordTable<Row extends object>({
   /** Told whenever a row editor opens or closes, so the page can hold its
    *  Save while typed text is not yet in the working copy. */
   onEditingChange?: (open: boolean) => void;
+  /** Told whether the paste dialog holds uncommitted text. */
+  onPasteTextChange?: (hasText: boolean) => void;
   uiBridgeId: string;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -217,6 +220,7 @@ export function RecordTable<Row extends object>({
               setSort(null);
               onChange(pasted, "import");
             }}
+            onTextChange={onPasteTextChange}
             uiBridgeId={`${uiBridgeId}.paste`}
           />
         </div>

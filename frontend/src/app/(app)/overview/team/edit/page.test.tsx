@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ESTIMATE_UPDATE_SCHEMA } from "@/components/overview/editing/__fixtures__/estimate-schema";
@@ -395,5 +396,175 @@ describe("the estimate editor", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText(/Finish or cancel the row/)).toBeNull();
+  });
+
+  it("after keeping mine, a second conflict does not undo the first peer's work", async () => {
+    mocks.search = "";
+    await showEditor();
+    fireEvent.click(screen.getByRole("button", { name: "Add a role" }));
+    fireEvent.change(screen.getByLabelText("Code"), {
+      target: { value: "QA" },
+    });
+    fireEvent.change(screen.getByLabelText("Role"), {
+      target: { value: "Tester" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const line = {
+      id: "c1",
+      kind: "run_annual" as const,
+      label: "Hosting",
+      basis: "",
+      low_micros: 1_000_000,
+      high_micros: 2_000_000,
+      currency: "EUR",
+      phase_id: null,
+      phase_code: null,
+      run_model: null,
+      sort_order: 0,
+    };
+    // Peer one adds a cost line; peer two, after them, deletes it again.
+    const peerOne = {
+      ...ESTIMATE,
+      version: 9,
+      content: { ...ESTIMATE.content!, cost_lines: [line] },
+    };
+    const peerTwo = {
+      ...peerOne,
+      version: 10,
+      content: { ...peerOne.content, cost_lines: [] },
+    };
+    mocks.updateResource
+      .mockRejectedValueOnce(new VersionConflictError(peerOne))
+      .mockRejectedValueOnce(new VersionConflictError(peerTwo))
+      .mockResolvedValueOnce({ ...peerTwo, version: 11 });
+
+    const save = screen.getByRole("button", { name: "Save the estimate" });
+    await act(async () => fireEvent.click(save));
+    await act(async () =>
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Save mine over theirs" })
+      )
+    );
+    await act(async () =>
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Save mine over theirs" })
+      )
+    );
+    const third = mocks.updateResource.mock.calls[2]!;
+    expect(third[3]).toBe(10);
+    // Peer two's deletion stands: the line peer one added is not "mine".
+    expect(third[2].content.cost_lines).toEqual([]);
+    expect(third[2].content.roles.map((r: { code: string }) => r.code)).toEqual(
+      ["BE", "QA"]
+    );
+  });
+
+  it("offers no keep-mine when the merge would break, and says why", async () => {
+    mocks.search = "";
+    mocks.getResource.mockImplementation(async (path: string) =>
+      path === "pages"
+        ? { item: DOC, can_edit: true }
+        : {
+            item: {
+              ...ESTIMATE,
+              content: {
+                ...ESTIMATE.content!,
+                phases: [
+                  {
+                    id: "p1",
+                    code: "A0",
+                    name: "Mobilisation",
+                    sort_order: 0,
+                    planned_start: null,
+                    planned_end: null,
+                    stated_working_weeks: null,
+                    gate_criteria: "",
+                    actual_start: null,
+                    actual_end: null,
+                    gate_status: "pending",
+                    gate_decided_at: null,
+                    gate_notes: "",
+                    tasks: [
+                      {
+                        id: "t1",
+                        number: "1.1",
+                        title: "Kick-off",
+                        requirement_refs: null,
+                        planned_start: null,
+                        planned_end: null,
+                        is_critical: false,
+                        status: "planned",
+                        sort_order: 0,
+                        efforts: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            can_edit: true,
+          }
+    );
+    await showEditor();
+    // I remove the only role…
+    const row = screen.getByText("Backend").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    // …while they give that role days.
+    const loaded = (await mocks.getResource.mock.results[0]!.value).item;
+    const phase = loaded.content.phases[0];
+    const theirs = {
+      ...loaded,
+      version: 9,
+      content: {
+        ...loaded.content,
+        phases: [
+          {
+            ...phase,
+            tasks: [
+              {
+                ...phase.tasks[0],
+                efforts: [
+                  { role_id: "r1", role_code: "BE", planned_person_days: "2" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    mocks.updateResource.mockRejectedValueOnce(
+      new VersionConflictError(theirs)
+    );
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Save the estimate" }))
+    );
+    expect(
+      await screen.findByText(/can.t simply be saved over theirs/)
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Save mine over theirs" })
+    ).toBeNull();
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Combine them myself" })
+    );
+    expect(screen.getByRole("region", { name: "Their version" })).toBeTruthy();
+  });
+
+  it("warns before leaving while typed text is in no working copy", async () => {
+    mocks.search = "";
+    await showEditor();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.click(screen.getByRole("button", { name: "Add a role" }));
+    fireEvent.change(screen.getByLabelText("Code"), {
+      target: { value: "QA" },
+    });
+    fireEvent.click(
+      screen.getByRole("link", { name: "Back to the Team page" })
+    );
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]![0]).toMatch(/NOT kept on this device/);
+    confirm.mockRestore();
   });
 });

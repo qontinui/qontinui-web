@@ -404,6 +404,17 @@ const PHASE_CARRIED = [
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+export interface Rebased {
+  /** My working copy rebuilt on their version. */
+  draft: Draft;
+  /**
+   * Why `draft` cannot be saved over theirs as it stands — each a sentence a
+   * writer can act on. Non-empty means "keep mine" must not be applied
+   * automatically: the writer combines the two by hand instead.
+   */
+  unresolved: string[];
+}
+
 /**
  * My working copy, rebuilt on THEIR version: what saving it over theirs
  * should write. A three-way merge against the version mine was built on
@@ -415,15 +426,23 @@ const same = (a: unknown, b: unknown) =>
  * - a table I did change keeps mine;
  * - the phases: untouched, theirs; re-imported, my schedule — but each
  *   phase's gate, actual dates and stated weeks still come from theirs by
- *   code, since this page never edits those.
+ *   code, since this page never edits those;
+ * - my days of work, when THEY changed the schedule and I did not: each row
+ *   names a task by its number, and their re-import may have renumbered the
+ *   tasks, so every row is carried to the task it was written against
+ *   (matched as `applyGanttImport` matches, by title first). A row of mine
+ *   whose task cannot be found unambiguously in theirs is NOT guessed at: it
+ *   is reported in `unresolved`, and the writer combines by hand. An
+ *   untouched row whose task they removed goes with the task.
  *
  * Without it, "keep mine" would silently put back the old copy of every
- * field the dialog does not even show.
+ * field the dialog does not even show, or file my days under other tasks.
  */
-export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Draft {
+export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Rebased {
   const pick = <K extends keyof Draft>(part: K): Draft[K] =>
     same(mine[part], base[part]) ? theirs[part] : mine[part];
-  const phases = same(mine.phases, base.phases)
+  const mySchedule = !same(mine.phases, base.phases);
+  const phases = !mySchedule
     ? theirs.phases
     : mine.phases.map((phase) => {
         const their = theirs.phases.find((t) => t.code === phase.code);
@@ -433,15 +452,71 @@ export function rebaseDraft(mine: Draft, base: Draft, theirs: Draft): Draft {
         ) as Pick<DraftPhase, (typeof PHASE_CARRIED)[number]>;
         return { ...phase, ...carried };
       });
+
+  const unresolved: string[] = [];
+  let efforts = pick("efforts");
+  const theirSchedule = !same(theirs.phases, base.phases);
+  if (!mySchedule && theirSchedule && !same(mine.efforts, base.efforts)) {
+    // base task -> their task, per phase, and whether the pairing is proven
+    // by the title (a positional pairing is a guess at a rename).
+    const moved = new Map<string, { to: string; byTitle: boolean }>();
+    for (const their of theirs.phases) {
+      const was = base.phases.find((p) => p.code === their.code);
+      if (!was) continue;
+      matchTasks(was.tasks, their.tasks).forEach((old, index) => {
+        const to = their.tasks[index];
+        if (old && to) {
+          moved.set(`${their.code}:${old.number}`, {
+            to: to.number,
+            byTitle: old.title === to.title,
+          });
+        }
+      });
+    }
+    const untouched = new Set(base.efforts.map((e) => JSON.stringify(e)));
+    efforts = [];
+    for (const row of mine.efforts) {
+      const edited = !untouched.has(JSON.stringify(row));
+      const target = moved.get(`${row.phase_code}:${row.task_number}`);
+      if (target && (target.byTitle || !edited)) {
+        efforts.push({ ...row, task_number: target.to });
+      } else if (edited) {
+        unresolved.push(
+          `Your days for task ${row.task_number} of phase ${row.phase_code} (${row.role_code}) can't be matched to a task in their schedule, which they changed.`
+        );
+        efforts.push(row);
+      }
+      // An untouched row whose task they removed goes with the task.
+    }
+  }
+
   return {
-    roles: pick("roles"),
-    phases,
-    allocations: pick("allocations"),
-    efforts: pick("efforts"),
-    priceTiers: pick("priceTiers"),
-    costLines: pick("costLines"),
-    calendarBreaks: pick("calendarBreaks"),
+    draft: {
+      roles: pick("roles"),
+      phases,
+      allocations: pick("allocations"),
+      efforts,
+      priceTiers: pick("priceTiers"),
+      costLines: pick("costLines"),
+      calendarBreaks: pick("calendarBreaks"),
+    },
+    unresolved,
   };
+}
+
+/**
+ * Whether "keep mine" can be applied as it stands: the reasons it cannot —
+ * rows that could not be carried over, and anything the merged copy would be
+ * refused for (my removed role still named by their days, say). Empty means
+ * it can be saved.
+ */
+export function keepMineBlockers(rebased: Rebased): string[] {
+  return [
+    ...rebased.unresolved,
+    ...draftProblems(rebased.draft)
+      .filter((p) => p.severity === "error")
+      .map((p) => p.message),
+  ];
 }
 
 /**

@@ -721,7 +721,13 @@ class EstimateStore:
             raise StaleVersion(before)
 
         changes = payload.model_dump(exclude_unset=True, exclude={"content"})
-        if "source_page_id" in changes:
+        # Checked only when it CHANGES: re-sending the recorded source (whose
+        # document may since have been deleted or re-kinded) is not a new
+        # claim and must not refuse an otherwise valid write.
+        if (
+            "source_page_id" in changes
+            and changes["source_page_id"] != row.source_page_id
+        ):
             await _require_source_document(
                 ctx.db, row.tenant_id, changes["source_page_id"]
             )

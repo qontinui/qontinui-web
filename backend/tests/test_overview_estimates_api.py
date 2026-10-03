@@ -1270,6 +1270,31 @@ class TestEstimateCrud:
         assert cleared.status_code == 200, cleared.text
         assert cleared.json()["item"]["source_page_id"] is None
 
+    async def test_re_sending_the_recorded_source_is_not_re_checked(
+        self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The source is checked when it changes. A write that re-sends the
+        recorded one — whose document has since been deleted — still lands."""
+        from app.models.overview import Page
+
+        plan = Page(tenant_id=TENANT_A, kind="document", slug="gone", title="Gone")
+        async_db_session.add(plan)
+        await async_db_session.flush()
+        created = await _create_estimate(admin_a, source_page_id=str(plan.id))
+        await async_db_session.delete(plan)
+        await async_db_session.flush()
+
+        same = await _write(
+            admin_a,
+            created["id"],
+            {"name": "Renamed", "source_page_id": str(plan.id)},
+        )
+        assert same.status_code == 200, same.text
+        assert same.json()["item"]["name"] == "Renamed"
+        # A different one is still checked.
+        other = await _write(admin_a, created["id"], {"source_page_id": str(uuid4())})
+        assert other.status_code == 422, other.text
+
     async def test_content_and_its_source_land_in_one_version(
         self, admin_a: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:

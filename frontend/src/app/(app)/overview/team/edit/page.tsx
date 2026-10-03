@@ -27,7 +27,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { estimateVocabulary } from "@/components/overview/vocabulary";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +77,7 @@ import {
   draftProblems,
   draftToContent,
   draftToStorage,
+  keepMineBlockers,
   rebaseDraft,
   sameDraft,
   STORED_DRAFT_SCHEMA,
@@ -310,8 +311,12 @@ function GanttImport({
   onImport,
   busy = false,
   initialText = "",
+  onTextChange,
 }: {
   onImport: (text: string) => void;
+  /** Told whether the box holds typed text that is not yet applied (the
+   *  source document's own chart, untouched, does not count). */
+  onTextChange?: (unapplied: boolean) => void;
   /** A save is in flight: an import now would change a working copy the
    *  open request is NOT carrying. */
   busy?: boolean;
@@ -319,6 +324,10 @@ function GanttImport({
   initialText?: string;
 }) {
   const [text, setText] = useState(initialText);
+  const unapplied = text.trim() !== "" && text !== initialText;
+  useEffect(() => {
+    onTextChange?.(unapplied);
+  }, [unapplied, onTextChange]);
   const [preview, setPreview] = useState<ReturnType<
     typeof parseMermaidGantt
   > | null>(null);
@@ -524,14 +533,43 @@ function EstimateEditor({
     [trackEditor]
   );
   const onEffortsEditing = useMemo(() => trackEditor("efforts"), [trackEditor]);
+  /** Import boxes holding text not yet applied — in no working copy and on
+   *  no device. */
+  const [unappliedBoxes, setUnappliedBoxes] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const trackBox = useCallback(
+    (box: string) => (has: boolean) =>
+      setUnappliedBoxes((prev) => {
+        if (prev.has(box) === has) return prev;
+        const next = new Set(prev);
+        if (has) next.add(box);
+        else next.delete(box);
+        return next;
+      }),
+    []
+  );
+  const onGanttText = useMemo(() => trackBox("gantt"), [trackBox]);
+  const onRolesPaste = useMemo(() => trackBox("roles"), [trackBox]);
+  const onAllocationsPaste = useMemo(() => trackBox("allocations"), [trackBox]);
+  const onEffortsPaste = useMemo(() => trackBox("efforts"), [trackBox]);
+  /** Why "keep mine" was not applied, shown with their version. */
+  const [mergeNotes, setMergeNotes] = useState<string[]>([]);
   const vocabulary = estimateVocabulary(record.purpose);
 
   // Recorded as part of Save, in the same write as the content.
   const linkSource = source !== null && record.source_page_id !== source.id;
   const dirty = !sameDraft(draft, baseDraft) || baseVersion !== record.version;
+  const unsavedCopy = !sameDraft(draft, baseDraft);
+  const unkeptText = openEditors.size > 0 || unappliedBoxes.size > 0;
   useLeaveGuard(
-    !sameDraft(draft, baseDraft),
-    "The estimate has unsaved changes. Leave this page and lose them? (They are kept on this device.)"
+    unsavedCopy || unkeptText,
+    unkeptText
+      ? "You have typed text that has not been applied yet — a table row being edited, or text in an import box — and it is NOT kept on this device. Leave this page and lose it?" +
+          (unsavedCopy
+            ? " (Your other unsaved changes are kept on this device.)"
+            : "")
+      : "The estimate has unsaved changes. Leave this page and lose them? (They are kept on this device.)"
   );
 
   /** Keep the working copy on this device — with the version it is built on
@@ -582,6 +620,7 @@ function EstimateEditor({
     setImported(false);
     setRestoredFrom(null);
     setTheirs(null);
+    setMergeNotes([]);
     clearDraft(key);
   };
 
@@ -618,6 +657,21 @@ function EstimateEditor({
   const theirsDraft = useMemo(
     () => (theirs ? draftFromEstimate(theirs) : null),
     [theirs]
+  );
+  const theirsOfConflict = useMemo(
+    () => (conflict ? draftFromEstimate(conflict) : null),
+    [conflict]
+  );
+  const rebased = useMemo(
+    () =>
+      theirsOfConflict ? rebaseDraft(draft, baseDraft, theirsOfConflict) : null,
+    [theirsOfConflict, draft, baseDraft]
+  );
+  // "Keep mine" is offered only when the merged copy is what the writer
+  // means AND would be accepted: otherwise it is a combine, said why.
+  const blockers = useMemo(
+    () => (rebased ? keepMineBlockers(rebased) : []),
+    [rebased]
   );
   const rowSchema = (name: string) => schemaDefinition(updateSchema, name);
   const days = sumPersonDays(draft.efforts.map((e) => e.planned_person_days));
@@ -677,6 +731,16 @@ function EstimateEditor({
             Saving now replaces it with your working copy. Bring over what you
             want to keep first.
           </p>
+          {mergeNotes.length > 0 && (
+            <ul
+              className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-destructive"
+              data-ui-bridge-id="overview.estimate-editor.theirs.notes"
+            >
+              {mergeNotes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
           <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
             {describeDraft(theirsDraft)}
           </pre>
@@ -704,6 +768,7 @@ function EstimateEditor({
         <GanttImport
           busy={busy}
           initialText={source?.gantt ?? ""}
+          onTextChange={onGanttText}
           onImport={(text) => {
             const parsed = ganttToPhases(parseMermaidGantt(text));
             editDraft((d) => applyGanttImport(d, parsed), "import");
@@ -752,6 +817,7 @@ function EstimateEditor({
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_ROLES.schemaDef)}
           onEditingChange={onRolesEditing}
+          onPasteTextChange={onRolesPaste}
           uiBridgeId="overview.estimate-editor.roles"
         />
       </section>
@@ -768,6 +834,7 @@ function EstimateEditor({
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_ALLOCATIONS.schemaDef)}
           onEditingChange={onAllocationsEditing}
+          onPasteTextChange={onAllocationsPaste}
           uiBridgeId="overview.estimate-editor.allocations"
         />
       </section>
@@ -789,6 +856,7 @@ function EstimateEditor({
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_EFFORTS.schemaDef)}
           onEditingChange={onEffortsEditing}
+          onPasteTextChange={onEffortsPaste}
           uiBridgeId="overview.estimate-editor.efforts"
         />
         <p
@@ -892,28 +960,27 @@ function EstimateEditor({
       <ConflictDialog
         open={conflict !== null}
         // What "keep mine" would write: my changes, rebuilt on their version.
-        mine={
-          conflict
-            ? describeDraft(
-                rebaseDraft(draft, baseDraft, draftFromEstimate(conflict))
-              )
-            : ""
-        }
-        theirs={conflict ? describeDraft(draftFromEstimate(conflict)) : ""}
+        mine={rebased ? describeDraft(rebased.draft) : ""}
+        theirs={theirsOfConflict ? describeDraft(theirsOfConflict) : ""}
         theirsBy={conflict?.updated_by ?? null}
         theirsAt={conflict?.updated_at ?? null}
+        keepMineBlocked={blockers}
         uiBridgeId="overview.estimate-editor.conflict"
         onKeepMine={() => {
           const current = conflict;
           setConflict(null);
-          if (!current) return;
-          const merged = rebaseDraft(
-            draft,
-            baseDraft,
-            draftFromEstimate(current)
-          );
-          setDraft(merged);
-          void save(current.version, { content: merged });
+          if (!current || !rebased || !theirsOfConflict) return;
+          if (blockers.length > 0) return; // the button is absent then
+          // Built on THEIR version from here on, kept so on this device: if
+          // this save meets yet another writer (or fails and is retried), the
+          // next merge treats their changes as theirs, not as mine.
+          setDraft(rebased.draft);
+          setBaseDraft(theirsOfConflict);
+          setBaseVersion(current.version);
+          setTheirs(null);
+          setMergeNotes([]);
+          keep(rebased.draft, imported, current.version, theirsOfConflict);
+          void save(current.version, { content: rebased.draft });
         }}
         onTakeTheirs={() => {
           const current = conflict;
@@ -926,17 +993,16 @@ function EstimateEditor({
         onMerge={() => {
           const current = conflict;
           setConflict(null);
-          if (!current) return;
+          if (!current || !rebased || !theirsOfConflict) return;
           // Rebuilt on their version: what I did not change is theirs now,
           // and Save replaces the rest knowingly, once the writer has brought
           // over what they want from the panel.
-          const theirsNow = draftFromEstimate(current);
-          const merged = rebaseDraft(draft, baseDraft, theirsNow);
-          setDraft(merged);
-          setBaseDraft(theirsNow);
+          setDraft(rebased.draft);
+          setBaseDraft(theirsOfConflict);
           setBaseVersion(current.version);
           setTheirs(current);
-          keep(merged, imported, current.version, theirsNow);
+          setMergeNotes(blockers);
+          keep(rebased.draft, imported, current.version, theirsOfConflict);
         }}
       />
     </div>

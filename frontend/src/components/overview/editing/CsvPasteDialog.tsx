@@ -17,7 +17,7 @@
  *    records the write as an import.
  */
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -103,6 +103,7 @@ export function CsvPasteDialog<Row extends object>({
   rowSchema,
   onCommit,
   busy = false,
+  onTextChange,
   uiBridgeId,
 }: {
   table: TableDeclaration<Row>;
@@ -115,10 +116,17 @@ export function CsvPasteDialog<Row extends object>({
    * open request is NOT carrying.
    */
   busy?: boolean;
+  /** Told whether pasted text is sitting in the box uncommitted — text that
+   *  is in no working copy and on no device. */
+  onTextChange?: (hasText: boolean) => void;
   uiBridgeId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const hasText = text.trim() !== "";
+  useEffect(() => {
+    onTextChange?.(hasText);
+  }, [hasText, onTextChange]);
   const [preview, setPreview] = useState<PastePreview<Row> | null>(null);
   const inputId = useId();
 

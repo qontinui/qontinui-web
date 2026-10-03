@@ -7,6 +7,7 @@ import {
   draftToContent,
   draftFromStorage,
   draftToStorage,
+  keepMineBlockers,
   rebaseDraft,
   sameDraft,
   STORED_DRAFT_SCHEMA,
@@ -693,7 +694,7 @@ describe("rebaseDraft", () => {
       costLines: [],
       allocations: [{ phase_code: "A0", role_code: "BE", fte: "2" }],
     };
-    const merged = rebaseDraft(mine, base(), theirs);
+    const merged = rebaseDraft(mine, base(), theirs).draft;
     expect(merged.roles).toEqual([]);
     expect(merged.costLines).toEqual([]);
     expect(merged.allocations[0]?.fte).toBe("2");
@@ -706,7 +707,7 @@ describe("rebaseDraft", () => {
     theirs.phases = [
       { ...theirs.phases[0]!, gate_status: "failed", gate_notes: "Missed" },
     ];
-    const phase = rebaseDraft(mine, base(), theirs).phases[0]!;
+    const phase = rebaseDraft(mine, base(), theirs).draft.phases[0]!;
     expect(phase.name).toBe("Renamed by my import");
     expect(phase.gate_status).toBe("failed");
     expect(phase.gate_notes).toBe("Missed");
@@ -739,5 +740,94 @@ describe("the copy kept on this device", () => {
       draftFromStorage(JSON.stringify({ schema: 1, draft, base: { roles: 1 } }))
     ).toBeNull();
     expect(draftFromStorage("{not json")).toBeNull();
+  });
+});
+
+describe("rebaseDraft — my days on their re-imported schedule", () => {
+  const base = () => draftFromEstimate(LOADED);
+  const kickOff = () => CONTENT.phases[0]!.tasks[0]!;
+  /** Their version: the schedule re-imported with the given tasks. */
+  const theirsWith = (tasks: { number: string; title: string }[]) => {
+    const theirs = base();
+    theirs.phases = [
+      {
+        ...theirs.phases[0]!,
+        tasks: tasks.map((t) => ({
+          ...theirs.phases[0]!.tasks[0]!,
+          ...t,
+        })),
+      },
+    ];
+    return theirs;
+  };
+  /** Mine: the days on Kick-off changed, the schedule untouched. */
+  const mine = () => {
+    const draft = base();
+    draft.efforts = [{ ...draft.efforts[0]!, planned_person_days: "6" }];
+    return draft;
+  };
+
+  it("carries my days to the task they were written against after a renumber", () => {
+    // They inserted "Prep" above Kick-off, which moved it from 1.1 to 1.2.
+    const theirs = theirsWith([
+      { number: "1.1", title: "Prep" },
+      { number: "1.2", title: kickOff().title },
+    ]);
+    const rebased = rebaseDraft(mine(), base(), theirs);
+    expect(rebased.unresolved).toEqual([]);
+    expect(rebased.draft.phases).toEqual(theirs.phases);
+    expect(rebased.draft.efforts).toEqual([
+      {
+        phase_code: "A0",
+        task_number: "1.2",
+        role_code: "BE",
+        planned_person_days: "6",
+      },
+    ]);
+    expect(keepMineBlockers(rebased)).toEqual([]);
+  });
+
+  it("refuses to guess when my edited row's task cannot be found in theirs", () => {
+    // Kick-off renamed AND a task added: nothing proves which is which.
+    const rebased = rebaseDraft(
+      mine(),
+      base(),
+      theirsWith([
+        { number: "1.1", title: "Start" },
+        { number: "1.2", title: "Review" },
+      ])
+    );
+    expect(rebased.unresolved).toHaveLength(1);
+    expect(rebased.unresolved[0]).toContain("task 1.1 of phase A0");
+    expect(keepMineBlockers(rebased)).toEqual(rebased.unresolved);
+  });
+
+  it("treats a pairing by position alone (a rename) as unproven for my edits", () => {
+    const rebased = rebaseDraft(
+      mine(),
+      base(),
+      theirsWith([{ number: "1.1", title: "Renamed kick-off" }])
+    );
+    expect(rebased.unresolved).toHaveLength(1);
+  });
+
+  it("blocks keeping mine when the merge breaks a cross-reference", () => {
+    // Base has no days; I removed the role; they gave that role days.
+    const start = { ...base(), efforts: [] };
+    const myCopy = { ...start, roles: [] };
+    const theirs = {
+      ...start,
+      efforts: [
+        {
+          phase_code: "A0",
+          task_number: "1.1",
+          role_code: "BE",
+          planned_person_days: "2",
+        },
+      ],
+    };
+    const rebased = rebaseDraft(myCopy, start, theirs);
+    expect(rebased.unresolved).toEqual([]);
+    expect(keepMineBlockers(rebased).join(" ")).toContain('"BE"');
   });
 });
