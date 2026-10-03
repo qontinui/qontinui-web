@@ -348,7 +348,11 @@ class TestIngest:
         assert vendors[vendor]["newest_complete_day"] == "2026-10-02"
         assert vendors[vendor]["expected_lag_hours"] == 24
         assert "GitHub billing" in vendors[vendor]["provenance"]
-        assert vendors[aws]["status"] == "never"
+        # No run AND no linked credential: for a pull-only connector that is
+        # "not linked" (Phase 9), the never-run state named honestly.
+        assert vendors[aws]["status"] == "not_linked"
+        assert vendors[aws]["connector_status"] == "not_linked"
+        assert vendors[aws]["credential_status"] == "not_linked"
         assert vendors[aws]["month_to_date_micros"] is None
         assert summary["totals"]["partial"] is True
         assert summary["totals"]["unknown_vendors"] == ["AWS"]
@@ -679,7 +683,7 @@ class TestUnknownIsNotZero:
         # and today (10-03) has not been fetched at all.
         assert vendors[zero]["month_to_date_micros"] is None
         assert vendors[zero]["today_micros"] is None
-        assert vendors[never]["status"] == "never"
+        assert vendors[never]["status"] == "not_linked"  # no run, no credential
         assert vendors[never]["yesterday_micros"] is None
         assert vendors[never]["ceiling_pct"] is None
         assert summary["totals"]["unknown_vendors"] == ["Vercel"]

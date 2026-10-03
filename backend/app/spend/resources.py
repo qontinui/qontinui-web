@@ -46,6 +46,7 @@ ConnectorKey = Literal[
     "google_play_earnings",
     "google_workspace_seats",
     "upstash_billing",
+    "namecheap_domains",
 ]
 Cadence = Literal["monthly", "annual"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
@@ -244,6 +245,9 @@ class RecurringCostRead(BaseModel):
     renews_on: date | None
     external_ref: str | None
     source_note: str | None
+    #: Whether the provider renews it by itself — written only by a connector
+    #: (Namecheap); ``null`` is "not known". Read-only here.
+    auto_renew: bool | None = None
     #: The next date this entry charges on or after today (UTC), or ``null``
     #: once it has ended. Derived on read.
     next_charge_on: date | None
@@ -300,6 +304,7 @@ def _recurring_read(row: RecurringCost, today: date | None = None) -> RecurringC
         renews_on=row.renews_on,
         external_ref=row.external_ref,
         source_note=row.source_note,
+        auto_renew=row.auto_renew,
         next_charge_on=next_charge_on(row, today or _dt.now(UTC).date()),
         version=row.version,
         created_at=row.created_at,

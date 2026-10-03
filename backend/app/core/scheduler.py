@@ -508,6 +508,12 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_spend_collect() -> Any:
+    from app.spend.collect import collect_all_tenants
+
+    return await collect_all_tenants()
+
+
 async def _job_spend_evaluate() -> Any:
     from app.spend.evaluate import evaluate_all_tenants
 
@@ -701,6 +707,24 @@ def install_default_tasks(service: SchedulerService) -> None:
             coro=_job_spend_evaluate,
             cron="20 * * * *",
             timeout_seconds=300.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Provider-reported spend: the SERVER PULL (plan Phase 7). For every
+    # vendor with a linked connector credential (or the pinned tenant's AWS
+    # task-role arm) pull through the same normaliser the ingest door uses,
+    # recorded as transport=pull. Hourly with run_at_boot for the same
+    # redeploy reason as spend_evaluate; each connector bounds its own cadence
+    # (AWS Cost Explorer: at most two $0.01 pulls a day). At :05, so the :20
+    # evaluate reads what this tick collected (it also evaluates each tenant
+    # it pulled for, straight away).
+    service.register(
+        ScheduledTask(
+            name="spend_collect",
+            coro=_job_spend_collect,
+            cron="5 * * * *",
+            timeout_seconds=900.0,
             run_at_boot=True,
         )
     )

@@ -75,7 +75,7 @@ async def ingest_payload(
         connector=connector,
         source=source,
         transport=transport,
-        granularity="day" if query.is_day else "month",
+        granularity=("range" if query.is_range else "day" if query.is_day else "month"),
         status="failed",
         started_at=started,
         created_by=source,
@@ -130,6 +130,13 @@ async def ingest_payload(
                 run.rows_upserted = await _upsert(
                     db, tenant_id, vendor.id, run.id, batch, source
                 )
+            notices = list(batch.notices)
+            # Only a SERVER pull may act on the tenant's own rows: a pushed
+            # payload (an import token) must not rewrite a recurring cost,
+            # which the API reserves for a project admin.
+            if spec.apply is not None and transport == "pull":
+                notices.extend(await spec.apply(db, tenant_id, vendor, batch))
+            run.notices = [str(n)[:500] for n in notices[:50]]
     except Exception as exc:  # noqa: BLE001 — recorded on the run, never lost
         run.status = "failed"
         run.rows_upserted = 0
@@ -150,12 +157,45 @@ async def ingest_payload(
     )
 
 
+async def record_failed_fetch(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    vendor: Vendor,
+    connector: str,
+    source: str,
+    error: str,
+) -> UUID:
+    """A server pull that never got a payload (the provider refused it, or
+    the credential could not be read) is still a run — a ``failed`` one — so
+    freshness reports the failure instead of going quiet. ``error`` must be
+    value-free (a typed reason). Flushes, never commits."""
+    now = _now()
+    run = CostImportRun(
+        tenant_id=tenant_id,
+        vendor_id=vendor.id,
+        connector=connector,
+        source=source,
+        transport="pull",
+        granularity="day",
+        status="failed",
+        started_at=now,
+        finished_at=now,
+        error=error[:2000],
+        created_by=source,
+        updated_by=source,
+    )
+    db.add(run)
+    await db.flush()
+    return run.id
+
+
 def _query_period(query: IngestQuery) -> tuple[date | None, date | None]:
     """The days a query asked about, or ``(None, None)`` when it names none."""
     try:
         if query.day is not None:
             day = date(query.year, query.month, query.day)
-            return day, day
+            return day, query.until or day
         last = calendar.monthrange(query.year, query.month)[1]
         return date(query.year, query.month, 1), date(query.year, query.month, last)
     except ValueError:
@@ -181,13 +221,14 @@ async def _upsert(
     actor: str,
 ) -> int:
     refs = [e.source_ref for e in batch.entries]
-    if batch.ref_prefix:
-        # The day's statement is whole: a line it no longer reports is gone.
+    prefixes = [p for p in (batch.ref_prefix, *batch.extra_ref_prefixes) if p]
+    for prefix in prefixes:
+        # Each day's statement is whole: a line it no longer reports is gone.
         stale = delete(CostEntry).where(
             CostEntry.tenant_id == tenant_id,
             CostEntry.vendor_id == vendor_id,
             CostEntry.source == "connector",
-            CostEntry.source_ref.startswith(batch.ref_prefix, autoescape=True),
+            CostEntry.source_ref.startswith(prefix, autoescape=True),
         )
         if refs:
             stale = stale.where(CostEntry.source_ref.not_in(refs))

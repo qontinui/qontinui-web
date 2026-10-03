@@ -1,0 +1,51 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "data": [
+    {
+      "starting_at": "2026-10-01T00:00:00Z",
+      "ending_at": "2026-10-02T00:00:00Z",
+      "results": [
+        {
+          "currency": "USD",
+          "amount": "123.45",
+          "workspace_id": "wrkspc_01Example",
+          "description": "Claude Sonnet Usage - Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5",
+          "service_tier": "standard",
+          "token_type": "uncached_input_tokens"
+        },
+        {
+          "currency": "USD",
+          "amount": "10",
+          "workspace_id": "wrkspc_01Example",
+          "description": "Claude Sonnet Usage - Output Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5",
+          "service_tier": "standard",
+          "token_type": "uncached_input_tokens"
+        },
+        {
+          "currency": "USD",
+          "amount": "0.5",
+          "workspace_id": null,
+          "description": "Web Search Usage",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": null,
+          "service_tier": "standard",
+          "token_type": "uncached_input_tokens"
+        }
+      ]
+    },
+    {
+      "starting_at": "2026-10-02T00:00:00Z",
+      "ending_at": "2026-10-03T00:00:00Z",
+      "results": []
+    }
+  ],
+  "has_more": false,
+  "next_page": null
+}

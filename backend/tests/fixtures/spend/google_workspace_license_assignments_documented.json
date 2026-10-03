@@ -1,0 +1,41 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "product_id": "Google-Apps",
+  "kind": "licensing#licenseAssignmentList",
+  "items": [
+    {
+      "kind": "licensing#licenseAssignment",
+      "etags": "\"x\"",
+      "selfLink": "https://licensing.googleapis.com/apps/licensing/v1/product/Google-Apps/sku/1010020027/user/a@example.com",
+      "userId": "a@example.com",
+      "productId": "Google-Apps",
+      "productName": "Google Workspace",
+      "skuId": "1010020027",
+      "skuName": "Google Workspace Business Starter"
+    },
+    {
+      "kind": "licensing#licenseAssignment",
+      "userId": "b@example.com",
+      "productId": "Google-Apps",
+      "productName": "Google Workspace",
+      "skuId": "1010020027",
+      "skuName": "Google Workspace Business Starter"
+    },
+    {
+      "kind": "licensing#licenseAssignment",
+      "userId": "c@example.com",
+      "productId": "Google-Apps",
+      "productName": "Google Workspace",
+      "skuId": "1010020027",
+      "skuName": "Google Workspace Business Starter"
+    },
+    {
+      "kind": "licensing#licenseAssignment",
+      "userId": "d@example.com",
+      "productId": "Google-Apps",
+      "productName": "Google Workspace",
+      "skuId": "1010020027",
+      "skuName": "Google Workspace Business Starter"
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "account_id": "123456789012",
+  "GroupDefinitions": [
+    {
+      "Type": "DIMENSION",
+      "Key": "SERVICE"
+    }
+  ],
+  "ResultsByTime": [
+    {
+      "TimePeriod": {
+        "Start": "2026-09-30",
+        "End": "2026-10-01"
+      },
+      "Total": {},
+      "Groups": [
+        {
+          "Keys": [
+            "Amazon Elastic Compute Cloud - Compute"
+          ],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "12.3456789",
+              "Unit": "USD"
+            },
+            "NetUnblendedCost": {
+              "Amount": "12.3456789",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": [
+            "Amazon Relational Database Service"
+          ],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "4.10",
+              "Unit": "USD"
+            },
+            "NetUnblendedCost": {
+              "Amount": "3.90",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": [
+            "AWS Secrets Manager"
+          ],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "0.0400000001",
+              "Unit": "USD"
+            },
+            "NetUnblendedCost": {
+              "Amount": "0.0400000001",
+              "Unit": "USD"
+            }
+          }
+        }
+      ],
+      "Estimated": false
+    },
+    {
+      "TimePeriod": {
+        "Start": "2026-10-01",
+        "End": "2026-10-02"
+      },
+      "Total": {},
+      "Groups": [
+        {
+          "Keys": [
+            "Amazon Elastic Compute Cloud - Compute"
+          ],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "13.00",
+              "Unit": "USD"
+            },
+            "NetUnblendedCost": {
+              "Amount": "13.00",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": [
+            "Amazon Relational Database Service"
+          ],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "4.10",
+              "Unit": "USD"
+            },
+            "NetUnblendedCost": {
+              "Amount": "3.90",
+              "Unit": "USD"
+            }
+          }
+        }
+      ],
+      "Estimated": true
+    },
+    {
+      "TimePeriod": {
+        "Start": "2026-10-02",
+        "End": "2026-10-03"
+      },
+      "Total": {},
+      "Groups": [],
+      "Estimated": true
+    }
+  ],
+  "DimensionValueAttributes": []
+}

@@ -1,0 +1,56 @@
+{
+  "_shape": "DOCUMENTED SHAPE, NOT CAPTURED: built from the provider's published API documentation (keys as documented, values invented). Replace with a redacted capture after the first linked pull (plan Phase 9).",
+  "resources": [
+    {
+      "type": "redis",
+      "id": "6a4e2ccf-0000-4000-8000-000000000001",
+      "name": "qontinui-cache",
+      "stats": {
+        "dailybilling": [
+          {
+            "x": "2026-10-01 00:00:00 +0000 UTC",
+            "y": 0.12
+          },
+          {
+            "x": "2026-10-02 00:00:00 +0000 UTC",
+            "y": 0.3456
+          },
+          {
+            "x": "2026-10-03 00:00:00 +0000 UTC",
+            "y": 0.05
+          }
+        ],
+        "total_monthly_billing": 0.5156,
+        "dailyrequests": [
+          {
+            "x": "2026-10-01 00:00:00 +0000 UTC",
+            "y": 120000
+          }
+        ],
+        "days": [
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ]
+      }
+    },
+    {
+      "type": "qstash",
+      "id": "qstash",
+      "name": "QStash",
+      "stats": {
+        "dailybilling": [
+          {
+            "x": 1790812800000,
+            "y": 0.01
+          },
+          {
+            "x": 1790899200000,
+            "y": 0
+          }
+        ],
+        "total_monthly_billing": 0.01
+      }
+    }
+  ]
+}

@@ -39655,6 +39655,17 @@
       },
       "RecurringCostRead": {
         "properties": {
+          "auto_renew": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Renew"
+          },
           "cadence": {
             "enum": [
               "monthly",
@@ -58356,7 +58367,8 @@
                   "anthropic_cost_report",
                   "google_play_earnings",
                   "google_workspace_seats",
-                  "upstash_billing"
+                  "upstash_billing",
+                  "namecheap_domains"
                 ],
                 "type": "string"
               },
@@ -58422,7 +58434,8 @@
                   "anthropic_cost_report",
                   "google_play_earnings",
                   "google_workspace_seats",
-                  "upstash_billing"
+                  "upstash_billing",
+                  "namecheap_domains"
                 ],
                 "type": "string"
               },
@@ -58518,7 +58531,8 @@
                   "anthropic_cost_report",
                   "google_play_earnings",
                   "google_workspace_seats",
-                  "upstash_billing"
+                  "upstash_billing",
+                  "namecheap_domains"
                 ],
                 "type": "string"
               },
@@ -102766,6 +102780,181 @@
           }
         ],
         "summary": "Write Alert Preferences",
+        "tags": [
+          "overview",
+          "overview:spend"
+        ]
+      }
+    },
+    "/api/v1/overview/spend/connectors": {
+      "get": {
+        "description": "Every connector, the fields its \"Link account\" form asks for, and the\nexact scope to grant. No credential state and no values.",
+        "operationId": "api_v1_overview_spend_connectors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Connectors Api V1 Overview Spend Connectors Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Connectors",
+        "tags": [
+          "overview",
+          "overview:spend"
+        ]
+      }
+    },
+    "/api/v1/overview/spend/connectors/{connector}/credential": {
+      "delete": {
+        "description": "Delete the stored credential. Answers the status after.",
+        "operationId": "api_v1_overview_spend_connectors_connector_credential_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector",
+            "required": true,
+            "schema": {
+              "title": "Connector",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Unlink Credential Api V1 Overview Spend Connectors  Connector  Credential Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Unlink Credential",
+        "tags": [
+          "overview",
+          "overview:spend"
+        ]
+      },
+      "get": {
+        "description": "``linked`` | ``not_linked`` | ``error:<reason>`` \u2014 the status ONLY.",
+        "operationId": "api_v1_overview_spend_connectors_connector_credential_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector",
+            "required": true,
+            "schema": {
+              "title": "Connector",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Credential Status Api V1 Overview Spend Connectors  Connector  Credential Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Credential Status",
+        "tags": [
+          "overview",
+          "overview:spend"
+        ]
+      },
+      "put": {
+        "description": "Validate the credential with one live provider call, then store it in\nthe vault. Body: ``{\"credential\": {<the connector's fields>}}``.\n\nThe body is parsed by hand, not by a pydantic model: a validation error\nechoes its input, and the input here is the secret. Every refusal names a\nfield or a typed reason, never a value. A rejected credential stores\nnothing.",
+        "operationId": "api_v1_overview_spend_connectors_connector_credential_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector",
+            "required": true,
+            "schema": {
+              "title": "Connector",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Link Credential Api V1 Overview Spend Connectors  Connector  Credential Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Link Credential",
         "tags": [
           "overview",
           "overview:spend"

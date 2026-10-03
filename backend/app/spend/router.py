@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.models.overview import ImportToken, SpendAlertPreference, Vendor
 from app.models.user import User as UserModel
+from app.overview import change_log
 from app.overview.permissions import (
     OverviewAccess,
     build_overview_access,
@@ -45,7 +46,8 @@ from app.overview.permissions import (
     get_overview_caller,
     require_edit,
 )
-from app.spend.connectors import CONNECTORS, IngestQuery
+from app.spend import credentials
+from app.spend.connectors import CONNECTORS, CredentialRejected, IngestQuery
 from app.spend.ingest import ingest_payload
 from app.spend.summary import GroupBy, build_renewals, build_summary
 
@@ -59,6 +61,10 @@ MAX_INGEST_BYTES = 2 * 1024 * 1024
 #: Every import token starts with this, so the door can tell one from a
 #: Cognito JWT without asking anybody — and never sends it to coord or Cognito.
 IMPORT_TOKEN_PREFIX = "qsit_"
+
+#: The change-log ``resource`` a credential link/unlink is recorded under —
+#: that it happened and by whom, never what was linked.
+CREDENTIAL_RESOURCE = "spend_credentials"
 
 
 def _now() -> datetime:
@@ -405,6 +411,185 @@ async def revoke_import_token(
             raise HTTPException(status_code=404, detail="not_found")
     await db.commit()
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Connectors and their linked credentials (Phase 7)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/connectors")
+async def list_connectors(
+    access: OverviewAccess = Depends(get_overview_access),
+) -> dict[str, Any]:
+    """Every connector, the fields its "Link account" form asks for, and the
+    exact scope to grant. No credential state and no values."""
+    return {
+        "connectors": [
+            {
+                "key": spec.key,
+                "provider": spec.provider,
+                "produces_money": spec.produces_money,
+                "expected_lag_hours": spec.expected_lag_hours,
+                "linkable": spec.validate is not None and bool(spec.credential_fields),
+                "pulled_by_server": spec.fetch is not None,
+                "help": spec.credential_help,
+                # Values qontinui ISSUES this project (the AWS ExternalId) —
+                # not secrets, shown so the tenant can configure its side.
+                "issued": (
+                    spec.issued_fields(access.tenant_id)
+                    if spec.issued_fields is not None
+                    else {}
+                ),
+                "fields": [
+                    {
+                        "name": f.name,
+                        "label": f.label,
+                        "secret": f.secret,
+                        "required": f.required,
+                        "help": f.help,
+                    }
+                    for f in spec.credential_fields
+                ],
+            }
+            for spec in sorted(CONNECTORS.values(), key=lambda c: c.key)
+        ]
+    }
+
+
+def _known_connector(connector: str) -> str:
+    if connector not in CONNECTORS:
+        raise HTTPException(status_code=404, detail="unknown_connector")
+    return connector
+
+
+@router.get("/connectors/{connector}/credential")
+async def read_credential_status(
+    connector: str,
+    access: OverviewAccess = Depends(require_edit("project_admin")),
+) -> dict[str, Any]:
+    """``linked`` | ``not_linked`` | ``error:<reason>`` — the status ONLY."""
+    _known_connector(connector)
+    return (await credentials.status(access.tenant_id, connector)).wire(connector)
+
+
+@router.put("/connectors/{connector}/credential")
+async def link_credential(
+    connector: str,
+    request: Request,
+    access: OverviewAccess = Depends(require_edit("project_admin")),
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """Validate the credential with one live provider call, then store it in
+    the vault. Body: ``{"credential": {<the connector's fields>}}``.
+
+    The body is parsed by hand, not by a pydantic model: a validation error
+    echoes its input, and the input here is the secret. Every refusal names a
+    field or a typed reason, never a value. A rejected credential stores
+    nothing.
+    """
+    _known_connector(connector)
+    raw = await request.body()
+    if len(raw) > 64 * 1024:
+        raise HTTPException(status_code=413, detail="payload_too_large")
+    try:
+        body = json.loads(raw or b"null")
+    except ValueError:
+        body = None
+    if not isinstance(body, dict) or not isinstance(body.get("credential"), dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "invalid_body", "message": 'Send {"credential": {...}}.'},
+        )
+    vendor = await db.scalar(
+        select(Vendor)
+        .where(Vendor.tenant_id == access.tenant_id, Vendor.connector == connector)
+        .order_by(Vendor.created_at)
+        .limit(1)
+    )
+    config = dict(vendor.connector_config or {}) if vendor is not None else {}
+    # Only `submitted` holds the value from here on, and only until link()
+    # returns: no later frame (a change-log write, a commit) can carry it.
+    submitted: Any = body.pop("credential")
+    body = None
+    raw = b""
+    before = await credentials.status(access.tenant_id, connector)
+    try:
+        result = await credentials.link(access.tenant_id, connector, submitted, config)
+    except CredentialRejected as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "credential_rejected",
+                "reason": exc.reason,
+                "message": exc.detail or exc.reason,
+            },
+        )
+    except credentials.StoreUnavailable as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "credential_store_unavailable", "reason": exc.reason},
+        )
+    except Exception as exc:  # noqa: BLE001 — handled here, never re-raised with the value
+        logger.warning(
+            "spend_credential_link_failed",
+            connector=connector,
+            error_type=type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "credential_link_failed", "reason": type(exc).__name__},
+        )
+    finally:
+        submitted = None
+    await change_log.record(
+        db,
+        tenant_id=access.tenant_id,
+        resource=CREDENTIAL_RESOURCE,
+        record_id=connector,
+        action="update" if before.status == "linked" else "create",
+        source=change_log.change_source(request),
+        actor=access.actor,
+        actor_user_id=access.user_id,
+        before=before.wire(connector) if before.status == "linked" else None,
+        after=result.wire(connector),
+    )
+    await db.commit()
+    return result.wire(connector)
+
+
+@router.delete("/connectors/{connector}/credential")
+async def unlink_credential(
+    connector: str,
+    request: Request,
+    access: OverviewAccess = Depends(require_edit("project_admin")),
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """Delete the stored credential. Answers the status after."""
+    _known_connector(connector)
+    try:
+        removed = await credentials.unlink(access.tenant_id, connector)
+    except credentials.StoreUnavailable as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "credential_store_unavailable", "reason": exc.reason},
+        )
+    after = await credentials.status(access.tenant_id, connector)
+    if removed:
+        await change_log.record(
+            db,
+            tenant_id=access.tenant_id,
+            resource=CREDENTIAL_RESOURCE,
+            record_id=connector,
+            action="delete",
+            source=change_log.change_source(request),
+            actor=access.actor,
+            actor_user_id=access.user_id,
+            before={"connector": connector, "status": "linked", "arm": "secret"},
+            after=None,
+        )
+        await db.commit()
+    return after.wire(connector)
 
 
 # ---------------------------------------------------------------------------

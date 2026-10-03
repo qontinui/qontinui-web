@@ -7,18 +7,31 @@ server pull) share it. Decision 5: freshness is lag-aware — each connector
 declares ``expected_lag_hours``, the delay after a UTC day ends before the
 provider serves that day complete (GitHub 24, AWS Cost Explorer 48).
 
-A connector whose ``normalise`` is ``None`` is declared (the vendor CHECK
-admits it, the page can show it "not linked") but has no normaliser yet —
-Phase 9 adds them.
+Phase 7 adds the second transport: a connector with a ``fetch`` can be
+PULLED by the server (``app.spend.collect``) once the tenant has linked a
+credential for it (``app.spend.credentials``), and its ``validate`` is the one
+live provider call that proves a credential before it is stored. A pulled
+payload goes through the very same ``normalise`` as a pushed one.
+
+Phase 9 adds the token-linked providers. Two of them produce NO money
+(``produces_money=False``: Google Workspace seats, Namecheap domains) — their
+runs carry facts and notices, and an ``apply`` hook acts on them (a seat-count
+warning, a renewal date kept current), never a cost entry.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.overview import Vendor
 
 #: Money is integer micros.
 MICROS = Decimal(1_000_000)
@@ -31,13 +44,42 @@ class NormaliseError(ValueError):
 
 @dataclass(frozen=True)
 class IngestQuery:
+    """What a payload is about: one UTC day (``day``), a month (no ``day``),
+    or — server pulls only — a RANGE of days from ``day`` through ``until``
+    inclusive, which is that range's whole statement."""
+
     year: int
     month: int
     day: int | None = None
+    until: date | None = None
 
     @property
     def is_day(self) -> bool:
         return self.day is not None
+
+    @property
+    def is_range(self) -> bool:
+        return self.day is not None and self.until is not None
+
+    @classmethod
+    def for_range(cls, start: date, end: date) -> IngestQuery:
+        if end == start:
+            return cls(start.year, start.month, start.day)
+        return cls(start.year, start.month, start.day, until=end)
+
+    def days(self) -> tuple[date, date]:
+        """The first and last day a day/range query names. Raises
+        :class:`NormaliseError` on a month query or an invalid date."""
+        if self.day is None:
+            raise NormaliseError("query names no day")
+        try:
+            start = date(self.year, self.month, self.day)
+        except ValueError as exc:
+            raise NormaliseError("query names no valid day") from exc
+        end = self.until or start
+        if end < start:
+            raise NormaliseError("query range ends before it starts")
+        return start, end
 
 
 @dataclass(frozen=True)
@@ -81,9 +123,81 @@ class NormalisedBatch:
     #: The ``source_ref`` prefix every entry of this account+period shares,
     #: so a day re-ingest can drop rows the provider no longer reports.
     ref_prefix: str | None = None
+    #: More such prefixes — a RANGE payload is several days' statements, one
+    #: prefix per day.
+    extra_ref_prefixes: list[str] = field(default_factory=list)
+    #: What the provider said that is not money (a seat count, a domain's
+    #: expiry) — read by the connector's ``apply`` hook.
+    facts: dict[str, Any] = field(default_factory=dict)
+    #: Human-readable warnings, stored on the run and shown on the vendor's
+    #: Sources card (e.g. "AutoRenew is off for x.io, expiring 2026-11-01").
+    notices: list[str] = field(default_factory=list)
 
 
 Normaliser = Callable[[Any, IngestQuery, dict[str, Any]], NormalisedBatch]
+
+
+class CredentialRejected(Exception):
+    """A credential failed validation, or a provider refused a pull.
+
+    ``reason`` is a TYPED, value-free token (``unauthorized``, ``forbidden``,
+    ``not_found``, ``rate_limited``, ``provider_error``, ``unreachable``,
+    ``invalid_response``, ``invalid_credential``, ``not_configured``…).
+    ``detail`` is a short human sentence. NEITHER may carry a credential: they
+    reach responses, logs and import-run rows.
+    """
+
+    def __init__(self, reason: str, detail: str = "") -> None:
+        super().__init__(f"{reason}: {detail}" if detail else reason)
+        self.reason = reason
+        self.detail = detail
+
+
+@dataclass(frozen=True)
+class CredentialField:
+    name: str
+    label: str
+    #: A secret field is never echoed anywhere; a non-secret one (a team id,
+    #: an account id) is still stored ONLY in the vault, beside the secret.
+    secret: bool = True
+    required: bool = True
+    help: str = ""
+    #: A multi-line value (a service-account JSON key) — exempt from the
+    #: printable-ASCII check single-line tokens get.
+    multiline: bool = False
+
+
+@dataclass(frozen=True)
+class Pull:
+    """One payload a server pull fetched, and the query it answers."""
+
+    query: IngestQuery
+    raw: Any
+
+
+@dataclass
+class FetchContext:
+    tenant_id: UUID
+    #: The vault's value for this tenant+connector (``{}`` for an arm that
+    #: needs none, like the AWS task role). Never logged.
+    credential: dict[str, Any]
+    #: The vendor's NON-secret ``connector_config``.
+    config: dict[str, Any]
+    now: datetime
+    #: The last day an ``ok`` PULL run of this vendor covered, or ``None`` on
+    #: the first pull (the connector then backfills).
+    last_pulled_day: date | None
+    #: Which arm resolved the credential (``secret`` | ``task_role``).
+    arm: str = "secret"
+
+
+Validator = Callable[[dict[str, Any], dict[str, Any]], Awaitable[None]]
+Fetcher = Callable[[FetchContext], Awaitable[list[Pull]]]
+#: ``(db, tenant_id, vendor, batch) -> notices`` — runs inside the ingest's
+#: savepoint after an ok normalise; it may update the tenant's own rows.
+Applier = Callable[
+    ["AsyncSession", UUID, "Vendor", NormalisedBatch], Awaitable[list[str]]
+]
 
 
 @dataclass(frozen=True)
@@ -93,6 +207,32 @@ class ConnectorSpec:
     expected_lag_hours: int
     provenance: str
     normalise: Normaliser | None = None
+    #: ``False`` for a connector that reports facts, never money (seat counts,
+    #: domain expiries). Its vendor's figures come from recurring entries, and
+    #: its freshness is "did the last read succeed recently".
+    produces_money: bool = True
+    #: A day is complete once a run finished this many days after it began:
+    #: 1 for most providers, 2 for AWS Cost Explorer (complete day = day − 2).
+    complete_lag_days: int = 1
+    #: Whether the relative spike rule reads this vendor (off for Play, whose
+    #: fees follow revenue, and for no-money connectors).
+    spike_rule: bool = True
+    #: The fields the "Link account" form asks for.
+    credential_fields: tuple[CredentialField, ...] = ()
+    #: Where the operator gets the credential, and the exact scope to grant.
+    credential_help: str = ""
+    validate: Validator | None = None
+    fetch: Fetcher | None = None
+    apply: Applier | None = None
+    #: The fewest hours between two server pulls of one vendor.
+    min_pull_interval_hours: int = 1
+    #: Whether a fleet importer PUSHES this connector without any linked
+    #: credential (GitHub, plan Phase 2). For every other connector a vendor
+    #: with no credential and no run is "not linked", not merely "never".
+    pushed_without_credential: bool = False
+    #: Fields the SERVER issues per tenant and adds to the stored credential
+    #: (the AWS ExternalId) — shown on the Link form, never accepted as input.
+    issued_fields: Callable[[UUID], dict[str, str]] | None = None
 
 
 #: The largest magnitude a ``bigint`` micros column holds.
@@ -123,60 +263,31 @@ def micros(value: Any, *, field_name: str) -> int:
 
 
 def _registry() -> dict[str, ConnectorSpec]:
-    from app.spend.connectors.github_billing import normalise as github_normalise
+    from app.spend.connectors import (
+        anthropic_cost_report,
+        aws_cost_explorer,
+        cloudflare_billing,
+        github_billing,
+        google_play_earnings,
+        google_workspace_seats,
+        namecheap_domains,
+        upstash_billing,
+        vercel_billing,
+    )
 
-    specs = (
-        ConnectorSpec(
-            key="github_billing",
-            provider="GitHub",
-            expected_lag_hours=24,
-            provenance="as reported by GitHub billing usage API",
-            normalise=github_normalise,
-        ),
-        ConnectorSpec(
-            key="aws_cost_explorer",
-            provider="AWS",
-            # Cost Explorer's complete day is day - 2.
-            expected_lag_hours=48,
-            provenance="as reported by AWS Cost Explorer (UnblendedCost)",
-        ),
-        ConnectorSpec(
-            key="vercel_billing",
-            provider="Vercel",
-            expected_lag_hours=24,
-            provenance="as reported by Vercel billing charges (FOCUS BilledCost)",
-        ),
-        ConnectorSpec(
-            key="cloudflare_billing",
-            provider="Cloudflare",
-            expected_lag_hours=48,
-            provenance="as reported by Cloudflare billing history",
-        ),
-        ConnectorSpec(
-            key="anthropic_cost_report",
-            provider="Anthropic",
-            expected_lag_hours=24,
-            provenance="as reported by the Anthropic cost report API",
-        ),
-        ConnectorSpec(
-            key="google_play_earnings",
-            provider="Google Play",
-            # Monthly earnings reports land days after the month ends.
-            expected_lag_hours=24 * 35,
-            provenance="as reported by Google Play earnings reports (fees only)",
-        ),
-        ConnectorSpec(
-            key="google_workspace_seats",
-            provider="Google Workspace",
-            expected_lag_hours=24,
-            provenance="seat count from the Enterprise License Manager API (no money)",
-        ),
-        ConnectorSpec(
-            key="upstash_billing",
-            provider="Upstash",
-            expected_lag_hours=24,
-            provenance="as reported by the Upstash developer API (dailybilling)",
-        ),
+    specs = tuple(
+        module.SPEC
+        for module in (
+            github_billing,
+            aws_cost_explorer,
+            vercel_billing,
+            cloudflare_billing,
+            anthropic_cost_report,
+            google_play_earnings,
+            google_workspace_seats,
+            upstash_billing,
+            namecheap_domains,
+        )
     )
     return {spec.key: spec for spec in specs}
 

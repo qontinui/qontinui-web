@@ -8,9 +8,10 @@ UNKNOWN vendor's own figures are ``None``; a total over one is marked
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
@@ -19,7 +20,15 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.overview import CostEntry, RecurringCost, SpendAlert, SpendRule, Vendor
+from app.models.overview import (
+    CostEntry,
+    CostImportRun,
+    RecurringCost,
+    SpendAlert,
+    SpendRule,
+    Vendor,
+)
+from app.spend import credentials
 from app.spend.connectors import connector_spec
 from app.spend.freshness import Freshness, vendor_freshness
 from app.spend.recurring import View, amount_micros, materialise, next_charge_on
@@ -174,6 +183,18 @@ class VendorSummary(BaseModel):
     last_month_micros: int | None
     #: A prepaid balance where one is known — a balance, never spend.
     balance_micros: int | None = None
+    #: The connector's own collection state (``ok|stale|failed|never|
+    #: not_linked``), or ``null`` for a vendor with no connector. Equal to
+    #: ``status`` for a connector that reports money; for one that reports
+    #: none (Workspace seats, Namecheap domains) ``status`` describes the
+    #: vendor's MONEY (its recurring entries) and this the connector.
+    connector_status: str | None = None
+    #: ``linked`` | ``not_linked`` | ``error:<reason>`` from the credential
+    #: vault (Phase 7); ``null`` for a vendor with no connector. Never a value.
+    credential_status: str | None = None
+    #: Warnings the connector's last good read raised (a changed seat count,
+    #: a domain that will not auto-renew). Empty when none or unknown.
+    warnings: list[str] = []
 
 
 class SeriesPoint(BaseModel):
@@ -468,6 +489,28 @@ async def _series(
     return [points[k] for k in sorted(points)]
 
 
+async def _last_notices(
+    db: AsyncSession, tenant_id: UUID, ids: list[UUID]
+) -> dict[UUID, list[str]]:
+    """Each vendor's warnings from its newest ok run (not a month check)."""
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(CostImportRun.vendor_id, CostImportRun.notices)
+            .where(
+                CostImportRun.tenant_id == tenant_id,
+                CostImportRun.vendor_id.in_(ids),
+                CostImportRun.status == "ok",
+                CostImportRun.granularity != "month",
+            )
+            .distinct(CostImportRun.vendor_id)
+            .order_by(CostImportRun.vendor_id, CostImportRun.started_at.desc())
+        )
+    ).all()
+    return {vendor_id: [str(n) for n in (notices or [])] for vendor_id, notices in rows}
+
+
 def _uncovered(f: Freshness, start: date, end: date) -> list[date]:
     """Days in ``[start, end]`` ∩ ``[oldest_covered_day, newest_complete_day]``
     that no ok run fetched — the holes :func:`_window` treats as UNKNOWN."""
@@ -536,15 +579,51 @@ async def build_summary(
         db, tenant_id, ids, load_start, load_end
     )
 
+    warnings = await _last_notices(db, tenant_id, ids)
+    # The vault's answer per connector, read concurrently (one call per
+    # connector, cached; a vault failure is remembered briefly).
+    keys = sorted({str(v.connector) for v in vendors if connector_spec(v.connector)})
+    vault = dict(
+        zip(
+            keys,
+            await asyncio.gather(*(credentials.status(tenant_id, k) for k in keys)),
+            strict=True,
+        )
+    )
     summaries: list[VendorSummary] = []
     unknown: list[str] = []
     for vendor in vendors:
         f = fresh[vendor.id]
         spec = connector_spec(vendor.connector)
+        credential_status: str | None = None
+        if spec is not None:
+            credential_status = vault[spec.key].status
+            if (
+                f.status == "never"
+                and credential_status == "not_linked"
+                and not spec.pushed_without_credential
+            ):
+                f = replace(
+                    f,
+                    status="not_linked",
+                    reason=f"no {spec.provider} account is linked",
+                )
+        connector_status = f.status if spec is not None else None
+        if spec is not None and not spec.produces_money:
+            # A connector that reports no money: the vendor's figures are its
+            # recurring entries, known or not on their own (decision 10).
+            f = Freshness(
+                status="manual" if vendor.id in recurring_vendors else "not_linked",
+                reason=(
+                    f"{spec.provider} connector: {connector_status}"
+                    if vendor.id in recurring_vendors
+                    else "no recurring cost is entered"
+                ),
+            )
         vrows = by_vendor.get(vendor.id, [])
         rule = rules.get(vendor.id)
         ceiling = rule.monthly_ceiling_micros if rule else None
-        has_connector = spec is not None
+        has_connector = spec is not None and spec.produces_money
 
         mtd = _window(f, has_connector, vrows, month_start, today, today)
         today_m = _window(f, has_connector, vrows, today, today, today)
@@ -603,6 +682,9 @@ async def build_summary(
                 today_micros=today_m,
                 yesterday_micros=yesterday_m,
                 last_month_micros=last_month,
+                connector_status=connector_status,
+                credential_status=credential_status,
+                warnings=warnings.get(vendor.id, []),
             )
         )
 
@@ -698,6 +780,7 @@ async def build_renewals(
                 renews_on=nxt,
                 amount_micros=amount_micros(entry),
                 currency=entry.currency,
+                auto_renew=entry.auto_renew,
             )
         )
     out.sort(key=lambda r: (r.renews_on, r.vendor_name, r.description))
