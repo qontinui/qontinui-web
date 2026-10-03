@@ -72,9 +72,18 @@ value read from a process environment, and it is read alone; no other variable i
 ever captured. The migration test pins the exact column set, so widening it is a
 reviewed act.
 
-Idempotency: raw ``op.execute`` with ``CREATE TABLE / INDEX IF NOT EXISTS`` —
+Idempotency: raw ``op.execute`` with ``CREATE TABLE / INDEX IF NOT EXISTS`` (the
+index CONCURRENTLY, inside ``autocommit_block``) —
 the house convention for coord tables (``coordinput_01_operator_inputs``,
 ``fleet_res_tel_01``).
+
+Note on a killed CONCURRENTLY build: ``autocommit_block`` commits the two
+tables before the index is built, so a build killed partway leaves the tables
+committed, ``alembic_version`` unadvanced and an INVALID index of the same name,
+which ``IF NOT EXISTS`` then skips on the re-run. Recovery is manual (the
+classifier refuses a DROP on the upgrade path): ``DROP INDEX
+coord.ix_session_census_session_id`` and re-run the upgrade — the same note as
+``coord_pg_overload_idx_01``.
 """
 
 from collections.abc import Sequence
@@ -139,16 +148,24 @@ def upgrade() -> None:
         """
     )
     # By-session lookup across devices — what a Session-Id trailer drives.
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS ix_session_census_session_id
-            ON coord.session_census (session_id)
-        """
-    )
+    # Built CONCURRENTLY outside the migration transaction (the
+    # coord_pg_overload_idx_01 precedent) so coord's migration classifier
+    # reads it as provably lock-safe; the table is created just above and is
+    # empty, so the build is instant either way.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_session_census_session_id
+                ON coord.session_census (session_id)
+            """
+        )
 
 
 def downgrade() -> None:
     """Drop both tables. Reverse order of upgrade()."""
-    op.execute("DROP INDEX IF EXISTS coord.ix_session_census_session_id")
+    with op.get_context().autocommit_block():
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS coord.ix_session_census_session_id"
+        )
     op.execute("DROP TABLE IF EXISTS coord.session_census")
     op.execute("DROP TABLE IF EXISTS coord.session_census_device")
