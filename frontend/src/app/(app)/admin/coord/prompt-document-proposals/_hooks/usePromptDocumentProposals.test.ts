@@ -318,7 +318,8 @@ describe("usePromptDocumentProposals — the landed-write diff", () => {
   it("diffs v1 against the empty document without a second fetch", async () => {
     const first = { ...HEAD_WRITE, version_number: 1, current_version: 1 };
     getMock.mockImplementation((url: string) => {
-      if (url.endsWith("/versions/1")) return Promise.resolve({ body: "first" });
+      if (url.endsWith("/versions/1"))
+        return Promise.resolve({ body: "first" });
       return routeInitial({})(url);
     });
 
@@ -377,6 +378,27 @@ describe("usePromptDocumentProposals — the landed-write diff", () => {
   });
 });
 
+/**
+ * The Error `httpClient.post` throws for a coord refusal relayed by the
+ * operations proxy, built the way production builds it: coord's JSON body is
+ * the `HTTPException` detail STRING, the backend's error envelope carries it as
+ * `message`, and `httpClient` folds the whole response text into
+ * `POST <url> failed: <status> - <text>`.
+ */
+function proxiedFailure(
+  status: number,
+  coordBody: Record<string, unknown>,
+  path = "/api/v1/operations/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
+): Error {
+  const envelope = JSON.stringify({
+    error: status === 409 ? "conflict" : "forbidden",
+    message: JSON.stringify(coordBody),
+    timestamp: "2026-09-14T00:00:00Z",
+    path,
+  });
+  return new Error(`POST ${path} failed: ${status} - ${envelope}`);
+}
+
 const CREATED_RECORD: PromptDocumentWrite = {
   kind: "decision_record",
   name: "no-cross-tenant-reads",
@@ -415,8 +437,13 @@ describe("usePromptDocumentProposals — withdrawing a created decision record",
     expect(url).toBe(
       "/api/v1/operations/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
     );
-    // Only the reason — the withdrawer is coord's to stamp, never the browser's.
-    expect(body).toEqual({ reason: "never decided — recorded from a guess" });
+    // The reason and the version just re-read — the withdrawer is coord's to
+    // stamp, never the browser's; the version lets coord refuse a withdrawal
+    // that a peer write overtook between the re-read and this POST.
+    expect(body).toEqual({
+      reason: "never decided — recorded from a guess",
+      expected_version: 1,
+    });
     // No PATCH: a withdrawal is not an undo-by-body.
     expect(patchMock).not.toHaveBeenCalled();
   });
@@ -440,6 +467,83 @@ describe("usePromptDocumentProposals — withdrawing a created decision record",
     expect(outcome).toBe(false);
     expect(postMock).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining("now v2"));
+  });
+
+  it("reports coord's stale refusal as a moved record and reloads", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 1, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+    postMock.mockRejectedValue(
+      proxiedFailure(409, {
+        error:
+          "`decision_record/no-cross-tenant-reads` moved since it was read: the withdrawal was decided against version 1, and the record is now at version 2.",
+        error_code: "withdraw_stale",
+        expected_version: 1,
+        current_version: 2,
+      })
+    );
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const loadsBefore = getMock.mock.calls.filter(([u]) =>
+      String(u).includes("prompt-document-writes")
+    ).length;
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(CREATED_RECORD, "a reason");
+    });
+
+    expect(outcome).toBe(false);
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(postMock.mock.calls[0][1]).toMatchObject({ expected_version: 1 });
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("changed while you were withdrawing it (now v2)")
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+    const loadsAfter = getMock.mock.calls.filter(([u]) =>
+      String(u).includes("prompt-document-writes")
+    ).length;
+    expect(loadsAfter).toBeGreaterThan(loadsBefore);
+  });
+
+  it("does not read another refusal as stale because the record's NAME carries the token", async () => {
+    const named: PromptDocumentWrite = {
+      ...CREATED_RECORD,
+      name: "why-withdraw_stale-exists",
+    };
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 1, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+    postMock.mockRejectedValue(
+      proxiedFailure(
+        403,
+        { error: "not a tenant admin" },
+        "/api/v1/operations/coord/prompt-documents/decision_record/why-withdraw_stale-exists/withdraw"
+      )
+    );
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(named, "a reason");
+    });
+
+    expect(outcome).toBe(false);
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("not a tenant admin")
+    );
+    expect(toastError).not.toHaveBeenCalledWith(
+      expect.stringContaining("changed while you were withdrawing it")
+    );
   });
 
   it("refuses a blank reason without any round trip", async () => {
