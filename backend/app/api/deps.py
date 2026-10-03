@@ -183,7 +183,7 @@ class DeviceTokenContext:
         Deliberately a ``str`` and deliberately unparsed. ``GET /devices/me``
         returns the claim as the token spelled it — its test says so by name
         ("sourced from claims ... verbatim, not derived") and pins values like
-        ``personal-jspinak`` that are not UUIDs at all. Parsing here would
+        ``personal-<name>`` that are not UUIDs at all. Parsing here would
         401 every such deployment, and normalising would make a caller
         string-comparing this against its own copy of the claim disagree.
 

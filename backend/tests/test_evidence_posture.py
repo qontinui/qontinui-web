@@ -135,6 +135,15 @@ def test_the_population_is_not_vacuous(
     assert len(population) >= 24, sorted(population)
 
 
+def test_the_plan_library_upsert_is_admitted_through_the_claims_dependency(
+    population: dict[tuple[str, str], frozenset[str]],
+) -> None:
+    """``POST /plan-library`` reads the device claims (its tenant axis) via
+    ``get_audit_actor_context``. That dependency must be in the admitting set,
+    or the upsert silently drops out of the population and loses its row."""
+    assert "get_audit_actor_context" in population[("POST", "/api/v1/plan-library")]
+
+
 def test_the_walk_recurses_through_a_wrapper_dependency() -> None:
     """``route.dependant.dependencies`` is DIRECT only; the walk must not be."""
     from app.api.deps import get_audit_actor_user
@@ -304,6 +313,10 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     ),
     "app.api.deps._resolve_actor_principal": (
         "a plain coroutine the dual-auth dependencies call by hand; never a Depends()"
+    ),
+    "app.api.deps._resolve_actor_context": (
+        "the claims-carrying plain coroutine _resolve_actor_principal and "
+        "get_audit_actor_context delegate to; never a Depends()"
     ),
     "app.api.v1.endpoints.devices_ws.websocket_device_unified_endpoint": (
         "a WebSocket endpoint — no write METHOD, so never in the population"
