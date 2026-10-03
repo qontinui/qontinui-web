@@ -1102,3 +1102,14 @@ class TestForecastRoute:
         response = await other_project.get(f"{API}/estimates/{estimate['id']}/forecast")
         assert response.status_code == 404
         assert (await admin.get(f"{API}/estimates/nope/forecast")).status_code == 404
+
+
+def test_an_update_carrying_only_acknowledgements_is_refused() -> None:
+    """``acknowledged_drops`` qualifies a content change; alone it changes nothing."""
+    from pydantic import ValidationError
+
+    from app.schemas.overview import EstimateUpdate
+
+    with pytest.raises(ValidationError, match="give at least one field"):
+        EstimateUpdate.model_validate({"acknowledged_drops": []})
+    assert EstimateUpdate.model_validate({"name": "x", "acknowledged_drops": []})
