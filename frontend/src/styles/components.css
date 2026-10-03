@@ -877,3 +877,38 @@
     -webkit-text-fill-color: transparent;
   }
 }
+
+/* ============================================
+ * Spend chart series (overview Costs page)
+ *
+ * The categorical palette for the vendor-stacked daily bars, assigned in
+ * fixed order and never cycled — a ninth vendor folds into "Other". Values
+ * are the dataviz reference palette, validated for adjacent-pair CVD and
+ * normal-vision separation; the dark steps are selected for the dark
+ * surface, not flipped. The app renders dark; the light steps are kept so
+ * the chart stays correct if a light surface is ever used.
+ * ============================================ */
+
+.spend-viz {
+  --spend-series-1: #2a78d6;
+  --spend-series-2: #eb6834;
+  --spend-series-3: #1baf7a;
+  --spend-series-4: #eda100;
+  --spend-series-5: #e87ba4;
+  --spend-series-6: #008300;
+  --spend-series-7: #4a3aa7;
+  --spend-series-8: #e34948;
+  --spend-series-other: #8a8983;
+}
+
+.dark .spend-viz {
+  --spend-series-1: #3987e5;
+  --spend-series-2: #d95926;
+  --spend-series-3: #199e70;
+  --spend-series-4: #c98500;
+  --spend-series-5: #d55181;
+  --spend-series-6: #008300;
+  --spend-series-7: #9085e9;
+  --spend-series-8: #e66767;
+  --spend-series-other: #8a8983;
+}

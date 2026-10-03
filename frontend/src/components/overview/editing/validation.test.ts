@@ -103,3 +103,32 @@ describe("checkFields", () => {
     ).toEqual({ overview_order: "Position must be at least 1." });
   });
 });
+
+describe("enum and date format from the served schema", () => {
+  it("refuses a value outside the enum", () => {
+    expect(
+      checkField(
+        { type: "string", enum: ["monthly", "annual"] },
+        "weekly",
+        "Charged"
+      )
+    ).toBe("Charged isn't one of the allowed values.");
+    expect(
+      checkField(
+        { type: "string", enum: ["monthly", "annual"] },
+        "annual",
+        "Charged"
+      )
+    ).toBeNull();
+  });
+
+  it("refuses a value not in date format, through a nullable wrapper", () => {
+    const schema = {
+      anyOf: [{ type: "string", format: "date" }, { type: "null" }],
+    };
+    expect(checkField(schema, "02/01/2026", "Ends on")).toBe(
+      "Ends on must be a date, e.g. 2026-10-03."
+    );
+    expect(checkField(schema, "2026-01-02", "Ends on")).toBeNull();
+  });
+});

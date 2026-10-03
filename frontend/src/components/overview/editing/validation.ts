@@ -63,6 +63,14 @@ export function checkField(
   // An empty value is not this function's to judge: whether the field may
   // be left empty is the form's decision (a position may; a body may not).
   if (value === null || value === undefined || value === "") return null;
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value))
+    return `${label} isn't one of the allowed values.`;
+  if (
+    schema.format === "date" &&
+    typeof value === "string" &&
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+  )
+    return `${label} must be a date, e.g. 2026-10-03.`;
   const type = schema.type;
   if (type === "string" && typeof value === "string") {
     if (

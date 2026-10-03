@@ -24,13 +24,24 @@ export type RowText = Record<string, string | boolean>;
 
 const DECIMAL = /^\d*(\.\d+)?$/;
 const CURRENCY = /^[A-Za-z]{3}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A real calendar day, not just the shape of one (`2026-02-30` is not). */
+function isCalendarDay(value: string): boolean {
+  if (!DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
+
+/** The fields a row is read and written through — a table's, or a form's. */
+type HasFields<Row> = { fields: FieldDeclaration<Row>[] };
 
 function get(row: object, field: string): unknown {
   return (row as Record<string, unknown>)[field];
 }
 
 export function rowToText<Row extends object>(
-  table: TableDeclaration<Row>,
+  table: HasFields<Row>,
   row: Row
 ): RowText {
   const text: RowText = {};
@@ -90,6 +101,36 @@ function readField<Row>(
         ? { error: problem }
         : { values: { [field.field]: value } };
     }
+    case "date": {
+      const value = str(text, field.field).trim();
+      if (value === "") {
+        return field.required
+          ? { error: `${field.label} can't be empty.` }
+          : { values: { [field.field]: null } };
+      }
+      if (!isCalendarDay(value))
+        return { error: `${field.label} must be a date, e.g. 2026-10-03.` };
+      const problem = checkField(property, value, field.label);
+      return problem
+        ? { error: problem }
+        : { values: { [field.field]: value } };
+    }
+    case "choice": {
+      const value = str(text, field.field);
+      if (value === "") {
+        return field.required
+          ? { error: `Choose the ${field.label.toLowerCase()}.` }
+          : { values: { [field.field]: null } };
+      }
+      if (!field.options.some((o) => o.value === value))
+        return { error: `${field.label} isn't one of the choices.` };
+      // The served schema is the authority on which values it takes; a
+      // declared option it no longer accepts is refused here, not by a 422.
+      const problem = checkField(property, value, field.label);
+      return problem
+        ? { error: problem }
+        : { values: { [field.field]: value } };
+    }
     case "money": {
       const amount = str(text, field.field).trim();
       const currency = str(text, field.currencyField).trim().toUpperCase();
@@ -125,7 +166,7 @@ function readField<Row>(
  * show.
  */
 export function textToRow<Row extends object>(
-  table: TableDeclaration<Row>,
+  table: HasFields<Row>,
   text: RowText,
   rowSchema: JsonSchema | undefined,
   base: Row
@@ -171,6 +212,13 @@ export function cellText<Row extends object>(
   switch (field.kind) {
     case "flag":
       return value === true ? field.yes : field.no;
+    case "choice":
+      return (
+        field.options.find((o) => o.value === value)?.label ??
+        (value === null || value === undefined || value === ""
+          ? "—"
+          : String(value))
+      );
     case "money":
       return (
         formatMicros(
