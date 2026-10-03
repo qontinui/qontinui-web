@@ -85,7 +85,7 @@ from tests._alembic_harness import (
 # rewinds too far and replays unrelated non-idempotent revisions, surfacing as
 # someone else's `DuplicateTable`.
 _REVISION_ID = "wtcap_01_max_worktrees_by_device"
-_PARENT_REVISION_ID = "coord_agent_sessions_context_01"
+_PARENT_REVISION_ID = "overview_04_timeline"
 _REVISION_FILENAME = "wtcap_01_max_worktrees_by_device.py"
 
 _PARENT_TABLE = "fleet_runtime_policy"
