@@ -11494,6 +11494,895 @@
         "title": "CorpusHealth",
         "type": "object"
       },
+      "CostAmount": {
+        "description": "A figure in the base currency. ``micros`` is ``null`` when nothing it\ncovers is known; ``partial`` when some of it is not (``unknown`` names\neach part left out).",
+        "properties": {
+          "micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Micros"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "unknown": {
+            "items": {
+              "$ref": "#/components/schemas/CostUnknown"
+            },
+            "title": "Unknown",
+            "type": "array"
+          }
+        },
+        "required": [
+          "micros"
+        ],
+        "title": "CostAmount",
+        "type": "object"
+      },
+      "CostComparison": {
+        "description": "The estimate beside what was actually spent. Actuals cover EVERY\nfigure to date (``actual_from`` to ``actual_to``), not the summary\nwindow: an estimate is for the whole project.",
+        "properties": {
+          "actual_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual From"
+          },
+          "actual_to": {
+            "format": "date",
+            "title": "Actual To",
+            "type": "string"
+          },
+          "contingency": {
+            "$ref": "#/components/schemas/CostEstimateFigure"
+          },
+          "contingency_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contingency Pct"
+          },
+          "estimate_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Currency"
+          },
+          "estimate_id": {
+            "title": "Estimate Id",
+            "type": "string"
+          },
+          "is_baseline": {
+            "title": "Is Baseline",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "non_labour_actual": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "non_labour_estimate_high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Labour Estimate High Micros"
+          },
+          "non_labour_estimate_low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Labour Estimate Low Micros"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/CostPhaseComparison"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "purpose": {
+            "enum": [
+              "budget",
+              "comparison",
+              "forecast"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "run_cost_lines": {
+            "items": {
+              "$ref": "#/components/schemas/RunCostLine"
+            },
+            "title": "Run Cost Lines",
+            "type": "array"
+          },
+          "run_rate": {
+            "$ref": "#/components/schemas/CostRunRate"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CostComparisonTotals"
+          },
+          "unavailable": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          },
+          "unphased": {
+            "$ref": "#/components/schemas/CostUnphasedActual"
+          }
+        },
+        "required": [
+          "estimate_id",
+          "name",
+          "purpose",
+          "status",
+          "is_baseline",
+          "estimate_currency",
+          "contingency_pct",
+          "actual_from",
+          "actual_to",
+          "phases",
+          "unphased",
+          "totals",
+          "contingency",
+          "non_labour_estimate_low_micros",
+          "non_labour_estimate_high_micros",
+          "non_labour_actual",
+          "run_cost_lines",
+          "run_rate",
+          "unavailable"
+        ],
+        "title": "CostComparison",
+        "type": "object"
+      },
+      "CostComparisonTotals": {
+        "properties": {
+          "actual": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "difference_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Micros"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/CostEstimateFigure"
+          }
+        },
+        "required": [
+          "estimate",
+          "actual",
+          "difference_micros"
+        ],
+        "title": "CostComparisonTotals",
+        "type": "object"
+      },
+      "CostEntriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/CostEntryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "CostEntriesItem",
+        "type": "object"
+      },
+      "CostEntriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostEntryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "CostEntriesList",
+        "type": "object"
+      },
+      "CostEntryCreate": {
+        "additionalProperties": false,
+        "description": "A one-off cost, entered from an invoice. Always ``source = manual``.",
+        "properties": {
+          "amount_micros": {
+            "maximum": 9007199254740991.0,
+            "minimum": -9007199254740991.0,
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai",
+                  "cloud",
+                  "source_hosting",
+                  "saas",
+                  "labour",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "fx_rate_to_base": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 10000000000.0,
+                    "exclusiveMinimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 18,
+                  "scale": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate To Base"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor_id",
+          "description",
+          "amount_micros",
+          "currency",
+          "period_start"
+        ],
+        "title": "CostEntryCreate",
+        "type": "object"
+      },
+      "CostEntryRead": {
+        "properties": {
+          "amount_micros": {
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "discount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Micros"
+          },
+          "fx_rate_to_base": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate To Base"
+          },
+          "gross_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Micros"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product"
+          },
+          "provider_reported": {
+            "title": "Provider Reported",
+            "type": "boolean"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "scope_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Label"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "vendor_id": {
+            "title": "Vendor Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "vendor_id",
+          "category",
+          "description",
+          "amount_micros",
+          "currency",
+          "fx_rate_to_base",
+          "period_start",
+          "period_end",
+          "phase_id",
+          "source",
+          "source_ref",
+          "gross_micros",
+          "discount_micros",
+          "quantity",
+          "unit",
+          "scope_label",
+          "sku",
+          "product",
+          "provider_reported",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "CostEntryRead",
+        "type": "object"
+      },
+      "CostEntryUpdate": {
+        "additionalProperties": false,
+        "description": "Partial: a field left out is unchanged; ``null`` clears a nullable one.\nOn a provider-reported row only ``phase_id`` and ``fx_rate_to_base``.",
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": -9007199254740991.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai",
+                  "cloud",
+                  "source_hosting",
+                  "saas",
+                  "labour",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "fx_rate_to_base": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 10000000000.0,
+                    "exclusiveMinimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 18,
+                  "scale": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate To Base"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          }
+        },
+        "title": "CostEntryUpdate",
+        "type": "object"
+      },
+      "CostEstimateFigure": {
+        "description": "An estimated amount in the base currency: the primary tier, with the\nlow\u2013high band across tiers when the estimate has more than one.",
+        "properties": {
+          "high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Micros"
+          },
+          "low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Micros"
+          },
+          "micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Micros"
+          }
+        },
+        "required": [
+          "micros",
+          "low_micros",
+          "high_micros"
+        ],
+        "title": "CostEstimateFigure",
+        "type": "object"
+      },
+      "CostKpis": {
+        "properties": {
+          "last_month": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "run_rate": {
+            "$ref": "#/components/schemas/CostRunRate"
+          },
+          "this_month": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "total_to_date": {
+            "$ref": "#/components/schemas/CostAmount"
+          }
+        },
+        "required": [
+          "this_month",
+          "last_month",
+          "total_to_date",
+          "run_rate"
+        ],
+        "title": "CostKpis",
+        "type": "object"
+      },
+      "CostLimitLine": {
+        "description": "The project's monthly spend limit \u2014 the org-wide spend rule's\n``monthly_ceiling_micros`` \u2014 in the base currency. Its CURRENT value: a\nlimit changed mid-history is drawn at today's figure.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "monthly_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Micros"
+          },
+          "rule_currency": {
+            "title": "Rule Currency",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "rule_micros": {
+            "title": "Rule Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule_id",
+          "monthly_micros",
+          "rule_currency",
+          "rule_micros"
+        ],
+        "title": "CostLimitLine",
+        "type": "object"
+      },
       "CostLineRead": {
         "properties": {
           "basis": {
@@ -11693,6 +12582,393 @@
         "title": "CostLineWrite",
         "type": "object"
       },
+      "CostPhaseActual": {
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "first_activity": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Activity"
+          },
+          "last_activity": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity"
+          },
+          "people": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "People"
+          },
+          "person_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Days"
+          }
+        },
+        "required": [
+          "cost",
+          "person_days",
+          "people",
+          "actual_start",
+          "actual_end",
+          "first_activity",
+          "last_activity"
+        ],
+        "title": "CostPhaseActual",
+        "type": "object"
+      },
+      "CostPhaseComparison": {
+        "properties": {
+          "actual": {
+            "$ref": "#/components/schemas/CostPhaseActual"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "difference_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Micros"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/CostPhaseEstimate"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phase_id": {
+            "title": "Phase Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase_id",
+          "code",
+          "name",
+          "sort_order",
+          "estimate",
+          "actual",
+          "difference_micros"
+        ],
+        "title": "CostPhaseComparison",
+        "type": "object"
+      },
+      "CostPhaseEstimate": {
+        "properties": {
+          "allocated_fte": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Fte",
+            "type": "string"
+          },
+          "contingency": {
+            "$ref": "#/components/schemas/CostEstimateFigure"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostEstimateFigure"
+          },
+          "labour": {
+            "$ref": "#/components/schemas/CostEstimateFigure"
+          },
+          "non_labour_high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Labour High Micros"
+          },
+          "non_labour_low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Labour Low Micros"
+          },
+          "person_days": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Person Days",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          }
+        },
+        "required": [
+          "labour",
+          "contingency",
+          "non_labour_low_micros",
+          "non_labour_high_micros",
+          "cost",
+          "person_days",
+          "allocated_fte",
+          "planned_start",
+          "planned_end"
+        ],
+        "title": "CostPhaseEstimate",
+        "type": "object"
+      },
+      "CostPhaseRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "span_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span End"
+          },
+          "span_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Start"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "sort_order",
+          "span_start",
+          "span_end"
+        ],
+        "title": "CostPhaseRef",
+        "type": "object"
+      },
+      "CostRunRate": {
+        "description": "Trailing-twelve-month actual cost, annualised. With less history than a\nyear, annualised from the days there are (``short_history``).",
+        "properties": {
+          "annual_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Micros"
+          },
+          "basis_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis Days"
+          },
+          "basis_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis From"
+          },
+          "basis_to": {
+            "format": "date",
+            "title": "Basis To",
+            "type": "string"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "short_history": {
+            "title": "Short History",
+            "type": "boolean"
+          },
+          "unknown": {
+            "items": {
+              "$ref": "#/components/schemas/CostUnknown"
+            },
+            "title": "Unknown",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annual_micros",
+          "partial",
+          "unknown",
+          "basis_from",
+          "basis_to",
+          "basis_days",
+          "short_history"
+        ],
+        "title": "CostRunRate",
+        "type": "object"
+      },
+      "CostSeriesPoint": {
+        "description": "One bar segment: ``series`` (a vendor id, or ``labour``) under ``key``\n(a ``YYYY-MM`` month, a vendor id, a category, or a phase id /\n``unphased``).",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Micros"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "series": {
+            "title": "Series",
+            "type": "string"
+          },
+          "unknown": {
+            "items": {
+              "$ref": "#/components/schemas/CostUnknown"
+            },
+            "title": "Unknown",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "series",
+          "micros",
+          "partial",
+          "unknown"
+        ],
+        "title": "CostSeriesPoint",
+        "type": "object"
+      },
       "CostTrendDataPoint": {
         "description": "Single data point in cost trend.",
         "properties": {
@@ -11786,6 +13062,302 @@
           "overall_stats"
         ],
         "title": "CostTrendResponse",
+        "type": "object"
+      },
+      "CostUnknown": {
+        "description": "One part a figure does not contain, and why.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "part": {
+            "enum": [
+              "vendor",
+              "labour",
+              "fx",
+              "history",
+              "nothing"
+            ],
+            "title": "Part",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "part",
+          "reason",
+          "detail"
+        ],
+        "title": "CostUnknown",
+        "type": "object"
+      },
+      "CostUnphasedActual": {
+        "properties": {
+          "cost": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "estimate_non_labour_high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Non Labour High Micros"
+          },
+          "estimate_non_labour_low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Non Labour Low Micros"
+          },
+          "person_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Days"
+          }
+        },
+        "required": [
+          "cost",
+          "person_days",
+          "estimate_non_labour_low_micros",
+          "estimate_non_labour_high_micros"
+        ],
+        "title": "CostUnphasedActual",
+        "type": "object"
+      },
+      "CostVendorRef": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "connector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "connector",
+          "status",
+          "status_reason"
+        ],
+        "title": "CostVendorRef",
+        "type": "object"
+      },
+      "CostsSummary": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison_unavailable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostUnknown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data From"
+          },
+          "from": {
+            "format": "date",
+            "title": "From",
+            "type": "string"
+          },
+          "fx": {
+            "$ref": "#/components/schemas/FxReport"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "group_by": {
+            "enum": [
+              "month",
+              "vendor",
+              "category",
+              "phase"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "kpis": {
+            "$ref": "#/components/schemas/CostKpis"
+          },
+          "labour": {
+            "$ref": "#/components/schemas/LabourSummary"
+          },
+          "labour_billing": {
+            "enum": [
+              "unbilled",
+              "day_rates",
+              "fixed_fee"
+            ],
+            "title": "Labour Billing",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostLimitLine"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/CostPhaseRef"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/CostSeriesPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "to": {
+            "format": "date",
+            "title": "To",
+            "type": "string"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CostAmount"
+          },
+          "vendors": {
+            "items": {
+              "$ref": "#/components/schemas/CostVendorRef"
+            },
+            "title": "Vendors",
+            "type": "array"
+          },
+          "view": {
+            "enum": [
+              "amortized",
+              "charged"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_currency",
+          "labour_billing",
+          "view",
+          "group_by",
+          "from",
+          "to",
+          "today",
+          "generated_at",
+          "data_from",
+          "vendors",
+          "phases",
+          "series",
+          "totals",
+          "kpis",
+          "limit",
+          "labour",
+          "fx",
+          "comparison",
+          "comparison_unavailable"
+        ],
+        "title": "CostsSummary",
         "type": "object"
       },
       "CoverageData": {
@@ -17613,6 +19185,463 @@
         "title": "EditCommandResponse",
         "type": "object"
       },
+      "EffortEntriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/EffortEntryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "EffortEntriesItem",
+        "type": "object"
+      },
+      "EffortEntriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EffortEntryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "EffortEntriesList",
+        "type": "object"
+      },
+      "EffortEntryCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "hours": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1000.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 24.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Hours",
+            "x-numeric": {
+              "precision": 5,
+              "scale": 2
+            }
+          },
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "person": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person"
+          },
+          "person_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person User Id"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "role_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Code"
+          },
+          "task_number": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Number"
+          },
+          "work_date": {
+            "format": "date",
+            "title": "Work Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_date",
+          "hours"
+        ],
+        "title": "EffortEntryCreate",
+        "type": "object"
+      },
+      "EffortEntryRead": {
+        "properties": {
+          "cost_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Micros"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "hours": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Hours",
+            "type": "string"
+          },
+          "hours_per_day_used": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day Used"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "person": {
+            "title": "Person",
+            "type": "string"
+          },
+          "person_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person User Id"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "rate_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Currency"
+          },
+          "rate_micros_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Micros Used"
+          },
+          "role_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Code"
+          },
+          "task_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Number"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "work_date": {
+            "format": "date",
+            "title": "Work Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "work_date",
+          "person",
+          "person_user_id",
+          "hours",
+          "role_code",
+          "phase_id",
+          "task_number",
+          "note",
+          "rate_micros_used",
+          "rate_currency",
+          "hours_per_day_used",
+          "cost_micros",
+          "editable",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "EffortEntryRead",
+        "type": "object"
+      },
+      "EffortEntryUpdate": {
+        "additionalProperties": false,
+        "description": "Partial: a field left out is unchanged; ``null`` clears a nullable one.",
+        "properties": {
+          "hours": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000.0,
+                    "exclusiveMinimum": 0.0,
+                    "maximum": 24.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 5,
+                  "scale": 2
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "person": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person"
+          },
+          "person_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person User Id"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "role_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Code"
+          },
+          "task_number": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Number"
+          },
+          "work_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Date"
+          }
+        },
+        "title": "EffortEntryUpdate",
+        "type": "object"
+      },
       "ElementAnnotation": {
         "description": "Element annotation for backend storage.",
         "properties": {
@@ -20213,6 +22242,37 @@
           "created_at"
         ],
         "title": "EvaluationExperimentResponse",
+        "type": "object"
+      },
+      "ExcludedLabourEntries": {
+        "description": "``labour`` cost entries the billing setting leaves out of actual cost\n(under ``unbilled`` and ``day_rates``) \u2014 reported, never silently\ndropped.",
+        "properties": {
+          "base_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Micros"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "base_micros",
+          "detail"
+        ],
+        "title": "ExcludedLabourEntries",
         "type": "object"
       },
       "ExecutionContext": {
@@ -24510,6 +26570,138 @@
         "title": "FunctionStats",
         "type": "object"
       },
+      "FxApplied": {
+        "description": "One rate a read used, and how much it converted.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "base_micros": {
+            "title": "Base Micros",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "original_micros": {
+            "title": "Original Micros",
+            "type": "integer"
+          },
+          "rate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "entry",
+              "settings"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "source",
+          "rate",
+          "rows",
+          "original_micros",
+          "base_micros"
+        ],
+        "title": "FxApplied",
+        "type": "object"
+      },
+      "FxMissing": {
+        "description": "A currency a read could NOT convert; its amounts are in no total.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "original_micros": {
+            "title": "Original Micros",
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "no_rate",
+              "unreadable_rate"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "reason",
+          "detail",
+          "rows",
+          "original_micros"
+        ],
+        "title": "FxMissing",
+        "type": "object"
+      },
+      "FxReport": {
+        "description": "Every conversion this read applied, and every currency it could not\nconvert. Covers every figure in the response (the all-time ones too).",
+        "properties": {
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/FxApplied"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/FxMissing"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "unreadable": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Unreadable",
+            "type": "object"
+          }
+        },
+        "required": [
+          "base_currency",
+          "applied",
+          "missing",
+          "unreadable"
+        ],
+        "title": "FxReport",
+        "type": "object"
+      },
       "GateDoctorSweepRequest": {
         "description": "Body for ``POST /admin-dev/gates/doctor/sweep``.\n\nMirrors coord's ``GateDoctorSweepRequest`` defaults verbatim\n(``qontinui-coord/src/api/gate_routes.rs``): dry-run-first, and the\n``land_backfill`` sweep mode (re-clear ``failed`` ``pr_merged``-on-coord\ngates whose work actually landed). ``mode`` is passed through unvalidated\nso coord remains the single authority on the mode set \u2014 an unknown mode\nis coord's ``400`` to raise, not the web layer's.",
         "properties": {
@@ -28045,6 +30237,104 @@
         "title": "LLMMetrics",
         "type": "object"
       },
+      "LabourSummary": {
+        "properties": {
+          "billing": {
+            "enum": [
+              "unbilled",
+              "day_rates",
+              "fixed_fee"
+            ],
+            "title": "Billing",
+            "type": "string"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostAmount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "excluded_cost_entries": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExcludedLabourEntries"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hours": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours"
+          },
+          "people": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "People"
+          },
+          "person_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Days"
+          },
+          "status": {
+            "enum": [
+              "not_billed",
+              "day_rates",
+              "fixed_fee"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unpriced_entries": {
+            "title": "Unpriced Entries",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "billing",
+          "status",
+          "detail",
+          "cost",
+          "hours",
+          "person_days",
+          "people",
+          "unpriced_entries",
+          "excluded_cost_entries"
+        ],
+        "title": "LabourSummary",
+        "type": "object"
+      },
       "LearnedWorkflowResponse": {
         "description": "Schema for learned workflow response.",
         "properties": {
@@ -28159,6 +30449,320 @@
           "published_info"
         ],
         "title": "LearnedWorkflowResponse",
+        "type": "object"
+      },
+      "LedgerPage": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "from": {
+            "format": "date",
+            "title": "From",
+            "type": "string"
+          },
+          "fx_applied": {
+            "items": {
+              "$ref": "#/components/schemas/FxApplied"
+            },
+            "title": "Fx Applied",
+            "type": "array"
+          },
+          "fx_missing": {
+            "items": {
+              "$ref": "#/components/schemas/FxMissing"
+            },
+            "title": "Fx Missing",
+            "type": "array"
+          },
+          "labour_billing": {
+            "title": "Labour Billing",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "to": {
+            "format": "date",
+            "title": "To",
+            "type": "string"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_currency",
+          "labour_billing",
+          "from",
+          "to",
+          "rows",
+          "total_rows",
+          "offset",
+          "limit",
+          "fx_applied",
+          "fx_missing"
+        ],
+        "title": "LedgerPage",
+        "type": "object"
+      },
+      "LedgerRow": {
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "base_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Micros"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "counted_as": {
+            "enum": [
+              "vendor",
+              "labour",
+              "excluded_labour",
+              "time_only"
+            ],
+            "title": "Counted As",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "fx_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate"
+          },
+          "fx_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "entry",
+                  "settings"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Source"
+          },
+          "hours": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "cost",
+              "recurring",
+              "effort"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "person": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person"
+          },
+          "phase_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Code"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "provider_reported": {
+            "title": "Provider Reported",
+            "type": "boolean"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "role_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Code"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          },
+          "vendor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "resource",
+          "id",
+          "date",
+          "period_end",
+          "vendor_id",
+          "vendor_name",
+          "category",
+          "description",
+          "source",
+          "amount_micros",
+          "currency",
+          "fx_rate",
+          "fx_source",
+          "base_micros",
+          "phase_id",
+          "phase_code",
+          "person",
+          "hours",
+          "role_code",
+          "counted_as",
+          "provider_reported",
+          "editable",
+          "version"
+        ],
+        "title": "LedgerRow",
         "type": "object"
       },
       "LifecycleHoldResponse": {
@@ -41793,6 +44397,72 @@
           "name"
         ],
         "title": "RoleWrite",
+        "type": "object"
+      },
+      "RunCostLine": {
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Micros"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Micros"
+          },
+          "run_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Model"
+          }
+        },
+        "required": [
+          "label",
+          "run_model",
+          "basis",
+          "low_micros",
+          "high_micros",
+          "currency"
+        ],
+        "title": "RunCostLine",
         "type": "object"
       },
       "RunStatus": {
@@ -101343,6 +104013,870 @@
         "summary": "Read Change Log",
         "tags": [
           "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/effort-entries": {
+      "get": {
+        "operationId": "api_v1_overview_costs_effort_entries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortEntriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Effort Entries",
+        "tags": [
+          "overview",
+          "overview:costs/effort-entries"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_costs_effort_entries_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffortEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Effort Entries",
+        "tags": [
+          "overview",
+          "overview:costs/effort-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/effort-entries/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_costs_effort_entries_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Effort Entries",
+        "tags": [
+          "overview",
+          "overview:costs/effort-entries"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_costs_effort_entries_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Effort Entries",
+        "tags": [
+          "overview",
+          "overview:costs/effort-entries"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_costs_effort_entries_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffortEntryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Effort Entries",
+        "tags": [
+          "overview",
+          "overview:costs/effort-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/entries": {
+      "get": {
+        "operationId": "api_v1_overview_costs_entries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cost Entries",
+        "tags": [
+          "overview",
+          "overview:costs/entries"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_costs_entries_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cost Entries",
+        "tags": [
+          "overview",
+          "overview:costs/entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/entries/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_costs_entries_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cost Entries",
+        "tags": [
+          "overview",
+          "overview:costs/entries"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_costs_entries_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cost Entries",
+        "tags": [
+          "overview",
+          "overview:costs/entries"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_costs_entries_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Cost Entries",
+        "tags": [
+          "overview",
+          "overview:costs/entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/ledger": {
+      "get": {
+        "description": "Every cost entry, recurring charge and time entry in the window,\nnewest first. JSON is paged (``limit``/``offset``); ``format=csv``\nexports every matching row (up to 100,000, ``X-Ledger-Truncated`` when\nthere were more).",
+        "operationId": "api_v1_overview_costs_ledger_get",
+        "parameters": [
+          {
+            "description": "Default: 365 days before `to`.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Default: 365 days before `to`.",
+              "title": "From"
+            }
+          },
+          {
+            "description": "Default: today.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Default: today.",
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "money",
+                "cost",
+                "recurring",
+                "effort"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vendor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "description": "A phase id, or `none` for rows naming no phase.",
+            "in": "query",
+            "name": "phase_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A phase id, or `none` for rows naming no phase.",
+              "title": "Phase Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "manual",
+                    "connector",
+                    "recurring",
+                    "effort"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerPage"
+                }
+              },
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Ledger",
+        "tags": [
+          "overview",
+          "overview:costs"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/summary": {
+      "get": {
+        "description": "Actual cost in the base currency, and the estimate beside it.\n\nUnknown is ``null`` with a reason, never 0; every conversion applied is\nlisted under ``fx``.",
+        "operationId": "api_v1_overview_costs_summary_get",
+        "parameters": [
+          {
+            "description": "First day of the window; default the first day of the month eleven months before `to` (twelve months).",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First day of the window; default the first day of the month eleven months before `to` (twelve months).",
+              "title": "From"
+            }
+          },
+          {
+            "description": "Last day; default today.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last day; default today.",
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "month",
+              "enum": [
+                "month",
+                "vendor",
+                "category",
+                "phase"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "amortized",
+              "enum": [
+                "amortized",
+                "charged"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The estimate to compare with; default the baseline.",
+            "in": "query",
+            "name": "estimate_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The estimate to compare with; default the baseline.",
+              "title": "Estimate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostsSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Costs Summary",
+        "tags": [
+          "overview",
+          "overview:costs"
         ]
       }
     },
