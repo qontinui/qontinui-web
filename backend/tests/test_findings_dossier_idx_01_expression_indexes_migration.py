@@ -21,9 +21,9 @@ Asserted
 5. Downgrade drops the three indexes and keeps the rows; upgrade works again.
 6. The TRAP: an INVALID index (killed CONCURRENTLY build) is skipped by a rerun
    of the upgrade and the revision is stamped applied; dropping it alone leaves
-   it missing (``upgrade head`` is a no-op). The DOCUMENTED recovery (detection
-   query, drop, then ``stamp`` back or ``downgrade -1``, then ``upgrade head``)
-   repairs it.
+   it missing (upgrading to this revision is a no-op). The DOCUMENTED recovery
+   (detection query, drop, then stamp back to the parent or downgrade one step,
+   then upgrade this revision; ``-1`` / ``head`` only while it is head) repairs it.
 7. Every expression is total, including for 4000-char readiness / slug ref /
    topic suffix (NULL, not a btree size error) and object-valued refs.
 """
@@ -554,7 +554,8 @@ def test_findings_dossier_idx_01_expression_indexes() -> None:
             "IF NOT EXISTS skips an invalid index and the revision is stamped"
         )
         #    Documented recovery: detect, drop, step the stamp back, upgrade.
-        #    The drop alone does nothing: upgrade head is a no-op when stamped.
+        #    The drop alone does nothing: upgrading to this revision is a no-op
+        #    while it is stamped.
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(
                 text(
@@ -578,6 +579,9 @@ def test_findings_dossier_idx_01_expression_indexes() -> None:
         #    Alternative documented step: downgrade one step instead of stamp
         #    ("downgrade -1" while this revision is head; spelled as the parent
         #    here so the step still targets this revision once it is not).
+        #    TEST DB ONLY: it stops at this revision. On a real database with
+        #    descendants, `downgrade mdroles_01` would also undo every later
+        #    revision; use the revision's documented stamp recipe there.
         _invalidate(engine, "idx_findings_dossier_recurrence")
         assert _invalid_names(engine) == ["idx_findings_dossier_recurrence"]
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
