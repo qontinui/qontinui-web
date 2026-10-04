@@ -430,15 +430,16 @@ def test_tables_columns_and_security_checks() -> None:
 
         # Leases: one runner name, a bounded name and slot, a known state.
         _lease(engine, t=tenant_id, a=agent_id, p=pool_id, n="h-p-0-abcd1234")
-        for bad in (
+        bad_leases: tuple[dict[str, object], ...] = (
             {"s": 5, "n": "h-p-0-abcd1234"},  # duplicate runner name
             {"s": 6, "n": "x" * 64},  # > 63 chars
             {"s": 1024, "n": "n1024"},
             {"s": -1, "n": "nneg"},
             {"s": 7, "n": "nstate", "st": "running"},
-        ):
+        )
+        for bad_lease in bad_leases:
             with pytest.raises(sqlalchemy.exc.IntegrityError):
-                _lease(engine, t=tenant_id, a=agent_id, p=pool_id, **bad)
+                _lease(engine, t=tenant_id, a=agent_id, p=pool_id, **bad_lease)
 
         _exec(
             engine,
