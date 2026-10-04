@@ -21,9 +21,11 @@ import {
 import {
   FRESHNESS_PALETTE,
   freshnessStatus,
+  gpuIndexLabel,
   gpuText,
   gpuTitle,
   gpusNote,
+  groupGpus,
   historyPoints,
   laneDiskUsed,
   laneFreshness,
@@ -111,10 +113,12 @@ export function ReadIssueBanner({
 }
 
 /**
- * The GPU stats: one `gpu` badge per GPU (`model · VRAM`, vendor / driver /
- * compute capability on hover), `none` for a MEASURED empty list, and
- * `unknown` for `null` or a shape this page cannot read — never `0` or `none`
- * for a GPU set nobody measured.
+ * The GPU stats: one `gpu` badge per distinct GPU (`model · VRAM`, prefixed
+ * `N ×` when identical GPUs are grouped; positions, vendor / driver / compute
+ * capability on hover), `none` for a MEASURED empty list, and `unknown` for
+ * `null` or a shape this page cannot read — never `0` or `none` for a GPU set
+ * nobody measured. A group's test id carries its FIRST GPU's index, so ids
+ * skip the positions a group absorbed (`[A, A, B]` → `gpu-0`, `gpu-2`).
  */
 export function gpuStats(r: GpusReading): Stat[] {
   switch (r.kind) {
@@ -151,16 +155,20 @@ export function gpuStats(r: GpusReading): Stat[] {
         },
       ];
     case "gpus":
-      return r.gpus.map(
-        (g, i): Stat => ({
-          key: `gpu-${i}`,
+      return groupGpus(r.gpus).map(({ gpu: g, indices }): Stat => {
+        const first = indices[0];
+        return {
+          key: `gpu-${first}`,
           label: "gpu",
-          value: gpuText(g),
+          value:
+            indices.length > 1
+              ? `${indices.length} × ${gpuText(g)}`
+              : gpuText(g),
           tone: g.model === null && g.vramBytes === null ? "muted" : "default",
-          title: gpuTitle(g),
-          "data-testid": `coord-computer-gpu-${i}`,
-        })
-      );
+          title: `${gpuIndexLabel(indices)} · ${gpuTitle(g)}`,
+          "data-testid": `coord-computer-gpu-${first}`,
+        };
+      });
   }
 }
 
