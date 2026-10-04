@@ -298,11 +298,59 @@ describe("poolRowStatus — colour means who must act", () => {
     expect(s.attention).toBe("author");
   });
 
-  it("an open ci_job_queue_stalled alert on a MEASURED pool is red", () => {
+  it("a stall alert the current reading CONFIRMS is red, with the alert's age as reason", () => {
     const s = poolRowStatus(
-      pool({ open_alerts: [alertFx("ci_job_queue_stalled")] })
+      pool({
+        queued_jobs: 14,
+        oldest_queued_age_secs: 11520,
+        threshold_secs: 1800,
+        open_alerts: [alertFx("ci_job_queue_stalled")],
+      })
     );
     expect(s.kind).toBe("queue_stalled");
+    expect(s.attention).toBe("author");
+    expect(s.reason).toContain("fired 2026-10-03T09:00:00Z");
+    expect(s.reason).toContain("14 queued");
+  });
+
+  it.each([
+    ["nothing queued", { queued_jobs: 0, oldest_queued_age_secs: null }],
+    ["queue within bound", { queued_jobs: 3, oldest_queued_age_secs: 60 }],
+    [
+      "no bound reported",
+      { queued_jobs: 3, oldest_queued_age_secs: 9000, threshold_secs: null },
+    ],
+    ["no oldest age", { queued_jobs: 3, oldest_queued_age_secs: null }],
+  ] as const)(
+    "a stall alert on a measured pool whose reading shows %s is amber alert_contradicted",
+    (_label, over) => {
+      const s = poolRowStatus(
+        pool({ ...over, open_alerts: [alertFx("ci_job_queue_stalled")] })
+      );
+      expect(s.kind).toBe("alert_contradicted");
+      expect(s.attention).toBe("waiting");
+      expect(s.label).toBe("alert open · reading clear");
+      expect(s.reason).toContain("fired 2026-10-03T09:00:00Z");
+    }
+  );
+
+  it("a no-eligible-runner alert on a pool that reads eligible is amber alert_contradicted", () => {
+    const s = poolRowStatus(
+      pool({ open_alerts: [alertFx("ci_pool_no_eligible_runner")] })
+    );
+    expect(s.kind).toBe("alert_contradicted");
+    expect(s.attention).toBe("waiting");
+  });
+
+  it("a no-eligible-runner alert the reading confirms (required pool) is red", () => {
+    const s = poolRowStatus(
+      pool({
+        eligibility_state: "no_eligible_runner",
+        eligible_runners: 0,
+        open_alerts: [alertFx("ci_pool_no_eligible_runner")],
+      })
+    );
+    expect(s.kind).toBe("no_eligible_runner");
     expect(s.attention).toBe("author");
   });
 
@@ -626,6 +674,25 @@ describe("deriveCiHealth — an open alert drives red only on a measured pool", 
     expect(h.headline).toMatch(/^Stuck: \[qontinui-ccfg, self-hosted\]/);
   });
 
+  it("a stall alert the reading contradicts never drives the strip red", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          pools: [
+            pool({
+              queued_jobs: 0,
+              open_alerts: [alertFx("ci_job_queue_stalled")],
+            }),
+          ],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).not.toMatch(/Stuck/);
+  });
+
   it.each(POOL_NON_MEASURED)(
     "open alerts on a %s pool render UNKNOWN with their age — never red, never 'Stuck'",
     (state) => {
@@ -662,6 +729,99 @@ describe("deriveCiHealth — an open alert drives red only on a measured pool", 
       expect(h.badges.find((b) => b.key === "stuck")).toBeUndefined();
     }
   );
+});
+
+describe("deriveCiHealth — a stuck pool on a stale read is not current", () => {
+  const stuckPool = pool({
+    eligibility_state: "no_eligible_runner",
+    eligible_runners: 0,
+    queued_jobs: 14,
+  });
+
+  it("a failed refresh turns 'Stuck' into UNKNOWN 'Last read showed …', keeping the stuck badge", () => {
+    const h = deriveCiHealth(
+      read(overview({ pools: [stuckPool] }), true),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/^Last read showed \[qontinui, self-hosted\]/);
+    expect(h.headline).toMatch(/— not current$/);
+    expect(h.badges.find((b) => b.key === "stuck")?.label).toBe("stuck 1");
+  });
+
+  it("an overview older than three polls does the same", () => {
+    const h = deriveCiHealth(
+      read(overview({ pools: [stuckPool], as_of: "2026-10-04T11:00:00Z" })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/^Last read showed/);
+  });
+
+  it("the same pool on a current read is red", () => {
+    expect(
+      deriveCiHealth(read(overview({ pools: [stuckPool] })), status(), NOW)
+        .level
+    ).toBe("red");
+  });
+});
+
+describe("deriveCiHealth — green needs every repo row known", () => {
+  it("a repo in the overview with no CI-status row blocks green", () => {
+    const h = deriveCiHealth(
+      read(overview({ repos: [repo(), repo({ repo: "a/other" })] })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/UNKNOWN for 1 repo/);
+  });
+
+  it("a CI-status repo with no outcome row blocks green", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow(), ciRow({ repo: "a/other" })]),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+  });
+
+  it("a repo with unmeasured outcomes blocks green (never green beside a – badge)", () => {
+    const h = deriveCiHealth(
+      read(overview({ repos: [repo({ state: "stale", outcomes: null })] })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.badges.find((b) => b.key === "content-fail")?.label).toBe(
+      `content fail 24h ${DASH}`
+    );
+  });
+
+  it("no repos at all is UNKNOWN", () => {
+    const h = deriveCiHealth(read(overview({ repos: [] })), status([]), NOW);
+    expect(h.level).toBe("unknown");
+  });
+});
+
+describe("pool group freshness is the OLDEST member's", () => {
+  it("takes the minimum observed_at", () => {
+    const [g] = groupPools([
+      pool({ repo: "a/one", observed_at: "2026-10-04T12:07:00Z" }),
+      pool({ repo: "a/two", observed_at: "2026-10-04T11:50:00Z" }),
+    ]);
+    expect(g?.observedAt).toBe("2026-10-04T11:50:00Z");
+  });
+
+  it("is null when any member is undated", () => {
+    const [g] = groupPools([
+      pool({ repo: "a/one", observed_at: "2026-10-04T12:07:00Z" }),
+      pool({ repo: "a/two", observed_at: null }),
+    ]);
+    expect(g?.observedAt).toBeNull();
+  });
 });
 
 describe("the 2026-10-04T12:08Z capture — UNKNOWN capacity, not '0 runners'", () => {

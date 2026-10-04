@@ -19,7 +19,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { RepoCiRow } from "@/components/operations/types";
 
 vi.mock("next/navigation", () => ({
@@ -279,6 +285,53 @@ describe("/admin/coord/ci", () => {
       "pool not measured since the alert fired"
     );
     expect(screen.getByTestId("ci-freshness-alert-918273")).toBeTruthy();
+  });
+
+  it("drives data-ci-health=red for a measured required pool with no eligible runner", async () => {
+    route(
+      overviewBody([
+        measuredPool({
+          eligibility_state: "no_eligible_runner",
+          eligible_runners: 0,
+          queued_jobs: 14,
+        }),
+      ])
+    );
+    render(<CoordCiPage />);
+    await screen.findByTestId("ci-pool-row-qontinui,self-hosted");
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "red"
+    );
+    expect(
+      screen.getByTestId("ci-health-strip").getAttribute("data-health-level")
+    ).toBe("red");
+    expect(screen.getByTestId("ci-health-strip").textContent).toContain(
+      "Stuck: [qontinui, self-hosted]"
+    );
+  });
+
+  it("drives data-ci-health=amber for a measured pool over its bound with no alert", async () => {
+    route(
+      overviewBody([
+        measuredPool({ queued_jobs: 3, oldest_queued_age_secs: 4000 }),
+      ])
+    );
+    render(<CoordCiPage />);
+    await screen.findByTestId("ci-pool-row-qontinui,self-hosted");
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "amber"
+    );
+    expect(screen.getByTestId("ci-health-strip").textContent).toContain(
+      "Waiting:"
+    );
+  });
+
+  it("renders candidate CI p90 from the economics read", async () => {
+    route(overviewBody([measuredPool()]));
+    render(<CoordCiPage />);
+    const row = await screen.findByTestId(`ci-repo-row-${WEB}`);
+    // 600 s from the economics fixture.
+    await waitFor(() => expect(row.textContent).toContain("cand. p90 10m"));
   });
 
   it("links the machine axis to the Dev Ops overview", async () => {

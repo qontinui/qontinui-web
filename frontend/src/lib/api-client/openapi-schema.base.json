@@ -8298,7 +8298,6 @@
           "as_of": {
             "anyOf": [
               {
-                "format": "date-time",
                 "type": "string"
               },
               {
@@ -40963,7 +40962,7 @@
         "type": "object"
       },
       "RepoCiRow": {
-        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /\n``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.\n``vacuously_green`` is coord's zero-baseline arm \u2014 no required check has\never reported on main, so \"green\" is an absence of evidence, not a pass.\n\nThe two ``*_observed_at`` stamps are the freshness of the facts the row\ncarries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):\n``main_verdict_observed_at`` is ``max(updated_at)`` over the\n``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``\nis the newest ``pr_check_runs`` row counted. They MUST be declared here:\n``response_model`` filtering drops every undeclared key, so an undeclared\nstamp would leave the page an unbounded read of \"the latest observation\"\nwith no way to say how old it is. ``None`` is coord saying it has no\nobservation to date the value by (the vacuously-green / memo arms, or no\nchecks at all) \u2014 and also an older coord that sends no stamp; both read\nas UNKNOWN freshness on the page, never as \"just now\".",
+        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /\n``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.\n``vacuously_green`` is coord's zero-baseline arm \u2014 no required check has\never reported on main, so \"green\" is an absence of evidence, not a pass.\n\nThe two ``*_observed_at`` stamps are the freshness of the facts the row\ncarries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):\n``main_verdict_observed_at`` is ``max(updated_at)`` over the\n``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``\nis the newest ``pr_check_runs`` row counted. They MUST be declared here:\n``response_model`` filtering drops every undeclared key, so an undeclared\nstamp would leave the page an unbounded read of \"the latest observation\"\nwith no way to say how old it is. ``None`` is coord saying it has no\nobservation to date the value by (the vacuously-green / memo arms, or no\nchecks at all) \u2014 and also an older coord that sends no stamp; both read\nas UNKNOWN freshness on the page, never as \"just now\".\n\nThe stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339\ntext reaches the page byte-for-byte (no re-serialisation that rewrites\nthe offset or the precision), and a value this model cannot parse is\nstill delivered rather than 500-ing the whole read.",
         "properties": {
           "latest_details_url": {
             "anyOf": [
@@ -40995,7 +40994,6 @@
           "main_verdict_observed_at": {
             "anyOf": [
               {
-                "format": "date-time",
                 "type": "string"
               },
               {
@@ -41016,7 +41014,6 @@
           "pr_checks_observed_at": {
             "anyOf": [
               {
-                "format": "date-time",
                 "type": "string"
               },
               {

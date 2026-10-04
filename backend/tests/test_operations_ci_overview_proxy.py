@@ -249,11 +249,11 @@ class TestCiStatusFreshness:
         assert resp.status_code == 200
         assert instance.get.call_args.args[0].endswith("/coord/ci/status")
         body = resp.json()
-        assert body["as_of"] is not None
-        assert body["as_of"].startswith("2026-10-04T12:08:00")
+        # str pass-through: coord's RFC 3339 text arrives byte-for-byte.
+        assert body["as_of"] == "2026-10-04T12:08:00+00:00"
         row = body["repos"][0]
-        assert row["main_verdict_observed_at"].startswith("2026-10-04T12:00:00")
-        assert row["pr_checks_observed_at"].startswith("2026-10-04T12:07:30")
+        assert row["main_verdict_observed_at"] == "2026-10-04T12:00:00+00:00"
+        assert row["pr_checks_observed_at"] == "2026-10-04T12:07:30+00:00"
 
     def test_ci_status_vacuously_green_with_null_stamp(self, auth_client: TestClient):
         """The zero-baseline arm: coord has no baseline to date the verdict

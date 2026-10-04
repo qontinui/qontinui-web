@@ -22,9 +22,11 @@
  *    the amber ignorance floor (style guide R3 "the one exception", R6). A
  *    `0` appears only on a measured row — `0` is a measurement, `–` is not.
  * 2. **Green is unreachable on ignorance.** The strip is never green while
- *    any pool on a required path is not `measured`, while any pool's
- *    `required` is `null` (we cannot tell whether it is on a required path),
- *    or while either read the strip is built from failed or never landed.
+ *    ANY pool is not `measured` (required or not — an unmeasured pool's
+ *    required-ness is itself unknown), while any pool's `required` is `null`,
+ *    while any repo lacks a CI-status row, a green/red main or a measured
+ *    outcome split, or while either read the strip is built from failed,
+ *    never landed, or is older than three polls.
  *    UNKNOWN renders UNKNOWN — not "stuck" and not "healthy"
  *    (`[policy: an-unknown-input-must-not-fire-a-detector]`).
  * 3. **Infra-shaped is never folded into content red.** A job that failed
@@ -37,13 +39,15 @@
  *
  * ## Colour means who must act (R3)
  *
- * - **Red** — a REQUIRED pool with no eligible runner, an open
- *   `ci_job_queue_stalled` alert, or red main. Nothing clears these but a
- *   person.
+ * - **Red** — on a CURRENT, measured reading only: a REQUIRED pool with no
+ *   eligible runner, a `ci_job_queue_stalled` alert the reading confirms
+ *   (jobs queued, oldest past its bound), or red main. An alert the reading
+ *   does not confirm is amber (`alert_contradicted` / `alert_unconfirmed`),
+ *   and a stuck pool on a stale read is UNKNOWN ("Last read showed …").
  * - **Amber** — waiting (a queue past its bound, jobs queued with no
  *   eligibility answer) or UNKNOWN (the ignorance floor).
  * - **Green** — only when every pool is measured, every pool's `required` is
- *   known, and nothing above holds.
+ *   known, every repo row is known, and nothing above holds.
  *
  * Everything below is pure and unit-tested (`ciDashboardStatus.test.ts`).
  */
@@ -170,6 +174,8 @@ export const CI_OVERVIEW_STALE_AFTER_SECS = (3 * CI_OVERVIEW_POLL_MS) / 1000;
 
 /** The open-alert kind that is red on its own: coord saw a queue stall. */
 export const QUEUE_STALLED_ALERT = "ci_job_queue_stalled";
+/** Coord's no-eligible-runner alert kind (`ci_pool_alerts.rs`). */
+export const NO_ELIGIBLE_RUNNER_ALERT = "ci_pool_no_eligible_runner";
 
 // ---------------------------------------------------------------------------
 // Readings — one cell, which either carries a number or says why not
@@ -262,6 +268,7 @@ export function cell(
 export type PoolKind =
   | "queue_stalled"
   | "alert_unconfirmed"
+  | "alert_contradicted"
   | "no_eligible_runner"
   | "no_runner_required_unknown"
   | "queue_over_bound"
@@ -281,6 +288,11 @@ export type PoolKind =
  *   `(repo, pool)` AND the pool currently reads `measured`: jobs have waited
  *   past the bound and nothing is taking them. The 130-jobs-vs-2-runners and
  *   hours-queued incidents.
+ * - `alert_contradicted` — WAITING. An alert is open on a MEASURED pool, but
+ *   the current reading does not show what it claims (a stall alert while the
+ *   oldest queued job is within its bound, or nothing is queued; a
+ *   no-eligible-runner alert while the pool reads eligible). The alert is
+ *   coord's to close; the reading says nothing is stuck now, so it is not red.
  * - `alert_unconfirmed` — WAITING (ignorance floor). An alert is open, but
  *   the pool does not currently read `measured`, so nothing confirms the
  *   alert's fire-time numbers still hold. Live on 2026-10-04 coord kept
@@ -312,6 +324,7 @@ export type PoolKind =
 export const CI_POOL_ATTENTION_BY_KIND = {
   queue_stalled: "author",
   alert_unconfirmed: "waiting",
+  alert_contradicted: "waiting",
   no_eligible_runner: "author",
   no_runner_required_unknown: "waiting",
   queue_over_bound: "waiting",
@@ -330,6 +343,7 @@ const CLEAR_GREEN = "bg-green-500/15 text-green-200 border-green-500/30";
 export const CI_POOL_BADGE_CLASS: Record<PoolKind, string> = {
   queue_stalled: AUTHOR_RED,
   alert_unconfirmed: UNKNOWN_AMBER,
+  alert_contradicted: WAITING_AMBER,
   no_eligible_runner: AUTHOR_RED,
   no_runner_required_unknown: UNKNOWN_AMBER,
   queue_over_bound: WAITING_AMBER,
@@ -421,19 +435,28 @@ export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
       `${alertAgeText(firstAlert)}${more}; the pool reads ${state} now (${stateReason(state, row.state_reason)}), so the alert's numbers are not current`
     );
   }
-  const stall = stalledAlert(row);
-  if (stall) {
-    return make(
-      "queue_stalled",
-      "queue stalled",
-      stall.summary || "coord raised a queue-stall alert for this pool"
-    );
-  }
   if (state !== "measured") {
     const label = state === "never_observed" ? "never observed" : state;
     return make(state, label, stateReason(state, row.state_reason));
   }
   const queue = queueSummary(row);
+  // A stall alert drives red only when the CURRENT reading confirms it: jobs
+  // queued and the oldest past its bound. Its fire-time summary is never the
+  // reason on its own — the reason says when it fired and what it saw.
+  const stall = stalledAlert(row);
+  const stallConfirmed =
+    stall !== null &&
+    (row.queued_jobs ?? 0) > 0 &&
+    row.oldest_queued_age_secs !== null &&
+    row.threshold_secs !== null &&
+    row.oldest_queued_age_secs > row.threshold_secs;
+  if (stall && stallConfirmed) {
+    return make(
+      "queue_stalled",
+      "queue stalled",
+      `${queue} now, past the ${formatDuration(row.threshold_secs ?? 0)} bound; ${alertAgeText(stall)}`
+    );
+  }
   if (row.eligibility_state === "no_eligible_runner") {
     const what = `0 eligible runners${queue ? `, ${queue}` : ""}`;
     if (row.required === true) {
@@ -454,6 +477,19 @@ export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
       "no_runner_not_required",
       "no runner (not required)",
       `${what}; no required check runs here, so nothing is blocked — its jobs will not run until a runner is registered`
+    );
+  }
+  // An open alert the current reading does not bear out (a stall alert with
+  // the queue within bound, or a no-runner alert on an eligible pool).
+  const contradicted =
+    stall ??
+    (row.open_alerts ?? []).find((a) => a.kind === NO_ELIGIBLE_RUNNER_ALERT) ??
+    null;
+  if (contradicted) {
+    return make(
+      "alert_contradicted",
+      "alert open · reading clear",
+      `${alertAgeText(contradicted)}; the current reading does not show it (${queue || "nothing queued"}, eligibility ${row.eligibility_state ?? "not reported"})`
     );
   }
   if (
@@ -510,7 +546,11 @@ export interface PoolGroup {
   entries: PoolEntry[];
   /** Worst member state: a group is measured only when every member is. */
   state: ObservationState;
-  /** Newest member `observed_at` (for the row's time slot). */
+  /**
+   * OLDEST member `observed_at` — the group is only as fresh as its stalest
+   * member. `null` when any member has none (undatable), never a newer
+   * member's stamp standing in for it.
+   */
   observedAt: string | null;
   openAlerts: (CiPoolAlertWire & { repo: string })[];
 }
@@ -549,16 +589,20 @@ export function groupPools(pools: CiPoolWire[]): PoolGroup[] {
         : worst.status;
     let state: ObservationState = "measured";
     let observedAt: string | null = null;
+    let anyUndated = false;
     for (const m of members) {
       const s = normalizeState(m.state);
       if (STATE_RANK[s] > STATE_RANK[state]) state = s;
-      if (
-        m.observed_at &&
-        (observedAt === null || m.observed_at > observedAt)
+      if (!m.observed_at) {
+        anyUndated = true;
+      } else if (
+        observedAt === null ||
+        Date.parse(m.observed_at) < Date.parse(observedAt)
       ) {
         observedAt = m.observed_at;
       }
     }
+    if (anyUndated) observedAt = null;
     const openAlerts = members.flatMap((m) =>
       (m.open_alerts ?? []).map((a) => ({ ...a, repo: m.repo }))
     );
@@ -875,7 +919,7 @@ export function repoRowStatus(
   if (
     ci === null ||
     ci.main_verdict === "unknown" ||
-    !(ci.main_verdict in MAIN_VERDICT_TEXT)
+    !Object.hasOwn(MAIN_VERDICT_TEXT, ci.main_verdict)
   ) {
     return make(
       "main_unknown",
@@ -1191,8 +1235,10 @@ export function deriveCiHealth(
     .filter(Boolean)
     .join(" ");
 
-  // RED — someone must act now. Kept even on a stale read: the last good read
-  // showed it and nothing has said it cleared; the detail says it is old.
+  // RED — someone must act now, but only off a CURRENT read. On a stale or
+  // failed overview read the last good read's "stuck" is reported as what it
+  // is — a past reading — at UNKNOWN; the stuck badge stays so the count is
+  // not lost (R6's stale arm keeps counts; the dot says what is true NOW).
   const firstStuck = stuck[0];
   if (firstStuck) {
     const { status: s, member: m } = firstStuck;
@@ -1201,6 +1247,15 @@ export function deriveCiHealth(
       s.kind === "no_eligible_runner"
         ? `has 0 eligible runners${m.queued_jobs !== null ? `, ${m.queued_jobs} queued` : ""}${m.oldest_queued_age_secs !== null ? `, oldest ${formatDuration(m.oldest_queued_age_secs)}` : ""}`
         : `queue stalled${queueSummary(m) ? ` — ${queueSummary(m)}` : ""}`;
+    if (staleRead) {
+      return {
+        level: "unknown",
+        headline: `Last read showed ${poolLabel(m.pool)} on ${m.repo} ${what}${more} — not current`,
+        detail: qualifiers || null,
+        badges,
+        pools,
+      };
+    }
     return {
       level: "red",
       headline: `Stuck: ${poolLabel(m.pool)} on ${m.repo} ${what}${more}`,
@@ -1265,6 +1320,23 @@ export function deriveCiHealth(
       pools,
     };
   }
+  // Repos: green also needs every repo's own row to be known — a CI-status
+  // row, a green/red main, and a measured outcome split. A repo the strip
+  // cannot vouch for would otherwise sit as a `–` badge beside a green dot.
+  const repoNames = new Map<string, string>();
+  for (const r of ciStatus.rows) repoNames.set(r.repo.toLowerCase(), r.repo);
+  for (const r of data.repos) {
+    if (!repoNames.has(r.repo.toLowerCase()))
+      repoNames.set(r.repo.toLowerCase(), r.repo);
+  }
+  const ciByRepo = new Map(ciStatus.rows.map((r) => [r.repo.toLowerCase(), r]));
+  const ovByRepo = new Map(data.repos.map((r) => [r.repo.toLowerCase(), r]));
+  const unknownRepos = [...repoNames.entries()]
+    .map(([key, name]) =>
+      repoRowStatus(name, ciByRepo.get(key) ?? null, ovByRepo.get(key) ?? null)
+    )
+    .filter((st) => st.attention !== "none");
+
   if (staleRead || !ciStatus.seeded || ciStatus.error) {
     return {
       level: "unknown",
@@ -1272,6 +1344,27 @@ export function deriveCiHealth(
         ? "CI health UNKNOWN — showing the last good read, not current"
         : "CI health UNKNOWN — main verdicts not read",
       detail: qualifiers || null,
+      badges,
+      pools,
+    };
+  }
+
+  const firstUnknownRepo = unknownRepos[0];
+  if (repoNames.size === 0) {
+    return {
+      level: "unknown",
+      headline:
+        "CI health UNKNOWN — no repo has a CI-status or outcome row to vouch for",
+      detail: data.note ?? null,
+      badges,
+      pools,
+    };
+  }
+  if (firstUnknownRepo) {
+    return {
+      level: "unknown",
+      headline: `CI health UNKNOWN for ${unknownRepos.length} repo${unknownRepos.length === 1 ? "" : "s"} — ${firstUnknownRepo.reason ?? firstUnknownRepo.label}`,
+      detail: null,
       badges,
       pools,
     };
@@ -1289,19 +1382,6 @@ export function deriveCiHealth(
       pools,
     };
   }
-  const unknownMain = ciStatus.rows.filter(
-    (r) => r.main_verdict !== "green" && r.main_verdict !== "red"
-  );
-  if (unknownMain.length > 0) {
-    return {
-      level: "unknown",
-      headline: `CI health UNKNOWN — main's verdict is not known for ${unknownMain.length} repo${unknownMain.length === 1 ? "" : "s"}`,
-      detail: null,
-      badges,
-      pools,
-    };
-  }
-
   const anyQueued = entries.some(({ member }) => (member.queued_jobs ?? 0) > 0);
   return {
     level: "green",

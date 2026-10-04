@@ -462,9 +462,17 @@ function ReposSection({
 }) {
   const economics = useCiEconomics();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  // Keyed on the economics FIELDS: the hook returns a fresh object every
+  // render, which would defeat the memo.
+  const { byRepo: econByRepo, asOf: econAsOf, failed: econFailed } = economics;
   const rows = useMemo(
-    () => buildRepoRows(overview, ciRows, economics),
-    [overview, ciRows, economics]
+    () =>
+      buildRepoRows(overview, ciRows, {
+        byRepo: econByRepo,
+        asOf: econAsOf,
+        failed: econFailed,
+      }),
+    [overview, ciRows, econByRepo, econAsOf, econFailed]
   );
   return (
     <RecordList
