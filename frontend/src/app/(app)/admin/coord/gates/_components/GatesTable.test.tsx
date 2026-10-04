@@ -221,6 +221,40 @@ describe("GatesTable search + gate-id", () => {
     expect(screen.getAllByText(/not re-evaluated/)).toHaveLength(1);
   });
 
+  it("does not call an ENDED or unreadable snooze 'snoozed'", () => {
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            gate_id: "11111111-1111-1111-1111-111111111111",
+            stale: true,
+            snoozed_until: "2000-01-01T00:00:00Z",
+          }),
+          gate({
+            gate_id: "22222222-2222-2222-2222-222222222222",
+            stale: true,
+            snoozed_until: "2999-01-01T00:00:00Z",
+          }),
+          gate({
+            gate_id: "33333333-3333-3333-3333-333333333333",
+            snoozed_until: "not-a-date",
+          }),
+          // A terminal row keeps its old snooze column; no chip for it.
+          gate({
+            gate_id: "44444444-4444-4444-4444-444444444444",
+            verdict: "cleared",
+            snoozed_until: "2000-01-01T00:00:00Z",
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getAllByTestId("gates-snoozed")).toHaveLength(1);
+    expect(
+      screen.getAllByTestId("gates-snooze-inactive").map((b) => b.textContent),
+    ).toEqual(["snooze ended", "snooze ?"]);
+  });
+
   it("renders the gate-class chip when gate_class is set", () => {
     render(
       <GatesTable

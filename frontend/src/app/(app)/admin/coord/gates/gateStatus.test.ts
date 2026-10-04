@@ -25,6 +25,7 @@ import {
   GATE_KIND_CLASS,
   isSweepOverdue,
   isTerminalGateVerdict,
+  snoozeState,
   type GateKind,
 } from "./gateStatus";
 
@@ -121,6 +122,18 @@ describe("the readings the palette audit cannot make", () => {
     ).toBe(true);
     expect(isSweepOverdue(gate({ stale: true, muted: false }), now)).toBe(true);
     expect(isSweepOverdue(gate({ stale: false }), now)).toBe(false);
+  });
+
+  it("classifies a snooze the way the sweep's own clause does", () => {
+    const now = Date.parse("2026-10-01T00:00:00Z");
+    expect(snoozeState(null, now)).toBe("none");
+    expect(snoozeState(undefined, now)).toBe("none");
+    expect(snoozeState("2026-10-02T00:00:00Z", now)).toBe("active");
+    expect(snoozeState("2026-09-30T00:00:00Z", now)).toBe("ended");
+    // The sweep re-admits only on `snoozed_until < now()`, so at the instant
+    // itself the gate is still skipped.
+    expect(snoozeState("2026-10-01T00:00:00Z", now)).toBe("active");
+    expect(snoozeState("not-a-date", now)).toBe("unreadable");
   });
 
   it("keeps `pending` CALM — it is the normal state of a healthy gate", () => {

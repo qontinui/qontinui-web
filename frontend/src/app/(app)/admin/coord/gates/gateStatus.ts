@@ -160,12 +160,29 @@ export function isSweepOverdue(
   now: number = Date.now()
 ): boolean {
   if (!g.stale || g.muted) return false;
-  if (g.snoozed_until) {
-    const until = Date.parse(g.snoozed_until);
-    // An unparseable timestamp proves nothing about a pause: keep coord's flag.
-    if (Number.isFinite(until) && until > now) return false;
-  }
-  return true;
+  return snoozeState(g.snoozed_until, now) !== "active";
+}
+
+/** Where a gate's snooze stands — see `snoozeState`. */
+export type SnoozeState = "none" | "active" | "ended" | "unreadable";
+
+/**
+ * Where a gate's snooze stands against the sweep's own clause
+ * (`snoozed_until IS NULL OR snoozed_until < now()`): `none` when unset,
+ * `active` while the sweep still skips it (up to and including the instant
+ * itself), `ended` once it is swept again, and `unreadable` when the timestamp
+ * cannot be parsed — which proves nothing about a pause, so it never excuses
+ * staleness. `isSweepOverdue` and the row's snooze badge both read this, so
+ * the badge cannot say "snoozed" beside a "not re-evaluated" verdict.
+ */
+export function snoozeState(
+  snoozedUntil: string | null | undefined,
+  now: number = Date.now()
+): SnoozeState {
+  if (!snoozedUntil) return "none";
+  const until = Date.parse(snoozedUntil);
+  if (!Number.isFinite(until)) return "unreadable";
+  return until >= now ? "active" : "ended";
 }
 
 /**
