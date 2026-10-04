@@ -315,3 +315,23 @@ class TestCiHostingRepoScope:
             body = client.get(f"{API_PREFIX}/ci-hosting").json()
 
         assert [r["watched"] for r in body["repos"]] == [False, None, None]
+
+
+class TestCiHostingRepoNotInTenantIsNarrow:
+    """Only coord's 404 for a ``?repo=`` read is the per-repo UNKNOWN."""
+
+    def test_a_404_without_repo_passes_through_even_naming_the_code(
+        self, client: TestClient
+    ):
+        resp404 = _mock_response(404, {"error": "repo_not_in_tenant", "repo": "o/r"})
+        with _patch_coord_get(resp404), _patch_identity():
+            resp = client.get(f"{API_PREFIX}/ci-hosting")
+
+        assert resp.status_code == 404
+
+    def test_a_non_404_naming_the_code_is_not_mapped(self, client: TestClient):
+        resp400 = _mock_response(400, {"error": "repo_not_in_tenant"})
+        with _patch_coord_get(resp400), _patch_identity():
+            resp = client.get(f"{API_PREFIX}/ci-hosting?repo=o/r")
+
+        assert resp.status_code == 400

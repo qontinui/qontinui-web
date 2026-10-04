@@ -33,15 +33,22 @@ function message(err: unknown): string {
  *
  * `reload` resolves `true` only when THIS read delivered and was applied, so
  * a caller can retire a state (a write's read-back failure) only on a
- * CONFIRMED read. `deliveries` counts applied reads, so a caller can ask
- * "has a read landed since X?" — the tenant row's write-vs-aggregate check.
+ * CONFIRMED read; a success discarded because a newer read already settled
+ * resolves `false`.
+ *
+ * `appliedTicket` is the ISSUE ordinal of the read whose answer is on screen,
+ * and `issuedTicket()` the ordinal of the newest read issued so far. A caller
+ * that needs "a read ISSUED after X" — the tenant row's write-vs-aggregate
+ * check — captures `issuedTicket()` at X and compares `appliedTicket` to it:
+ * a read issued before X that lands after X does not count, which a count of
+ * deliveries could not tell apart.
  */
 export function useCiHosting() {
   const [view, setView] = useState<CiHostingView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notServed, setNotServed] = useState(false);
-  const [deliveries, setDeliveries] = useState(0);
+  const [appliedTicket, setAppliedTicket] = useState(0);
   const issued = useRef(0);
   /** The newest ticket that has SETTLED (delivered or failed). */
   const settled = useRef(0);
@@ -56,7 +63,7 @@ export function useCiHosting() {
       setView(next);
       setError(null);
       setNotServed(false);
-      setDeliveries((n) => n + 1);
+      setAppliedTicket(ticket);
       return true;
     } catch (err) {
       if (ticket < settled.current) return false;
@@ -78,13 +85,17 @@ export function useCiHosting() {
     void reload();
   }, [reload]);
 
+  const issuedTicket = useCallback(() => issued.current, []);
+
   return {
     view,
     loading,
     error,
     notServed,
-    /** How many reads have been applied — "has a read landed since X?". */
-    deliveries,
+    /** Issue ordinal of the read whose answer is displayed (0 = none). */
+    appliedTicket,
+    /** Issue ordinal of the newest read issued so far. */
+    issuedTicket,
     /** A value is on screen, and the newest read failed to replace it. */
     stale: view !== null && error !== null,
     reload,
