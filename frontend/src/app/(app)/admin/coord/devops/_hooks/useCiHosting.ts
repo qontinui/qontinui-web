@@ -25,33 +25,42 @@ function message(err: unknown): string {
  *    replace it.
  * 2. **A 404 is UNKNOWN, not a value.** An older coord (or web backend) has no
  *    such route; `notServed` says so, and nothing renders a level from it.
- * 3. **Out-of-order replies cannot paint an older value over a newer one** —
- *    each read takes a ticket and only the newest delivery is applied.
+ * 3. **Out-of-order replies cannot paint an older answer over a newer one** —
+ *    each read takes a ticket, and a reply is applied only when no NEWER read
+ *    has already settled, success or failure alike. So an older success that
+ *    lands after a newer failure neither replaces the value nor clears the
+ *    error: the newest thing known is that the latest read failed.
  *
- * `reload` resolves `true` when the read delivered, so a caller can retire a
- * state (a write's read-back failure) only on a CONFIRMED read.
+ * `reload` resolves `true` only when THIS read delivered and was applied, so
+ * a caller can retire a state (a write's read-back failure) only on a
+ * CONFIRMED read. `deliveries` counts applied reads, so a caller can ask
+ * "has a read landed since X?" — the tenant row's write-vs-aggregate check.
  */
 export function useCiHosting() {
   const [view, setView] = useState<CiHostingView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notServed, setNotServed] = useState(false);
+  const [deliveries, setDeliveries] = useState(0);
   const issued = useRef(0);
-  const applied = useRef(0);
+  /** The newest ticket that has SETTLED (delivered or failed). */
+  const settled = useRef(0);
 
   const reload = useCallback(async (): Promise<boolean> => {
     const ticket = (issued.current += 1);
     setLoading(true);
     try {
       const next = await httpClient.get<CiHostingView>(CI_HOSTING_API);
-      if (ticket < applied.current) return true;
-      applied.current = ticket;
+      if (ticket < settled.current) return false;
+      settled.current = ticket;
       setView(next);
       setError(null);
       setNotServed(false);
+      setDeliveries((n) => n + 1);
       return true;
     } catch (err) {
-      if (ticket < applied.current) return false;
+      if (ticket < settled.current) return false;
+      settled.current = ticket;
       if (isNotFoundError(err)) {
         setNotServed(true);
         setError(CI_HOSTING_NOT_SERVED);
@@ -74,6 +83,8 @@ export function useCiHosting() {
     loading,
     error,
     notServed,
+    /** How many reads have been applied — "has a read landed since X?". */
+    deliveries,
     /** A value is on screen, and the newest read failed to replace it. */
     stale: view !== null && error !== null,
     reload,

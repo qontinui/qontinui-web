@@ -19,6 +19,16 @@ import {
 const httpGet = vi.fn();
 const httpPut = vi.fn();
 
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
@@ -52,6 +62,22 @@ function tenantPolicy(
   };
 }
 
+function ciView(
+  tenantLevel: string | null,
+  tenantScope: string,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    ...CI_VIEW,
+    tenant_default: {
+      level: tenantLevel,
+      resolved_scope: tenantScope,
+      unknown_reason: tenantLevel === null ? "select_failed" : null,
+    },
+    ...extra,
+  };
+}
+
 const CI_VIEW = {
   domain: "github_hosted_ci",
   tenant_default: { level: "on", resolved_scope: "none", unknown_reason: null },
@@ -69,10 +95,10 @@ const CI_VIEW = {
       unknown_reason: null,
     },
     {
-      repo: "qontinui/shared",
+      repo: "qontinui/elsewhere",
       level: null,
       resolved_scope: "none",
-      unknown_reason: "owners_disagree",
+      unknown_reason: "repo_not_in_tenant",
     },
     {
       repo: "qontinui/broken",
@@ -134,8 +160,29 @@ describe("GithubHostedCiPanel — tenant row", () => {
     ).toHaveTextContent("default (on)");
   });
 
+  it("displays the AGGREGATE's tenant value, not the generic dial's", async () => {
+    // The dial's generic view would say `off` (it floors a missing level);
+    // the aggregate says UNKNOWN, and the aggregate is what is shown.
+    route({
+      tenant: tenantPolicy("off", "tenant"),
+      ci: ciView(null, "none"),
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+
+    const unknown = await screen.findByTestId(
+      "github-hosted-ci-tenant-unknown"
+    );
+    expect(unknown).toHaveTextContent(/select_failed/);
+    const value = screen.getByTestId("github-hosted-ci-tenant-effective");
+    expect(value.textContent).toBe("–");
+    expect(value.className).toMatch(/amber/);
+  });
+
   it("renders an explicit tenant OFF as a setting from the tenant", async () => {
-    route({ tenant: tenantPolicy("off", "tenant") });
+    route({
+      tenant: tenantPolicy("off", "tenant"),
+      ci: ciView("off", "tenant"),
+    });
     render(<GithubHostedCiPanel isAdmin />);
 
     await waitFor(() =>
@@ -153,17 +200,22 @@ describe("GithubHostedCiPanel — tenant row", () => {
   });
 
   it("turning OFF requires a confirm with a reason, which becomes the change note", async () => {
-    route({});
-    httpPut.mockResolvedValue({
-      ok: true,
-      domain: "github_hosted_ci",
-      written_level: "off",
-      written_master_enabled: true,
-      versioned: true,
-      version: 2,
-      updated_by: "op",
-      effective: tenantPolicy("off", "tenant"),
-      readback_error: null,
+    const r: { ci: Record<string, unknown> } = { ci: CI_VIEW };
+    route(r);
+    httpPut.mockImplementation(() => {
+      // Coord now resolves off — the next aggregate read says so.
+      r.ci = ciView("off", "tenant");
+      return Promise.resolve({
+        ok: true,
+        domain: "github_hosted_ci",
+        written_level: "off",
+        written_master_enabled: true,
+        versioned: true,
+        version: 2,
+        updated_by: "op",
+        effective: tenantPolicy("off", "tenant"),
+        readback_error: null,
+      });
     });
     render(<GithubHostedCiPanel isAdmin />);
     await waitFor(() =>
@@ -201,15 +253,84 @@ describe("GithubHostedCiPanel — tenant row", () => {
       master_enabled: true,
       change_note: "cost: all CI is self-hosted",
     });
+    // Confirmed only once an aggregate read made AFTER the write agrees.
     await waitFor(() =>
       expect(
         screen.getByTestId("github-hosted-ci-tenant-effective")
       ).toHaveTextContent("Off")
     );
+    expect(screen.queryByTestId("github-hosted-ci-tenant-awaiting")).toBeNull();
+  });
+
+  it("shows UNKNOWN when the write's read-back and a later aggregate read disagree", async () => {
+    // The aggregate keeps saying `on` after a write whose read-back said `off`.
+    route({});
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "off",
+      effective: tenantPolicy("off", "tenant"),
+      readback_error: null,
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-tenant-off")
+      ).not.toBeDisabled()
+    );
+    fireEvent.click(screen.getByTestId("github-hosted-ci-tenant-off"));
+    fireEvent.change(await screen.findByTestId("github-hosted-ci-off-reason"), {
+      target: { value: "cost" },
+    });
+    fireEvent.click(screen.getByTestId("github-hosted-ci-off-submit"));
+
+    const awaiting = await screen.findByTestId(
+      "github-hosted-ci-tenant-awaiting"
+    );
+    await waitFor(() => expect(awaiting).toHaveTextContent(/disagree/));
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+  });
+
+  it("a failed tenant read-back renders the tenant value UNKNOWN", async () => {
+    route({});
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "off",
+      effective: null,
+      readback_error: "read-back failed: coord returned 502",
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-tenant-off")
+      ).not.toBeDisabled()
+    );
+    fireEvent.click(screen.getByTestId("github-hosted-ci-tenant-off"));
+    fireEvent.change(await screen.findByTestId("github-hosted-ci-off-reason"), {
+      target: { value: "cost" },
+    });
+    fireEvent.click(screen.getByTestId("github-hosted-ci-off-submit"));
+
+    const notice = await screen.findByTestId(
+      "github-hosted-ci-tenant-readback-error"
+    );
+    expect(notice).toHaveTextContent(/coord returned 502/);
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-tenant")
+    ).toHaveTextContent("tenant –");
   });
 
   it("turning ON writes without a dialog", async () => {
-    route({ tenant: tenantPolicy("off", "tenant") });
+    route({
+      tenant: tenantPolicy("off", "tenant"),
+      ci: ciView("off", "tenant"),
+    });
     httpPut.mockResolvedValue({
       ok: true,
       domain: "github_hosted_ci",
@@ -251,16 +372,17 @@ describe("GithubHostedCiPanel — repo rows", () => {
     expect(rowFor("qontinui/multistate")).toHaveTextContent("from default");
   });
 
-  it("renders owners disagree in amber", async () => {
+  it("has no owners-disagree state; a repo outside the tenant is a typed UNKNOWN", async () => {
     route({});
     render(<GithubHostedCiPanel isAdmin />);
     await screen.findAllByTestId("github-hosted-ci-repo-row");
 
-    const shared = rowFor("qontinui/shared");
-    const badge = shared.querySelector("[data-status-kind]");
-    expect(badge?.getAttribute("data-status-kind")).toBe("owners_disagree");
-    expect(badge).toHaveTextContent("owners disagree");
-    expect(badge?.className).toMatch(/amber/);
+    expect(screen.queryByText(/owners disagree/)).toBeNull();
+    const elsewhere = rowFor("qontinui/elsewhere");
+    const badge = elsewhere.querySelector("[data-status-kind]");
+    expect(badge?.getAttribute("data-status-kind")).toBe("unknown");
+    expect(badge?.textContent).toBe("–");
+    expect(elsewhere).toHaveTextContent(/not one of this tenant's repos/);
   });
 
   it("renders an UNKNOWN repo as an amber dash, never a guessed value", async () => {
@@ -277,6 +399,59 @@ describe("GithubHostedCiPanel — repo rows", () => {
     expect(
       broken.querySelector("[data-console-row]")?.getAttribute("data-attention")
     ).toBe("waiting");
+  });
+
+  it("renders `not watched` only for an off repo coord says it does not poll", async () => {
+    route({
+      ci: {
+        ...CI_VIEW,
+        repos: [
+          {
+            repo: "o/unwatched",
+            level: "off",
+            resolved_scope: "repo",
+            unknown_reason: null,
+            watched: false,
+          },
+          {
+            repo: "o/older-coord",
+            level: "off",
+            resolved_scope: "repo",
+            unknown_reason: null,
+          },
+          {
+            repo: "o/null",
+            level: "off",
+            resolved_scope: "repo",
+            unknown_reason: null,
+            watched: null,
+          },
+          {
+            repo: "o/on",
+            level: "on",
+            resolved_scope: "repo",
+            unknown_reason: null,
+            watched: false,
+          },
+        ],
+      },
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    await screen.findAllByTestId("github-hosted-ci-repo-row");
+
+    const unwatched = rowFor("o/unwatched");
+    const tag = within(unwatched).getByTestId("github-hosted-ci-not-watched");
+    expect(tag.className).toMatch(/amber/);
+    expect(
+      unwatched
+        .querySelector("[data-console-row]")
+        ?.getAttribute("data-attention")
+    ).toBe("waiting");
+    for (const repo of ["o/older-coord", "o/null", "o/on"]) {
+      expect(
+        within(rowFor(repo)).queryByTestId("github-hosted-ci-not-watched")
+      ).toBeNull();
+    }
   });
 
   it("Inherit writes the repo band with the owner/name key and master_enabled true", async () => {
@@ -317,7 +492,7 @@ describe("GithubHostedCiPanel — repo rows", () => {
     );
   });
 
-  it("a failed read-back renders that repo UNKNOWN, not the written value", async () => {
+  it("a failed read-back renders THAT repo UNKNOWN, leaves the others, and highlights no choice", async () => {
     route({});
     httpPut.mockResolvedValue({
       ok: true,
@@ -340,6 +515,20 @@ describe("GithubHostedCiPanel — repo rows", () => {
           ?.getAttribute("data-status-kind")
       ).toBe("unknown")
     );
+    const after = rowFor("qontinui/qontinui-web");
+    expect(after).toHaveTextContent(/reading it back failed/);
+    // No choice is shown as in force — the written one is unconfirmed.
+    for (const choice of ["inherit", "on", "off"]) {
+      expect(
+        within(after).getByTestId(`github-hosted-ci-repo-${choice}`)
+      ).not.toBeDisabled();
+    }
+    // The guard is per repo: a neighbour keeps its confirmed value.
+    expect(
+      rowFor("qontinui/multistate")
+        .querySelector("[data-status-kind]")
+        ?.getAttribute("data-status-kind")
+    ).toBe("on");
   });
 });
 
@@ -361,6 +550,24 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
         within(web).getByTestId(`github-hosted-ci-repo-${choice}`)
       ).toBeDisabled();
     }
+  });
+
+  it("says nothing about the role while the first reads are in flight", async () => {
+    const tenantRead = deferred<unknown>();
+    const ciRead = deferred<unknown>();
+    httpGet.mockImplementation((url: unknown) =>
+      String(url).includes("/fleet-policy")
+        ? tenantRead.promise
+        : ciRead.promise
+    );
+    render(<GithubHostedCiPanel isAdmin={false} />);
+    expect(screen.queryByTestId("github-hosted-ci-readonly")).toBeNull();
+
+    tenantRead.resolve(tenantPolicy("on", "none", false));
+    ciRead.resolve(CI_VIEW);
+    expect(
+      await screen.findByTestId("github-hosted-ci-readonly")
+    ).toHaveTextContent(/only an admin/);
   });
 
   it("is read-only when the backend says can_edit false, even for an admin", async () => {
@@ -391,9 +598,13 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     expect(
       screen.getByTestId("github-hosted-ci-summary-repos")
     ).toHaveTextContent("repos –");
+    // The tenant value comes from the same read, so it is unknown too.
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
   });
 
-  it("a failed tenant read renders the tenant value as a dash", async () => {
+  it("a failed tenant-dial read does not blank the tenant value the aggregate gave", async () => {
     route({
       tenant: new Error(
         "GET /api/v1/operations/fleet-policy failed: 502 - coord is not reachable"
@@ -401,15 +612,22 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     });
     render(<GithubHostedCiPanel isAdmin />);
     await screen.findByTestId("github-hosted-ci-tenant-error");
-    expect(
-      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
-    ).toBe("–");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-tenant-effective")
+      ).toHaveTextContent("On")
+    );
+    // But nobody may write: whether the caller can is unknown.
+    expect(screen.getByTestId("github-hosted-ci-tenant-off")).toBeDisabled();
   });
 
-  it("a failed LATEST read keeps the last values, labelled stale", async () => {
+  it("a failed LATEST read keeps the last values, labelled stale — in the header too", async () => {
     route({});
     render(<GithubHostedCiPanel isAdmin />);
     await screen.findAllByTestId("github-hosted-ci-repo-row");
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-repos")
+    ).not.toHaveTextContent(/stale/);
 
     route({
       ci: new Error(
@@ -428,5 +646,37 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     expect(
       web.querySelector("[data-console-row]")?.getAttribute("data-attention")
     ).toBe("waiting");
+    // The collapsed header says so as well (R6/R7).
+    for (const id of [
+      "github-hosted-ci-summary-tenant",
+      "github-hosted-ci-summary-repos",
+    ]) {
+      const badge = screen.getByTestId(id);
+      expect(badge).toHaveTextContent(/\(stale\)/);
+      expect(badge.className).toMatch(/amber/);
+    }
+  });
+
+  it("a failed latest TENANT-dial read also marks the header stale", async () => {
+    route({});
+    render(<GithubHostedCiPanel isAdmin />);
+    await screen.findAllByTestId("github-hosted-ci-repo-row");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-tenant-off")
+      ).not.toBeDisabled()
+    );
+
+    route({
+      tenant: new Error(
+        "GET /api/v1/operations/fleet-policy failed: 502 - coord is not reachable"
+      ),
+    });
+    fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
+
+    await screen.findByTestId("github-hosted-ci-tenant-error");
+    const badge = screen.getByTestId("github-hosted-ci-summary-tenant");
+    expect(badge).toHaveTextContent(/\(stale\)/);
+    expect(badge.className).toMatch(/amber/);
   });
 });

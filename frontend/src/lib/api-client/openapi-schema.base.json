@@ -8089,6 +8089,17 @@
               }
             ],
             "title": "Unknown Reason"
+          },
+          "watched": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watched"
           }
         },
         "required": [
