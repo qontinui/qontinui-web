@@ -15,13 +15,16 @@ new fleet-policy domain ``github_hosted_ci`` needs no DDL because
 ``coord.fleet_runtime_policy.domain`` and ``.level`` are plain TEXT with no
 CHECK (``fleet_policy_01``) — declaring a domain is a code-only change on the
 coord side. What a domain cannot get from code is a tenant's *choice*, and the
-operator directive of 2026-10-04 (coord memory ``ed245b84``, verified by a
-coord memory search 2026-10-04) states Qontinui's own: GitHub-hosted Actions CI is OFF permanently for the Qontinui tenant.
+operator directive of 2026-10-04 (coord memory ``ed245b84`` —
+``coord_memory_search`` 2026-10-04 returned memory ``ed245b84``) states
+Qontinui's own: GitHub-hosted Actions CI is OFF permanently for the Qontinui
+tenant.
 
-So this writes exactly one tenant-band row,
+So this writes exactly one tenant-band row (``coord_query_identity``
+2026-10-04 returned slug ``qontinui`` for this tenant id),
 
 ```text
-tenant_id      c231d9da-0ca8-4fe4-bd81-0e3d6c20339a   (slug ``qontinui``; verified 2026-10-04 via coord_query_identity)
+tenant_id      c231d9da-0ca8-4fe4-bd81-0e3d6c20339a   (slug ``qontinui``)
 domain         github_hosted_ci
 scope_band     tenant
 scope_key      NULL
@@ -64,7 +67,8 @@ The write obligations this honours
 * **Scope uniqueness.** The conflict target is the functional unique index
   ``uq_fleet_runtime_policy_scope`` over
   ``(tenant_id, domain, scope_band, COALESCE(scope_key, ''))``
-  (``fleet_policy_01``), spelled with the same expression so Postgres infers it.
+  (``fleet_policy_01``), spelled with the same expression so Postgres infers
+  it.
 * **Only this tenant.** Guarded by ``WHERE EXISTS`` on ``coord.tenants``, so a
   database without the qontinui tenant (CI, a developer DB, another
   deployment) is a no-op. No other tenant is touched; a tenant with no row
@@ -88,10 +92,10 @@ regardless. The snapshot DELETE is written out first so the downgrade states
 what it removes rather than depending on the cascade.
 
 Merge-train note: coord's migration classifier (``migration_classifier.rs``)
-rejects this revision — the downgrade's DELETEs as DML, and the upgrade (a
-statement beginning ``WITH … INSERT``) through its fail-closed
-unrecognized-statement arm — so the PR parks on ``escalate-path-matched`` and is
-cleared by ``coord_submit_escalate_evidence`` (plan Phase 1).
+rejects this revision through its fail-closed unrecognized-statement arm — the
+upgrade is a single statement beginning ``WITH … INSERT``; ``downgrade()`` is
+not classified. So the PR parks on ``escalate-path-matched`` and is cleared by
+``coord_submit_escalate_evidence`` (plan Phase 1).
 """
 
 from collections.abc import Sequence
