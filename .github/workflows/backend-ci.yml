@@ -161,6 +161,14 @@ concurrency:
   group: backend-ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read. A job that needs more
+# declares its own `permissions:`.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   lint:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -202,7 +210,9 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
@@ -223,7 +233,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -418,13 +428,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -453,7 +465,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -512,7 +524,7 @@ jobs:
       # local regen and CI.
       - name: Upload CI-generated OpenAPI snapshot on drift
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           # Shard-scoped: upload-artifact rejects a duplicate name within one
           # run, and this job is now a 6-way matrix, so a fixed name would fail
@@ -710,12 +722,26 @@ jobs:
       # splitter enforces them on the selection path too (there is a test for
       # that), which matters for any OTHER caller - not for this workflow, where
       # the selection is only reached after the gate passed.
+      #
+      # `--durations` deals the files by MEASURED SECONDS rather than by test
+      # count (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget).
+      # Count balance put the alembic-harness files -- ~8% of the tests and
+      # ~75% of the seconds -- wherever LPT happened to drop them, so one shard
+      # ran at 2-4x its siblings. The map is committed (never cached: every
+      # shard must compute the SAME assignment from the SAME inputs) and is
+      # refreshed from the nightly's `shard-durations-proposed.json` artifact.
+      # An absent or corrupt map degrades to count weights, said on the
+      # splitter's verdict line; it cannot change which files run. Only THIS
+      # step takes the flag -- the collect step above is a pure collection
+      # check, and the splitter refuses `--durations` with `--count-only`.
       - name: Select this shard's test files
         run: |
           python ../scripts/ci/split_pytest_shards.py \
             --nodeids collected-nodeids.txt \
             --shards 6 \
             --shard ${{ matrix.shard }} \
+            --durations tests/shard-durations.json \
             --out shard-files.txt
 
       - name: Run tests with coverage
@@ -829,7 +855,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./backend/coverage.xml
           # One flag, six partial uploads: Codecov merges uploads per commit, so
@@ -844,7 +870,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           # Shard-scoped, for the same reason as the OpenAPI artifact above:
           # upload-artifact rejects a duplicate name within a run, and six
@@ -854,6 +880,22 @@ jobs:
           name: coverage-report-shard-${{ matrix.shard }}
           path: ./backend/htmlcov/
           retention-days: 30
+
+      # The per-test timings the shard deal is built from. The pytest step
+      # above already writes them (`--junitxml=junit-results.xml`); until this
+      # upload they were thrown away with the runner. `if: always()` because a
+      # shard with a failing test still measured every test it ran, and a
+      # shard-scoped name for the same duplicate-name reason as the coverage
+      # artifact above. The nightly `shard-durations-proposal` job below is the
+      # consumer; on a PR the six artifacts are simply there to download.
+      - name: Upload junit results
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: junit-results-shard-${{ matrix.shard }}
+          path: ./backend/junit-results.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -1209,19 +1251,25 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: './backend'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          # The pinned action release defaults to Trivy v0.70.0; name the
+          # engine explicitly so pinning the action does not downgrade the
+          # scanner (master defaulted to v0.75.0 when this was pinned).
+          version: v0.75.0
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
         if: always()
         # SARIF upload requires GitHub Advanced Security on private repos.
         # Without GHAS the API returns 403; don't red-flag the whole job —
@@ -1231,7 +1279,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -1248,7 +1296,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1269,6 +1317,91 @@ jobs:
         run: |
           poetry run pip install safety
           poetry run safety check --json || true
+
+  # Keeps `backend/tests/shard-durations.json` from rotting (plan
+  # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget,
+  # Phase 2). On the nightly (and a manual dispatch), it turns the six shards'
+  # junit timings into a proposed replacement map and uploads it, so a refresh
+  # is a download and a reviewed commit. It writes nothing to the tree itself.
+  #
+  # It runs on exactly the events `shard-headroom` runs on, because a `skewed`
+  # headroom verdict names THIS run's `shard-durations-proposed` artifact as
+  # its remedy; a dispatch run without the artifact would point at nothing.
+  # Pinned by backend/tests/test_pytest_shard_split.py.
+  #
+  # It is deliberately NOT in `test-gate`'s `needs:` and nothing gates on it: a
+  # tuning-file proposal must never be able to red or hold the `Run Tests`
+  # check. `always()` so a nightly with one failing shard still proposes from
+  # the timings it has (a failing shard still wrote its junit file).
+  shard-durations-proposal:
+    name: Propose shard durations
+    needs: [test]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # The `test` job's matrix length, pinned equal by
+      # backend/tests/test_pytest_shard_split.py.
+      EXPECTED_SHARDS: '6'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # `continue-on-error` because a nightly whose shards were ALL cancelled
+      # uploads no junit artifact at all, and the download action fails on an
+      # empty pattern match. That is not this job's failure to report -- the
+      # shards' own checks already say it -- so the next step counts what
+      # arrived and skips rather than going red.
+      - name: Download the shards' junit results
+        continue-on-error: true
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: junit-results-shard-*
+          path: junit
+
+      - name: Build shard-durations-proposed.json
+        id: build
+        run: |
+          found=0
+          if [ -d junit ]; then
+            found=$(find junit -name '*.xml' -type f | wc -l)
+          fi
+          echo "junit files downloaded: ${found} (expected ${EXPECTED_SHARDS})"
+          if [ "${found}" = "0" ]; then
+            echo "::notice title=No shard durations proposal tonight::No shard uploaded a junit file (every shard was cancelled or timed out before pytest wrote one), so there is nothing to measure. Skipping the proposal; this is not a failure of this job."
+            echo "proposed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${found}" != "${EXPECTED_SHARDS}" ]; then
+            echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not ${EXPECTED_SHARDS}, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
+          fi
+          # `--compare` reports how far the committed map has drifted from
+          # tonight's measurement (new / dropped / moved files, both totals) on
+          # the run's summary page, so whether a refresh PR is worth opening is
+          # readable without downloading anything. It never fails the step.
+          set -o pipefail
+          python scripts/ci/refresh_shard_durations.py junit \
+            --root backend \
+            --out shard-durations-proposed.json \
+            --compare backend/tests/shard-durations.json 2>&1 \
+            | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "proposed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload shard-durations-proposed.json
+        if: steps.build.outputs.proposed == 'true'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: shard-durations-proposed
+          path: shard-durations-proposed.json
+          retention-days: 30
 
   # The `Run Tests` check name, preserved across the shard split.
   #
@@ -1324,14 +1457,16 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The Dockerfile installs torch from pytorch-cu128 (multi-GB wheels);
       # the runner's default disk allocation isn't enough for the build
       # layers + image cache. Free the host's preinstalled SDKs before
       # docker build runs.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -1364,9 +1499,11 @@ jobs:
       # registrar landed) runs as part of this build, so this job is what gates
       # it on every PR.
       - name: Build Docker image
+        env:
+          CLOUD_CONTROL_SHA: ${{ steps.cloudcontrol.outputs.sha }}
         run: |
           docker build \
-            --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
+            --build-arg CLOUD_CONTROL_SHA=${CLOUD_CONTROL_SHA} \
             -t qontinui-backend:test .
 
       - name: Test Docker image
@@ -1414,7 +1551,7 @@ jobs:
       # The `test` job's matrix length, pinned equal by the same test.
       EXPECTED_SHARDS: '6'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Only the script is needed, and nothing here pushes: do not leave the
           # token in .git/config for the rest of the job.

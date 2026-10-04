@@ -669,17 +669,10 @@ export interface MergeEconomics {
   coverage_note?: string | null;
 }
 
-/**
- * Coord's `/pr-merge/economics` response (served to the page as
- * `/pr-merge/merge-economics`). Without `?repo=` coord returns the per-repo
- * ARRAY of `{ repo, ...MergeEconomics }`; the frontend fetch tolerates all
- * of: an object keyed by `owner/name`, a `{ repos: {...} }` wrapper, or that
- * array. This declared type is the wrapper form; the fetch normalizes every
- * shape into a `Record<repo, MergeEconomics>`.
- */
-export interface MergeEconomicsResponse {
-  repos?: Record<string, MergeEconomics>;
-}
+// Coord's `/pr-merge/economics` body (served as `/pr-merge/merge-economics`)
+// has no declared response type here: its no-repo arm is `{as_of, repos: [
+// {repo, ...MergeEconomics} ]}`, older shapes differ, and the one normalizer
+// that reads every shape is `mergeEconomics.ts` `normalizeMergeEconomics`.
 
 // ============================================================================
 // Per-PR check breakdown wire types.

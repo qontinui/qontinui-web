@@ -2,9 +2,10 @@
  * The recently-merged read's load discipline and failure reporting.
  *
  * That read is the expensive one: coord answers it in 14-21s for a 24h/48h
- * window, and the operations proxy holds a backend DB connection for the whole
- * round trip (the 2026-07-21 pool-exhaustion incident, recorded in the hook's
- * header). So it must follow the same three rules as the main batch —
+ * window, and every overlapping read is that much more coord work (the hook's
+ * header records the 2026-07-21 incident these rules came from, and why the
+ * cost is now coord load rather than backend DB connections). So it must
+ * follow the same three rules as the main batch —
  * single-flight, a gap measured from COMPLETION, no polling from a hidden tab —
  * and must not be retried by the HTTP client, which retries every 5xx three
  * times and would ask a struggling coord the same expensive question four times.
@@ -127,8 +128,7 @@ describe("useMergePipelineData — merged read", () => {
 
   it("adopts a read already in flight when includeMerged flips off and on", async () => {
     // A tab click away from All PRs and back re-runs the effect. The new run
-    // used to start its own 14-21s read while the first still pinned a backend
-    // DB connection.
+    // used to start its own 14-21s read while the first was still running.
     let finish: (v: unknown) => void = () => {};
     mergedResponse = () =>
       new Promise((resolve) => {
@@ -197,7 +197,7 @@ describe("useMergePipelineData — merged read", () => {
       await flush();
     };
     // Alt-tabbing back and forth: with 14-21s reads and no floor this would be
-    // one read per event, keeping a DB connection pinned almost continuously.
+    // one read per event, keeping coord busy with it almost continuously.
     await advance(5_000);
     await reveal();
     await advance(5_000);

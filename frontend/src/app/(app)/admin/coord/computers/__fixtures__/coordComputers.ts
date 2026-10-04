@@ -186,9 +186,7 @@ export function serviceFx(
     repo: "qontinui-web",
     observed_at: new Date(Date.now() - age * 1000).toISOString(),
     observed_age_secs: age,
-    // Coord: `observed_age_secs > REPORT_STALE_AFTER_SECS`.
-    stale: age > 900,
-    // Coord's `service_is_down` — the last reported state, whatever its age.
+    // Coord's `service_is_down`.
     down: active === "failed" || active === "inactive",
     ...over,
   };
@@ -230,10 +228,8 @@ export function detailFx(
       ...over,
       services_reported: reported,
       services_total: reported ? services.length : 0,
-      // Coord's `service_counts_as_down`: down AND not stale.
-      services_failed: reported
-        ? services.filter((s) => s.down && !s.stale).length
-        : 0,
+      // Coord counts every down row (contract A2).
+      services_failed: reported ? services.filter((s) => s.down).length : 0,
     },
     nowMs
   );

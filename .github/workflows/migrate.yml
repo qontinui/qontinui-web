@@ -99,7 +99,8 @@ jobs:
     permissions:
       contents: read
       # issues: write powers the page-on-failure step below (create/comment a
-      # tracking issue when the migration apply fails).
+      # tracking issue when the migration apply fails) and the step that closes
+      # that issue once a run's migrator exits 0.
       issues: write
       # OIDC: configure-aws-credentials assumes the scoped qontinui-web-migrate
       # role with this job's GitHub token (no stored AWS key).
@@ -107,13 +108,14 @@ jobs:
 
     steps:
       - name: Check out qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Full history so the DAG-snapshot step can resolve each migration
           # file's INTRODUCING commit (`git log --diff-filter=A`) into
           # `authored_in_sha` — the join key coord's lifecycle view uses against
           # `commit_lineage`. Shallow (default depth-1) would leave it null.
           fetch-depth: 0
+          persist-credentials: false
 
       # ── Φ_Schema authored-DAG snapshot ────────────────────────────────────
       # Phase 3 of the coord migration/drift/provenance plan, and now the SOLE
@@ -191,7 +193,7 @@ jobs:
               parsed = G.parse_source(src)
               if not parsed:
                   return None, []
-              return parsed[0], G.PARENT_REF_RE.findall(parsed[1])
+              return parsed[0], G.parent_refs(parsed[1])
 
 
           def block_after(src, header_regex):
@@ -297,7 +299,7 @@ jobs:
       # qontinui-migrator only, the qontinui-staging-migrator task-def + task,
       # and the migrator log group.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-migrate
           role-session-name: migrate-${{ github.run_id }}
@@ -322,9 +324,11 @@ jobs:
             --image-scanning-configuration scanOnPush=true >/dev/null
 
       - name: Login to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           aws ecr get-login-password --region "${AWS_REGION}" \
-            | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.registry }}"
+            | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
       # Build context = parent of qontinui-web checkout (i.e. the directory
       # containing qontinui-web/, qontinui-stack/, qontinui-schemas/). The
@@ -332,19 +336,25 @@ jobs:
       # qontinui-schemas/ relative to that context.
       - name: Build migrator image
         working-directory: ${{ github.workspace }}/..
+        env:
+          ECR_URI: ${{ steps.ecr.outputs.uri }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
             -f qontinui-stack/migrator/Dockerfile \
-            -t "${{ steps.ecr.outputs.uri }}" \
-            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${ECR_URI}" \
+            -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
             --load \
             .
 
       - name: Push migrator image
+        env:
+          ECR_URI: ${{ steps.ecr.outputs.uri }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          docker push "${{ steps.ecr.outputs.uri }}"
-          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${ECR_URI}"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
 
       # Register a fresh task-def revision pinned to THIS run's SHA image and
       # run that revision explicitly. Do NOT rely on the family's latest
@@ -359,8 +369,10 @@ jobs:
       # mirrors staging-web-deploy.yml's deploy step.
       - name: Register task-def revision (fresh SHA image)
         id: taskdef
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          NEW_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           aws ecs describe-task-definition --task-definition "${ECS_TASK_FAMILY}" \
             --region "${AWS_REGION}" --query 'taskDefinition' --output json > td.json
           python3 - "$NEW_IMAGE" <<'PY'
@@ -382,6 +394,8 @@ jobs:
 
       - name: Run migrator task
         id: runtask
+        env:
+          TASKDEF_ARN: ${{ steps.taskdef.outputs.arn }}
         run: |
           # Convert comma-separated subnet list into JSON array literal for
           # the awsvpcConfiguration argument. STAGING_PRIVATE_SUBNET_IDS is
@@ -390,7 +404,7 @@ jobs:
 
           TASK_ARN=$(aws ecs run-task \
             --cluster "${ECS_CLUSTER}" \
-            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            --task-definition "${TASKDEF_ARN}" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
             --started-by "github-actions-${GITHUB_RUN_ID}" \
@@ -604,6 +618,44 @@ jobs:
           fi
           exit 0
 
+      # ── Resolve the open migration-failure issue (best-effort) ────────────
+      # The page below files ONE open `migration-failure` issue and promises
+      # that "the next migrate run reports the true state" — but nothing acted
+      # on that report, so the issue stayed open after the schema caught up
+      # (#904 sat open for ten days of green runs). A `succeeded` outcome means
+      # the migrator exited 0 at this run's head, which settles every page
+      # class (failed, unknown, failed-before-the-migrator): the schema is at
+      # head now. Gated on that KNOWN success, never on a merely green job, and
+      # on `main`: a workflow_dispatch against another ref exits 0 at THAT
+      # ref's head, which says nothing about whether main's head is applied.
+      # Best-effort, fail-open — never alters the migrate outcome.
+      - name: Resolve open migration-failure issue
+        if: steps.migrator.outputs.outcome == 'succeeded' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          OPEN=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label migration-failure \
+            --state open \
+            --json number \
+            --jq '.[].number' || true)
+          if [ -z "${OPEN}" ]; then
+            echo "No open migration-failure issue."
+            exit 0
+          fi
+          for N in ${OPEN}; do
+            echo "Closing migration-failure issue #${N}: this run applied to head."
+            gh issue close "${N}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --reason completed \
+              --comment "Resolved: migrate run ${RUN_URL} (head ${GITHUB_SHA}, trigger ${GITHUB_EVENT_NAME}) ran the migrator to a clean exit (exit 0), so the schema is at the authored head. A later failure files a new issue." \
+              || echo "::warning::could not close issue #${N} (best-effort)"
+          done
+          exit 0
+
       # ── Page on migration failure (best-effort) ───────────────────────────
       # A failed migrate run used to just turn red — nobody was paged, which is
       # exactly how web #538's silent migration failure went unnoticed on
@@ -681,7 +733,7 @@ jobs:
 
           Migrations are FORWARD-ONLY — fix forward (see the workflow header comment), never downgrade.
 
-          _Auto-filed by .github/workflows/migrate.yml; closes manually once a migrate run is green._"
+          _Auto-filed by .github/workflows/migrate.yml; closed automatically by the next migrate run on main whose migrator exits 0._"
 
           # Ensure the label exists (idempotent), then de-dupe into one issue.
           gh label create migration-failure \
