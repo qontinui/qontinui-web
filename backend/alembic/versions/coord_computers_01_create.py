@@ -1,7 +1,7 @@
 """coord.computers — the fleet machine as a first-class coord entity
 
 Revision ID: coord_computers_01
-Revises: overview_04_timeline
+Revises: mdroles_01
 Create Date: 2026-09-30
 
 Phase 1 (schema) of plan
@@ -181,7 +181,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_computers_01"
-down_revision = "overview_04_timeline"
+down_revision = "mdroles_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
