@@ -46,19 +46,25 @@ jobs:
       id-token: write
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-oneoff-task
           role-session-name: oneoff-seed-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Validate exactly one of email/device_id was given
+        # Inputs reach the shell through env, never inline expressions: a
+        # dispatcher-typed email containing `"` or `$(...)` would otherwise be
+        # executed (zizmor template-injection).
+        env:
+          SEED_EMAIL: ${{ inputs.email }}
+          SEED_DEVICE_ID: ${{ inputs.device_id }}
         run: |
-          if [ -z "${{ inputs.email }}" ] && [ -z "${{ inputs.device_id }}" ]; then
+          if [ -z "${SEED_EMAIL}" ] && [ -z "${SEED_DEVICE_ID}" ]; then
             echo "::error::give either email or device_id"
             exit 1
           fi
-          if [ -n "${{ inputs.email }}" ] && [ -n "${{ inputs.device_id }}" ]; then
+          if [ -n "${SEED_EMAIL}" ] && [ -n "${SEED_DEVICE_ID}" ]; then
             echo "::error::give only one of email / device_id, not both"
             exit 1
           fi

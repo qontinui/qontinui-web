@@ -1,0 +1,130 @@
+name: Workflow Lint
+
+# Security and correctness lint for this repo's GitHub Actions files:
+#   * zizmor 1.30.1 — template injection, excessive permissions, credential
+#     persistence, unpinned actions, dangerous triggers (.github/zizmor.yml
+#     holds the reasoned suppressions);
+#   * actionlint 1.7.12 — syntax, expression typing, unknown runner labels
+#     (.github/actionlint.yaml declares this repo's self-hosted labels).
+# Plan: 2026-10-04-adopt-self-hosted-ci-scout-improvements, Phase 1. The
+# pre-commit hook in .pre-commit-config.yaml is the skippable shift-left half;
+# this job is the authority.
+#
+# Required-check shim. The pull_request trigger carries NO `paths:` filter, on
+# purpose: a required context that a paths filter skips leaves every PR that
+# does not touch .github/ stuck on "Expected — waiting for status" (the ghost
+# required check alembic-graph-pr.yml and coord-column-drop-guard.yml
+# describe). The usual shim — a detect job plus a trivially-green job — is not
+# worth it here: the whole lint takes seconds, less than a change-detection
+# checkout would, so the job simply always runs and always reports.
+#
+# Coord candidate refs (merge-candidate*/**) are linted so the train sees the
+# check. There is deliberately no `push: main` trigger: coord reads a failing
+# push run on main as a red main and holds the train on it.
+#
+# ADVISORY until promoted: `continue-on-error` sits on the lint STEPS, not on
+# the job. A job-level continue-on-error still posts a check run whose
+# conclusion is failure, which coord's candidate classifier reads as red. With
+# step-level it the check stays green and the findings surface as annotations
+# and in the step summary. Promotion (plan step 1.5, after >= 5 observed
+# completed runs) removes the step-level continue-on-error and adds
+# `workflow-lint` to the ruleset's required checks.
+#
+# Runs on this repo's self-hosted public pool; hosted runners are off.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  ZIZMOR_VERSION: 1.30.1
+  ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    runs-on: [self-hosted, public-pool]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # Release tarballs by exact version, each checked against a sha256
+      # recorded here (zizmor-x86_64-unknown-linux-gnu.tar.gz from
+      # zizmorcore/zizmor v1.30.1; actionlint_1.7.12_linux_amd64.tar.gz, whose
+      # digest matches the release's actionlint_1.7.12_checksums.txt).
+      - name: Install zizmor and actionlint (pinned, sha256-verified)
+        id: install
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/workflow-lint-bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/zizmor.tgz" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  $RUNNER_TEMP/zizmor.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/zizmor.tgz" -C "$bin" zizmor
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/actionlint.tgz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$bin" actionlint
+          "$bin/zizmor" --version
+          "$bin/actionlint" --version
+
+      # Online audits (impostor-commit, known-vulnerable-actions, ref
+      # confusion) read the GitHub API with this run's read-only token.
+      - name: zizmor
+        id: zizmor
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "$RUNNER_TEMP/workflow-lint-bin/zizmor" --no-progress --format=github \
+            --config .github/zizmor.yml \
+            .github/workflows .github/actions .github/dependabot.yml
+
+      # `-shellcheck=` / `-pyflakes=` disable the external checkers so the
+      # verdict does not depend on what happens to be installed on the runner.
+      - name: actionlint
+        id: actionlint
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/workflow-lint-bin/actionlint" -shellcheck= -pyflakes= -color
+
+      - name: Summary
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
+          ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
+        run: |
+          {
+            echo "## workflow-lint (advisory)"
+            echo ""
+            echo "| step | outcome |"
+            echo "| --- | --- |"
+            echo "| install | ${INSTALL_OUTCOME} |"
+            echo "| zizmor ${ZIZMOR_VERSION} | ${ZIZMOR_OUTCOME} |"
+            echo "| actionlint ${ACTIONLINT_VERSION} | ${ACTIONLINT_OUTCOME} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pair in "install:${INSTALL_OUTCOME}" "zizmor:${ZIZMOR_OUTCOME}" "actionlint:${ACTIONLINT_OUTCOME}"; do
+            if [ "${pair#*:}" != "success" ]; then
+              echo "::warning title=workflow-lint (advisory)::${pair%%:*} did not succeed (${pair#*:}); see that step's log. Advisory: this check stays green until promoted."
+            fi
+          done

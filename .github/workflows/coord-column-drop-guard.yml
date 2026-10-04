@@ -82,13 +82,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # The gate diffs `<base>...HEAD` (three-dot: from the merge base),
           # so it needs the base ref AND enough history to find that merge
           # base. A depth-1 checkout has neither; `fetch-depth: 0` is the
           # simplest correct answer and the revision set is small.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Choose the base to diff against
         id: base
@@ -106,14 +107,18 @@ jobs:
         #   candidate ref -> origin/main: the candidate is main plus the PR, so
         #                    the three-dot diff from their merge base is exactly
         #                    the PR's revisions.
+        # Context values reach the script through env, never inline expressions
+        # (zizmor template-injection).
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
+          case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              base="origin/${{ github.base_ref }}" ;;
+              base="origin/${GITHUB_BASE_REF}" ;;
             push)
-              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-                before="${{ github.event.before }}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                before="${EVENT_BEFORE}"
                 if [ -n "$before" ] \
                    && [ "$before" != "0000000000000000000000000000000000000000" ] \
                    && git cat-file -e "${before}^{commit}" 2>/dev/null; then
@@ -125,7 +130,7 @@ jobs:
                 base="origin/main"
               fi ;;
             *)
-              echo "::error::unexpected event ${{ github.event_name }}"; exit 2 ;;
+              echo "::error::unexpected event ${GITHUB_EVENT_NAME}"; exit 2 ;;
           esac
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "diffing ${base}...HEAD"
@@ -138,4 +143,6 @@ jobs:
         # (git error, manifest half missing/null/empty, or a wildcard waiver on
         # the dropped table). Neither is a pass. The common case — no coord.*
         # drop in the diff — exits 0 offline.
-        run: python scripts/ci/check_coord_column_drops.py --base-ref "${{ steps.base.outputs.base }}"
+        env:
+          BASE_REF: ${{ steps.base.outputs.base }}
+        run: python scripts/ci/check_coord_column_drops.py --base-ref "${BASE_REF}"

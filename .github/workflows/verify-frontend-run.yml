@@ -188,19 +188,20 @@ jobs:
       # Sparse -- only the resolver's directory is needed.
       - name: Check out qontinui-web
         if: steps.gate.outputs.proceed == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           sparse-checkout: frontend/tests/spec-ci
+          persist-credentials: false
 
       - name: Setup Node
         if: steps.gate.outputs.proceed == 'true'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
 
       - name: Configure AWS credentials
         if: steps.gate.outputs.proceed == 'true'
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
           role-session-name: verify-frontend-validate-${{ github.run_id }}
@@ -334,24 +335,26 @@ jobs:
       # main (the push itself, or `validate`'s compare check for a dispatched
       # sha), so it is trusted code; this workflow file always runs from main.
       - name: Check out qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
 
       # The deployment resolver (`prior` and `alias` modes) runs from THIS
       # workflow's own commit -- main, the same commit whose copy of this file
       # is running -- never from DEPLOY_SHA, which on a manual re-smoke of an
       # older commit may predate the resolver entirely. One file, sparse.
       - name: Check out the deployment resolver (workflow's own commit)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ github.sha }}
           path: resolver
           sparse-checkout: frontend/tests/spec-ci/resolve-prod-deployment.ts
           sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -363,7 +366,7 @@ jobs:
       # the Vercel token comes from SSM, consistent with the backend, no extra
       # GH secret.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
           role-session-name: verify-frontend-${{ github.run_id }}
@@ -581,7 +584,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
           path: ~/.cache/qontinui-apt-playwright
@@ -741,7 +744,7 @@ jobs:
         # mistaken for the apt failure this plan exists to report. Belt and
         # braces.
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
@@ -924,12 +927,14 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1')) &&
           steps.token.outputs.token_missing == '0' &&
           steps.prior.outputs.prior_found == '1'
+        env:
+          PRIOR_UID_OUT: ${{ steps.prior.outputs.prior_uid }}
         run: |
           set -uo pipefail
           # `vercel promote` takes a deployment id or URL (Vercel docs,
           # /docs/instant-rollback "Undo a rollback": `vercel promote
           # [deployment-id or url]`); the uid is the unambiguous one.
-          PRIOR="${{ steps.prior.outputs.prior_uid }}"
+          PRIOR="${PRIOR_UID_OUT}"
           if [ -z "$PRIOR" ]; then
             echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
             exit 1
@@ -972,8 +977,11 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1')) &&
           (steps.token.outputs.token_missing == '1' ||
            steps.prior.outputs.prior_found != '1')
+        env:
+          TOKEN_MISSING: ${{ steps.token.outputs.token_missing }}
+          PRIOR_FOUND: ${{ steps.prior.outputs.prior_found }}
         run: |
-          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
+          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${TOKEN_MISSING}, prior_found=${PRIOR_FOUND}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
           exit 1
 
       # ── Resolve the open frontend-deploy-rollback issue (best-effort) ─────
@@ -1072,6 +1080,8 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1'))
         continue-on-error: true
         env:
+          ROLLED_BACK: ${{ steps.rollback.outputs.rolled_back }}
+          ROLLBACK_BLOCKED: ${{ steps.rollback.outputs.rollback_blocked }}
           GH_TOKEN: ${{ github.token }}
           # What the alias served before the smokes, and (if the rollback step
           # ran) what it served before the promote. Both are uids validated by
@@ -1103,9 +1113,9 @@ jobs:
             echo "::warning::not recording deployment ${DEPLOYMENT_ID} as failed: the alias was not confirmed to serve it throughout (before smokes: '${PRE_SMOKE_SERVING_UID}', before rollback: '${PRE_ROLLBACK_SERVING_UID}')."
           fi
 
-          if [ "${{ steps.rollback.outputs.rolled_back }}" = "1" ]; then
+          if [ "${ROLLED_BACK}" = "1" ]; then
             STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
-          elif [ "${{ steps.rollback.outputs.rollback_blocked }}" = "1" ]; then
+          elif [ "${ROLLBACK_BLOCKED}" = "1" ]; then
             STATE="Auto-rollback was WITHHELD — prod was serving a different deployment than the one smoked, its state could not be read, or the promote failed (see the run's errors). Prod may still be serving the failing deploy."
           else
             STATE="Auto-rollback was NOT possible — the failing deploy is STILL LIVE on prod."

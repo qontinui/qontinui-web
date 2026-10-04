@@ -41,13 +41,14 @@ runs:
     # .sibling/ (the path frontend-ci already uses for cloud-control) — NOT at
     # ../qontinui-schemas, which backend-ci clones at main for the path deps.
     - name: Checkout qontinui-schemas fleet-nouns.toml (public sibling, pinned ref)
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       with:
         repository: qontinui/qontinui-schemas
         ref: ${{ steps.pin.outputs.ref }}
         path: .sibling/qontinui-schemas-fleet-nouns
         sparse-checkout: fleet-nouns.toml
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Verify the digest and export QONTINUI_FLEET_NOUNS_FILE
       shell: bash
