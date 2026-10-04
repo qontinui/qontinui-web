@@ -1263,6 +1263,10 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          # The pinned action release defaults to Trivy v0.70.0; name the
+          # engine explicitly so pinning the action does not downgrade the
+          # scanner (master defaulted to v0.75.0 when this was pinned).
+          version: v0.75.0
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2

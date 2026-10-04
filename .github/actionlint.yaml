@@ -14,6 +14,10 @@ self-hosted-runner:
 
 # shellcheck findings actionlint relays from `run:` bodies, ignored by code.
 # Each entry is a whole-code ignore with its reason; nothing else is muted.
+# SC ignores apply to local runs only: workflow-lint.yml runs actionlint with
+# `-shellcheck=`, so CI never invokes shellcheck and these entries match
+# nothing there. They keep a local `actionlint` (shellcheck on PATH) quiet on
+# the same accepted findings.
 paths:
   .github/workflows/**/*.{yml,yaml}:
     ignore:
