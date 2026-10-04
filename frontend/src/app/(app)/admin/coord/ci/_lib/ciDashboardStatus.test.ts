@@ -34,6 +34,7 @@ import {
   stripLevel,
   type CiOverviewWire,
   type CiPoolAlertWire,
+  type CiUnattachedAlertWire,
   type CiPoolWire,
   type CiRepoOverviewWire,
   type CiStatusRead,
@@ -1013,5 +1014,140 @@ describe("formatting", () => {
   });
   it("labels a pool as its label set", () => {
     expect(poolLabel("qontinui, self-hosted")).toBe("[qontinui, self-hosted]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coord AS-BUILT follow-up: unattached alerts, repo freshness, null queue half
+// ---------------------------------------------------------------------------
+
+/** coord's test sample, verbatim shape. */
+const UNATTACHED: CiUnattachedAlertWire = {
+  repo: "qontinui/qontinui-web",
+  pool: "qontinui,self-hosted",
+  alert_id: "47990",
+  kind: "ci_pool_no_eligible_runner",
+  opened_at: "2026-10-03T08:12:00Z",
+  last_seen_at: "2026-10-03T08:40:00Z",
+  occurrences: 3,
+  summary: "0 eligible runners",
+  current_state_note:
+    "no persisted pool row matches this alert; its numbers are not current",
+};
+
+describe("unattached alerts — never red, never ignored", () => {
+  it("make an otherwise-green strip UNKNOWN, with the alert's age in the detail", () => {
+    const h = deriveCiHealth(
+      read(overview({ unattached_alerts: [UNATTACHED] })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toBe(
+      "CI health UNKNOWN — 1 open alert with no current pool reading"
+    );
+    expect(h.headline).not.toMatch(/Stuck/);
+    expect(h.detail).toContain("fired 2026-10-03T08:12:00Z");
+    expect(h.detail).toContain("last re-confirmed 2026-10-03T08:40:00Z");
+    expect(h.detail).toContain("no persisted pool row matches");
+    expect(h.badges.find((b) => b.key === "unattached-alerts")?.label).toBe(
+      "alerts unconfirmed 1"
+    );
+    expect(h.badges.find((b) => b.key === "stuck")).toBeUndefined();
+  });
+
+  it("are reported even when coord has no pool rows at all", () => {
+    const h = deriveCiHealth(
+      read(overview({ pools: [], unattached_alerts: [UNATTACHED] })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.detail).toContain("no current pool reading");
+  });
+
+  it("an absent field (older coord) is no unattached alerts", () => {
+    const h = deriveCiHealth(read(overview()), status(), NOW);
+    expect(h.level).toBe("green");
+  });
+
+  it("do not lift a measured stuck pool off red", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          pools: [
+            pool({
+              eligibility_state: "no_eligible_runner",
+              eligible_runners: 0,
+            }),
+          ],
+          unattached_alerts: [UNATTACHED],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("red");
+  });
+});
+
+describe("repo freshness and watched pools", () => {
+  it("carries last_observed_at and pools_watched onto the row", () => {
+    const [row] = buildRepoRows(
+      overview({
+        repos: [
+          repo({
+            last_observed_at: "2026-10-04T11:52:10Z",
+            pools_watched: false,
+          }),
+        ],
+      }),
+      [ciRow()],
+      ECON
+    );
+    expect(row?.outcomesObservedAt).toBe("2026-10-04T11:52:10Z");
+    expect(row?.poolsWatched).toBe(false);
+  });
+
+  it("absent fields (older coord) read as unknown, not false", () => {
+    const [row] = buildRepoRows(overview(), [ciRow()], ECON);
+    expect(row?.outcomesObservedAt).toBeNull();
+    expect(row?.poolsWatched).toBeNull();
+  });
+
+  it("a repo whose 24h window is empty but has history reads unknown — amber –", () => {
+    const ov = repo({
+      state: "unknown",
+      outcomes: null,
+      state_reason: "no job in the last 24 h; older observations exist",
+      last_observed_at: "2026-10-02T10:00:00Z",
+    });
+    const cells = outcomeCells(ov);
+    expect(cells.content_fail.text).toBe(DASH);
+    expect(cells.content_fail.reason).toBe(
+      "no job in the last 24 h; older observations exist"
+    );
+    expect(repoRowStatus("qontinui/qontinui-web", ciRow(), ov).attention).toBe(
+      "waiting"
+    );
+  });
+});
+
+describe("a pool whose queue half is all null", () => {
+  const nullQueue = unmeasuredPool("unknown", {
+    observed_at: null,
+    stale_after_secs: null,
+    poll_ok: null,
+    poll_complete: null,
+  });
+
+  it("renders every figure – and its group is undated", () => {
+    for (const c of Object.values(poolMemberCells(nullQueue))) {
+      expect(c.text).toBe(DASH);
+      expect(c.text).not.toMatch(/NaN|ago/);
+    }
+    const [g] = groupPools([nullQueue]);
+    expect(g?.observedAt).toBeNull();
+    expect(g?.status.kind).toBe("unknown");
   });
 });

@@ -334,6 +334,71 @@ describe("/admin/coord/ci", () => {
     await waitFor(() => expect(row.textContent).toContain("cand. p90 10m"));
   });
 
+  it("lists unattached alerts amber, keyed by alert id, and never turns the strip red", async () => {
+    const body = {
+      ...overviewBody([measuredPool()]),
+      unattached_alerts: [
+        {
+          repo: WEB,
+          pool: "qontinui,self-hosted",
+          alert_id: "47990",
+          kind: "ci_pool_no_eligible_runner",
+          opened_at: "2026-10-03T08:12:00Z",
+          last_seen_at: "2026-10-03T08:40:00Z",
+          occurrences: 3,
+          summary: "0 eligible runners",
+          current_state_note: "no persisted pool row matches this alert",
+        },
+      ],
+    };
+    route(body);
+    render(<CoordCiPage />);
+    const row = await screen.findByTestId("ci-alert-unattached-47990");
+    expect(row.getAttribute("data-attention")).toBe("waiting");
+    expect(row.textContent).toContain("fired 2026-10-03T08:12:00Z");
+    expect(row.textContent).toContain("no persisted pool row matches");
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "unknown"
+    );
+    expect(screen.getByTestId("ci-health-strip").textContent).not.toContain(
+      "Stuck"
+    );
+  });
+
+  it("stamps repo outcomes with last_observed_at and notes unwatched pools", async () => {
+    const body = overviewBody([measuredPool()]);
+    body.repos[0] = {
+      ...body.repos[0]!,
+      last_observed_at: NOW_ISO,
+      pools_watched: false,
+    } as (typeof body.repos)[number];
+    route(body);
+    render(<CoordCiPage />);
+    const stamp = await screen.findByTestId(
+      `ci-freshness-repo-outcomes-${WEB}`
+    );
+    expect(stamp.textContent).not.toMatch(/NaN|freshness unknown/);
+    expect(screen.getByTestId(`ci-repo-no-pools-${WEB}`).textContent).toBe(
+      "no watched pools"
+    );
+  });
+
+  it("a pool with a null observed_at shows 'freshness unknown', never NaN or '–ago'", async () => {
+    route(
+      overviewBody([
+        { ...UNKNOWN_POOL, observed_at: null, stale_after_secs: null },
+      ])
+    );
+    render(<CoordCiPage />);
+    const stamp = await screen.findByTestId(
+      "ci-freshness-pool-qontinui-ccfg,self-hosted"
+    );
+    expect(stamp.textContent).toBe("freshness unknown");
+    expect(
+      screen.getByTestId("ci-pool-row-qontinui-ccfg,self-hosted").textContent
+    ).not.toMatch(/NaN|–ago|undefined/);
+  });
+
   it("links the machine axis to the Dev Ops overview", async () => {
     route(overviewBody([measuredPool()]));
     render(<CoordCiPage />);

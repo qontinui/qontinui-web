@@ -25,7 +25,8 @@
  *    ANY pool is not `measured` (required or not — an unmeasured pool's
  *    required-ness is itself unknown), while any pool's `required` is `null`,
  *    while any repo lacks a CI-status row, a green/red main or a measured
- *    outcome split, or while either read the strip is built from failed,
+ *    outcome split, while any open alert has no current pool reading
+ *    (`unattached_alerts`), or while either read the strip is built from failed,
  *    never landed, or is older than three polls.
  *    UNKNOWN renders UNKNOWN — not "stuck" and not "healthy"
  *    (`[policy: an-unknown-input-must-not-fire-a-detector]`).
@@ -153,6 +154,29 @@ export interface CiRepoOverviewWire {
   state_reason: string | null;
   outcomes: CiOutcomesWire | null;
   hosted: CiHostedWire | null;
+  /**
+   * Newest job observation for this repo, any age (coord AS-BUILT). The
+   * outcome split's freshness stamp. Absent from an older coord and `null`
+   * with no observation at all — UNKNOWN freshness either way.
+   */
+  last_observed_at?: string | null;
+  /**
+   * Whether coord's queue watcher watches any pool for this repo. `false` is
+   * a configuration fact (no self-hosted pool in its workflows), not an
+   * error; absent/`null` is unknown.
+   */
+  pools_watched?: boolean | null;
+}
+
+/**
+ * An open alert that matches no persisted pool row (coord AS-BUILT). Coord
+ * holds NO current observation of its pool, so it can never be confirmed:
+ * always amber/UNKNOWN, never "Stuck". Its `current_state_note` says why its
+ * numbers are not current.
+ */
+export interface CiUnattachedAlertWire extends CiPoolAlertWire {
+  repo: string;
+  pool: string;
 }
 
 export interface CiOverviewWire {
@@ -161,6 +185,15 @@ export interface CiOverviewWire {
   note: string | null;
   pools: CiPoolWire[];
   repos: CiRepoOverviewWire[];
+  /** Absent from a coord predating it — read as `[]` by {@link unattachedAlerts}. */
+  unattached_alerts?: CiUnattachedAlertWire[] | null;
+}
+
+/** The overview's unattached alerts, `[]` when coord sent none. */
+export function unattachedAlerts(
+  data: CiOverviewWire | null
+): CiUnattachedAlertWire[] {
+  return data?.unattached_alerts ?? [];
 }
 
 /** `/ci/overview` poll cadence — the queue-wait watcher's tick (plan Phase 4). */
@@ -880,6 +913,10 @@ export interface RepoRowModel {
   outcomes: OutcomeCells;
   outcomesState: ObservationState;
   windowHours: number | null;
+  /** The outcome split's freshness (`last_observed_at`); null = unknown. */
+  outcomesObservedAt: string | null;
+  /** `false` = coord watches no pool for this repo; `null` = not reported. */
+  poolsWatched: boolean | null;
   /** The pipeline Train tab, filtered to this repo — train blockers live there (D2). */
   trainHref: string;
 }
@@ -1084,6 +1121,8 @@ export function buildRepoRows(
       outcomes: outcomeCells(ov),
       outcomesState: ov ? normalizeState(ov.state) : "never_observed",
       windowHours: ov?.window_hours ?? null,
+      outcomesObservedAt: ov?.last_observed_at ?? null,
+      poolsWatched: ov?.pools_watched ?? null,
       trainHref: trainHref(repo),
     });
   }
@@ -1208,6 +1247,13 @@ export function deriveCiHealth(
 
   const contentFail = sumOutcome(data, "content_fail");
   const infra = sumOutcome(data, "infra_shaped");
+  // Open alerts on pools coord holds NO current reading of. Never red (no
+  // reading can confirm them), never ignored (they disqualify green).
+  const unattached = unattachedAlerts(data);
+  const unattachedText = unattached.map(
+    (a) =>
+      `Open alert on ${a.repo} ${poolLabel(a.pool)} with no current pool reading: ${alertAgeText(a)}.`
+  );
 
   const badges: HealthBadge[] = [
     countBadge("pools", "pools", pools.length, "muted"),
@@ -1222,6 +1268,17 @@ export function deriveCiHealth(
         nonMeasured.length,
         "muted",
         "Pool rows whose state is stale or unknown — their figures render –, never 0."
+      )
+    );
+  }
+  if (unattached.length > 0) {
+    badges.push(
+      countBadge(
+        "unattached-alerts",
+        "alerts unconfirmed",
+        unattached.length,
+        "muted",
+        "Open alerts on pools coord holds no current reading of — their numbers are from when they fired, and nothing confirms or clears them. UNKNOWN, not stuck."
       )
     );
   }
@@ -1345,7 +1402,7 @@ export function deriveCiHealth(
       headline:
         "CI capacity UNKNOWN — coord has no pool observations for this tenant",
       detail:
-        [data.note, qualifiers].filter(Boolean).join(" ") ||
+        [data.note, ...unattachedText, qualifiers].filter(Boolean).join(" ") ||
         "No pool has ever been observed; that is no measurement, not an idle fleet.",
       badges,
       pools,
@@ -1366,7 +1423,19 @@ export function deriveCiHealth(
     return {
       level: "unknown",
       headline: `CI capacity UNKNOWN for ${poolsAffected} pool${poolsAffected === 1 ? "" : "s"} — ${reason}`,
-      detail: [...unconfirmed, qualifiers].filter(Boolean).join(" ") || null,
+      detail:
+        [...unconfirmed, ...unattachedText, qualifiers]
+          .filter(Boolean)
+          .join(" ") || null,
+      badges,
+      pools,
+    };
+  }
+  if (unattached.length > 0) {
+    return {
+      level: "unknown",
+      headline: `CI health UNKNOWN — ${unattached.length} open alert${unattached.length === 1 ? "" : "s"} with no current pool reading`,
+      detail: [...unattachedText, qualifiers].filter(Boolean).join(" ") || null,
       badges,
       pools,
     };
