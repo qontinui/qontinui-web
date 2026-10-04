@@ -964,9 +964,15 @@ describe("MergePipeline", () => {
     expect(screen.queryByTestId("pipeline-empty")).toBeNull();
     expect(screen.getByText("Connecting…")).toBeInTheDocument();
     // ...nor with counts of rows nobody fetched.
-    expect(screen.getByTestId("pipeline-filter-in-flight")).toHaveTextContent("–");
-    expect(screen.getByTestId("pipeline-filter-in-flight")).not.toHaveTextContent("0");
-    expect(screen.getByTestId("pipeline-health")).toHaveTextContent("in flight –");
+    expect(screen.getByTestId("pipeline-filter-in-flight")).toHaveTextContent(
+      "–"
+    );
+    expect(
+      screen.getByTestId("pipeline-filter-in-flight")
+    ).not.toHaveTextContent("0");
+    expect(screen.getByTestId("pipeline-health")).toHaveTextContent(
+      "in flight –"
+    );
   });
 
   it("shows no PR-read notice when the last read succeeded", () => {
@@ -1296,6 +1302,37 @@ describe("MergePipeline", () => {
 
     fireEvent.click(screen.getByTestId("pipeline-filter-train"));
     expect(healthCalls()).toBeGreaterThan(0);
+  });
+
+  it("honours the ?tab=train&repo=… deep link from /admin/coord/ci", async () => {
+    // Plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` D2: the CI
+    // page's repo rows link here for train blockers rather than rebuild them.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    });
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+    const before = window.location.href;
+    window.history.pushState(
+      {},
+      "",
+      "/admin/coord/pipeline?tab=train&repo=qontinui%2Fqontinui-web"
+    );
+    try {
+      render(<MergePipeline />);
+      // The Train view replaces the PR list — its row is the active-tab proof.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("train-row-qontinui/qontinui-web")
+        ).toBeInTheDocument()
+      );
+      expect(screen.getByTestId("pipeline-search")).toHaveValue(
+        "qontinui/qontinui-web"
+      );
+    } finally {
+      window.history.pushState({}, "", before);
+    }
   });
 
   it("still renders the train view when the health read is unavailable", async () => {
@@ -1856,9 +1893,7 @@ describe("MergePipeline gate-holds health badge", () => {
     // failure mode the console's absence-is-not-zero rule exists for.
     hookData.current.gateTotalBlocks = null;
     render(<MergePipeline />);
-    expect(
-      screen.queryByTestId("pipeline-gate-holds")
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-gate-holds")).not.toBeInTheDocument();
   });
 
   it("renders a MEASURED zero, because that is a fact", () => {
@@ -1984,9 +2019,9 @@ describe("MergePipeline attempt history replaces the raw stream", () => {
     expect(screen.queryByTestId("gate-decisions")).not.toBeInTheDocument();
     expect(screen.queryByTestId("raw-proposals")).not.toBeInTheDocument();
     // …but the signal survives the collapse, on the panel header.
-    expect(screen.getByTestId("coord-internals-orphan-gates")).toHaveTextContent(
-      "1 unlisted"
-    );
+    expect(
+      screen.getByTestId("coord-internals-orphan-gates")
+    ).toHaveTextContent("1 unlisted");
   });
 });
 
@@ -2135,7 +2170,9 @@ describe("MergePipeline gate join across row shapes", () => {
     window.localStorage.setItem("fleet:coord-internals", "1");
 
     render(<MergePipeline />);
-    fireEvent.click(screen.getByTestId("pipeline-row").querySelector("button")!);
+    fireEvent.click(
+      screen.getByTestId("pipeline-row").querySelector("button")!
+    );
     expect(screen.queryByTestId("row-gate-decision")).not.toBeInTheDocument();
     // It is residue instead — visible, not dropped.
     expect(screen.getByTestId("gate-decisions")).toHaveTextContent(

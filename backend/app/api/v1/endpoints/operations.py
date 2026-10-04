@@ -7580,6 +7580,11 @@ class RepoCiRow(BaseModel):
     observation to date the value by (the vacuously-green / memo arms, or no
     checks at all) — and also an older coord that sends no stamp; both read
     as UNKNOWN freshness on the page, never as "just now".
+
+    The stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339
+    text reaches the page byte-for-byte (no re-serialisation that rewrites
+    the offset or the precision), and a value this model cannot parse is
+    still delivered rather than 500-ing the whole read.
     """
 
     repo: str
@@ -7591,14 +7596,14 @@ class RepoCiRow(BaseModel):
     )
     latest_details_url: str | None = None
     main_head_sha: str | None = None
-    main_verdict_observed_at: datetime | None = Field(
+    main_verdict_observed_at: str | None = Field(
         default=None,
         description=(
             "max(updated_at) over the ci_baselines rows main_verdict was read "
             "from; null when no baseline backs the verdict"
         ),
     )
-    pr_checks_observed_at: datetime | None = Field(
+    pr_checks_observed_at: str | None = Field(
         default=None,
         description="newest pr_check_runs row counted; null when none",
     )
@@ -7613,7 +7618,7 @@ class CiStatusResponse(BaseModel):
     ``as_of`` renders as UNKNOWN freshness, never as current.
     """
 
-    as_of: datetime | None = Field(
+    as_of: str | None = Field(
         default=None, description="when coord composed this response (RFC 3339)"
     )
     repos: list[RepoCiRow]
