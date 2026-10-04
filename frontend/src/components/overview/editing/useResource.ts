@@ -14,12 +14,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ResourceError,
   VersionConflictError,
   createResource,
   describeWriteFailure,
+  getResource,
   listResource,
   updateResource,
   type VersionedRecord,
+  type WriteSource,
 } from "./api";
 
 export type ListState<T> =
@@ -30,12 +33,16 @@ export type ListState<T> =
 export type SaveResult<T> =
   | { ok: true; item: T }
   | { ok: false; conflict: T }
-  | { ok: false; error: string };
+  /** `code` is the server's machine reason when it gave one (e.g.
+   *  `source_page_not_found`), so a caller can offer the fix it implies. */
+  | { ok: false; error: string; code?: string | null };
 
 export interface UpdateOptions<T> {
   /** What the record will look like once saved, shown until the server
    *  answers. Omit to show nothing until then. */
   optimistic?: (item: T) => T;
+  /** Where the write comes from, for the change log. Default `ui`. */
+  source?: WriteSource;
 }
 
 function newKey(): string {
@@ -125,7 +132,8 @@ export function useResourceList<T extends VersionedRecord>(
           path,
           current.id,
           patch,
-          current.version
+          current.version,
+          options.source ?? "ui"
         );
         replace(saved);
         return { ok: true, item: saved };
@@ -143,11 +151,14 @@ export function useResourceList<T extends VersionedRecord>(
   );
 
   const create = useCallback(
-    async (body: Record<string, unknown>): Promise<SaveResult<T>> => {
+    async (
+      body: Record<string, unknown>,
+      { source = "ui" }: { source?: WriteSource } = {}
+    ): Promise<SaveResult<T>> => {
       try {
         // One key per attempt the reader made; the client's own retries of
         // that attempt reuse it, so a lost response cannot create twice.
-        const created = await createResource<T>(path, body, newKey());
+        const created = await createResource<T>(path, body, newKey(), source);
         setList((prev) =>
           prev.state === "ready"
             ? { ...prev, items: [...prev.items, created] }
@@ -155,13 +166,115 @@ export function useResourceList<T extends VersionedRecord>(
         );
         return { ok: true, item: created };
       } catch (err) {
-        return { ok: false, error: describeWriteFailure(err) };
+        return {
+          ok: false,
+          error: describeWriteFailure(err),
+          code: err instanceof ResourceError ? err.code : null,
+        };
       }
     },
     [path]
   );
 
+  /** Take a record off the list once the server has deleted it. */
+  const drop = useCallback((id: string) => {
+    setList((prev) =>
+      prev.state === "ready"
+        ? { ...prev, items: prev.items.filter((i) => i.id !== id) }
+        : prev
+    );
+  }, []);
+
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { list, update, create, reload };
+  return { list, update, create, drop, replace, reload };
+}
+
+export type RecordState<T> =
+  | { state: "loading" }
+  /** `status` is the HTTP status when the server answered (404: no such
+   *  record here), null when it could not be asked. */
+  | { state: "error"; message: string; status: number | null }
+  | { state: "ready"; item: T; canEdit: boolean };
+
+/**
+ * One record of a resource, read with its served `version` and written back
+ * through the contract — the single-record twin of {@link useResourceList}.
+ *
+ * `update` names the version the write was BUILT on (a working copy's base,
+ * which may be older than the record on screen), so a peer's save in between
+ * is a conflict, never an overwrite. On a conflict the hook holds THEIR copy
+ * — it is now the server's truth — and hands it back for the caller to show
+ * beside the writer's; the writer's working copy is the caller's and is
+ * never touched here.
+ */
+export function useResourceRecord<T extends VersionedRecord>(
+  path: string,
+  id: string | null,
+  { hold, reloadKey }: { hold: boolean; reloadKey: unknown }
+) {
+  const [record, setRecord] = useState<RecordState<T>>({ state: "loading" });
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    if (hold || id === null) return;
+    let live = true;
+    setRecord({ state: "loading" });
+    getResource<T>(path, id).then(
+      (body) =>
+        live &&
+        setRecord({ state: "ready", item: body.item, canEdit: body.can_edit }),
+      (err: unknown) =>
+        live &&
+        setRecord({
+          state: "error",
+          message: err instanceof Error ? err.message : String(err),
+          status: err instanceof ResourceError ? err.status : null,
+        })
+    );
+    return () => {
+      live = false;
+    };
+  }, [path, id, hold, reloadKey, nonce]);
+
+  const replace = useCallback((item: T) => {
+    setRecord((prev) => (prev.state === "ready" ? { ...prev, item } : prev));
+  }, []);
+
+  const update = useCallback(
+    async (
+      patch: Record<string, unknown>,
+      baseVersion: number,
+      { source = "ui" }: { source?: WriteSource } = {}
+    ): Promise<SaveResult<T>> => {
+      if (id === null) return { ok: false, error: "Nothing is loaded." };
+      try {
+        const saved = await updateResource<T>(
+          path,
+          id,
+          patch,
+          baseVersion,
+          source
+        );
+        replace(saved);
+        return { ok: true, item: saved };
+      } catch (err) {
+        if (err instanceof VersionConflictError) {
+          const theirs = err.current as T;
+          replace(theirs);
+          return { ok: false, conflict: theirs };
+        }
+        return {
+          ok: false,
+          error: describeWriteFailure(err),
+          code: err instanceof ResourceError ? err.code : null,
+        };
+      }
+    },
+    [path, id, replace]
+  );
+
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+
+  return { record, update, replace, reload };
 }

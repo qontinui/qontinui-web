@@ -175,6 +175,30 @@ describe("GatesTable search + gate-id", () => {
     expect(screen.queryByTestId("gates-clearance-provenance")).toBeNull();
   });
 
+  it("marks a retention-archived row with an archived chip, and a live row with none", () => {
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            gate_id: "11111111-1111-1111-1111-111111111111",
+            verdict: "cleared",
+            archived_at: "2026-09-01T00:00:00Z",
+          }),
+          gate({ gate_id: "22222222-2222-2222-2222-222222222222" }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    const chips = screen.getAllByTestId("gates-archived");
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toBe("archived");
+  });
+
+  it("renders NO archived chip when coord omits archived_at (pre-#2537 coord)", () => {
+    render(<GatesTable gates={GATES} onActed={() => {}} />);
+    expect(screen.queryByTestId("gates-archived")).toBeNull();
+  });
+
   it("renders the gate-class chip when gate_class is set", () => {
     render(
       <GatesTable

@@ -52,6 +52,7 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  HardDrive,
   History as HistoryIcon,
   Inbox,
   KeyRound,
@@ -89,6 +90,42 @@ export interface NavLeaf {
    * a member can reach.
    */
   operatorOnly?: boolean;
+  /**
+   * Coord-tenant-admin-only — a tenant-scoped page whose backend read is
+   * gated on `require_coord_tenant_admin` (so a plain member would get a 403
+   * page). Rendered for an admin of the ACTIVE tenant or a superuser, via
+   * `isActiveTenantCoordAdmin` — the question that gate asks. NOT
+   * `useAuth().isCoordAdmin`, which is a union across tenants. Distinct from
+   * `operatorOnly`, which is `is_superuser` alone. See {@link navEntryVisibleTo}.
+   */
+  coordAdminOnly?: boolean;
+}
+
+/** Who is looking at the menu. */
+export interface NavViewer {
+  isSuperuser: boolean;
+  isCoordAdmin: boolean;
+}
+
+/**
+ * Whether a nav entry is shown to a viewer. The sidebar filter calls this, so
+ * the two visibility classes cannot drift between the model and the menu:
+ * `adminOnly`/`operatorOnly` needs a superuser; `coordAdminOnly` needs a coord
+ * tenant admin (superusers included).
+ */
+export function navEntryVisibleTo(
+  entry: {
+    adminOnly?: boolean;
+    operatorOnly?: boolean;
+    coordAdminOnly?: boolean;
+  },
+  viewer: NavViewer | null
+): boolean {
+  // `operatorOnly` is the model's name for the sidebar's `adminOnly`.
+  const superuserOnly = entry.adminOnly === true || entry.operatorOnly === true;
+  if (superuserOnly && viewer?.isSuperuser !== true) return false;
+  if (entry.coordAdminOnly && viewer?.isCoordAdmin !== true) return false;
+  return true;
 }
 
 export interface NavGroup {
@@ -425,6 +462,22 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-devops-overview",
       },
       {
+        // Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-
+        // and-coord-has-no-resource-model` Phase 5: the computer as a record —
+        // capacity, usage per lane, watched services, events, workloads. Beside
+        // Overview because Overview's computers link points here.
+        // `coordAdminOnly`, not `operatorOnly`: its proxies are gated on
+        // `require_coord_tenant_admin` (the payload carries registrar CI-runner
+        // rows and access facts), and the menu uses that same gate — a plain
+        // member still sees exactly Overview here (resolved Q3), while a coord
+        // admin who is not staff is not locked out of a page they may read.
+        href: "/admin/coord/computers",
+        label: "Computers",
+        icon: HardDrive,
+        testId: "coord-nav-computers",
+        coordAdminOnly: true,
+      },
+      {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
@@ -554,9 +607,12 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-agent-registry",
       },
       {
-        // Per-tenant switches coord ENFORCES (today: transcript sync, the
-        // session-output ingest consent gate). Plan
-        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`.
+        // Per-tenant switches: transcript sync (the session-output ingest
+        // consent gate coord enforces; plan
+        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
+        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // spawn (plan
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

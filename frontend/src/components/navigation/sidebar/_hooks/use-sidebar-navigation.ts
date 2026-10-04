@@ -6,6 +6,9 @@ import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems, OVERVIEW_GROUP } from "../nav-items";
 import { cloudNavItems } from "@cloud/nav-items";
 import { useAuth } from "@/contexts/auth-context";
+import { navEntryVisibleTo } from "@/components/admin/coord/coordNavModel";
+import { isActiveTenantCoordAdmin } from "@/lib/coord-admin";
+import { useTenant } from "@/contexts/tenant-context";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 
@@ -73,6 +76,7 @@ export function useSidebarNavigation() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
+  const { tenants, activeTenantId } = useTenant();
   const { mode: productMode } = useProductMode();
   const { showAdvancedAutomation } = useAdvancedAutomation();
   const [mounted, setMounted] = useState(false);
@@ -99,8 +103,19 @@ export function useSidebarNavigation() {
             item.productMode !== productMode
           )
             return false;
-          if (authLoading || !user) return !item.adminOnly;
-          return !item.adminOnly || user.is_superuser === true;
+          if (authLoading || !user) {
+            return !item.adminOnly && !item.coordAdminOnly;
+          }
+          return navEntryVisibleTo(item, {
+            isSuperuser: user.is_superuser === true,
+            // Admin IN THE ACTIVE TENANT — the question the admin-gated
+            // proxies behind `coordAdminOnly` pages ask — not the union.
+            isCoordAdmin: isActiveTenantCoordAdmin({
+              user,
+              tenants,
+              activeTenantId,
+            }),
+          });
         })
         .map((item) => ({
           ...item,
@@ -113,6 +128,8 @@ export function useSidebarNavigation() {
       isDevelopment,
       authLoading,
       user,
+      tenants,
+      activeTenantId,
       productMode,
       showAdvancedAutomation,
     ]
