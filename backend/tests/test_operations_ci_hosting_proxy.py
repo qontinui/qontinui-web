@@ -11,7 +11,10 @@ The proxy forwards to coord's ``GET /coord/ci-hosting/effective`` and adds
 2. **An older coord 404s and the proxy says so** (a 404, not a value).
 3. **``can_edit`` follows the effective-tenant roles**, not coord's
    cross-tenant ``is_admin`` union, exactly like ``GET /fleet-policy``.
-4. **``?repo=`` is forwarded** so one repo can be resolved alone.
+4. **``?repo=`` is forwarded** so one repo can be resolved alone, and coord's
+   ``404 repo_not_in_tenant`` for it becomes a typed UNKNOWN for that repo.
+5. **The caller's bearer and active-tenant selection reach coord**, which is
+   what scopes the read to the caller's tenant.
 
 Mirrors ``test_operations_fleet_policy_proxy.py``.
 """
@@ -51,7 +54,7 @@ COORD_BODY = {
             "repo": "qontinui/shared",
             "level": None,
             "resolved_scope": "none",
-            "unknown_reason": "owners_disagree",
+            "unknown_reason": "select_failed",
         },
     ],
 }
@@ -148,7 +151,7 @@ class TestGetCiHosting:
 
         shared = body["repos"][2]
         assert shared["level"] is None
-        assert shared["unknown_reason"] == "owners_disagree"
+        assert shared["unknown_reason"] == "select_failed"
 
     def test_an_unrecognised_level_is_unknown_not_a_guess(self, client: TestClient):
         payload = {
@@ -216,3 +219,99 @@ class TestGetCiHosting:
             body = client.get(f"{API_PREFIX}/ci-hosting").json()
 
         assert body["can_edit"] is True
+
+
+class TestCiHostingTenantScoping:
+    def test_forwards_the_callers_bearer_and_active_tenant(self):
+        """Coord scopes the read by these two headers; losing either would
+        silently read the wrong tenant (or the home tenant)."""
+        from app.api.deps import get_current_active_user_async
+        from app.api.v1.endpoints import operations
+        from app.api.v1.endpoints.operations import get_tenant_id
+        from app.api.v1.endpoints.operations import router as operations_router
+
+        active = str(uuid4())
+        resolved = uuid4()
+
+        async def _capturing_tenant_id() -> object:
+            # What the real dependency does first: capture the caller's
+            # bearer and selection into the request-scoped ContextVars.
+            operations._caller_bearer.set("caller-token")
+            operations._caller_active_tenant.set(active)
+            return resolved
+
+        app = FastAPI()
+        user = MagicMock()
+        user.is_superuser = False
+        app.dependency_overrides[get_current_active_user_async] = lambda: user
+        app.dependency_overrides[get_tenant_id] = _capturing_tenant_id
+        app.include_router(operations_router, prefix=API_PREFIX)
+        client = TestClient(app)
+
+        with (
+            _patch_coord_get(_mock_response(200, COORD_BODY)) as coord,
+            _patch_identity(),
+        ):
+            resp = client.get(f"{API_PREFIX}/ci-hosting")
+
+        assert resp.status_code == 200
+        headers = coord.get.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer caller-token"
+        assert headers["X-Qontinui-Active-Tenant"] == active
+
+
+class TestCiHostingRepoScope:
+    def test_repo_not_in_tenant_is_a_typed_unknown_for_that_repo(
+        self, client: TestClient
+    ):
+        resp404 = _mock_response(404, {"error": "repo_not_in_tenant"})
+        with _patch_coord_get(resp404), _patch_identity():
+            resp = client.get(f"{API_PREFIX}/ci-hosting?repo=other/repo")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["repos"] == [
+            {
+                "repo": "other/repo",
+                "level": None,
+                "resolved_scope": "none",
+                "unknown_reason": "repo_not_in_tenant",
+                "watched": None,
+            }
+        ]
+        # The tenant default was not read by this request — UNKNOWN, not a value.
+        assert body["tenant_default"]["level"] is None
+
+    def test_a_plain_404_with_a_repo_still_passes_through(self, client: TestClient):
+        """A coord without the route is not a per-repo answer."""
+        with (
+            _patch_coord_get(_mock_response(404, {"error": "NOT_FOUND"})),
+            _patch_identity(),
+        ):
+            resp = client.get(f"{API_PREFIX}/ci-hosting?repo=o/r")
+
+        assert resp.status_code == 404
+
+    def test_watched_passes_through_and_absent_stays_null(self, client: TestClient):
+        payload = {
+            "tenant_default": {"level": "off", "resolved_scope": "tenant"},
+            "repos": [
+                {
+                    "repo": "o/a",
+                    "level": "off",
+                    "resolved_scope": "tenant",
+                    "watched": False,
+                },
+                {"repo": "o/b", "level": "off", "resolved_scope": "tenant"},
+                {
+                    "repo": "o/c",
+                    "level": "off",
+                    "resolved_scope": "tenant",
+                    "watched": "x",
+                },
+            ],
+        }
+        with _patch_coord_get(_mock_response(200, payload)), _patch_identity():
+            body = client.get(f"{API_PREFIX}/ci-hosting").json()
+
+        assert [r["watched"] for r in body["repos"]] == [False, None, None]

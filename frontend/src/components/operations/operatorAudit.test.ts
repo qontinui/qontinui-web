@@ -289,6 +289,16 @@ describe("describeAuditAction — R8", () => {
     ]);
   });
 
+  it("does not promote domain/scope_key/level on any other action", () => {
+    const radius = blastRadiusOf({
+      ...row(),
+      action: "agent_registry.set",
+      metadata: { domain: "x", scope_key: "y", level: "z" },
+    });
+    expect(radius.items).toEqual([]);
+    expect(radius.unstated).toBe(true);
+  });
+
   it("falls back to the raw id, never to a friendly placeholder", () => {
     // The id is a real fact and a working filter term; "Unknown action" is
     // neither, and would hide the one string an operator could act on.

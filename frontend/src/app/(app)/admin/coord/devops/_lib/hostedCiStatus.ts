@@ -16,9 +16,14 @@
  *   value.** Coord's typed read never collapses an unhappy path to a level,
  *   because this domain has two opposite "safe" sides (`off` is safe for
  *   spend; `on` is safe for a tenant with no self-hosted runners) — plan D5.
- * - **`owners_disagree` is its own kind.** A repo owned by several tenants
- *   resolves Unknown when their settings differ; the operator is told which
- *   unknown it is, in amber.
+ * - **Only this tenant's own preference is shown.** Coord scopes the read to
+ *   the caller's tenant and never exposes another tenant's setting for a
+ *   shared repo, so there is no "owners disagree" state here; a repo the
+ *   tenant does not own is UNKNOWN (`repo_not_in_tenant`), not a value.
+ * - **`not watched`** (amber) marks an `off` repo coord's hosted-job detector
+ *   does not poll (`watched: false`), so the panel never implies detection
+ *   coverage coord does not have. An absent `watched` (older coord) adds
+ *   nothing.
  * - **`off` is a setting in effect, not an alarm** (style guide §3.4: a
  *   deliberate operator setting reflected back never moves the level). Both
  *   `on` and `off` are calm.
@@ -60,6 +65,11 @@ export interface CiHostingReading {
 export interface CiHostingRepoReading extends CiHostingReading {
   /** `owner/name` — the repo-band `scope_key` spelling. */
   repo: string;
+  /**
+   * Whether coord's hosted-job detector polls this repo. `false` on an `off`
+   * repo renders `not watched`; absent / `null` (an older coord) says nothing.
+   */
+  watched?: boolean | null;
 }
 
 export interface CiHostingView {
@@ -70,32 +80,28 @@ export interface CiHostingView {
   can_edit: boolean;
 }
 
-/** The reason coord gives when a multi-owner repo's tenants disagree. */
-export const OWNERS_DISAGREE = "owners_disagree";
+/** The reason given for a `?repo=` this tenant does not own. */
+export const REPO_NOT_IN_TENANT = "repo_not_in_tenant";
 
-export type HostedCiKind = "on" | "off" | "owners_disagree" | "unknown";
+export type HostedCiKind = "on" | "off" | "unknown";
 
 /**
  * Who must act on a hosted-CI reading.
  *
  * - `on` / `off` — none. Either is a setting somebody chose (or the default),
  *   reflected back; nothing is waiting on anyone.
- * - `owners_disagree` — WAITING. The repo is shared by tenants whose settings
- *   differ, so what coord does with it is not one answer.
  * - `unknown` — WAITING, the ignorance floor (R3): the read failed, or coord
  *   does not serve it, so whose move it is cannot be told.
  */
 export const HOSTED_CI_ATTENTION_BY_KIND = {
   on: "none",
   off: "none",
-  owners_disagree: "waiting",
   unknown: "waiting",
 } satisfies AttentionMap<HostedCiKind>;
 
 export const HOSTED_CI_BADGE_CLASS: Record<HostedCiKind, string> = {
   on: INERT,
   off: INERT,
-  owners_disagree: UNKNOWN_AMBER,
   unknown: UNKNOWN_AMBER,
 };
 
@@ -110,17 +116,15 @@ export const HOSTED_CI_PALETTE: StatusPalette<HostedCiKind> = {
 /** The dash an unknown value renders as — never a guessed `on`. */
 export const UNKNOWN_DASH = "–";
 
-/** Operator words for a level. */
-export function levelLabel(level: HostedCiLevel | null): string {
-  if (level === "on") return "On";
-  if (level === "off") return "Off";
-  return UNKNOWN_DASH;
+/** Operator words for a KNOWN level. An unknown one is `UNKNOWN_DASH`. */
+export function levelLabel(level: HostedCiLevel): string {
+  return level === "on" ? "On" : "Off";
 }
 
 /** Operator words for an `unknown_reason`. The wire string stays in a title. */
 export function unknownReasonText(reason: string | null): string {
-  if (reason === OWNERS_DISAGREE) {
-    return "this repo belongs to more than one tenant, and their settings disagree";
+  if (reason === REPO_NOT_IN_TENANT) {
+    return "this repo is not one of this tenant's repos";
   }
   if (reason === null || reason === "") return "coord could not read it";
   return `coord could not read it (${reason})`;
@@ -179,7 +183,6 @@ export function asHostedCiLevel(
 /** The kind of one reading. */
 export function hostedCiKind(reading: CiHostingReading): HostedCiKind {
   if (reading.level === "on" || reading.level === "off") return reading.level;
-  if (reading.unknown_reason === OWNERS_DISAGREE) return "owners_disagree";
   return "unknown";
 }
 
@@ -188,8 +191,9 @@ export function hostedCiKind(reading: CiHostingReading): HostedCiKind {
  *
  * `stale` is set when the latest read FAILED and this reading is the one an
  * earlier read delivered: the value is kept (it is still the best evidence)
- * but the badge says it is old, and a stale row is at least amber — a retained
- * value may not look like a re-confirmed one (R6).
+ * but the reason says it is old, and the ROW is raised to `waiting` (an amber
+ * left-edge accent) while the badge keeps its value's own calm hue — a
+ * retained value may not look like a re-confirmed one (R6).
  */
 export function repoStatus(
   reading: CiHostingRepoReading,
@@ -211,19 +215,18 @@ export function repoStatus(
     ? " · last refresh failed, this value may be stale"
     : "";
   if (kind === "on" || kind === "off") {
+    const unwatched = isNotWatched(reading);
     return {
       kind,
-      label: levelLabel(reading.level),
-      reason: `from ${repoSourceLabel(reading.resolved_scope)}${staleNote}`,
-      attention: stale ? "waiting" : HOSTED_CI_ATTENTION_BY_KIND[kind],
-    };
-  }
-  if (kind === "owners_disagree") {
-    return {
-      kind,
-      label: "owners disagree",
-      reason: unknownReasonText(reading.unknown_reason) + staleNote,
-      attention: HOSTED_CI_ATTENTION_BY_KIND.owners_disagree,
+      label: levelLabel(kind),
+      reason:
+        `from ${repoSourceLabel(reading.resolved_scope)}` +
+        (unwatched ? ` · ${NOT_WATCHED_REASON}` : "") +
+        staleNote,
+      // Off itself is calm; what is amber is a coverage gap (`not watched`)
+      // or a value the latest read did not re-confirm.
+      attention:
+        stale || unwatched ? "waiting" : HOSTED_CI_ATTENTION_BY_KIND[kind],
     };
   }
   return {
@@ -232,6 +235,19 @@ export function repoStatus(
     reason: unknownReasonText(reading.unknown_reason) + staleNote,
     attention: HOSTED_CI_ATTENTION_BY_KIND.unknown,
   };
+}
+
+/** Why `not watched` is shown, in operator words. */
+export const NOT_WATCHED_REASON =
+  "not watched: coord's hosted-job check does not poll this repo, so a job aimed at a GitHub-hosted runner here would go unflagged";
+
+/**
+ * An `off` repo coord's hosted-job detector does not poll. Only an explicit
+ * `watched: false` counts — absent or `null` is an older coord that does not
+ * report coverage, and says nothing either way.
+ */
+export function isNotWatched(reading: CiHostingRepoReading): boolean {
+  return reading.level === "off" && reading.watched === false;
 }
 
 /**

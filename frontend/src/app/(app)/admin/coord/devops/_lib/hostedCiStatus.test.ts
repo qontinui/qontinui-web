@@ -5,6 +5,8 @@ import {
   HOSTED_CI_PALETTE,
   currentRepoChoice,
   hostedCiKind,
+  isNotWatched,
+  levelLabel,
   repoSourceLabel,
   repoStatus,
   summarizeRepos,
@@ -43,10 +45,34 @@ describe("hostedCiStatus", () => {
     expect(s.attention).toBe("waiting");
   });
 
-  it("owners_disagree is its own amber kind", () => {
-    const r = reading({ level: null, unknown_reason: "owners_disagree" });
-    expect(hostedCiKind(r)).toBe("owners_disagree");
-    expect(repoStatus(r).label).toBe("owners disagree");
+  it("a repo outside the tenant is UNKNOWN with its reason in words", () => {
+    const r = reading({ level: null, unknown_reason: "repo_not_in_tenant" });
+    expect(hostedCiKind(r)).toBe("unknown");
+    expect(repoStatus(r).label).toBe("–");
+    expect(repoStatus(r).reason).toMatch(/not one of this tenant's repos/);
+  });
+
+  it("there is no owners-disagree kind: coord never shows another tenant's preference", () => {
+    expect(Object.keys(HOSTED_CI_ATTENTION_BY_KIND).sort()).toEqual([
+      "off",
+      "on",
+      "unknown",
+    ]);
+  });
+
+  it("not watched only for an explicit watched:false on an off repo", () => {
+    expect(isNotWatched(reading({ level: "off", watched: false }))).toBe(true);
+    expect(isNotWatched(reading({ level: "off", watched: null }))).toBe(false);
+    expect(isNotWatched(reading({ level: "off" }))).toBe(false);
+    expect(isNotWatched(reading({ level: "on", watched: false }))).toBe(false);
+    const s = repoStatus(reading({ level: "off", watched: false }));
+    expect(s.attention).toBe("waiting");
+    expect(s.reason).toMatch(/not watched/);
+  });
+
+  it("levelLabel names both known levels", () => {
+    expect(levelLabel("on")).toBe("On");
+    expect(levelLabel("off")).toBe("Off");
   });
 
   it("a stale value is kept but no longer calm", () => {

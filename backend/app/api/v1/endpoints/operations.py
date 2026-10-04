@@ -9849,6 +9849,9 @@ async def put_fleet_policy(
 #: The two levels coord resolves this domain to. Anything else is UNKNOWN.
 _HOSTED_CI_LEVELS = ("on", "off")
 
+#: Coord's 404 code for a ``?repo=`` the caller's tenant does not own.
+_CI_HOSTING_REPO_NOT_IN_TENANT = "repo_not_in_tenant"
+
 
 class CiHostingReading(BaseModel):
     """One resolved ``github_hosted_ci`` reading. ``level is None`` ⇒ UNKNOWN."""
@@ -9857,7 +9860,8 @@ class CiHostingReading(BaseModel):
     #: ``"none" | "repo" | "tenant" | "system"`` — the band that answered.
     #: ``"none"`` means no row matched and the domain default (``on``) applies.
     resolved_scope: str
-    #: Set when ``level`` is ``None``: ``owners_disagree``, a read failure, or
+    #: Set when ``level`` is ``None``: a read failure,
+    #: ``repo_not_in_tenant`` for a ``?repo=`` this tenant does not own, or
     #: ``malformed_level`` when coord answered with a level this proxy does not
     #: recognise.
     unknown_reason: str | None = None
@@ -9866,6 +9870,9 @@ class CiHostingReading(BaseModel):
 class CiHostingRepoReading(CiHostingReading):
     #: ``owner/name`` — the repo-band ``scope_key`` spelling.
     repo: str
+    #: Whether coord's hosted-job detector polls this repo. ``None`` when
+    #: coord does not report it (an older build) — never read as ``False``.
+    watched: bool | None = None
 
 
 class CiHostingView(BaseModel):
@@ -9907,7 +9914,14 @@ def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
             repo = entry.get("repo")
             if not isinstance(repo, str) or not repo:
                 continue
-            repos.append(CiHostingRepoReading(repo=repo, **_ci_hosting_reading(entry)))
+            watched = entry.get("watched")
+            repos.append(
+                CiHostingRepoReading(
+                    repo=repo,
+                    watched=watched if isinstance(watched, bool) else None,
+                    **_ci_hosting_reading(entry),
+                )
+            )
     return CiHostingView(
         tenant_default=CiHostingReading(
             **_ci_hosting_reading(body.get("tenant_default"))
@@ -9937,9 +9951,36 @@ async def get_ci_hosting(
     params: dict[str, Any] = {}
     if repo:
         params["repo"] = repo
-    payload = await _proxy_coord_get(
-        "/coord/ci-hosting/effective", params=params or None, tenant_id=tenant_id
-    )
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/ci-hosting/effective", params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        # Coord scopes `?repo=` to the caller's own tenant and answers 404
+        # `repo_not_in_tenant` for a repo it does not own. That is a typed
+        # UNKNOWN for THAT repo, not "this coord has no such route" — which
+        # is the other 404, and still passes through.
+        if not (
+            repo
+            and exc.status_code == 404
+            and _CI_HOSTING_REPO_NOT_IN_TENANT in str(exc.detail)
+        ):
+            raise
+        payload = {
+            "tenant_default": {
+                "level": None,
+                "resolved_scope": "none",
+                "unknown_reason": "not_read",
+            },
+            "repos": [
+                {
+                    "repo": repo,
+                    "level": None,
+                    "resolved_scope": "none",
+                    "unknown_reason": _CI_HOSTING_REPO_NOT_IN_TENANT,
+                }
+            ],
+        }
     identity = await get_coord_identity(request)
     active = request.headers.get(ACTIVE_TENANT_HEADER)
     can_edit = (

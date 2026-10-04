@@ -92,6 +92,9 @@ export interface AuditFilter {
  */
 export const ESCALATE_OVERRIDE_ACTION = "pr_merge.escalate_override";
 
+/** Every `PUT /coord/fleet-policy` write, for any domain. */
+export const FLEET_POLICY_UPSERT_ACTION = "fleet_policy.upsert";
+
 export const AUDIT_FILTERS: readonly AuditFilter[] = [
   {
     id: "fleet",
@@ -183,6 +186,12 @@ const BLAST_RADIUS_KEYS: readonly {
   key: string;
   label: string;
   format: (v: unknown) => string | null;
+  /**
+   * Promote only on these actions. For generic key names (`domain`,
+   * `level`) that other writers may stamp with an unrelated meaning — there
+   * the value stays in the raw metadata rather than gaining a wrong label.
+   */
+  onlyFor?: string;
 }[] = [
   {
     key: "affected_tenant_ids",
@@ -232,9 +241,24 @@ const BLAST_RADIUS_KEYS: readonly {
   // `{domain, scope_band, scope_key, level, master_enabled, version}`. The
   // setting, the repo it was scoped to (absent for a tenant-band write) and
   // the level are what an operator scans for.
-  { key: "domain", label: "Policy", format: (v) => String(v) },
-  { key: "scope_key", label: "Applies to", format: (v) => String(v) },
-  { key: "level", label: "Level", format: (v) => String(v) },
+  {
+    key: "domain",
+    label: "Policy",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
+  {
+    key: "scope_key",
+    label: "Applies to",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
+  {
+    key: "level",
+    label: "Level",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
   { key: "version", label: "Policy version", format: (v) => String(v) },
 ];
 
@@ -250,6 +274,7 @@ export function blastRadiusOf(row: AuditRow): BlastRadius {
   if (!meta) return { items: [], unstated: true };
   const items: BlastRadiusItem[] = [];
   for (const spec of BLAST_RADIUS_KEYS) {
+    if (spec.onlyFor !== undefined && row.action !== spec.onlyFor) continue;
     if (!(spec.key in meta)) continue;
     const value = meta[spec.key];
     if (value === null || value === undefined) continue;

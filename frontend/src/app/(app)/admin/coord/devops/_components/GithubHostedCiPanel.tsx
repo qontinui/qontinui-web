@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { AlertTriangle, Cloud, Loader2 } from "lucide-react";
 import {
   CollapsiblePanel,
@@ -10,6 +16,7 @@ import {
   RefreshButton,
   StatusBadge,
   UNKNOWN_AMBER,
+  escalateAttention,
   readIsUnknown,
 } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
@@ -33,14 +40,17 @@ import {
   HOSTED_CI_PALETTE,
   REPO_CHOICE_LABEL,
   REPO_OVERRIDE_CHOICES,
+  NOT_WATCHED_REASON,
   UNKNOWN_DASH,
   asHostedCiLevel,
   currentRepoChoice,
+  isNotWatched,
   levelLabel,
   repoSourceLabel,
   repoStatus,
   summarizeRepos,
   tenantSourceLabel,
+  unknownReasonText,
   type CiHostingRepoReading,
   type HostedCiLevel,
   type RepoOverrideChoice,
@@ -58,7 +68,14 @@ const LABEL = "GitHub-hosted CI";
  * its in-place detail (R5), and derivations from the pure `hostedCiStatus`
  * module (R8).
  *
- * - **Tenant row** — `On` / `Off` through the shared tenant-band dial. Turning
+ * - **Tenant row** — the DISPLAYED value and source come from the hosted-CI
+ *   aggregate's `tenant_default`, which is UNKNOWN-aware (a null level stays
+ *   `–`). The shared tenant-band dial is used only for the write, its
+ *   read-back and `can_edit`: its generic view floors a missing level to
+ *   `off`, which this setting must never render. After a write, the value
+ *   shows `–` until an aggregate read made AFTER the write agrees with the
+ *   write's read-back.
+ * - **Writes** — `On` / `Off` through that dial. Turning
  *   it OFF asks for a reason first, because off is the change that can stop a
  *   tenant's CI when it has no self-hosted runners; the reason becomes the
  *   write's `change_note` (the `DeviceDrainControl` precedent).
@@ -77,7 +94,8 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
     LABEL,
     "coord"
   );
-  const { reload: reloadCi } = ci;
+  const { reload: reloadCi, deliveries } = ci;
+  const { reload: reloadTenant, setLevel, lastWrite } = tenant;
   const repoWrite = useRepoFleetPolicyWrite<RepoOverrideChoice>(
     GITHUB_HOSTED_CI_DOMAIN,
     LABEL,
@@ -90,24 +108,62 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const [tenantPending, setTenantPending] = useState<HostedCiLevel | null>(
     null
   );
+  /**
+   * A tenant write's read-back, waiting for the aggregate to agree. `after`
+   * is the aggregate's delivery count when the write was made: only a read
+   * that lands LATER may confirm it, so a pre-write aggregate that happens to
+   * match cannot.
+   */
+  const [expected, setExpected] = useState<{
+    level: HostedCiLevel | null;
+    after: number;
+  } | null>(null);
+  const writeMark = useRef(0);
+
+  useEffect(() => {
+    const effective = lastWrite?.effective;
+    if (!effective) return;
+    setExpected({
+      level: asHostedCiLevel(effective.effective_level),
+      after: writeMark.current,
+    });
+  }, [lastWrite]);
+
+  const aggregateTenant = ci.view?.tenant_default ?? null;
+  const confirmed =
+    expected !== null &&
+    deliveries > expected.after &&
+    aggregateTenant?.level === expected.level;
+  useEffect(() => {
+    if (confirmed) setExpected(null);
+  }, [confirmed]);
+  const awaitingAgreement = expected !== null && !confirmed;
 
   /** Re-read both halves. A confirmed aggregate read retires read-back fails. */
   const refreshAll = useCallback(async () => {
-    const [ok] = await Promise.all([reloadCi(), tenant.reload()]);
+    const [ok] = await Promise.all([reloadCi(), reloadTenant()]);
     if (ok) clearReadbackErrors();
-  }, [reloadCi, tenant, clearReadbackErrors]);
+  }, [reloadCi, reloadTenant, clearReadbackErrors]);
 
-  const tenantLevel = asHostedCiLevel(tenant.policy?.effective_level);
-  const tenantScope = tenant.policy?.resolved_scope ?? null;
-  const tenantUnknown = tenantLevel === null || tenant.readbackError !== null;
+  const tenantLevel = aggregateTenant?.level ?? null;
+  const tenantScope = aggregateTenant?.resolved_scope ?? null;
+  const tenantUnknown =
+    tenantLevel === null || tenant.readbackError !== null || awaitingAgreement;
   const canEditTenant = isAdmin && tenant.policy?.can_edit === true;
   const canEditRepos = isAdmin && ci.view?.can_edit === true;
+  // R6: a retained value may not look like a re-confirmed one — in the
+  // collapsed header as much as in the body.
+  const stale = ci.stale || (tenant.error !== null && tenant.policy !== null);
+  const staleSuffix = stale ? " (stale)" : "";
+  const stillReading =
+    (ci.loading && ci.view === null) || (tenant.loading && !tenant.policy);
 
   const writeTenant = useCallback(
     async (level: HostedCiLevel, note?: string) => {
       setTenantPending(level);
+      writeMark.current = deliveries;
       try {
-        const ok = await tenant.setLevel(level, note);
+        const ok = await setLevel(level, note);
         // Repos that inherit just changed with it — re-read what they resolve.
         if (ok) void reloadCi();
         return ok;
@@ -115,7 +171,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
         setTenantPending(null);
       }
     },
-    [tenant, reloadCi]
+    [setLevel, reloadCi, deliveries]
   );
 
   const onTenantClick = (level: HostedCiLevel) => {
@@ -149,20 +205,27 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
         <>
           <Badge
             variant="outline"
-            className={`text-[10px] ${tenantUnknown ? UNKNOWN_AMBER : ""}`}
+            className={`text-[10px] ${tenantUnknown || stale ? UNKNOWN_AMBER : ""}`}
             data-testid="github-hosted-ci-summary-tenant"
+            data-stale={stale ? "true" : undefined}
           >
-            tenant {tenantUnknown ? UNKNOWN_DASH : levelLabel(tenantLevel)}
+            tenant{" "}
+            {tenantUnknown || tenantLevel === null
+              ? UNKNOWN_DASH
+              : levelLabel(tenantLevel)}
+            {staleSuffix}
           </Badge>
           <Badge
             variant="outline"
-            className={`text-[10px] ${reposUnknown || summary.unknown > 0 ? UNKNOWN_AMBER : ""}`}
+            className={`text-[10px] ${reposUnknown || summary.unknown > 0 || stale ? UNKNOWN_AMBER : ""}`}
             data-testid="github-hosted-ci-summary-repos"
+            data-stale={stale ? "true" : undefined}
           >
             {reposUnknown
               ? `repos ${UNKNOWN_DASH}`
               : `repos on ${summary.on} · off ${summary.off}` +
                 (summary.unknown > 0 ? ` · unknown ${summary.unknown}` : "")}
+            {staleSuffix}
           </Badge>
         </>
       }
@@ -219,8 +282,17 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
               variant="outline"
               className={tenantUnknown ? UNKNOWN_AMBER : ""}
               data-testid="github-hosted-ci-tenant-effective"
+              title={
+                awaitingAgreement
+                  ? "Waiting for a fresh read to confirm the write"
+                  : tenantLevel === null
+                    ? unknownReasonText(aggregateTenant?.unknown_reason ?? null)
+                    : undefined
+              }
             >
-              {tenantUnknown ? UNKNOWN_DASH : levelLabel(tenantLevel)}
+              {tenantUnknown || tenantLevel === null
+                ? UNKNOWN_DASH
+                : levelLabel(tenantLevel)}
             </Badge>
             <span className="text-xs text-muted-foreground">from</span>
             <Badge
@@ -232,12 +304,35 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
             </Badge>
           </div>
 
-          {!canEditTenant && (
+          {aggregateTenant !== null &&
+            aggregateTenant.level === null &&
+            !awaitingAgreement && (
+              <p
+                className="text-xs text-amber-700 dark:text-amber-300"
+                data-testid="github-hosted-ci-tenant-unknown"
+              >
+                The tenant value is unknown:{" "}
+                {unknownReasonText(aggregateTenant.unknown_reason)}.
+              </p>
+            )}
+
+          {awaitingAgreement && !tenant.readbackError && (
+            <p
+              className="text-xs text-amber-700 dark:text-amber-300"
+              data-testid="github-hosted-ci-tenant-awaiting"
+            >
+              {deliveries > (expected?.after ?? 0)
+                ? "The write's read-back and the per-repo read disagree about the tenant value, so it is shown as unknown. Refresh to re-check."
+                : "Written — waiting for a fresh read to confirm what coord resolves."}
+            </p>
+          )}
+
+          {!canEditTenant && !stillReading && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="github-hosted-ci-readonly"
             >
-              {tenant.policy || ci.view
+              {!isAdmin || tenant.policy
                 ? "Read-only: only an admin of this tenant can change this setting."
                 : "Read-only: your role could not be read, so whether a change would be accepted is unknown. Refresh once coord answers."}
             </p>
@@ -253,10 +348,11 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
           )}
           {tenant.error && (
             <Notice testId="github-hosted-ci-tenant-error">
-              Couldn&apos;t read the tenant setting: {tenant.error}.{" "}
+              Couldn&apos;t refresh the tenant setting&apos;s write control:{" "}
+              {tenant.error}.{" "}
               {tenant.policy
-                ? "Showing the last value read, which may be stale."
-                : "The current value is unknown."}
+                ? "Whether you can change it is from the last read, which may be stale."
+                : "Whether you can change it is unknown."}
             </Notice>
           )}
         </div>
@@ -407,14 +503,32 @@ function RepoRow({
 }) {
   const status = repoStatus(reading, { stale, readbackError });
   const current = readbackError ? null : currentRepoChoice(reading);
+  const unwatched = !readbackError && isNotWatched(reading);
   return (
     <RecordRow
       data-testid="github-hosted-ci-repo-row"
       identity={reading.repo}
       label={LABEL}
-      status={<StatusBadge status={status} palette={HOSTED_CI_PALETTE} />}
+      status={
+        <>
+          <StatusBadge status={status} palette={HOSTED_CI_PALETTE} />
+          {unwatched && (
+            <Badge
+              variant="outline"
+              className={`text-[11px] font-semibold whitespace-nowrap ${UNKNOWN_AMBER}`}
+              title={NOT_WATCHED_REASON}
+              data-testid="github-hosted-ci-not-watched"
+            >
+              not watched
+            </Badge>
+          )}
+        </>
+      }
       reason={status.reason}
-      attention={status.attention}
+      attention={escalateAttention(
+        status.attention,
+        unwatched ? "waiting" : "none"
+      )}
       expanded={expanded}
       onToggle={onToggle}
     >
