@@ -13,6 +13,7 @@ vi.mock("@/services/service-factory", () => ({
 import {
   RedMainBanner,
   bannerHeadline,
+  blockingSinceLabel,
   compactPrincipal,
   deployRedHeadline,
   parseAlertClaim,
@@ -68,6 +69,7 @@ describe("parseRedMainAlerts", () => {
         claim: { kind: "unknown", cause: "not-reported" },
         // Never read off a red_main row.
         blocksMerging: null,
+        blockingWorkflows: [],
       },
     ]);
   });
@@ -811,7 +813,7 @@ describe("deploy_red blocks_merging states", () => {
     const headline = deployRedHeadline(a, NOW);
     expect(headline).toBe(
       `Deploy is red on ${REPO} for 7h 29m — merges are currently BLOCKED ` +
-        "on it until coord re-proves it deploy-only; see the coord diagnosis"
+        "on it until coord re-proves it push-only; see the coord diagnosis"
     );
     expect(headline).not.toMatch(/does not block/);
     // Even beside a red main it never says "does not block".
@@ -870,5 +872,144 @@ describe("deploy_red blocks_merging states", () => {
     expect(el).toHaveAttribute("data-blocks-merging", "unknown");
     // Never the not-blocking look on an unknown.
     expect(el.className).not.toContain("border-dashed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `detail.blocking_workflows` and `detail.blocking_since` — coord
+// `deploy_red_blocking_patch`. What blocks can differ from what fires the row.
+// ---------------------------------------------------------------------------
+
+describe("deploy_red blocking workflows and blocking_since", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  // coord's mixed case: a proven "Deploy backend" fires the row while an
+  // unproven "Deploy web" is what blocks merging.
+  const mixed = {
+    alert_key: `deploy_red:${REPO}`,
+    kind: "deploy_red",
+    first_seen_at: "2026-09-12T04:31:00Z",
+    detail: {
+      repo: REPO,
+      workflows: ["Deploy backend"],
+      blocks_merging: true,
+      blocking_reason: "push_only_proof_pending",
+      blocking_workflows: ["Deploy web", 7, null],
+      blocking_since: "2026-09-12T09:59:59.123456+00:00",
+    },
+  };
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("names the BLOCKING workflow, not the failing one", () => {
+    const [a] = parseRedMainAlerts([mixed]);
+    // Non-strings are dropped.
+    expect(a.blockingWorkflows).toEqual(["Deploy web"]);
+    const headline = deployRedHeadline(a, NOW);
+    expect(headline).toBe(
+      `Deploy is red on ${REPO} for 7h 29m — merges are currently BLOCKED ` +
+        "on Deploy web until coord re-proves it push-only; see the coord diagnosis"
+    );
+    expect(headline).not.toContain("Deploy backend");
+  });
+
+  it("uses the plural for several blocking workflows", () => {
+    const [a] = parseRedMainAlerts([
+      {
+        ...mixed,
+        detail: {
+          ...mixed.detail,
+          blocking_workflows: ["Deploy web", "Deploy api"],
+        },
+      },
+    ]);
+    expect(deployRedHeadline(a, NOW)).toContain(
+      "BLOCKED on Deploy web, Deploy api until coord re-proves them push-only"
+    );
+  });
+
+  it("keeps the generic wording when the blocking list is empty or absent", () => {
+    for (const blocking_workflows of [[], undefined, "Deploy web"]) {
+      const [a] = parseRedMainAlerts([
+        { ...mixed, detail: { ...mixed.detail, blocking_workflows } },
+      ]);
+      expect(a.blockingWorkflows).toEqual([]);
+      expect(deployRedHeadline(a, NOW)).toContain(
+        "merges are currently BLOCKED on it until coord re-proves it push-only"
+      );
+    }
+  });
+
+  it("labels the failing and blocking lists apart", async () => {
+    getMock.mockResolvedValue([mixed]);
+    render(<RedMainBanner />);
+
+    const row = await screen.findByTestId("red-main-banner-row");
+    expect(row.textContent).toContain("failing: Deploy backend");
+    expect(
+      screen.getByTestId("deploy-red-blocking-workflows").textContent
+    ).toBe("blocking: Deploy web");
+  });
+
+  it("shows no blocking chip on a non-blocking row", async () => {
+    getMock.mockResolvedValue([
+      {
+        ...mixed,
+        detail: {
+          ...mixed.detail,
+          blocks_merging: false,
+          blocking_workflows: [],
+        },
+      },
+    ]);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner-row");
+    expect(screen.queryByTestId("deploy-red-blocking-workflows")).toBeNull();
+  });
+
+  it("ages blocking_since alike in coord's chrono and Postgres spellings", () => {
+    // The same instant, give or take a second, in both spellings.
+    expect(blockingSinceLabel("2026-09-12T10:00:00Z", NOW)).toBe(
+      "blocking for 2h 0m"
+    );
+    expect(blockingSinceLabel("2026-09-12T09:59:59.123456+00:00", NOW)).toBe(
+      "blocking for 2h 0m"
+    );
+  });
+
+  it("shows an unparseable blocking_since verbatim", () => {
+    expect(blockingSinceLabel("not-a-time", NOW)).toBe(
+      "blocking since not-a-time"
+    );
+  });
+
+  it("drops a non-string blocking_since", () => {
+    for (const blocking_since of [1726138800, null, {}, ""]) {
+      const [a] = parseRedMainAlerts([
+        { ...mixed, detail: { ...mixed.detail, blocking_since } },
+      ]);
+      expect(a.blockingSince).toBeUndefined();
+    }
+  });
+
+  it("puts the aged blocking_since in the headline's tooltip", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
+    try {
+      getMock.mockResolvedValue([mixed]);
+      render(<RedMainBanner />);
+      const row = await screen.findByTestId("red-main-banner-row");
+      const titled = row.querySelector("[title*='blocking for']");
+      expect(titled?.getAttribute("title")).toBe(
+        "reason: push_only_proof_pending, blocking for 2h 0m"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

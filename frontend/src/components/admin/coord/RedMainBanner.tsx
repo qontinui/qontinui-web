@@ -255,6 +255,14 @@ export interface RedMainAlert {
   blockingReason?: string;
   /** `detail.blocking_since` — when the current blocking state began. */
   blockingSince?: string;
+  /**
+   * `detail.blocking_workflows` — the deploy-side workflows the merge gate is
+   * blocked on RIGHT NOW. Not necessarily {@link RedMainAlert.workflows}: a
+   * proven workflow A can fire the row while an unproven B is what blocks
+   * (coord `deploy_red_blocking_patch`). Non-strings are dropped; `[]` when
+   * absent.
+   */
+  blockingWorkflows: string[];
 }
 
 /**
@@ -411,6 +419,11 @@ export function parseRedMainAlerts(
           : null,
       blockingReason: nonEmptyString(detail.blocking_reason),
       blockingSince: nonEmptyString(detail.blocking_since),
+      blockingWorkflows: Array.isArray(detail.blocking_workflows)
+        ? detail.blocking_workflows.filter(
+            (w): w is string => typeof w === "string" && w.length > 0
+          )
+        : [],
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls;
@@ -485,9 +498,14 @@ export function deployRedHeadline(
   const since = a.since && label !== a.since ? ` for ${label}` : "";
   const head = `Deploy is red on ${a.repo}${since}`;
   if (a.blocksMerging === true) {
+    // Name what blocks — it can differ from the failing list (see
+    // `blockingWorkflows`). Without a list, the generic wording.
+    const n = a.blockingWorkflows.length;
+    const on = n > 0 ? a.blockingWorkflows.join(", ") : "it";
+    const pronoun = n > 1 ? "them" : "it";
     return (
-      `${head} — merges are currently BLOCKED on it until coord ` +
-      "re-proves it deploy-only; see the coord diagnosis"
+      `${head} — merges are currently BLOCKED on ${on} until coord ` +
+      `re-proves ${pronoun} push-only; see the coord diagnosis`
     );
   }
   if (a.blocksMerging === false) {
@@ -503,14 +521,26 @@ export function deployRedHeadline(
 }
 
 /**
+ * `detail.blocking_since`, aged the way {@link sinceLabel} ages an episode.
+ * coord writes it two ways — chrono on the fire path (`…Z`) and Postgres on
+ * the mark path (`….123456+00:00`) — and both parse to the same age, so they
+ * display alike. An unparseable value is shown verbatim rather than hidden.
+ * Pure — exported for the vitest suite.
+ */
+export function blockingSinceLabel(iso: string, nowMs: number): string {
+  const label = sinceLabel(iso, nowMs);
+  return label === iso ? `blocking since ${iso}` : `blocking for ${label}`;
+}
+
+/**
  * The native tooltip for a BLOCKING deploy row: coord's reason and since,
  * which are machine vocabulary (R8) and so stay off the headline itself.
  */
-function blockingTitle(a: RedMainAlert): string | undefined {
+function blockingTitle(a: RedMainAlert, nowMs: number): string | undefined {
   if (a.blocksMerging !== true) return undefined;
   const parts = [
     a.blockingReason ? `reason: ${a.blockingReason}` : null,
-    a.blockingSince ? `blocking since ${a.blockingSince}` : null,
+    a.blockingSince ? blockingSinceLabel(a.blockingSince, nowMs) : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(", ") : undefined;
 }
@@ -808,12 +838,25 @@ export function RedMainBanner() {
             className="h-4 w-4 shrink-0 text-red-300"
             aria-hidden
           />
-          <span className="text-sm font-semibold" title={blockingTitle(a)}>
+          <span
+            className="text-sm font-semibold"
+            title={blockingTitle(a, nowMs)}
+          >
             {bannerHeadline(a, nowMs, redMainRepos.has(a.repo))}
           </span>
           {a.workflows.length > 0 && (
             <span className="text-xs font-mono text-red-100">
               failing: {a.workflows.join(", ")}
+            </span>
+          )}
+          {a.blocksMerging === true && a.blockingWorkflows.length > 0 && (
+            // Labelled apart from `failing:` because the two lists can
+            // differ: what is red is not necessarily what holds merges.
+            <span
+              className="text-xs font-mono text-red-100"
+              data-testid="deploy-red-blocking-workflows"
+            >
+              blocking: {a.blockingWorkflows.join(", ")}
             </span>
           )}
           {stale && lastSuccessAt !== null && (
