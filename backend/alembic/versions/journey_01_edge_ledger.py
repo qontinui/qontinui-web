@@ -1,7 +1,7 @@
 """project.journey_edge_observations + project.journey_frontier — the observed journey ledger
 
 Revision ID: journey_01_edge_ledger
-Revises: coordinput_01_operator_inputs
+Revises: mdroles_01
 Create Date: 2026-09-30
 
 Phase 1 (qontinui-web half) of plan
@@ -155,7 +155,7 @@ from alembic import op
 # Keep ``down_revision`` on ONE physical line — the ``alembic-heads-pr`` CI gate
 # parses it with a line-based regex.
 revision: str = "journey_01_edge_ledger"
-down_revision: str | Sequence[str] | None = "coordinput_01_operator_inputs"
+down_revision: str | Sequence[str] | None = "mdroles_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
