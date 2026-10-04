@@ -39,6 +39,20 @@ from app.schemas.overview import (
     PhaseProgressRead,
     PhaseProgressUpdate,
 )
+from app.spend.resources import (
+    RecurringCostCreate,
+    RecurringCostRead,
+    RecurringCostUpdate,
+    SpendRuleCreate,
+    SpendRuleRead,
+    SpendRuleUpdate,
+    VendorCreate,
+    VendorRead,
+    VendorUpdate,
+    recurring_cost_store,
+    spend_rule_store,
+    vendor_store,
+)
 
 REGISTRY: dict[str, ResourceSpec] = {
     spec.name: spec
@@ -178,6 +192,65 @@ REGISTRY: dict[str, ResourceSpec] = {
             tables=("files",),
         ),
         ResourceSpec(
+            name="vendors",
+            path="spend/vendors",
+            title="Vendors",
+            description=(
+                "Who the project pays. A vendor carries no money: its figures "
+                "come from its connector (connector + non-secret "
+                'connector_config, e.g. {"org": "qontinui"}) or from its '
+                "recurring costs. Credentials never go here."
+            ),
+            permission="project_admin",
+            read_model=VendorRead,
+            create_model=VendorCreate,
+            update_model=VendorUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            store=vendor_store,
+            tables=("vendors",),
+        ),
+        ResourceSpec(
+            name="spend_rules",
+            path="spend/rules",
+            title="Spend alert rules",
+            description=(
+                "Alert thresholds for one vendor (vendor_id) or org-wide "
+                "(vendor_id null): monthly_ceiling_micros with "
+                "mtd_thresholds_pct, daily_abs_micros, spike_multiplier over "
+                "median_window_days, and product_filter (which provider "
+                "products the rule counts). Money is integer micros. Filter: "
+                "vendor_id."
+            ),
+            permission="project_admin",
+            read_model=SpendRuleRead,
+            create_model=SpendRuleCreate,
+            update_model=SpendRuleUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("vendor_id",),
+            store=spend_rule_store,
+            tables=("spend_rules",),
+        ),
+        ResourceSpec(
+            name="recurring_costs",
+            path="spend/recurring-costs",
+            title="Recurring costs",
+            description=(
+                "A provider invoice amount with no billing API, entered from "
+                "the invoice: unit_amount_micros x quantity, charged monthly "
+                "or annually from start_date (an annual entry renews on "
+                "renews_on when set). Materialised on read; never estimated. "
+                "Filter: vendor_id."
+            ),
+            permission="project_admin",
+            read_model=RecurringCostRead,
+            create_model=RecurringCostCreate,
+            update_model=RecurringCostUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("vendor_id",),
+            store=recurring_cost_store,
+            tables=("recurring_costs",),
+        ),
+        ResourceSpec(
             name="settings",
             path="settings",
             title="Project settings",
@@ -200,4 +273,18 @@ REGISTRY: dict[str, ResourceSpec] = {
 #: exhaustiveness test.
 EXCLUDED_TABLES: dict[str, str] = {
     "change_log": "the audit trail itself — every resource writes it, none edits it",
+    "cost_entries": (
+        "connector-written until authoring-layer Phase 5 adds manual entries "
+        "(POST /spend/ingest/{connector} writes them)"
+    ),
+    "cost_import_runs": "system-written: one row per ingest attempt",
+    "spend_alerts": "system-written by the spend_evaluate scheduler task",
+    "spend_push_deliveries": "system-written: the alert pushes and their receipts",
+    "import_tokens": (
+        "a credential table: minted, listed and revoked only through "
+        "/spend/import-tokens, never generic CRUD"
+    ),
+    "spend_alert_preferences": (
+        "each user's own switch, written through /spend/alert-preferences"
+    ),
 }

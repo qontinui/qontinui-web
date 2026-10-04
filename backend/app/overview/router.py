@@ -56,6 +56,7 @@ from app.overview.resource import (
     StoreContext,
     StoreRefused,
 )
+from app.spend.router import router as spend_routes
 
 logger = structlog.get_logger(__name__)
 
@@ -530,3 +531,6 @@ router.include_router(estimates_routes)
 router.include_router(timeline_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)
+# Provider-reported spend: summary, renewals, ingest, import tokens, alert
+# preferences (plan 2026-10-03-provider-reported-spend-collection-alerts-and-mobile).
+router.include_router(spend_routes)

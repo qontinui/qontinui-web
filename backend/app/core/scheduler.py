@@ -508,6 +508,12 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_spend_evaluate() -> Any:
+    from app.spend.evaluate import evaluate_all_tenants
+
+    return await evaluate_all_tenants()
+
+
 def install_default_tasks(service: SchedulerService) -> None:
     """Register the canonical Qontinui schedule on ``service``.
 
@@ -677,6 +683,24 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="render_log_retention",
             coro=_job_render_log_retention,
             interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Provider-reported spend: evaluate every tenant's spend rules, push the
+    # alerts to the operator's phone, poll Expo receipts, and post to coord
+    # (plan 2026-10-03-provider-reported-spend-collection-alerts-and-mobile
+    # Phase 3). HOURLY with run_at_boot, never a daily cron slot: this backend
+    # redeploys more often than daily, so a daily slot can be skipped forever.
+    # Idempotent by construction — an alert row is unique per crossing — and
+    # also called at the end of every successful ingest. Offset to :20 so it
+    # never shares a tick with the */10 memory sweeps or :35 session_archive.
+    service.register(
+        ScheduledTask(
+            name="spend_evaluate",
+            coro=_job_spend_evaluate,
+            cron="20 * * * *",
+            timeout_seconds=300.0,
             run_at_boot=True,
         )
     )

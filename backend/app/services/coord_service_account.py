@@ -158,17 +158,30 @@ class CoordServiceAccountClient:
 
     # -- proxied reads --------------------------------------------------
 
-    async def _headers(self, acting_user_id: str) -> dict[str, str]:
+    async def _headers(self, acting_user_id: str | None) -> dict[str, str]:
+        """The service bearer, plus the acting human when there is one. A
+        scheduler tick acts for nobody, so it sends no ``X-Qontinui-User-Id``."""
         token = await self._ensure_token()
-        return {
-            "Authorization": f"Bearer {token}",
-            "X-Qontinui-User-Id": acting_user_id,
-        }
+        headers = {"Authorization": f"Bearer {token}"}
+        if acting_user_id is not None:
+            headers["X-Qontinui-User-Id"] = acting_user_id
+        return headers
+
+    @staticmethod
+    def _parse(resp: httpx.Response) -> tuple[int, object]:
+        # 204 No Content has no body to parse.
+        if resp.status_code == 204 or not resp.content:
+            return resp.status_code, None
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = {"error": resp.text[:500]}
+        return resp.status_code, body
 
     async def _post(
         self,
         path: str,
-        acting_user_id: str,
+        acting_user_id: str | None,
         json_body: object | None = None,
     ) -> tuple[int, object]:
         headers = await self._headers(acting_user_id)
@@ -178,14 +191,37 @@ class CoordServiceAccountClient:
                 headers=headers,
                 json=json_body,
             )
-        # 204 No Content has no body to parse.
-        if resp.status_code == 204 or not resp.content:
-            return resp.status_code, None
-        try:
-            body: object = resp.json()
-        except ValueError:
-            body = {"error": resp.text[:500]}
-        return resp.status_code, body
+        return self._parse(resp)
+
+    async def _get(
+        self,
+        path: str,
+        acting_user_id: str | None,
+        params: dict[str, str] | None = None,
+    ) -> tuple[int, object]:
+        headers = await self._headers(acting_user_id)
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.get(
+                f"{self._coord_url}{path}", headers=headers, params=params
+            )
+        return self._parse(resp)
+
+    # -- spend alerts (plan 2026-10-03-provider-reported-spend-…) ---------
+
+    async def get_tenant_admins(self, tenant_id: str) -> tuple[int, object]:
+        """``GET /coord/service/tenant-admins?tenant_id=`` — the tenant's
+        coord admins (``{admins: [{operator_id, email, cognito_sub}]}``), read
+        as web's service principal because a scheduler tick has no caller
+        whose bearer could be forwarded. Raises
+        :class:`CoordServiceAccountDisabledError` when the bridge is off."""
+        return await self._get(
+            "/coord/service/tenant-admins", None, params={"tenant_id": tenant_id}
+        )
+
+    async def post_spend_alert(self, body: dict[str, object]) -> tuple[int, object]:
+        """``POST /coord/spend-alerts`` — the agents' delivery of a spend
+        alert; tenant-scoped by ``body["tenant_id"]``."""
+        return await self._post("/coord/spend-alerts", None, json_body=body)
 
     # -- device machine-key exchange (4b cold-start recovery) ------------
 

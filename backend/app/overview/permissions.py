@@ -122,6 +122,15 @@ async def get_overview_access(
 ) -> OverviewAccess:
     """The caller plus the project's ``editing_roles`` — everything
     :meth:`OverviewAccess.can_edit` needs."""
+    return await build_overview_access(caller, user, db)
+
+
+async def build_overview_access(
+    caller: OverviewCaller, user: UserModel, db: AsyncSession
+) -> OverviewAccess:
+    """:func:`get_overview_access` as a plain call, for a route that resolves
+    its caller itself (the spend ingest door, which also accepts an import
+    token and so cannot declare the session dependencies)."""
     settings = await db.get(OverviewSettings, caller.tenant_id)
     access = OverviewAccess(
         tenant_id=caller.tenant_id,
