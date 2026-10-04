@@ -23,8 +23,9 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
 4. Column types, nullability and defaults, and the key ``(repo, pool)``.
 5. The key rejects a duplicate, each CHECK rejects what it names, NOT NULL
-   names its column, a row of all-NULL counts (a failed poll) is storable, and
-   a measured zero is storable.
+   names its column, a row of all-NULL counts (a failed poll) is storable, an
+   eligibility-only row with the whole queue half NULL is storable, and a
+   measured zero is storable.
 6. The table and column comments land as the source writes them.
 7. ``upgrade()`` is idempotent, and up, down, up leaves no residue.
 """
@@ -75,10 +76,10 @@ _TABLE = "ci_pool_observations"
 _COLUMNS: tuple[tuple[str, str, bool], ...] = (
     ("repo", "text", False),
     ("pool", "text", False),
-    ("observed_at", "timestamp with time zone", False),
-    ("stale_after_secs", "integer", False),
-    ("poll_ok", "boolean", False),
-    ("poll_complete", "boolean", False),
+    ("observed_at", "timestamp with time zone", True),
+    ("stale_after_secs", "integer", True),
+    ("poll_ok", "boolean", True),
+    ("poll_complete", "boolean", True),
     ("queued_jobs", "integer", True),
     ("oldest_queued_age_secs", "integer", True),
     ("threshold_secs", "integer", True),
@@ -193,7 +194,7 @@ def test_every_ddl_object_is_coord_qualified() -> None:
                 sql,
                 re.I,
             ):
-                assert obj.startswith(f"{_SCHEMA}.{_TABLE}"), (
+                assert re.fullmatch(rf"{_SCHEMA}\.{_TABLE}(\.\w+)?", obj), (
                     f"{fn_name}(): object {obj!r} is not coord.{_TABLE}"
                 )
 
@@ -376,6 +377,20 @@ def test_key_checks_and_nulls_behave() -> None:
         _insert(engine, pool="msi,self-hosted", poll_ok=False, poll_complete=False)
         for state in ("no_eligible_runner", "unknown"):
             _insert(engine, pool=f"state-{state}", eligibility_state=state)
+        # A pool first seen by the eligibility pass: no queue poll has happened,
+        # so the whole queue half is NULL rather than a fabricated poll_ok.
+        _insert(
+            engine,
+            pool="eligibility-only",
+            observed_at=None,
+            stale_after_secs=None,
+            poll_ok=None,
+            poll_complete=None,
+            eligibility_state="eligible",
+            eligible_runners=1,
+            eligible_registrations=1,
+            eligibility_observed_at=_OBSERVED,
+        )
 
         _assert_rejected_by(engine, f"{_TABLE}_pkey")
 
@@ -387,6 +402,7 @@ def test_key_checks_and_nulls_behave() -> None:
                 f"{prefix}_repo_lowercase_check",
                 {"pool": "upper-repo", "repo": "Qontinui/cpo01-test-repo"},
             ),
+            (f"{prefix}_repo_nonblank_check", {"pool": "blank-repo", "repo": "  "}),
             (f"{prefix}_pool_nonblank_check", {"pool": ""}),
             (f"{prefix}_pool_nonblank_check", {"pool": "   "}),
             (
@@ -402,9 +418,9 @@ def test_key_checks_and_nulls_behave() -> None:
 
         # A NOT NULL violation carries no constraint name, so pin it by SQLSTATE
         # 23502 (not_null_violation) and the column the database names.
-        for column in ("observed_at", "stale_after_secs", "poll_ok", "poll_complete"):
+        for column in ("repo", "pool"):
             with pytest.raises(sqlalchemy.exc.IntegrityError) as excinfo:
-                _insert(engine, pool=f"null-{column}", **{column: None})
+                _insert(engine, **{column: None})
             orig = excinfo.value.orig
             assert getattr(orig, "pgcode", None) == "23502", f"not a NOT NULL: {orig!r}"
             assert orig.diag.column_name == column  # type: ignore[union-attr]
@@ -416,6 +432,17 @@ def test_key_checks_and_nulls_behave() -> None:
                     SELECT queued_jobs, unknown_registrations
                       FROM coord.{_TABLE}
                      WHERE repo = :repo AND pool = 'qontinui,self-hosted'
+                    """
+                ),
+                {"repo": _REPO},
+            ).one()
+            eligibility_only = conn.execute(
+                text(
+                    f"""
+                    SELECT observed_at, stale_after_secs, poll_ok, poll_complete,
+                           queued_jobs, eligible_runners
+                      FROM coord.{_TABLE}
+                     WHERE repo = :repo AND pool = 'eligibility-only'
                     """
                 ),
                 {"repo": _REPO},
@@ -432,7 +459,10 @@ def test_key_checks_and_nulls_behave() -> None:
             ).one()
         assert tuple(measured) == (0, 0), "a measured zero must read back as zero"
         assert tuple(failed) == (None, None, None), "a failed poll stores no count"
-        assert _repo_row_count(engine, _REPO) == 4
+        assert tuple(eligibility_only) == (None, None, None, None, None, 1), (
+            "an eligibility-only row stores no queue half"
+        )
+        assert _repo_row_count(engine, _REPO) == 5
 
 
 @_needs_pg

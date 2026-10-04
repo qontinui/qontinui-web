@@ -36,25 +36,34 @@ never zero.
 ## Column shape
 
 * ``repo`` TEXT NOT NULL, ``owner/name`` LOWERCASED by the writer. CHECK
+  ``length(btrim(repo)) > 0``: a blank repo matches no ``coord.tenant_repos``
+  row, so it would be a reading no tenant can ever see. CHECK
   ``repo = lower(repo)``: GitHub treats owner/name case-insensitively, so two
   spellings would split one pool into two rows. The CHECK makes a writer that
   skips the lowercasing fail loudly. The reader joins ``coord.tenant_repos``
   case-insensitively, because that table has no such CHECK.
-* ``pool`` TEXT NOT NULL, the pool key: the runs-on labels trimmed, lowercased,
-  deduplicated, sorted and joined with a comma, rendered by the one shared
-  ``pool_key`` function. CHECK ``length(btrim(pool)) > 0``: an empty or
+* ``pool`` TEXT NOT NULL, the pool key as rendered by coord's ``pool_key``
+  (trim, lowercase, drop empty labels, dedupe, sort, comma-join). CHECK ``length(btrim(pool)) > 0``: an empty or
   blank key would be a pool with no labels, which no job can target.
-* ``observed_at`` TIMESTAMPTZ NOT NULL, no default: the tick time, set by the
-  writer on every upsert. A default would cover INSERT only, and the house has
-  no trigger to cover UPDATE.
-* ``stale_after_secs`` INTEGER NOT NULL, CHECK ``> 0``. Computed and stored by
-  the writer per row, because the queue-wait watcher walks repos from a cursor
-  under a call budget, so the revisit interval depends on how many repos are
-  armed. Storing it means the reader never guesses the watcher cadence.
-* ``poll_ok`` BOOLEAN NOT NULL: false when the poll failed. A failed poll is
-  UNKNOWN, never "no queued jobs".
-* ``poll_complete`` BOOLEAN NOT NULL: false when the poll succeeded only in
-  part (for example, the call budget ran out mid-repo).
+The queue half is ``observed_at``, ``stale_after_secs``, ``poll_ok``,
+``poll_complete`` and the four queue counts. All of it is NULLABLE, and NULL
+across the half means "the queue half was never observed": a pool first seen
+by the eligibility pass has had no queue poll, and a NOT NULL ``poll_ok`` would
+force the writer to fabricate one (D4 of the plan forbids that).
+
+* ``observed_at`` TIMESTAMPTZ NULL, no default: the queue tick time, set by the
+  writer on every queue upsert. A default would cover INSERT only, and the
+  house has no trigger to cover UPDATE.
+* ``stale_after_secs`` INTEGER NULL, CHECK ``> 0`` (NULL passes). Computed and
+  stored by the writer per row, because the queue-wait watcher walks repos from
+  a cursor under a call budget, so the revisit interval depends on how many
+  repos are armed. Storing it means the reader never guesses the watcher
+  cadence.
+* ``poll_ok`` BOOLEAN NULL: false when the poll failed. A failed poll is
+  UNKNOWN, never "no queued jobs". NULL when no queue poll has happened.
+* ``poll_complete`` BOOLEAN NULL: false when the poll succeeded only in part
+  (for example, the call budget ran out mid-repo). NULL when no queue poll has
+  happened.
 * ``queued_jobs``, ``oldest_queued_age_secs``, ``threshold_secs``,
   ``p90_wait_secs`` INTEGER NULL.
 * ``eligibility_state`` TEXT NULL, CHECK in ``eligible`` |
@@ -113,13 +122,10 @@ add an ``alembic merge``: this repo keeps strict single-head discipline.
 
 ## Merge-train classifier disposition
 
-coord's migration classifier (``qontinui-coord``
-``crates/coord/src/pr_merge/migration_classifier.rs``) is expected to classify
-this revision Reject: ``COMMENT ON`` is not a form it recognises, and it scans
-``downgrade()`` too, where it rejects the ``DROP TABLE``. Every SQL string is a
-static literal, so it is not rejected for being dynamic. The landed precedents
-``coord_ci_pool_baselines_01`` and ``coord_ci_job_observations_01`` classify
-Reject the same way.
+The disposition is whatever coord's migration classifier (``qontinui-coord``
+``crates/coord/src/pr_merge/migration_classifier.rs``) returns on the PR; it is
+not predicted here. Every SQL string is a static literal, so nothing in this
+revision is dynamic SQL the classifier cannot read.
 
 ## Safety
 
@@ -143,8 +149,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Every SQL string below is a STATIC literal. The coord merge-train migration
 # classifier extracts string literals from each execute call and rejects a call
-# with none as dynamic. Keep these comments free of apostrophes and of the
-# op-dot-call spelling: the classifier lexer does not skip Python comments.
+# with none as dynamic.
 
 
 def upgrade() -> None:
@@ -154,10 +159,10 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS coord.ci_pool_observations (
             repo                      TEXT NOT NULL,
             pool                      TEXT NOT NULL,
-            observed_at               TIMESTAMPTZ NOT NULL,
-            stale_after_secs          INTEGER NOT NULL,
-            poll_ok                   BOOLEAN NOT NULL,
-            poll_complete             BOOLEAN NOT NULL,
+            observed_at               TIMESTAMPTZ,
+            stale_after_secs          INTEGER,
+            poll_ok                   BOOLEAN,
+            poll_complete             BOOLEAN,
             queued_jobs               INTEGER,
             oldest_queued_age_secs    INTEGER,
             threshold_secs            INTEGER,
@@ -170,6 +175,8 @@ def upgrade() -> None:
             eligibility_observed_at   TIMESTAMPTZ,
             CONSTRAINT ci_pool_observations_pkey
                 PRIMARY KEY (repo, pool),
+            CONSTRAINT ci_pool_observations_repo_nonblank_check
+                CHECK (length(btrim(repo)) > 0),
             CONSTRAINT ci_pool_observations_repo_lowercase_check
                 CHECK (repo = lower(repo)),
             CONSTRAINT ci_pool_observations_pool_nonblank_check
@@ -189,43 +196,43 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.ci_pool_observations IS
-            'Latest per (repo, pool) CI queue and eligibility reading, written by the coord leader at the end of each queue-wait tick and eligibility pass, and read by GET /coord/ci/overview so every replica serves the same answer. Every count is NULL when not measured; a zero is stored only when measured. No tenant_id: reads scope through coord.tenant_repos.'
+            'Latest per (repo, pool) CI queue and eligibility reading, written by the coord leader at the end of each queue-wait tick and eligibility pass, and read by GET /coord/ci/overview so every replica serves the same answer. Every count, and the whole queue half, is NULL when not measured; a zero is stored only when measured. No tenant_id: reads scope through coord.tenant_repos.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.repo IS
-            'GitHub repository as owner/name, lowercased by the writer; the repo_lowercase CHECK rejects an unnormalised write. Readers join coord.tenant_repos case-insensitively.'
+            'GitHub repository as owner/name, lowercased by the writer and never blank; the repo_lowercase CHECK rejects an unnormalised write. Readers join coord.tenant_repos case-insensitively.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.pool IS
-            'Pool key: the runs-on labels trimmed, lowercased, deduplicated, sorted and joined with a comma, rendered by the one shared pool_key function.'
+            'Pool key as rendered by coord pool_key (trim, lowercase, remove empty labels, dedupe, sort, comma-join).'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.observed_at IS
-            'Tick time of the most recent write. No default: the writer sets it on every upsert.'
+            'Tick time of the most recent queue-half write. NULL when the queue half was never observed (a pool seen only by the eligibility pass). No default: the writer sets it on every queue upsert.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.stale_after_secs IS
-            'Age past which this row is stale, computed by the writer from the watcher cadence and the armed repo count, so the reader never guesses it.'
+            'Age past which this row is stale, computed by the writer from the watcher cadence and the armed repo count, so the reader never guesses it. NULL when the queue half was never observed.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.poll_ok IS
-            'False when the poll failed. A failed poll is UNKNOWN, never no queued jobs, and its counts are NULL.'
+            'False when the poll failed. A failed poll is UNKNOWN, never no queued jobs, and its counts are NULL. NULL when no queue poll has happened.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.poll_complete IS
-            'False when the poll succeeded only in part, for example when the call budget ran out mid-repo.'
+            'False when the poll succeeded only in part, for example when the call budget ran out mid-repo. NULL when no queue poll has happened.'
         """
     )
     op.execute(
