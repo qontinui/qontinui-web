@@ -14,18 +14,33 @@ What the five tables are for
 
 One host agent per machine (plan D1) asks coord for one-job JIT runner
 registrations (D3). Coord owns the policy — which pools exist, how many slots
-each host should run, which trust class may run which pool — and these tables
-are where it keeps it:
+each host should run, which hosts may hold secrets — and these tables are where
+it keeps it.
+
+Plan AMENDMENT 2026-10-04 (A2 / A2a) collapsed the trust split: there is ONE
+pool vocabulary of capability labels, no ``public`` class, and pool labels never
+describe trust. What remains is a SECRETS-PLACEMENT choice (plan D7's trusted
+pool, decided per secret) and an ``isolation`` attribute that is the seam for a
+future isolation tier:
+
+* ``ci_pool_specs.secrets_class`` — ``none`` | ``trusted`` (the D7
+  secrets-holding pool);
+* ``ci_host_agents.may_hold_secrets`` — operator-set, default false; a
+  ``trusted`` pool runs only on an agent that may hold secrets;
+* ``isolation`` on BOTH ``ci_pool_specs`` and ``ci_host_agents`` — text,
+  default ``'shared'``, CHECK in (``shared``). A future tier ADDS a value to
+  these CHECKs; it needs no new schema shape. Coord's eligibility predicate
+  (``ci_host_agent::agent_may_run_pool``) is the one place it is enforced.
+
+The tables:
 
 ``coord.ci_host_agents``
     One row per ENROLLED host agent. The agent authenticates with an opaque
     256-bit secret issued once at enrolment; ``credential_hash`` is the
     lowercase sha256 hex of that secret and is the ONLY copy coord keeps (D3).
     ``revoked_at`` set means every heartbeat and JIT call is refused.
-    ``declared_trust_class`` is operator-set and is a CEILING: ``trusted``
-    may run trusted, public and pr pools; ``public`` public and pr; NULL or
-    ``pr`` runs pr pools only (fail-closed until the machine trust-tier plan
-    lands and the JIT door reads that instead). ``host`` is bound by the
+    ``may_hold_secrets`` (default false) and ``isolation`` are operator-set.
+    ``host`` is bound by the
     operator when the enrolment code is issued, never chosen by the agent,
     and is stored lower-case. ``budget`` / ``availability_window`` / ``slots``
     / versions are written by the agent's heartbeat.
@@ -37,13 +52,13 @@ are where it keeps it:
 ``coord.ci_enrol_codes``
     Operator-issued, single-use, short-lived enrolment codes. Only the code's
     sha256 hex is stored (``code_hash``); the plaintext exists only in the one
-    response that issued it. The operator binds ``host`` and the optional
-    ``declared_trust_class`` at issue time, and the redeem copies both onto the
-    new agent row. ``redeemed_at`` set means the code is spent.
+    response that issued it. The operator binds ``host`` and
+    ``may_hold_secrets`` at issue time, and the redeem copies both onto the new
+    agent row. ``redeemed_at`` set means the code is spent.
 
 ``coord.ci_pool_specs``
-    One row per ``(tenant, repo, label set)`` pool: the isolation class its
-    slots run in (``uid_class``, plan D8), the per-slot sizing, and the
+    One row per ``(tenant, repo, label set)`` pool: its ``secrets_class`` and
+    ``isolation`` (above), the per-slot sizing, and the
     ``min_idle`` / ``max_slots`` bounds the scaler places within (D5). Label
     sets are stored LOWER-CASE, SORTED (byte order) and DE-DUPLICATED, with no
     NULL or empty label — enforced by CHECKs against
@@ -166,7 +181,8 @@ def upgrade() -> None:
             revoked_at           TIMESTAMPTZ,
             host                 TEXT NOT NULL,
             os                   TEXT NOT NULL,
-            declared_trust_class TEXT,
+            may_hold_secrets     BOOLEAN NOT NULL DEFAULT false,
+            isolation            TEXT NOT NULL DEFAULT 'shared',
             budget               JSONB,
             availability_window  JSONB,
             slots                JSONB,
@@ -178,9 +194,8 @@ def upgrade() -> None:
             CONSTRAINT uq_ci_host_agents_agent_tenant UNIQUE (agent_id, tenant_id),
             CONSTRAINT ck_ci_host_agents_credential_hash_sha256_hex
                 CHECK (credential_hash ~ '^[0-9a-f]{64}$'),
-            CONSTRAINT ck_ci_host_agents_declared_trust_class
-                CHECK (declared_trust_class IS NULL
-                       OR declared_trust_class IN ('pr', 'public', 'trusted')),
+            CONSTRAINT ck_ci_host_agents_isolation
+                CHECK (isolation IN ('shared')),
             CONSTRAINT ck_ci_host_agents_host_lower
                 CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$'),
             CONSTRAINT ck_ci_host_agents_os
@@ -196,7 +211,7 @@ def upgrade() -> None:
                 REFERENCES coord.tenants(tenant_id) ON DELETE CASCADE,
             issued_by            TEXT NOT NULL,
             host                 TEXT NOT NULL,
-            declared_trust_class TEXT,
+            may_hold_secrets     BOOLEAN NOT NULL DEFAULT false,
             expires_at           TIMESTAMPTZ NOT NULL,
             redeemed_at          TIMESTAMPTZ,
             created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -205,10 +220,7 @@ def upgrade() -> None:
             CONSTRAINT ck_ci_enrol_codes_expires_after_created
                 CHECK (expires_at > created_at),
             CONSTRAINT ck_ci_enrol_codes_host_lower
-                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$'),
-            CONSTRAINT ck_ci_enrol_codes_declared_trust_class
-                CHECK (declared_trust_class IS NULL
-                       OR declared_trust_class IN ('pr', 'public', 'trusted'))
+                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$')
         )
         """
     )
@@ -220,7 +232,8 @@ def upgrade() -> None:
                 REFERENCES coord.tenants(tenant_id) ON DELETE CASCADE,
             repo         TEXT NOT NULL,
             labels       TEXT[] NOT NULL,
-            uid_class    TEXT NOT NULL,
+            secrets_class TEXT NOT NULL DEFAULT 'none',
+            isolation    TEXT NOT NULL DEFAULT 'shared',
             docker       BOOLEAN NOT NULL DEFAULT false,
             mem_gib      INTEGER NOT NULL,
             cores        INTEGER NOT NULL,
@@ -233,8 +246,10 @@ def upgrade() -> None:
             CONSTRAINT uq_ci_pool_specs_tenant_repo_labels
                 UNIQUE (tenant_id, repo, labels),
             CONSTRAINT uq_ci_pool_specs_id_tenant UNIQUE (id, tenant_id),
-            CONSTRAINT ck_ci_pool_specs_uid_class
-                CHECK (uid_class IN ('pr', 'public', 'trusted')),
+            CONSTRAINT ck_ci_pool_specs_secrets_class
+                CHECK (secrets_class IN ('none', 'trusted')),
+            CONSTRAINT ck_ci_pool_specs_isolation
+                CHECK (isolation IN ('shared')),
             CONSTRAINT ck_ci_pool_specs_repo_owner_name
                 CHECK (repo ~ '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
                        AND split_part(repo, '/', 1) NOT IN ('.', '..')
@@ -309,15 +324,15 @@ def upgrade() -> None:
         COMMENT ON TABLE coord.ci_host_agents IS
         'Enrolled CI host agents (plan 2026-10-04 D1/D3). credential_hash is the '
         'sha256 hex of the agent secret and the ONLY copy coord keeps; the secret '
-        'is returned once at enrolment. declared_trust_class is a ceiling; NULL '
-        'means pr pools only.'
+        'is returned once at enrolment. may_hold_secrets gates trusted '
+        '(secrets-holding) pools; isolation is the future isolation-tier seam.'
         """
     )
     op.execute(
         """
         COMMENT ON TABLE coord.ci_enrol_codes IS
         'Operator-issued single-use CI-agent enrolment codes binding host and '
-        'declared_trust_class. Only the sha256 hex of the code is stored; '
+        'may_hold_secrets. Only the sha256 hex of the code is stored; '
         'redeemed_at set means spent.'
         """
     )
@@ -325,7 +340,7 @@ def upgrade() -> None:
         """
         COMMENT ON TABLE coord.ci_pool_specs IS
         'Self-hosted CI pool specs: (tenant, repo, sorted distinct label set) with '
-        'uid_class, per-slot sizing and min_idle/max_slots bounds. Written through '
+        'secrets_class, isolation, per-slot sizing and min_idle/max_slots bounds. Written through '
         'the coord spec door, never by hand DML.'
         """
     )

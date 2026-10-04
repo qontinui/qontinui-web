@@ -67,7 +67,8 @@ _COLUMNS: dict[str, set[str]] = {
         "revoked_at",
         "host",
         "os",
-        "declared_trust_class",
+        "may_hold_secrets",
+        "isolation",
         "budget",
         "availability_window",
         "slots",
@@ -82,7 +83,7 @@ _COLUMNS: dict[str, set[str]] = {
         "tenant_id",
         "issued_by",
         "host",
-        "declared_trust_class",
+        "may_hold_secrets",
         "expires_at",
         "redeemed_at",
         "created_at",
@@ -92,7 +93,8 @@ _COLUMNS: dict[str, set[str]] = {
         "tenant_id",
         "repo",
         "labels",
-        "uid_class",
+        "secrets_class",
+        "isolation",
         "docker",
         "mem_gib",
         "cores",
@@ -326,15 +328,16 @@ def _agent(engine: Engine, tenant_id: uuid.UUID, **overrides: object) -> uuid.UU
         "credential_hash": _HASH,
         "host": "merytshost",
         "os": "linux",
-        "declared_trust_class": None,
+        "may_hold_secrets": False,
+        "isolation": "shared",
     }
     params.update(overrides)
     _exec(
         engine,
         "INSERT INTO coord.ci_host_agents "
-        "(agent_id, tenant_id, credential_hash, host, os, declared_trust_class) "
+        "(agent_id, tenant_id, credential_hash, host, os, may_hold_secrets, isolation) "
         "VALUES (:agent_id, :tenant_id, :credential_hash, :host, :os, "
-        ":declared_trust_class)",
+        ":may_hold_secrets, :isolation)",
         **params,
     )
     return agent_id
@@ -347,7 +350,8 @@ def _pool(engine: Engine, tenant_id: uuid.UUID, **overrides: object) -> uuid.UUI
         "tenant_id": tenant_id,
         "repo": "qontinui/qontinui-coord",
         "labels": ["qontinui-coorddb", "self-hosted"],
-        "uid_class": "pr",
+        "secrets_class": "none",
+        "isolation": "shared",
         "mem_gib": 32,
         "cores": 8,
         "min_idle": 1,
@@ -357,8 +361,10 @@ def _pool(engine: Engine, tenant_id: uuid.UUID, **overrides: object) -> uuid.UUI
     _exec(
         engine,
         "INSERT INTO coord.ci_pool_specs "
-        "(id, tenant_id, repo, labels, uid_class, mem_gib, cores, min_idle, max_slots) "
-        "VALUES (:id, :tenant_id, :repo, :labels, :uid_class, :mem_gib, :cores, "
+        "(id, tenant_id, repo, labels, secrets_class, isolation, mem_gib, cores, "
+        "min_idle, max_slots) "
+        "VALUES (:id, :tenant_id, :repo, :labels, :secrets_class, :isolation, :mem_gib, "
+        ":cores, "
         ":min_idle, :max_slots)",
         **params,
     )
@@ -393,24 +399,24 @@ def test_tables_columns_and_security_checks() -> None:
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _agent(engine, tenant_id, credential_hash="plaintext-secret")
         with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _agent(engine, tenant_id, declared_trust_class="admin")
+            _agent(engine, tenant_id, isolation="dedicated")  # no such tier yet
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _agent(engine, tenant_id, os="beos")
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _agent(engine, tenant_id, host="MerytsHost")  # lower-case only
-        _agent(engine, tenant_id, declared_trust_class="trusted")
+        _agent(engine, tenant_id, may_hold_secrets=True)
 
         code_sql = (
             "INSERT INTO coord.ci_enrol_codes (code_hash, tenant_id, issued_by, host, "
-            "declared_trust_class, expires_at) VALUES (:h, :t, 'op', :host, :c, "
+            "may_hold_secrets, expires_at) VALUES (:h, :t, 'op', :host, :c, "
             "now() + interval '1 hour')"
         )
-        _exec(engine, code_sql, h="b" * 64, t=tenant_id, host="dell-2020", c=None)
-        _exec(engine, code_sql, h="c" * 64, t=tenant_id, host="h", c="trusted")
+        _exec(engine, code_sql, h="b" * 64, t=tenant_id, host="dell-2020", c=False)
+        _exec(engine, code_sql, h="c" * 64, t=tenant_id, host="h", c=True)
         for bad in (
-            {"h": "CODE-PLAINTEXT", "host": "h", "c": None},
-            {"h": "d" * 64, "host": "Upper", "c": None},
-            {"h": "e" * 64, "host": "h", "c": "admin"},
+            {"h": "CODE-PLAINTEXT", "host": "h", "c": False},
+            {"h": "d" * 64, "host": "Upper", "c": False},
+            {"h": "e" * 64, "host": "h", "c": None},  # NOT NULL
         ):
             with pytest.raises(sqlalchemy.exc.IntegrityError):
                 _exec(engine, code_sql, t=tenant_id, **bad)
@@ -419,7 +425,10 @@ def test_tables_columns_and_security_checks() -> None:
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _pool(engine, tenant_id)  # same (tenant, repo, labels)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _pool(engine, tenant_id, labels=["x"], uid_class="root")
+            _pool(engine, tenant_id, labels=["x"], secrets_class="public")
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _pool(engine, tenant_id, labels=["w"], isolation="dedicated")
+        _pool(engine, tenant_id, labels=["trusted-pool"], secrets_class="trusted")
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _pool(engine, tenant_id, labels=["y"], min_idle=5, max_slots=2)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
