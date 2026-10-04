@@ -10,6 +10,32 @@ function message(err: unknown, fallback: string): string {
 }
 
 /**
+ * Coord's typed refusals for a fleet-policy write, in operator words.
+ *
+ * Coord's `PUT /coord/fleet-policy` answers 400 with `{"error": <code>}`; the
+ * web proxy relays the body and `httpClient` folds it into the error message,
+ * so the code is recovered from the message text. A refusal coord NAMED is a
+ * fact about the request ("that repo is not yours"), and rendering it as a
+ * generic failure would send the operator looking for an outage.
+ */
+const WRITE_REFUSALS: Readonly<Record<string, string>> = {
+  repo_not_in_tenant:
+    "coord refused: this repo is not one of this tenant's repos, so it cannot carry an override here",
+  unknown_level: "coord refused: that level is not one this setting accepts",
+  repo_key_not_owner_name:
+    "coord refused: a repo override must be keyed owner/name",
+};
+
+/** The operator-words refusal for a write error, or `null` if coord named none. */
+export function describeWriteRefusal(err: unknown): string | null {
+  const text = err instanceof Error ? err.message : String(err ?? "");
+  for (const [code, words] of Object.entries(WRITE_REFUSALS)) {
+    if (text.includes(code)) return words;
+  }
+  return null;
+}
+
+/**
  * One REPO-band fleet-policy write — the sibling of `useTenantFleetPolicyDial`
  * for a domain that does have a repo in hand when it is decided.
  *
@@ -50,11 +76,21 @@ export function useRepoFleetPolicyWrite<L extends string>(
   const [readbackErrors, setReadbackErrors] = useState<
     Readonly<Record<string, string>>
   >({});
+  /** Per repo: why the last write was REFUSED, in operator words. */
+  const [writeErrors, setWriteErrors] = useState<
+    Readonly<Record<string, string>>
+  >({});
 
   const write = useCallback(
     async (repo: string, level: L, changeNote?: string): Promise<boolean> => {
       try {
         setSavingRepo(repo);
+        setWriteErrors((prev) => {
+          if (!(repo in prev)) return prev;
+          const next = { ...prev };
+          delete next[repo];
+          return next;
+        });
         const result = await httpClient.put<FleetPolicyWriteResult>(
           FLEET_POLICY_API,
           {
@@ -92,7 +128,11 @@ export function useRepoFleetPolicyWrite<L extends string>(
         }
         return true;
       } catch (err) {
-        toast.error(message(err, `Failed to write ${label} for ${repo}`));
+        const refusal = describeWriteRefusal(err);
+        const text =
+          refusal ?? message(err, `Failed to write ${label} for ${repo}`);
+        setWriteErrors((prev) => ({ ...prev, [repo]: text }));
+        toast.error(`${repo}: ${text}`);
         return false;
       } finally {
         setSavingRepo(null);
@@ -103,5 +143,12 @@ export function useRepoFleetPolicyWrite<L extends string>(
 
   const clearReadbackErrors = useCallback(() => setReadbackErrors({}), []);
 
-  return { write, savingRepo, readbackErrors, clearReadbackErrors };
+  return {
+    write,
+    savingRepo,
+    readbackErrors,
+    clearReadbackErrors,
+    /** Per repo: the last write's refusal or failure, until the next write. */
+    writeErrors,
+  };
 }

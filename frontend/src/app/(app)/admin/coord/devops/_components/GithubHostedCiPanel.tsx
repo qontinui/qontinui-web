@@ -16,7 +16,6 @@ import {
   RefreshButton,
   StatusBadge,
   UNKNOWN_AMBER,
-  escalateAttention,
   readIsUnknown,
 } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +93,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
     LABEL,
     "coord"
   );
-  const { reload: reloadCi, deliveries } = ci;
+  const { reload: reloadCi, appliedTicket, issuedTicket } = ci;
   const { reload: reloadTenant, setLevel, lastWrite } = tenant;
   const repoWrite = useRepoFleetPolicyWrite<RepoOverrideChoice>(
     GITHUB_HOSTED_CI_DOMAIN,
@@ -110,9 +109,10 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   );
   /**
    * A tenant write's read-back, waiting for the aggregate to agree. `after`
-   * is the aggregate's delivery count when the write was made: only a read
-   * that lands LATER may confirm it, so a pre-write aggregate that happens to
-   * match cannot.
+   * is the aggregate's newest ISSUE ordinal when the write started: only a
+   * read ISSUED later may confirm it, so neither a pre-write aggregate that
+   * happens to match nor a read issued before the write and landing after it
+   * can.
    */
   const [expected, setExpected] = useState<{
     level: HostedCiLevel | null;
@@ -132,7 +132,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const aggregateTenant = ci.view?.tenant_default ?? null;
   const confirmed =
     expected !== null &&
-    deliveries > expected.after &&
+    appliedTicket > expected.after &&
     aggregateTenant?.level === expected.level;
   useEffect(() => {
     if (confirmed) setExpected(null);
@@ -152,8 +152,10 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const canEditTenant = isAdmin && tenant.policy?.can_edit === true;
   const canEditRepos = isAdmin && ci.view?.can_edit === true;
   // R6: a retained value may not look like a re-confirmed one — in the
-  // collapsed header as much as in the body.
-  const stale = ci.stale || (tenant.error !== null && tenant.policy !== null);
+  // collapsed header as much as in the body. Both header badges are sourced
+  // from the aggregate, so only ITS staleness marks them; a failed
+  // tenant-dial read affects the role / write-control text alone.
+  const stale = ci.stale;
   const staleSuffix = stale ? " (stale)" : "";
   const stillReading =
     (ci.loading && ci.view === null) || (tenant.loading && !tenant.policy);
@@ -161,7 +163,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const writeTenant = useCallback(
     async (level: HostedCiLevel, note?: string) => {
       setTenantPending(level);
-      writeMark.current = deliveries;
+      writeMark.current = issuedTicket();
       try {
         const ok = await setLevel(level, note);
         // Repos that inherit just changed with it — re-read what they resolve.
@@ -171,7 +173,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
         setTenantPending(null);
       }
     },
-    [setLevel, reloadCi, deliveries]
+    [setLevel, reloadCi, issuedTicket]
   );
 
   const onTenantClick = (level: HostedCiLevel) => {
@@ -321,7 +323,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
               className="text-xs text-amber-700 dark:text-amber-300"
               data-testid="github-hosted-ci-tenant-awaiting"
             >
-              {deliveries > (expected?.after ?? 0)
+              {appliedTicket > (expected?.after ?? 0)
                 ? "The write's read-back and the per-repo read disagree about the tenant value, so it is shown as unknown. Refresh to re-check."
                 : "Written — waiting for a fresh read to confirm what coord resolves."}
             </p>
@@ -389,6 +391,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
                   onToggle={onToggle}
                   stale={ci.stale}
                   readbackError={repoWrite.readbackErrors[r.repo] ?? null}
+                  writeError={repoWrite.writeErrors[r.repo] ?? null}
                   canEdit={canEditRepos}
                   saving={repoWrite.savingRepo === r.repo}
                   busy={repoWrite.savingRepo !== null}
@@ -486,6 +489,7 @@ function RepoRow({
   onToggle,
   stale,
   readbackError,
+  writeError,
   canEdit,
   saving,
   busy,
@@ -496,6 +500,7 @@ function RepoRow({
   onToggle: () => void;
   stale: boolean;
   readbackError: string | null;
+  writeError: string | null;
   canEdit: boolean;
   saving: boolean;
   busy: boolean;
@@ -525,10 +530,7 @@ function RepoRow({
         </>
       }
       reason={status.reason}
-      attention={escalateAttention(
-        status.attention,
-        unwatched ? "waiting" : "none"
-      )}
+      attention={status.attention}
       expanded={expanded}
       onToggle={onToggle}
     >
@@ -540,6 +542,16 @@ function RepoRow({
               ? status.reason
               : `Coord resolves ${levelLabel(reading.level)} for this repo, from the ${repoSourceLabel(reading.resolved_scope)}${stale ? " (the last refresh failed, so this may be stale)" : ""}.`}
           </p>
+        }
+        problems={
+          writeError ? (
+            <p
+              className="text-xs text-amber-700 dark:text-amber-300"
+              data-testid="github-hosted-ci-repo-write-error"
+            >
+              The last change was not applied: {writeError}.
+            </p>
+          ) : undefined
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">

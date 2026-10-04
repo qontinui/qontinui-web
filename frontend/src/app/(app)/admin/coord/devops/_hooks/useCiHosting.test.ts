@@ -88,7 +88,7 @@ describe("useCiHosting", () => {
     });
     expect(result.current.view).toBeNull();
     expect(result.current.error).toMatch(/502/);
-    expect(result.current.deliveries).toBe(0);
+    expect(result.current.appliedTicket).toBe(0);
   });
 
   it("an OLDER success landing after a NEWER success does not overwrite it", async () => {
@@ -107,6 +107,44 @@ describe("useCiHosting", () => {
       await first.promise;
     });
     expect(result.current.view?.tenant_default.level).toBe("off");
-    expect(result.current.deliveries).toBe(1);
+    // The displayed answer is read #2's.
+    expect(result.current.appliedTicket).toBe(2);
+  });
+
+  it("reload resolves false for a success discarded because a newer read settled", async () => {
+    getMock.mockResolvedValueOnce(view("on"));
+    const { result } = renderHook(() => useCiHosting());
+    await waitFor(() => expect(result.current.appliedTicket).toBe(1));
+
+    const older = deferred<unknown>();
+    getMock.mockReturnValueOnce(older.promise);
+    let olderResult: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      olderResult = result.current.reload();
+    });
+    getMock.mockResolvedValueOnce(view("off"));
+    let newer = false;
+    await act(async () => {
+      newer = await result.current.reload();
+    });
+    expect(newer).toBe(true);
+
+    await act(async () => {
+      older.resolve(view("on"));
+    });
+    await expect(olderResult).resolves.toBe(false);
+    expect(result.current.view?.tenant_default.level).toBe("off");
+  });
+
+  it("issuedTicket names the newest read issued, landed or not", async () => {
+    const pending = deferred<unknown>();
+    getMock.mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => useCiHosting());
+    expect(result.current.issuedTicket()).toBe(1);
+    expect(result.current.appliedTicket).toBe(0);
+    await act(async () => {
+      pending.resolve(view("on"));
+    });
+    expect(result.current.appliedTicket).toBe(1);
   });
 });

@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -657,7 +658,7 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     }
   });
 
-  it("a failed latest TENANT-dial read also marks the header stale", async () => {
+  it("a failed TENANT-dial read does not mark the aggregate-sourced header stale", async () => {
     route({});
     render(<GithubHostedCiPanel isAdmin />);
     await screen.findAllByTestId("github-hosted-ci-repo-row");
@@ -675,8 +676,275 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
 
     await screen.findByTestId("github-hosted-ci-tenant-error");
-    const badge = screen.getByTestId("github-hosted-ci-summary-tenant");
-    expect(badge).toHaveTextContent(/\(stale\)/);
-    expect(badge.className).toMatch(/amber/);
+    // Both badges come from the aggregate, which just re-confirmed.
+    for (const id of [
+      "github-hosted-ci-summary-tenant",
+      "github-hosted-ci-summary-repos",
+    ]) {
+      const badge = screen.getByTestId(id);
+      expect(badge).not.toHaveTextContent(/stale/);
+    }
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-tenant").className
+    ).not.toMatch(/amber/);
+  });
+
+  it("an admin whose tenant-dial read failed is told the role could not be read", async () => {
+    route({
+      tenant: new Error(
+        "GET /api/v1/operations/fleet-policy failed: 502 - coord is not reachable"
+      ),
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    const text = await screen.findByTestId("github-hosted-ci-readonly");
+    expect(text).toHaveTextContent(/your role could not be read/);
+    expect(text).not.toHaveTextContent(/only an admin/);
+  });
+});
+
+/** A `/ci-hosting` GET whose answer the test hands out one at a time. */
+function routeQueuedCi(opts: { tenant?: Record<string, unknown> } = {}) {
+  const pending: ReturnType<typeof deferred<unknown>>[] = [];
+  httpGet.mockImplementation((url: unknown) => {
+    const u = String(url);
+    if (u.includes("/fleet-policy")) {
+      return Promise.resolve(opts.tenant ?? tenantPolicy("on", "none"));
+    }
+    if (u.includes("/ci-hosting")) {
+      const d = deferred<unknown>();
+      pending.push(d);
+      return d.promise;
+    }
+    return Promise.reject(new Error(`unexpected GET ${u}`));
+  });
+  return pending;
+}
+
+async function writeTenantOff() {
+  await waitFor(() =>
+    expect(screen.getByTestId("github-hosted-ci-tenant-off")).not.toBeDisabled()
+  );
+  fireEvent.click(screen.getByTestId("github-hosted-ci-tenant-off"));
+  fireEvent.change(await screen.findByTestId("github-hosted-ci-off-reason"), {
+    target: { value: "cost" },
+  });
+  fireEvent.click(screen.getByTestId("github-hosted-ci-off-submit"));
+}
+
+describe("GithubHostedCiPanel — only a read ISSUED after a write confirms it", () => {
+  it("a matching aggregate delivered BEFORE the write does not confirm it", async () => {
+    // The write asks for off, but the read-back says coord resolves `on`
+    // (a narrower row wins, say). The pre-write aggregate also says `on` —
+    // it matches the read-back, and must still not confirm it.
+    const pending = routeQueuedCi();
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "off",
+      effective: tenantPolicy("on", "system"),
+      readback_error: null,
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    await act(async () => {
+      pending[0]!.resolve(CI_VIEW);
+    });
+    await writeTenantOff();
+
+    const awaiting = await screen.findByTestId(
+      "github-hosted-ci-tenant-awaiting"
+    );
+    expect(awaiting).toHaveTextContent(/waiting for a fresh read/);
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+
+    // The post-write read lands and agrees: now it is confirmed.
+    await waitFor(() => expect(pending.length).toBe(2));
+    await act(async () => {
+      pending[1]!.resolve(CI_VIEW);
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("github-hosted-ci-tenant-awaiting")
+      ).toBeNull()
+    );
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective")
+    ).toHaveTextContent("On");
+  });
+
+  it("a read issued BEFORE the write but landing AFTER it does not confirm it", async () => {
+    const pending = routeQueuedCi();
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "off",
+      effective: tenantPolicy("off", "tenant"),
+      readback_error: null,
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    await act(async () => {
+      pending[0]!.resolve(CI_VIEW);
+    });
+
+    // A refresh issues read #2 and leaves it in flight…
+    fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
+    await waitFor(() => expect(pending.length).toBe(2));
+    // …then the write happens, issuing read #3 after it lands.
+    await writeTenantOff();
+    await waitFor(() => expect(pending.length).toBe(3));
+
+    // Read #2 lands now, saying `off`. It was issued before the write.
+    await act(async () => {
+      pending[1]!.resolve(ciView("off", "tenant"));
+    });
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+    expect(
+      screen.getByTestId("github-hosted-ci-tenant-awaiting")
+    ).toBeInTheDocument();
+
+    // Read #3 — issued after the write — is the one allowed to confirm.
+    await act(async () => {
+      pending[2]!.resolve(ciView("off", "tenant"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-tenant-effective")
+      ).toHaveTextContent("Off")
+    );
+  });
+});
+
+describe("GithubHostedCiPanel — refresh retires read-back failures only on a confirmed read", () => {
+  async function failARepoReadBack(
+    pending: ReturnType<typeof deferred<unknown>>[]
+  ) {
+    httpPut.mockResolvedValueOnce({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "on",
+      effective: null,
+      readback_error: "read-back failed: coord returned 502",
+    });
+    await act(async () => {
+      pending[0]!.resolve(CI_VIEW);
+    });
+    const web = await waitFor(() => rowFor("qontinui/qontinui-web"));
+    fireEvent.click(within(web).getByRole("button", { expanded: false }));
+    fireEvent.click(within(web).getByTestId("github-hosted-ci-repo-on"));
+    await waitFor(() =>
+      expect(
+        rowFor("qontinui/qontinui-web")
+          .querySelector("[data-status-kind]")
+          ?.getAttribute("data-status-kind")
+      ).toBe("unknown")
+    );
+  }
+
+  const kindOf = (repo: string) =>
+    rowFor(repo)
+      .querySelector("[data-status-kind]")
+      ?.getAttribute("data-status-kind");
+
+  it("a refresh whose read succeeds clears it", async () => {
+    const pending = routeQueuedCi();
+    render(<GithubHostedCiPanel isAdmin />);
+    await failARepoReadBack(pending);
+
+    fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
+    await waitFor(() => expect(pending.length).toBe(2));
+    await act(async () => {
+      pending[1]!.resolve(CI_VIEW);
+    });
+    await waitFor(() => expect(kindOf("qontinui/qontinui-web")).toBe("off"));
+  });
+
+  it("a refresh whose read fails keeps it", async () => {
+    const pending = routeQueuedCi();
+    render(<GithubHostedCiPanel isAdmin />);
+    await failARepoReadBack(pending);
+
+    fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
+    await waitFor(() => expect(pending.length).toBe(2));
+    await act(async () => {
+      pending[1]!.reject(new Error("GET x failed: 502 - down"));
+    });
+    await screen.findByTestId("github-hosted-ci-repos-error");
+    expect(kindOf("qontinui/qontinui-web")).toBe("unknown");
+  });
+
+  it("a refresh whose success is SUPERSEDED by a newer settled read keeps it", async () => {
+    const pending = routeQueuedCi();
+    render(<GithubHostedCiPanel isAdmin />);
+    await failARepoReadBack(pending);
+
+    // Refresh issues read #2 and leaves it in flight.
+    fireEvent.click(screen.getByTestId("github-hosted-ci-refresh"));
+    await waitFor(() => expect(pending.length).toBe(2));
+    // A confirmed write on ANOTHER repo issues read #3, which fails first.
+    httpPut.mockResolvedValueOnce({
+      ok: true,
+      domain: "github_hosted_ci",
+      written_level: "off",
+      effective: tenantPolicy("off", "repo"),
+      readback_error: null,
+    });
+    const multi = rowFor("qontinui/multistate");
+    fireEvent.click(within(multi).getByRole("button", { expanded: false }));
+    fireEvent.click(within(multi).getByTestId("github-hosted-ci-repo-off"));
+    await waitFor(() => expect(pending.length).toBe(3));
+    await act(async () => {
+      pending[2]!.reject(new Error("GET x failed: 502 - down"));
+    });
+    // Read #2 now succeeds — but a newer read already settled, so it is
+    // discarded, and the refresh must NOT retire the read-back failure.
+    await act(async () => {
+      pending[1]!.resolve(CI_VIEW);
+    });
+    expect(kindOf("qontinui/qontinui-web")).toBe("unknown");
+  });
+});
+
+describe("GithubHostedCiPanel — coord's named write refusals", () => {
+  it.each([
+    ["repo_not_in_tenant", /not one of this tenant's repos/],
+    ["unknown_level", /not one this setting accepts/],
+    ["repo_key_not_owner_name", /keyed owner\/name/],
+  ])("renders %s legibly in the row", async (code, words) => {
+    route({});
+    httpPut.mockRejectedValue(
+      new Error(
+        `PUT /api/v1/operations/fleet-policy failed: 400 - {"detail":"{\\"error\\":\\"${code}\\"}"}`
+      )
+    );
+    render(<GithubHostedCiPanel isAdmin />);
+    await screen.findAllByTestId("github-hosted-ci-repo-row");
+    const web = rowFor("qontinui/qontinui-web");
+    fireEvent.click(within(web).getByRole("button", { expanded: false }));
+    fireEvent.click(within(web).getByTestId("github-hosted-ci-repo-inherit"));
+
+    const err = await within(rowFor("qontinui/qontinui-web")).findByTestId(
+      "github-hosted-ci-repo-write-error"
+    );
+    expect(err).toHaveTextContent(words);
+    expect(err).toHaveTextContent(/coord refused/);
+  });
+
+  it("an unnamed failure still says what failed", async () => {
+    route({});
+    httpPut.mockRejectedValue(
+      new Error("PUT /api/v1/operations/fleet-policy failed: 502 - down")
+    );
+    render(<GithubHostedCiPanel isAdmin />);
+    await screen.findAllByTestId("github-hosted-ci-repo-row");
+    const web = rowFor("qontinui/qontinui-web");
+    fireEvent.click(within(web).getByRole("button", { expanded: false }));
+    fireEvent.click(within(web).getByTestId("github-hosted-ci-repo-on"));
+    const err = await within(rowFor("qontinui/qontinui-web")).findByTestId(
+      "github-hosted-ci-repo-write-error"
+    );
+    expect(err).toHaveTextContent(/502/);
   });
 });
