@@ -316,11 +316,6 @@ describe("poolRowStatus — colour means who must act", () => {
   it.each([
     ["nothing queued", { queued_jobs: 0, oldest_queued_age_secs: null }],
     ["queue within bound", { queued_jobs: 3, oldest_queued_age_secs: 60 }],
-    [
-      "no bound reported",
-      { queued_jobs: 3, oldest_queued_age_secs: 9000, threshold_secs: null },
-    ],
-    ["no oldest age", { queued_jobs: 3, oldest_queued_age_secs: null }],
   ] as const)(
     "a stall alert on a measured pool whose reading shows %s is amber alert_contradicted",
     (_label, over) => {
@@ -331,6 +326,45 @@ describe("poolRowStatus — colour means who must act", () => {
       expect(s.attention).toBe("waiting");
       expect(s.label).toBe("alert open · reading clear");
       expect(s.reason).toContain("fired 2026-10-03T09:00:00Z");
+    }
+  );
+
+  it.each([
+    [
+      "no bound reported",
+      { queued_jobs: 3, oldest_queued_age_secs: 9000, threshold_secs: null },
+      "the stall bound",
+    ],
+    [
+      "no oldest age",
+      { queued_jobs: 3, oldest_queued_age_secs: null },
+      "the oldest queued job's age",
+    ],
+  ] as const)(
+    "a stall alert on a measured pool with %s is alert_incomplete (never 'reading clear')",
+    (_label, over, missing) => {
+      const s = poolRowStatus(
+        pool({ ...over, open_alerts: [alertFx("ci_job_queue_stalled")] })
+      );
+      expect(s.kind).toBe("alert_incomplete");
+      expect(s.attention).toBe("waiting");
+      expect(s.label).toBe("alert open · reading incomplete");
+      expect(s.reason).toContain(missing);
+      expect(s.reason).toContain("fired 2026-10-03T09:00:00Z");
+    }
+  );
+
+  it.each(["unknown", null] as const)(
+    "a no-eligible-runner alert with eligibility_state %s is alert_incomplete",
+    (eligibility) => {
+      const s = poolRowStatus(
+        pool({
+          eligibility_state: eligibility,
+          open_alerts: [alertFx("ci_pool_no_eligible_runner")],
+        })
+      );
+      expect(s.kind).toBe("alert_incomplete");
+      expect(s.reason).toContain("the eligibility verdict");
     }
   );
 
@@ -768,6 +802,23 @@ describe("deriveCiHealth — a stuck pool on a stale read is not current", () =>
   });
 });
 
+describe("deriveCiHealth — red main on a stale CI-status read is not current", () => {
+  it("a failed CI-status refresh turns red main into UNKNOWN 'Last read showed …'", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "red" })], { error: "HTTP 502" }),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toBe(
+      "Last read showed main red on qontinui/qontinui-web — not current"
+    );
+    expect(h.badges.find((b) => b.key === "main-red")?.label).toBe(
+      "main red 1"
+    );
+  });
+});
+
 describe("deriveCiHealth — green needs every repo row known", () => {
   it("a repo in the overview with no CI-status row blocks green", () => {
     const h = deriveCiHealth(
@@ -813,6 +864,14 @@ describe("pool group freshness is the OLDEST member's", () => {
       pool({ repo: "a/two", observed_at: "2026-10-04T11:50:00Z" }),
     ]);
     expect(g?.observedAt).toBe("2026-10-04T11:50:00Z");
+  });
+
+  it("is null when any member's observed_at is unparseable", () => {
+    const [g] = groupPools([
+      pool({ repo: "a/one", observed_at: "2026-10-04T12:07:00Z" }),
+      pool({ repo: "a/two", observed_at: "not-a-date" }),
+    ]);
+    expect(g?.observedAt).toBeNull();
   });
 
   it("is null when any member is undated", () => {

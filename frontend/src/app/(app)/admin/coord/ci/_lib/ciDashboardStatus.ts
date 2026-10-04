@@ -269,6 +269,7 @@ export type PoolKind =
   | "queue_stalled"
   | "alert_unconfirmed"
   | "alert_contradicted"
+  | "alert_incomplete"
   | "no_eligible_runner"
   | "no_runner_required_unknown"
   | "queue_over_bound"
@@ -289,10 +290,14 @@ export type PoolKind =
  *   past the bound and nothing is taking them. The 130-jobs-vs-2-runners and
  *   hours-queued incidents.
  * - `alert_contradicted` — WAITING. An alert is open on a MEASURED pool, but
- *   the current reading does not show what it claims (a stall alert while the
- *   oldest queued job is within its bound, or nothing is queued; a
- *   no-eligible-runner alert while the pool reads eligible). The alert is
+ *   the current reading DISPROVES it (a stall alert while nothing is queued
+ *   or the oldest job is within a reported bound; a no-eligible-runner alert
+ *   while the pool reads eligible). The alert is
  *   coord's to close; the reading says nothing is stuck now, so it is not red.
+ * - `alert_incomplete` — WAITING (ignorance floor). An alert is open on a
+ *   MEASURED pool but the reading lacks the figure that would confirm or
+ *   disprove it (no stall bound, no oldest age, eligibility unresolved).
+ *   The reason names the missing figure.
  * - `alert_unconfirmed` — WAITING (ignorance floor). An alert is open, but
  *   the pool does not currently read `measured`, so nothing confirms the
  *   alert's fire-time numbers still hold. Live on 2026-10-04 coord kept
@@ -325,6 +330,7 @@ export const CI_POOL_ATTENTION_BY_KIND = {
   queue_stalled: "author",
   alert_unconfirmed: "waiting",
   alert_contradicted: "waiting",
+  alert_incomplete: "waiting",
   no_eligible_runner: "author",
   no_runner_required_unknown: "waiting",
   queue_over_bound: "waiting",
@@ -344,6 +350,7 @@ export const CI_POOL_BADGE_CLASS: Record<PoolKind, string> = {
   queue_stalled: AUTHOR_RED,
   alert_unconfirmed: UNKNOWN_AMBER,
   alert_contradicted: WAITING_AMBER,
+  alert_incomplete: UNKNOWN_AMBER,
   no_eligible_runner: AUTHOR_RED,
   no_runner_required_unknown: UNKNOWN_AMBER,
   queue_over_bound: WAITING_AMBER,
@@ -479,17 +486,58 @@ export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
       `${what}; no required check runs here, so nothing is blocked — its jobs will not run until a runner is registered`
     );
   }
-  // An open alert the current reading does not bear out (a stall alert with
-  // the queue within bound, or a no-runner alert on an eligible pool).
-  const contradicted =
-    stall ??
+  // An open alert the current reading does not CONFIRM. Two different
+  // answers: the reading DISPROVES it (`alert_contradicted`, "reading
+  // clear"), or the reading lacks the figure that would decide it
+  // (`alert_incomplete`) — the second is ignorance, never "clear".
+  const noRunnerAlert =
     (row.open_alerts ?? []).find((a) => a.kind === NO_ELIGIBLE_RUNNER_ALERT) ??
     null;
-  if (contradicted) {
+  const incomplete: { alert: CiPoolAlertWire; missing: string }[] = [];
+  const disproved: CiPoolAlertWire[] = [];
+  if (stall) {
+    const disprovesStall =
+      row.queued_jobs === 0 ||
+      (row.oldest_queued_age_secs !== null &&
+        row.threshold_secs !== null &&
+        row.oldest_queued_age_secs <= row.threshold_secs);
+    if (disprovesStall) {
+      disproved.push(stall);
+    } else {
+      const missing = [
+        row.queued_jobs === null ? "the queued-job count" : null,
+        row.oldest_queued_age_secs === null
+          ? "the oldest queued job's age"
+          : null,
+        row.threshold_secs === null ? "the stall bound" : null,
+      ].filter(Boolean);
+      incomplete.push({ alert: stall, missing: missing.join(" and ") });
+    }
+  }
+  if (noRunnerAlert) {
+    if (row.eligibility_state === "eligible") {
+      disproved.push(noRunnerAlert);
+    } else {
+      incomplete.push({
+        alert: noRunnerAlert,
+        missing: `the eligibility verdict (reads ${row.eligibility_state ?? "not reported"})`,
+      });
+    }
+  }
+  const firstIncomplete = incomplete[0];
+  if (firstIncomplete) {
+    return make(
+      "alert_incomplete",
+      "alert open · reading incomplete",
+      `${alertAgeText(firstIncomplete.alert)}; the current reading cannot confirm or clear it — coord did not report ${firstIncomplete.missing}`
+    );
+  }
+  const firstDisproved = disproved[0];
+  if (firstDisproved) {
     return make(
       "alert_contradicted",
       "alert open · reading clear",
-      `${alertAgeText(contradicted)}; the current reading does not show it (${queue || "nothing queued"}, eligibility ${row.eligibility_state ?? "not reported"})`
+      `${alertAgeText(firstDisproved)}; the current reading disproves it (${queue || "nothing queued"}, eligibility ${row.eligibility_state ?? "not reported"})`
     );
   }
   if (
@@ -593,7 +641,8 @@ export function groupPools(pools: CiPoolWire[]): PoolGroup[] {
     for (const m of members) {
       const s = normalizeState(m.state);
       if (STATE_RANK[s] > STATE_RANK[state]) state = s;
-      if (!m.observed_at) {
+      if (!m.observed_at || !Number.isFinite(Date.parse(m.observed_at))) {
+        // Missing or unparseable: undatable, so the group is too.
         anyUndated = true;
       } else if (
         observedAt === null ||
@@ -1265,9 +1314,24 @@ export function deriveCiHealth(
     };
   }
   if (mainRed.length > 0) {
+    const where =
+      mainRed.length === 1 && mainRed[0]
+        ? mainRed[0].repo
+        : `${mainRed.length} repos`;
+    // The verdicts come from the CI-status read; when its latest refresh
+    // failed (or it never seeded) they are the last good read, not now.
+    if (ciStatus.error || !ciStatus.seeded) {
+      return {
+        level: "unknown",
+        headline: `Last read showed main red on ${where} — not current`,
+        detail: qualifiers || null,
+        badges,
+        pools,
+      };
+    }
     return {
       level: "red",
-      headline: `Main is red on ${mainRed.length === 1 && mainRed[0] ? mainRed[0].repo : `${mainRed.length} repos`}`,
+      headline: `Main is red on ${where}`,
       detail: qualifiers || null,
       badges,
       pools,
