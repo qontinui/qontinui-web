@@ -9824,6 +9824,131 @@ async def put_fleet_policy(
     )
 
 
+# ---- GitHub-hosted CI read proxy -----------------------------------------
+#
+# Plan ``2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting`` Phase 3
+# (D7). Proxies coord's ``GET /coord/ci-hosting/effective`` — the tenant
+# default plus one entry per repo the tenant owns, each with its RESOLVED
+# ``github_hosted_ci`` level and the band it came from. Writes do NOT get a
+# route here: they reuse ``PUT /fleet-policy`` above with
+# ``domain="github_hosted_ci"`` (``scope_band`` ``tenant`` | ``repo``, repo key
+# ``owner/name``, ``level: "inherit"`` clearing a repo override).
+#
+# The one property this projection holds: **``level: null`` is UNKNOWN and
+# stays null.** Coord's typed read returns ``Unknown(reason)`` rather than
+# collapsing to a level, because this domain has two opposite "safe" sides
+# (``off`` is safe for spend, ``on`` is safe for a tenant with no self-hosted
+# runners — plan D5). So unlike :func:`_fleet_policy_view`, which floors a
+# missing level to ``off``, nothing here is floored: a malformed or missing
+# level reads ``None`` with an ``unknown_reason`` naming why.
+#
+# An older coord without the route answers 404, which passes through as a 404
+# so the panel can say "this coord build does not serve the hosted-CI read
+# yet" — never a value.
+
+#: The two levels coord resolves this domain to. Anything else is UNKNOWN.
+_HOSTED_CI_LEVELS = ("on", "off")
+
+
+class CiHostingReading(BaseModel):
+    """One resolved ``github_hosted_ci`` reading. ``level is None`` ⇒ UNKNOWN."""
+
+    level: Literal["on", "off"] | None
+    #: ``"none" | "repo" | "tenant" | "system"`` — the band that answered.
+    #: ``"none"`` means no row matched and the domain default (``on``) applies.
+    resolved_scope: str
+    #: Set when ``level`` is ``None``: ``owners_disagree``, a read failure, or
+    #: ``malformed_level`` when coord answered with a level this proxy does not
+    #: recognise.
+    unknown_reason: str | None = None
+
+
+class CiHostingRepoReading(CiHostingReading):
+    #: ``owner/name`` — the repo-band ``scope_key`` spelling.
+    repo: str
+
+
+class CiHostingView(BaseModel):
+    domain: str = "github_hosted_ci"
+    tenant_default: CiHostingReading
+    repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
+    can_edit: bool
+
+
+def _ci_hosting_reading(raw: Any) -> dict[str, Any]:
+    body = raw if isinstance(raw, dict) else {}
+    level = body.get("level")
+    scope = body.get("resolved_scope")
+    reason = body.get("unknown_reason")
+    reason = reason if isinstance(reason, str) and reason else None
+    if level is not None and level not in _HOSTED_CI_LEVELS:
+        # Coord said something this build cannot read as on/off. That is
+        # ignorance, not a value — render it as UNKNOWN and say why.
+        reason = reason or f"malformed_level:{level}"
+        level = None
+    elif level is None and reason is None:
+        reason = "no_level_reported" if isinstance(raw, dict) else "missing"
+    return {
+        "level": level,
+        "resolved_scope": scope if isinstance(scope, str) else "none",
+        "unknown_reason": reason,
+    }
+
+
+def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
+    body = payload if isinstance(payload, dict) else {}
+    repos_raw = body.get("repos")
+    repos: list[CiHostingRepoReading] = []
+    if isinstance(repos_raw, list):
+        for entry in repos_raw:
+            if not isinstance(entry, dict):
+                continue
+            repo = entry.get("repo")
+            if not isinstance(repo, str) or not repo:
+                continue
+            repos.append(CiHostingRepoReading(repo=repo, **_ci_hosting_reading(entry)))
+    return CiHostingView(
+        tenant_default=CiHostingReading(
+            **_ci_hosting_reading(body.get("tenant_default"))
+        ),
+        repos=repos,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/ci-hosting", response_model=CiHostingView)
+async def get_ci_hosting(
+    request: Request,
+    repo: str | None = Query(
+        None,
+        description="Resolve only this repo (owner/name).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> CiHostingView:
+    """Read the tenant's resolved GitHub-hosted CI setting, per repo.
+
+    ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+    roles in the EFFECTIVE tenant plus the superuser bypass — because the
+    writes this panel makes go through ``PUT /fleet-policy``, which is gated on
+    ``require_coord_tenant_admin``.
+    """
+    params: dict[str, Any] = {}
+    if repo:
+        params["repo"] = repo
+    payload = await _proxy_coord_get(
+        "/coord/ci-hosting/effective", params=params or None, tenant_id=tenant_id
+    )
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _ci_hosting_view(payload, can_edit=can_edit)
+
+
 # ---- Tenant transcript-sync consent proxy -------------------------------
 #
 # Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
