@@ -65,10 +65,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # The pinned binaries are x86_64 Linux builds. Soft guard: a runner of
+      # another architecture warns here instead of failing the check.
+      - name: Architecture guard (x86_64 binaries)
+        continue-on-error: true
+        run: |
+          arch="$(uname -m)"
+          if [ "$arch" != "x86_64" ]; then
+            echo "::warning title=workflow-lint::runner architecture is $arch; the pinned zizmor/actionlint binaries are x86_64 and will not run here"
+          fi
+
       # Release tarballs by exact version, each checked against a sha256
       # recorded here (zizmor-x86_64-unknown-linux-gnu.tar.gz from
       # zizmorcore/zizmor v1.30.1; actionlint_1.7.12_linux_amd64.tar.gz, whose
       # digest matches the release's actionlint_1.7.12_checksums.txt).
+      # continue-on-error: a download blip or digest mismatch must not turn
+      # the check red while advisory; the summary reports it as ERROR.
       - name: Install zizmor and actionlint (pinned, sha256-verified)
         id: install
         continue-on-error: true
@@ -89,42 +101,70 @@ jobs:
 
       # Online audits (impostor-commit, known-vulnerable-actions, ref
       # confusion) read the GitHub API with this run's read-only token.
+      # `--format=github` turns each finding into a workflow-command
+      # annotation, so findings are visible on the PR while the check stays
+      # green. Exit codes: 0 = clean, 1 = error, >=10 = findings.
       - name: zizmor
         id: zizmor
+        if: steps.install.outcome == 'success'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set +e
           "$RUNNER_TEMP/workflow-lint-bin/zizmor" --no-progress --format=github \
             --config .github/zizmor.yml \
-            .github/workflows .github/actions .github/dependabot.yml
+            .github/workflows .github/actions .github/dependabot.yml \
+            | tee "$RUNNER_TEMP/zizmor.out"
+          rc=${PIPESTATUS[0]}
+          n=$(grep -c '^::' "$RUNNER_TEMP/zizmor.out")
+          if [ "$rc" -eq 0 ]; then v="PASS"
+          elif [ "$rc" -ge 10 ]; then v="FINDINGS($n)"
+          else v="ERROR(exit $rc)"; fi
+          echo "| zizmor ${ZIZMOR_VERSION} | $v |" >> "$RUNNER_TEMP/summary.md"
+          exit "$rc"
 
       # `-shellcheck=` / `-pyflakes=` disable the external checkers so the
       # verdict does not depend on what happens to be installed on the runner.
+      # `-format` emits one `::warning` annotation per finding. Exit codes:
+      # 0 = clean, 1 = findings, 2/3 = bad flag / fatal error.
       - name: actionlint
         id: actionlint
+        if: steps.install.outcome == 'success'
         continue-on-error: true
         run: |
-          "$RUNNER_TEMP/workflow-lint-bin/actionlint" -shellcheck= -pyflakes= -color
+          set +e
+          "$RUNNER_TEMP/workflow-lint-bin/actionlint" -shellcheck= -pyflakes= \
+            -format '{{range $err := .}}::warning file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}} [{{$err.Kind}}]\n{{end}}' \
+            | tee "$RUNNER_TEMP/actionlint.out"
+          rc=${PIPESTATUS[0]}
+          n=$(grep -c '^::warning' "$RUNNER_TEMP/actionlint.out")
+          case "$rc" in
+            0) v="PASS" ;;
+            1) v="FINDINGS($n)" ;;
+            *) v="ERROR(exit $rc)" ;;
+          esac
+          echo "| actionlint ${ACTIONLINT_VERSION} | $v |" >> "$RUNNER_TEMP/summary.md"
+          exit "$rc"
 
       - name: Summary
         if: always()
         env:
           INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
-          ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
         run: |
           {
             echo "## workflow-lint (advisory)"
             echo ""
-            echo "| step | outcome |"
+            echo "| tool | verdict |"
             echo "| --- | --- |"
-            echo "| install | ${INSTALL_OUTCOME} |"
-            echo "| zizmor ${ZIZMOR_VERSION} | ${ZIZMOR_OUTCOME} |"
-            echo "| actionlint ${ACTIONLINT_VERSION} | ${ACTIONLINT_OUTCOME} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for pair in "install:${INSTALL_OUTCOME}" "zizmor:${ZIZMOR_OUTCOME}" "actionlint:${ACTIONLINT_OUTCOME}"; do
-            if [ "${pair#*:}" != "success" ]; then
-              echo "::warning title=workflow-lint (advisory)::${pair%%:*} did not succeed (${pair#*:}); see that step's log. Advisory: this check stays green until promoted."
+            if [ "${INSTALL_OUTCOME}" != "success" ]; then
+              echo "| install | ERROR (${INSTALL_OUTCOME}) |"
+              echo "| zizmor ${ZIZMOR_VERSION} | ERROR (not run: install failed) |"
+              echo "| actionlint ${ACTIONLINT_VERSION} | ERROR (not run: install failed) |"
+            else
+              cat "$RUNNER_TEMP/summary.md" 2>/dev/null || echo "| (tools) | ERROR (no verdict recorded) |"
             fi
-          done
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${INSTALL_OUTCOME}" != "success" ]; then
+            echo "::warning title=workflow-lint (advisory)::tool install did not succeed (${INSTALL_OUTCOME}); no lint ran. Advisory: this check stays green until promoted."
+          fi
