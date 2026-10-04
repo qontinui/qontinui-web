@@ -70,10 +70,14 @@ concurrency:
   group: e2e-tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
-# that needs more declares its own `permissions:`.
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read inside the called
+# e2e-playwright-stack.yml (a called workflow gets at most the caller's
+# token scope). A job that needs more declares its own `permissions:`.
 permissions:
   contents: read
+  actions: read
 
 jobs:
   backend-tests:
