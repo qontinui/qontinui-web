@@ -1482,6 +1482,24 @@ The freshness badge itself is not a new component: it is a `StatusBadge` over a
 three-kind palette (`fresh` calm, `stale` and `unknown` on `UNKNOWN_AMBER` —
 R3's ignorance floor), so it inherits the glyph and title rules for free.
 
+### 3.6 The CI dashboard — recorded under §6.4
+
+`/admin/coord/ci` (plan `2026-10-04-ci-dashboard-in-the-dev-ops-console`
+Phase 4) composes `HealthStrip`, `CollapsiblePanel`, `RecordList`/`RecordRow`/
+`RecordDetail`, `StatusBadge`, `RowTime` and `RefreshButton`, and registers two
+palettes (a pool's verdict, a repo's) in `CONSOLE_PALETTES`. It adds no new
+primitive. One thing is recorded rather than shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **`LaneTable`'s per-field refusal, inline on a one-line row** | `ci/page.tsx` (`CellText`), readings from `ci/_lib/ciDashboardStatus.ts` (`cell`) | Every figure on a pool or repo row is a `CellReading`: a number only when coord's row `state` is `measured`, otherwise an amber `–` whose `title` carries the reason. A measured `null` is a `–` too — `null` is never `0`. Every figure has a `RowTime` freshness stamp beside it or on its row. | §3.5 records the per-field rule for a dense TABLE; here the same rule rides R2's single line. It stays local to the route until a second surface needs it — then it moves to `console/`, per §6.4. |
+
+The strip's verdict has a fourth value the primitive does not: `deriveCiHealth`
+returns `unknown` beside red/amber/green, and the page paints it amber
+(`stripLevel`) while exposing the verdict as `data-ci-health` — so "we do not
+know" and "waiting" look alike to the eye (R3's ignorance floor) and stay
+distinct to a UI Bridge reader.
+
 ---
 
 ## 4. The attention palette
