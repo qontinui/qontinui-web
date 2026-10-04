@@ -8618,8 +8618,21 @@
         "type": "object"
       },
       "CiStatusResponse": {
-        "description": "Response wrapper for ``GET /operations/ci-status``.",
+        "description": "Response wrapper for ``GET /operations/ci-status``.\n\n``as_of`` is coord's read time. It is optional rather than required so a\nweb deploy that lands before the coord half (Phase 2) keeps serving the\npage instead of failing response validation with a 500 \u2014 an absent\n``as_of`` renders as UNKNOWN freshness, never as current.",
         "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "when coord composed this response (RFC 3339)",
+            "title": "As Of"
+          },
           "repos": {
             "items": {
               "$ref": "#/components/schemas/RepoCiRow"
@@ -41719,7 +41732,7 @@
         "type": "object"
       },
       "RepoCiRow": {
-        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering\n(``green`` / ``red`` / ``unknown``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.",
+        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /\n``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.\n``vacuously_green`` is coord's zero-baseline arm \u2014 no required check has\never reported on main, so \"green\" is an absence of evidence, not a pass.\n\nThe two ``*_observed_at`` stamps are the freshness of the facts the row\ncarries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):\n``main_verdict_observed_at`` is ``max(updated_at)`` over the\n``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``\nis the newest ``pr_check_runs`` row counted. They MUST be declared here:\n``response_model`` filtering drops every undeclared key, so an undeclared\nstamp would leave the page an unbounded read of \"the latest observation\"\nwith no way to say how old it is. ``None`` is coord saying it has no\nobservation to date the value by (the vacuously-green / memo arms, or no\nchecks at all) \u2014 and also an older coord that sends no stamp; both read\nas UNKNOWN freshness on the page, never as \"just now\".",
         "properties": {
           "latest_details_url": {
             "anyOf": [
@@ -41744,9 +41757,22 @@
             "title": "Main Head Sha"
           },
           "main_verdict": {
-            "description": "\"green\" | \"red\" | \"unknown\"",
+            "description": "\"green\" | \"red\" | \"unknown\" | \"vacuously_green\"",
             "title": "Main Verdict",
             "type": "string"
+          },
+          "main_verdict_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max(updated_at) over the ci_baselines rows main_verdict was read from; null when no baseline backs the verdict",
+            "title": "Main Verdict Observed At"
           },
           "open_pr_checks": {
             "additionalProperties": {
@@ -41755,6 +41781,19 @@
             "description": "counts keyed by 'success' | 'failure' | 'pending'",
             "title": "Open Pr Checks",
             "type": "object"
+          },
+          "pr_checks_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "newest pr_check_runs row counted; null when none",
+            "title": "Pr Checks Observed At"
           },
           "repo": {
             "title": "Repo",
@@ -89196,7 +89235,7 @@
     },
     "/api/v1/operations/ci-status": {
       "get": {
-        "description": "Return per-repo CI status for the caller's tenant.\n\nProxies coord's ``GET /coord/ci/status`` with the\n``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from\n``coord.tenant_repos`` for the tenant, so an operator with no\nregistered repos gets ``{\"repos\": []}`` \u2014 never 4xx.\n\nWire shape (coord ``CiStatusResponse``)::\n\n    { \"repos\": [RepoCiRow, ...] }",
+        "description": "Return per-repo CI status for the caller's tenant.\n\nProxies coord's ``GET /coord/ci/status`` with the\n``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from\n``coord.tenant_repos`` for the tenant, so an operator with no\nregistered repos gets ``{\"repos\": []}`` \u2014 never 4xx.\n\nWire shape (coord ``CiStatusResponse``)::\n\n    { \"as_of\": \"<rfc3339>\", \"repos\": [RepoCiRow, ...] }",
         "operationId": "api_v1_operations_ci_status_get",
         "responses": {
           "200": {
@@ -89253,6 +89292,28 @@
           }
         },
         "summary": "Post Ci Status Notify When Green",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/ci/overview": {
+      "get": {
+        "description": "Per-pool CI capacity/queue state and per-repo job-outcome split.\n\nProxies coord's ``GET /coord/ci/overview`` (plan\n``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phases 2-3), the\ndurable read behind ``/admin/coord/ci``. Coord serves it from\n``coord.ci_pool_observations`` (written by the leader each queue-wait /\neligibility pass) plus tenant-scoped ``ci_job_observations`` counts, so\nevery replica answers the same rows.\n\nPassed through VERBATIM \u2014 deliberately no ``response_model``. Every\ncount on this wire is nullable and every row carries a ``state``\n(``measured`` / ``stale`` / ``never_observed`` / ``unknown``) plus its\n``observed_at`` / ``stale_after_secs``; a declared model that lagged the\ncoord shape would silently drop exactly the fields that let the page\nsay \"UNKNOWN\" instead of \"0\" (the ``/ci-status`` freshness bug this same\nplan had to fix in ``RepoCiRow``).\n\nWire shape (coord)::\n\n    {\n      \"as_of\": \"<rfc3339>\", \"coverage_note\": \"...\", \"note\": \"...|null\",\n      \"pools\": [{repo, pool, state, state_reason, observed_at, ...}],\n      \"repos\": [{repo, window_hours, state, outcomes, hosted, ...}]\n    }\n\nNo graceful fallback: a coord predating the route answers 404 and the\npage renders that as an explicit UNKNOWN, never as an empty fleet.",
+        "operationId": "api_v1_operations_ci_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Ci Overview Api V1 Operations Ci Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ci Overview",
         "tags": [
           "operations"
         ]
