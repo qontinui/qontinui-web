@@ -262,9 +262,11 @@ CODE_END_PENDING = "end_already_pending"
 # outcome than one it can — but is NAMESPACED with
 # ``TARGET_CODE_PREFIX``, which no relay code shares.
 #
-# ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
-# and stay pass-through. State the trade honestly, because two earlier drafts
-# of this comment contradicted each other on it (review round 4, item 4):
+# ``attach_grant_expired`` is in BOTH vocabularies, and it and
+# ``attach_grant_unknown`` (the target's own "that grant is gone"; the relay
+# never mints it) stay pass-through. State the trade honestly, because two
+# earlier drafts of this comment contradicted each other on it (review round 4,
+# item 4):
 #
 # * What pass-through COSTS. The source cannot distinguish "the relay's
 #   verifier rejected your grant" from "the counterparty you attached to claims
@@ -303,6 +305,23 @@ TARGET_ERROR_CODES = frozenset(
         "remote_create_source_user_not_allowed",
         # backend_relay's pre-dispatch refusal
         "remote_type_not_admitted",
+        # The remote-block checks (attach, detach, flow — and end once
+        # qontinui-runner#1883 lands): a frame with no
+        # ``remote`` block. The relay always sends one, so this is a target
+        # disagreeing with the relay about the frame, not a relay verdict.
+        "remote_block_required",
+        # backend_relay's refusal of a ``terminal_flow`` with no boolean
+        # ``paused``.
+        "flow_paused_required",
+        # backend_relay's ``terminal_create`` replies: the spawned PTY exited
+        # before coord confirmed it, or coord never confirmed the registration.
+        "terminal_exited",
+        "coord_registration_unconfirmed",
+        # ``handle_terminal_create``'s coord device-drain deferral
+        # (``coord_drain_state::DeferClass::code``): the target is drained, or
+        # cannot read its drain state. Refused before any grant is spent.
+        "device_drained",
+        "drain_unreadable",
     }
 )
 
@@ -428,9 +447,9 @@ ATTACH_REPRESENT_DELAY_SECONDS = 3.0
 #   module's source for ``"code": "<literal>"`` and fails on any that is not
 #   here. The two must agree.
 #
-# ``TARGET_ERROR_CODES`` and this set deliberately intersect
-# (``attach_grant_unknown`` / ``attach_grant_expired``): the source's handling
-# is identical either way, so those stay pass-through. Every OTHER relay code
+# ``TARGET_ERROR_CODES`` and this set deliberately intersect on exactly
+# ``attach_grant_expired``: the source's handling is identical either way, so
+# it stays pass-through. Every OTHER relay code
 # must be unreachable from target input, which is the property
 # ``namespace_target_code`` owns.
 _INLINE_RELAY_ERROR_CODES = frozenset(

@@ -1,7 +1,7 @@
 """The generic overview authoring routes, built from the registry.
 
 Plan ``2026-09-20-overview-authoring-layer`` §1–§2. Mounted at
-``/api/v1/overview`` beside the estimate routes.
+``/api/v1/overview`` beside the hand-written settings routes.
 
 Routes
 ------
@@ -43,9 +43,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.overview import change_log
 from app.overview import http as contract_http
+from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
 from app.overview.pages import router as pages_routes
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
+from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
 from app.overview.resource import (
     RecordNotFound,
@@ -521,7 +523,10 @@ for _spec in REGISTRY.values():
     if _spec.store is not None:
         _mount(_spec)
 
-# The routes beyond the generic contract, on the same prefix: page versions,
-# revert and backlinks; file upload and download.
+# The routes beyond the generic contract, on the same prefix: the estimate's
+# rollup and forecast; page versions, revert and backlinks; file upload and
+# download.
+router.include_router(estimates_routes)
+router.include_router(timeline_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)

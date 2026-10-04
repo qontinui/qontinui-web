@@ -109,9 +109,33 @@ vi.mock("next/navigation", () => ({
 // this page mounts no `AuthProvider`. Stubbed to an admin so the control that
 // Phase 4b adds is the one under test; the non-admin arm is asserted in
 // `components/operations/DeviceDrainControl.test.tsx`.
-const authState = { isCoordAdmin: true };
+const authState = {
+  isCoordAdmin: true,
+  user: { is_superuser: false, coord_is_admin: true } as {
+    is_superuser: boolean;
+    coord_is_admin: boolean;
+  },
+};
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+  useAuth: () => ({
+    isCoordAdmin: authState.isCoordAdmin,
+    user: authState.user,
+  }),
+}));
+
+// The Computers link reads admin IN THE ACTIVE TENANT from the tenant list.
+const tenantState: {
+  tenants: { id: string; slug: string; name: string; roles?: string[] }[];
+  activeTenantId: string | null;
+} = {
+  tenants: [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }],
+  activeTenantId: "t-a",
+};
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({
+    tenants: tenantState.tenants,
+    activeTenantId: tenantState.activeTenantId,
+  }),
 }));
 
 // Toasts are a drain write's only other output; nothing here asserts on them,
@@ -365,6 +389,44 @@ describe("/admin/coord/devops", () => {
     // cannot appear anywhere in the app any more.
     expect(screen.queryByTestId("coord-fleet-health")).not.toBeInTheDocument();
     expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
+  });
+
+  it("links to Computers only for an admin of the ACTIVE tenant — the proxies' gate", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    const { unmount } = render(<CoordDevOpsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-machines")).toBeInTheDocument()
+    );
+    expect(
+      screen.getByTestId("coord-devops-computers-link").getAttribute("href")
+    ).toBe("/admin/coord/computers");
+    unmount();
+
+    // Admin of A with B active: the union (`coord_is_admin`) is still true,
+    // but the gate checks B's roles, so no link.
+    tenantState.tenants = [
+      { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      { id: "t-b", slug: "b", name: "B", roles: ["developer"] },
+    ];
+    tenantState.activeTenantId = "t-b";
+    try {
+      render(<CoordDevOpsPage />);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-devops-machines")).toBeInTheDocument()
+      );
+      expect(
+        screen.queryByTestId("coord-devops-computers-link")
+      ).not.toBeInTheDocument();
+    } finally {
+      tenantState.tenants = [
+        { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      ];
+      tenantState.activeTenantId = "t-a";
+    }
   });
 
   it("joins coord's DeviceState onto the machine row", async () => {
@@ -2667,5 +2729,32 @@ describe("/admin/coord/devops — Worktree slots (Phase 3)", () => {
     const banner = await screen.findByTestId("fleet-worktree-slots-error");
     expect(banner).toHaveTextContent("coord is not reachable");
     expect(banner).not.toHaveTextContent("does not serve");
+  });
+});
+
+describe("/admin/coord/devops — GitHub-hosted CI", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("mounts the panel open, and a coord without the read renders it UNKNOWN", async () => {
+    // `mockRoutes` rejects every route it does not know, which is exactly a
+    // coord/web build that serves neither the hosted-CI read nor the dial yet.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    render(<CoordDevOpsPage />);
+
+    const panel = await screen.findByTestId("github-hosted-ci-panel");
+    expect(
+      await within(panel).findByTestId("github-hosted-ci-repos-error")
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
   });
 });

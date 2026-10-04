@@ -155,6 +155,113 @@ class TestPairConfirmSendsCoordArmB:
         detail = resp.json()["detail"]
         assert detail["coord_status"] == 403
         assert "tenant_membership_required" in detail["coord_body"]
+        assert detail["coord_code"] == "tenant_membership_required"
+        assert detail["coord_hint"] == "restart pairing"
+
+    def test_refusal_code_is_parsed_from_the_full_body_not_the_truncated_one(
+        self, client: TestClient
+    ) -> None:
+        """A collect-mode batch refusal carries per-tenant ``results`` and
+        routinely runs past ``coord_body``'s 500 chars; ``coord_code`` must
+        still be relayed so the page can tell a retryable coord failure from
+        a membership refusal."""
+        refusal = {
+            "error": "no requested tenant could be paired",
+            "results": [
+                {
+                    "tenant_id": str(uuid4()),
+                    "status": "skipped",
+                    "skipped_reason": "probe_failed",
+                }
+                for _ in range(8)
+            ],
+            "code": "probe_failed",
+            "hint": "restart pairing",
+        }
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=403, json_data=refusal, text=str(refusal)
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert len(detail["coord_body"]) == 500
+        assert detail["coord_code"] == "probe_failed"
+        assert detail["coord_hint"] == "restart pairing"
+        assert detail["coord_skip_reasons"] == ["probe_failed"]
+
+    def test_batch_refusal_relays_distinct_skip_reasons_only(
+        self, client: TestClient
+    ) -> None:
+        tenant = str(uuid4())
+        refusal = {
+            "error": "no requested tenant could be paired",
+            "code": "no_tenant_authorized",
+            "hint": "restart pairing",
+            "results": [
+                {
+                    "tenant_id": tenant,
+                    "status": "skipped",
+                    "skipped_reason": "not_a_member",
+                },
+                {
+                    "tenant_id": str(uuid4()),
+                    "status": "skipped",
+                    "skipped_reason": "user_not_provisioned",
+                },
+                {
+                    "tenant_id": str(uuid4()),
+                    "status": "skipped",
+                    "skipped_reason": "not_a_member",
+                },
+                "not-an-object",
+                {"tenant_id": str(uuid4()), "status": "skipped", "skipped_reason": 7},
+            ],
+        }
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=403, json_data=refusal, text="x" * 600
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["coord_code"] == "no_tenant_authorized"
+        assert detail["coord_skip_reasons"] == ["not_a_member", "user_not_provisioned"]
+        assert tenant not in str({k: v for k, v in detail.items() if k != "coord_body"})
+
+    def test_non_json_refusal_relays_no_code(self, client: TestClient) -> None:
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            bad = _mock_response(status_code=500, text="upstream exploded")
+            bad.json.side_effect = ValueError("not json")
+            instance.post.return_value = bad
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail == {"coord_status": 500, "coord_body": "upstream exploded"}
 
     def test_unlinked_operator_is_refused_before_any_outbound_call(
         self, client: TestClient

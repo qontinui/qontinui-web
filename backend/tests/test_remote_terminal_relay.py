@@ -3956,31 +3956,25 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     frame, so a target could emit the RELAY's own verdicts — ``listener_lost``
     most plainly, a claim only the relay is in a position to make.
 
-    ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
-    and stay pass-through on purpose, so the codes pinned here are the
-    relay-ONLY ones. The trade that carve-out makes is stated at
-    ``TARGET_ERROR_CODES``: a target can close the source's pane repeatably by
-    claiming the grant is gone, which is a pane-level DoS by the party you
-    chose to attach to and not a privilege gain. An earlier draft of this
+    ``attach_grant_expired`` is in BOTH vocabularies and stays pass-through on
+    purpose, so the codes pinned here are every relay code but that one. The
+    trade that carve-out makes is stated at ``TARGET_ERROR_CODES``: a target
+    can close the source's pane repeatably by claiming the grant is gone, which
+    is a pane-level DoS by the party you chose to attach to and not a privilege
+    gain. An earlier draft of this
     docstring called it "discard live grants and re-mint in a loop"; there is
     no auto-remint path, and that claim was simply wrong (review round 4,
     item 4).
     """
-    relay_only = [
-        rtr.CODE_GRANT_INVALID,
-        rtr.CODE_GRANT_WRONG_SOURCE,
-        rtr.CODE_GRANT_CONSUMED,
-        rtr.CODE_NOT_REGISTERED,
-        rtr.CODE_VERIFIER_UNAVAILABLE,
-        rtr.CODE_REGISTRY_UNAVAILABLE,
-        rtr.CODE_TERMINAL_BUSY,
-        rtr.CODE_TARGET_NOT_CONNECTED,
-        rtr.CODE_CREATE_GRANT_INVALID,
-        rtr.CODE_CREATE_GRANT_EXPIRED,
-        rtr.CODE_CREATE_GRANT_WRONG_SOURCE,
-        rtr.CODE_GRANT_WRONG_KIND,
-        rtr.CODE_LISTENER_LOST,
-    ]
+    # Derived, not hand-listed: a hand list missed ``end_reply_timeout`` and
+    # ``end_already_pending`` when #1593 added them, and still missed
+    # ``create_grant_consumed``, ``buffer_backlog`` and the inline
+    # ``attach_terminal_missing`` after that was fixed.
+    # ``RELAY_ERROR_CODES`` sweeps every ``CODE_*`` constant, so a relay code
+    # added later is pinned here without anyone remembering to.
+    shared = {rtr.CODE_GRANT_EXPIRED}
+    assert rtr.RELAY_ERROR_CODES & rtr.TARGET_ERROR_CODES == shared
+    relay_only = sorted(rtr.RELAY_ERROR_CODES - shared)
     for code in relay_only:
         assert code not in rtr.TARGET_ERROR_CODES, code
         namespaced = rtr.namespace_target_code(code)
@@ -4020,9 +4014,9 @@ async def test_the_namespacing_branch_never_produces_a_relay_code() -> None:
     "by construction" was false.
 
     The property, stated exactly: the NAMESPACING branch never yields a relay
-    code. The pass-through branch may — ``attach_grant_unknown`` /
-    ``attach_grant_expired`` are in both vocabularies on purpose — so the
-    documented intersection is the only permitted overlap.
+    code. The pass-through branch may — ``attach_grant_expired`` is in both
+    vocabularies on purpose — so the documented intersection is the only
+    permitted overlap.
     """
     # The collision itself, in every spelling that reduces to the same slug.
     for forgery in [
@@ -5740,7 +5734,8 @@ async def test_remote_marked_uncorrelated_refusal_settles_a_fresh_end(
     assert routed is True
     (err,) = ws.of_type("remote_terminal_error")
     assert err["request_id"] == "req-end-1"
-    assert err["code"] == "target_said_remote_block_required"
+    # A target refusal from the runner's own vocabulary passes through.
+    assert err["code"] == "remote_block_required"
     assert session.grants == {}
     assert redis.empty()
 

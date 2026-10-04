@@ -27,6 +27,12 @@ const ACTION_LABEL: Record<ChangeLogEntry["action"], string> = {
   delete: "deleted it",
 };
 
+/** Which record a resource-wide entry is about, by the title it carried. */
+function entryTitle(entry: ChangeLogEntry): string | null {
+  const title = (entry.after ?? entry.before)?.title;
+  return typeof title === "string" && title !== "" ? title : null;
+}
+
 type HistoryState =
   | { state: "closed" }
   | { state: "loading" }
@@ -41,7 +47,8 @@ export function ChangeLogPanel({
   uiBridgeId,
 }: {
   resource: string;
-  recordId: string;
+  /** One record's history; `null` for every record of the resource. */
+  recordId: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
   uiBridgeId: string;
@@ -104,7 +111,10 @@ export function ChangeLogPanel({
             <ol className="space-y-0.5">
               {history.entries.map((entry) => (
                 <li key={entry.id}>
-                  {entry.actor ?? "Someone"} {ACTION_LABEL[entry.action]}{" "}
+                  {entry.actor ?? "Someone"} {ACTION_LABEL[entry.action]}
+                  {recordId === null && entryTitle(entry)
+                    ? ` (“${entryTitle(entry)}”)`
+                    : ""}{" "}
                   {formatRelativeTime(entry.created_at)},{" "}
                   {SOURCE_LABEL[entry.source]}
                 </li>

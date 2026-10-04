@@ -20,8 +20,10 @@
  *        - sessionStorage.auth_bearer_refresh_token
  *        - localStorage.is_authenticated = "true"
  *        - localStorage.token_expiry     = <far-future ms>
- *        - document.cookie qontinui_auth=1 (the middleware soft-gate marker;
- *          carries no token — see token-storage.ts AUTH_MARKER_COOKIE).
+ *      and, on the browser CONTEXT before the first navigation (not from the
+ *      init script, which misses the first request — see auth-marker-cookie.ts):
+ *        - cookie qontinui_auth=1 (the middleware soft-gate marker; carries no
+ *          token — see token-storage.ts AUTH_MARKER_COOKIE).
  *      The app's http-client.ts then attaches the Bearer header on every call,
  *      and middleware.ts lets protected routes through.
  *
@@ -46,6 +48,8 @@ import {
   type ConsoleErrorEntry,
   type ConsoleLevel,
 } from "./console-policy";
+import { seedAuthMarkerCookie } from "./auth-marker-cookie";
+import { settleRoute } from "./route-settle";
 import {
   isSameOriginServerError,
   type ServerErrorEntry,
@@ -145,7 +149,7 @@ interface LoginTokens {
 async function login(
   _apiBase: string,
   email: string,
-  password: string,
+  password: string
 ): Promise<LoginTokens | null> {
   // Cognito is the sole auth mechanism (legacy-auth teardown T3): the local
   // /api/v1/auth/jwt/login endpoint was deleted (it now 404s). Mint a ci-bot
@@ -173,13 +177,13 @@ async function login(
     });
   } catch (e) {
     process.stderr.write(
-      `[authed-smoke] Cognito InitiateAuth request failed (harness): ${e instanceof Error ? e.message : String(e)}\n`,
+      `[authed-smoke] Cognito InitiateAuth request failed (harness): ${e instanceof Error ? e.message : String(e)}\n`
     );
     return null;
   }
   if (!res.ok) {
     process.stderr.write(
-      `[authed-smoke] Cognito InitiateAuth returned non-2xx (harness): ${res.status}\n`,
+      `[authed-smoke] Cognito InitiateAuth returned non-2xx (harness): ${res.status}\n`
     );
     return null;
   }
@@ -187,7 +191,9 @@ async function login(
   try {
     json = await res.json();
   } catch {
-    process.stderr.write("[authed-smoke] Cognito response was not JSON (harness)\n");
+    process.stderr.write(
+      "[authed-smoke] Cognito response was not JSON (harness)\n"
+    );
     return null;
   }
   const ar = (
@@ -197,7 +203,7 @@ async function login(
   ).AuthenticationResult;
   if (!ar || typeof ar.IdToken !== "string" || ar.IdToken.length === 0) {
     process.stderr.write(
-      "[authed-smoke] Cognito response had no IdToken (harness)\n",
+      "[authed-smoke] Cognito response had no IdToken (harness)\n"
     );
     return null;
   }
@@ -224,7 +230,7 @@ async function main(): Promise<number> {
   }
   if (!email || !password) {
     process.stderr.write(
-      "[authed-smoke] no QONTINUI_TEST_AUTO_LOGIN_EMAIL/_PASSWORD (harness)\n",
+      "[authed-smoke] no QONTINUI_TEST_AUTO_LOGIN_EMAIL/_PASSWORD (harness)\n"
     );
     return 2;
   }
@@ -232,15 +238,23 @@ async function main(): Promise<number> {
   try {
     baseOrigin = new URL(base).origin;
   } catch {
-    process.stderr.write(`[authed-smoke] SMOKE_BASE_URL is not a URL: ${base}\n`);
+    process.stderr.write(
+      `[authed-smoke] SMOKE_BASE_URL is not a URL: ${base}\n`
+    );
     return 2;
+  }
+  let apiOrigin: string | null = null;
+  try {
+    apiOrigin = new URL(apiBase).origin;
+  } catch {
+    // Diagnostics only; a malformed PROD_API_BASE just disables them.
   }
 
   // ci-bot login. A login-infra failure is HARNESS, not a deploy regression.
   const tokens = await login(apiBase, email, password);
   if (!tokens) {
     process.stderr.write(
-      "[authed-smoke] HARNESS: ci-bot login failed; not a deploy finding\n",
+      "[authed-smoke] HARNESS: ci-bot login failed; not a deploy finding\n"
     );
     return 2;
   }
@@ -254,12 +268,14 @@ async function main(): Promise<number> {
     viewport: { width: 1280, height: 800 },
     ignoreHTTPSErrors: true,
   });
+  // The marker cookie goes on the context so the FIRST request carries it;
+  // see auth-marker-cookie.ts for the false /sessions bounce this prevents.
+  await seedAuthMarkerCookie(context, base);
   const page: Page = await context.newPage();
 
   // Seed the auth surface the app boots from BEFORE any navigation. Mirrors
   // token-storage.ts: Bearer tokens in sessionStorage (the primary auth path),
-  // is_authenticated + a far-future token_expiry in localStorage, and the
-  // qontinui_auth marker cookie that lets middleware.ts pass protected routes.
+  // and is_authenticated + a far-future token_expiry in localStorage.
   const farFutureExpiryMs = Date.now() + 23 * 60 * 60 * 1000; // ~23h ahead
   await page.addInitScript(
     ([accessToken, refreshToken, expiry]) => {
@@ -268,7 +284,6 @@ async function main(): Promise<number> {
         sessionStorage.setItem("auth_bearer_refresh_token", refreshToken);
         localStorage.setItem("is_authenticated", "true");
         localStorage.setItem("token_expiry", expiry);
-        document.cookie = "qontinui_auth=1; Path=/; SameSite=Lax; Secure";
       } catch {
         // sessionStorage/localStorage may be unavailable on the very first
         // about:blank init; the per-route goto re-runs this init script.
@@ -278,7 +293,7 @@ async function main(): Promise<number> {
       tokens.accessToken,
       tokens.refreshToken,
       String(farFutureExpiryMs),
-    ] as const,
+    ] as const
   );
 
   const consoleErrors: ConsoleErrorEntry[] = [];
@@ -310,10 +325,30 @@ async function main(): Promise<number> {
       ts: Date.now(),
     });
   });
-  // Reuse the EXACT same-origin 5xx scope from server-error-policy.ts.
+  // DIAGNOSTIC ONLY (never a finding, never widens the rollback gate): the
+  // prod API is cross-origin, so its auth rejections and 5xx were invisible
+  // here — a bounce or missing landmark then gave no hint whether the backend
+  // refused the seeded bearer or merely answered slowly.
+  const apiDiagnostics: string[] = [];
   page.on("response", (response) => {
     const status = response.status();
     const url = response.url();
+    if (
+      apiOrigin !== null &&
+      (status === 401 || status === 403 || status >= 500)
+    ) {
+      try {
+        const u = new URL(url);
+        if (u.origin === apiOrigin) {
+          apiDiagnostics.push(
+            `${currentRoute}: [${response.request().method()} ${status}] ${u.pathname}`
+          );
+        }
+      } catch {
+        // Unparseable URL — not an API response we can attribute.
+      }
+    }
+    // Reuse the EXACT same-origin 5xx scope from server-error-policy.ts.
     if (!isSameOriginServerError(url, status, baseOrigin)) return;
     serverErrors.push({
       specId: `authed:${currentRoute}`,
@@ -335,40 +370,36 @@ async function main(): Promise<number> {
     const url = `${base}${route}`;
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForTimeout(2_500);
     } catch (e) {
       // A single nav throw is recorded but not by itself a behavioral finding
       // (could be a transient timeout); total unreachability is the harness
       // case handled by reachedAny below.
       process.stderr.write(
-        `[authed-smoke] ${route} NAV-FAIL: ${e instanceof Error ? e.message : String(e)}\n`,
+        `[authed-smoke] ${route} NAV-FAIL: ${e instanceof Error ? e.message : String(e)}\n`
       );
       continue;
     }
     reachedAny = true;
 
-    // (a) bounce check: a redirect to /login means the protected-route gate
-    // rejected our seeded session — an authed regression.
-    let landedPath: string;
-    try {
-      landedPath = new URL(page.url()).pathname;
-    } catch {
-      landedPath = page.url();
-    }
-    if (landedPath === "/login" || landedPath.startsWith("/login")) {
-      routeFindings.push(`${route}: BOUNCED to /login (landed ${landedPath})`);
-      process.stderr.write(`[authed-smoke] ${route} BOUNCE -> ${landedPath}\n`);
-      continue;
-    }
-
-    // (b) landmark check: the page must have actually rendered.
-    const visible = await landmark(page).catch(() => false);
-    if (!visible) {
+    // (a) bounce: a redirect to /login means the protected-route gate rejected
+    // our seeded session — an authed regression. (b) landmark: the page must
+    // have actually rendered within the settle deadline.
+    const outcome = await settleRoute(page, landmark);
+    if (outcome.kind === "bounce") {
       routeFindings.push(
-        `${route}: landmark missing (${landmarkDesc}); url=${page.url()}`,
+        `${route}: BOUNCED to /login (landed ${outcome.landedPath})`
       );
       process.stderr.write(
-        `[authed-smoke] ${route} LANDMARK-MISSING (${landmarkDesc})\n`,
+        `[authed-smoke] ${route} BOUNCE -> ${outcome.landedPath}\n`
+      );
+      continue;
+    }
+    if (outcome.kind === "missing") {
+      routeFindings.push(
+        `${route}: landmark missing (${landmarkDesc}); url=${page.url()}`
+      );
+      process.stderr.write(
+        `[authed-smoke] ${route} LANDMARK-MISSING (${landmarkDesc})\n`
       );
       continue;
     }
@@ -379,23 +410,26 @@ async function main(): Promise<number> {
 
   if (!reachedAny) {
     process.stderr.write(
-      "[authed-smoke] HARNESS: could not reach ANY authed route on the new prod URL\n",
+      "[authed-smoke] HARNESS: could not reach ANY authed route on the new prod URL\n"
     );
     return 2;
   }
 
   for (const e of consoleErrors) {
     process.stderr.write(
-      `[authed-smoke] CONSOLE ${e.specId}: [${e.level}] ${e.text}\n`,
+      `[authed-smoke] CONSOLE ${e.specId}: [${e.level}] ${e.text}\n`
     );
   }
   for (const e of serverErrors) {
     process.stderr.write(
-      `[authed-smoke] SERVER ${e.specId}: [${e.method} ${e.status}] ${e.url}\n`,
+      `[authed-smoke] SERVER ${e.specId}: [${e.method} ${e.status}] ${e.url}\n`
     );
   }
   for (const f of routeFindings) {
     process.stderr.write(`[authed-smoke] ROUTE-FINDING ${f}\n`);
+  }
+  for (const d of apiDiagnostics) {
+    process.stderr.write(`[authed-smoke] API-DIAGNOSTIC ${d}\n`);
   }
 
   const clean =
@@ -405,7 +439,7 @@ async function main(): Promise<number> {
   process.stderr.write(
     `[authed-smoke] result: ${clean ? "CLEAN" : "FAIL"} ` +
       `(${routeFindings.length} route findings, ${consoleErrors.length} console, ` +
-      `${serverErrors.length} same-origin 5xx across ${AUTHED_ROUTES.length} authed routes)\n`,
+      `${serverErrors.length} same-origin 5xx across ${AUTHED_ROUTES.length} authed routes)\n`
   );
   return clean ? 0 : 1;
 }
@@ -416,7 +450,7 @@ main()
     // An unexpected throw in the harness itself is a HARNESS error (2), not a
     // behavioral finding — so it never triggers a rollback.
     process.stderr.write(
-      `[authed-smoke] fatal harness error: ${err instanceof Error ? err.message : String(err)}\n`,
+      `[authed-smoke] fatal harness error: ${err instanceof Error ? err.message : String(err)}\n`
     );
     process.exit(2);
   });

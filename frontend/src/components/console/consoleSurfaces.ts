@@ -197,6 +197,28 @@ import {
   COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS,
   COORD_CREDENTIAL_BADGE_CLASS,
 } from "@/components/operations/coordCredentialStatus";
+// The computers console — plan
+// `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
+// Phase 5. One module declares three orthogonal tables (the computer's
+// verdict, its report freshness, a watched service's state), each its own row.
+import {
+  COMPUTER_ATTENTION_BY_KIND,
+  COMPUTER_AUTHOR_GLYPH_KINDS,
+  COMPUTER_BADGE_CLASS,
+  FRESHNESS_ATTENTION_BY_KIND,
+  FRESHNESS_AUTHOR_GLYPH_KINDS,
+  FRESHNESS_BADGE_CLASS,
+  SERVICE_ATTENTION_BY_KIND,
+  SERVICE_AUTHOR_GLYPH_KINDS,
+  SERVICE_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// GitHub-hosted CI on the Dev Ops page — plan
+// `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
+import {
+  HOSTED_CI_ATTENTION_BY_KIND,
+  HOSTED_CI_AUTHOR_GLYPH_KINDS,
+  HOSTED_CI_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/devops/_lib/hostedCiStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -517,6 +539,44 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: SESSION_WORK_CLASS,
       authorGlyphKinds:
         SESSION_WORK_PALETTE.authorGlyphKinds as ReadonlySet<string>,
+    },
+  },
+  // --- the computers console ----------------------------------------------
+  {
+    surface: "computers — verdict (/admin/coord/computers)",
+    module: "app/(app)/admin/coord/computers/_lib/computerStatus.ts",
+    attentionByKind: COMPUTER_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: COMPUTER_BADGE_CLASS,
+      authorGlyphKinds: COMPUTER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "computers — report freshness (/admin/coord/computers)",
+    module: "app/(app)/admin/coord/computers/_lib/computerStatus.ts",
+    attentionByKind: FRESHNESS_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FRESHNESS_BADGE_CLASS,
+      authorGlyphKinds: FRESHNESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "computers — watched services (/admin/coord/computers/[computerId])",
+    module: "app/(app)/admin/coord/computers/_lib/computerStatus.ts",
+    attentionByKind: SERVICE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SERVICE_BADGE_CLASS,
+      authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
+  {
+    surface: "GitHub-hosted CI (/admin/coord/devops)",
+    module: "app/(app)/admin/coord/devops/_lib/hostedCiStatus.ts",
+    attentionByKind: HOSTED_CI_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: HOSTED_CI_BADGE_CLASS,
+      authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
