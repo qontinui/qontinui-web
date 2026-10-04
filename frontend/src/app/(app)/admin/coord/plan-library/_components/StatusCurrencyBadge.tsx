@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
+import { resolveStatusCurrency } from "../statusCurrency";
 import {
   STATUS_CURRENCY_LABELS,
-  STATUS_CURRENCY_STATES,
   type StatusCurrency,
   type StatusCurrencyState,
 } from "../types";
@@ -20,34 +20,6 @@ const CURRENCY_VARIANT: Record<
   asserted_once: "secondary",
   unknown: "outline",
 };
-
-function isStatusCurrencyState(
-  value: string | undefined
-): value is StatusCurrencyState {
-  return (STATUS_CURRENCY_STATES as readonly string[]).includes(value ?? "");
-}
-
-/**
- * The state to render and why. A currency the backend did not serve, or a
- * state this console was not written for, resolves to UNKNOWN with a detail
- * naming which — never to nothing, which would read as "fine".
- */
-export function resolveStatusCurrency(currency: StatusCurrency | undefined): {
-  state: StatusCurrencyState;
-  detail: string | undefined;
-} {
-  const served: string | undefined = currency?.state;
-  const recognised = isStatusCurrencyState(served);
-  const state: StatusCurrencyState = recognised ? served : "unknown";
-  const detail = !currency
-    ? "status currency not served by this backend"
-    : !recognised
-      ? `unrecognised status currency '${served ?? ""}' — this console predates it${
-          currency.detail ? `; served detail: ${currency.detail}` : ""
-        }`
-      : (currency.detail ?? undefined);
-  return { state, detail };
-}
 
 /**
  * How far a row's `status` can be trusted now — the served `status_currency`,

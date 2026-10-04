@@ -55,7 +55,13 @@ import {
 } from "@/components/console";
 import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
 import type { DisclosureLine } from "@/components/admin/coord/disclosureLines";
-import type { StatusCurrency } from "../plan-library/types";
+import { resolveStatusCurrency } from "../plan-library/statusCurrency";
+import {
+  STATUS_CURRENCY_LABELS,
+  STATUS_CURRENCY_STATES,
+  type StatusCurrency,
+  type StatusCurrencyState,
+} from "../plan-library/types";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -587,6 +593,93 @@ export function describePopulation(res: PlanCandidateResponse): DisclosureLine {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Status currency — whether a row's `status` can vouch for itself
+// ---------------------------------------------------------------------------
+
+/** What a null `status_currency` beside `doc: present` resolves to. */
+const NULL_ON_PRESENT_ROW: StatusCurrency = {
+  state: "unknown",
+  as_of: null,
+  ref_sha: null,
+  ref_age_secs: null,
+  detail:
+    "status_currency is null on a row with document_state 'present' — the backend broke its own contract",
+};
+
+/**
+ * The currency a candidate row renders, or `null` for a row that owes none.
+ *
+ * `null` is served on a work-unit-only row — there is no stored body to be
+ * stale, and `document_state` says why — so that row owes no currency. An
+ * ABSENT key (a backend predating the field) resolves to `undefined`, which
+ * {@link resolveStatusCurrency} reads as UNKNOWN; a null beside
+ * `doc: present`, which the contract rules out, resolves to UNKNOWN naming
+ * the broken contract. Neither renders as nothing.
+ */
+export function candidateCurrency(
+  candidate: PlanCandidate
+): StatusCurrency | undefined | null {
+  if (candidate.status_currency !== null) return candidate.status_currency;
+  return candidate.document_state === "present" ? NULL_ON_PRESENT_ROW : null;
+}
+
+/**
+ * The page's currency tally — how many rows on THIS page can vouch for their
+ * own `status`.
+ *
+ * This is a selection surface, and a row's `status` is what selects it; a
+ * badge per row answers "this one?", this line answers "how much of what I am
+ * looking at?". Page-local by construction (the route serves no corpus-wide
+ * tally), and it says so. Signals, never a verdict: nothing here hides or
+ * reorders a row — the route's D5 keeps the refusal in the selecting skills.
+ * `null` when no row on the page owes a currency.
+ */
+export function describeStatusCurrency(
+  res: PlanCandidateResponse
+): DisclosureLine | null {
+  const counts = Object.fromEntries(
+    STATUS_CURRENCY_STATES.map((s) => [s, 0])
+  ) as Record<StatusCurrencyState, number>;
+  let owed = 0;
+  for (const c of res.items ?? []) {
+    const currency = candidateCurrency(c);
+    if (currency === null) continue;
+    owed += 1;
+    counts[resolveStatusCurrency(currency).state] += 1;
+  }
+  if (owed === 0) return null;
+  const inStep = counts.fed_in_step;
+  // "Owe a currency", not "carry a stored body": on a backend that serves
+  // neither the key nor `document_state`, which layer a row came from is
+  // itself unstated, and such a row is counted here as UNKNOWN.
+  const rows = (n: number) =>
+    n === 1
+      ? "row on this page that owes a status currency"
+      : "rows on this page that owe a status currency";
+  if (inStep === owed) {
+    return {
+      key: "status-currency",
+      level: "note",
+      text:
+        (owed === 1 ? `The ${rows(1)} was` : `All ${owed} ${rows(owed)} were`) +
+        " read by a feeder in step with its ref, so their status is as " +
+        "current as the last scan.",
+    };
+  }
+  return {
+    key: "status-currency",
+    level: "caveat",
+    text:
+      `${owed - inStep} of the ${owed} ${rows(owed)} cannot vouch for their status ` +
+      "(breakdown below). Confirm such a row's body against origin/main " +
+      "before dispatching on its status. Counts cover this page only.",
+    items: STATUS_CURRENCY_STATES.filter(
+      (s) => s !== "fed_in_step" && counts[s] > 0
+    ).map((s) => `${STATUS_CURRENCY_LABELS[s]}: ${counts[s]}`),
+  };
+}
+
 export function deriveCandidateDisclosure(
   res: PlanCandidateResponse
 ): DisclosureLine[] {
@@ -601,6 +694,8 @@ export function deriveCandidateDisclosure(
     });
   }
   lines.push(describeCorpusHealth(res));
+  const currency = describeStatusCurrency(res);
+  if (currency !== null) lines.push(currency);
   return lines;
 }
 
