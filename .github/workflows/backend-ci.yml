@@ -6,6 +6,10 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
+      # reads: a pin bump must run the ratchet it re-seeds.
+      - 'fleet-nouns.pin.toml'
+      - '.github/actions/fleet-nouns-vocab/**'
       # The composed backend is pinned by this file: backend/Dockerfile clones
       # qontinui-cloud-control at the sha it names. A pin bump changes what the
       # image contains while touching no path under backend/**, so without this
@@ -22,6 +26,11 @@ on:
       # _CONTRACT_FILES; it asserts every entry appears in BOTH filters.
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
+      # The ACTIVE_TENANT_URL_PREFIXES allowlist that
+      # tests/test_active_tenant_prefix_drift_guard.py parses: a frontend-only
+      # PR that drops a prefix must run the guard that catches it. The module
+      # asserts this entry appears in BOTH filters.
+      - 'frontend/src/services/http-client.ts'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -61,7 +70,7 @@ on:
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
-      - '.github/workflows/verify-frontend-deploy.yml'
+      - '.github/workflows/verify-frontend-run.yml'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -72,9 +81,14 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
+      # reads: a pin bump must run the ratchet it re-seeds.
+      - 'fleet-nouns.pin.toml'
+      - '.github/actions/fleet-nouns-vocab/**'
       # See the pull_request filter above.
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
+      - 'frontend/src/services/http-client.ts'
       - 'scripts/ci/**'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
@@ -86,7 +100,7 @@ on:
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
-      - '.github/workflows/verify-frontend-deploy.yml'
+      - '.github/workflows/verify-frontend-run.yml'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
@@ -97,7 +111,18 @@ on:
   # nightly run makes that drift loud (the drift-check fails) instead of silent.
   schedule:
     - cron: '17 7 * * *' # 07:17 UTC daily
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      # TEST LEVER for the `shard-headroom` job only (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-... Phase 3).
+      # Empty (the default, and always on `schedule`) uses JOB_TIMEOUT_MINUTES.
+      # A value below the measured slowest shard must turn that job red with
+      # `verdict=over_margin`. It changes no other job's budget.
+      headroom_budget_override:
+        description: 'Test only: budget (minutes) the shard-headroom alarm measures against. Empty = the real per-shard budget.'
+        required: false
+        default: ''
+        type: string
 
 env:
   PYTHON_VERSION: '3.12'
@@ -420,6 +445,13 @@ jobs:
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -439,20 +471,6 @@ jobs:
         # ./backend (one level deeper than the repo root the clone sits beside).
         run: poetry run pip install -e ../../qontinui-cloud-control
 
-      # backend/tests/conftest.py uses Base.metadata.create_all (NOT
-      # alembic) to bootstrap the test DB, so SQLAlchemy will try to
-      # create tables in named schemas without first ensuring the
-      # schemas exist. Models reference `project`, `auth`, and `cloud`
-      # schemas (the last via the qontinui-cloud-control sibling repo
-      # whose models are side-effect-imported in conftest.py); the
-      # postgres service container doesn't run our init-scripts/, so
-      # create them explicitly here. We also `CREATE EXTENSION vector`
-      # — alembic does this in 05a366f58455 but conftest skips alembic,
-      # so create_all hits `UndefinedObjectError: type "vector" does
-      # not exist` whenever a Vector column is materialized. Without
-      # the schema lines, create_all fails with:
-      #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
-      #   does not exist
       # Keep the committed OpenAPI snapshot authoritative. The exporter calls
       # app.openapi() (the FastAPI method — computes the schema from the
       # registered routes with no running server and no DB connection), writes
@@ -547,6 +565,20 @@ jobs:
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
+      # backend/tests/conftest.py uses Base.metadata.create_all (NOT
+      # alembic) to bootstrap the test DB, so SQLAlchemy will try to
+      # create tables in named schemas without first ensuring the
+      # schemas exist. Models reference `project`, `auth`, and `cloud`
+      # schemas (the last via the qontinui-cloud-control sibling repo
+      # whose models are side-effect-imported in conftest.py); the
+      # postgres service container starts with none of them, so
+      # create them explicitly here. We also `CREATE EXTENSION vector`
+      # — alembic does this in 05a366f58455 but conftest skips alembic,
+      # so create_all hits `UndefinedObjectError: type "vector" does
+      # not exist` whenever a Vector column is materialized. Without
+      # the schema lines, create_all fails with:
+      #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
+      #   does not exist
       - name: Create test schemas and extensions
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
@@ -678,12 +710,26 @@ jobs:
       # splitter enforces them on the selection path too (there is a test for
       # that), which matters for any OTHER caller - not for this workflow, where
       # the selection is only reached after the gate passed.
+      #
+      # `--durations` deals the files by MEASURED SECONDS rather than by test
+      # count (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget).
+      # Count balance put the alembic-harness files -- ~8% of the tests and
+      # ~75% of the seconds -- wherever LPT happened to drop them, so one shard
+      # ran at 2-4x its siblings. The map is committed (never cached: every
+      # shard must compute the SAME assignment from the SAME inputs) and is
+      # refreshed from the nightly's `shard-durations-proposed.json` artifact.
+      # An absent or corrupt map degrades to count weights, said on the
+      # splitter's verdict line; it cannot change which files run. Only THIS
+      # step takes the flag -- the collect step above is a pure collection
+      # check, and the splitter refuses `--durations` with `--count-only`.
       - name: Select this shard's test files
         run: |
           python ../scripts/ci/split_pytest_shards.py \
             --nodeids collected-nodeids.txt \
             --shards 6 \
             --shard ${{ matrix.shard }} \
+            --durations tests/shard-durations.json \
             --out shard-files.txt
 
       - name: Run tests with coverage
@@ -822,6 +868,22 @@ jobs:
           name: coverage-report-shard-${{ matrix.shard }}
           path: ./backend/htmlcov/
           retention-days: 30
+
+      # The per-test timings the shard deal is built from. The pytest step
+      # above already writes them (`--junitxml=junit-results.xml`); until this
+      # upload they were thrown away with the runner. `if: always()` because a
+      # shard with a failing test still measured every test it ran, and a
+      # shard-scoped name for the same duplicate-name reason as the coverage
+      # artifact above. The nightly `shard-durations-proposal` job below is the
+      # consumer; on a PR the six artifacts are simply there to download.
+      - name: Upload junit results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: junit-results-shard-${{ matrix.shard }}
+          path: ./backend/junit-results.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -1238,6 +1300,89 @@ jobs:
           poetry run pip install safety
           poetry run safety check --json || true
 
+  # Keeps `backend/tests/shard-durations.json` from rotting (plan
+  # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget,
+  # Phase 2). On the nightly (and a manual dispatch), it turns the six shards'
+  # junit timings into a proposed replacement map and uploads it, so a refresh
+  # is a download and a reviewed commit. It writes nothing to the tree itself.
+  #
+  # It runs on exactly the events `shard-headroom` runs on, because a `skewed`
+  # headroom verdict names THIS run's `shard-durations-proposed` artifact as
+  # its remedy; a dispatch run without the artifact would point at nothing.
+  # Pinned by backend/tests/test_pytest_shard_split.py.
+  #
+  # It is deliberately NOT in `test-gate`'s `needs:` and nothing gates on it: a
+  # tuning-file proposal must never be able to red or hold the `Run Tests`
+  # check. `always()` so a nightly with one failing shard still proposes from
+  # the timings it has (a failing shard still wrote its junit file).
+  shard-durations-proposal:
+    name: Propose shard durations
+    needs: [test]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # The `test` job's matrix length, pinned equal by
+      # backend/tests/test_pytest_shard_split.py.
+      EXPECTED_SHARDS: '6'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # `continue-on-error` because a nightly whose shards were ALL cancelled
+      # uploads no junit artifact at all, and the download action fails on an
+      # empty pattern match. That is not this job's failure to report -- the
+      # shards' own checks already say it -- so the next step counts what
+      # arrived and skips rather than going red.
+      - name: Download the shards' junit results
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          pattern: junit-results-shard-*
+          path: junit
+
+      - name: Build shard-durations-proposed.json
+        id: build
+        run: |
+          found=0
+          if [ -d junit ]; then
+            found=$(find junit -name '*.xml' -type f | wc -l)
+          fi
+          echo "junit files downloaded: ${found} (expected ${EXPECTED_SHARDS})"
+          if [ "${found}" = "0" ]; then
+            echo "::notice title=No shard durations proposal tonight::No shard uploaded a junit file (every shard was cancelled or timed out before pytest wrote one), so there is nothing to measure. Skipping the proposal; this is not a failure of this job."
+            echo "proposed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${found}" != "${EXPECTED_SHARDS}" ]; then
+            echo "::warning title=Shard durations proposal is partial::Found ${found} junit files, not ${EXPECTED_SHARDS}, so the proposed map covers only the shards that uploaded one. Files from the missing shards are ABSENT from the proposal - do not commit it as a full refresh."
+          fi
+          # `--compare` reports how far the committed map has drifted from
+          # tonight's measurement (new / dropped / moved files, both totals) on
+          # the run's summary page, so whether a refresh PR is worth opening is
+          # readable without downloading anything. It never fails the step.
+          set -o pipefail
+          python scripts/ci/refresh_shard_durations.py junit \
+            --root backend \
+            --out shard-durations-proposed.json \
+            --compare backend/tests/shard-durations.json 2>&1 \
+            | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "proposed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload shard-durations-proposed.json
+        if: steps.build.outputs.proposed == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: shard-durations-proposed
+          path: shard-durations-proposed.json
+          retention-days: 30
+
   # The `Run Tests` check name, preserved across the shard split.
   #
   # The suite's work now runs as `Run Tests (shard N/6)`, six separate check
@@ -1340,3 +1485,61 @@ jobs:
       - name: Test Docker image
         run: |
           docker run --rm qontinui-backend:test python -c "import app; print('Import successful')"
+
+  # Nightly headroom alarm for the `Run Tests` shards (plan
+  # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-
+  # carries-the-migration-tests-back-to-the-budget, Phase 3). It reads THIS
+  # run's shard jobs back from the API and goes RED when the slowest shard
+  # exceeds 70% of the per-shard budget (`over_margin`), when slowest/fastest
+  # > 2.0 (`skewed` -- the deal is stale), or when it cannot measure at all
+  # (`unknown` is never a pass). Logic and tests:
+  # scripts/ci/shard_headroom.py, backend/tests/test_shard_headroom.py.
+  #
+  # Why a RED job and not a `::warning::`: the warning channel is measured dead
+  # (twice, per the plan) -- the `test` job's soft-budget tripwire already
+  # warns on green runs, and nothing reads a warning on a green run. A red
+  # SCHEDULE run holds nothing: coord's main baseline is push-event-only
+  # (`ci_runs_watcher.rs`, citing `ci_baseline.rs` `establishes_main_baseline`),
+  # and a scheduled red is exactly what
+  # `qontinui-runner/scripts/detect-schedule-red-streaks.sh` exists to read.
+  #
+  # It can never hold a PR: it runs on `schedule` / `workflow_dispatch` only,
+  # and it is deliberately NOT in `test-gate`'s `needs` (the `Run Tests`
+  # aggregate PRs wait on).
+  shard-headroom:
+    name: Run Tests shard headroom
+    needs: [test]
+    # `always()` so a failed or budget-cancelled shard still gets measured --
+    # a shard cancelled AT its budget is the loudest over_margin there is.
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The workflow declares no top-level `permissions:`, so the jobs read must
+    # not depend on the repo's default token scope.
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # The `test` job's `timeout-minutes`, hand-copied (GitHub exposes no
+      # expression for another job's timeout). Pinned equal by
+      # backend/tests/test_shard_headroom.py.
+      JOB_TIMEOUT_MINUTES: '45'
+      # The `test` job's matrix length, pinned equal by the same test.
+      EXPECTED_SHARDS: '6'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Only the script is needed, and nothing here pushes: do not leave the
+          # token in .git/config for the rest of the job.
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      - name: Measure Run Tests shard headroom
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEADROOM_BUDGET_OVERRIDE: ${{ inputs.headroom_budget_override }}
+        run: |
+          set -o pipefail
+          python3 scripts/ci/shard_headroom.py --expected-shards "$EXPECTED_SHARDS" 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"

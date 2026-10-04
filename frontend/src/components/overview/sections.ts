@@ -55,7 +55,7 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     route: "/overview/timeline",
     icon: CalendarRange,
     description: "Phases, gates and milestones, planned against actual",
-    available: false,
+    available: true,
   },
   {
     id: "overview-costs",

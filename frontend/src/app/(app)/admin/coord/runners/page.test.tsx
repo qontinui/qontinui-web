@@ -173,6 +173,12 @@ let controlResponse: ReturnType<typeof res> | Promise<ReturnType<typeof res>> = 
   device_id: DEVICE,
   action: "finish_and_close",
 });
+let worktreeCapResponse: ReturnType<typeof res> = res(200, {
+  state: "known",
+  count: 0,
+  overrides: [],
+  detail: null,
+});
 
 beforeEach(() => {
   search = `device=${DEVICE}`;
@@ -189,6 +195,12 @@ beforeEach(() => {
     device_id: DEVICE,
     action: "finish_and_close",
   });
+  worktreeCapResponse = res(200, {
+    state: "known",
+    count: 0,
+    overrides: [],
+    detail: null,
+  });
   httpGet.mockReset();
   httpGet.mockResolvedValue({
     devices: [{ device_id: DEVICE, hostname: "spaceship", state: "healthy" }],
@@ -196,6 +208,7 @@ beforeEach(() => {
   httpFetch.mockReset();
   httpFetch.mockImplementation(async (url: string) => {
     if (url.includes("/control")) return controlResponse;
+    if (url.includes("/fleet/worktree-cap")) return worktreeCapResponse;
     if (url.includes("/fleet/drain")) return res(200, { drained: {} });
     if (url.includes("/fleet/resource-samples")) return samplesResponse;
     if (url.includes("/sessions/fleet")) return sessionsResponse;
@@ -456,5 +469,79 @@ describe("/admin/coord/runners", () => {
       await within(row).findByTestId("coord-runners-action-accepted")
     ).toBeInTheDocument();
     expect(controlCalls()).toHaveLength(1);
+  });
+
+  // --- Per-device worktree cap (plan 2026-09-18 amendment A3) -------------
+  //
+  // The page-level half of the contract: the control is WIRED (it reads the
+  // route and renders coord's answer) and it renders UNKNOWN rather than "no
+  // cap" whenever the read did not succeed. Every rule about what a body MEANS
+  // is pinned without a DOM in `components/operations/fleetWorktreeCap.test.ts`;
+  // these three only prove the page actually asks and actually shows.
+
+  it("renders the worktree-cap control beside the drain, and says derived when nothing is capped", async () => {
+    render(<CoordRunnersPage />);
+    await rows();
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "derived")
+    );
+    expect(block).toHaveTextContent("No operator cap");
+    // The target is coord's OWN identity, never the card title: a workstation
+    // and its CI runner are separate device registrations under one alias.
+    expect(screen.getByTestId("device-worktree-cap-target")).toHaveAttribute(
+      "data-device-id",
+      DEVICE
+    );
+    // It really did ask.
+    expect(
+      httpFetch.mock.calls.filter((c) =>
+        String(c[0]).includes("/fleet/worktree-cap")
+      ).length
+    ).toBeGreaterThan(0);
+  });
+
+  it("renders a capped device with its number, who set it and why", async () => {
+    worktreeCapResponse = res(200, {
+      state: "known",
+      count: 1,
+      overrides: [
+        {
+          device_id: DEVICE,
+          max_worktrees: 4,
+          reason: "winding this box down",
+          set_by: "op@example.com",
+          set_at: "2026-09-30T12:00:00Z",
+        },
+      ],
+      detail: null,
+    });
+    render(<CoordRunnersPage />);
+    await rows();
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "capped")
+    );
+    expect(block).toHaveTextContent("Capped at 4");
+    expect(block).toHaveTextContent("op@example.com");
+    expect(block).toHaveTextContent("winding this box down");
+    // The one thing the two levers must never be confused about.
+    expect(block).toHaveTextContent("it is not a drain");
+  });
+
+  it("renders UNKNOWN — never 'no cap' — when coord cannot be read", async () => {
+    // A 404 is the EXPECTED reading during the deploy window this feature
+    // guarantees: the alembic revision lands first, this console second, coord
+    // third. It must not render as "this machine has no cap"
+    // [policy: unknown-must-not-render-as-a-default].
+    worktreeCapResponse = res(404, "not found");
+    render(<CoordRunnersPage />);
+    await rows();
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "unknown")
+    );
+    expect(block).toHaveTextContent("Worktree cap unknown");
+    expect(block).not.toHaveTextContent("No operator cap");
   });
 });

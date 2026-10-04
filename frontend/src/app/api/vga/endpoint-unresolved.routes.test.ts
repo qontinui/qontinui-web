@@ -10,6 +10,12 @@ import { GET as captureGET } from "./capture/route";
 import { GET as monitorsGET } from "./monitors/route";
 import { POST as groundPOST } from "./ground/route";
 import { POST as proposePOST } from "./propose/route";
+import { POST as correctionPOST } from "./correction/route";
+import { GET as runsGET } from "./runs/route";
+import { GET as runGET } from "./runs/[runId]/route";
+import { GET as statesGET } from "./state/route";
+import { GET as stateGET, DELETE as stateDELETE } from "./state/[id]/route";
+import { GET as stateExportGET } from "./state/[id]/export/route";
 
 vi.mock("@/lib/vga/shadow-log", () => ({ logShadowSample: vi.fn() }));
 
@@ -19,6 +25,8 @@ beforeEach(() => {
   vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("QONTINUI_RUNNER_URL", "");
   vi.stubEnv("QONTINUI_LLAMA_SWAP_URL", "");
+  vi.stubEnv("RUNNER_DATABASE_URL", "");
+  vi.stubEnv("DATABASE_URL", "");
   fetchSpy.mockReset();
   vi.stubGlobal("fetch", fetchSpy);
 });
@@ -72,5 +80,76 @@ describe("/api/vga/* with no base configured", () => {
       })
     );
     await expectUnresolved(res, "QONTINUI_LLAMA_SWAP_URL");
+  });
+});
+
+/**
+ * The DB-backed routes resolve the runner database DSN through
+ * resolveEndpoint("runner_db", …): unset outside development is a 503 naming
+ * RUNNER_DATABASE_URL — never a connection to the dev-stack Postgres on this
+ * server's own loopback with the dev password.
+ */
+describe("/api/vga/* DB routes with no runner database configured", () => {
+  const ID = "123e4567-e89b-42d3-a456-426614174000";
+  const params = <T extends object>(p: T) => ({ params: Promise.resolve(p) });
+
+  it.each([
+    [
+      "GET runs",
+      () => runsGET(new NextRequest("http://app.test/api/vga/runs")),
+    ],
+    [
+      "GET runs/[runId]",
+      () =>
+        runGET(
+          new NextRequest(`http://app.test/api/vga/runs/${ID}`),
+          params({ runId: ID })
+        ),
+    ],
+    [
+      "GET state",
+      () => statesGET(new NextRequest("http://app.test/api/vga/state")),
+    ],
+    [
+      "GET state/[id]",
+      () =>
+        stateGET(
+          new NextRequest(`http://app.test/api/vga/state/${ID}`),
+          params({ id: ID })
+        ),
+    ],
+    [
+      "DELETE state/[id]",
+      () =>
+        stateDELETE(
+          new NextRequest(`http://app.test/api/vga/state/${ID}`, {
+            method: "DELETE",
+          }),
+          params({ id: ID })
+        ),
+    ],
+    [
+      "GET state/[id]/export",
+      () =>
+        stateExportGET(
+          new NextRequest(`http://app.test/api/vga/state/${ID}/export`),
+          params({ id: ID })
+        ),
+    ],
+    [
+      "POST correction",
+      () =>
+        correctionPOST(
+          post("/api/vga/correction", {
+            stateMachineId: ID,
+            imageBase64: "aGVsbG8=",
+            prompt: "the button",
+            correctedBbox: { x: 1, y: 2, w: 3, h: 4 },
+            source: "builder",
+          })
+        ),
+    ],
+  ] as const)("%s → 503 naming RUNNER_DATABASE_URL", async (_name, call) => {
+    await expectUnresolved(await call(), "RUNNER_DATABASE_URL");
   });
 });

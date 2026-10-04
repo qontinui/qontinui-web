@@ -112,9 +112,9 @@ class ResourceSpec:
 
     ``store`` is a FastAPI dependency returning the :class:`ResourceStore`;
     when it is ``None`` the resource's routes are hand-written elsewhere (the
-    estimate, pending its refit onto this contract in Phase 3 of the plan) and
-    the entry exists so its permission is served from the same place as every
-    other resource's.
+    project settings, ``app/api/v1/endpoints/overview.py``) and the entry
+    exists so its permission is served from the same place as every other
+    resource's.
     """
 
     name: str
