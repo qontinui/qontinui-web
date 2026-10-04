@@ -35,6 +35,11 @@ on:
       - 'merge-candidate-spec/**'
       - 'merge-candidate-batch/**'
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
+
 jobs:
   forbid-public-schema:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -43,7 +48,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Scan for forbidden public.* references
         # Exits 1 on a forbidden reference, and 2 if the pathspec set selected

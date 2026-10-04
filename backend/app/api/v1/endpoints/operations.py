@@ -7563,23 +7563,64 @@ async def websocket_coord_events(
 class RepoCiRow(BaseModel):
     """One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
 
-    ``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering
-    (``green`` / ``red`` / ``unknown``); any amber tone is a frontend
+    ``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /
+    ``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend
     derivation from ``open_pr_checks`` counts, not a backend value.
+    ``vacuously_green`` is coord's zero-baseline arm — no required check has
+    ever reported on main, so "green" is an absence of evidence, not a pass.
+
+    The two ``*_observed_at`` stamps are the freshness of the facts the row
+    carries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):
+    ``main_verdict_observed_at`` is ``max(updated_at)`` over the
+    ``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``
+    is the newest ``pr_check_runs`` row counted. They MUST be declared here:
+    ``response_model`` filtering drops every undeclared key, so an undeclared
+    stamp would leave the page an unbounded read of "the latest observation"
+    with no way to say how old it is. ``None`` is coord saying it has no
+    observation to date the value by (the vacuously-green / memo arms, or no
+    checks at all) — and also an older coord that sends no stamp; both read
+    as UNKNOWN freshness on the page, never as "just now".
+
+    The stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339
+    text reaches the page byte-for-byte (no re-serialisation that rewrites
+    the offset or the precision), and a value this model cannot parse is
+    still delivered rather than 500-ing the whole read.
     """
 
     repo: str
-    main_verdict: str = Field(..., description='"green" | "red" | "unknown"')
+    main_verdict: str = Field(
+        ..., description='"green" | "red" | "unknown" | "vacuously_green"'
+    )
     open_pr_checks: dict[str, int] = Field(
         ..., description="counts keyed by 'success' | 'failure' | 'pending'"
     )
     latest_details_url: str | None = None
     main_head_sha: str | None = None
+    main_verdict_observed_at: str | None = Field(
+        default=None,
+        description=(
+            "max(updated_at) over the ci_baselines rows main_verdict was read "
+            "from; null when no baseline backs the verdict"
+        ),
+    )
+    pr_checks_observed_at: str | None = Field(
+        default=None,
+        description="newest pr_check_runs row counted; null when none",
+    )
 
 
 class CiStatusResponse(BaseModel):
-    """Response wrapper for ``GET /operations/ci-status``."""
+    """Response wrapper for ``GET /operations/ci-status``.
 
+    ``as_of`` is coord's read time. It is optional rather than required so a
+    web deploy that lands before the coord half (Phase 2) keeps serving the
+    page instead of failing response validation with a 500 — an absent
+    ``as_of`` renders as UNKNOWN freshness, never as current.
+    """
+
+    as_of: str | None = Field(
+        default=None, description="when coord composed this response (RFC 3339)"
+    )
     repos: list[RepoCiRow]
 
 
@@ -7695,9 +7736,44 @@ async def get_ci_status(
 
     Wire shape (coord ``CiStatusResponse``)::
 
-        { "repos": [RepoCiRow, ...] }
+        { "as_of": "<rfc3339>", "repos": [RepoCiRow, ...] }
     """
     return await _proxy_coord_get("/coord/ci/status", tenant_id=tenant_id)
+
+
+@router.get("/ci/overview")
+async def get_ci_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-pool CI capacity/queue state and per-repo job-outcome split.
+
+    Proxies coord's ``GET /coord/ci/overview`` (plan
+    ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phases 2-3), the
+    durable read behind ``/admin/coord/ci``. Coord serves it from
+    ``coord.ci_pool_observations`` (written by the leader each queue-wait /
+    eligibility pass) plus tenant-scoped ``ci_job_observations`` counts, so
+    every replica answers the same rows.
+
+    Passed through VERBATIM — deliberately no ``response_model``. Every
+    count on this wire is nullable and every row carries a ``state``
+    (``measured`` / ``stale`` / ``never_observed`` / ``unknown``) plus its
+    ``observed_at`` / ``stale_after_secs``; a declared model that lagged the
+    coord shape would silently drop exactly the fields that let the page
+    say "UNKNOWN" instead of "0" (the ``/ci-status`` freshness bug this same
+    plan had to fix in ``RepoCiRow``).
+
+    Wire shape (coord)::
+
+        {
+          "as_of": "<rfc3339>", "coverage_note": "...", "note": "...|null",
+          "pools": [{repo, pool, state, state_reason, observed_at, ...}],
+          "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
+        }
+
+    No graceful fallback: a coord predating the route answers 404 and the
+    page renders that as an explicit UNKNOWN, never as an empty fleet.
+    """
+    return await _proxy_coord_get("/coord/ci/overview", tenant_id=tenant_id)
 
 
 @router.post("/ci-status/notify-when-green", response_model=NotifyWhenGreenResponse)

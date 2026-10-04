@@ -194,15 +194,15 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(routes).not.toContain("/billing");
   });
 
-  it("shows a member only Overview under Dev Ops, and an operator all of it", () => {
+  it("shows a member only Overview and CI under Dev Ops, and an operator all of it", () => {
     const devops = () =>
       menu().visibleNavItems.find((i) => i.id === "coord-group-devops");
-    expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview"]);
+    expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
 
     isSuperuser = true;
     expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
     expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
-    expect(devops()?.children).toHaveLength(14);
+    expect(devops()?.children).toHaveLength(15);
   });
 
   it("shows Computers to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
@@ -214,6 +214,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     );
     expect(devops?.children?.map((c) => c.label)).toEqual([
       "Overview",
+      "CI",
       "Computers",
     ]);
   });
@@ -231,7 +232,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     const devops = menu().visibleNavItems.find(
       (i) => i.id === "coord-group-devops"
     );
-    expect(devops?.children?.map((c) => c.label)).toEqual(["Overview"]);
+    expect(devops?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
   });
 
   it("keeps a console section active on its detail routes", () => {
