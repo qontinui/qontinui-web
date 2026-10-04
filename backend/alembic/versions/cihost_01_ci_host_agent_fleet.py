@@ -1,7 +1,7 @@
 """coord.ci_* — the coord-managed ephemeral self-hosted CI runner fleet
 
 Revision ID: cihost_01_ci_host_agent_fleet
-Revises: overview_04_timeline
+Revises: mdroles_01
 Create Date: 2026-10-04
 
 Phase 1 of plan
@@ -22,11 +22,13 @@ are where it keeps it:
     256-bit secret issued once at enrolment; ``credential_hash`` is the
     lowercase sha256 hex of that secret and is the ONLY copy coord keeps (D3).
     ``revoked_at`` set means every heartbeat and JIT call is refused.
-    ``declared_trust_class`` is operator-set: NULL means the agent may run
-    ``pr`` pools only, never ``public`` or ``trusted`` (fail-closed until the
-    machine trust-tier plan lands and the JIT door reads that instead).
-    ``budget`` / ``availability_window`` / ``slots`` / versions are written by
-    the agent's heartbeat.
+    ``declared_trust_class`` is operator-set and is a CEILING: ``trusted``
+    may run trusted, public and pr pools; ``public`` public and pr; NULL or
+    ``pr`` runs pr pools only (fail-closed until the machine trust-tier plan
+    lands and the JIT door reads that instead). ``host`` is bound by the
+    operator when the enrolment code is issued, never chosen by the agent,
+    and is stored lower-case. ``budget`` / ``availability_window`` / ``slots``
+    / versions are written by the agent's heartbeat.
 
     The availability window column is ``availability_window`` rather than
     ``window``: ``WINDOW`` is a reserved word in PostgreSQL, so the bare name
@@ -35,20 +37,29 @@ are where it keeps it:
 ``coord.ci_enrol_codes``
     Operator-issued, single-use, short-lived enrolment codes. Only the code's
     sha256 hex is stored (``code_hash``); the plaintext exists only in the one
-    response that issued it. ``redeemed_at`` set means the code is spent.
+    response that issued it. The operator binds ``host`` and the optional
+    ``declared_trust_class`` at issue time, and the redeem copies both onto the
+    new agent row. ``redeemed_at`` set means the code is spent.
 
 ``coord.ci_pool_specs``
     One row per ``(tenant, repo, label set)`` pool: the isolation class its
     slots run in (``uid_class``, plan D8), the per-slot sizing, and the
     ``min_idle`` / ``max_slots`` bounds the scaler places within (D5). Label
-    sets are stored SORTED by the coord writer, so the unique key is the set.
+    sets are stored SORTED (byte order) and DE-DUPLICATED — enforced by a CHECK
+    against ``coord.ci_labels_normalized`` — so the unique key is the set,
+    never one spelling of it.
 
 ``coord.ci_slot_leases``
     One row per JIT registration coord minted: which agent, which pool, which
-    slot, and the coord-chosen ``runner_name``
-    (``<host>-<pool>-<slot>-<lease8>``). It is the mapping coord's existing
-    detectors use to collapse a fresh per-job runner name back onto
-    ``(host, pool, slot)`` (D10). The JIT config itself is NEVER stored.
+    slot, the coord-chosen ``runner_name`` (``<host>-<pool>-<slot>-<lease8>``,
+    at most 63 characters) and GitHub's ``runner_id`` (what coord deletes the
+    registration by when the slot is released). At most ONE live
+    (``minted``/``busy``) lease per ``(agent, pool, slot)`` — a partial unique
+    index, so two concurrent mints for one slot cannot both succeed. It is the
+    mapping coord's detectors use to collapse a per-job runner name back onto
+    ``(host, pool, slot)`` (D10). The JIT config itself is NEVER stored. A pool
+    spec with lease history cannot be deleted (``ON DELETE RESTRICT``): the
+    leases are the audit trail of registrations coord minted.
 
 ``coord.ci_slot_desired``
     The scaler's output (Phase 3): how many slots of each pool each agent
@@ -63,10 +74,19 @@ Tenant binding
 
 ``ci_host_agents``, ``ci_enrol_codes`` and ``ci_pool_specs`` carry a
 ``tenant_id`` with an FK to ``coord.tenants`` ``ON DELETE CASCADE`` (the
-``ghut01`` / ``coord_memory_synthesis_jobs`` style): these are configuration,
-not a best-effort observation log, so a dangling tenant is a real defect.
-``ci_slot_leases`` and ``ci_slot_desired`` are tenant-scoped through their
-agent and pool FKs.
+``ghut01`` / ``coord_memory_synthesis_jobs`` style). ``ci_slot_leases`` and
+``ci_slot_desired`` carry ``tenant_id`` too, with COMPOSITE foreign keys
+``(agent_id, tenant_id)`` and ``(pool_spec_id, tenant_id)``, so a lease or a
+desired row can never pair one tenant's agent with another tenant's pool. The
+two parents carry the ``UNIQUE (…, tenant_id)`` keys those FKs need.
+
+``coord.ci_labels_normalized(text[])``
+======================================
+
+An ``IMMUTABLE`` SQL function (``DISTINCT`` + ``ORDER BY … COLLATE "C"``) used
+by the pool-spec CHECK, because PostgreSQL forbids sub-queries inside a CHECK.
+Byte-order collation matches Rust's ``sort`` / ``dedup`` on ``String``, so the
+coord writer and the constraint agree on what "sorted" means.
 
 Idempotency / authorship posture
 ================================
@@ -74,7 +94,7 @@ Idempotency / authorship posture
 * Every statement is ``coord.``-qualified (``alembic-schema-arg-gate``).
 * ``CREATE TABLE IF NOT EXISTS`` with constraints inline (a new table holds no
   rows, so coord's migration classifier reads it as additive), and every
-  secondary index ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside
+  secondary index ``CREATE … INDEX CONCURRENTLY IF NOT EXISTS`` inside
   ``autocommit_block``.
 * This revision was **HAND-AUTHORED**; ``alembic revision --autogenerate`` is
   never run here. Pure DDL, no app imports — the prod migrator lacks app deps.
@@ -93,10 +113,9 @@ preference, not a crash risk. Done-when is
 ``down_revision``
 =================
 
-The single head on qontinui-web ``origin/main`` ``e53886894``
-(``overview_04_timeline``). qontinui-web#1552 (``machine_ci_hosts``) was open
-when this was authored; whichever lands second re-points the token below AND
-the ``Revises:`` line above at the merged head. Do not author an
+The single head on qontinui-web ``origin/main`` when this branch was last
+rebased (``mdroles_01``). If another revision lands first, re-point the token
+below AND the ``Revises:`` line above at the merged head. Do not author an
 ``alembic merge`` revision.
 """
 
@@ -106,14 +125,27 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cihost_01_ci_host_agent_fleet"
-down_revision: str | Sequence[str] | None = "overview_04_timeline"
+down_revision: str | Sequence[str] | None = "mdroles_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create the five coord.ci_* fleet tables and their indexes."""
+    """Create the five coord.ci_* fleet tables, their helper and indexes."""
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION coord.ci_labels_normalized(labels text[])
+        RETURNS text[]
+        LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+        AS $fn$
+            SELECT COALESCE(
+                ARRAY(SELECT DISTINCT (u.l COLLATE "C") FROM unnest(labels) AS u(l) ORDER BY 1),
+                '{}'::text[]
+            )
+        $fn$
+        """
+    )
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.ci_host_agents (
@@ -133,13 +165,14 @@ def upgrade() -> None:
             last_seen_at         TIMESTAMPTZ,
             created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_ci_host_agents_agent_tenant UNIQUE (agent_id, tenant_id),
             CONSTRAINT ck_ci_host_agents_credential_hash_sha256_hex
                 CHECK (credential_hash ~ '^[0-9a-f]{64}$'),
             CONSTRAINT ck_ci_host_agents_declared_trust_class
                 CHECK (declared_trust_class IS NULL
                        OR declared_trust_class IN ('pr', 'public', 'trusted')),
-            CONSTRAINT ck_ci_host_agents_host_nonempty
-                CHECK (length(host) > 0),
+            CONSTRAINT ck_ci_host_agents_host_lower
+                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$'),
             CONSTRAINT ck_ci_host_agents_os
                 CHECK (os IN ('linux', 'windows', 'macos'))
         )
@@ -148,17 +181,24 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.ci_enrol_codes (
-            code_hash    TEXT PRIMARY KEY,
-            tenant_id    UUID NOT NULL
+            code_hash            TEXT PRIMARY KEY,
+            tenant_id            UUID NOT NULL
                 REFERENCES coord.tenants(tenant_id) ON DELETE CASCADE,
-            issued_by    TEXT NOT NULL,
-            expires_at   TIMESTAMPTZ NOT NULL,
-            redeemed_at  TIMESTAMPTZ,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            issued_by            TEXT NOT NULL,
+            host                 TEXT NOT NULL,
+            declared_trust_class TEXT,
+            expires_at           TIMESTAMPTZ NOT NULL,
+            redeemed_at          TIMESTAMPTZ,
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT ck_ci_enrol_codes_code_hash_sha256_hex
                 CHECK (code_hash ~ '^[0-9a-f]{64}$'),
             CONSTRAINT ck_ci_enrol_codes_expires_after_created
-                CHECK (expires_at > created_at)
+                CHECK (expires_at > created_at),
+            CONSTRAINT ck_ci_enrol_codes_host_lower
+                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$'),
+            CONSTRAINT ck_ci_enrol_codes_declared_trust_class
+                CHECK (declared_trust_class IS NULL
+                       OR declared_trust_class IN ('pr', 'public', 'trusted'))
         )
         """
     )
@@ -182,12 +222,17 @@ def upgrade() -> None:
             updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT uq_ci_pool_specs_tenant_repo_labels
                 UNIQUE (tenant_id, repo, labels),
+            CONSTRAINT uq_ci_pool_specs_id_tenant UNIQUE (id, tenant_id),
             CONSTRAINT ck_ci_pool_specs_uid_class
                 CHECK (uid_class IN ('pr', 'public', 'trusted')),
             CONSTRAINT ck_ci_pool_specs_repo_owner_name
-                CHECK (repo ~ '^[^/[:space:]]+/[^/[:space:]]+$'),
+                CHECK (repo ~ '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+                       AND split_part(repo, '/', 1) NOT IN ('.', '..')
+                       AND split_part(repo, '/', 2) NOT IN ('.', '..')),
             CONSTRAINT ck_ci_pool_specs_labels_nonempty
                 CHECK (cardinality(labels) > 0),
+            CONSTRAINT ck_ci_pool_specs_labels_sorted_distinct
+                CHECK (labels = coord.ci_labels_normalized(labels)),
             CONSTRAINT ck_ci_pool_specs_mem_gib_positive
                 CHECK (mem_gib > 0),
             CONSTRAINT ck_ci_pool_specs_cores_positive
@@ -203,17 +248,25 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS coord.ci_slot_leases (
             lease_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            agent_id      UUID NOT NULL
-                REFERENCES coord.ci_host_agents(agent_id) ON DELETE CASCADE,
-            pool_spec_id  UUID NOT NULL
-                REFERENCES coord.ci_pool_specs(id) ON DELETE CASCADE,
+            tenant_id     UUID NOT NULL,
+            agent_id      UUID NOT NULL,
+            pool_spec_id  UUID NOT NULL,
             slot          INTEGER NOT NULL,
             runner_name   TEXT NOT NULL,
+            runner_id     BIGINT,
             minted_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
             job_id        BIGINT,
             state         TEXT NOT NULL DEFAULT 'minted',
+            CONSTRAINT fk_ci_slot_leases_agent_tenant
+                FOREIGN KEY (agent_id, tenant_id)
+                REFERENCES coord.ci_host_agents (agent_id, tenant_id) ON DELETE CASCADE,
+            CONSTRAINT fk_ci_slot_leases_pool_tenant
+                FOREIGN KEY (pool_spec_id, tenant_id)
+                REFERENCES coord.ci_pool_specs (id, tenant_id) ON DELETE RESTRICT,
             CONSTRAINT uq_ci_slot_leases_runner_name UNIQUE (runner_name),
-            CONSTRAINT ck_ci_slot_leases_slot_nonnegative CHECK (slot >= 0),
+            CONSTRAINT ck_ci_slot_leases_runner_name_length
+                CHECK (char_length(runner_name) BETWEEN 1 AND 63),
+            CONSTRAINT ck_ci_slot_leases_slot_range CHECK (slot BETWEEN 0 AND 1023),
             CONSTRAINT ck_ci_slot_leases_state
                 CHECK (state IN ('minted', 'busy', 'done', 'expired'))
         )
@@ -222,13 +275,18 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.ci_slot_desired (
-            agent_id      UUID NOT NULL
-                REFERENCES coord.ci_host_agents(agent_id) ON DELETE CASCADE,
-            pool_spec_id  UUID NOT NULL
-                REFERENCES coord.ci_pool_specs(id) ON DELETE CASCADE,
+            agent_id      UUID NOT NULL,
+            pool_spec_id  UUID NOT NULL,
+            tenant_id     UUID NOT NULL,
             desired       INTEGER NOT NULL,
             computed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
             PRIMARY KEY (agent_id, pool_spec_id),
+            CONSTRAINT fk_ci_slot_desired_agent_tenant
+                FOREIGN KEY (agent_id, tenant_id)
+                REFERENCES coord.ci_host_agents (agent_id, tenant_id) ON DELETE CASCADE,
+            CONSTRAINT fk_ci_slot_desired_pool_tenant
+                FOREIGN KEY (pool_spec_id, tenant_id)
+                REFERENCES coord.ci_pool_specs (id, tenant_id) ON DELETE CASCADE,
             CONSTRAINT ck_ci_slot_desired_nonnegative CHECK (desired >= 0)
         )
         """
@@ -238,29 +296,32 @@ def upgrade() -> None:
         COMMENT ON TABLE coord.ci_host_agents IS
         'Enrolled CI host agents (plan 2026-10-04 D1/D3). credential_hash is the '
         'sha256 hex of the agent secret and the ONLY copy coord keeps; the secret '
-        'is returned once at enrolment. declared_trust_class NULL means pr pools only.'
+        'is returned once at enrolment. declared_trust_class is a ceiling; NULL '
+        'means pr pools only.'
         """
     )
     op.execute(
         """
         COMMENT ON TABLE coord.ci_enrol_codes IS
-        'Operator-issued single-use CI-agent enrolment codes. Only the sha256 hex '
-        'of the code is stored; redeemed_at set means spent.'
+        'Operator-issued single-use CI-agent enrolment codes binding host and '
+        'declared_trust_class. Only the sha256 hex of the code is stored; '
+        'redeemed_at set means spent.'
         """
     )
     op.execute(
         """
         COMMENT ON TABLE coord.ci_pool_specs IS
-        'Self-hosted CI pool specs: (tenant, repo, sorted label set) with uid_class, '
-        'per-slot sizing and min_idle/max_slots bounds. Written through the coord '
-        'spec door, never by hand DML.'
+        'Self-hosted CI pool specs: (tenant, repo, sorted distinct label set) with '
+        'uid_class, per-slot sizing and min_idle/max_slots bounds. Written through '
+        'the coord spec door, never by hand DML.'
         """
     )
     op.execute(
         """
         COMMENT ON TABLE coord.ci_slot_leases IS
-        'One row per coord-minted JIT runner registration: agent, pool, slot and the '
-        'coord-chosen runner_name. The JIT config itself is never stored.'
+        'One row per coord-minted JIT runner registration: agent, pool, slot, the '
+        'coord-chosen runner_name and GitHub runner_id. At most one live lease per '
+        'slot. The JIT config itself is never stored.'
         """
     )
     op.execute(
@@ -280,23 +341,29 @@ def upgrade() -> None:
             "ON coord.ci_enrol_codes (tenant_id)"
         )
         op.execute(
+            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_ci_slot_leases_live_slot "
+            "ON coord.ci_slot_leases (agent_id, pool_spec_id, slot) "
+            "WHERE state IN ('minted', 'busy')"
+        )
+        op.execute(
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_leases_agent_pool_slot "
             "ON coord.ci_slot_leases (agent_id, pool_spec_id, slot)"
         )
         op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_leases_pool_spec "
-            "ON coord.ci_slot_leases (pool_spec_id)"
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_leases_pool_tenant "
+            "ON coord.ci_slot_leases (pool_spec_id, tenant_id)"
         )
         op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_desired_pool_spec "
-            "ON coord.ci_slot_desired (pool_spec_id)"
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_desired_pool_tenant "
+            "ON coord.ci_slot_desired (pool_spec_id, tenant_id)"
         )
 
 
 def downgrade() -> None:
-    """Reverse: drop the five tables, dependents first."""
+    """Reverse: drop the five tables (dependents first), then the helper."""
     op.execute("DROP TABLE IF EXISTS coord.ci_slot_desired")
     op.execute("DROP TABLE IF EXISTS coord.ci_slot_leases")
     op.execute("DROP TABLE IF EXISTS coord.ci_pool_specs")
     op.execute("DROP TABLE IF EXISTS coord.ci_enrol_codes")
     op.execute("DROP TABLE IF EXISTS coord.ci_host_agents")
+    op.execute("DROP FUNCTION IF EXISTS coord.ci_labels_normalized(text[])")

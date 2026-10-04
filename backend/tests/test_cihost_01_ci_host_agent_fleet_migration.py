@@ -81,6 +81,8 @@ _COLUMNS: dict[str, set[str]] = {
         "code_hash",
         "tenant_id",
         "issued_by",
+        "host",
+        "declared_trust_class",
         "expires_at",
         "redeemed_at",
         "created_at",
@@ -103,15 +105,23 @@ _COLUMNS: dict[str, set[str]] = {
     },
     "ci_slot_leases": {
         "lease_id",
+        "tenant_id",
         "agent_id",
         "pool_spec_id",
         "slot",
         "runner_name",
+        "runner_id",
         "minted_at",
         "job_id",
         "state",
     },
-    "ci_slot_desired": {"agent_id", "pool_spec_id", "desired", "computed_at"},
+    "ci_slot_desired": {
+        "agent_id",
+        "pool_spec_id",
+        "tenant_id",
+        "desired",
+        "computed_at",
+    },
 }
 
 _needs_pg = pytest.mark.skipif(
@@ -182,6 +192,20 @@ def test_the_declared_parent_is_exactly_one_real_sibling() -> None:
         and pattern.search(f.read_text(encoding="utf-8"))
     ]
     assert len(siblings) == 1, [f.name for f in siblings]
+
+
+def test_exactly_one_revision_declares_this_parent() -> None:
+    """No sibling fork: this revision is the ONLY child of its parent."""
+    parent = _declared_parent()
+    pattern = re.compile(
+        rf'^down_revision(?:: [^=]+)?\s*=\s*["\']{re.escape(parent)}["\']', re.M
+    )
+    children = [
+        f.name
+        for f in (backend_root() / "alembic" / "versions").glob("*.py")
+        if pattern.search(f.read_text(encoding="utf-8"))
+    ]
+    assert children == [_REVISION_FILENAME], children
 
 
 def test_docstring_header_agrees_with_the_declared_parent() -> None:
@@ -341,6 +365,18 @@ def _pool(engine: Engine, tenant_id: uuid.UUID, **overrides: object) -> uuid.UUI
     return pool_id
 
 
+_LEASE_SQL = (
+    "INSERT INTO coord.ci_slot_leases (tenant_id, agent_id, pool_spec_id, slot, "
+    "runner_name, state) VALUES (:t, :a, :p, :s, :n, :st)"
+)
+
+
+def _lease(engine: Engine, **p: object) -> None:
+    params: dict[str, object] = {"s": 0, "st": "minted"}
+    params.update(p)
+    _exec(engine, _LEASE_SQL, **params)
+
+
 @_needs_pg
 def test_tables_columns_and_security_checks() -> None:
     with ephemeral_database(admin_database_url(), "cihost01_shape") as (
@@ -360,24 +396,24 @@ def test_tables_columns_and_security_checks() -> None:
             _agent(engine, tenant_id, declared_trust_class="admin")
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _agent(engine, tenant_id, os="beos")
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _agent(engine, tenant_id, host="MerytsHost")  # lower-case only
         _agent(engine, tenant_id, declared_trust_class="trusted")
 
-        # Enrolment codes: hash shape and a positive lifetime.
-        _exec(
-            engine,
-            "INSERT INTO coord.ci_enrol_codes (code_hash, tenant_id, issued_by, "
-            "expires_at) VALUES (:h, :t, 'op', now() + interval '1 hour')",
-            h="b" * 64,
-            t=tenant_id,
+        code_sql = (
+            "INSERT INTO coord.ci_enrol_codes (code_hash, tenant_id, issued_by, host, "
+            "declared_trust_class, expires_at) VALUES (:h, :t, 'op', :host, :c, "
+            "now() + interval '1 hour')"
         )
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _exec(
-                engine,
-                "INSERT INTO coord.ci_enrol_codes (code_hash, tenant_id, issued_by, "
-                "expires_at) VALUES ('CODE-PLAINTEXT', :t, 'op', "
-                "now() + interval '1 hour')",
-                t=tenant_id,
-            )
+        _exec(engine, code_sql, h="b" * 64, t=tenant_id, host="dell-2020", c=None)
+        _exec(engine, code_sql, h="c" * 64, t=tenant_id, host="h", c="trusted")
+        for bad in (
+            {"h": "CODE-PLAINTEXT", "host": "h", "c": None},
+            {"h": "d" * 64, "host": "Upper", "c": None},
+            {"h": "e" * 64, "host": "h", "c": "admin"},
+        ):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _exec(engine, code_sql, t=tenant_id, **bad)
 
         pool_id = _pool(engine, tenant_id)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
@@ -388,57 +424,131 @@ def test_tables_columns_and_security_checks() -> None:
             _pool(engine, tenant_id, labels=["y"], min_idle=5, max_slots=2)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _pool(engine, tenant_id, labels=[])
+        for bad_repo in ("noslash", "a/b/c", "../x", "o/..", "o/r;x"):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _pool(engine, tenant_id, labels=["z"], repo=bad_repo)
 
-        lease_sql = (
-            "INSERT INTO coord.ci_slot_leases (agent_id, pool_spec_id, slot, "
-            "runner_name, state) VALUES (:a, :p, :s, :n, :st)"
-        )
+        # Leases: one runner name, a bounded name and slot, a known state.
+        _lease(engine, t=tenant_id, a=agent_id, p=pool_id, n="h-p-0-abcd1234")
+        for bad in (
+            {"s": 5, "n": "h-p-0-abcd1234"},  # duplicate runner name
+            {"s": 6, "n": "x" * 64},  # > 63 chars
+            {"s": 1024, "n": "n1024"},
+            {"s": -1, "n": "nneg"},
+            {"s": 7, "n": "nstate", "st": "running"},
+        ):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _lease(engine, t=tenant_id, a=agent_id, p=pool_id, **bad)
+
         _exec(
             engine,
-            lease_sql,
+            "INSERT INTO coord.ci_slot_desired (agent_id, pool_spec_id, tenant_id, "
+            "desired) VALUES (:a, :p, :t, 2)",
             a=agent_id,
             p=pool_id,
-            s=0,
-            n="h-p-0-abcd1234",
-            st="minted",
+            t=tenant_id,
         )
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _exec(
                 engine,
-                lease_sql,
+                "INSERT INTO coord.ci_slot_desired (agent_id, pool_spec_id, tenant_id, "
+                "desired) VALUES (:a, :p, :t, 3)",
                 a=agent_id,
                 p=pool_id,
-                s=1,
-                n="h-p-0-abcd1234",
-                st="minted",
-            )
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _exec(
-                engine, lease_sql, a=agent_id, p=pool_id, s=1, n="other", st="running"
+                t=tenant_id,
             )
 
-        _exec(
-            engine,
-            "INSERT INTO coord.ci_slot_desired (agent_id, pool_spec_id, desired) "
-            "VALUES (:a, :p, 2)",
-            a=agent_id,
-            p=pool_id,
-        )
+        # A pool spec with lease history cannot be deleted (RESTRICT)...
         with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _exec(
-                engine,
-                "INSERT INTO coord.ci_slot_desired (agent_id, pool_spec_id, desired) "
-                "VALUES (:a, :p, 3)",
-                a=agent_id,
-                p=pool_id,
-            )
-
-        # Deleting the agent cascades to its leases and desired rows.
+            _exec(engine, "DELETE FROM coord.ci_pool_specs WHERE id = :p", p=pool_id)
+        # ...while deleting the agent cascades to its leases and desired rows.
         _exec(
             engine, "DELETE FROM coord.ci_host_agents WHERE agent_id = :a", a=agent_id
         )
         assert scalar(engine, "SELECT count(*) FROM coord.ci_slot_leases") == 0
         assert scalar(engine, "SELECT count(*) FROM coord.ci_slot_desired") == 0
+
+
+@_needs_pg
+def test_one_live_lease_per_slot() -> None:
+    with ephemeral_database(admin_database_url(), "cihost01_live") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        t = _tenant(engine)
+        a = _agent(engine, t)
+        p = _pool(engine, t)
+        _lease(engine, t=t, a=a, p=p, n="live-1")
+        # A second LIVE lease on the same (agent, pool, slot) is refused,
+        # whether minted or busy.
+        for st in ("minted", "busy"):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _lease(engine, t=t, a=a, p=p, n=f"live-2-{st}", st=st)
+        # Terminal leases do not occupy the slot...
+        _lease(engine, t=t, a=a, p=p, n="old-done", st="done")
+        _lease(engine, t=t, a=a, p=p, n="old-expired", st="expired")
+        # ...and releasing the live one frees it.
+        _exec(
+            engine,
+            "UPDATE coord.ci_slot_leases SET state = 'done' WHERE runner_name = 'live-1'",
+        )
+        _lease(engine, t=t, a=a, p=p, n="live-3")
+        # Another slot of the same pool is independent.
+        _lease(engine, t=t, a=a, p=p, n="slot-1", s=1)
+
+
+@_needs_pg
+def test_leases_and_desired_rows_cannot_cross_tenants() -> None:
+    with ephemeral_database(admin_database_url(), "cihost01_tenant") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        t1, t2 = _tenant(engine), _tenant(engine)
+        a1 = _agent(engine, t1)
+        p2 = _pool(engine, t2)
+        p1 = _pool(engine, t1)
+        # Tenant-1 agent on a tenant-2 pool: no tenant_id satisfies both FKs.
+        for t in (t1, t2):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _lease(engine, t=t, a=a1, p=p2, n=f"x-{t.hex[:6]}")
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _exec(
+                    engine,
+                    "INSERT INTO coord.ci_slot_desired (agent_id, pool_spec_id, "
+                    "tenant_id, desired) VALUES (:a, :p, :t, 1)",
+                    a=a1,
+                    p=p2,
+                    t=t,
+                )
+        _lease(engine, t=t1, a=a1, p=p1, n="same-tenant")
+
+
+@_needs_pg
+def test_labels_must_be_stored_sorted_and_distinct() -> None:
+    with ephemeral_database(admin_database_url(), "cihost01_labels") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        t = _tenant(engine)
+        # Byte order: upper-case sorts before lower-case, '-' before letters.
+        _pool(engine, t, labels=["Linux", "qontinui", "self-hosted"])
+        for bad in (
+            ["self-hosted", "qontinui"],  # unsorted
+            ["a", "a"],  # duplicate
+            ["qontinui", "Linux"],  # sorted case-insensitively, not by bytes
+        ):
+            with pytest.raises(sqlalchemy.exc.IntegrityError):
+                _pool(engine, t, labels=bad, repo=f"o/r{len(bad)}{bad[0]}")
+        assert (
+            scalar(
+                engine,
+                "SELECT coord.ci_labels_normalized(ARRAY['b','a','b','A'])::text",
+            )
+            == "{A,a,b}"
+        )
 
 
 @_needs_pg
@@ -459,6 +569,15 @@ def test_upgrade_is_idempotent_and_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "downgrade", parent)
         for table in _TABLES:
             assert not table_exists(engine, _SCHEMA, table), table
+        assert (
+            scalar(
+                engine,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
+                "ON n.oid = p.pronamespace "
+                "WHERE n.nspname = 'coord' AND p.proname = 'ci_labels_normalized'",
+            )
+            == 0
+        )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         for table in _TABLES:
