@@ -29,10 +29,8 @@ import {
   type WorkArtifactEdge,
   type WorkArtifactKind,
 } from "../types";
-import {
-  StatusCurrencyBadge,
-  resolveStatusCurrency,
-} from "./StatusCurrencyBadge";
+import { resolveStatusCurrency } from "../statusCurrency";
+import { StatusCurrencyBadge } from "./StatusCurrencyBadge";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "unknown";

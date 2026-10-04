@@ -529,6 +529,36 @@ describe("a candidate row states the currency of its own status", () => {
     expect(badge).toHaveAttribute("title", "every fresh reading is a floor");
   });
 
+  it("tallies the page's currencies in the disclosure, with the breakdown", async () => {
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({ slug: "a" }),
+          candidate({
+            slug: "b",
+            status_currency: {
+              state: "unfed_key",
+              as_of: null,
+              ref_sha: null,
+              ref_age_secs: null,
+              detail: null,
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    expect(
+      await screen.findByTestId("coord-candidates-disclosure-status-currency")
+    ).toHaveTextContent(/2 of the 2 rows on this page/);
+    const items = screen.getByTestId(
+      "coord-candidates-disclosure-status-currency-items"
+    );
+    expect(items).toHaveTextContent("Unfed key: 1");
+    expect(items).toHaveTextContent("Currency unknown: 1");
+  });
+
   it("renders an UNSERVED currency as unknown, never as nothing", async () => {
     get.mockResolvedValue(response());
     render(<CoordPlanCandidatesPage />);
