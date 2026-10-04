@@ -20,6 +20,13 @@
  *   so does every count on it: the last verdict of a runner that stopped
  *   reporting is not a verdict.
  * - `DeviceDrainControl` + `useFleetDrain`, reused as-is — the lever.
+ * - `DeviceWorktreeCapControl` + `useFleetWorktreeCap` — the OTHER per-device
+ *   lever (plan `2026-09-18…` amendment A3). It sits beside the drain because
+ *   both act on one coord device identity and an operator reaches for them in
+ *   the same runbook, and it is worded throughout to keep the two apart: a
+ *   drain stops NEW work reaching the machine and expires on its own; a cap
+ *   bounds how many worktrees may exist there, has no expiry, and stops
+ *   nothing.
  * - `RecordList` of the device's live sessions, each a `RecordRow` whose
  *   `RecordDetail` carries the row's actions.
  *
@@ -50,6 +57,7 @@ import {
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
 import { DeviceDrainControl } from "@/components/operations/DeviceDrainControl";
+import { DeviceWorktreeCapControl } from "@/components/operations/DeviceWorktreeCapControl";
 import {
   DevicePicker,
   findRosterDevice,
@@ -59,6 +67,8 @@ import {
   type DrainTarget,
 } from "@/components/operations/fleetDrain";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
+import { resolveDeviceWorktreeCap } from "@/components/operations/fleetWorktreeCap";
+import { useFleetWorktreeCap } from "@/components/operations/useFleetWorktreeCap";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import {
   CONTROL_REASON_MAX_LENGTH,
@@ -295,6 +305,7 @@ export default function CoordRunnersPage() {
 
   const fleet = useFleetHealth();
   const drain = useFleetDrain();
+  const worktreeCap = useFleetWorktreeCap();
   const readiness = useDeviceReadiness(deviceId);
   const sessions = useDeviceFleetSessions(deviceId);
 
@@ -350,6 +361,13 @@ export default function CoordRunnersPage() {
     deviceId: rosterDevice?.device_id ?? deviceId,
     coordHostname: rosterDevice?.hostname ?? null,
   };
+  // The SAME target, deliberately: both levers write against one coord device
+  // identity, and resolving it twice is how one row ends up acting on two
+  // different machines.
+  const capState = resolveDeviceWorktreeCap(
+    worktreeCap.read,
+    drainTarget.deviceId
+  );
 
   const send = useCallback(
     async (rec: RunnerSessionRecord, action: SessionControlAction, reason?: string) => {
@@ -429,6 +447,12 @@ export default function CoordRunnersPage() {
     send,
   ]);
 
+  // Every read this page RENDERS, so the Refresh button means what its label
+  // says. `worktreeCap` is here and not only on the cap control's `onActed`
+  // because an operator is not the only writer of a cap — once A3's agent twin
+  // lands an agent can change the same value (see `useFleetWorktreeCap`'s module
+  // doc), and without this line the only way to see a peer's change was to wait
+  // out the 30 s poll while the button beside it reported success.
   const refreshAll = useCallback(
     () =>
       Promise.all([
@@ -436,8 +460,9 @@ export default function CoordRunnersPage() {
         drain.refresh(),
         readiness.refresh(),
         sessions.refresh(),
+        worktreeCap.refresh(),
       ]),
-    [fleet, drain, readiness, sessions]
+    [fleet, drain, readiness, sessions, worktreeCap]
   );
 
   const badges: HealthBadge[] = [
@@ -516,7 +541,7 @@ export default function CoordRunnersPage() {
         <RefreshButton
           onRefresh={refreshAll}
           label="Refresh runner"
-          title={`Re-reads the roster, drain, readiness and sessions now; also refreshes itself every ${RUNNER_POLL_MS / 1000} s`}
+          title={`Re-reads the roster, drain, worktree caps, readiness and sessions now; also refreshes itself every ${RUNNER_POLL_MS / 1000} s`}
           data-testid="coord-runners-refresh"
         />
         {rosterNotice && (
@@ -557,6 +582,13 @@ export default function CoordRunnersPage() {
             drain={drainState}
             rowHostname={hostname}
             onActed={drain.refresh}
+          />
+
+          <DeviceWorktreeCapControl
+            target={drainTarget}
+            cap={capState}
+            rowHostname={hostname}
+            onActed={worktreeCap.refresh}
           />
 
           <section className="space-y-2" data-testid="coord-runners-sessions">

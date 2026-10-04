@@ -24,4 +24,8 @@ updates:
       - "/backend"
     schedule:
       interval: "monthly"
+    # Inert while the limit is 0; stated so a future re-enable cannot pull a
+    # release younger than a week (zizmor dependabot-cooldown).
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 0

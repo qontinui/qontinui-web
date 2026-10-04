@@ -18,6 +18,9 @@
  * 6. **A failed refresh keeps the rows, says so, and lets them go stale**:
  *    after 900 s with no good read, a computer coord last called fresh reads
  *    STALE by itself.
+ * 7. **Each list row's GPUs render in its expanded capacity block** — model
+ *    and VRAM per GPU, `none` for a measured `[]` — and only one row's block
+ *    is open at a time.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -252,6 +255,186 @@ describe("/admin/coord/computers", () => {
   });
 });
 
+describe("/admin/coord/computers — the gpus capacity per row", () => {
+  it("renders each row's GPUs, in the expanded row's capacity block", async () => {
+    httpGet.mockResolvedValue(
+      listFx([
+        computerFx({
+          hostname: "merytshost",
+          capacity: {
+            cpu_cores: 48,
+            memory_total_bytes: 64 * 1024 ** 3,
+            swap_total_bytes: 8 * 1024 ** 3,
+            disk_total_bytes: 1024 ** 4,
+            gpus: [
+              {
+                vendor: "nvidia",
+                model: "NVIDIA GeForce RTX 4090",
+                vram_bytes: 24 * 1024 ** 3,
+                driver: "550.120",
+                compute_capability: "8.9",
+              },
+            ],
+          },
+        }),
+        computerFx({
+          computer_id: OTHER_COMPUTER_ID,
+          hostname: "msi-wsl",
+          capacity: {
+            cpu_cores: 16,
+            memory_total_bytes: 32 * 1024 ** 3,
+            swap_total_bytes: 0,
+            disk_total_bytes: 1024 ** 4,
+            gpus: [],
+          },
+        }),
+      ])
+    );
+    render(<CoordComputersPage />);
+    const rows = await screen.findAllByTestId("coord-computer-row");
+    expect(rows).toHaveLength(2);
+    // Collapsed rows render no detail, so no GPU is shown before a click.
+    expect(screen.queryByTestId("coord-computer-capacity")).toBeNull();
+
+    fireEvent.click(within(rows[0]).getByRole("button", { expanded: false }));
+    const gpuCap = await screen.findByTestId("coord-computer-capacity");
+    expect(within(gpuCap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpuNVIDIA GeForce RTX 4090 · 24.0 GB"
+    );
+    expect(
+      screen.getByTestId("coord-computer-gpus-note").textContent
+    ).toContain("another vendor's GPU may be present and unlisted");
+
+    fireEvent.click(within(rows[1]).getByRole("button", { expanded: false }));
+    // One row expands at a time: the second row's capacity replaces the first.
+    const caps = screen.getAllByTestId("coord-computer-capacity");
+    expect(caps).toHaveLength(1);
+    expect(within(caps[0]).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusnone"
+    );
+    expect(within(caps[0]).queryByTestId("coord-computer-gpu-0")).toBeNull();
+    expect(screen.getByTestId("coord-computer-gpus-note").textContent).toBe(
+      "GPUs: measured none."
+    );
+  });
+});
+
+describe("/admin/coord/computers/[computerId] — the gpus capacity", () => {
+  async function capacityOf(gpus: unknown) {
+    httpGet.mockResolvedValue(
+      detailFx({
+        capacity: {
+          cpu_cores: 48,
+          memory_total_bytes: 64 * 1024 ** 3,
+          swap_total_bytes: 8 * 1024 ** 3,
+          disk_total_bytes: 1024 ** 4,
+          gpus,
+        },
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const cap = await screen.findByTestId("coord-computer-capacity");
+    return { cap, note: screen.getByTestId("coord-computer-gpus-note") };
+  }
+
+  it("renders null gpus as unknown — not reported, never none or 0", async () => {
+    const { cap, note } = await capacityOf(null);
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusunknown"
+    );
+    expect(note.textContent).toBe("GPUs not reported — UNKNOWN, not none.");
+  });
+
+  it("renders a measured [] as none", async () => {
+    const { cap, note } = await capacityOf([]);
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusnone"
+    );
+    expect(note.textContent).toBe("GPUs: measured none.");
+  });
+
+  it("renders each GPU's model and VRAM", async () => {
+    const { cap, note } = await capacityOf([
+      {
+        vendor: "nvidia",
+        model: "Example GPU A",
+        vram_bytes: 32 * 1024 ** 3,
+        driver: "999.10",
+        compute_capability: "12.0",
+      },
+      {
+        vendor: "nvidia",
+        model: "Example GPU B",
+        vram_bytes: null,
+        driver: null,
+        compute_capability: null,
+      },
+    ]);
+    expect(within(cap).queryByTestId("coord-computer-gpus")).toBeNull();
+    expect(within(cap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpuExample GPU A · 32.0 GB"
+    );
+    expect(note.textContent).toContain(
+      "gpu 0 (Example GPU A): vendor: nvidia · driver: 999.10 · compute capability: 12.0"
+    );
+    expect(note.textContent).toContain("gpu 1 (Example GPU B)");
+    expect(note.textContent).toContain("may be present and unlisted");
+    expect(within(cap).getByTestId("coord-computer-gpu-1").textContent).toBe(
+      "gpuExample GPU B · VRAM unknown"
+    );
+  });
+
+  it("renders identical GPUs as one grouped badge", async () => {
+    const same = {
+      vendor: "nvidia",
+      model: "Example GPU A",
+      vram_bytes: 32 * 1024 ** 3,
+      driver: "999.10",
+      compute_capability: "12.0",
+    };
+    const { cap, note } = await capacityOf([same, same, same, same]);
+    expect(within(cap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpu4 × Example GPU A · 32.0 GB"
+    );
+    expect(within(cap).queryByTestId("coord-computer-gpu-1")).toBeNull();
+    expect(note.textContent).toContain("gpus 0–3 (Example GPU A)");
+    expect(note.textContent).not.toContain("gpu 1 ");
+  });
+
+  it("keeps a distinct GPU apart from a group, under its own index", async () => {
+    const a = {
+      vendor: "nvidia",
+      model: "Example GPU A",
+      vram_bytes: 32 * 1024 ** 3,
+      driver: "999.10",
+      compute_capability: "12.0",
+    };
+    const b = { ...a, model: "Example GPU B" };
+    const { cap, note } = await capacityOf([a, a, b]);
+    const group = within(cap).getByTestId("coord-computer-gpu-0");
+    expect(group.textContent).toBe("gpu2 × Example GPU A · 32.0 GB");
+    expect(group.getAttribute("title")).toContain("gpus 0, 1 · vendor: nvidia");
+    expect(within(cap).queryByTestId("coord-computer-gpu-1")).toBeNull();
+    expect(within(cap).getByTestId("coord-computer-gpu-2").textContent).toBe(
+      "gpuExample GPU B · 32.0 GB"
+    );
+    expect(note.textContent).toContain("gpus 0, 1 (Example GPU A)");
+    expect(note.textContent).toContain("; gpu 2 (Example GPU B)");
+  });
+
+  it("renders a gpus value it cannot read as unknown, not as a count", async () => {
+    const { cap, note } = await capacityOf({ count: 1 });
+    expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusunknown"
+    );
+    // Told apart from null in words, and floored at amber (R3), not calm.
+    expect(note.textContent).toContain("cannot read");
+    expect(within(cap).getByTestId("coord-computer-gpus").className).toContain(
+      "amber"
+    );
+  });
+});
+
 describe("/admin/coord/computers/[computerId]", () => {
   it("renders unknown and not-supported readings as words in the lane table", async () => {
     httpGet.mockResolvedValue(
@@ -336,6 +519,36 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.getByTestId("coord-computer-lanes")).toBeTruthy();
     expect(screen.getByTestId("coord-computer-health").textContent).toContain(
       "samples not fully known"
+    );
+  });
+
+  it("counts an old down row as down — its age is information only (contract A2)", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({
+        services: [
+          serviceFx({ active_state: "failed", observed_age_secs: 3600 }),
+        ],
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const status = await screen.findByTestId("coord-computer-service-status");
+    expect(status.getAttribute("data-status")).toBe("down");
+    expect(status.textContent).toBe("✕ failed");
+    expect(
+      screen.getByTestId("coord-computer-health-services").textContent
+    ).toBe("services down 1");
+    // Expand the row (RecordRow's whole line is one button).
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId("coord-computer-service-row")).getAllByRole(
+          "button"
+        )[0]
+      );
+    });
+    expect(
+      (await screen.findByTestId("coord-computer-service-observed")).textContent
+    ).toBe(
+      "Recorded by coord 1h ago (an unchanged unit is re-recorded about every 5 min; currency is this computer's report freshness)"
     );
   });
 
