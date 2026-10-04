@@ -527,28 +527,31 @@ def test_leases_and_desired_rows_cannot_cross_tenants() -> None:
 
 
 @_needs_pg
-def test_labels_must_be_stored_sorted_and_distinct() -> None:
+def test_labels_must_be_stored_lower_sorted_distinct_and_non_empty() -> None:
     with ephemeral_database(admin_database_url(), "cihost01_labels") as (
         engine,
         db_url,
     ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         t = _tenant(engine)
-        # Byte order: upper-case sorts before lower-case, '-' before letters.
-        _pool(engine, t, labels=["Linux", "qontinui", "self-hosted"])
-        for bad in (
+        # Byte order: '-' (0x2d) sorts before letters.
+        _pool(engine, t, labels=["linux", "qontinui", "self-hosted"])
+        bad_label_sets: tuple[list[str | None], ...] = (
             ["self-hosted", "qontinui"],  # unsorted
             ["a", "a"],  # duplicate
-            ["qontinui", "Linux"],  # sorted case-insensitively, not by bytes
-        ):
+            ["Linux", "qontinui"],  # upper-case
+            ["", "a"],  # empty label
+            ["a", None],  # NULL label
+        )
+        for i, bad in enumerate(bad_label_sets):
             with pytest.raises(sqlalchemy.exc.IntegrityError):
-                _pool(engine, t, labels=bad, repo=f"o/r{len(bad)}{bad[0]}")
+                _pool(engine, t, labels=bad, repo=f"o/bad{i}")
         assert (
             scalar(
                 engine,
-                "SELECT coord.ci_labels_normalized(ARRAY['b','a','b','A'])::text",
+                "SELECT coord.ci_labels_normalized(ARRAY['b','a','B','A','c-d'])::text",
             )
-            == "{A,a,b}"
+            == "{a,b,c-d}"
         )
 
 

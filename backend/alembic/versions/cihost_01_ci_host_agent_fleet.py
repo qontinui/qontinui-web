@@ -45,9 +45,11 @@ are where it keeps it:
     One row per ``(tenant, repo, label set)`` pool: the isolation class its
     slots run in (``uid_class``, plan D8), the per-slot sizing, and the
     ``min_idle`` / ``max_slots`` bounds the scaler places within (D5). Label
-    sets are stored SORTED (byte order) and DE-DUPLICATED — enforced by a CHECK
-    against ``coord.ci_labels_normalized`` — so the unique key is the set,
-    never one spelling of it.
+    sets are stored LOWER-CASE, SORTED (byte order) and DE-DUPLICATED, with no
+    NULL or empty label — enforced by CHECKs against
+    ``coord.ci_labels_normalized`` — so the unique key is the set, never one
+    spelling of it. (GitHub matches ``runs-on`` labels case-insensitively, so
+    lower-casing loses nothing.)
 
 ``coord.ci_slot_leases``
     One row per JIT registration coord minted: which agent, which pool, which
@@ -58,8 +60,11 @@ are where it keeps it:
     index, so two concurrent mints for one slot cannot both succeed. It is the
     mapping coord's detectors use to collapse a per-job runner name back onto
     ``(host, pool, slot)`` (D10). The JIT config itself is NEVER stored. A pool
-    spec with lease history cannot be deleted (``ON DELETE RESTRICT``): the
-    leases are the audit trail of registrations coord minted.
+    spec with ANY lease — live or historical — cannot be hard-deleted
+    (``ON DELETE RESTRICT``): the leases are the audit trail of registrations
+    coord minted. Retiring a pool is therefore a SOFT delete, which is the
+    Phase 4 spec door's job (e.g. ``max_slots = 0`` / a retired flag), never a
+    ``DELETE``.
 
 ``coord.ci_slot_desired``
     The scaler's output (Phase 3): how many slots of each pool each agent
@@ -83,8 +88,9 @@ two parents carry the ``UNIQUE (…, tenant_id)`` keys those FKs need.
 ``coord.ci_labels_normalized(text[])``
 ======================================
 
-An ``IMMUTABLE`` SQL function (``DISTINCT`` + ``ORDER BY … COLLATE "C"``) used
-by the pool-spec CHECK, because PostgreSQL forbids sub-queries inside a CHECK.
+An ``IMMUTABLE`` SQL function (``lower`` + ``DISTINCT`` + ``ORDER BY … COLLATE
+"C"``) used by the pool-spec CHECK, because PostgreSQL forbids sub-queries
+inside a CHECK.
 Byte-order collation matches Rust's ``sort`` / ``dedup`` on ``String``, so the
 coord writer and the constraint agree on what "sorted" means.
 
@@ -140,7 +146,11 @@ def upgrade() -> None:
         LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
         AS $fn$
             SELECT COALESCE(
-                ARRAY(SELECT DISTINCT (u.l COLLATE "C") FROM unnest(labels) AS u(l) ORDER BY 1),
+                ARRAY(
+                    SELECT DISTINCT lower(u.l COLLATE "C") COLLATE "C"
+                      FROM unnest(labels) AS u(l)
+                     ORDER BY 1
+                ),
                 '{}'::text[]
             )
         $fn$
@@ -231,7 +241,10 @@ def upgrade() -> None:
                        AND split_part(repo, '/', 2) NOT IN ('.', '..')),
             CONSTRAINT ck_ci_pool_specs_labels_nonempty
                 CHECK (cardinality(labels) > 0),
-            CONSTRAINT ck_ci_pool_specs_labels_sorted_distinct
+            CONSTRAINT ck_ci_pool_specs_labels_no_null_or_empty
+                CHECK (array_position(labels, NULL) IS NULL
+                       AND array_position(labels, '') IS NULL),
+            CONSTRAINT ck_ci_pool_specs_labels_normalized
                 CHECK (labels = coord.ci_labels_normalized(labels)),
             CONSTRAINT ck_ci_pool_specs_mem_gib_positive
                 CHECK (mem_gib > 0),
@@ -344,10 +357,6 @@ def upgrade() -> None:
             "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_ci_slot_leases_live_slot "
             "ON coord.ci_slot_leases (agent_id, pool_spec_id, slot) "
             "WHERE state IN ('minted', 'busy')"
-        )
-        op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_leases_agent_pool_slot "
-            "ON coord.ci_slot_leases (agent_id, pool_spec_id, slot)"
         )
         op.execute(
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_slot_leases_pool_tenant "
