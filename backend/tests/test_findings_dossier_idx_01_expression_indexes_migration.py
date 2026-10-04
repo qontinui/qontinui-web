@@ -561,22 +561,27 @@ def test_findings_dossier_idx_01_expression_indexes() -> None:
                     "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_findings_dossier_slug"
                 )
             )
-        run_alembic(root, url, "upgrade", "head")
+        #    Targets are pinned to this revision, not "head": once later revisions
+        #    chain on top (journey_01, coord_ci_pool_observations_01, ...), "head"
+        #    and "-1" address THEM, and the recovery under test never runs.
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert not index_exists(engine, "idx_findings_dossier_slug"), (
-            "upgrade head after the drop is a no-op while the revision is stamped"
+            "upgrade after the drop is a no-op while the revision is stamped"
         )
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        run_alembic(root, url, "upgrade", "head")
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _invalid_names(engine) == []
         _indexes_valid_and_partial(engine)
         _assert_indexes_used(engine)
         _assert_cases(engine, before, "after stamp-based repair")
 
-        #    Alternative documented step: downgrade -1 instead of stamp.
+        #    Alternative documented step: downgrade one step instead of stamp
+        #    ("downgrade -1" while this revision is head; spelled as the parent
+        #    here so the step still targets this revision once it is not).
         _invalidate(engine, "idx_findings_dossier_recurrence")
         assert _invalid_names(engine) == ["idx_findings_dossier_recurrence"]
-        run_alembic(root, url, "downgrade", "-1")
-        run_alembic(root, url, "upgrade", "head")
+        run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _invalid_names(engine) == []
         _indexes_valid_and_partial(engine)
         _assert_indexes_used(engine)
