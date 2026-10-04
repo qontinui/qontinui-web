@@ -159,7 +159,12 @@ export interface SymbolClaimsResponse {
  * (see `CiRepoStrip`, which was `CiStatusPanel` until 2026-09-19), never a
  * backend verdict.
  */
-export type MainCiVerdict = "green" | "red" | "unknown";
+/**
+ * `vacuously_green` is coord's zero-baseline arm: no required check has ever
+ * reported on main, so the "green" is an absence of evidence, not a pass. It
+ * must never render as a measured green.
+ */
+export type MainCiVerdict = "green" | "red" | "unknown" | "vacuously_green";
 
 /**
  * Counts of open-PR check runs for a repo, bucketed by GitHub
@@ -194,10 +199,21 @@ export interface RepoCiRow {
    *  first push to main lands; gates the "Notify when green" action
    *  because the `CiGreen` predicate is SHA-keyed. */
   main_head_sha: string | null;
+  /**
+   * `max(updated_at)` over the `ci_baselines` rows `main_verdict` was read
+   * from (plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 2).
+   * Null/absent when no baseline backs the verdict, or from a coord that
+   * predates the stamp — UNKNOWN freshness either way, never "just now".
+   */
+  main_verdict_observed_at?: string | null;
+  /** Newest `pr_check_runs` row counted; null/absent when none. */
+  pr_checks_observed_at?: string | null;
 }
 
 /** Wire shape returned by `GET /api/v1/operations/ci-status`. */
 export interface CiStatusResponse {
+  /** Coord's compose time; null/absent from a coord predating the stamp. */
+  as_of?: string | null;
   repos: RepoCiRow[];
 }
 

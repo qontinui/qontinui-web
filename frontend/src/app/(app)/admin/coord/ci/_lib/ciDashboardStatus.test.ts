@@ -1,0 +1,697 @@
+/**
+ * ciDashboardStatus — the derivation behind `/admin/coord/ci`.
+ *
+ * Pins plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 3's vitest
+ * list: every non-measured state renders `–` with its reason; a `0` appears
+ * only when `state == measured`; green is unreachable while any pool is not
+ * measured or any pool's `required` is null; `hosted` renders `–`, never a
+ * count; and the 2026-10-04T12:08Z capture (`capacity_reading:
+ * unknown_unrefreshed`, 65 `ci-failed`) derives UNKNOWN capacity, not
+ * "0 runners". Plus the palette agrees with the attention table, and an
+ * infra-shaped share never folds into the content-red count.
+ */
+
+import { describe, expect, it } from "vitest";
+import { paletteDisagreements } from "@/components/console";
+import type { RepoCiRow } from "@/components/operations/types";
+import {
+  CI_POOL_ATTENTION_BY_KIND,
+  CI_POOL_PALETTE,
+  CI_REPO_ATTENTION_BY_KIND,
+  CI_REPO_PALETTE,
+  DASH,
+  buildRepoRows,
+  cell,
+  deriveCiHealth,
+  formatDuration,
+  groupPools,
+  outcomeCells,
+  poolGroupCells,
+  poolLabel,
+  poolMemberCells,
+  poolRowStatus,
+  repoRowStatus,
+  stripLevel,
+  type CiOverviewWire,
+  type CiPoolWire,
+  type CiRepoOverviewWire,
+  type CiStatusRead,
+  type EconomicsRead,
+  type ObservationState,
+  type OverviewRead,
+} from "./ciDashboardStatus";
+
+const NOW = Date.parse("2026-10-04T12:10:00Z");
+const AS_OF = "2026-10-04T12:08:00Z";
+
+function pool(over: Partial<CiPoolWire> = {}): CiPoolWire {
+  return {
+    repo: "qontinui/qontinui-web",
+    pool: "qontinui,self-hosted",
+    state: "measured",
+    state_reason: null,
+    observed_at: "2026-10-04T12:07:00Z",
+    stale_after_secs: 360,
+    poll_ok: true,
+    poll_complete: true,
+    queued_jobs: 0,
+    oldest_queued_age_secs: null,
+    threshold_secs: 1800,
+    p90_wait_secs: 42,
+    eligibility_state: "eligible",
+    eligible_runners: 2,
+    eligible_registrations: 3,
+    unknown_registrations: 0,
+    eligible_runners_drained: 1,
+    eligibility_observed_at: "2026-10-04T12:06:00Z",
+    required: true,
+    required_note: null,
+    coverage_note: "repo-registered runners only",
+    open_alerts: [],
+    ...over,
+  };
+}
+
+/** A non-measured pool exactly as the contract says coord writes one: NULL counts. */
+function unmeasuredPool(
+  state: ObservationState,
+  over: Partial<CiPoolWire> = {}
+): CiPoolWire {
+  return pool({
+    state,
+    state_reason: null,
+    poll_ok: state === "unknown" ? false : null,
+    poll_complete: state === "unknown" ? false : null,
+    queued_jobs: null,
+    oldest_queued_age_secs: null,
+    threshold_secs: null,
+    p90_wait_secs: null,
+    eligibility_state: null,
+    eligible_runners: null,
+    eligible_registrations: null,
+    unknown_registrations: null,
+    eligible_runners_drained: null,
+    eligibility_observed_at: null,
+    ...over,
+  });
+}
+
+function repo(over: Partial<CiRepoOverviewWire> = {}): CiRepoOverviewWire {
+  return {
+    repo: "qontinui/qontinui-web",
+    window_hours: 24,
+    state: "measured",
+    state_reason: null,
+    outcomes: {
+      pass: 120,
+      content_fail: 3,
+      infra_shaped: 7,
+      neutral: 2,
+      unknown: 0,
+    },
+    hosted: {
+      state: "not_measured",
+      note: "hosted-only workflows are not sampled (ci_job_sampler hosted-only memo); see Phase 5a",
+    },
+    ...over,
+  };
+}
+
+function overview(over: Partial<CiOverviewWire> = {}): CiOverviewWire {
+  return {
+    as_of: AS_OF,
+    coverage_note: "self-hosted jobs only",
+    note: null,
+    pools: [pool()],
+    repos: [repo()],
+    ...over,
+  };
+}
+
+function ciRow(over: Partial<RepoCiRow> = {}): RepoCiRow {
+  return {
+    repo: "qontinui/qontinui-web",
+    main_verdict: "green",
+    open_pr_checks: { success: 4, failure: 0, pending: 0 },
+    latest_details_url: null,
+    main_head_sha: "abc",
+    main_verdict_observed_at: "2026-10-04T12:00:00Z",
+    pr_checks_observed_at: "2026-10-04T12:07:00Z",
+    ...over,
+  };
+}
+
+const read = (data: CiOverviewWire | null, failed = false): OverviewRead => ({
+  data,
+  failed,
+  failureText: failed ? "HTTP 502" : null,
+});
+const status = (
+  rows: RepoCiRow[] = [ciRow()],
+  over: Partial<CiStatusRead> = {}
+): CiStatusRead => ({
+  rows,
+  seeded: true,
+  error: null,
+  ...over,
+});
+const ECON: EconomicsRead = {
+  byRepo: { "qontinui/qontinui-web": { candidate_ci_p90_secs: 600 } },
+  asOf: AS_OF,
+  failed: false,
+};
+
+const NON_MEASURED: ObservationState[] = ["stale", "never_observed", "unknown"];
+
+describe("cell — a number only on a measured row", () => {
+  it.each(NON_MEASURED)(
+    "%s renders – with a reason, never the value",
+    (state) => {
+      for (const v of [0, 5, null]) {
+        const c = cell(v, state, null);
+        expect(c.text).toBe(DASH);
+        expect(c.known).toBe(false);
+        expect(c.reason).toBeTruthy();
+      }
+    }
+  );
+
+  it("prefers coord's own reason", () => {
+    expect(cell(null, "unknown", "registrar unrefreshed").reason).toBe(
+      "registrar unrefreshed"
+    );
+  });
+
+  it("renders a measured 0 as 0", () => {
+    expect(cell(0, "measured", null)).toEqual({
+      text: "0",
+      known: true,
+      reason: null,
+    });
+  });
+
+  it("renders a measured null as – (null is never 0)", () => {
+    const c = cell(null, "measured", null);
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+  });
+});
+
+describe("pool cells", () => {
+  it.each(NON_MEASURED)(
+    "every figure of a %s pool is – with a reason",
+    (state) => {
+      const cells = poolMemberCells(
+        unmeasuredPool(state, { state_reason: "poll failed" })
+      );
+      for (const c of Object.values(cells)) {
+        expect(c.text).toBe(DASH);
+        expect(c.known).toBe(false);
+        expect(c.reason).toBeTruthy();
+      }
+    }
+  );
+
+  it("a 0 appears only on a measured pool", () => {
+    const measured = poolMemberCells(
+      pool({ eligible_runners: 0, queued_jobs: 0, eligible_runners_drained: 0 })
+    );
+    expect(measured.eligible.text).toBe("0");
+    expect(measured.queued.text).toBe("0");
+    expect(measured.drained.text).toBe("0");
+    // A stale row that still CARRIES zeros (a writer that kept old values)
+    // must not print them.
+    const stale = poolMemberCells(
+      pool({ state: "stale", eligible_runners: 0, queued_jobs: 0 })
+    );
+    expect(stale.eligible.text).toBe(DASH);
+    expect(stale.queued.text).toBe(DASH);
+  });
+
+  it("a measured queue with unknown eligibility does not print a runner count", () => {
+    const cells = poolMemberCells(
+      pool({ eligibility_state: "unknown", eligible_runners: 0 })
+    );
+    expect(cells.eligible.text).toBe(DASH);
+    expect(cells.queued.text).toBe("0");
+  });
+
+  it("oldest age is rendered against its bound", () => {
+    const cells = poolMemberCells(
+      pool({
+        queued_jobs: 14,
+        oldest_queued_age_secs: 11520,
+        threshold_secs: 1800,
+      })
+    );
+    expect(cells.oldest.text).toBe("3h12m / 30m");
+  });
+
+  it("a group sums only when every member is measured", () => {
+    const groups = groupPools([
+      pool({ repo: "a/one", eligible_runners: 2, queued_jobs: 1 }),
+      unmeasuredPool("unknown", { repo: "a/two" }),
+    ]);
+    const cells = poolGroupCells(groups[0]);
+    expect(cells.eligible.text).toBe(DASH);
+    expect(cells.eligible.reason).toMatch(/1 of 2 repos not measured/);
+    const allMeasured = poolGroupCells(
+      groupPools([
+        pool({ repo: "a/one", eligible_runners: 2 }),
+        pool({ repo: "a/two", eligible_runners: 1 }),
+      ])[0]
+    );
+    expect(allMeasured.eligible.text).toBe("3");
+  });
+});
+
+describe("poolRowStatus — colour means who must act", () => {
+  it("a required pool with no eligible runner is red", () => {
+    const s = poolRowStatus(
+      pool({
+        eligibility_state: "no_eligible_runner",
+        eligible_runners: 0,
+        queued_jobs: 14,
+      })
+    );
+    expect(s.kind).toBe("no_eligible_runner");
+    expect(s.attention).toBe("author");
+  });
+
+  it("an open ci_job_queue_stalled alert is red, even on an unknown row", () => {
+    const s = poolRowStatus(
+      unmeasuredPool("unknown", {
+        open_alerts: [
+          {
+            alert_id: "x",
+            kind: "ci_job_queue_stalled",
+            opened_at: AS_OF,
+            summary: "14 queued",
+          },
+        ],
+      })
+    );
+    expect(s.kind).toBe("queue_stalled");
+    expect(s.attention).toBe("author");
+  });
+
+  it("no eligible runner with required UNKNOWN is amber, not red", () => {
+    const s = poolRowStatus(
+      pool({ eligibility_state: "no_eligible_runner", required: null })
+    );
+    expect(s.attention).toBe("waiting");
+  });
+
+  it("no eligible runner on a pool no required check uses is calm", () => {
+    const s = poolRowStatus(
+      pool({ eligibility_state: "no_eligible_runner", required: false })
+    );
+    expect(s.attention).toBe("none");
+  });
+
+  it.each(NON_MEASURED)("a %s pool is amber (the ignorance floor)", (state) => {
+    const s = poolRowStatus(unmeasuredPool(state));
+    expect(s.kind).toBe(state);
+    expect(s.attention).toBe("waiting");
+    expect(s.reason).toBeTruthy();
+  });
+
+  it("an unrecognised wire state is treated as unknown", () => {
+    expect(poolRowStatus(pool({ state: "half-measured" })).kind).toBe(
+      "unknown"
+    );
+  });
+
+  it("a queue past its bound with no stall alert is waiting", () => {
+    const s = poolRowStatus(
+      pool({
+        queued_jobs: 3,
+        oldest_queued_age_secs: 4000,
+        threshold_secs: 1800,
+      })
+    );
+    expect(s.kind).toBe("queue_over_bound");
+    expect(s.attention).toBe("waiting");
+  });
+
+  it("measured, eligible, required → clear", () => {
+    expect(poolRowStatus(pool()).kind).toBe("clear");
+  });
+});
+
+describe("palettes agree with their attention tables", () => {
+  it("pool palette", () => {
+    expect(
+      paletteDisagreements(CI_POOL_ATTENTION_BY_KIND, CI_POOL_PALETTE)
+    ).toEqual([]);
+  });
+  it("repo palette", () => {
+    expect(
+      paletteDisagreements(CI_REPO_ATTENTION_BY_KIND, CI_REPO_PALETTE)
+    ).toEqual([]);
+  });
+});
+
+describe("hosted is never a count", () => {
+  it("renders – with coord's note when the repo is measured", () => {
+    const c = outcomeCells(repo()).hosted;
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+    expect(c.reason).toMatch(/hosted-only workflows are not sampled/);
+  });
+  it("renders – when there is no outcome row at all", () => {
+    expect(outcomeCells(null).hosted.text).toBe(DASH);
+  });
+  it("the strip's hosted badge carries no number", () => {
+    const h = deriveCiHealth(read(overview()), status(), NOW);
+    const hosted = h.badges.find((b) => b.key === "hosted");
+    expect(hosted?.label).toBe(`hosted ${DASH}`);
+  });
+});
+
+describe("outcomes — infra-shaped is never folded into content red", () => {
+  it("content and infra are separate cells and separate badges", () => {
+    const cells = outcomeCells(repo());
+    expect(cells.content_fail.text).toBe("3");
+    expect(cells.infra_shaped.text).toBe("7");
+    const h = deriveCiHealth(read(overview()), status(), NOW);
+    expect(h.badges.find((b) => b.key === "content-fail")?.label).toBe(
+      "content fail 24h 3"
+    );
+    expect(h.badges.find((b) => b.key === "infra")?.label).toBe(
+      "infra-shaped 24h 7"
+    );
+  });
+
+  it.each(NON_MEASURED)("a %s outcome row dashes every count", (state) => {
+    const cells = outcomeCells(
+      repo({ state, outcomes: null, state_reason: "sampler behind" })
+    );
+    for (const k of [
+      "pass",
+      "content_fail",
+      "infra_shaped",
+      "neutral",
+      "unknown",
+    ] as const) {
+      expect(cells[k].text).toBe(DASH);
+      expect(cells[k].reason).toBeTruthy();
+    }
+  });
+
+  it("the strip's content/infra badges dash when any repo is unmeasured", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          repos: [
+            repo(),
+            repo({ repo: "a/b", state: "unknown", outcomes: null }),
+          ],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.badges.find((b) => b.key === "content-fail")?.label).toBe(
+      `content fail 24h ${DASH}`
+    );
+    expect(h.badges.find((b) => b.key === "infra")?.label).toBe(
+      `infra-shaped 24h ${DASH}`
+    );
+  });
+});
+
+describe("deriveCiHealth — green is unreachable on ignorance", () => {
+  it("is green only when everything is measured, required known, and clear", () => {
+    const h = deriveCiHealth(read(overview()), status(), NOW);
+    expect(h.level).toBe("green");
+    expect(h.headline).toMatch(/^CI healthy — 1 pool measured/);
+    expect(stripLevel(h.level)).toBe("green");
+  });
+
+  it.each(NON_MEASURED)(
+    "a %s pool makes the strip UNKNOWN, never green",
+    (state) => {
+      const h = deriveCiHealth(
+        read(
+          overview({ pools: [pool(), unmeasuredPool(state, { repo: "a/b" })] })
+        ),
+        status(),
+        NOW
+      );
+      expect(h.level).toBe("unknown");
+      expect(h.headline).toMatch(/UNKNOWN/);
+      expect(stripLevel(h.level)).toBe("amber");
+    }
+  );
+
+  it("a measured pool with required === null keeps green unreachable", () => {
+    const h = deriveCiHealth(
+      read(overview({ pools: [pool({ required: null })] })),
+      status(),
+      NOW
+    );
+    expect(h.level).not.toBe("green");
+    expect(h.level).toBe("unknown");
+  });
+
+  it("no pool observations at all is UNKNOWN, not an idle fleet", () => {
+    const h = deriveCiHealth(
+      read(overview({ pools: [], note: "tenant has no repos" })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.detail).toMatch(/tenant has no repos/);
+  });
+
+  it("a never-landed overview read is UNKNOWN with dashed counts", () => {
+    const h = deriveCiHealth(read(null, true), status(), NOW);
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/could not be read/);
+    expect(h.badges.find((b) => b.key === "pools")?.label).toBe(
+      `pools ${DASH}`
+    );
+  });
+
+  it("a failed refresh after a good read disqualifies green (stale ≠ current)", () => {
+    const h = deriveCiHealth(read(overview(), true), status(), NOW);
+    expect(h.level).toBe("unknown");
+    expect(h.detail).toMatch(/Last overview refresh failed/);
+  });
+
+  it("a read older than three polls disqualifies green by the page clock", () => {
+    const h = deriveCiHealth(
+      read(overview({ as_of: "2026-10-04T11:00:00Z" })),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+  });
+
+  it("an undatable read (no as_of) disqualifies green", () => {
+    const h = deriveCiHealth(read(overview({ as_of: null })), status(), NOW);
+    expect(h.level).toBe("unknown");
+  });
+
+  it("an unseeded CI-status read disqualifies green", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([], { seeded: false }),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+  });
+
+  it("a vacuously-green main disqualifies green", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "vacuously_green" })]),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+  });
+
+  it("a required pool with no eligible runner is red and named in the headline", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          pools: [
+            pool({
+              pool: "qontinui-ccfg,self-hosted",
+              repo: "qontinui/qontinui-claude-config",
+              eligibility_state: "no_eligible_runner",
+              eligible_runners: 0,
+              queued_jobs: 14,
+              oldest_queued_age_secs: 11520,
+            }),
+          ],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe(
+      "Stuck: [qontinui-ccfg, self-hosted] on qontinui/qontinui-claude-config has 0 eligible runners, 14 queued, oldest 3h12m"
+    );
+    expect(h.badges.find((b) => b.key === "stuck")?.label).toBe("stuck 1");
+  });
+
+  it("red main is red", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "red" })]),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toMatch(/Main is red/);
+  });
+
+  it("a queue past its bound is amber (waiting)", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          pools: [pool({ queued_jobs: 3, oldest_queued_age_secs: 4000 })],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toMatch(/^Waiting:/);
+  });
+});
+
+describe("the 2026-10-04T12:08Z capture — UNKNOWN capacity, not '0 runners'", () => {
+  // coord_query_train_health for qontinui/qontinui-claude-config: 127 open
+  // PRs, 65 ci-failed; ci_runner_inventory capacity_reading
+  // "unknown_unrefreshed", tenant.online_hosts 0, registrar coverage
+  // "unrefreshed". On the overview wire that is a pool row coord could not
+  // measure (state unknown, NULL counts) beside a CI-status row with 65
+  // failing PR checks.
+  const CCFG = "qontinui/qontinui-claude-config";
+  const capture = overview({
+    pools: [
+      unmeasuredPool("unknown", {
+        repo: CCFG,
+        pool: "qontinui-ccfg,self-hosted",
+        state_reason:
+          "registrar unrefreshed (capacity_reading: unknown_unrefreshed)",
+        required: true,
+      }),
+    ],
+    repos: [
+      repo({
+        repo: CCFG,
+        state: "unknown",
+        outcomes: null,
+        state_reason: "registrar unrefreshed",
+      }),
+    ],
+  });
+  const ci = [
+    ciRow({
+      repo: CCFG,
+      main_verdict: "unknown",
+      open_pr_checks: { success: 40, failure: 65, pending: 22 },
+    }),
+  ];
+
+  it("derives UNKNOWN capacity, never red and never green", () => {
+    const h = deriveCiHealth(read(capture), status(ci), NOW);
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toBe(
+      "CI capacity UNKNOWN for 1 pool — registrar unrefreshed (capacity_reading: unknown_unrefreshed)"
+    );
+    expect(h.headline).not.toMatch(/0 (eligible )?runners/);
+  });
+
+  it("the pool row shows – for runners, not 0", () => {
+    const cells = poolGroupCells(groupPools(capture.pools)[0]);
+    expect(cells.eligible.text).toBe(DASH);
+    expect(cells.eligible.reason).toMatch(/registrar unrefreshed/);
+    expect(cells.queued.text).toBe(DASH);
+  });
+
+  it("the 65 failing PR checks are not counted as content red", () => {
+    const h = deriveCiHealth(read(capture), status(ci), NOW);
+    expect(h.badges.find((b) => b.key === "content-fail")?.label).toBe(
+      `content fail 24h ${DASH}`
+    );
+    const [row] = buildRepoRows(capture, ci, ECON);
+    expect(row.outcomes.content_fail.text).toBe(DASH);
+    expect(row.outcomes.infra_shaped.text).toBe(DASH);
+    // The PR-check count itself is a measured fact and is shown as one.
+    expect(row.prChecks.text).toMatch(/^65 failing/);
+    expect(row.status.attention).toBe("waiting");
+  });
+});
+
+describe("repo rows", () => {
+  it("joins ci-status and overview case-insensitively and links the Train tab", () => {
+    const rows = buildRepoRows(
+      overview({ repos: [repo({ repo: "Qontinui/Qontinui-Web" })] }),
+      [ciRow()],
+      ECON
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].trainHref).toBe(
+      "/admin/coord/pipeline?tab=train&repo=qontinui%2Fqontinui-web"
+    );
+    expect(rows[0].candidateP90.text).toBe("10m");
+    expect(rows[0].mainObservedAt).toBe("2026-10-04T12:00:00Z");
+  });
+
+  it("an unread economics map renders candidate p90 as –", () => {
+    const [row] = buildRepoRows(overview(), [ciRow()], {
+      byRepo: null,
+      asOf: null,
+      failed: true,
+    });
+    expect(row.candidateP90.text).toBe(DASH);
+    expect(row.candidateP90.reason).toMatch(/failed/);
+  });
+
+  it("a repo coord's economics omits renders –, not 0", () => {
+    const [row] = buildRepoRows(overview(), [ciRow()], {
+      byRepo: {},
+      asOf: AS_OF,
+      failed: false,
+    });
+    expect(row.candidateP90.text).toBe(DASH);
+  });
+
+  it("vacuously green main renders – and is amber", () => {
+    const s = repoRowStatus(
+      "a/b",
+      ciRow({ main_verdict: "vacuously_green" }),
+      repo()
+    );
+    expect(s.kind).toBe("main_vacuous");
+    expect(s.attention).toBe("waiting");
+    const [row] = buildRepoRows(
+      overview(),
+      [ciRow({ main_verdict: "vacuously_green" })],
+      ECON
+    );
+    expect(row.mainVerdict.text).toBe(DASH);
+  });
+
+  it("main green with unmeasured outcomes is amber, not healthy", () => {
+    const s = repoRowStatus("a/b", ciRow(), repo({ state: "stale" }));
+    expect(s.kind).toBe("outcomes_unknown");
+  });
+});
+
+describe("formatting", () => {
+  it("formats durations", () => {
+    expect(formatDuration(40)).toBe("40s");
+    expect(formatDuration(600)).toBe("10m");
+    expect(formatDuration(11520)).toBe("3h12m");
+    expect(formatDuration(7200)).toBe("2h");
+  });
+  it("labels a pool as its label set", () => {
+    expect(poolLabel("qontinui, self-hosted")).toBe("[qontinui, self-hosted]");
+  });
+});
