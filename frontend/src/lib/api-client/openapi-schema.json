@@ -8338,6 +8338,121 @@
         "title": "CheckoutSessionResponse",
         "type": "object"
       },
+      "CiHostingReading": {
+        "description": "One resolved ``github_hosted_ci`` reading. ``level is None`` \u21d2 UNKNOWN.",
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          }
+        },
+        "required": [
+          "level",
+          "resolved_scope"
+        ],
+        "title": "CiHostingReading",
+        "type": "object"
+      },
+      "CiHostingRepoReading": {
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          }
+        },
+        "required": [
+          "level",
+          "resolved_scope",
+          "repo"
+        ],
+        "title": "CiHostingRepoReading",
+        "type": "object"
+      },
+      "CiHostingView": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "domain": {
+            "default": "github_hosted_ci",
+            "title": "Domain",
+            "type": "string"
+          },
+          "repos": {
+            "items": {
+              "$ref": "#/components/schemas/CiHostingRepoReading"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "tenant_default": {
+            "$ref": "#/components/schemas/CiHostingReading"
+          }
+        },
+        "required": [
+          "tenant_default",
+          "can_edit"
+        ],
+        "title": "CiHostingView",
+        "type": "object"
+      },
       "CiNodeConfig": {
         "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
@@ -89006,6 +89121,63 @@
           }
         },
         "summary": "Get Coord Alerts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/ci-hosting": {
+      "get": {
+        "description": "Read the tenant's resolved GitHub-hosted CI setting, per repo.\n\n``can_edit`` follows :func:`get_fleet_policy` exactly \u2014 the operator's\nroles in the EFFECTIVE tenant plus the superuser bypass \u2014 because the\nwrites this panel makes go through ``PUT /fleet-policy``, which is gated on\n``require_coord_tenant_admin``.",
+        "operationId": "api_v1_operations_ci_hosting_get",
+        "parameters": [
+          {
+            "description": "Resolve only this repo (owner/name).",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resolve only this repo (owner/name).",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiHostingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Ci Hosting",
         "tags": [
           "operations"
         ]

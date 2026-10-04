@@ -120,6 +120,12 @@ export const AUDIT_FILTERS: readonly AuditFilter[] = [
     hint: "Escalate-path blocks an agent cleared on evidence (via: agent_evidence) — the feed the notify-not-ask rule depends on. Nothing here waited for approval.",
   },
   {
+    id: "policy",
+    label: "Policy changes",
+    action: "fleet_policy.*",
+    hint: "Fleet-policy writes — GitHub-hosted CI, plan capture and every other dial — with the domain, scope and level each one set.",
+  },
+  {
     id: "all",
     label: "All actions",
     action: null,
@@ -221,6 +227,14 @@ const BLAST_RADIUS_KEYS: readonly {
     label: "Cleared via",
     format: (v) => (v === "agent_evidence" || v === "service" ? v : null),
   },
+  // A `fleet_policy.upsert` row (plan
+  // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6) carries
+  // `{domain, scope_band, scope_key, level, master_enabled, version}`. The
+  // setting, the repo it was scoped to (absent for a tenant-band write) and
+  // the level are what an operator scans for.
+  { key: "domain", label: "Policy", format: (v) => String(v) },
+  { key: "scope_key", label: "Applies to", format: (v) => String(v) },
+  { key: "level", label: "Level", format: (v) => String(v) },
   { key: "version", label: "Policy version", format: (v) => String(v) },
 ];
 
@@ -343,6 +357,10 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   "pr_merge.escalate_override": "Cleared an escalate-path block",
   "operator.disable": "Disabled an operator",
   "operator.enable": "Re-enabled an operator",
+  // Every `PUT /coord/fleet-policy`, for any domain (plan
+  // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6).
+  // `metadata.domain` / `scope_key` / `level` say which setting and how.
+  "fleet_policy.upsert": "Changed a fleet policy",
 };
 
 export function describeAuditAction(action: string): AuditActionLabel {
