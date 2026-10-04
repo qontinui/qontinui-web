@@ -93,6 +93,8 @@ import {
   deriveGateStatus,
   GATE_STATUS_PALETTE,
   isSweepOverdue,
+  isTerminalGateVerdict,
+  snoozeState,
 } from "../gateStatus";
 import {
   CONTINUATION_STATUS_PALETTE,
@@ -153,6 +155,44 @@ function formatEta(g: GateOverviewRow): string {
 // `withdrawn` was destructive red (a registrant cancelling its own request
 // costs nobody anything), and `stale` was a red ornament beside a calm badge
 // rather than part of the verdict.
+
+/**
+ * The row's snooze badge, read through the same `snoozeState` the sweep-overdue
+ * predicate uses. An ended (or unreadable) snooze is no longer a pause, so it
+ * must not read "snoozed" beside a "not re-evaluated" verdict. Its own chip is
+ * shown only where coord's sweep actually selects the row — open and unmuted —
+ * so its tooltip's claim holds; on a terminal or muted row it would be noise.
+ */
+function SnoozeBadge({ gate }: { gate: GateOverviewRow }) {
+  const until = gate.snoozed_until ?? null;
+  const state = snoozeState(until);
+  if (state === "none") return null;
+  if (state === "active")
+    return (
+      <Badge
+        variant="outline"
+        title={`until ${formatAbsolute(until)}`}
+        data-testid="gates-snoozed"
+      >
+        snoozed
+      </Badge>
+    );
+  if (gate.muted || isTerminalGateVerdict(gate.verdict)) return null;
+  return (
+    <Badge
+      variant="outline"
+      className="text-muted-foreground"
+      title={
+        state === "ended"
+          ? `snooze ended ${formatAbsolute(until)} — no longer a pause; coord's sweep evaluates this gate again`
+          : `snooze timestamp "${until}" could not be read — not treated as a pause`
+      }
+      data-testid="gates-snooze-inactive"
+    >
+      {state === "ended" ? "snooze ended" : "snooze ?"}
+    </Badge>
+  );
+}
 
 function progressVariant(
   g: GateOverviewRow
@@ -937,14 +977,7 @@ export function GatesTable({
                             </Badge>
                           )}
                           {g.muted && <Badge variant="secondary">muted</Badge>}
-                          {g.snoozed_until && (
-                            <Badge
-                              variant="outline"
-                              title={`until ${formatAbsolute(g.snoozed_until)}`}
-                            >
-                              snoozed
-                            </Badge>
-                          )}
+                          <SnoozeBadge gate={g} />
                           {/* Gate-class chip — registrant self-classification
                               (free vocabulary; NULL/absent = unclassified → no
                               chip, identical to today). */}
