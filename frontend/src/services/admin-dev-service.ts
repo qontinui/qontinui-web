@@ -108,6 +108,13 @@ export interface GateOverviewRow {
   created_at: string;
   evaluated_at: string | null;
   cleared_at: string | null;
+  /**
+   * When coord's `retention_worker` soft-archived this gate (ISO-8601); null =
+   * live. Only an `include_archived=true` page can carry a non-null value —
+   * the default page excludes archived rows. OPTIONAL: a coord predating
+   * qontinui-coord#2537 omits it and the table renders no chip.
+   */
+  archived_at?: string | null;
   muted: boolean;
   snoozed_until: string | null;
   clearance_audience: string;

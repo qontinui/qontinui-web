@@ -29827,6 +29827,129 @@
         "title": "MemoryQueryResponse",
         "type": "object"
       },
+      "MemoryRecordByIdResponse": {
+        "additionalProperties": false,
+        "description": "``GET /memory/records/{id}`` \u2014 one row, in WHATEVER state it is in.\n\nThe read-back half of a write receipt (plan\n``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``\nPhase 1). Unlike the list and query surfaces it does NOT filter to live\nrows: a receipt for a row a peer superseded a minute later must read as\n``superseded``, not as a lost write.\n\n``state`` is derived from the row's own columns, in precedence order:\n\n1. ``is_tombstone`` \u2192 ``tombstoned`` (deleted). ``title`` and\n   ``content`` are withheld as ``null``; id, state and ``valid_until``\n   are still returned.\n2. a non-null ``superseded_by`` \u2192 ``superseded``.\n3. ``valid_until`` at or before the effective now \u2192 ``expired`` \u2014 the\n   validity was ended without a tombstone or a successor (decay\n   invalidate, closed-session expiry, an anchor-gone sweep). \"Now\" is\n   the SAME clock-skew-safe effective now retrieval uses\n   (``memory_store._EFFECTIVE_NOW_ROW_SQL``).\n4. otherwise \u2192 ``live``: retrievable now on the validity axis. A\n   session-scoped row whose ``valid_until`` is still in the future is\n   ``live`` until that instant passes.\n\n``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a\nmulti-bound device can be read as \"the wrong tenant was minted\" rather\nthan \"the write was lost\".",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "state": {
+            "enum": [
+              "live",
+              "superseded",
+              "tombstoned",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "required": [
+          "memory_id",
+          "tenant_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "scope_ref",
+          "importance",
+          "created_at",
+          "state",
+          "superseded_by",
+          "valid_until"
+        ],
+        "title": "MemoryRecordByIdResponse",
+        "type": "object"
+      },
       "MemoryRecordIn": {
         "additionalProperties": false,
         "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.\n\n``anchors`` names the ground truth this record asserts something\nabout. A record with a non-empty array is decay-EXEMPT: its\nvisibility is governed by the watcher's ``anchor_state`` rather than\nby the Ebbinghaus curve. Re-writing an identical record with a new\nanchor MERGES the anchor onto the existing live row (see\n``memory_store.insert_record``'s ON CONFLICT clause), which is the\nonly supported way to anchor an existing record.\n\n**Unknown keys are REJECTED (422), not ignored** \u2014 the same rule\n:class:`MemoryQueryRequest` carries. The measured occurrence was a\n``supersedes`` key written INSIDE a record (the real door is\n``POST /records/{id}/supersede``): pydantic's default dropped it and\nthe write \"succeeded\" while dropping the field that was its whole point.",
@@ -35427,6 +35550,17 @@
             ],
             "title": "Authored At"
           },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
           "coord": {
             "$ref": "#/components/schemas/CandidateCoordLink"
           },
@@ -35582,6 +35716,16 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusCurrency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -35614,7 +35758,9 @@
           "created_at",
           "last_touched",
           "age_days",
-          "coord"
+          "coord",
+          "content_sha256",
+          "status_currency"
         ],
         "title": "PlanCandidate",
         "type": "object"
@@ -48761,6 +48907,75 @@
         "title": "StateUpdateRequest",
         "type": "object"
       },
+      "StatusCurrency": {
+        "description": "How current a row's ``status`` can be taken to be \u2014 with its evidence.\n\n``as_of`` is the newest ``received_at`` among the readings that produced\nTHIS verdict \u2014 the in-step readings for ``fed_in_step`` (a floor reading\nbeside them does not move it), the floor readings for ``fed_stale_ref``;\nthe row's ``updated_at`` for ``asserted_once``; null for\n``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the\nfreshest-ref reading among the same set, null otherwise. ``behind`` is\ndeliberately NOT carried: it is not a property of the body.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "state": {
+            "enum": [
+              "fed_in_step",
+              "fed_stale_ref",
+              "unfed_key",
+              "asserted_once",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "as_of",
+          "ref_sha",
+          "ref_age_secs",
+          "detail"
+        ],
+        "title": "StatusCurrency",
+        "type": "object"
+      },
       "StepExecutionConfig": {
         "additionalProperties": true,
         "description": "Step configuration captured for AI visibility.",
@@ -58567,6 +58782,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -58614,6 +58832,7 @@
           "current_version",
           "created_at",
           "updated_at",
+          "status_currency",
           "body",
           "versions",
           "edges"
@@ -59077,6 +59296,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -59116,7 +59338,8 @@
           "captured_by",
           "current_version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "status_currency"
         ],
         "title": "WorkArtifactSummary",
         "type": "object"
@@ -85266,6 +85489,56 @@
           }
         ],
         "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      },
+      "get": {
+        "description": "One record by id, tenant-scoped, in WHATEVER state it is in.\n\nThe read-back half of a write receipt: a caller holding a ``memory_id``\nfrom ``POST /records`` (or coord's ``coord_memory_record``) resolves it\nhere deterministically, without FTS and without the list surface's\nlive-only, time-windowed filter. Superseded and tombstoned rows are\nreturned, with ``state`` derived from the row's own columns \u2014 see\n:class:`MemoryRecordByIdResponse` for the precedence. A tombstoned\nrow's ``title`` and ``content`` are withheld (``null``).\n\n404 when the id does not exist OR belongs to another tenant \u2014 the two\nare deliberately indistinguishable. Read-only: does not bump\n``access_count``.",
+        "operationId": "api_v1_memory_records_memory_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecordByIdResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Record By Id",
         "tags": [
           "memory"
         ]
