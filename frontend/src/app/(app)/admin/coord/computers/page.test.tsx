@@ -18,6 +18,9 @@
  * 6. **A failed refresh keeps the rows, says so, and lets them go stale**:
  *    after 900 s with no good read, a computer coord last called fresh reads
  *    STALE by itself.
+ * 7. **Each list row's GPUs render in its expanded capacity block** — model
+ *    and VRAM per GPU, `none` for a measured `[]` — and only one row's block
+ *    is open at a time.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -249,6 +252,70 @@ describe("/admin/coord/computers", () => {
     expect(
       screen.getByTestId("coord-computers-ambiguous-badge").textContent
     ).toBe("ambiguous CI runners –");
+  });
+});
+
+describe("/admin/coord/computers — the gpus capacity per row", () => {
+  it("renders each row's GPUs, in the expanded row's capacity block", async () => {
+    httpGet.mockResolvedValue(
+      listFx([
+        computerFx({
+          hostname: "merytshost",
+          capacity: {
+            cpu_cores: 48,
+            memory_total_bytes: 64 * 1024 ** 3,
+            swap_total_bytes: 8 * 1024 ** 3,
+            disk_total_bytes: 1024 ** 4,
+            gpus: [
+              {
+                vendor: "nvidia",
+                model: "NVIDIA GeForce RTX 4090",
+                vram_bytes: 24 * 1024 ** 3,
+                driver: "550.120",
+                compute_capability: "8.9",
+              },
+            ],
+          },
+        }),
+        computerFx({
+          computer_id: OTHER_COMPUTER_ID,
+          hostname: "msi-wsl",
+          capacity: {
+            cpu_cores: 16,
+            memory_total_bytes: 32 * 1024 ** 3,
+            swap_total_bytes: 0,
+            disk_total_bytes: 1024 ** 4,
+            gpus: [],
+          },
+        }),
+      ])
+    );
+    render(<CoordComputersPage />);
+    const rows = await screen.findAllByTestId("coord-computer-row");
+    expect(rows).toHaveLength(2);
+    // Collapsed rows render no detail, so no GPU is shown before a click.
+    expect(screen.queryByTestId("coord-computer-capacity")).toBeNull();
+
+    fireEvent.click(within(rows[0]).getByRole("button", { expanded: false }));
+    const gpuCap = await screen.findByTestId("coord-computer-capacity");
+    expect(within(gpuCap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpuNVIDIA GeForce RTX 4090 · 24.0 GB"
+    );
+    expect(
+      screen.getByTestId("coord-computer-gpus-note").textContent
+    ).toContain("another vendor's GPU may be present and unlisted");
+
+    fireEvent.click(within(rows[1]).getByRole("button", { expanded: false }));
+    // One row expands at a time: the second row's capacity replaces the first.
+    const caps = screen.getAllByTestId("coord-computer-capacity");
+    expect(caps).toHaveLength(1);
+    expect(within(caps[0]).getByTestId("coord-computer-gpus").textContent).toBe(
+      "gpusnone"
+    );
+    expect(within(caps[0]).queryByTestId("coord-computer-gpu-0")).toBeNull();
+    expect(screen.getByTestId("coord-computer-gpus-note").textContent).toBe(
+      "GPUs: measured none."
+    );
   });
 });
 
