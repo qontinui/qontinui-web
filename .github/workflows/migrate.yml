@@ -192,7 +192,7 @@ jobs:
               parsed = G.parse_source(src)
               if not parsed:
                   return None, []
-              return parsed[0], G.PARENT_REF_RE.findall(parsed[1])
+              return parsed[0], G.parent_refs(parsed[1])
 
 
           def block_after(src, header_regex):

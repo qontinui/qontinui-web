@@ -502,3 +502,104 @@ describe("a superseded read may not speak", () => {
     expect(screen.getByTestId("coord-candidates-empty")).toBeInTheDocument();
   });
 });
+
+describe("a candidate row states the currency of its own status", () => {
+  it("renders the served state, with its detail as the tooltip", async () => {
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({
+            content_sha256: "ab".repeat(32),
+            status_currency: {
+              state: "fed_stale_ref",
+              as_of: "2026-09-20T09:00:00Z",
+              ref_sha: "c0ffee",
+              ref_age_secs: 40000,
+              detail: "every fresh reading is a floor",
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const badge = await screen.findByTestId("coord-candidate-currency");
+    expect(badge).toHaveAttribute("data-state", "fed_stale_ref");
+    expect(badge).toHaveTextContent("Fed, stale ref");
+    expect(badge).toHaveAttribute("title", "every fresh reading is a floor");
+  });
+
+  it("tallies the page's currencies in the disclosure, with the breakdown", async () => {
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({ slug: "a" }),
+          candidate({
+            slug: "b",
+            status_currency: {
+              state: "unfed_key",
+              as_of: null,
+              ref_sha: null,
+              ref_age_secs: null,
+              detail: null,
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    expect(
+      await screen.findByTestId("coord-candidates-disclosure-status-currency")
+    ).toHaveTextContent(/2 of the 2 rows on this page/);
+    const items = screen.getByTestId(
+      "coord-candidates-disclosure-status-currency-items"
+    );
+    expect(items).toHaveTextContent("Unfed key: 1");
+    expect(items).toHaveTextContent("Currency unknown: 1");
+  });
+
+  it("renders an UNSERVED currency as unknown, never as nothing", async () => {
+    get.mockResolvedValue(response());
+    render(<CoordPlanCandidatesPage />);
+
+    const badge = await screen.findByTestId("coord-candidate-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveAttribute(
+      "title",
+      "status currency not served by this backend"
+    );
+  });
+
+  it("renders no badge on a work-unit-only row, whose null is explained by doc:", async () => {
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({
+            id: null,
+            document_state: "unsynced",
+            status_currency: null,
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    await screen.findByTestId("coord-candidate-row");
+    expect(screen.queryByTestId("coord-candidate-currency")).toBeNull();
+    expect(
+      screen.getByTestId("coord-candidate-document-state")
+    ).toHaveAttribute("data-document-state", "unsynced");
+  });
+
+  it("renders UNKNOWN when a present row's currency is null — a contract break, not fine", async () => {
+    get.mockResolvedValue(
+      response({ items: [candidate({ status_currency: null })] })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const badge = await screen.findByTestId("coord-candidate-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge.getAttribute("title")).toContain("broke its own contract");
+  });
+});
