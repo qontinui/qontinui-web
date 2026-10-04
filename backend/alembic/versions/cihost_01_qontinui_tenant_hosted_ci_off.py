@@ -15,13 +15,13 @@ new fleet-policy domain ``github_hosted_ci`` needs no DDL because
 ``coord.fleet_runtime_policy.domain`` and ``.level`` are plain TEXT with no
 CHECK (``fleet_policy_01``) — declaring a domain is a code-only change on the
 coord side. What a domain cannot get from code is a tenant's *choice*, and the
-operator directive of 2026-10-04 (coord memory ``ed245b84``) states Qontinui's
-own: GitHub-hosted Actions CI is OFF permanently for the Qontinui tenant.
+operator directive of 2026-10-04 (coord memory ``ed245b84``, verified by a
+coord memory search 2026-10-04) states Qontinui's own: GitHub-hosted Actions CI is OFF permanently for the Qontinui tenant.
 
 So this writes exactly one tenant-band row,
 
 ```text
-tenant_id      c231d9da-0ca8-4fe4-bd81-0e3d6c20339a   (slug ``qontinui``)
+tenant_id      c231d9da-0ca8-4fe4-bd81-0e3d6c20339a   (slug ``qontinui``; verified 2026-10-04 via coord_query_identity)
 domain         github_hosted_ci
 scope_band     tenant
 scope_key      NULL
@@ -77,13 +77,21 @@ Deletes exactly what the upgrade wrote, and only while it is still in the state
 the upgrade left it: the qontinui tenant-band ``github_hosted_ci`` row whose
 ``updated_by`` is ``migration:cihost_01`` AND whose ``current_version`` is
 still 1. Once an operator has edited the dial (version 2+, ``updated_by`` an
-operator), the row is theirs and the downgrade leaves it. The snapshot(s) are
-deleted explicitly first, although the versions FK is ``ON DELETE CASCADE``
-(``fleet_res_tel_02``), so the downgrade does not depend on the cascade.
+operator), the row is theirs and the downgrade leaves it.
 
-Merge-train note: coord's migration classifier rejects any INSERT/DELETE in a
-migration, so this PR parks on ``escalate-path-matched`` and is cleared by
-``coord_submit_escalate_evidence`` (plan Phase 1).
+The versions table is append-only ("never UPDATE or DELETE a row here"), and
+this downgrade deletes from it anyway. That rule governs history of a row that
+continues to exist; here the parent row itself is being removed, and its
+history goes with it — the versions FK is ``ON DELETE CASCADE``
+(``fleet_res_tel_02``), so the parent DELETE would remove the snapshot
+regardless. The snapshot DELETE is written out first so the downgrade states
+what it removes rather than depending on the cascade.
+
+Merge-train note: coord's migration classifier (``migration_classifier.rs``)
+rejects this revision — the downgrade's DELETEs as DML, and the upgrade (a
+statement beginning ``WITH … INSERT``) through its fail-closed
+unrecognized-statement arm — so the PR parks on ``escalate-path-matched`` and is
+cleared by ``coord_submit_escalate_evidence`` (plan Phase 1).
 """
 
 from collections.abc import Sequence
