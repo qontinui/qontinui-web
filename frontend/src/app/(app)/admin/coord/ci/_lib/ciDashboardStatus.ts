@@ -68,26 +68,46 @@ import type { RepoCiRow } from "@/components/operations/types";
 // Wire — coord `GET /coord/ci/overview`, field for field (plan Phase 2)
 // ---------------------------------------------------------------------------
 
-/** D4's four states. Anything else this build does not know is `unknown`. */
+/**
+ * D4's four states. Anything else this build does not know is `unknown`.
+ * `never_observed` is a REPO-outcome state only: coord reads a pool the
+ * queue watcher has not visited yet as `unknown`, never `never_observed`.
+ */
 export type ObservationState =
   | "measured"
   | "stale"
   | "never_observed"
   | "unknown";
 
+/** The states coord serves on a pool row (no `never_observed`). */
+export type PoolObservationState = Exclude<ObservationState, "never_observed">;
+
 export type EligibilityState = "eligible" | "no_eligible_runner" | "unknown";
 
+/**
+ * One open `coord.alerts` row on a `(repo, pool)`. `alert_id` is coord's
+ * bigint id rendered as a STRING (not a uuid). `opened_at` is FIRE time and
+ * `summary` carries the fire-time numbers: an alert stays open (and its
+ * numbers stay as fired) while the pool's current reading may be anything,
+ * so neither is ever presented as the pool's current state.
+ */
 export interface CiPoolAlertWire {
   alert_id: string;
   kind: string;
   opened_at: string;
+  /** When coord last re-confirmed the condition. */
+  last_seen_at: string | null;
+  occurrences: number | null;
+  /** Coord's note on how the alert relates to the pool's state NOW. */
+  current_state_note: string | null;
   summary: string;
 }
 
 export interface CiPoolWire {
   repo: string;
   pool: string;
-  state: ObservationState | string;
+  /** `measured` / `stale` / `unknown` (an unvisited pool reads `unknown`). */
+  state: PoolObservationState | string;
   state_reason: string | null;
   observed_at: string | null;
   stale_after_secs: number | null;
@@ -241,6 +261,7 @@ export function cell(
 
 export type PoolKind =
   | "queue_stalled"
+  | "alert_unconfirmed"
   | "no_eligible_runner"
   | "no_runner_required_unknown"
   | "queue_over_bound"
@@ -257,8 +278,16 @@ export type PoolKind =
  * The audit, one line per kind:
  *
  * - `queue_stalled` — AUTHOR. Coord raised `ci_job_queue_stalled` for this
- *   `(repo, pool)`: jobs have waited past the bound and nothing is taking
- *   them. The 130-jobs-vs-2-runners and hours-queued incidents.
+ *   `(repo, pool)` AND the pool currently reads `measured`: jobs have waited
+ *   past the bound and nothing is taking them. The 130-jobs-vs-2-runners and
+ *   hours-queued incidents.
+ * - `alert_unconfirmed` — WAITING (ignorance floor). An alert is open, but
+ *   the pool does not currently read `measured`, so nothing confirms the
+ *   alert's fire-time numbers still hold. Live on 2026-10-04 coord kept
+ *   day-old `ci_pool_no_eligible_runner` / `ci_job_queue_stalled` rows open
+ *   on pools reading `unknown`; painting those "Stuck" would let an UNKNOWN
+ *   input fire a detector (`[policy: an-unknown-input-must-not-fire-a-detector]`).
+ *   The row shows the alert's age and coord's `current_state_note` instead.
  * - `no_eligible_runner` — AUTHOR. A pool on a REQUIRED path has no runner
  *   that can take its jobs; every PR waiting on it waits forever.
  * - `no_runner_required_unknown` — WAITING (ignorance floor). No eligible
@@ -282,6 +311,7 @@ export type PoolKind =
  */
 export const CI_POOL_ATTENTION_BY_KIND = {
   queue_stalled: "author",
+  alert_unconfirmed: "waiting",
   no_eligible_runner: "author",
   no_runner_required_unknown: "waiting",
   queue_over_bound: "waiting",
@@ -299,6 +329,7 @@ const CLEAR_GREEN = "bg-green-500/15 text-green-200 border-green-500/30";
 
 export const CI_POOL_BADGE_CLASS: Record<PoolKind, string> = {
   queue_stalled: AUTHOR_RED,
+  alert_unconfirmed: UNKNOWN_AMBER,
   no_eligible_runner: AUTHOR_RED,
   no_runner_required_unknown: UNKNOWN_AMBER,
   queue_over_bound: WAITING_AMBER,
@@ -344,6 +375,26 @@ function queueSummary(row: CiPoolWire): string {
   return parts.join(", ");
 }
 
+/**
+ * An open alert's provenance in words: what it said when it fired, when it
+ * fired, when coord last re-confirmed it, and coord's note on now. Never the
+ * pool's current state — that is the row's `state`.
+ */
+export function alertAgeText(a: CiPoolAlertWire): string {
+  const parts = [
+    `${a.kind}${a.summary ? ` ("${a.summary}")` : ""}`,
+    `fired ${a.opened_at}`,
+    a.last_seen_at
+      ? `last re-confirmed ${a.last_seen_at}`
+      : "never re-confirmed",
+  ];
+  if (a.occurrences !== null && a.occurrences !== undefined) {
+    parts.push(`${a.occurrences} occurrence${a.occurrences === 1 ? "" : "s"}`);
+  }
+  if (a.current_state_note) parts.push(a.current_state_note);
+  return parts.join(", ");
+}
+
 /** One `(repo, pool)` row's verdict. */
 export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
   const make = (
@@ -356,8 +407,20 @@ export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
     reason,
     attention: CI_POOL_ATTENTION_BY_KIND[kind],
   });
-  // An open stall alert is coord's own measured claim, and stays true however
-  // the latest poll went — so it outranks freshness.
+  const state = normalizeState(row.state);
+  // An open alert keeps its FIRE-time numbers however the pool reads now, so
+  // it may drive red only when the pool is currently measured. On any other
+  // state it is reported with its age and coord's note — never "Stuck".
+  const alerts = row.open_alerts ?? [];
+  const firstAlert = alerts[0];
+  if (state !== "measured" && firstAlert) {
+    const more = alerts.length > 1 ? ` (+${alerts.length - 1} more open)` : "";
+    return make(
+      "alert_unconfirmed",
+      "alert · pool unknown",
+      `${alertAgeText(firstAlert)}${more}; the pool reads ${state} now (${stateReason(state, row.state_reason)}), so the alert's numbers are not current`
+    );
+  }
   const stall = stalledAlert(row);
   if (stall) {
     return make(
@@ -366,7 +429,6 @@ export function poolRowStatus(row: CiPoolWire): RowStatus<PoolKind> {
       stall.summary || "coord raised a queue-stall alert for this pool"
     );
   }
-  const state = normalizeState(row.state);
   if (state !== "measured") {
     const label = state === "never_observed" ? "never observed" : state;
     return make(state, label, stateReason(state, row.state_reason));
@@ -1066,7 +1128,7 @@ export function deriveCiHealth(
         "not measured",
         nonMeasured.length,
         "muted",
-        "Pool rows whose state is stale, never observed, or unknown — their figures render –, never 0."
+        "Pool rows whose state is stale or unknown — their figures render –, never 0."
       )
     );
   }
@@ -1174,10 +1236,18 @@ export function deriveCiHealth(
   if (first) {
     const poolsAffected = new Set(nonMeasured.map((p) => p.pool)).size;
     const reason = stateReason(normalizeState(first.state), first.state_reason);
+    // Open alerts on these pools are reported, with their age, as what they
+    // are — fire-time claims nothing currently confirms — never as "Stuck".
+    const unconfirmed = nonMeasured.flatMap((p) =>
+      (p.open_alerts ?? []).map(
+        (a) =>
+          `Open alert on ${p.repo} ${poolLabel(p.pool)}, not confirmed by a current reading: ${alertAgeText(a)}.`
+      )
+    );
     return {
       level: "unknown",
       headline: `CI capacity UNKNOWN for ${poolsAffected} pool${poolsAffected === 1 ? "" : "s"} — ${reason}`,
-      detail: qualifiers || null,
+      detail: [...unconfirmed, qualifiers].filter(Boolean).join(" ") || null,
       badges,
       pools,
     };

@@ -240,6 +240,47 @@ describe("/admin/coord/ci", () => {
     expect(within(members).getByTestId(`ci-pool-member-${CCFG}`)).toBeTruthy();
   });
 
+  it("an open alert on an unknown pool is amber with its age, never 'Stuck'", async () => {
+    route(
+      overviewBody([
+        {
+          ...UNKNOWN_POOL,
+          open_alerts: [
+            {
+              alert_id: "918273",
+              kind: "ci_job_queue_stalled",
+              opened_at: "2026-10-03T09:00:00Z",
+              last_seen_at: "2026-10-03T11:30:00Z",
+              occurrences: 4,
+              current_state_note: "pool not measured since the alert fired",
+              summary: "14 queued, oldest 3h12m",
+            },
+          ],
+        },
+      ])
+    );
+    render(<CoordCiPage />);
+    const row = await screen.findByTestId(
+      "ci-pool-row-qontinui-ccfg,self-hosted"
+    );
+    expect(
+      within(row).getByTestId("ci-pool-status").getAttribute("data-status")
+    ).toBe("alert_unconfirmed");
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "unknown"
+    );
+    expect(screen.getByTestId("ci-health-strip").textContent).not.toContain(
+      "Stuck"
+    );
+    fireEvent.click(within(row).getAllByRole("button")[0]!);
+    const alert = await screen.findByTestId("ci-pool-alert-918273");
+    expect(alert.textContent).toContain("at fire time: 14 queued");
+    expect(alert.textContent).toContain(
+      "pool not measured since the alert fired"
+    );
+    expect(screen.getByTestId("ci-freshness-alert-918273")).toBeTruthy();
+  });
+
   it("links the machine axis to the Dev Ops overview", async () => {
     route(overviewBody([measuredPool()]));
     render(<CoordCiPage />);

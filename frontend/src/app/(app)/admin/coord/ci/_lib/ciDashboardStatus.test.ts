@@ -33,6 +33,7 @@ import {
   repoRowStatus,
   stripLevel,
   type CiOverviewWire,
+  type CiPoolAlertWire,
   type CiPoolWire,
   type CiRepoOverviewWire,
   type CiStatusRead,
@@ -162,6 +163,25 @@ const ECON: EconomicsRead = {
 };
 
 const NON_MEASURED: ObservationState[] = ["stale", "never_observed", "unknown"];
+/** Coord never serves `never_observed` on a POOL row (an unvisited pool reads `unknown`). */
+const POOL_NON_MEASURED: ObservationState[] = ["stale", "unknown"];
+
+/** An open alert as coord's build serves it: bigint id as a string, fire-time numbers. */
+function alertFx(
+  kind: string,
+  over: Partial<CiPoolAlertWire> = {}
+): CiPoolAlertWire {
+  return {
+    alert_id: "918273",
+    kind,
+    opened_at: "2026-10-03T09:00:00Z",
+    last_seen_at: "2026-10-03T11:30:00Z",
+    occurrences: 4,
+    current_state_note: "pool has not been measured since the alert fired",
+    summary: "0 eligible runners, 14 queued, oldest 3h12m",
+    ...over,
+  };
+}
 
 describe("cell — a number only on a measured row", () => {
   it.each(NON_MEASURED)(
@@ -198,7 +218,7 @@ describe("cell — a number only on a measured row", () => {
 });
 
 describe("pool cells", () => {
-  it.each(NON_MEASURED)(
+  it.each(POOL_NON_MEASURED)(
     "every figure of a %s pool is – with a reason",
     (state) => {
       const cells = poolMemberCells(
@@ -278,22 +298,38 @@ describe("poolRowStatus — colour means who must act", () => {
     expect(s.attention).toBe("author");
   });
 
-  it("an open ci_job_queue_stalled alert is red, even on an unknown row", () => {
+  it("an open ci_job_queue_stalled alert on a MEASURED pool is red", () => {
     const s = poolRowStatus(
-      unmeasuredPool("unknown", {
-        open_alerts: [
-          {
-            alert_id: "x",
-            kind: "ci_job_queue_stalled",
-            opened_at: AS_OF,
-            summary: "14 queued",
-          },
-        ],
-      })
+      pool({ open_alerts: [alertFx("ci_job_queue_stalled")] })
     );
     expect(s.kind).toBe("queue_stalled");
     expect(s.attention).toBe("author");
   });
+
+  it.each(POOL_NON_MEASURED)(
+    "an open alert on a %s pool is AMBER with its age and note, never queue_stalled",
+    (state) => {
+      for (const kind of [
+        "ci_job_queue_stalled",
+        "ci_pool_no_eligible_runner",
+      ]) {
+        const s = poolRowStatus(
+          unmeasuredPool(state, {
+            state_reason: "queue watcher has not visited this pool",
+            open_alerts: [alertFx(kind)],
+          })
+        );
+        expect(s.kind).toBe("alert_unconfirmed");
+        expect(s.attention).toBe("waiting");
+        expect(s.reason).toContain("fired 2026-10-03T09:00:00Z");
+        expect(s.reason).toContain("last re-confirmed 2026-10-03T11:30:00Z");
+        expect(s.reason).toContain(
+          "pool has not been measured since the alert fired"
+        );
+        expect(s.reason).toContain(`reads ${state} now`);
+      }
+    }
+  );
 
   it("no eligible runner with required UNKNOWN is amber, not red", () => {
     const s = poolRowStatus(
@@ -309,12 +345,15 @@ describe("poolRowStatus — colour means who must act", () => {
     expect(s.attention).toBe("none");
   });
 
-  it.each(NON_MEASURED)("a %s pool is amber (the ignorance floor)", (state) => {
-    const s = poolRowStatus(unmeasuredPool(state));
-    expect(s.kind).toBe(state);
-    expect(s.attention).toBe("waiting");
-    expect(s.reason).toBeTruthy();
-  });
+  it.each(POOL_NON_MEASURED)(
+    "a %s pool is amber (the ignorance floor)",
+    (state) => {
+      const s = poolRowStatus(unmeasuredPool(state));
+      expect(s.kind).toBe(state);
+      expect(s.attention).toBe("waiting");
+      expect(s.reason).toBeTruthy();
+    }
+  );
 
   it("an unrecognised wire state is treated as unknown", () => {
     expect(poolRowStatus(pool({ state: "half-measured" })).kind).toBe(
@@ -429,7 +468,7 @@ describe("deriveCiHealth — green is unreachable on ignorance", () => {
     expect(stripLevel(h.level)).toBe("green");
   });
 
-  it.each(NON_MEASURED)(
+  it.each(POOL_NON_MEASURED)(
     "a %s pool makes the strip UNKNOWN, never green",
     (state) => {
       const h = deriveCiHealth(
@@ -561,6 +600,68 @@ describe("deriveCiHealth — green is unreachable on ignorance", () => {
     expect(h.level).toBe("amber");
     expect(h.headline).toMatch(/^Waiting:/);
   });
+});
+
+describe("deriveCiHealth — an open alert drives red only on a measured pool", () => {
+  const CCFG_POOL = "qontinui-ccfg,self-hosted";
+
+  it("a stall alert on a measured pool is RED and named 'Stuck'", () => {
+    const h = deriveCiHealth(
+      read(
+        overview({
+          pools: [
+            pool({
+              pool: CCFG_POOL,
+              queued_jobs: 14,
+              oldest_queued_age_secs: 11520,
+              open_alerts: [alertFx("ci_job_queue_stalled")],
+            }),
+          ],
+        })
+      ),
+      status(),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toMatch(/^Stuck: \[qontinui-ccfg, self-hosted\]/);
+  });
+
+  it.each(POOL_NON_MEASURED)(
+    "open alerts on a %s pool render UNKNOWN with their age — never red, never 'Stuck'",
+    (state) => {
+      // The Phase 0 census shape: coord keeps day-old fire-time alerts open
+      // while the pool reads unknown now.
+      const h = deriveCiHealth(
+        read(
+          overview({
+            pools: [
+              unmeasuredPool(state, {
+                pool: CCFG_POOL,
+                required: true,
+                state_reason: "queue watcher has not visited this pool",
+                open_alerts: [
+                  alertFx("ci_pool_no_eligible_runner"),
+                  alertFx("ci_job_queue_stalled", { alert_id: "918274" }),
+                ],
+              }),
+            ],
+          })
+        ),
+        status(),
+        NOW
+      );
+      expect(h.level).toBe("unknown");
+      expect(stripLevel(h.level)).toBe("amber");
+      expect(h.headline).not.toMatch(/Stuck/);
+      expect(h.headline).toMatch(/UNKNOWN/);
+      expect(h.detail).toContain("fired 2026-10-03T09:00:00Z");
+      expect(h.detail).toContain("last re-confirmed 2026-10-03T11:30:00Z");
+      expect(h.detail).toContain(
+        "pool has not been measured since the alert fired"
+      );
+      expect(h.badges.find((b) => b.key === "stuck")).toBeUndefined();
+    }
+  );
 });
 
 describe("the 2026-10-04T12:08Z capture — UNKNOWN capacity, not '0 runners'", () => {
