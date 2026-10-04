@@ -413,6 +413,18 @@ def test_key_checks_and_nulls_behave() -> None:
                 f"{prefix}_eligibility_state_check",
                 {"pool": "bad-state", "eligibility_state": "healthy"},
             ),
+            (
+                f"{prefix}_queue_half_coherent_check",
+                {"pool": "half-queue", "poll_ok": None},
+            ),
+            (
+                f"{prefix}_queue_half_coherent_check",
+                {"pool": "half-queue-time", "observed_at": None},
+            ),
+            (
+                f"{prefix}_failed_poll_null_counts_check",
+                {"pool": "failed-zero", "poll_ok": False, "queued_jobs": 0},
+            ),
         ):
             _assert_rejected_by(engine, expected, **bad)
 

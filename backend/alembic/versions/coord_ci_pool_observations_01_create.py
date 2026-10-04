@@ -43,13 +43,23 @@ never zero.
   skips the lowercasing fail loudly. The reader joins ``coord.tenant_repos``
   case-insensitively, because that table has no such CHECK.
 * ``pool`` TEXT NOT NULL, the pool key as rendered by coord's ``pool_key``
-  (trim, lowercase, drop empty labels, dedupe, sort, comma-join). CHECK ``length(btrim(pool)) > 0``: an empty or
-  blank key would be a pool with no labels, which no job can target.
+  (trim, lowercase, drop empty labels, dedupe, sort, comma-join). CHECK
+  ``length(btrim(pool)) > 0``: an empty or blank key would be a pool with no
+  labels, which no job can target.
+
 The queue half is ``observed_at``, ``stale_after_secs``, ``poll_ok``,
 ``poll_complete`` and the four queue counts. All of it is NULLABLE, and NULL
 across the half means "the queue half was never observed": a pool first seen
 by the eligibility pass has had no queue poll, and a NOT NULL ``poll_ok`` would
-force the writer to fabricate one (D4 of the plan forbids that).
+force the writer to fabricate one. D4's ``never_observed`` / ``unknown``
+state must be representable without a fabricated poll.
+
+Two CHECKs keep the half honest. ``queue_half_coherent``: ``observed_at``,
+``stale_after_secs``, ``poll_ok`` and ``poll_complete`` are all NULL or all
+set, so a row is never half-observed. ``failed_poll_null_counts``: when
+``poll_ok`` is false, ``queued_jobs``, ``oldest_queued_age_secs`` and
+``p90_wait_secs`` are NULL, so a failed poll can never store a zero. It is
+spelled ``poll_ok IS NOT FALSE`` so an unobserved half (NULL) passes.
 
 * ``observed_at`` TIMESTAMPTZ NULL, no default: the queue tick time, set by the
   writer on every queue upsert. A default would cover INSERT only, and the
@@ -184,7 +194,22 @@ def upgrade() -> None:
             CONSTRAINT ci_pool_observations_stale_after_positive_check
                 CHECK (stale_after_secs > 0),
             CONSTRAINT ci_pool_observations_eligibility_state_check
-                CHECK (eligibility_state IN ('eligible', 'no_eligible_runner', 'unknown'))
+                CHECK (eligibility_state IN ('eligible', 'no_eligible_runner', 'unknown')),
+            CONSTRAINT ci_pool_observations_queue_half_coherent_check
+                CHECK (
+                    (observed_at IS NULL) = (poll_ok IS NULL)
+                    AND (poll_ok IS NULL) = (poll_complete IS NULL)
+                    AND (poll_ok IS NULL) = (stale_after_secs IS NULL)
+                ),
+            CONSTRAINT ci_pool_observations_failed_poll_null_counts_check
+                CHECK (
+                    poll_ok IS NOT FALSE
+                    OR (
+                        queued_jobs IS NULL
+                        AND oldest_queued_age_secs IS NULL
+                        AND p90_wait_secs IS NULL
+                    )
+                )
         )
         """
     )
@@ -220,7 +245,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_pool_observations.stale_after_secs IS
-            'Age past which this row is stale, computed by the writer from the watcher cadence and the armed repo count, so the reader never guesses it. NULL when the queue half was never observed.'
+            'Age past which the queue half is stale, computed by the writer from the watcher cadence and the armed repo count, so the reader never guesses it. NULL when the queue half was never observed.'
         """
     )
     op.execute(
