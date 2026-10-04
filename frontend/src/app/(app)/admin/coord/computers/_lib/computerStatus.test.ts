@@ -35,6 +35,9 @@ import {
   deriveComputerDetailHealth,
   deriveComputersHealth,
   emptyLanesText,
+  gpuText,
+  gpuTitle,
+  gpusNote,
   historyByLane,
   historyPoints,
   isSchemaPendingBody,
@@ -42,6 +45,7 @@ import {
   laneKey,
   normalizeComputer,
   readIssueHeadline,
+  readGpus,
   readIssueText,
   readLaneField,
   readingText,
@@ -705,5 +709,177 @@ describe("deriveComputerDetailHealth", () => {
     expect(h.headline).toBe("No such computer in this tenant");
     expect(h.level).toBe("amber");
     expect(h.badges).toEqual([]);
+  });
+});
+
+describe("readGpus — null is UNKNOWN, [] is a measured none", () => {
+  it("reads null and undefined as unknown, never none", () => {
+    expect(readGpus(null)).toEqual({ kind: "unknown" });
+    expect(readGpus(undefined)).toEqual({ kind: "unknown" });
+  });
+
+  it("reads [] as none", () => {
+    expect(readGpus([])).toEqual({ kind: "none" });
+  });
+
+  it("reads a value that is not an array as unrecognized, not as a count", () => {
+    expect(readGpus({ count: 2 })).toEqual({ kind: "unrecognized" });
+    expect(readGpus(2)).toEqual({ kind: "unrecognized" });
+    expect(readGpus("rtx")).toEqual({ kind: "unrecognized" });
+  });
+
+  it("reads each GPU's model, VRAM, driver and compute capability", () => {
+    expect(
+      readGpus([
+        {
+          vendor: "nvidia",
+          model: "Example GPU A",
+          vram_bytes: 32607 * 1024 ** 2,
+          driver: "999.10",
+          compute_capability: "12.0",
+        },
+        {
+          vendor: "nvidia",
+          model: null,
+          vram_bytes: null,
+          driver: null,
+          compute_capability: null,
+        },
+      ])
+    ).toEqual({
+      kind: "gpus",
+      gpus: [
+        {
+          vendor: "nvidia",
+          model: "Example GPU A",
+          vramBytes: 32607 * 1024 ** 2,
+          driver: "999.10",
+          computeCapability: "12.0",
+        },
+        {
+          vendor: "nvidia",
+          model: null,
+          vramBytes: null,
+          driver: null,
+          computeCapability: null,
+        },
+      ],
+    });
+  });
+
+  it("reads a list with any unreadable member as unrecognized — never a count", () => {
+    expect(readGpus(["junk", null])).toEqual({ kind: "unrecognized" });
+    expect(readGpus(["Example GPU A"])).toEqual({ kind: "unrecognized" });
+    expect(
+      readGpus([
+        { vendor: "nvidia", model: "Example GPU A" },
+        { model: "no vendor" },
+      ])
+    ).toEqual({ kind: "unrecognized" });
+    expect(readGpus([{ vendor: "", model: "x" }])).toEqual({
+      kind: "unrecognized",
+    });
+  });
+
+  it("reads a detail field that is not a string as unknown", () => {
+    const r = readGpus([
+      { vendor: "nvidia", model: 5090, driver: 999, compute_capability: 8.6 },
+    ]);
+    expect(r).toEqual({
+      kind: "gpus",
+      gpus: [
+        {
+          vendor: "nvidia",
+          model: null,
+          vramBytes: null,
+          driver: null,
+          computeCapability: null,
+        },
+      ],
+    });
+  });
+
+  it("reads a VRAM that is not a positive number as unknown", () => {
+    for (const vram_bytes of [-1, 0, "big", Number.NaN]) {
+      const r = readGpus([{ vendor: "nvidia", model: "x", vram_bytes }]);
+      expect(r.kind).toBe("gpus");
+      if (r.kind === "gpus") expect(r.gpus[0].vramBytes).toBeNull();
+    }
+  });
+
+  it("qualifies each reading in words", () => {
+    expect(gpusNote({ kind: "unknown" })).toBe(
+      "GPUs not reported — UNKNOWN, not none."
+    );
+    expect(gpusNote({ kind: "unrecognized" })).toContain("cannot read");
+    expect(gpusNote({ kind: "none" })).toBe("GPUs: measured none.");
+    const note = gpusNote({
+      kind: "gpus",
+      gpus: [
+        {
+          vendor: "nvidia",
+          model: "x",
+          vramBytes: 1,
+          driver: "999.10",
+          computeCapability: "8.6",
+        },
+      ],
+    });
+    expect(note).toContain(
+      "gpu 0 (x): vendor: nvidia · driver: 999.10 · compute capability: 8.6"
+    );
+    expect(note).toContain("another vendor's GPU may be present and unlisted");
+    // The NVIDIA-only caveat is not printed once another vendor is listed.
+    const mixed = gpusNote({
+      kind: "gpus",
+      gpus: [
+        {
+          vendor: "nvidia",
+          model: "a",
+          vramBytes: null,
+          driver: null,
+          computeCapability: null,
+        },
+        {
+          vendor: "amd",
+          model: null,
+          vramBytes: null,
+          driver: null,
+          computeCapability: null,
+        },
+      ],
+    });
+    expect(mixed).toContain("; gpu 1 (unknown model): vendor: amd");
+    expect(mixed).not.toContain("NVIDIA");
+  });
+
+  it("says model and VRAM in words, and unknown for what was not measured", () => {
+    expect(
+      gpuText({
+        vendor: "nvidia",
+        model: "Example GPU A",
+        vramBytes: 24 * 1024 ** 3,
+        driver: null,
+        computeCapability: null,
+      })
+    ).toBe("Example GPU A · 24.0 GB");
+    expect(
+      gpuText({
+        vendor: "nvidia",
+        model: null,
+        vramBytes: null,
+        driver: null,
+        computeCapability: null,
+      })
+    ).toBe("unknown model · VRAM unknown");
+    expect(
+      gpuTitle({
+        vendor: "nvidia",
+        model: "x",
+        vramBytes: 1,
+        driver: "999.10",
+        computeCapability: null,
+      })
+    ).toBe("vendor: nvidia · driver: 999.10 · compute capability: unknown");
   });
 });
