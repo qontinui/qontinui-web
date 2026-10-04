@@ -165,7 +165,9 @@ OVERVIEW_BODY = {
 
 class TestCiOverviewProxy:
     def test_ci_overview_hits_coord_overview_path(self, auth_client: TestClient):
-        resp, instance = _get(auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY))
+        resp, instance = _get(
+            auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY)
+        )
         assert resp.status_code == 200
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/ci/overview")
@@ -178,7 +180,9 @@ class TestCiOverviewProxy:
             "app.api.v1.endpoints.operations._tenant_headers",
             return_value=sentinel,
         ) as tenant_headers:
-            _, instance = _get(auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY))
+            _, instance = _get(
+                auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY)
+            )
         tenant_headers.assert_called_once()
         assert instance.get.call_args.kwargs.get("headers") == sentinel
 
@@ -186,7 +190,9 @@ class TestCiOverviewProxy:
         """Exact equality on purpose: no field is dropped, no null is
         coerced. A measured ``0`` stays ``0`` and an unknown ``null`` stays
         ``null`` — the page's whole honesty rests on telling them apart."""
-        resp, _ = _get(auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY))
+        resp, _ = _get(
+            auth_client, OVERVIEW_PATH, _mock_response(json_data=OVERVIEW_BODY)
+        )
         body = resp.json()
         assert body == OVERVIEW_BODY
         measured, unknown = body["pools"]
@@ -214,7 +220,9 @@ class TestCiOverviewProxy:
         resp, _ = _get(
             auth_client,
             OVERVIEW_PATH,
-            _mock_response(status_code=404, json_data=None, text='{"error":"NOT_FOUND"}'),
+            _mock_response(
+                status_code=404, json_data=None, text='{"error":"NOT_FOUND"}'
+            ),
         )
         assert resp.status_code == 404
 
@@ -230,7 +238,9 @@ class TestCiOverviewProxy:
 
 
 class TestCiStatusFreshness:
-    def test_ci_status_freshness_fields_survive_response_model(self, auth_client: TestClient):
+    def test_ci_status_freshness_fields_survive_response_model(
+        self, auth_client: TestClient
+    ):
         coord = {
             "as_of": "2026-10-04T12:08:00+00:00",
             "repos": [
