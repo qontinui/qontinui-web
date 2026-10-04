@@ -238,16 +238,46 @@ function PoolRow({
                 data-testid="ci-pool-alerts"
               >
                 {group.openAlerts.map((a) => (
-                  <li key={a.alert_id} className="text-xs">
+                  <li
+                    key={`${a.repo}:${a.alert_id}`}
+                    className="text-xs"
+                    data-testid={`ci-pool-alert-${a.alert_id}`}
+                  >
                     <span className="font-mono text-[11px]">{a.kind}</span>{" "}
                     <span className="text-muted-foreground">({a.repo})</span> —{" "}
-                    {a.summary}{" "}
+                    <span title="The alert's numbers as of when it FIRED — not the pool's current reading">
+                      at fire time: {a.summary}
+                    </span>{" "}
                     <span
                       className="text-muted-foreground"
                       title={absoluteTime(a.opened_at)}
                     >
-                      opened {relativeTime(a.opened_at)}
+                      fired {relativeTime(a.opened_at)}
                     </span>
+                    {" · "}
+                    <span
+                      className="text-muted-foreground"
+                      title={absoluteTime(a.last_seen_at ?? null)}
+                      data-testid={`ci-freshness-alert-${a.alert_id}`}
+                    >
+                      last re-confirmed{" "}
+                      {relativeTime(a.last_seen_at ?? null, {
+                        absent: "never",
+                      })}
+                    </span>
+                    {a.occurrences != null ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {a.occurrences} occurrence
+                        {a.occurrences === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                    {a.current_state_note ? (
+                      <span className="text-amber-200">
+                        {" "}
+                        — {a.current_state_note}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
