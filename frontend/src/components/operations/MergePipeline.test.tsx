@@ -964,15 +964,9 @@ describe("MergePipeline", () => {
     expect(screen.queryByTestId("pipeline-empty")).toBeNull();
     expect(screen.getByText("Connecting…")).toBeInTheDocument();
     // ...nor with counts of rows nobody fetched.
-    expect(screen.getByTestId("pipeline-filter-in-flight")).toHaveTextContent(
-      "–"
-    );
-    expect(
-      screen.getByTestId("pipeline-filter-in-flight")
-    ).not.toHaveTextContent("0");
-    expect(screen.getByTestId("pipeline-health")).toHaveTextContent(
-      "in flight –"
-    );
+    expect(screen.getByTestId("pipeline-filter-in-flight")).toHaveTextContent("–");
+    expect(screen.getByTestId("pipeline-filter-in-flight")).not.toHaveTextContent("0");
+    expect(screen.getByTestId("pipeline-health")).toHaveTextContent("in flight –");
   });
 
   it("shows no PR-read notice when the last read succeeded", () => {
@@ -1893,7 +1887,9 @@ describe("MergePipeline gate-holds health badge", () => {
     // failure mode the console's absence-is-not-zero rule exists for.
     hookData.current.gateTotalBlocks = null;
     render(<MergePipeline />);
-    expect(screen.queryByTestId("pipeline-gate-holds")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("pipeline-gate-holds")
+    ).not.toBeInTheDocument();
   });
 
   it("renders a MEASURED zero, because that is a fact", () => {
@@ -2019,9 +2015,9 @@ describe("MergePipeline attempt history replaces the raw stream", () => {
     expect(screen.queryByTestId("gate-decisions")).not.toBeInTheDocument();
     expect(screen.queryByTestId("raw-proposals")).not.toBeInTheDocument();
     // …but the signal survives the collapse, on the panel header.
-    expect(
-      screen.getByTestId("coord-internals-orphan-gates")
-    ).toHaveTextContent("1 unlisted");
+    expect(screen.getByTestId("coord-internals-orphan-gates")).toHaveTextContent(
+      "1 unlisted"
+    );
   });
 });
 
@@ -2170,9 +2166,7 @@ describe("MergePipeline gate join across row shapes", () => {
     window.localStorage.setItem("fleet:coord-internals", "1");
 
     render(<MergePipeline />);
-    fireEvent.click(
-      screen.getByTestId("pipeline-row").querySelector("button")!
-    );
+    fireEvent.click(screen.getByTestId("pipeline-row").querySelector("button")!);
     expect(screen.queryByTestId("row-gate-decision")).not.toBeInTheDocument();
     // It is residue instead — visible, not dropped.
     expect(screen.getByTestId("gate-decisions")).toHaveTextContent(
