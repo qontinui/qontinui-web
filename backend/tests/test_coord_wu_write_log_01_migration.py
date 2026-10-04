@@ -266,6 +266,40 @@ def test_metadata_replace_dropping_phases_is_logged_with_key_diff(db: Engine) ->
 
 
 @pg_only
+@pytest.mark.parametrize("odd", ["null", "[1]", '"s"', "3"])
+def test_non_object_metadata_never_aborts_the_write(db: Engine, odd: str) -> None:
+    """``metadata`` has no ``jsonb_typeof`` CHECK, so the trigger must log a
+    scalar/array/JSON-null value rather than raise and abort the caller's write
+    (the object-only operators ``-`` and ``jsonb_object_keys`` would)."""
+    unit = _insert_unit(db, _slug("odd"), metadata=odd)
+    # object -> non-object -> object, then a tick-only write, then a delete.
+    _exec(
+        db,
+        """UPDATE coord.work_units SET metadata = '{"a": 1}'::jsonb WHERE id = :id""",
+        id=unit,
+    )
+    _exec(
+        db,
+        "UPDATE coord.work_units SET metadata = CAST(:m AS jsonb) WHERE id = :id",
+        id=unit,
+        m=odd,
+    )
+    _exec(
+        db,
+        "UPDATE coord.work_units SET updated_at = now() + interval '1 minute' "
+        "WHERE id = :id",
+        id=unit,
+    )
+    _exec(db, "DELETE FROM coord.work_units WHERE id = :id", id=unit)
+    rows = _log_rows(db, unit)
+    assert [r["op"] for r in rows] == ["insert", "update", "update", "delete"]
+    assert rows[1]["metadata_keys_added"] == ["a"]
+    assert rows[1]["metadata_keys_removed"] == []
+    assert rows[2]["metadata_keys_removed"] == ["a"]
+    assert rows[2]["metadata_keys_added"] == []
+
+
+@pg_only
 def test_on_conflict_upsert_logs_an_update_row(db: Engine) -> None:
     slug = _slug("upsert")
     upsert = (

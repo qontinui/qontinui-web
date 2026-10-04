@@ -213,8 +213,13 @@ DECLARE
     changed TEXT[] := ARRAY[]::TEXT[];
     k TEXT;
     om JSONB; nm JSONB;
+    -- object-only views of om/nm for the key diff: metadata is NOT NULL JSONB
+    -- with no jsonb_typeof CHECK, so a scalar/array/JSON-null value must never
+    -- reach an object-only operator and abort the caller's write.
+    omo JSONB; nmo JSONB;
     ov JSONB := '{}'::jsonb; nv JSONB := '{}'::jsonb;
     meta_changed BOOLEAN := false;
+    meta_moved BOOLEAN;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         n := to_jsonb(NEW); r := n;
@@ -228,8 +233,16 @@ BEGIN
         CONTINUE WHEN k = ANY (excluded_cols);
         IF TG_OP = 'UPDATE' THEN
             IF k = 'metadata' THEN
-                IF (coalesce(o->'metadata','{}'::jsonb) - volatile_keys)
-                   IS DISTINCT FROM (coalesce(n->'metadata','{}'::jsonb) - volatile_keys) THEN
+                -- (a CASE cannot sit in the IF: PL/pgSQL ends the condition at
+                -- the first THEN, so the verdict is computed first.)
+                meta_moved := CASE
+                    WHEN jsonb_typeof(o->'metadata') = 'object'
+                         AND jsonb_typeof(n->'metadata') = 'object'
+                    THEN ((o->'metadata') - volatile_keys)
+                         IS DISTINCT FROM ((n->'metadata') - volatile_keys)
+                    ELSE (o->'metadata') IS DISTINCT FROM (n->'metadata')
+                END;
+                IF meta_moved THEN
                     changed := changed || k; meta_changed := true;
                 END IF;
             ELSIF (o->k) IS DISTINCT FROM (n->k) THEN
@@ -253,6 +266,8 @@ BEGIN
 
     IF meta_changed THEN
         om := o->'metadata'; nm := n->'metadata';
+        omo := CASE WHEN jsonb_typeof(om) = 'object' THEN om ELSE '{}'::jsonb END;
+        nmo := CASE WHEN jsonb_typeof(nm) = 'object' THEN nm ELSE '{}'::jsonb END;
     END IF;
 
     INSERT INTO coord.work_unit_write_log (
@@ -268,11 +283,11 @@ BEGIN
         CASE WHEN 'title'  = ANY (changed) THEN n->>'title'  END,
         om, nm,
         CASE WHEN meta_changed THEN ARRAY(
-            SELECT jsonb_object_keys(coalesce(om,'{}'::jsonb))
-            EXCEPT SELECT jsonb_object_keys(coalesce(nm,'{}'::jsonb)) ORDER BY 1) END,
+            SELECT jsonb_object_keys(omo)
+            EXCEPT SELECT jsonb_object_keys(nmo) ORDER BY 1) END,
         CASE WHEN meta_changed THEN ARRAY(
-            SELECT jsonb_object_keys(coalesce(nm,'{}'::jsonb))
-            EXCEPT SELECT jsonb_object_keys(coalesce(om,'{}'::jsonb)) ORDER BY 1) END,
+            SELECT jsonb_object_keys(nmo)
+            EXCEPT SELECT jsonb_object_keys(omo) ORDER BY 1) END,
         CASE WHEN o IS NOT NULL AND ov <> '{}'::jsonb THEN ov END,
         CASE WHEN n IS NOT NULL AND nv <> '{}'::jsonb THEN nv END,
         NULLIF(current_setting('coord.write_actor', true), ''),
@@ -323,6 +338,9 @@ def upgrade() -> None:
     op.execute(
         f"COMMENT ON COLUMN coord.work_unit_write_log.actor IS '{_ACTOR_COMMENT}'"
     )
+    # env.py runs every revision of one `upgrade head` in ONE transaction, so a
+    # SET LOCAL would otherwise leak into every later revision of the batch.
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
@@ -330,3 +348,4 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS wu_write_log ON coord.work_units")
     op.execute("DROP FUNCTION IF EXISTS coord.log_work_unit_write()")
     op.execute("DROP TABLE IF EXISTS coord.work_unit_write_log")
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
