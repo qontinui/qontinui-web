@@ -12,7 +12,7 @@ truth: edit a file here, then apply it.
 |---|---|---|
 | `deploy-web.yml` / `deploy` | `qontinui-web-deploy` | 7200 s |
 | `migrate.yml` / `migrate` | `qontinui-web-migrate` | 3600 s |
-| `verify-frontend-run.yml` / `verify` (dispatched by `verify-frontend-deploy.yml`) | `qontinui-web-verify-frontend` | 3600 s |
+| `verify-frontend-run.yml` / `validate` and `verify` (on push to `main`) | `qontinui-web-verify-frontend` | 3600 s |
 | `db-credential-drift.yml` / `drift-check` | `qontinui-web-db-drift` | 3600 s |
 | `oneoff-seed-claude-accounts.yml` / `seed` | `qontinui-web-oneoff-task` | 3600 s |
 
@@ -35,32 +35,37 @@ Each role trusts only its own workflow file. The `production`-environment jobs
 casing) and `@refs/heads/main`. **Reverting the customization to the default
 template breaks every role here.**
 
-The frontend verify is split in two because of how `deployment_status`
-works. GitHub runs a `deployment_status` workflow from the deployment's
-commit, and Vercel creates deployments by SHA for every commit it builds,
-branch and preview commits included. A role trusted from that trigger would
-have to trust any ref, so anyone who could get a commit deployed could run
-a modified copy and read the Vercel token and the ci-bot login.
+The frontend verify (`verify-frontend-run.yml`) runs on `push` to `main`,
+plus `workflow_dispatch` for a manual re-smoke, which its `validate` job
+refuses unless it was dispatched on `refs/heads/main`. Both triggers
+therefore run `main`'s copy of the file, and both of its jobs assume
+`qontinui-web-verify-frontend`. `validate` reads the Vercel token to
+resolve the production deployment of the pushed commit from the Vercel API.
+`verify` reads it and the ci-bot login to smoke and roll back. The role
+trusts only this file at `refs/heads/main`, so no branch, fork or preview
+commit can produce its subject.
 
-- `verify-frontend-deploy.yml` (`deployment_status`) holds no AWS access and
-  no secrets. Its token has only `actions: write`, which it uses to dispatch
-  `verify-frontend-run.yml` on `main` with the deployment id.
-- `verify-frontend-run.yml` (`workflow_dispatch`) does not trust that id.
-  Its `validate` job re-reads the deployment from the GitHub API and checks
-  five things: the run is on `refs/heads/main`, the creator is `vercel[bot]`,
-  the environment is Production, the latest status is `success`, and `main`
-  contains the deployed SHA. It takes the URL and SHA from the API, not from
-  the inputs. If any check fails, the run ends green with a notice. Only
-  then does the `verify` job assume `qontinui-web-verify-frontend`, whose
-  trust is pinned to this file at `refs/heads/main`.
+It used to be split in two (plan
+2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share, review
+finding S1). The trigger was Vercel's GitHub `deployment_status` event, and
+GitHub runs a `deployment_status` workflow from the deployment's commit,
+branch and preview commits included. So the trigger file held no AWS access
+and only dispatched the run file on `main`. Vercel turned out to write that
+deployment record for only about one production deploy in six, so the
+trigger and its dispatcher (`verify-frontend-deploy.yml`) were deleted (plan
+2026-10-02-frontend-post-deploy-smoke-misses-most-production-deploys). With
+it gone, no AWS-holding job runs any copy of a workflow file but `main`'s.
+A production deploy that no push to `main` created (a manual Vercel
+redeploy or promote) is not smoked automatically; re-smoke it with
+`gh workflow run verify-frontend-run.yml --ref main -f sha=<sha>`.
 
-So a branch or fork deployment can still run a modified trigger file, and
-it runs in THIS repo's context: whatever the file says at that commit, it
-can reference any **repo-level** secret and request write scopes for the
-job token. The role, the SSM parameters and the Vercel token are out of its
-reach (the role trusts only `verify-frontend-run.yml` at `refs/heads/main`,
-which re-validates the deployment before doing anything). Two things keep the
-rest small:
+Vercel still deploys branch and preview commits, and GitHub still emits
+`deployment_status` for them, so any workflow file at such a commit that
+listens for that event runs in THIS repo's context: it can reference any
+**repo-level** secret and request write scopes for the job token. The role,
+the SSM parameters and the Vercel token are out of its reach (the role
+trusts only `verify-frontend-run.yml` at `refs/heads/main`). Two things keep
+the rest small:
 
 - **Keep no secret at repo level that such a copy could abuse.** The unused
   `SPEC_CI_AUTH_EMAIL` / `SPEC_CI_AUTH_PASSWORD` repo secrets were deleted on

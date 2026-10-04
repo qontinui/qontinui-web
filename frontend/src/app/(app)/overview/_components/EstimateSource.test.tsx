@@ -4,14 +4,14 @@ import type { PageRecord } from "../_lib/pages";
 
 const mocks = vi.hoisted(() => ({
   canEdit: vi.fn(() => false),
-  fetchEstimates: vi.fn(),
+  listResource: vi.fn(),
 }));
 vi.mock("@/components/overview/editing/permissions", () => ({
   useCanEdit: mocks.canEdit,
 }));
-vi.mock("../_lib/estimate-api", async (importOriginal) => ({
+vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  fetchEstimates: mocks.fetchEstimates,
+  listResource: mocks.listResource,
 }));
 
 import { EstimateSource, editorHref } from "./EstimateSource";
@@ -24,11 +24,19 @@ const page = {
 } as PageRecord;
 
 function estimates(source: string | null) {
-  mocks.fetchEstimates.mockResolvedValue({
-    estimates: [
-      { id: "e1", name: "v0.1", is_baseline: true, source_page_id: source },
+  mocks.listResource.mockResolvedValue({
+    items: [
+      {
+        id: "e1",
+        name: "v0.1",
+        is_baseline: true,
+        source_page_id: source,
+        content: null,
+      },
     ],
     total: 1,
+    can_edit: false,
+    degraded: null,
   });
 }
 
@@ -41,7 +49,7 @@ function show() {
 describe("EstimateSource", () => {
   it("says so when it could not check, instead of offering the wrong action", async () => {
     mocks.canEdit.mockReturnValue(false);
-    mocks.fetchEstimates.mockRejectedValue(new Error("HTTP 503"));
+    mocks.listResource.mockRejectedValue(new Error("HTTP 503"));
     show();
     expect(await screen.findByText(/couldn.t\s+be checked/)).toBeTruthy();
   });
@@ -79,7 +87,7 @@ describe("EstimateSource", () => {
     // Wait for the answer itself, not just the request: while loading the
     // section is empty anyway, so asserting then would prove nothing.
     await act(async () => {
-      await mocks.fetchEstimates.mock.results[0]?.value;
+      await mocks.listResource.mock.results[0]?.value;
     });
     expect(container.textContent).toBe("");
   });

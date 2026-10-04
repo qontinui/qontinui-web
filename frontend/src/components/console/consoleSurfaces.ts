@@ -212,6 +212,13 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// GitHub-hosted CI on the Dev Ops page — plan
+// `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
+import {
+  HOSTED_CI_ATTENTION_BY_KIND,
+  HOSTED_CI_AUTHOR_GLYPH_KINDS,
+  HOSTED_CI_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/devops/_lib/hostedCiStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -560,6 +567,16 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: SERVICE_BADGE_CLASS,
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
+  {
+    surface: "GitHub-hosted CI (/admin/coord/devops)",
+    module: "app/(app)/admin/coord/devops/_lib/hostedCiStatus.ts",
+    attentionByKind: HOSTED_CI_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: HOSTED_CI_BADGE_CLASS,
+      authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];

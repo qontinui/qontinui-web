@@ -192,7 +192,14 @@ export interface ComputerServiceWire {
   runner_name: string | null;
   repo: string | null;
   observed_at: string;
-  /** `failed` or `inactive` — coord's one "down" predicate (`service_is_down`). */
+  /**
+   * `now() - observed_at` on coord's database clock, whole seconds. DISPLAY
+   * ONLY (contract A2): a row leaves coord when a report complete for its
+   * kind omits it, so a row present is the machine's last stated view of the
+   * unit; whether that view is current is the computer's own `freshness`.
+   */
+  observed_age_secs: number;
+  /** The reported state is down (`failed` / `inactive`). Counted in `services_failed`. */
   down: boolean;
 }
 
@@ -568,6 +575,171 @@ export function normalizeComputer(
     ciRunners: options.registrarReadOk === true ? c.ci_runners : null,
     drillDown: c.drill_down,
   };
+}
+
+// ---------------------------------------------------------------------------
+// GPUs — `coord.computers.gpus`, the runner's static GPU inventory
+// ---------------------------------------------------------------------------
+
+/**
+ * One GPU as the runner publishes it (plan
+ * `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`,
+ * amendment 2026-10-01): `{vendor, model, vram_bytes, driver,
+ * compute_capability}`, every member but `vendor` nullable. A member with no
+ * vendor breaks that contract and makes the whole value `unrecognized`.
+ */
+export interface GpuEntry {
+  vendor: string;
+  model: string | null;
+  vramBytes: number | null;
+  driver: string | null;
+  computeCapability: string | null;
+}
+
+/**
+ * What the `gpus` column says. Four answers, and only `none` is a zero:
+ *
+ * - `unknown` — `null`: never reported, or the runner could not measure.
+ * - `unrecognized` — a value this build cannot read: not an array, or a
+ *   list with a member that is not an object carrying a vendor. Rendered as
+ *   an amber `unknown` (R3: "we do not know what this is"), never as a count.
+ * - `none` — `[]`: the publisher MEASURED no GPU (the plan amendment's
+ *   contract: `[]` is a measurement, `null` is UNKNOWN).
+ * - `gpus` — the listed GPUs. A publisher that enumerates one vendor only
+ *   lists "at least these"; [`gpusNote`] says so when every entry is NVIDIA.
+ */
+export type GpusReading =
+  | { kind: "unknown" }
+  | { kind: "unrecognized" }
+  | { kind: "none" }
+  | { kind: "gpus"; gpus: GpuEntry[] };
+
+/**
+ * Read coord's `capacity.gpus`. Any member that is not an object carrying a
+ * `vendor` makes the WHOLE value `unrecognized`: a list we can only half read
+ * is not a measurement, and counting its members would claim GPUs nobody
+ * described. A `vram_bytes` that is not a positive number reads as unknown.
+ */
+export function readGpus(v: unknown): GpusReading {
+  if (v === null || v === undefined) return { kind: "unknown" };
+  if (!Array.isArray(v)) return { kind: "unrecognized" };
+  if (v.length === 0) return { kind: "none" };
+  const gpus: GpuEntry[] = [];
+  for (const g of v) {
+    if (g === null || typeof g !== "object" || Array.isArray(g)) {
+      return { kind: "unrecognized" };
+    }
+    const o = g as Record<string, unknown>;
+    const vendor = str(o.vendor);
+    if (vendor === null) return { kind: "unrecognized" };
+    const vram = num(o.vram_bytes);
+    gpus.push({
+      vendor,
+      model: str(o.model),
+      vramBytes: vram !== null && vram > 0 ? vram : null,
+      driver: str(o.driver),
+      computeCapability: str(o.compute_capability),
+    });
+  }
+  return { kind: "gpus", gpus };
+}
+
+/** GPUs that report the same vendor, model, VRAM, driver and compute capability, with their positions in the list. */
+export interface GpuGroup {
+  gpu: GpuEntry;
+  indices: number[];
+}
+
+/**
+ * Collapse identical GPUs into one group each, in first-seen order. An
+ * eight-GPU box of one model is one badge and one note entry, not eight. Two
+ * GPUs are identical only when every member matches AND was measured: an
+ * entry with any unknown member is its own group, because sharing an unknown
+ * is not evidence of being the same GPU.
+ */
+export function groupGpus(gpus: GpuEntry[]): GpuGroup[] {
+  const groups = new Map<string, GpuGroup>();
+  gpus.forEach((g, i) => {
+    const measured =
+      g.model !== null &&
+      g.vramBytes !== null &&
+      g.driver !== null &&
+      g.computeCapability !== null;
+    const key = measured
+      ? JSON.stringify([
+          g.vendor,
+          g.model,
+          g.vramBytes,
+          g.driver,
+          g.computeCapability,
+        ])
+      : `unmeasured-${i}`;
+    const group = groups.get(key);
+    if (group) group.indices.push(i);
+    else groups.set(key, { gpu: g, indices: [i] });
+  });
+  return [...groups.values()];
+}
+
+/**
+ * A group's positions in words: `gpu 2`, `gpus 0–3` for a run, `gpus 0, 2`
+ * otherwise. Expects ascending, distinct indices, as [`groupGpus`] produces.
+ */
+export function gpuIndexLabel(indices: number[]): string {
+  const first = indices[0];
+  const last = indices[indices.length - 1];
+  if (first === undefined || last === undefined) return "gpus";
+  if (indices.length === 1) return `gpu ${first}`;
+  const contiguous = last - first === indices.length - 1;
+  return contiguous && indices.length > 2
+    ? `gpus ${first}–${last}`
+    : `gpus ${indices.join(", ")}`;
+}
+
+/** One GPU in words: `"<model> · <VRAM>"`, with `unknown` for a field the runner did not measure. */
+export function gpuText(g: GpuEntry): string {
+  const model = g.model ?? "unknown model";
+  const vram = g.vramBytes === null ? "VRAM unknown" : formatBytes(g.vramBytes);
+  return `${model} · ${vram}`;
+}
+
+/** One GPU's detail in words: vendor, driver and compute capability (its badge's hover text). */
+export function gpuTitle(g: GpuEntry): string {
+  return [
+    `vendor: ${g.vendor}`,
+    `driver: ${g.driver ?? "unknown"}`,
+    `compute capability: ${g.computeCapability ?? "unknown"}`,
+  ].join(" · ");
+}
+
+/**
+ * The sentence that qualifies the GPU badges, rendered as visible text (a
+ * `title` is not an accessible name — style guide R6 / §2): why an unknown is
+ * unknown, that `none` was measured, and that a list is NVIDIA-only.
+ * Identical GPUs share one entry ([`groupGpus`]), so the note stays short on
+ * a many-GPU machine.
+ */
+export function gpusNote(r: GpusReading): string {
+  switch (r.kind) {
+    case "unknown":
+      return "GPUs not reported — UNKNOWN, not none.";
+    case "unrecognized":
+      return "Coord sent a gpus value this page cannot read — UNKNOWN, not none.";
+    case "none":
+      return "GPUs: measured none.";
+    case "gpus": {
+      const each = groupGpus(r.gpus)
+        .map(
+          ({ gpu, indices }) =>
+            `${gpuIndexLabel(indices)} (${gpu.model ?? "unknown model"}): ${gpuTitle(gpu)}`
+        )
+        .join("; ");
+      const nvidiaOnly = r.gpus.every((g) => g.vendor === "nvidia");
+      return nvidiaOnly
+        ? `${each}. Every listed GPU is NVIDIA — the publisher measures NVIDIA GPUs, so another vendor's GPU may be present and unlisted.`
+        : `${each}.`;
+    }
+  }
 }
 
 /** The drill-down route for one computer. */
@@ -1140,6 +1312,19 @@ export function computerStatus(
     );
   }
   return make("healthy", "healthy", freshness.reason);
+}
+
+/**
+ * How long ago coord recorded the row — just the age (`"12m ago"`), for the
+ * caller to put in one sentence. Information only: coord re-records an
+ * UNCHANGED unit only about once per 300 s report cadence, so this can
+ * overstate a unit's silence by up to ~10 min (just under two report
+ * cadences), and a row's age says nothing about whether the unit still
+ * exists. It never changes the badge.
+ */
+export function serviceObservedText(s: ComputerServiceWire): string {
+  const age = num(s.observed_age_secs);
+  return age === null ? "at an unknown time" : formatAge(age);
 }
 
 /** A watched service's state, bucketed. `down` is coord's `down` flag (failed or inactive). */
