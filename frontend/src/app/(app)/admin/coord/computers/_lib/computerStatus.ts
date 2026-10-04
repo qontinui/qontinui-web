@@ -644,6 +644,58 @@ export function readGpus(v: unknown): GpusReading {
   return { kind: "gpus", gpus };
 }
 
+/** GPUs that report the same vendor, model, VRAM, driver and compute capability, with their positions in the list. */
+export interface GpuGroup {
+  gpu: GpuEntry;
+  indices: number[];
+}
+
+/**
+ * Collapse identical GPUs into one group each, in first-seen order. An
+ * eight-GPU box of one model is one badge and one note entry, not eight. Two
+ * GPUs are identical only when every member matches AND was measured: an
+ * entry with any unknown member is its own group, because sharing an unknown
+ * is not evidence of being the same GPU.
+ */
+export function groupGpus(gpus: GpuEntry[]): GpuGroup[] {
+  const groups = new Map<string, GpuGroup>();
+  gpus.forEach((g, i) => {
+    const measured =
+      g.model !== null &&
+      g.vramBytes !== null &&
+      g.driver !== null &&
+      g.computeCapability !== null;
+    const key = measured
+      ? JSON.stringify([
+          g.vendor,
+          g.model,
+          g.vramBytes,
+          g.driver,
+          g.computeCapability,
+        ])
+      : `unmeasured-${i}`;
+    const group = groups.get(key);
+    if (group) group.indices.push(i);
+    else groups.set(key, { gpu: g, indices: [i] });
+  });
+  return [...groups.values()];
+}
+
+/**
+ * A group's positions in words: `gpu 2`, `gpus 0–3` for a run, `gpus 0, 2`
+ * otherwise. Expects ascending, distinct indices, as [`groupGpus`] produces.
+ */
+export function gpuIndexLabel(indices: number[]): string {
+  const first = indices[0];
+  const last = indices[indices.length - 1];
+  if (first === undefined || last === undefined) return "gpus";
+  if (indices.length === 1) return `gpu ${first}`;
+  const contiguous = last - first === indices.length - 1;
+  return contiguous && indices.length > 2
+    ? `gpus ${first}–${last}`
+    : `gpus ${indices.join(", ")}`;
+}
+
 /** One GPU in words: `"<model> · <VRAM>"`, with `unknown` for a field the runner did not measure. */
 export function gpuText(g: GpuEntry): string {
   const model = g.model ?? "unknown model";
@@ -664,6 +716,8 @@ export function gpuTitle(g: GpuEntry): string {
  * The sentence that qualifies the GPU badges, rendered as visible text (a
  * `title` is not an accessible name — style guide R6 / §2): why an unknown is
  * unknown, that `none` was measured, and that a list is NVIDIA-only.
+ * Identical GPUs share one entry ([`groupGpus`]), so the note stays short on
+ * a many-GPU machine.
  */
 export function gpusNote(r: GpusReading): string {
   switch (r.kind) {
@@ -674,9 +728,10 @@ export function gpusNote(r: GpusReading): string {
     case "none":
       return "GPUs: measured none.";
     case "gpus": {
-      const each = r.gpus
+      const each = groupGpus(r.gpus)
         .map(
-          (g, i) => `gpu ${i} (${g.model ?? "unknown model"}): ${gpuTitle(g)}`
+          ({ gpu, indices }) =>
+            `${gpuIndexLabel(indices)} (${gpu.model ?? "unknown model"}): ${gpuTitle(gpu)}`
         )
         .join("; ");
       const nvidiaOnly = r.gpus.every((g) => g.vendor === "nvidia");

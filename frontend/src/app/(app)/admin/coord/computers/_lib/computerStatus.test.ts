@@ -38,6 +38,8 @@ import {
   gpuText,
   gpuTitle,
   gpusNote,
+  gpuIndexLabel,
+  groupGpus,
   historyByLane,
   historyPoints,
   isSchemaPendingBody,
@@ -851,6 +853,50 @@ describe("readGpus — null is UNKNOWN, [] is a measured none", () => {
     });
     expect(mixed).toContain("; gpu 1 (unknown model): vendor: amd");
     expect(mixed).not.toContain("NVIDIA");
+  });
+
+  it("groups identical GPUs into one note entry, and keeps distinct ones apart", () => {
+    const h = {
+      vendor: "nvidia",
+      model: "h",
+      vramBytes: 80,
+      driver: "999.10",
+      computeCapability: "9.0",
+    };
+    const other = { ...h, driver: "999.11" };
+    const groups = groupGpus([h, h, other, h]);
+    expect(groups.map((g) => g.indices)).toEqual([[0, 1, 3], [2]]);
+    const note = gpusNote({ kind: "gpus", gpus: [h, h, h, h, h, h, h, h] });
+    expect(note).toBe(
+      "gpus 0–7 (h): vendor: nvidia · driver: 999.10 · compute capability: 9.0. Every listed GPU is NVIDIA — the publisher measures NVIDIA GPUs, so another vendor's GPU may be present and unlisted."
+    );
+  });
+
+  it("never groups GPUs that only share an unknown", () => {
+    const blank = {
+      vendor: "nvidia",
+      model: null,
+      vramBytes: null,
+      driver: null,
+      computeCapability: null,
+    };
+    const partial = {
+      vendor: "nvidia",
+      model: "h",
+      vramBytes: 80,
+      driver: null,
+      computeCapability: "9.0",
+    };
+    expect(
+      groupGpus([blank, blank, partial, partial]).map((g) => g.indices)
+    ).toEqual([[0], [1], [2], [3]]);
+  });
+
+  it("names a group's positions as a run only when they are one", () => {
+    expect(gpuIndexLabel([2])).toBe("gpu 2");
+    expect(gpuIndexLabel([0, 1])).toBe("gpus 0, 1");
+    expect(gpuIndexLabel([0, 1, 2, 3])).toBe("gpus 0–3");
+    expect(gpuIndexLabel([0, 1, 3])).toBe("gpus 0, 1, 3");
   });
 
   it("says model and VRAM in words, and unknown for what was not measured", () => {

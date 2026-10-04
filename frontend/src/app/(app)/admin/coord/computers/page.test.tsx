@@ -384,6 +384,44 @@ describe("/admin/coord/computers/[computerId] — the gpus capacity", () => {
     );
   });
 
+  it("renders identical GPUs as one grouped badge", async () => {
+    const same = {
+      vendor: "nvidia",
+      model: "Example GPU A",
+      vram_bytes: 32 * 1024 ** 3,
+      driver: "999.10",
+      compute_capability: "12.0",
+    };
+    const { cap, note } = await capacityOf([same, same, same, same]);
+    expect(within(cap).getByTestId("coord-computer-gpu-0").textContent).toBe(
+      "gpu4 × Example GPU A · 32.0 GB"
+    );
+    expect(within(cap).queryByTestId("coord-computer-gpu-1")).toBeNull();
+    expect(note.textContent).toContain("gpus 0–3 (Example GPU A)");
+    expect(note.textContent).not.toContain("gpu 1 ");
+  });
+
+  it("keeps a distinct GPU apart from a group, under its own index", async () => {
+    const a = {
+      vendor: "nvidia",
+      model: "Example GPU A",
+      vram_bytes: 32 * 1024 ** 3,
+      driver: "999.10",
+      compute_capability: "12.0",
+    };
+    const b = { ...a, model: "Example GPU B" };
+    const { cap, note } = await capacityOf([a, a, b]);
+    const group = within(cap).getByTestId("coord-computer-gpu-0");
+    expect(group.textContent).toBe("gpu2 × Example GPU A · 32.0 GB");
+    expect(group.getAttribute("title")).toContain("gpus 0, 1 · vendor: nvidia");
+    expect(within(cap).queryByTestId("coord-computer-gpu-1")).toBeNull();
+    expect(within(cap).getByTestId("coord-computer-gpu-2").textContent).toBe(
+      "gpuExample GPU B · 32.0 GB"
+    );
+    expect(note.textContent).toContain("gpus 0, 1 (Example GPU A)");
+    expect(note.textContent).toContain("; gpu 2 (Example GPU B)");
+  });
+
   it("renders a gpus value it cannot read as unknown, not as a count", async () => {
     const { cap, note } = await capacityOf({ count: 1 });
     expect(within(cap).getByTestId("coord-computer-gpus").textContent).toBe(
