@@ -106,10 +106,18 @@ SCENARIOS: dict[str, Callable[[], Any]] = {
     "no_content_204": lambda: _response(204),
     "ok_200_text": lambda: _response(200, _TEXT_BODY.encode(), "text/plain"),
 }
-# Only exercised against post_to_coord: a gateway status it retries.
+# Extra scenarios, exercised only against the helpers whose behaviour they
+# distinguish: the three gateway statuses post_to_coord retries, and a 202
+# for the return_status variant (which passes a <400 status through).
+GATEWAY_502 = "gateway_502"
 GATEWAY_503 = "gateway_503"
+GATEWAY_504 = "gateway_504"
+OK_202_JSON = "ok_202_json"
 _EXTRA_SCENARIOS: dict[str, Callable[[], Any]] = {
+    GATEWAY_502: lambda: _response(502, b"Bad Gateway", "text/plain"),
     GATEWAY_503: lambda: _response(503, b"Service Unavailable", "text/plain"),
+    GATEWAY_504: lambda: _response(504, b"Gateway Timeout", "text/plain"),
+    OK_202_JSON: lambda: _response(202, _OK_BODY, "application/json"),
 }
 
 
@@ -225,8 +233,36 @@ _VERBATIM_FAMILY: dict[str, Cell] = {
     "coord_500_html": Cell(Responds(500, {"detail": _HTML_BODY})),
     "ok_200_json": Cell(Responds(200, _OK_DICT)),
     "ok_200_empty": Cell(Responds(200, {"detail": ""})),
+    # RECORDED PROTOCOL ODDITY (Phase 5): coord's bodiless 204 is relayed as
+    # a JSONResponse with status 204 AND a body (``{"detail": ""}``) — a 204
+    # must carry no content. Pinned as today's behaviour; Phase 5 decides it.
     "no_content_204": Cell(Responds(204, {"detail": ""})),
     "ok_200_text": Cell(Responds(200, {"detail": _TEXT_BODY})),
+}
+
+_DELETE_FAMILY: dict[str, Cell] = {
+    **_get_family(HTTPException),
+    "ok_200_empty": Cell(Returns({"status": "ok"})),
+    "no_content_204": Cell(Returns({"status": "ok"})),
+}
+
+_PASSTHROUGH_FAMILY: dict[str, Cell] = {
+    **_transport(),
+    "read_error": _READ_ERROR_ESCAPES,
+    # Empty error body → the synthesized message, not an empty string.
+    "coord_404_empty": Cell(Responds(404, {"error": "coord returned HTTP 404"})),
+    "coord_422_json": Cell(Responds(422, _JSON_ERROR_DICT)),
+    "coord_500_html": Cell(Responds(500, {"error": _HTML_BODY})),
+    "ok_200_json": Cell(Responds(200, _OK_DICT)),
+    "ok_200_empty": Cell(
+        Raises(502, "coord answered HTTP 200 with a body that is not JSON")
+    ),
+    "no_content_204": Cell(
+        Raises(502, "coord answered HTTP 204 with a body that is not JSON")
+    ),
+    "ok_200_text": Cell(
+        Raises(502, "coord answered HTTP 200 with a body that is not JSON")
+    ),
 }
 
 _POST_RETRY_AFTER = {"Retry-After": "10"}
@@ -253,12 +289,25 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         # Only a JSON OBJECT becomes a dict detail; empty/HTML stay text.
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
+    # return_status=True: a <400 answer comes back as ``(json, status)`` with
+    # coord's own status passed through (the 202 row); ≥400 and non-JSON 2xx
+    # behave exactly as plain ops_post.
+    "ops_post_return_status": {
+        **_get_family(HTTPException),
+        "ok_200_json": Cell(Returns((_OK_DICT, 200))),
+        OK_202_JSON: Cell(Returns((_OK_DICT, 202))),
+    },
     "ops_post_non_json_success_as_empty": {
         **_get_family(HTTPException),
         "ok_200_empty": Cell(Returns({})),
         "no_content_204": Cell(Returns({})),
         "ok_200_text": Cell(Returns({})),
     },
+    # Recorded, no cell depends on it: for a NON-dict detail (the 404/500
+    # rows), ``_readable_coord_refusal`` returns the caught exception itself,
+    # so ``_proxy_coord_post_readable`` executes ``raise exc from exc`` — the
+    # re-raised exception is its own ``__cause__``. Class, status and detail
+    # are unchanged, which is all these cells assert.
     "ops_post_readable": {
         **_get_family(HTTPException),
         "coord_422_json": Cell(
@@ -274,31 +323,14 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     },
     "ops_patch": _WRITE_FAMILY,
     "ops_put": _WRITE_FAMILY,
-    "ops_delete": {
-        **_get_family(HTTPException),
-        "ok_200_empty": Cell(Returns({"status": "ok"})),
-        "no_content_204": Cell(Returns({"status": "ok"})),
-    },
+    "ops_delete": _DELETE_FAMILY,
+    # body= switches the call to client.request("DELETE", ...); same answers.
+    "ops_delete_with_body": _DELETE_FAMILY,
     "ops_verbatim": _VERBATIM_FAMILY,
     "ops_route_clone_credential": _VERBATIM_FAMILY,
-    "ops_passthrough": {
-        **_transport(),
-        "read_error": _READ_ERROR_ESCAPES,
-        # Empty error body → the synthesized message, not an empty string.
-        "coord_404_empty": Cell(Responds(404, {"error": "coord returned HTTP 404"})),
-        "coord_422_json": Cell(Responds(422, _JSON_ERROR_DICT)),
-        "coord_500_html": Cell(Responds(500, {"error": _HTML_BODY})),
-        "ok_200_json": Cell(Responds(200, _OK_DICT)),
-        "ok_200_empty": Cell(
-            Raises(502, "coord answered HTTP 200 with a body that is not JSON")
-        ),
-        "no_content_204": Cell(
-            Raises(502, "coord answered HTTP 204 with a body that is not JSON")
-        ),
-        "ok_200_text": Cell(
-            Raises(502, "coord answered HTTP 200 with a body that is not JSON")
-        ),
-    },
+    "ops_passthrough": _PASSTHROUGH_FAMILY,
+    # The POST arm (``client.post(json=body or {})``); same answer handling.
+    "ops_passthrough_post": _PASSTHROUGH_FAMILY,
     "agent_registry_coord_request": {
         **_transport(),
         # httpx.RequestError arm: ReadError → 502, not an escape.
@@ -339,7 +371,9 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         "ok_200_empty": Cell(ReturnsRawResponse()),
         "no_content_204": Cell(ReturnsRawResponse()),
         "ok_200_text": Cell(ReturnsRawResponse()),
+        GATEWAY_502: _POST_TO_COORD_503,
         GATEWAY_503: _POST_TO_COORD_503,
+        GATEWAY_504: _POST_TO_COORD_503,
     },
 }
 
@@ -366,103 +400,150 @@ def _url() -> str:
     return f"{settings.COORD_URL}{PATH}"
 
 
+def _fwd(fn: Callable[..., Awaitable[Any]], *args: Any, **defaults: Any) -> Any:
+    """An ``invoke`` that FORWARDS every kwarg to the helper over ``defaults``.
+
+    Nothing is swallowed: a kwarg the real helper does not accept raises
+    ``TypeError`` from its own signature, so a row can never think it set an
+    option the call silently dropped (``test_invoke_rejects_unknown_kwargs``).
+    """
+
+    def invoke(**kw: Any) -> Awaitable[Any]:
+        return fn(*args, **{**defaults, **kw})
+
+    return invoke
+
+
+DELETE_BODY = {"role": "admin"}
+
 HELPERS: dict[str, Helper] = {
     "ops_get": Helper(
-        _OPS_TARGET,
-        "get",
-        lambda **kw: operations._proxy_coord_get(PATH, **{"tenant_id": TENANT, **kw}),
+        _OPS_TARGET, "get", _fwd(operations._proxy_coord_get, PATH, tenant_id=TENANT)
     ),
     "ops_post": Helper(
         _OPS_TARGET,
         "post",
-        lambda **kw: operations._proxy_coord_post(
-            PATH, BODY, **{"tenant_id": TENANT, **kw}
-        ),
+        _fwd(operations._proxy_coord_post, PATH, BODY, tenant_id=TENANT),
     ),
     "ops_post_structured_errors": Helper(
         _OPS_TARGET,
         "post",
-        lambda **kw: operations._proxy_coord_post(
-            PATH, BODY, tenant_id=TENANT, structured_errors=True
+        _fwd(
+            operations._proxy_coord_post,
+            PATH,
+            BODY,
+            tenant_id=TENANT,
+            structured_errors=True,
+        ),
+    ),
+    "ops_post_return_status": Helper(
+        _OPS_TARGET,
+        "post",
+        _fwd(
+            operations._proxy_coord_post,
+            PATH,
+            BODY,
+            tenant_id=TENANT,
+            return_status=True,
         ),
     ),
     "ops_post_non_json_success_as_empty": Helper(
         _OPS_TARGET,
         "post",
-        lambda **kw: operations._proxy_coord_post(
-            PATH, BODY, tenant_id=TENANT, non_json_success_as_empty=True
+        _fwd(
+            operations._proxy_coord_post,
+            PATH,
+            BODY,
+            tenant_id=TENANT,
+            non_json_success_as_empty=True,
         ),
     ),
     "ops_post_readable": Helper(
         _OPS_TARGET,
         "post",
-        lambda **kw: operations._proxy_coord_post_readable(
-            PATH, BODY, tenant_id=TENANT
-        ),
+        _fwd(operations._proxy_coord_post_readable, PATH, BODY, tenant_id=TENANT),
     ),
     "ops_patch": Helper(
         _OPS_TARGET,
         "patch",
-        lambda **kw: operations._proxy_coord_patch(
-            PATH, BODY, **{"tenant_id": TENANT, **kw}
-        ),
+        _fwd(operations._proxy_coord_patch, PATH, BODY, tenant_id=TENANT),
     ),
     "ops_put": Helper(
         _OPS_TARGET,
         "put",
-        lambda **kw: operations._proxy_coord_put(
-            PATH, BODY, **{"tenant_id": TENANT, **kw}
-        ),
+        _fwd(operations._proxy_coord_put, PATH, BODY, tenant_id=TENANT),
     ),
     "ops_delete": Helper(
         _OPS_TARGET,
         "delete",
-        lambda **kw: operations._proxy_coord_delete(
-            PATH, **{"tenant_id": TENANT, **kw}
-        ),
+        _fwd(operations._proxy_coord_delete, PATH, tenant_id=TENANT),
+    ),
+    # body= is the branch that goes through client.request("DELETE", ...).
+    "ops_delete_with_body": Helper(
+        _OPS_TARGET,
+        "request",
+        _fwd(operations._proxy_coord_delete, PATH, tenant_id=TENANT, body=DELETE_BODY),
     ),
     "ops_verbatim": Helper(
         _OPS_TARGET,
         "request",
-        lambda **kw: operations._proxy_coord_verbatim(
-            "POST", PATH, tenant_id=TENANT, json_body=BODY
+        _fwd(
+            operations._proxy_coord_verbatim,
+            "POST",
+            PATH,
+            tenant_id=TENANT,
+            json_body=BODY,
         ),
     ),
     "ops_route_clone_credential": Helper(
         _OPS_TARGET,
         "post",
-        lambda **kw: operations.post_github_clone_credential(
-            operations.CloneCredentialRequest(repo="owner/name"), tenant_id=TENANT
+        _fwd(
+            operations.post_github_clone_credential,
+            operations.CloneCredentialRequest(repo="owner/name"),
+            tenant_id=TENANT,
         ),
     ),
     "ops_passthrough": Helper(
         _OPS_TARGET,
         "get",
-        lambda **kw: operations._proxy_coord_passthrough("GET", PATH, tenant_id=TENANT),
+        _fwd(operations._proxy_coord_passthrough, "GET", PATH, tenant_id=TENANT),
+    ),
+    "ops_passthrough_post": Helper(
+        _OPS_TARGET,
+        "post",
+        _fwd(
+            operations._proxy_coord_passthrough,
+            "POST",
+            PATH,
+            tenant_id=TENANT,
+            body=BODY,
+        ),
     ),
     "agent_registry_coord_request": Helper(
         "app.api.v1.endpoints.agent_registry.httpx.AsyncClient",
         "request",
-        lambda **kw: agent_registry._coord_request("GET", PATH),
+        _fwd(agent_registry._coord_request, "GET", PATH),
     ),
     "agent_sessions_get": Helper(
         "app.api.v1.endpoints.agent_sessions.httpx.AsyncClient",
         "get",
-        lambda **kw: agent_sessions._proxy_coord_get(PATH),
+        _fwd(agent_sessions._proxy_coord_get, PATH),
         vars_module=agent_sessions,
     ),
     "prompt_injections_get": Helper(
         "app.api.v1.endpoints.prompt_injections.httpx.AsyncClient",
         "get",
-        lambda **kw: prompt_injections._proxy_coord_get(PATH),
+        _fwd(prompt_injections._proxy_coord_get, PATH),
         vars_module=prompt_injections,
     ),
     "post_to_coord": Helper(
         "app.services.coord_proxy.httpx.AsyncClient",
         "post",
-        lambda **kw: services_coord_proxy.post_to_coord(
+        _fwd(
+            services_coord_proxy.post_to_coord,
             PATH,
-            headers=kw.get("headers", {"Authorization": "Bearer service-token"}),
+            headers={"Authorization": "Bearer service-token"},
             json_body=BODY,
             log_event="contract",
         ),
@@ -486,10 +567,23 @@ def _captured(
 
 
 @contextlib.contextmanager
-def _stub_coord(helper: Helper, outcome: Callable[[], Any]) -> Iterator[MagicMock]:
+def _stub_coord(
+    helper: Helper,
+    outcome: Callable[[], Any],
+    sleep: AsyncMock | None = None,
+) -> Iterator[MagicMock]:
     """Patch ``httpx.AsyncClient`` so every call to ``helper.method`` yields
     ``outcome()`` (raised if it is an exception). Yields the client CLASS
-    mock; ``.return_value`` is the instance whose method was called."""
+    mock; ``.return_value`` is the instance whose method was called.
+
+    For a retrying helper (``helper.sleeps``) ``asyncio.sleep`` is replaced by
+    ``sleep`` (a fresh ``AsyncMock`` when not given) so the backoff costs no
+    wall time and can be read back from its ``await_args_list``. NOTE: the
+    target ``app.services.coord_proxy.asyncio.sleep`` is the ``sleep``
+    attribute of the ONE ``asyncio`` module object, so while the block is
+    active the patch is PROCESS-WIDE — every ``asyncio.sleep`` anywhere
+    (the event loop's own helpers included) returns immediately. Keep the
+    block around the helper call only."""
     instance = AsyncMock()
 
     async def _answer(*_args: Any, **_kwargs: Any) -> Any:
@@ -507,7 +601,10 @@ def _stub_coord(helper: Helper, outcome: Callable[[], Any]) -> Iterator[MagicMoc
         )
         if helper.sleeps:
             stack.enter_context(
-                patch("app.services.coord_proxy.asyncio.sleep", new=AsyncMock())
+                patch(
+                    "app.services.coord_proxy.asyncio.sleep",
+                    new=sleep if sleep is not None else AsyncMock(),
+                )
             )
         yield client_cls
 
@@ -575,6 +672,7 @@ def test_matrix_covers_every_scenario_for_every_helper() -> None:
     """Every helper has a cell for every base scenario — no silent gaps."""
     for name, cells in EXPECTED.items():
         assert set(SCENARIOS) <= set(cells), name
+        assert set(cells) <= set(SCENARIOS) | set(_EXTRA_SCENARIOS), name
         assert name in HELPERS
     assert set(HELPERS) == set(EXPECTED)
 
@@ -635,8 +733,29 @@ _BEARER_ROWS: list[tuple[str, str, dict[str, Any], Any, Any]] = [
     ("put-tenant_id", "ops_put", {}, operations, FULL_HEADERS),
     ("delete-no_tenant", "ops_delete", {"tenant_id": None}, operations, None),
     ("delete-tenant_id", "ops_delete", {}, operations, FULL_HEADERS),
+    (
+        "delete_with_body-no_tenant",
+        "ops_delete_with_body",
+        {"tenant_id": None},
+        operations,
+        None,
+    ),
+    (
+        "delete_with_body-tenant_id",
+        "ops_delete_with_body",
+        {},
+        operations,
+        FULL_HEADERS,
+    ),
     ("verbatim-always", "ops_verbatim", {}, operations, FULL_HEADERS),
     ("passthrough-always", "ops_passthrough", {}, operations, FULL_HEADERS),
+    (
+        "passthrough_post-always",
+        "ops_passthrough_post",
+        {},
+        operations,
+        FULL_HEADERS,
+    ),
     (
         "route_clone_credential-always",
         "ops_route_clone_credential",
@@ -684,8 +803,17 @@ async def test_bearer_forwarding(
     vars_module: Any,
     expected_headers: Any,
 ) -> None:
+    """Each row is self-contained: the helper's OWN ContextVars are first
+    cleared to ``None`` explicitly, then ``vars_module``'s are set. For the
+    ``*-own_vars`` rows the second overrides the first; for the
+    ``*-operations_vars_only`` rows it proves the private copy ignores
+    operations' vars rather than relying on ambient (unset) state."""
     helper = HELPERS[helper_name]
-    with _captured(vars_module), _stub_coord(helper, SCENARIOS["ok_200_json"]) as cls:
+    with (
+        _captured(helper.vars_module, None, None),
+        _captured(vars_module),
+        _stub_coord(helper, SCENARIOS["ok_200_json"]) as cls,
+    ):
         await helper.invoke(**kwargs)
     sent = _sent(cls, helper)
     assert sent.await_count == 1
@@ -728,6 +856,301 @@ async def test_url_join(helper_name: str) -> None:
     assert url == expected
 
 
+_SLASHED = "http://coord.test/"
+# post_to_coord strips a trailing slash off COORD_URL; every other helper
+# concatenates f"{COORD_URL}{path}" and so sends a DOUBLE slash.
+_SLASHED_DOUBLE = "http://coord.test//coord/contract-probe"
+_SLASHED_URLS: dict[str, str] = {
+    **dict.fromkeys(HELPERS, _SLASHED_DOUBLE),
+    "ops_route_clone_credential": (
+        "http://coord.test//coord/onboarding/installations/clone-credential"
+    ),
+    "post_to_coord": "http://coord.test/coord/contract-probe",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper_name", list(HELPERS))
+async def test_url_join_trailing_slash_coord_url(helper_name: str) -> None:
+    """The URL-join difference with a trailing-slash ``COORD_URL``, pinned."""
+    helper = HELPERS[helper_name]
+    with (
+        patch.object(settings, "COORD_URL", _SLASHED),
+        _captured(helper.vars_module),
+        _stub_coord(helper, SCENARIOS["ok_200_json"]) as cls,
+    ):
+        await helper.invoke()
+    call = _sent(cls, helper).call_args
+    url = call.args[1] if helper.method == "request" else call.args[0]
+    assert url == _SLASHED_URLS[helper_name]
+
+
+def test_slashed_urls_cover_every_helper() -> None:
+    assert set(_SLASHED_URLS) == set(HELPERS)
+
+
+# ---------------------------------------------------------------------------
+# What reaches the wire besides headers: params= and json=, verbatim.
+# ---------------------------------------------------------------------------
+
+# A list value is a REPEATED key (?kind=a&kind=b) — httpx's own encoding, so
+# the dict must reach client.<method>(params=...) unmodified.
+PARAMS = {"kind": ["a", "b"], "limit": 5}
+_CLONE_URL = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
+_POST_TO_COORD_URL = f"{settings.COORD_URL.rstrip('/')}{PATH}"
+
+# (id, helper, invoke kwargs, expected positional args, expected kwargs other
+#  than headers, kwarg names whose wire value must be the SAME object passed)
+_WIRE_ROWS: list[
+    tuple[str, str, dict[str, Any], tuple[Any, ...], dict[str, Any], tuple[str, ...]]
+] = [
+    ("get-no_params", "ops_get", {}, (_url(),), {"params": None}, ()),
+    (
+        "get-repeated_key_params",
+        "ops_get",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
+    (
+        "agent_sessions_get-params",
+        "agent_sessions_get",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
+    (
+        "prompt_injections_get-params",
+        "prompt_injections_get",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
+    ("post-json", "ops_post", {}, (_url(),), {"json": BODY}, ("json",)),
+    (
+        "post_readable-json",
+        "ops_post_readable",
+        {},
+        (_url(),),
+        {"json": BODY},
+        ("json",),
+    ),
+    ("patch-json", "ops_patch", {}, (_url(),), {"json": BODY}, ("json",)),
+    ("put-json", "ops_put", {}, (_url(),), {"json": BODY}, ("json",)),
+    ("delete-no_params", "ops_delete", {}, (_url(),), {"params": None}, ()),
+    (
+        "delete-params",
+        "ops_delete",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
+    (
+        "delete_with_body-params_and_json",
+        "ops_delete_with_body",
+        {"params": PARAMS},
+        ("DELETE", _url()),
+        {"params": PARAMS, "json": DELETE_BODY},
+        ("params", "json"),
+    ),
+    (
+        "verbatim-no_params",
+        "ops_verbatim",
+        {},
+        ("POST", _url()),
+        {"params": None, "json": BODY},
+        ("json",),
+    ),
+    (
+        "verbatim-params_and_json",
+        "ops_verbatim",
+        {"params": PARAMS},
+        ("POST", _url()),
+        {"params": PARAMS, "json": BODY},
+        ("params", "json"),
+    ),
+    # The GET arm sends neither params nor json.
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    (
+        "passthrough_post-body",
+        "ops_passthrough_post",
+        {},
+        (_url(),),
+        {"json": BODY},
+        ("json",),
+    ),
+    # ``json=body or {}``: None, and any FALSY body, goes out as {}.
+    (
+        "passthrough_post-body_none",
+        "ops_passthrough_post",
+        {"body": None},
+        (_url(),),
+        {"json": {}},
+        (),
+    ),
+    (
+        "passthrough_post-body_falsy_list",
+        "ops_passthrough_post",
+        {"body": []},
+        (_url(),),
+        {"json": {}},
+        (),
+    ),
+    (
+        "route_clone_credential-json",
+        "ops_route_clone_credential",
+        {},
+        (_CLONE_URL,),
+        {"json": {"repo": "owner/name"}},
+        (),
+    ),
+    (
+        "agent_registry-no_body",
+        "agent_registry_coord_request",
+        {},
+        ("GET", _url()),
+        {"json": None},
+        (),
+    ),
+    (
+        "agent_registry-json_body",
+        "agent_registry_coord_request",
+        {"json_body": BODY},
+        ("GET", _url()),
+        {"json": BODY},
+        ("json",),
+    ),
+    (
+        "post_to_coord-json",
+        "post_to_coord",
+        {},
+        (_POST_TO_COORD_URL,),
+        {"json": BODY},
+        ("json",),
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("helper_name", "kwargs", "expected_args", "expected_kwargs", "same"),
+    [pytest.param(*row[1:], id=row[0]) for row in _WIRE_ROWS],
+)
+async def test_wire_arguments(
+    helper_name: str,
+    kwargs: dict[str, Any],
+    expected_args: tuple[Any, ...],
+    expected_kwargs: dict[str, Any],
+    same: tuple[str, ...],
+) -> None:
+    helper = HELPERS[helper_name]
+    with (
+        _captured(helper.vars_module),
+        _stub_coord(helper, SCENARIOS["ok_200_json"]) as cls,
+    ):
+        await helper.invoke(**kwargs)
+    call = _sent(cls, helper).call_args
+    assert call.args == expected_args
+    sent_kwargs = {k: v for k, v in call.kwargs.items() if k != "headers"}
+    assert sent_kwargs == expected_kwargs
+    for key in same:
+        # Verbatim: the very object the caller passed, not a re-encoding.
+        assert sent_kwargs[key] is expected_kwargs[key], key
+
+
+# ---------------------------------------------------------------------------
+# post_to_coord's retry backoff.
+# ---------------------------------------------------------------------------
+
+_BACKOFF_ROWS: list[tuple[str, list[str], list[float]]] = [
+    # Three never-reached-coord failures: two sleeps, 0.5 then 1.5.
+    *(
+        (f"{s}-exhausted", [s, s, s], [0.5, 1.5])
+        for s in (
+            "connect_error",
+            "connect_timeout",
+            GATEWAY_502,
+            GATEWAY_503,
+            GATEWAY_504,
+        )
+    ),
+    # Recovers on the second attempt: one sleep, the first backoff only.
+    ("gateway_503-then_ok", [GATEWAY_503, "ok_200_json"], [0.5]),
+    ("connect_error-then_ok", ["connect_error", "ok_200_json"], [0.5]),
+    # Single-attempt arms never sleep.
+    ("ok_200_json-first_try", ["ok_200_json"], []),
+    ("read_timeout-no_retry", ["read_timeout"], []),
+    ("read_error-no_retry", ["read_error"], []),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sequence", "expected_sleeps"),
+    [pytest.param(*row[1:], id=row[0]) for row in _BACKOFF_ROWS],
+)
+async def test_post_to_coord_backoff_sequence(
+    sequence: list[str], expected_sleeps: list[float]
+) -> None:
+    helper = HELPERS["post_to_coord"]
+    factories = {**SCENARIOS, **_EXTRA_SCENARIOS}
+    queue = [factories[name] for name in sequence]
+
+    def _next() -> Any:
+        return queue.pop(0)()
+
+    sleep = AsyncMock()
+    with (
+        _captured(helper.vars_module),
+        _stub_coord(helper, _next, sleep=sleep) as cls,
+    ):
+        with contextlib.suppress(HTTPException):
+            await helper.invoke()
+    assert queue == []
+    assert _sent(cls, helper).await_count == len(sequence)
+    assert [c.args for c in sleep.await_args_list] == [(s,) for s in expected_sleeps]
+    assert all(c.kwargs == {} for c in sleep.await_args_list)
+
+
+# ---------------------------------------------------------------------------
+# invoke must forward kwargs, never swallow them.
+# ---------------------------------------------------------------------------
+
+
+# post_to_coord takes ``**log_fields``: an unknown kwarg is FORWARDED and lands
+# as a structured-log field by design, so it cannot raise. Pinned below
+# instead — it reaches neither the wire nor the client constructor.
+_ABSORBS_UNKNOWN_KWARGS = {"post_to_coord"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper_name", list(HELPERS))
+async def test_invoke_rejects_unknown_kwargs(helper_name: str) -> None:
+    """A kwarg the helper does not take raises TypeError — a future row
+    cannot silently believe it set an option that was dropped."""
+    helper = HELPERS[helper_name]
+    with (
+        _captured(helper.vars_module),
+        _stub_coord(helper, SCENARIOS["ok_200_json"]) as cls,
+    ):
+        if helper_name in _ABSORBS_UNKNOWN_KWARGS:
+            await helper.invoke(no_such_option=True)
+        else:
+            with pytest.raises(TypeError):
+                await helper.invoke(no_such_option=True)
+    sent = _sent(cls, helper)
+    if helper_name in _ABSORBS_UNKNOWN_KWARGS:
+        assert sent.await_count == 1
+        assert "no_such_option" not in sent.call_args.kwargs
+        assert "no_such_option" not in cls.call_args.kwargs
+    else:
+        assert sent.await_count == 0
+
+
 # ---------------------------------------------------------------------------
 # Timeout handed to the httpx.AsyncClient constructor.
 # ---------------------------------------------------------------------------
@@ -752,8 +1175,10 @@ _TIMEOUT_ROWS: list[tuple[str, str, dict[str, Any], Any]] = [
     ("patch", "ops_patch", {}, _FIVE),
     ("put", "ops_put", {}, _FIVE),
     ("delete", "ops_delete", {}, _FIVE),
+    ("delete_with_body", "ops_delete_with_body", {}, _FIVE),
     ("verbatim", "ops_verbatim", {}, _FIVE),
     ("passthrough", "ops_passthrough", {}, _FIVE),
+    ("passthrough_post", "ops_passthrough_post", {}, _FIVE),
     ("route_clone_credential", "ops_route_clone_credential", {}, _FIVE),
     ("agent_registry", "agent_registry_coord_request", {}, _FIVE),
     ("agent_sessions", "agent_sessions_get", {}, _FIVE),
@@ -785,8 +1210,9 @@ async def test_client_timeout(
 
 def test_timeout_rows_cover_every_helper() -> None:
     covered = {row[1] for row in _TIMEOUT_ROWS}
-    # The two flag variants of post share ops_post's constructor call.
+    # The three flag variants of post share ops_post's constructor call.
     assert covered | {
         "ops_post_structured_errors",
+        "ops_post_return_status",
         "ops_post_non_json_success_as_empty",
     } == set(HELPERS)
