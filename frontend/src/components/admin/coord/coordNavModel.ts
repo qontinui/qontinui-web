@@ -13,6 +13,7 @@
  *   Pipeline · Pull Requests · Gates · Notifications   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
+ *             Operator Touches /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
  *             History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
@@ -53,6 +54,7 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  Hand,
   HardDrive,
   History as HistoryIcon,
   Inbox,
@@ -274,6 +276,18 @@ export const GROUPS: NavGroup[] = [
         label: "Findings",
         icon: Lightbulb,
         testId: "coord-nav-findings",
+      },
+      {
+        // Sits after Questions and Findings deliberately: Questions is where a
+        // single interruption is ANSWERED; this is the aggregate over every
+        // one of them — which classes of interruption reach the operator, and
+        // whether the operator is the constraint. Strategic and read-only, so
+        // it is not a second question queue (plan
+        // `2026-08-27-operator-touch-read-and-surface` Phase C3).
+        href: "/admin/coord/operator-touches",
+        label: "Operator Touches",
+        icon: Hand,
+        testId: "coord-nav-operator-touches",
       },
       {
         href: "/admin/coord/agents",

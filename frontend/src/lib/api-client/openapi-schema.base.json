@@ -88932,6 +88932,182 @@
         ]
       }
     },
+    "/api/v1/operations/coord/operator-touches": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched \u2014\n``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,\n``aggregate_included`` (``false`` on a ``before`` page, where every\naggregate field and ``constraint_verdict`` are ``null``),\n``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,\n``unknown_share``, ``policy_authorized_split``, ``reason_classes``,\n``touches``, ``next_cursor`` and ``constraint_verdict``.\n\nEvery parameter is declared as a STRING and forwarded unchanged. coord\nclamps ``limit`` to ``1..200``, answers a VALUE error with its typed\n``400 {\"error\": \"bad_request\", \"detail\"}``, and a TYPE error (``abc`` for\nan integer, ``yes`` for a boolean) with axum's plain-text 400, which the\npassthrough wraps as ``{\"error\": \"<text>\"}`` \u2014 see the section note.\nTyping them here would answer a FastAPI ``422 {detail: [...]}`` instead,\nwhich the page would misattribute to coord. A ``not_yet_measured`` store is coord's\nanswer, not a failure; coord's 400/503 bodies pass through verbatim.",
+        "operationId": "api_v1_operations_coord_operator_touches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disposition",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Disposition"
+            }
+          },
+          {
+            "in": "query",
+            "name": "open_only",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Open Only"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actionable_only",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actionable Only"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operator Touches",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/operator-touches/constraint-verdict": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.\n\nThe standalone form of the ``constraint_verdict`` object the touch read\ncarries inline: ``{verdict: \"operator\"|\"machines\"|\"tokens\"|\"unknown\",\nreason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted\nverdict, never a default. Error bodies pass through verbatim.",
+        "operationId": "api_v1_operations_coord_operator_touches_constraint_verdict_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operator Touch Constraint Verdict",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/policies": {
       "get": {
         "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.\n\n``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``\nfilters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when\nPRESENT.\n\nFor the two STRING filters that includes an empty string, which is a real\nfilter to coord and not a synonym for \"unfiltered\" (``?repo=`` selects the\ndegenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown\nkind, which is a better answer than silently listing everything).\n``enabled`` is the exception and is NOT reachable that way: it is a\n``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function\nruns (measured \u2014 ``?repo=`` and ``?kind=`` reach the handler as ``\"\"``;\n``?enabled=`` does not reach it at all). Only ``?enabled=true`` /\n``?enabled=false`` are expressible, which costs nothing: an empty\n``enabled`` has no meaning to coord, whose own field is an\n``Option<bool>``. Until this route\naccepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and\na tenant's DISABLED rules were **not listable from the console** \u2014 the\n``/admin/coord/automation-rules`` enable/disable switch could therefore\nwrite a row it could never read back, and the row was unrecoverable through\nthe product.\n\n``enabled`` is an EQUALITY filter server-side, not a \"show everything\"\nswitch: coord's resolver binds it as ``AND enabled = $2`` against the\ntenant's own rules. ``enabled=false`` therefore lists the DISABLED rules\nonly. A caller wanting both states issues both requests and unions them by\n``policy_id`` \u2014 coord's system built-ins come back on BOTH arms (its\nsystem-band query hardcodes ``enabled = true``), so the union must dedupe.",
@@ -96665,7 +96841,7 @@
     },
     "/api/v1/operations/pr-merge/slo": {
       "get": {
-        "description": "Per-tenant SLO dashboard \u2014 per-(tenant, repo) metrics over the\nlast 7/30 days.\n\nReturns ``{ \"tenant_id\", \"repos\": [...], \"kill_switch_history_last_30d\":\n[...], \"generated_at\" }`` where each repo carries ``merge_enabled`` (the\nRESOLVED boolean) + ``merge_enabled_override`` (the RAW per-repo pin:\n``true``/``false`` = pinned, ``null`` = inheriting) + 7/30 day windows of\n``auto_merge_success_rate``, ``escalation_rate``,\n``operator_override_rate``, ``total_decisions``.\n\n``current_rollout_state`` / ``shadow_vs_live_agreement_rate`` /\n``shadow_decisions`` were REMOVED from coord's payload by plan\n``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``\nPhase 5, along with the ``rollout_state`` column and the ``shadow`` state\nthe last two existed to justify exiting.\n\nDrives MergeOrchestrationSettings.tsx's SLO Dashboard section.",
+        "description": "Per-tenant SLO dashboard \u2014 per-(tenant, repo) metrics over the\nlast 7/30 days.\n\nReturns ``{ \"tenant_id\", \"repos\": [...], \"kill_switch_history_last_30d\":\n[...], \"generated_at\" }`` where each repo carries ``merge_enabled`` (the\nRESOLVED boolean) + ``merge_enabled_override`` (the RAW per-repo pin:\n``true``/``false`` = pinned, ``null`` = inheriting) + 7/30 day windows of\n``auto_merge_success_rate``, ``escalation_rate``,\n``operator_override_rate``, ``total_decisions``.\n\n``current_rollout_state`` / ``shadow_vs_live_agreement_rate`` /\n``shadow_decisions`` were REMOVED from coord's payload by plan\n``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``\nPhase 5, along with the ``rollout_state`` column and the ``shadow`` state\nthe last two existed to justify exiting.\n\nPlan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level\nfields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``\n\u2014 each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |\n``unreadable`` \u2014 and ``structurally_zero``, the per-repo window fields\nwith no live writer (``operator_override_rate``, ``escalation_rate``).\nThis proxy returns coord's JSON as-is (no response model reshapes it), so\nboth reach the frontend without a change here.\n\nDrives MergeOrchestrationSettings.tsx's SLO Dashboard section.",
         "operationId": "api_v1_operations_pr_merge_slo_get",
         "responses": {
           "200": {

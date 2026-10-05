@@ -45,6 +45,7 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 import { MergeOrchestrationSettings } from "./MergeOrchestrationSettings";
+import { UNKNOWN_AMBER } from "@/components/console";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -1759,5 +1760,121 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
     expect(screen.getByTestId(`repo-card-${REPO}`)).toHaveTextContent(
       /tenant is paused/i
     );
+  });
+});
+
+// Plan `2026-08-27-operator-touch-read-and-surface` C3: the SLO Dashboard's
+// tenant-level operator-touch line, and the two dead neighbours labelled so a
+// reader can tell which numbers are live.
+describe("<MergeOrchestrationSettings> SLO operator-touch strip", () => {
+  const SLO_REPO = "qontinui/qontinui-web";
+
+  function sloWindow() {
+    return {
+      auto_merge_success_rate: 0.9,
+      escalation_rate: 0,
+      post_merge_verification_lag_p95_seconds: null,
+      operator_override_rate: 0,
+      total_decisions: 3,
+    };
+  }
+
+  function routeSlo(extra: Record<string, unknown>) {
+    return (url: string) => {
+      if (url.includes("/pr-merge/slo")) {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            repos: [
+              {
+                repo: SLO_REPO,
+                merge_enabled: true,
+                merge_enabled_override: null,
+                windows: { last_7d: sloWindow(), last_30d: sloWindow() },
+              },
+            ],
+            kill_switch_history_last_30d: [],
+            generated_at: "2026-09-27T00:00:00Z",
+            ...extra,
+          })
+        );
+      }
+      return Promise.resolve(routeGet(url, {}));
+    };
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("says Not yet measured for an empty touch store — never 0", async () => {
+    const empty = { measurement: "not_yet_measured" };
+    fetchMock.mockImplementation(
+      routeSlo({
+        operator_touch: { last_7d: empty, last_30d: empty },
+        structurally_zero: ["operator_override_rate", "escalation_rate"],
+      })
+    );
+    render(<MergeOrchestrationSettings />);
+    const w7 = await screen.findByTestId("slo-operator-touch-7d");
+    expect(w7).toHaveTextContent(
+      "Not yet measured — the touch emitter has not run"
+    );
+    expect(w7).toHaveAttribute("data-touch-state", "not_yet_measured");
+    // One tenant-level line, not a tile per repo card.
+    expect(screen.getAllByTestId("slo-operator-touch-strip")).toHaveLength(1);
+    expect(
+      screen.getByTestId(`slo-repo-card-${SLO_REPO}`)
+    ).not.toHaveTextContent("Operator touches");
+  });
+
+  it("labels the two dead neighbours structurally zero", async () => {
+    fetchMock.mockImplementation(
+      routeSlo({
+        operator_touch: {
+          last_7d: {
+            measurement: "measured",
+            touches: 4,
+            operator_reaching: 2,
+            operator_reaching_per_day: 0.5,
+            agent_absorbed_rate: 0.5,
+            unknown_share: 0,
+          },
+          last_30d: { measurement: "unreadable", unreadable_reason: "db_unavailable" },
+        },
+        structurally_zero: ["operator_override_rate", "escalation_rate"],
+      })
+    );
+    render(<MergeOrchestrationSettings />);
+    const override = await screen.findByTestId(
+      "slo-structurally-zero-operator_override_rate"
+    );
+    expect(override).toHaveTextContent("structurally 0");
+    expect(
+      screen.getByTestId("slo-structurally-zero-escalation_rate")
+    ).toHaveTextContent("structurally 0");
+    // The live one is NOT labelled dead, and says what it measured.
+    expect(screen.getByTestId("slo-operator-touch-7d")).toHaveTextContent(
+      "0.5/day reached you · 50.0% agent-absorbable"
+    );
+    expect(screen.getByTestId("slo-operator-touch-30d")).toHaveAttribute(
+      "data-touch-state",
+      "unknown"
+    );
+    // The unknown window wears the console's own UNKNOWN_AMBER token.
+    const unknownText = screen
+      .getByTestId("slo-operator-touch-30d")
+      .querySelector("span:last-child");
+    expect(unknownText?.className).toContain(UNKNOWN_AMBER);
+  });
+
+  it("labels nothing dead, and shows the touch line as unknown, on an older coord", async () => {
+    fetchMock.mockImplementation(routeSlo({}));
+    render(<MergeOrchestrationSettings />);
+    const w7 = await screen.findByTestId("slo-operator-touch-7d");
+    expect(w7).toHaveAttribute("data-touch-state", "unknown");
+    expect(
+      screen.queryByTestId("slo-structurally-zero-operator_override_rate")
+    ).toBeNull();
   });
 });

@@ -973,8 +973,17 @@ _WIRE_ROWS: list[
         {"params": PARAMS, "json": BODY},
         ("params", "json"),
     ),
-    # The GET arm sends neither params nor json.
-    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    # The GET arm sends no json, and ``params`` verbatim: ``None`` when the
+    # caller passed no query (httpx puts nothing on the wire for it).
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {"params": None}, ()),
+    (
+        "passthrough-get_params",
+        "ops_passthrough",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
     (
         "passthrough_post-body",
         "ops_passthrough_post",
