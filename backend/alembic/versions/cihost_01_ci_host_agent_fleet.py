@@ -1,7 +1,7 @@
 """coord.ci_* — the coord-managed ephemeral self-hosted CI runner fleet
 
 Revision ID: cihost_01_ci_host_agent_fleet
-Revises: coord_ci_pool_observations_01
+Revises: coord_alerts_resolvedidx_01
 Create Date: 2026-10-04
 
 Phase 1 of plan
@@ -59,11 +59,10 @@ The tables:
     One row per ``(tenant, repo, label set)`` pool: its ``secrets_class`` and
     ``isolation`` (above), the per-slot sizing, and the
     ``min_idle`` / ``max_slots`` bounds the scaler places within (D5). Label
-    sets are stored LOWER-CASE, SORTED (byte order) and DE-DUPLICATED, with no
-    NULL or empty label — enforced by CHECKs against
-    ``coord.ci_labels_normalized`` — so the unique key is the set, never one
-    spelling of it. (GitHub matches ``runs-on`` labels case-insensitively, so
-    lower-casing loses nothing.)
+    labels are LOWER-CASE ``[a-z0-9._-]+`` with no NULL, empty or comma-carrying
+    element — enforced by builtin-only CHECKs (see "Label invariants" below).
+    (GitHub matches ``runs-on`` labels case-insensitively, so lower-casing
+    loses nothing.)
 
 ``coord.ci_slot_leases``
     One row per JIT registration coord minted: which agent, which pool, which
@@ -99,16 +98,24 @@ Tenant binding
 desired row can never pair one tenant's agent with another tenant's pool. The
 two parents carry the ``UNIQUE (…, tenant_id)`` keys those FKs need.
 
-``coord.ci_labels_normalized(text[])``
-======================================
+Label invariants — which half the database enforces, and which the writer
+==========================================================================
 
-An ``IMMUTABLE`` SQL function (``lower`` + ``DISTINCT`` + ``ORDER BY … COLLATE
-"C"``) used by the pool-spec CHECK, because PostgreSQL forbids sub-queries
-inside a CHECK. Its sibling ``coord.ci_labels_valid(text[])`` checks every
-element against ``^[a-z0-9._-]+$`` (ASCII, no spaces) — a per-element CHECK,
-for the same reason — and is false for an empty array.
-Byte-order collation matches Rust's ``sort`` / ``dedup`` on ``String``, so the
-coord writer and the constraint agree on what "sorted" means.
+Enforced HERE, with builtins only (no function, no dollar quote — so coord's
+migration classifier can prove this revision additive-safe and auto-land it):
+no NULL element (``array_position(labels, NULL) IS NULL``), no empty element
+(``NOT ('' = ANY(labels))``), lower-case (``labels::text = lower(labels::text)``),
+the charset (``array_to_string(labels, ',') ~ '^[a-z0-9._,-]+$'``) and no comma
+INSIDE an element (the joined string carries exactly ``cardinality - 1`` commas).
+
+NOT enforced here: SORTED (byte order) and DE-DUPLICATED. Neither is expressible
+in a CHECK without a sub-query or a function, and a function is exactly what
+kept this revision from auto-landing. So it is the WRITER's invariant: coord's
+Phase 4 pool-spec door is the single writer of ``coord.ci_pool_specs.labels``
+and MUST store each set sorted by byte order (Rust ``sort`` on ``String``) and
+de-duplicated, so the ``UNIQUE (tenant_id, repo, labels)`` key is the set rather
+than one spelling of it. Decided by auto-landing over a DB-enforced sort: the
+writer is single and owned by coord, and the sort is one line there.
 
 Idempotency / authorship posture
 ================================
@@ -136,7 +143,7 @@ preference, not a crash risk. Done-when is
 =================
 
 The single head on qontinui-web ``origin/main`` when this branch was last
-rebased (``coord_ci_pool_observations_01``). If another revision lands first, re-point the token
+rebased (``coord_alerts_resolvedidx_01``). If another revision lands first, re-point the token
 below AND the ``Revises:`` line above at the merged head. Do not author an
 ``alembic merge`` revision.
 """
@@ -147,45 +154,14 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cihost_01_ci_host_agent_fleet"
-down_revision: str | Sequence[str] | None = "coord_ci_pool_observations_01"
+down_revision: str | Sequence[str] | None = "coord_alerts_resolvedidx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create the five coord.ci_* fleet tables, their helper and indexes."""
+    """Create the five coord.ci_* fleet tables and their indexes."""
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION coord.ci_labels_normalized(labels text[])
-        RETURNS text[]
-        LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-        AS $fn$
-            SELECT COALESCE(
-                ARRAY(
-                    SELECT DISTINCT lower(u.l COLLATE "C") COLLATE "C"
-                      FROM unnest(labels) AS u(l)
-                     ORDER BY 1
-                ),
-                '{}'::text[]
-            )
-        $fn$
-        """
-    )
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION coord.ci_labels_valid(labels text[])
-        RETURNS boolean
-        LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-        AS $fn$
-            SELECT COALESCE(
-                bool_and(u.l IS NOT NULL AND u.l ~ '^[a-z0-9._-]+$'),
-                false
-            )
-              FROM unnest(labels) AS u(l)
-        $fn$
-        """
-    )
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.ci_host_agents (
@@ -274,13 +250,18 @@ def upgrade() -> None:
                        AND split_part(repo, '/', 2) NOT IN ('.', '..')),
             CONSTRAINT ck_ci_pool_specs_labels_nonempty
                 CHECK (cardinality(labels) > 0),
-            CONSTRAINT ck_ci_pool_specs_labels_no_null_or_empty
-                CHECK (array_position(labels, NULL) IS NULL
-                       AND array_position(labels, '') IS NULL),
-            CONSTRAINT ck_ci_pool_specs_labels_normalized
-                CHECK (labels = coord.ci_labels_normalized(labels)),
+            CONSTRAINT ck_ci_pool_specs_labels_no_null
+                CHECK (array_position(labels, NULL) IS NULL),
+            CONSTRAINT ck_ci_pool_specs_labels_no_empty
+                CHECK (NOT ('' = ANY(labels))),
+            CONSTRAINT ck_ci_pool_specs_labels_lower
+                CHECK (labels::text = lower(labels::text)),
             CONSTRAINT ck_ci_pool_specs_labels_charset
-                CHECK (coord.ci_labels_valid(labels)),
+                CHECK (array_to_string(labels, ',') ~ '^[a-z0-9._,-]+$'),
+            CONSTRAINT ck_ci_pool_specs_labels_no_comma
+                CHECK (length(array_to_string(labels, ','))
+                       - length(replace(array_to_string(labels, ','), ',', ''))
+                       = cardinality(labels) - 1),
             CONSTRAINT ck_ci_pool_specs_mem_gib_positive
                 CHECK (mem_gib > 0),
             CONSTRAINT ck_ci_pool_specs_cores_positive
@@ -359,7 +340,8 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.ci_pool_specs IS
-        'Self-hosted CI pool specs: (tenant, repo, sorted distinct label set) with '
+        'Self-hosted CI pool specs: (tenant, repo, label set; the coord writer stores '
+        'it sorted and de-duplicated) with '
         'secrets_class, isolation, per-slot sizing and min_idle/max_slots bounds. Written through '
         'the coord spec door, never by hand DML.'
         """
@@ -410,5 +392,3 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS coord.ci_pool_specs")
     op.execute("DROP TABLE IF EXISTS coord.ci_enrol_codes")
     op.execute("DROP TABLE IF EXISTS coord.ci_host_agents")
-    op.execute("DROP FUNCTION IF EXISTS coord.ci_labels_normalized(text[])")
-    op.execute("DROP FUNCTION IF EXISTS coord.ci_labels_valid(text[])")

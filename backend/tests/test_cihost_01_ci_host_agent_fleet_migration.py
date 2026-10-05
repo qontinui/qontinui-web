@@ -546,40 +546,31 @@ def test_leases_and_desired_rows_cannot_cross_tenants() -> None:
 
 
 @_needs_pg
-def test_labels_must_be_stored_lower_sorted_distinct_and_non_empty() -> None:
+def test_labels_are_lower_case_charset_bound_and_non_empty() -> None:
     with ephemeral_database(admin_database_url(), "cihost01_labels") as (
         engine,
         db_url,
     ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         t = _tenant(engine)
-        # Byte order: '-' (0x2d) sorts before letters.
         _pool(engine, t, labels=["linux", "qontinui", "self-hosted"])
+        _pool(engine, t, labels=["a.b_c-1"], repo="o/charset")
         bad_label_sets: tuple[list[str | None], ...] = (
-            ["self-hosted", "qontinui"],  # unsorted
-            ["a", "a"],  # duplicate
             ["Linux", "qontinui"],  # upper-case
             ["", "a"],  # empty label
             ["a", None],  # NULL label
             ["a b"],  # space
             ["ré"],  # non-ASCII
             ["a/b"],  # outside [a-z0-9._-]
+            ["a,b"],  # a comma INSIDE one element
+            [],  # no label at all
         )
         for i, bad in enumerate(bad_label_sets):
             with pytest.raises(sqlalchemy.exc.IntegrityError):
                 _pool(engine, t, labels=bad, repo=f"o/bad{i}")
-        assert (
-            scalar(
-                engine,
-                "SELECT coord.ci_labels_normalized(ARRAY['b','a','B','A','c-d'])::text",
-            )
-            == "{a,b,c-d}"
-        )
-        assert scalar(engine, "SELECT coord.ci_labels_valid('{}'::text[])") is False
-        assert (
-            scalar(engine, "SELECT coord.ci_labels_valid(ARRAY['x', 'a.b_c-1'])")
-            is True
-        )
+        # Sorted / de-duplicated is the WRITER's invariant (coord's Phase 4
+        # spec door), deliberately not a CHECK — see the revision docstring.
+        _pool(engine, t, labels=["self-hosted", "qontinui"], repo="o/unsorted")
 
 
 @_needs_pg
@@ -600,16 +591,6 @@ def test_upgrade_is_idempotent_and_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "downgrade", parent)
         for table in _TABLES:
             assert not table_exists(engine, _SCHEMA, table), table
-        assert (
-            scalar(
-                engine,
-                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
-                "ON n.oid = p.pronamespace "
-                "WHERE n.nspname = 'coord' "
-                "AND p.proname IN ('ci_labels_normalized', 'ci_labels_valid')",
-            )
-            == 0
-        )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         for table in _TABLES:
