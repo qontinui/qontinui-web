@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from pathlib import Path
 from types import ModuleType, TracebackType
 from typing import Any
 from unittest import mock
@@ -176,3 +177,25 @@ def setattr_ops(monkeypatch: pytest.MonkeyPatch, name: str, value: Any) -> None:
     """``monkeypatch.setattr`` on every binding of ``name``; pytest undoes it."""
     for owner, attribute in resolve_ops_targets(name):
         monkeypatch.setattr(owner, attribute, value, raising=True)
+
+
+def ops_submodules(backend: Path | None = None) -> frozenset[str]:
+    """Dotted names of every submodule under the operations package on disk.
+
+    ``.py`` files (``__init__`` excluded) and subpackage directories, as
+    ``app.api.v1.endpoints.operations.<sub>[.<leaf>]``. Empty while
+    ``operations`` is still one module. Read from the filesystem, not
+    ``sys.modules``, so the answer does not depend on what a test imported.
+    """
+    root = backend or Path(__file__).resolve().parent.parent
+    package_dir = root / Path(*OPS_PACKAGE.split("."))
+    if not package_dir.is_dir():
+        return frozenset()
+    names: set[str] = set()
+    for path in package_dir.rglob("*"):
+        rel = path.relative_to(package_dir)
+        if path.is_file() and path.suffix == ".py" and path.stem != "__init__":
+            names.add(".".join([OPS_PACKAGE, *rel.with_suffix("").parts]))
+        elif path.is_dir() and path.name != "__pycache__":
+            names.add(".".join([OPS_PACKAGE, *rel.parts]))
+    return frozenset(names)
