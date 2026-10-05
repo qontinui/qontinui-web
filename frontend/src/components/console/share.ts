@@ -2,7 +2,7 @@
  * share — the console's ONE percentage formatter for a part of a whole.
  *
  * **Supports §3.2's `ShareBar` / `ShareList`** (`console-ui-style-guide.md`
- * §3.6). Promoted out of `plan-library/_components/PlanCoveragePanel.tsx` by
+ * §3.7). Promoted out of `plan-library/_components/PlanCoveragePanel.tsx` by
  * plan `2026-08-27-operator-touch-read-and-surface` Phase C3 rather than
  * written a third time: that panel's `share()` and `MergeOrchestrationSettings`'
  * `fmtRate` were already two, and the operator-touch surface needed a third.
