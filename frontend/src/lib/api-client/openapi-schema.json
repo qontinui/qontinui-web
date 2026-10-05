@@ -11462,6 +11462,117 @@
         "title": "ContextUpdate",
         "type": "object"
       },
+      "ContinuationDeliveryModePut": {
+        "additionalProperties": false,
+        "description": "Closed body for coord's ``PutContinuationDeliveryRequest``.",
+        "properties": {
+          "mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "mode"
+        ],
+        "title": "ContinuationDeliveryModePut",
+        "type": "object"
+      },
+      "ContinuationDeliveryModeView": {
+        "description": "What coord's resolver returns for one repo's continuation delivery.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "provenance_known": {
+            "default": false,
+            "title": "Provenance Known",
+            "type": "boolean"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "mode",
+          "can_edit"
+        ],
+        "title": "ContinuationDeliveryModeView",
+        "type": "object"
+      },
+      "ContinuationDeliveryModeWriteResult": {
+        "description": "The write, and a separate fresh read of what coord resolves.",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContinuationDeliveryModeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "written_mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Written Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "repo",
+          "written_mode"
+        ],
+        "title": "ContinuationDeliveryModeWriteResult",
+        "type": "object"
+      },
       "CoordSignal": {
         "description": "A coord-owned signal, or an explicit statement that it is UNKNOWN.\n\nCopied from the plan library's invariant 5 posture: an unavailable coord\ndegrades to ``available=False`` with a stated reason, and NEVER to an\nempty payload. \"coord is down\" and \"coord says there is nothing\" are\ndifferent answers, and rendering the first as the second is how a\nmonitoring surface reports an outage as good news.",
         "properties": {
@@ -37158,6 +37269,189 @@
           "period"
         ],
         "title": "PopularPackageResponse",
+        "type": "object"
+      },
+      "PostMergeFollowupScopePut": {
+        "additionalProperties": false,
+        "description": "Closed body for the scope write \u2014 the shape coord's\n``PutPostMergeFollowupScopeRequest`` accepts, and nothing else.\n\n``code_paths`` semantics are coord's and are kept exactly:\n\n* omitted (``None``) on an ``all`` / ``none`` write KEEPS the stored globs;\n* ``[]`` clears them;\n* ``code_only`` must carry at least one non-blank glob \u2014 checked here so\n  the common mistake is a local 422; coord still re-validates and is the\n  authority on whether each glob compiles (its 400 passes through).",
+        "properties": {
+          "code_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Paths"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Repo",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "scope"
+        ],
+        "title": "PostMergeFollowupScopePut",
+        "type": "object"
+      },
+      "PostMergeFollowupScopeView": {
+        "description": "One repo's post-merge follow-up scope, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "code_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Code Paths",
+            "type": "array"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shadow",
+                  "enforce",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "repo",
+                  "default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Scope"
+          },
+          "scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "scope",
+          "can_edit"
+        ],
+        "title": "PostMergeFollowupScopeView",
+        "type": "object"
+      },
+      "PostMergeFollowupScopeWriteResult": {
+        "description": "What the write did, and \u2014 separately \u2014 what coord now resolves.\n\n``effective`` is a SECOND, fresh GET. When it fails, ``effective`` is\n``None`` and ``readback_error`` says why: that is UNKNOWN, never \"the\nwritten scope applies\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostMergeFollowupScopeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "stored_code_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Code Paths"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "written_scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Written Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "repo",
+          "written_scope"
+        ],
+        "title": "PostMergeFollowupScopeWriteResult",
         "type": "object"
       },
       "PresignedUrlResponse": {
@@ -89801,6 +90095,102 @@
         ]
       }
     },
+    "/api/v1/operations/continuation-delivery-mode": {
+      "get": {
+        "description": "Read what coord resolves for one repo's continuation-delivery mode.\n\nSee :class:`ContinuationDeliveryModeView` ``provenance_known`` for why\nthis is a resolver answer and not a stored value.",
+        "operationId": "api_v1_operations_continuation_delivery_mode_get",
+        "parameters": [
+          {
+            "description": "GitHub full name, owner/name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "GitHub full name, owner/name",
+              "minLength": 3,
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuationDeliveryModeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Continuation Delivery Mode",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one repo's continuation-delivery mode, then read it back.",
+        "operationId": "api_v1_operations_continuation_delivery_mode_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinuationDeliveryModePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuationDeliveryModeWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Continuation Delivery Mode",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/audit/recent": {
       "get": {
         "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
@@ -97626,6 +98016,102 @@
           }
         ],
         "summary": "Post Coord Plan Transition",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/post-merge-followup-scope": {
+      "get": {
+        "description": "Read one repo's post-merge follow-up scope for the effective tenant.\n\nA coord 503 (``preference_unreadable`` / ``column_not_present``) passes\nthrough as a 503 \u2014 it is never answered with the ``all`` default.",
+        "operationId": "api_v1_operations_post_merge_followup_scope_get",
+        "parameters": [
+          {
+            "description": "GitHub full name, owner/name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "GitHub full name, owner/name",
+              "minLength": 3,
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMergeFollowupScopeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Post Merge Followup Scope",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one repo's scope, then READ BACK what coord resolves.\n\nTenant-admin gated web-side; coord re-checks with ``rbac::is_tenant_admin``\nand its ``403 admin_required`` passes through verbatim.",
+        "operationId": "api_v1_operations_post_merge_followup_scope_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMergeFollowupScopePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMergeFollowupScopeWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Post Merge Followup Scope",
         "tags": [
           "operations"
         ]
