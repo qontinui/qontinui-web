@@ -63,6 +63,7 @@ from app.api.v1.endpoints import devices_ws
 from app.services.coord_jwks import CoordTokenExpiredError, CoordTokenInvalidError
 from app.services.runner import remote_terminal_relay as rtr
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
+from app.services.runner.remote_relay import end as relay_end
 from app.services.runner.remote_terminal_relay import RemoteTerminalRelay
 from app.services.runner.terminal_relay import TerminalRelayService
 
@@ -81,7 +82,7 @@ TARGET_SESSION = str(uuid4())
 # tests (``test_*_seam_reaches_*``) prove the patch still reaches the code: a
 # patch on a dead name falls back to the real 3 s / 75 s and trips ``wait_for``.
 _ATTACH_DELAY_MODULE = rtr
-_END_TTL_MODULE = rtr
+_END_TTL_MODULE = relay_end
 
 
 # ---------------------------------------------------------------------------
@@ -2830,7 +2831,7 @@ async def test_subscribe_landing_after_its_listener_is_gone_is_matched_at_once(
         if cmd["type"] == "terminal_subscribe":
             # Tear the listener down while the subscribe is in flight.
             session = relay._sessions[id(ws)]
-            await relay._stop_listener(session, target)
+            await relay.listeners._stop_listener(session, target)
         return True
 
     manager.relay.send_command_to_runner = AsyncMock(side_effect=_publish)
@@ -5656,9 +5657,9 @@ async def test_remote_terminal_end_is_a_source_frame() -> None:
 async def test_end_ladder_sits_between_target_and_source_deadlines() -> None:
     # target graceful-exit deadline 60 s < relay 75 s < source 90 s, and NOT
     # the buffer TTL, which equals the target's deadline.
-    assert rtr.PENDING_END_TTL_SECONDS == 75.0
-    assert 60.0 < rtr.PENDING_END_TTL_SECONDS < 90.0
-    assert rtr.PENDING_END_TTL_SECONDS != rtr.PENDING_BUFFER_TTL_SECONDS
+    assert relay_end.PENDING_END_TTL_SECONDS == 75.0
+    assert 60.0 < relay_end.PENDING_END_TTL_SECONDS < 90.0
+    assert relay_end.PENDING_END_TTL_SECONDS != rtr.PENDING_BUFFER_TTL_SECONDS
 
 
 async def test_open_tab_end_forwards_terminal_end_with_the_remote_block(
@@ -6168,7 +6169,7 @@ async def test_unanswered_fresh_end_expires_with_a_typed_error(
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
-    with patch.object(rtr, "PENDING_END_TTL_SECONDS", 0.0):
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.0):
         await _fresh_end(relay, ws, manager, claims)
         await _drain_background(relay)
 
@@ -6196,7 +6197,7 @@ async def test_unanswered_open_tab_end_expires_typed_and_keeps_the_tab(
     ws = _FakeWS()
     manager = _manager()
     claims = await _attached(relay, ws, manager, terminal_id="t1")
-    with patch.object(rtr, "PENDING_END_TTL_SECONDS", 0.0):
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.0):
         await _send(
             relay,
             ws,
@@ -6391,7 +6392,7 @@ async def test_open_tab_end_ttl_after_exit_stops_the_listener(
     manager = _manager()
     claims = await _attached(relay, ws, manager, terminal_id="t1")
     session = relay._sessions[id(ws)]
-    with patch.object(rtr, "PENDING_END_TTL_SECONDS", 0.05):
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.05):
         await _send(
             relay,
             ws,
@@ -6699,7 +6700,7 @@ async def test_a_failing_source_send_still_releases_a_fresh_end(
     manager = _manager()
     claims = _claims()
     ttl = 0.0 if settled_by == "timeout" else 60.0
-    with patch.object(rtr, "PENDING_END_TTL_SECONDS", ttl):
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", ttl):
         await _fresh_end(relay, ws, manager, claims)
         session = relay._sessions[id(ws)]
         minted = _forwarded_ends(manager)[0]["request_id"]
@@ -7181,7 +7182,7 @@ async def test_attach_represent_delay_seam_reaches_the_represent_timer(
 async def test_pending_end_ttl_seam_reaches_the_end_timer(
     relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert rtr.PENDING_END_TTL_SECONDS >= 2.0
+    assert relay_end.PENDING_END_TTL_SECONDS >= 2.0
     monkeypatch.setattr(_END_TTL_MODULE, "PENDING_END_TTL_SECONDS", 0.0)
     ws = _FakeWS()
     manager = _manager()
