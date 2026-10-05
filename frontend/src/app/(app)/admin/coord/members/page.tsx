@@ -126,9 +126,28 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
-import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
+import { relativeTime } from "@/components/operations/utils";
+import {
+  addTenantMember,
+  fetchMembers,
+  fetchMyTenants,
+  grantMemberRole,
+  revokeMemberRole,
+} from "@/lib/api/operations/coordMembers";
+import {
+  addCognitoGroupUser,
+  createCognitoGroup,
+  createGroupTenantRole,
+  deleteCognitoGroup,
+  deleteGroupTenantRole,
+  fetchCognitoGroupBlastRadius,
+  fetchCognitoGroups,
+  fetchCognitoGroupUsers,
+  fetchGroupTenantRoles,
+  removeCognitoGroupUser,
+  type CognitoGroupCreate,
+} from "@/lib/api/operations/cognitoGroups";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -258,7 +277,7 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
+      const res = await fetchMyTenants();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MyTenantsResponse | null;
       // This read is cast straight into state with no check at all. A `null`
@@ -482,7 +501,7 @@ function MembersTable({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
+      const res = await fetchMembers();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MembersResponse;
       // The third sibling. A malformed 200 here fabricates "No members yet." —
@@ -523,12 +542,7 @@ function MembersTable({
     async (operatorId: string, role: CoordRole) => {
       setBusy(operatorId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/members/${encodeURIComponent(
-            operatorId
-          )}/roles`,
-          { method: "POST", body: JSON.stringify({ role }) }
-        );
+        const res = await grantMemberRole(operatorId, role);
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Granted ${tierLabel(role)}`);
         await load();
@@ -549,12 +563,7 @@ function MembersTable({
     async (operatorId: string, role: string) => {
       setBusy(operatorId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/members/${encodeURIComponent(
-            operatorId
-          )}/roles`,
-          { method: "DELETE", body: JSON.stringify({ role }) }
-        );
+        const res = await revokeMemberRole(operatorId, role);
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Revoked ${tierLabel(role)}`);
         await load();
@@ -977,10 +986,7 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
     setSubmitting(true);
     setOutcome(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/tenant-members`,
-        { method: "POST", body: JSON.stringify({ email: addr, role }) }
-      );
+      const res = await addTenantMember(addr, role);
       // 409 is the resolver's ambiguity verdict (more than one Cognito user
       // carries this email), NOT a generic conflict — same wording the Cognito
       // group member add already uses, because it is the same condition and an
@@ -1247,9 +1253,7 @@ function GroupTenantRolesSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/group-tenant-roles`
-      );
+      const res = await fetchGroupTenantRoles();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as GroupTenantRolesResponse;
       // A successful STATUS is not a successful READ — the same rule the
@@ -1303,16 +1307,10 @@ function GroupTenantRolesSection({
       let groupCreated = false;
       let groupReused = false;
       if (alsoCreateGroup && isSuperuser) {
-        const gres = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              group_name: gid,
-              description: `${tierLabel(role)} for ${slug}`,
-            }),
-          }
-        );
+        const gres = await createCognitoGroup({
+          group_name: gid,
+          description: `${tierLabel(role)} for ${slug}`,
+        });
         if (gres.status === 409) {
           // Reusing an existing group is correct — SAYING so is the fix. This
           // arm used to be silent, and the success toast then read "Mapping
@@ -1331,18 +1329,12 @@ function GroupTenantRolesSection({
         }
       }
       // Step 2: the group → tenant → role mapping.
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/group-tenant-roles`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            group_id: gid,
-            tenant_slug: slug,
-            role,
-            auto_create_tenant: autoCreate,
-          }),
-        }
-      );
+      const res = await createGroupTenantRole({
+        group_id: gid,
+        tenant_slug: slug,
+        role,
+        auto_create_tenant: autoCreate,
+      });
       if (!res.ok) {
         const reason = await backendErrorMessage(res);
         // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
@@ -1396,17 +1388,11 @@ function GroupTenantRolesSection({
       const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
       setBusy(key);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "DELETE",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: row.tenant_slug,
-              role: row.role,
-            }),
-          }
-        );
+        const res = await deleteGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: row.tenant_slug,
+          role: row.role,
+        });
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success("Mapping deleted");
         await load();
@@ -1446,35 +1432,23 @@ function GroupTenantRolesSection({
           r.role === row.role
       );
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: currentSlug,
-              role: row.role,
-              auto_create_tenant:
-                existing?.auto_create_tenant ?? row.auto_create_tenant,
-            }),
-          }
-        );
+        const res = await createGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: currentSlug,
+          role: row.role,
+          auto_create_tenant:
+            existing?.auto_create_tenant ?? row.auto_create_tenant,
+        });
         if (!res.ok) {
           throw new Error(
             `${await backendErrorMessage(res)} The mapping under ${row.tenant_slug} is unchanged.`
           );
         }
-        const del = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "DELETE",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: row.tenant_slug,
-              role: row.role,
-            }),
-          }
-        );
+        const del = await deleteGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: row.tenant_slug,
+          role: row.role,
+        });
         if (!del.ok) {
           const reason = await backendErrorMessage(del);
           toast.error(
@@ -1778,11 +1752,7 @@ function CognitoGroupMembers({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          groupName
-        )}/users`
-      );
+      const res = await fetchCognitoGroupUsers(groupName);
       // This route answers 400 naming the reason for a `group_name` Cognito
       // could never hold, so a bare `HTTP ${res.status}` throws that sentence
       // away and renders the section error as literally "HTTP 400" — the
@@ -1811,12 +1781,7 @@ function CognitoGroupMembers({
     async (email: string) => {
       setBusy(email);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-            groupName
-          )}/users`,
-          { method: "DELETE", body: JSON.stringify({ email }) }
-        );
+        const res = await removeCognitoGroupUser(groupName, email);
         // ONE prefix, not two — the `catch` below adds "Remove failed:". This
         // route already answered 404 (no such user) and 409 (ambiguous email)
         // with a real sentence, and now answers 400 for an email or group name
@@ -2036,11 +2001,7 @@ function CognitoGroupItem({
     setBlastRadius({ state: "loading" });
     void (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-            group.group_name
-          )}/blast-radius`
-        );
+        const res = await fetchCognitoGroupBlastRadius(group.group_name);
         // A 502 here is the backend's own `mapping_check_unavailable` /
         // `mapping_check_unreadable` — coord could not say, so neither can
         // we. Render the CAUSE (`error` + coord's status), not the detail's
@@ -2088,12 +2049,7 @@ function CognitoGroupItem({
     }
     setAdding(true);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          group.group_name
-        )}/users`,
-        { method: "POST", body: JSON.stringify({ email }) }
-      );
+      const res = await addCognitoGroupUser(group.group_name, email);
       if (res.status === 404) {
         toast.error("No Cognito user with that email; they must sign up first.");
         return;
@@ -2129,13 +2085,9 @@ function CognitoGroupItem({
       // deliberately no `allow_mapped` control: when coord maps the group the
       // backend 409s and the fix is to remove the mapping first — that
       // ordering is the guard's whole purpose, and a checkbox would erase it.
-      const query = allowHomeGroup ? "?allow_home_group=true" : "";
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          group.group_name
-        )}${query}`,
-        { method: "DELETE" }
-      );
+      const res = await deleteCognitoGroup(group.group_name, {
+        allowHomeGroup,
+      });
       if (!res.ok) {
         throw new Error(await backendErrorMessage(res));
       }
@@ -2583,9 +2535,7 @@ function CognitoGroupsSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups`
-      );
+      const res = await fetchCognitoGroups();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as CognitoGroupsResponse;
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
@@ -2615,9 +2565,7 @@ function CognitoGroupsSection({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`
-        );
+        const res = await fetchGroupTenantRoles();
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         const json = (await res.json()) as GroupTenantRolesResponse;
         // A successful STATUS is not a successful READ. `group_tenant_roles`
@@ -2670,11 +2618,7 @@ function CognitoGroupsSection({
       await Promise.all(
         groups.map(async (g) => {
           try {
-            const res = await httpClient.fetch(
-              `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-                g.group_name
-              )}/users`
-            );
+            const res = await fetchCognitoGroupUsers(g.group_name);
             if (!res.ok) throw new Error(await backendErrorMessage(res));
             const json = (await res.json()) as CognitoGroupUsersResponse;
             // `memberErrors` is the mechanism #1111 held up as the model — a
@@ -2722,12 +2666,9 @@ function CognitoGroupsSection({
     }
     setCreating(true);
     try {
-      const body: Record<string, unknown> = { group_name };
+      const body: CognitoGroupCreate = { group_name };
       if (newDescription.trim()) body.description = newDescription.trim();
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups`,
-        { method: "POST", body: JSON.stringify(body) }
-      );
+      const res = await createCognitoGroup(body);
       if (res.status === 409) {
         toast.error(`A Cognito group named "${group_name}" already exists.`);
         return;
