@@ -106,10 +106,11 @@ describe("coordNavModel", () => {
     ]);
   });
 
-  it("gives a member exactly Overview under Dev Ops", () => {
-    expect(memberLabels("devops")).toEqual(["Overview"]);
+  it("gives a member exactly Overview and CI under Dev Ops", () => {
+    expect(memberLabels("devops")).toEqual(["Overview", "CI"]);
     expect(labels("devops")).toEqual([
       "Overview",
+      "CI",
       "Computers",
       "Trees",
       "Spawn",
@@ -132,11 +133,13 @@ describe("coordNavModel", () => {
     );
     expect(computers?.coordAdminOnly).toBe(true);
     expect(computers?.operatorOnly).toBeUndefined();
-    // Plain member: exactly Overview (resolved Q3 holds).
-    expect(visibleLabels("devops", MEMBER)).toEqual(["Overview"]);
+    // Plain member: exactly Overview and CI (resolved Q3, extended by the
+    // CI dashboard plan's D1 — both are member reads).
+    expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
     // A coord admin who is NOT staff sees Computers and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
+      "CI",
       "Computers",
     ]);
     // A superuser sees every Dev Ops member.

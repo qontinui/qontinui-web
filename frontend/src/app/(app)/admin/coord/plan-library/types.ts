@@ -77,6 +77,43 @@ export type WorkArtifactRelation =
   /** A measurement that FALSIFIES the target claim. Two-ended. */
   | "refutes";
 
+/**
+ * How current a row's `status` can be taken to be — the closed vocabulary of
+ * `StatusCurrency.state` in `backend/app/schemas/plan_library.py` (plan
+ * `2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-whether-it-is-current`).
+ *
+ * Keyed on the FEEDER'S REF, never on `behind`: a feeder parked 1991 commits
+ * behind on a ref it fetched seconds ago is `fed_in_step`. `unknown` is a
+ * member and is never rendered as healthy. Pinned against the OpenAPI
+ * snapshots by `types.wire.test.ts`.
+ */
+export const STATUS_CURRENCY_STATES = [
+  "fed_in_step",
+  "fed_stale_ref",
+  "unfed_key",
+  "asserted_once",
+  "unknown",
+] as const;
+
+export type StatusCurrencyState = (typeof STATUS_CURRENCY_STATES)[number];
+
+export const STATUS_CURRENCY_LABELS: Record<StatusCurrencyState, string> = {
+  fed_in_step: "Fed, in step",
+  fed_stale_ref: "Fed, stale ref",
+  unfed_key: "Unfed key",
+  asserted_once: "Asserted once",
+  unknown: "Currency unknown",
+};
+
+export interface StatusCurrency {
+  state: StatusCurrencyState;
+  /** Newest reading behind the verdict (`updated_at` for `asserted_once`). */
+  as_of: string | null;
+  ref_sha: string | null;
+  ref_age_secs: number | null;
+  detail: string | null;
+}
+
 export interface WorkArtifactSummary {
   id: string;
   organization_id: string | null;
@@ -104,6 +141,8 @@ export interface WorkArtifactSummary {
   current_version: number;
   created_at: string;
   updated_at: string;
+  /** How far `status` can be trusted NOW. Always present on an artifact row. */
+  status_currency: StatusCurrency;
 }
 
 export interface WorkArtifactVersion {
@@ -327,6 +366,10 @@ export interface PlanCandidate {
   }>;
   coord: CandidateCoordLink;
   document_state: DocumentState;
+  /** `sha256(body)`; `null` on a work-unit-only row (there is no body). */
+  content_sha256: string | null;
+  /** `null` on a work-unit-only row — `document_state` says why. */
+  status_currency: StatusCurrency | null;
 }
 
 export interface PlanCandidateResponse {
@@ -799,6 +842,15 @@ export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
   refused_count: true,
   refused_age_secs: true,
   retired: false,
+};
+
+/** `StatusCurrency`'s nullability, as a value. See [`WireNullability`]. */
+export const STATUS_CURRENCY_NULLABLE: WireNullability<StatusCurrency> = {
+  state: false,
+  as_of: true,
+  ref_sha: true,
+  ref_age_secs: true,
+  detail: true,
 };
 
 /** `ScanRootListResponse`'s nullability, as a value. See [`WireNullability`]. */
