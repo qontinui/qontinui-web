@@ -26,11 +26,13 @@ door refuses a second row with the same pair (``409 policy_name_taken``).
 
 It refuses it with a read-then-insert (``name_taken`` before the INSERT), which
 two concurrent creates can both pass. This index closes that race in the
-database: the second INSERT fails with SQLSTATE 23505 on this index name, and
-coord maps that to the same ``409 policy_name_taken``. coord does not READ the
-index, so there is no read-side deploy ordering to wait on (served policy
-``production-and-cost`` ``alembic-sole-authorship`` governs reads of new
-objects); the coord-side 23505 mapping is harmless while the index is absent.
+database: the second INSERT fails with SQLSTATE 23505 on this index name. At
+#2601's head the shared create core turns that into a 500 (the row is still
+refused); coord's follow-up PR maps 23505 on this index to the same
+``409 policy_name_taken``, and that mapping is inert while the index is absent.
+coord does not READ the index, so there is no read-side deploy ordering to wait
+on (served policy ``production-and-cost`` ``alembic-sole-authorship`` governs
+reads of new objects).
 
 ## Why the predicate is this narrow
 
@@ -57,14 +59,23 @@ different domain). So the build cannot meet a duplicate, and a guard against
 one would only cost the migration its static-SQL shape — coord's migration
 classifier refuses a ``DO $$`` block, an f-string or a non-literal
 ``op.execute`` argument, and would hold this PR for an operator. ``CONCURRENTLY``
-takes no lock that blocks policy writes, so there is no unbounded wait behind a
-long coord transaction either. Land this BEFORE #2601 deploys; if it ever runs
-after agent rows exist and a duplicate does, the build fails loudly and leaves
-an INVALID index to drop, which is the visible failure rather than a silent one.
+blocks no policy writes (it does wait for in-flight transactions to finish).
+Land this BEFORE #2601 deploys — #2601 carries a ``coord:downstream-of`` label
+on this PR for that reason.
+
+If it ever runs after agent rows exist and meets a duplicate, the build fails
+and leaves an INVALID index named ``uq_policy_rules_agent_domain_name``; the
+revision is NOT recorded, so the deploy fails loudly. RECOVERY: dedupe, then
+``DROP INDEX CONCURRENTLY coord.uq_policy_rules_agent_domain_name`` BEFORE
+retrying — otherwise ``IF NOT EXISTS`` sees the invalid index on the retry, does
+nothing, and records the revision with no working constraint. The test
+``tests/test_policy_rules_agent_name_uq_01_migration.py`` asserts the
+built index is VALID (``pg_index.indisvalid``) for that reason.
 
 An OPERATOR rename (``PATCH /coord/policies/:id`` keeps ``created_by``) of an
 agent-authored row onto another agent row's name in the same tenant and domain
-now fails on this index — the one way it touches operator authoring.
+now fails on this index (a 500 through the operator door's update core until
+coord maps 23505 there too) — the one way it touches operator authoring.
 
 ``down_revision`` chains off the single live alembic head at authoring time
 (``findings_keyset_01``, computed with ``ScriptDirectory.get_heads()``).
