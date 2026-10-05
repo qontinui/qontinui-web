@@ -116,6 +116,7 @@ def _assert_unknown_envelope(body: dict) -> None:
     """
     assert body["bound_kind"] == "unknown"
     assert body["shown"] == 0
+    assert "limit" in body, "limit must be present (null when unrequested)"
     for key in (
         "truncated",
         "next_cursor",
