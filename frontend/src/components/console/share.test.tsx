@@ -1,7 +1,7 @@
 /**
  * share / ShareBar / ShareList — the console's part-of-a-whole primitives.
  *
- * Style guide §3.6. The formatter's ends are the whole point (a `toFixed(1)`
+ * Style guide §3.7. The formatter's ends are the whole point (a `toFixed(1)`
  * rounds 9999/10000 to a false `100.0%` and 1/10000 to a false `0.0%`), and a
  * share over nothing is the R6 dash, never `0%` and never `100%`.
  */
