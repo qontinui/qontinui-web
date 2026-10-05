@@ -5,9 +5,8 @@ grant on it; ``_PendingEnd`` is one in-flight ``terminal_end``. All mutable rela
 state lives on these objects, which the relay passes to every method, so no part
 of the relay keeps per-session state of its own.
 
-``PENDING_END_TTL_SECONDS`` is NOT here: the code that reads it still lives in
-``app.services.runner.remote_terminal_relay``, and it is read from that module's
-globals at call time, so that is where it is defined (and patched).
+``PENDING_END_TTL_SECONDS`` is NOT here: it is read at call time by the end
+timer in ``remote_relay.end``, so that is where it is defined (and patched).
 """
 
 from __future__ import annotations

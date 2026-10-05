@@ -14,6 +14,8 @@ collaborators, and they import this.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
 from typing import Any, Protocol
 
 from redis import asyncio as aioredis
@@ -25,6 +27,10 @@ class RelayCore(Protocol):
     """What a collaborator may call on the relay core. Nothing else."""
 
     async def _get_redis(self) -> aioredis.Redis: ...
+
+    def spawn_background(
+        self, coro: Coroutine[Any, Any, None]
+    ) -> asyncio.Task[None]: ...
 
     async def _send_to_source(
         self, session: _SourceSession, payload: dict[str, Any]
@@ -48,3 +54,19 @@ class RelayCore(Protocol):
     async def _drop_attachment(
         self, session: _SourceSession, att: _Attachment
     ) -> None: ...
+
+    async def _maybe_stop_listener(
+        self, session: _SourceSession, target_device_id: str
+    ) -> None: ...
+
+    async def _evict(
+        self, session: _SourceSession, att: _Attachment, *, code: str, message: str
+    ) -> None: ...
+
+    def _ensure_listener(
+        self, session: _SourceSession, target_device_id: str
+    ) -> Coroutine[Any, Any, None]: ...
+
+    async def route_target_frame(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool: ...
