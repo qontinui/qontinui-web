@@ -1,69 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
-import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
+import { proxyToBackend } from "@/lib/server/proxyToBackend";
 
-/**
- * API Route Handler for /api/v1/ai-tasks/[id]/findings/[findingId]
- *
- * This route reads the access token from HttpOnly cookies and forwards
- * requests to the backend with proper Bearer authentication.
- *
- * Required because Next.js rewrites don't forward cookies to the backend.
- */
-
-async function getAccessToken(request: NextRequest): Promise<string | null> {
-  // Get the access token from cookie (preferred) or Authorization header (fallback)
-  const cookieStore = await cookies();
-  const accessTokenCookie = cookieStore.get("access_token");
-  const authorizationHeader = request.headers.get("Authorization");
-
-  if (accessTokenCookie?.value) {
-    return accessTokenCookie.value;
-  } else if (authorizationHeader?.startsWith("Bearer ")) {
-    return authorizationHeader.substring(7);
-  }
-  return null;
-}
-
+/** /api/v1/ai-tasks/[id]/findings/[findingId] — proxied via `proxyToBackend`. */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; findingId: string }> }
 ) {
-  try {
-    const accessToken = await getAccessToken(request);
-    const { id, findingId } = await params;
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Not authenticated" },
-        { status: 401 }
-      );
+  const { id, findingId } = await params;
+  return proxyToBackend(
+    request,
+    `/api/v1/ai-tasks/${id}/findings/${findingId}`,
+    {
+      tokenSources: ["cookie", "header"],
+      onMissingToken: "401",
+      unauthorizedBodyKey: "detail",
+      forwardBody: "json",
+      body: "json",
+      errorBody: "detail",
     }
-
-    const body = await request.json();
-    const base = backendBaseOrResponse();
-    if (base instanceof NextResponse) return base;
-    const backendUrl = `${base}/api/v1/ai-tasks/${id}/findings/${findingId}`;
-
-    const response = await fetch(backendUrl, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error("[AI Tasks Finding API Route] Error:", error);
-    return NextResponse.json(
-      {
-        detail: "Failed to proxy request to backend",
-        error: (error as Error).message,
-      },
-      { status: 500 }
-    );
-  }
+  );
 }
