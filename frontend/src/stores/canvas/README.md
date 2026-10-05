@@ -14,7 +14,7 @@ import type { CanvasStore, Viewport } from "@/stores/canvas";
 `useSelectedNodes`, `useCanUndo`, `useViewport`, …).
 
 Persistence: key `canvas-storage`; only `viewport`, `showMinimap`, `showGrid`,
-`snapToGrid` and `gridSize` are persisted (asserted in `store-contract.test.ts`).
+`snapToGrid` and `gridSize` are persisted (asserted in `persist-contract.test.ts`).
 
 ## Slices
 
