@@ -15,10 +15,17 @@ fails on any of:
   target form, including one parked in a constant first — other than
   ``httpx.AsyncClient``, which resolves to the global ``httpx`` module and so
   reaches every caller wherever its body lives;
-* ``patch.object`` / ``monkeypatch.setattr`` / ``setattr`` / ``delattr`` whose
-  first argument is the operations module (or an attribute of it), however it
-  was imported;
-* a plain ``<operations module>.<attr> = ...`` assignment.
+* ``patch.object`` / ``patch.multiple`` / ``monkeypatch.setattr`` /
+  ``setattr`` / ``delattr`` whose first argument is the operations module (or
+  an attribute of it), however it was imported — an alias, the full dotted
+  ``app.api.v1.endpoints.operations`` chain, or the package path string;
+* a plain ``<operations module>.<attr> = ...`` assignment;
+* a patch target BUILT from the bare package path string (literal, or a name
+  bound to it) — ``patch(PKG + ".x")``, ``patch(f"{PKG}.{name}")``, or the
+  same expression parked in a name first. Building a module name for any
+  other purpose (``PKG + ".fleet"`` for an import, a prefix test) is not a
+  patch and is not flagged. ``tests/_ops_patch.py`` is exempt: it defines
+  that prefix.
 """
 
 from __future__ import annotations
@@ -39,8 +46,12 @@ from tests._ops_patch import (
 TESTS = Path(__file__).resolve().parent
 _PREFIX = OPS_PACKAGE + "."
 _ALLOWED_TARGET = "httpx.AsyncClient"
-_PATCHING_ATTRS = frozenset({"object", "setattr", "delattr"})
+_PATCHING_ATTRS = frozenset({"object", "multiple", "setattr", "delattr"})
 _PATCHING_NAMES = frozenset({"setattr", "delattr"})
+# Calls whose first argument is a patch target: ``patch(...)``,
+# ``mock.patch(...)``, ``patch.object(...)``, ``monkeypatch.setattr(...)`` …
+_TARGET_ATTRS = _PATCHING_ATTRS | {"patch"}
+_TARGET_NAMES = _PATCHING_NAMES | {"patch"}
 
 
 def _names_ops_module(node: ast.expr) -> bool:
@@ -83,10 +94,86 @@ def _root_name(node: ast.expr) -> str | None:
     return node.id if isinstance(node, ast.Name) else None
 
 
+def _dotted(node: ast.expr) -> str | None:
+    """``a.b.c`` for an ``Attribute``/``Name`` chain, else ``None``."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _is_ops_object(node: ast.expr, aliases: set[str]) -> bool:
+    """``node`` evaluates to the operations module or something under it."""
+    if _root_name(node) in aliases:
+        return True
+    dotted = _dotted(node)
+    return dotted is not None and (dotted == OPS_PACKAGE or dotted.startswith(_PREFIX))
+
+
+def _package_path_names(tree: ast.AST) -> set[str]:
+    """Names bound to the bare package path string."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign | ast.AnnAssign) and _is_package_path(
+            node.value
+        ):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names.update(t.id for t in targets if isinstance(t, ast.Name))
+    return names
+
+
+def _is_package_path(node: ast.expr | None) -> bool:
+    return isinstance(node, ast.Constant) and node.value == OPS_PACKAGE
+
+
+def _is_package_ref(node: ast.expr, names: set[str]) -> bool:
+    if isinstance(node, ast.FormattedValue):
+        node = node.value
+    return _is_package_path(node) or (isinstance(node, ast.Name) and node.id in names)
+
+
+def _builds_target_from_package(node: ast.expr, names: set[str]) -> bool:
+    """``PKG + ...`` (however nested) or an f-string with ``{PKG}.``."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _is_package_ref(node.left, names) or _builds_target_from_package(
+            node.left, names
+        )
+    if isinstance(node, ast.JoinedStr):
+        values = node.values
+        return any(
+            _is_package_ref(part, names)
+            and isinstance(after, ast.Constant)
+            and isinstance(after.value, str)
+            and after.value.startswith(".")
+            for part, after in zip(values, values[1:], strict=False)
+        )
+    return False
+
+
+def _built_target_names(tree: ast.AST, names: set[str]) -> set[str]:
+    """Names bound to a target built from the package path."""
+    built: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign | ast.AnnAssign)
+            and node.value is not None
+            and _builds_target_from_package(node.value, names)
+        ):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            built.update(t.id for t in targets if isinstance(t, ast.Name))
+    return built
+
+
 def scan_source(source: str) -> tuple[list[str], int]:
     """``(violations, allowed httpx targets)`` for one test module's source."""
     tree = ast.parse(source)
     aliases = _module_aliases(tree)
+    package_names = _package_path_names(tree)
+    built_names = _built_target_names(tree, package_names)
     violations: list[str] = []
     allowed = 0
     for node in ast.walk(tree):
@@ -104,14 +191,30 @@ def scan_source(source: str) -> tuple[list[str], int]:
             patching = (
                 isinstance(func, ast.Attribute) and func.attr in _PATCHING_ATTRS
             ) or (isinstance(func, ast.Name) and func.id in _PATCHING_NAMES)
-            if patching and _root_name(node.args[0]) in aliases:
+            takes_target = (
+                isinstance(func, ast.Attribute) and func.attr in _TARGET_ATTRS
+            ) or (isinstance(func, ast.Name) and func.id in _TARGET_NAMES)
+            first = node.args[0]
+            if takes_target and (
+                _builds_target_from_package(first, package_names)
+                or (isinstance(first, ast.Name) and first.id in built_names)
+            ):
+                violations.append(
+                    f"{node.lineno}: target built from the package path: "
+                    f"{ast.unparse(func)}({ast.unparse(first)}, ...)"
+                )
+            elif patching and (
+                _is_ops_object(first, aliases) or _is_package_ref(first, package_names)
+            ):
                 violations.append(
                     f"{node.lineno}: {ast.unparse(func)}({ast.unparse(node.args[0])}, ...)"
                 )
         elif isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                if isinstance(target, ast.Attribute) and _root_name(target) in aliases:
+                if isinstance(target, ast.Attribute) and _is_ops_object(
+                    target, aliases
+                ):
                     violations.append(
                         f"{node.lineno}: assignment to {ast.unparse(target)}"
                     )
@@ -123,6 +226,8 @@ def test_operations_patch_targets_go_through_patch_ops() -> None:
     allowed = 0
     scanned = 0
     for path in sorted(TESTS.rglob("*.py")):
+        if path == TESTS / "_ops_patch.py":
+            continue  # defines the package-path prefix the helpers patch through
         found, ok = scan_source(path.read_text(encoding="utf-8"))
         scanned += 1
         allowed += ok
@@ -156,11 +261,42 @@ def test_operations_patch_targets_go_through_patch_ops() -> None:
         "import importlib\n"
         'm = importlib.import_module("app.api.v1.endpoints.operations")\n'
         'setattr(m, "X", 1)',
+        "from app.api.v1.endpoints import operations\npatch.multiple(operations, X=1)",
+        'patch.multiple("app.api.v1.endpoints.operations", X=1)',
+        "import app.api.v1.endpoints.operations\n"
+        'patch.object(app.api.v1.endpoints.operations, "logger")',
+        "import app.api.v1.endpoints.operations\n"
+        'monkeypatch.setattr(app.api.v1.endpoints.operations.httpx, "X", 1)',
+        "import app.api.v1.endpoints.operations\napp.api.v1.endpoints.operations.X = 1",
+        'patch("app.api.v1.endpoints.operations" + ".logger")',
+        'MOD = "app.api.v1.endpoints.operations"\npatch(MOD + ".logger")',
+        'MOD = "app.api.v1.endpoints.operations"\npatch(f"{MOD}.{name}")',
+        'MOD: str = "app.api.v1.endpoints.operations"\npatch(f"{MOD}.logger")',
+        'MOD = "app.api.v1.endpoints.operations"\nmock.patch(MOD + "." + name)',
+        'MOD = "app.api.v1.endpoints.operations"\n'
+        'KEY = f"{MOD}.logger"\nmonkeypatch.setattr(KEY, 1)',
     ],
 )
 def test_the_patch_target_scan_flags_every_form(snippet: str) -> None:
     violations, _ = scan_source(snippet)
     assert violations, f"the scan missed: {snippet!r}"
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        'importlib.import_module("app.api.v1.endpoints.operations")',
+        'PKG = "app.api.v1.endpoints.operations"\nprint(f"see {PKG} for details")',
+        "import app.api.v1.endpoints.operations\n"
+        "app.api.v1.endpoints.operations.router.routes",
+        'patch.object(other_module, "X")',
+        'PKG = "app.api.v1.endpoints.operations"\n'
+        'importlib.import_module(PKG + ".fleet")\nname.startswith(PKG + ".")',
+    ],
+)
+def test_the_patch_target_scan_allows_non_patching_uses(snippet: str) -> None:
+    violations, _ = scan_source(snippet)
+    assert violations == [], violations
 
 
 def test_the_patch_target_scan_allows_the_httpx_form() -> None:
@@ -214,3 +350,29 @@ def test_patch_ops_refuses_a_name_nothing_binds(
         setattr_ops(monkeypatch, "no_such_name_anywhere", 1)
     with pytest.raises(LookupError):
         resolve_ops_targets("runner_crud.no_such_attribute")
+
+
+def test_ops_patcher_stop_stops_every_patcher_and_reraises_the_first() -> None:
+    from tests._ops_patch import _OpsPatcher
+
+    stopped: list[str] = []
+
+    class _Fake:
+        def __init__(self, label: str, error: Exception | None) -> None:
+            self.label = label
+            self.error = error
+
+        def stop(self) -> None:
+            stopped.append(self.label)
+            if self.error is not None:
+                raise self.error
+
+    first, second = RuntimeError("first"), RuntimeError("second")
+    patcher = _OpsPatcher("logger", None, {})
+    # stop() pops newest first: c (raises first), b (raises second), a.
+    patcher._patchers = [_Fake("a", None), _Fake("b", second), _Fake("c", first)]
+    with pytest.raises(RuntimeError) as raised:
+        patcher.stop()
+    assert raised.value is first
+    assert stopped == ["c", "b", "a"]
+    assert patcher._patchers == []

@@ -140,8 +140,19 @@ class _OpsPatcher:
         return replacement
 
     def stop(self) -> None:
+        """Stop every patcher, newest first, even when one of them raises —
+        a failure must not leave the remaining bindings patched. The first
+        error is re-raised once all have been stopped."""
+        first_error: BaseException | None = None
         while self._patchers:
-            self._patchers.pop().stop()
+            patcher = self._patchers.pop()
+            try:
+                patcher.stop()
+            except BaseException as exc:  # re-raised once all are stopped
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> Any:
         return self.start()
