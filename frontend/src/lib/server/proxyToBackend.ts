@@ -13,6 +13,9 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("proxyToBackend");
 
 /** Where the bearer token may come from, in order of preference. */
 export type TokenSource = "cookie" | "header";
@@ -48,6 +51,15 @@ export type ProxyOptions = {
 );
 
 const BODY_VERBS = new Set(["POST", "PUT", "PATCH"]);
+
+/**
+ * Upstream statuses a `Response` must carry no body for. (101 is one too, but
+ * `fetch` never yields it and a `Response` cannot be built with it.)
+ */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+/** The upstream `Content-Type` passes through, so never let a browser sniff. */
+const NOSNIFF = { "X-Content-Type-Options": "nosniff" } as const;
 
 async function readToken(
   request: NextRequest,
@@ -98,6 +110,11 @@ async function forward(
     );
   }
 
+  // Resolve the base before touching the body: an unresolved backend answers
+  // its structured 503 even when the body is malformed.
+  const base = backendBaseOrResponse();
+  if (base instanceof NextResponse) return base;
+
   const forwardBody = BODY_VERBS.has(request.method)
     ? (options.forwardBody ?? "none")
     : "none";
@@ -108,13 +125,11 @@ async function forward(
         ? await request.text()
         : undefined;
 
-  const base = backendBaseOrResponse();
-  if (base instanceof NextResponse) return base;
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  log.debug(`${request.method} -> ${backendPath}`);
   const response = await fetch(
     `${base}${backendPath}${queryOf(request, options.query)}`,
     // Next.js serves an un-exported HEAD with the GET handler; forward GET.
@@ -125,14 +140,18 @@ async function forward(
     }
   );
 
-  if (response.status === 204) {
-    return new NextResponse(null, { status: 204 });
+  if (NULL_BODY_STATUSES.has(response.status)) {
+    return new NextResponse(null, {
+      status: response.status,
+      headers: NOSNIFF,
+    });
   }
   return new NextResponse(await response.text(), {
     status: response.status,
     headers: {
       "Content-Type":
         response.headers.get("Content-Type") || "application/json",
+      ...NOSNIFF,
     },
   });
 }
@@ -141,7 +160,8 @@ async function forward(
  * Forward `request` to `${backend}${backendPath}` with the caller's bearer
  * token, and pass the upstream answer through as it came: its status, its
  * text and its `Content-Type` (`application/json` when it sends none), with a
- * 204 kept empty. An unresolved backend base answers the structured 503 from
+ * 204 / 205 / 304 kept empty, and always `X-Content-Type-Options: nosniff`.
+ * An unresolved backend base answers the structured 503 from
  * `backendBaseOrResponse()`; a missing token answers 401 before that.
  */
 export async function proxyToBackend(
