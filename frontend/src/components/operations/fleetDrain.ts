@@ -175,6 +175,25 @@ export type DeviceDrainState =
   /** Nothing here is a claim that the device is taking work. */
   | { state: "unknown"; reason: string };
 
+/**
+ * What a per-device lever acts on, or why it cannot name anything. Kept for
+ * `DeviceWorktreeCapControl` (plan `2026-09-18…` amendment A3), which the
+ * Machine Maintenance page renders beside the maintenance levers.
+ */
+export type DrainTarget =
+  | {
+      state: "identified";
+      /** The coord device UUID the write is keyed on. */
+      deviceId: string;
+      /**
+       * Coord's OWN hostname for that device — never the card's display
+       * alias. `null` when coord's device row carries none, in which case the
+       * id is the only identity there is and the control says so.
+       */
+      coordHostname: string | null;
+    }
+  | { state: "no_device"; reason: string };
+
 /** Coord's ceiling on a drain deadline (`fleet_drain::MAX_DRAIN_DAYS`). */
 export const MAX_DRAIN_DAYS = 30;
 
@@ -565,4 +584,36 @@ export function toLocalInputValue(ms: number): string {
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `T${pad(d.getHours())}:${pad(d.getMinutes())}`
   );
+}
+
+/**
+ * Turn a failed drain/undrain response into a human line.
+ *
+ * Coord's refusals are machine-readable and mean genuinely different things —
+ * `admin_required` (you are not an operator admin) versus
+ * `device_not_in_tenant` (the drain reaches every tenant sharing the machine,
+ * so the caller must be one of them) versus a 400 from `validate_drain`. The
+ * web proxy nests coord's body under `detail`, so both levels are unwrapped.
+ * Same shape as `describeDraftStateError`, which learned this first.
+ */
+export function describeDrainError(status: number, body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body.trim() ? `HTTP ${status} — ${body.trim()}` : `HTTP ${status}`;
+  }
+  if (!isRecord(parsed)) {
+    return body.trim() ? `HTTP ${status} — ${body.trim()}` : `HTTP ${status}`;
+  }
+  const inner = isRecord(parsed.detail) ? parsed.detail : parsed;
+  const code = optionalString(inner.error);
+  const message =
+    optionalString(inner.message) ??
+    optionalString(inner.detail) ??
+    (typeof parsed.detail === "string" ? parsed.detail : null);
+  const parts: string[] = [`HTTP ${status}`];
+  if (code) parts.push(code);
+  if (message) parts.push(message);
+  return parts.join(" — ");
 }

@@ -58,7 +58,13 @@ import {
 } from "@/components/admin/coord/CoordAdminOnly";
 import { MachinePicker } from "@/components/operations/MachinePicker";
 import { OperatorAuditPanel } from "@/components/operations/OperatorAuditPanel";
-import { resolveDeviceDrain } from "@/components/operations/fleetDrain";
+import {
+  resolveDeviceDrain,
+  type DrainTarget,
+} from "@/components/operations/fleetDrain";
+import { DeviceWorktreeCapControl } from "@/components/operations/DeviceWorktreeCapControl";
+import { resolveDeviceWorktreeCap } from "@/components/operations/fleetWorktreeCap";
+import { useFleetWorktreeCap } from "@/components/operations/useFleetWorktreeCap";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import {
@@ -234,6 +240,7 @@ export default function MachineMaintenancePage() {
   const machines = useFleetMachines();
   const drain = useFleetDrain();
   const mirror = useCiRunnerMirror();
+  const worktreeCap = useFleetWorktreeCap();
 
   const entries = machines.read.state === "ok" ? machines.read.entries : [];
   const entry: MachineEntry | undefined = findMachineEntry(entries, selection);
@@ -254,6 +261,30 @@ export default function MachineMaintenancePage() {
         : "";
   const runnerReadiness = useDeviceReadiness(deviceId);
   const sessions = useDeviceFleetSessions(deviceId);
+
+  // The per-device worktree cap (plan `2026-09-18…` amendment A3), carried here
+  // from the retired Runner Drain page. It is keyed on the SAME workstation
+  // device id as every agent-plane read above, and it is not a maintenance
+  // lever: a cap bounds how many worktrees may exist on the machine, has no
+  // expiry, and stops nothing.
+  const capTarget: DrainTarget =
+    deviceId !== ""
+      ? {
+          state: "identified",
+          deviceId,
+          coordHostname:
+            entry?.kind === "machine" ? (entry.hostname ?? null) : null,
+        }
+      : {
+          state: "no_device",
+          reason:
+            "No workstation device is linked to this CI host, so there is no " +
+            "coord device id to cap.",
+        };
+  const capState = resolveDeviceWorktreeCap(
+    worktreeCap.read,
+    deviceId || undefined
+  );
 
   const [prepareOpen, setPrepareOpen] = useState(false);
   const [prepareLevers, setPrepareLevers] = useState({
@@ -290,8 +321,9 @@ export default function MachineMaintenancePage() {
         readiness.refresh(),
         runnerReadiness.refresh(),
         sessions.refresh(),
+        worktreeCap.refresh(),
       ]),
-    [machines, drain, readiness, runnerReadiness, sessions]
+    [machines, drain, readiness, runnerReadiness, sessions, worktreeCap]
   );
 
   const afterWrite = useCallback(() => {
@@ -421,7 +453,7 @@ export default function MachineMaintenancePage() {
         <RefreshButton
           onRefresh={refreshAll}
           label="Refresh machine"
-          title={`Re-reads the machine, its window, readiness and sessions now; also refreshes itself every ${RUNNER_POLL_MS / 1000} s`}
+          title={`Re-reads the machine, its window, readiness, sessions and worktree cap now; also refreshes itself every ${RUNNER_POLL_MS / 1000} s`}
           data-testid="coord-maintenance-refresh"
         />
         {machinesNotice && (
@@ -563,6 +595,19 @@ export default function MachineMaintenancePage() {
               />
 
               <CiHostLink entry={entry} onChanged={afterWrite} />
+
+              {/* Rendered for a CI-host-only selection too, so the reason it
+                  cannot act (no workstation device) is shown, not hidden. */}
+              <DeviceWorktreeCapControl
+                target={capTarget}
+                cap={capState}
+                rowHostname={
+                  entry.kind === "machine"
+                    ? (entry.hostname ?? deviceId)
+                    : (entry.ciHost ?? deviceId)
+                }
+                onActed={worktreeCap.refresh}
+              />
             </>
           )}
 

@@ -297,6 +297,7 @@ let linkResponse: Res;
 let controlResponse: Res | Promise<Res>;
 let drainResponse: Res;
 let undrainResponse: Res;
+let worktreeCapResponse: Res;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -324,6 +325,12 @@ beforeEach(() => {
     drained: false,
     changed: true,
   });
+  worktreeCapResponse = res(200, {
+    state: "known",
+    count: 0,
+    overrides: [],
+    detail: null,
+  });
   controlResponse = res(202, {
     event_id: "e0e0e0e0-0000-4000-8000-000000000000",
     session_id: IDLE.sessionId,
@@ -345,6 +352,7 @@ beforeEach(() => {
         if (method === "POST")
           return windowPostResponses.shift() ?? res(500, "no more");
       }
+      if (url.includes("/fleet/worktree-cap")) return worktreeCapResponse;
       if (url.includes("/fleet/machines")) return machinesResponse;
       if (url.includes("/fleet/undrain")) return undrainResponse;
       if (url.includes("/fleet/drain")) return drainResponse;
@@ -1689,5 +1697,78 @@ describe("/admin/coord/machine-maintenance — session wind-down", () => {
       await within(row).findByTestId("coord-maintenance-action-accepted")
     ).toBeInTheDocument();
     expect(controlCalls()).toHaveLength(1);
+  });
+});
+
+// --- Per-device worktree cap (plan 2026-09-18 amendment A3) ---------------
+//
+// Carried here from the retired Runner Drain page, with the control. The
+// page-level half of the contract: the control is WIRED (it reads the route and
+// renders coord's answer) and it renders UNKNOWN rather than "no cap" whenever
+// the read did not succeed. What a body MEANS is pinned without a DOM in
+// `components/operations/fleetWorktreeCap.test.ts`.
+describe("/admin/coord/machine-maintenance — worktree cap", () => {
+  it("renders the worktree-cap control for the selected machine, and says derived when nothing is capped", async () => {
+    render(<MachineMaintenancePage />);
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "derived")
+    );
+    expect(block).toHaveTextContent("No operator cap");
+    // Keyed on coord's OWN device identity, the same one the agent-plane
+    // reads use, never the display alias.
+    expect(screen.getByTestId("device-worktree-cap-target")).toHaveAttribute(
+      "data-device-id",
+      DEVICE
+    );
+    expect(calls("/fleet/worktree-cap").length).toBeGreaterThan(0);
+  });
+
+  it("renders a capped machine with its number, who set it and why", async () => {
+    worktreeCapResponse = res(200, {
+      state: "known",
+      count: 1,
+      overrides: [
+        {
+          device_id: DEVICE,
+          max_worktrees: 4,
+          reason: "winding this box down",
+          set_by: "op@example.com",
+          set_at: "2026-09-30T12:00:00Z",
+        },
+      ],
+      detail: null,
+    });
+    render(<MachineMaintenancePage />);
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "capped")
+    );
+    expect(block).toHaveTextContent("Capped at 4");
+    expect(block).toHaveTextContent("op@example.com");
+    expect(block).toHaveTextContent("winding this box down");
+    // The cap is not a maintenance lever, and the control says so.
+    expect(block).toHaveTextContent("it is not a drain");
+  });
+
+  it("shows a CI-host-only selection why it cannot be capped, rather than hiding the control", async () => {
+    search = "machine=ci:msi-wsl";
+    render(<MachineMaintenancePage />);
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "no_device")
+    );
+    expect(block).toHaveTextContent("No workstation device is linked");
+  });
+
+  it("renders UNKNOWN, never 'no cap', when coord cannot be read", async () => {
+    worktreeCapResponse = res(404, "not found");
+    render(<MachineMaintenancePage />);
+    const block = await screen.findByTestId("device-worktree-cap");
+    await waitFor(() =>
+      expect(block).toHaveAttribute("data-device-worktree-cap", "unknown")
+    );
+    expect(block).toHaveTextContent("Worktree cap unknown");
+    expect(block).not.toHaveTextContent("No operator cap");
   });
 });
