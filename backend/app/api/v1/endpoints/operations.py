@@ -7852,6 +7852,14 @@ async def get_ci_overview(
           "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
         }
 
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
+
     No graceful fallback: a coord predating the route answers 404 and the
     page renders that as an explicit UNKNOWN, never as an empty fleet.
     """
@@ -12457,9 +12465,25 @@ async def get_coord_findings(
             "the unfiltered total by design."
         ),
     ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "Resume a keyset walk: pass the previous response's ``next_cursor`` "
+            "back verbatim, under the SAME filters. Forwarded verbatim — coord "
+            "owns the codec, and a malformed or foreign cursor is coord's typed "
+            "400 ``invalid_query_parameter`` naming ``cursor``."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Every answer is a PAGE of the corpus, never the corpus: coord's envelope
+    carries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's
+    ``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next
+    page (a malformed one is coord's 400, re-raised verbatim). Without that
+    pass-through a client following ``next_cursor`` would be served page 1
+    forever.
 
     Response envelope mirrors coord's:
     ``{"available", "count", "findings": [...], "finding_id_applied",
@@ -12500,6 +12524,8 @@ async def get_coord_findings(
         params["limit"] = limit
     if triaged is not None:
         params["triaged"] = triaged
+    if cursor is not None:
+        params["cursor"] = cursor
     try:
         body = await _proxy_coord_get(
             "/coord/findings", params=params or None, tenant_id=tenant_id
@@ -12510,6 +12536,21 @@ async def get_coord_findings(
                 "available": False,
                 "count": 0,
                 "findings": [],
+                # The bounded-read envelope coord serves on every answer,
+                # spelled as UNKNOWN: an absent key would read as falsy, and
+                # `truncated` missing reads as "complete" to a careless client.
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: `limit` means the cap coord
+                # APPLIED, and no page was read here, so no cap was applied.
+                # Echoing the request (or clamping it locally) would state a cap
+                # coord never used, and a local clamp would copy coord's range.
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
                 "unavailable": (
                     "coord's findings reader is not answering — its "
                     "`/coord/findings` route returned 404, so the deployed "
