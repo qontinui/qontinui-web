@@ -1,7 +1,7 @@
 """coord.ci_* — the coord-managed ephemeral self-hosted CI runner fleet
 
 Revision ID: cihost_01_ci_host_agent_fleet
-Revises: mdroles_01
+Revises: coord_ci_pool_observations_01
 Create Date: 2026-10-04
 
 Phase 1 of plan
@@ -134,7 +134,7 @@ preference, not a crash risk. Done-when is
 =================
 
 The single head on qontinui-web ``origin/main`` when this branch was last
-rebased (``mdroles_01``). If another revision lands first, re-point the token
+rebased (``coord_ci_pool_observations_01``). If another revision lands first, re-point the token
 below AND the ``Revises:`` line above at the merged head. Do not author an
 ``alembic merge`` revision.
 """
@@ -145,7 +145,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cihost_01_ci_host_agent_fleet"
-down_revision: str | Sequence[str] | None = "mdroles_01"
+down_revision: str | Sequence[str] | None = "coord_ci_pool_observations_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
