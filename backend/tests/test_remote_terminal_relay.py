@@ -6632,7 +6632,9 @@ async def test_fresh_end_registry_failure_is_typed_and_leaves_nothing(
     ws = _FakeWS()
     manager = _manager()
     with patch.object(
-        relay, "_write_grant_record", AsyncMock(side_effect=RuntimeError("redis down"))
+        relay.registry,
+        "_write_grant_record",
+        AsyncMock(side_effect=RuntimeError("redis down")),
     ):
         await _fresh_end(relay, ws, manager, _claims())
 

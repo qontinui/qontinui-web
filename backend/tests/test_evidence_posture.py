@@ -311,7 +311,7 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.api.v1.endpoints.devices_ws._route_device_message": (
         "dispatches frames inside the device WebSocket session, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._verify_grant": (
+    "app.services.runner.remote_relay.grants.GrantAuthorizer._verify_grant": (
         "verifies a relay capability grant inside a WebSocket session, not an HTTP route"
     ),
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_attach": (

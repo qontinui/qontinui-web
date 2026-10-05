@@ -122,21 +122,17 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Coroutine
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import structlog
 from qontinui_schemas.common import utc_now
 from redis import asyncio as aioredis
 
 from app.config.redis_config import get_redis
-from app.services.coord_jwks import (
-    CoordJWKSUnavailableError,
-    CoordTokenExpiredError,
-    CoordTokenInvalidError,
-    coord_jwks_client,
-    jwks_failure_log_fields,
-)
+from app.services.coord_jwks import coord_jwks_client
+from app.services.runner.remote_relay.grants import GrantAuthorizer
 from app.services.runner.remote_relay.protocol import (
     _HIGH_VOLUME_TARGET_FRAMES,
     _INLINE_RELAY_ERROR_CODES,
@@ -190,6 +186,7 @@ from app.services.runner.remote_relay.protocol import (
 from app.services.runner.remote_relay.registry import (
     BIND_TERMINAL_SCRIPT,
     RELEASE_TERMINAL_SCRIPT,
+    RelayRegistry,
     _eval,
     _hset,
     _maybe_await,
@@ -217,7 +214,8 @@ logger = structlog.get_logger(__name__)
 # Re-exported for READING only. To PATCH one, patch the module that defines it
 # (``remote_relay.protocol`` / ``.state`` / ``.registry``): code reads a name
 # from its own module's globals at call time, so a patch on this facade does
-# not reach code that lives there.
+# not reach code that lives there. (``coord_jwks_client`` is an OBJECT whose
+# method tests patch, which reaches ``remote_relay.grants`` from here too.)
 __all__ = [
     "ATTACH_GRANT_SUB_TYPE",
     "BIND_TERMINAL_SCRIPT",
@@ -276,6 +274,7 @@ __all__ = [
     "_maybe_await",
     "_prefix_is_disjoint_from_relay_codes",
     "claim_key",
+    "coord_jwks_client",
     "create_target_device_id",
     "get_relay",
     "grant_key",
@@ -331,9 +330,14 @@ class RemoteTerminalRelay:
         # device may reconnect (new socket, same device_id) while the old
         # session is still tearing down.
         self._sessions: dict[int, _SourceSession] = {}
-        # Listener finishers spawned from inside the listener they stop; held
-        # so the event loop cannot garbage-collect them mid-flight.
+        # Tasks spawned by ``spawn_background`` (end timers, listener
+        # finishers, attach re-presents); held so the event loop cannot
+        # garbage-collect them mid-flight.
         self._background: set[asyncio.Task[None]] = set()
+        # Collaborators, in dependency order: each is handed the siblings it
+        # calls and the core (``remote_relay.core.RelayCore``), nothing else.
+        self.registry = RelayRegistry(self)
+        self.grants = GrantAuthorizer(self, self.registry)
 
     # ------------------------------------------------------------------
     # Plumbing
@@ -343,6 +347,16 @@ class RemoteTerminalRelay:
         if self._redis is None:
             self._redis = await get_redis()
         return self._redis
+
+    def spawn_background(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+        """Run ``coro`` as a task the relay holds until it finishes.
+
+        Synchronous on purpose: spawning adds no suspend point to the caller.
+        """
+        task = asyncio.get_running_loop().create_task(coro)
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+        return task
 
     def _session_for(
         self, websocket: Any, device_id: Any, manager: Any
@@ -432,7 +446,7 @@ class RemoteTerminalRelay:
         elif msg_type == "remote_terminal_end":
             await self._handle_end(session, msg)
         elif msg_type == "remote_terminal_input":
-            att = await self._authorize(session, msg)
+            att = await self.grants._authorize(session, msg)
             if att is not None:
                 # The WHOLE source frame minus the keys the relay owns — see
                 # ``INPUT_FORWARD_RELAY_OWNED_KEYS``. ``seq`` and ``probe``
@@ -449,7 +463,7 @@ class RemoteTerminalRelay:
                     },
                 )
         elif msg_type == "remote_terminal_resize":
-            att = await self._authorize(session, msg)
+            att = await self.grants._authorize(session, msg)
             if att is not None:
                 await self._forward(
                     session,
@@ -459,7 +473,7 @@ class RemoteTerminalRelay:
                     {"cols": msg.get("cols"), "rows": msg.get("rows")},
                 )
         elif msg_type == "remote_terminal_buffer":
-            att = await self._authorize(session, msg)
+            att = await self.grants._authorize(session, msg)
             if att is not None:
                 minted = uuid4().hex
                 source_request_id = msg.get("request_id")
@@ -516,7 +530,7 @@ class RemoteTerminalRelay:
             # exists. Gated exactly like `terminal_input` (`require_bound`
             # default): a flow frame for a terminal this grant does not hold
             # must not pause someone else's pane.
-            att = await self._authorize(session, msg)
+            att = await self.grants._authorize(session, msg)
             if att is not None:
                 await self._forward(
                     session, msg, att, "terminal_flow", {"paused": msg.get("paused")}
@@ -525,7 +539,7 @@ class RemoteTerminalRelay:
             # Admitted on the grant alone: a source may give up an attach the
             # target never answered, and stranding that grant until expiry
             # would be the only alternative.
-            att = await self._authorize(
+            att = await self.grants._authorize(
                 session,
                 msg,
                 require_bound=False,
@@ -536,148 +550,11 @@ class RemoteTerminalRelay:
                 await self._detach_target(session, att, att.terminal_id)
                 await self._drop_attachment(session, att)
 
-    async def _verify_grant(
-        self,
-        session: _SourceSession,
-        msg: dict[str, Any],
-        *,
-        sub_type: str,
-        kind_noun: str,
-        code_invalid: str,
-        code_expired: str,
-        code_wrong_source: str,
-    ) -> tuple[dict[str, Any], str, str, int] | None:
-        """Verify the capability token on a source frame; ``None`` when refused.
-
-        Everything an attach grant and a create grant are checked for
-        identically: the SAME JWKS verifier that admitted this socket, the
-        declared ``sub_type``, the source device (taken from the authenticated
-        socket, never from a body field), expiry, and a usable ``jti``. Shared
-        rather than copied because the create door is exactly the kind of
-        second caller that silently grows a weaker check than the first.
-
-        Returns ``(claims, jti, socket_source, exp)``.
-        """
-        request_id = msg.get("request_id")
-        grant = msg.get("grant")
-        if not isinstance(grant, str) or not grant:
-            await self._refuse(
-                session, code_invalid, "grant missing", request_id=request_id
-            )
-            return None
-
-        try:
-            claims = await coord_jwks_client.verify_token(grant)
-        except CoordTokenExpiredError as exc:
-            await self._refuse(session, code_expired, str(exc), request_id=request_id)
-            return None
-        except CoordTokenInvalidError as exc:
-            await self._refuse(session, code_invalid, str(exc), request_id=request_id)
-            return None
-        except CoordJWKSUnavailableError as exc:
-            # Same shared field set as every other terminating JWKS handler
-            # (URL dialled, the SETTING that produced it, exception class and
-            # chained cause): ``error=str(exc)`` alone cannot separate a wrong
-            # coord URL from an unreachable coord.
-            logger.error(
-                "remote_terminal_verifier_unavailable",
-                source_device_id=session.device_id,
-                **jwks_failure_log_fields(exc),
-            )
-            await self._refuse(
-                session,
-                CODE_VERIFIER_UNAVAILABLE,
-                "grant verifier temporarily unavailable",
-                request_id=request_id,
-            )
-            return None
-
-        if claims.get("sub_type") != sub_type:
-            await self._refuse(
-                session,
-                code_invalid,
-                f"token is not {kind_noun}",
-                request_id=request_id,
-            )
-            return None
-
-        # The grant is bound to the SOURCE device coord minted it for, and the
-        # source is whoever authenticated THIS socket — never a body field.
-        try:
-            grant_source = str(UUID(str(claims.get("device_id"))))
-            socket_source = str(UUID(session.device_id))
-        except (ValueError, TypeError):
-            await self._refuse(
-                session,
-                code_invalid,
-                "grant device_id malformed",
-                request_id=request_id,
-            )
-            return None
-        if grant_source != socket_source:
-            await self._refuse(
-                session,
-                code_wrong_source,
-                "grant was minted for a different source device",
-                request_id=request_id,
-            )
-            return None
-
-        exp = claims.get("exp")
-        if not isinstance(exp, int | float) or exp <= time.time():
-            await self._refuse(
-                session, code_expired, "grant expired", request_id=request_id
-            )
-            return None
-
-        jti = claims.get("jti")
-        if not isinstance(jti, str) or not jti:
-            await self._refuse(
-                session, code_invalid, "grant missing jti", request_id=request_id
-            )
-            return None
-        return claims, jti, socket_source, int(exp)
-
-    async def _attach_target(
-        self, session: _SourceSession, claims: dict[str, Any], request_id: Any
-    ) -> tuple[str, str, str | None] | None:
-        """The ``attach`` claims of a verified attach grant; ``None`` when refused.
-
-        Returns ``(target_device_id, target_session_id, requested_terminal_id)``.
-        Shared by attach and end, so the fresh-grant end path cannot grow a
-        weaker reading of the same token.
-        """
-        attach = claims.get("attach")
-        if not isinstance(attach, dict):
-            await self._refuse(
-                session,
-                CODE_GRANT_INVALID,
-                "grant missing attach claims",
-                request_id=request_id,
-            )
-            return None
-        try:
-            target_device_id = str(UUID(str(attach.get("target_device_id"))))
-            target_session_id = str(UUID(str(attach.get("target_session_id"))))
-        except (ValueError, TypeError):
-            await self._refuse(
-                session,
-                CODE_GRANT_INVALID,
-                "grant attach target malformed",
-                request_id=request_id,
-            )
-            return None
-        raw_terminal_id = attach.get("terminal_id")
-        requested_terminal_id = (
-            raw_terminal_id if isinstance(raw_terminal_id, str) else None
-        )
-        return target_device_id, target_session_id, requested_terminal_id
-
     async def _handle_attach(
         self, session: _SourceSession, msg: dict[str, Any]
     ) -> None:
         request_id = msg.get("request_id")
-        verified = await self._verify_grant(
+        verified = await self.grants._verify_grant(
             session,
             msg,
             sub_type=ATTACH_GRANT_SUB_TYPE,
@@ -690,7 +567,7 @@ class RemoteTerminalRelay:
             return
         claims, jti, socket_source, exp = verified
 
-        target = await self._attach_target(session, claims, request_id)
+        target = await self.grants._attach_target(session, claims, request_id)
         if target is None:
             return
         target_device_id, target_session_id, requested_terminal_id = target
@@ -729,9 +606,9 @@ class RemoteTerminalRelay:
         # source's whole socket down).
         claimed = False
         try:
-            claimed = await self._claim_grant(att)
+            claimed = await self.registry._claim_grant(att)
             if claimed:
-                await self._write_grant_record(att)
+                await self.registry._write_grant_record(att)
                 session.grants[jti] = att
                 session.pending_attach[minted] = (att.request_id, jti)
                 await self._ensure_listener(session, target_device_id)
@@ -819,7 +696,7 @@ class RemoteTerminalRelay:
         PTY.
         """
         request_id = msg.get("request_id")
-        verified = await self._verify_grant(
+        verified = await self.grants._verify_grant(
             session,
             msg,
             sub_type=CREATE_GRANT_SUB_TYPE,
@@ -867,9 +744,9 @@ class RemoteTerminalRelay:
 
         claimed = False
         try:
-            claimed = await self._claim_grant(att)
+            claimed = await self.registry._claim_grant(att)
             if claimed:
-                await self._write_grant_record(att)
+                await self.registry._write_grant_record(att)
                 session.grants[jti] = att
                 session.pending_create[minted] = (att.request_id, jti)
                 await self._ensure_listener(session, target_device_id)
@@ -1000,7 +877,7 @@ class RemoteTerminalRelay:
             # frame that names a DIFFERENT one is still refused by
             # ``_authorize``.
             authorize_msg = {**msg, "terminal_id": held.terminal_id}
-        att = await self._authorize(session, authorize_msg)
+        att = await self.grants._authorize(session, authorize_msg)
         if att is None:
             return
         await self._forward_end(session, msg, att, terminal_id=att.terminal_id)
@@ -1010,7 +887,7 @@ class RemoteTerminalRelay:
     ) -> None:
         """The fresh-grant path: verify → claim → listen → forward → always drop."""
         request_id = msg.get("request_id")
-        verified = await self._verify_grant(
+        verified = await self.grants._verify_grant(
             session,
             msg,
             sub_type=ATTACH_GRANT_SUB_TYPE,
@@ -1039,7 +916,7 @@ class RemoteTerminalRelay:
             await self._end_attached(session, {**msg, "grant_jti": jti})
             return
 
-        target = await self._attach_target(session, claims, request_id)
+        target = await self.grants._attach_target(session, claims, request_id)
         if target is None:
             return
         target_device_id, target_session_id, requested_terminal_id = target
@@ -1056,9 +933,9 @@ class RemoteTerminalRelay:
         )
         claimed = False
         try:
-            claimed = await self._claim_grant(att)
+            claimed = await self.registry._claim_grant(att)
             if claimed:
-                await self._write_grant_record(att)
+                await self.registry._write_grant_record(att)
                 session.grants[jti] = att
                 await self._ensure_listener(session, target_device_id)
         except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
@@ -1181,12 +1058,9 @@ class RemoteTerminalRelay:
         # back on the listener before ``send_terminal`` returns, and a timer
         # armed for an already-settled id would idle out its whole TTL.
         if minted in session.pending_end:
-            timer = asyncio.get_running_loop().create_task(
+            session.pending_end_timers[minted] = self.spawn_background(
                 self._expire_pending_end(session, minted)
             )
-            session.pending_end_timers[minted] = timer
-            self._background.add(timer)
-            timer.add_done_callback(self._background.discard)
         logger.info(
             "remote_terminal_end_forwarded",
             source_device_id=session.device_id,
@@ -1358,143 +1232,6 @@ class RemoteTerminalRelay:
                 return
         await self._maybe_stop_listener(session, entry.target_device_id)
 
-    async def _authorize(
-        self,
-        session: _SourceSession,
-        msg: dict[str, Any],
-        *,
-        require_bound: bool = True,
-        require_attach_kind: bool = True,
-        settle_waiter: bool = True,
-    ) -> _Attachment | None:
-        """Admit a post-attach frame only for a registered, live grant.
-
-        ``settle_waiter`` (the default) lets the expiry arm tell a still-pending
-        attach or create waiter its grant lapsed. The detach door clears it: a
-        source that detaches has abandoned that waiter.
-
-        With ``require_bound`` (the default) the TARGET must also have
-        answered ``terminal_attached`` and the frame must name that terminal;
-        a grant that merely NAMES a terminal admits nothing.
-
-        ``require_attach_kind`` (the default) additionally refuses a CREATE
-        grant. Only ``remote_terminal_detach`` clears it, and for a reason that
-        is not a session operation at all: giving up a registration is how a
-        source releases the Redis claim and the per-target listener a create it
-        no longer wants is holding. Refusing that would leave an abandoned
-        create pinned until the grant expired.
-        """
-        request_id = msg.get("request_id")
-        grant_jti = msg.get("grant_jti")
-        terminal_id = msg.get("terminal_id")
-        att = session.grants.get(grant_jti) if isinstance(grant_jti, str) else None
-        if att is None:
-            await self._refuse(
-                session,
-                CODE_NOT_REGISTERED,
-                "no attachment registered for this grant on this socket",
-                request_id=request_id,
-                grant_jti=grant_jti if isinstance(grant_jti, str) else None,
-                terminal_id=terminal_id,
-            )
-            return None
-        if att.end_only:
-            # A fresh-grant end of this grant is in flight. Refused BEFORE the
-            # expiry arm and for every door — detach included, which admits on
-            # the grant alone: dropping this attachment would silently cancel
-            # the pending end and discard the target's ``terminal_ended``. It
-            # settles by reply, refusal or TTL; nothing else may end it.
-            await self._refuse(
-                session,
-                CODE_END_PENDING,
-                "an end for this grant is still awaiting the target's answer",
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        # Expiry BEFORE kind. The other order answered an expired create grant
-        # ``grant_wrong_kind`` and left it registered — holding its claim record
-        # and per-target listener — until some later frame's sweep reached it.
-        if att.expired():
-            # Claimed out of ``session.grants`` BEFORE the first await, exactly
-            # as ``_evict`` claims it: the listener task's sweep runs
-            # concurrently and would otherwise evict this same grant during the
-            # send below, telling the waiter a second time.
-            session.grants.pop(att.grant_jti, None)
-            # The frame that tripped expiry is not necessarily the one WAITING
-            # on this grant: an attach or create the target never answered has
-            # its own waiter under ``att.request_id``, and dropping the grant
-            # clears that correlation silently — so settle it, on the same
-            # predicate ``_evict`` uses, rather than leave it to the source's
-            # client-side timeout. That predicate errs toward telling a waiter
-            # that was already answered — the source finds no waiter under that
-            # id and routes by ``grant_jti``, which names no live pane for a grant
-            # that never bound — never toward silence. Not for a detach: a live
-            # detach tells an abandoned waiter nothing, and an expired one must
-            # not either.
-            if (
-                settle_waiter
-                and not att.attached
-                and att.request_id is not None
-                and att.request_id != request_id
-            ):
-                await self._send_to_source(
-                    session,
-                    {
-                        "type": "remote_terminal_error",
-                        "grant_jti": att.grant_jti,
-                        "code": att.expired_code(),
-                        "message": "grant expired",
-                        "request_id": att.request_id,
-                    },
-                )
-            # Same two-sided teardown as ``_evict``: the target learns the
-            # grant is gone rather than holding a detached subscriber.
-            await self._detach_target(session, att, att.terminal_id)
-            await self._drop_attachment(session, att)
-            await self._refuse(
-                session,
-                att.expired_code(),
-                "grant expired",
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        if require_attach_kind and att.kind != KIND_ATTACH:
-            # A create grant holds no session and no terminal: it bought one
-            # spawn and nothing else. Refused HERE rather than falling through
-            # to the ``attached`` check below, so the answer names the reason
-            # (wrong capability) instead of the symptom (nothing bound).
-            await self._refuse(
-                session,
-                CODE_GRANT_WRONG_KIND,
-                "a create grant does not attach to a terminal — mint an attach "
-                "grant for the session it created",
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        if not require_bound and not att.attached:
-            return att
-        if not att.attached or att.terminal_id != terminal_id:
-            await self._refuse(
-                session,
-                CODE_NOT_REGISTERED,
-                (
-                    "target has not attached a terminal for this grant yet"
-                    if not att.attached
-                    else "terminal_id does not match the attached terminal"
-                ),
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        return att
-
     async def _forward(
         self,
         session: _SourceSession,
@@ -1559,94 +1296,8 @@ class RemoteTerminalRelay:
             )
 
     # ------------------------------------------------------------------
-    # Registry (Redis)
+    # Teardown
     # ------------------------------------------------------------------
-
-    async def _claim_grant(self, att: _Attachment) -> bool:
-        """Atomically claim the grant for this attachment; False when held.
-
-        ``SET NX EXAT`` in one round trip: the claim can never outlive the
-        grant, and a second presentation — on this socket, another socket, or
-        another replica — reads False while the first attachment is live.
-        """
-        redis = await self._get_redis()
-        ok = await _maybe_await(
-            redis.set(
-                claim_key(att.grant_jti), att.source_device_id, nx=True, exat=att.exp
-            )
-        )
-        return bool(ok)
-
-    async def _write_grant_record(self, att: _Attachment) -> None:
-        redis = await self._get_redis()
-        record: dict[str, str] = {
-            "source_device_id": att.source_device_id,
-            "target_device_id": att.target_device_id,
-            "target_session_id": att.target_session_id or "",
-            "kind": att.kind,
-            "exp": str(att.exp),
-            "request_id": att.request_id or "",
-            "requested_terminal_id": att.requested_terminal_id or "",
-            "terminal_id": "",
-        }
-        await _hset(redis, grant_key(att.grant_jti), mapping=record)
-        await redis.expireat(grant_key(att.grant_jti), att.exp)
-
-    async def _bind_terminal(self, att: _Attachment, terminal_id: str) -> bool:
-        """Claim the ``(target, terminal)`` route for this grant; False when busy.
-
-        One atomic round trip (``BIND_TERMINAL_SCRIPT``): the key is never
-        observable half-written or without its TTL. On success the in-memory
-        record is updated HERE, before any further await, so a teardown that
-        runs next releases the key instead of leaking it until the grant's
-        expiry.
-        """
-        redis = await self._get_redis()
-        key = terminal_key(att.target_device_id, terminal_id)
-        bound = await _eval(
-            redis,
-            BIND_TERMINAL_SCRIPT,
-            key,
-            att.source_device_id,
-            att.grant_jti,
-            str(att.exp),
-        )
-        if not bound:
-            return False
-        att.terminal_id = terminal_id
-        att.attached = True
-        await _hset(
-            redis, grant_key(att.grant_jti), mapping={"terminal_id": terminal_id}
-        )
-        return True
-
-    async def _release_registry(self, att: _Attachment) -> None:
-        """Delete the attachment's keys; the terminal key only while ours.
-
-        **A CREATE's claim key is NOT deleted.** ``SET NX EXAT`` made it expire
-        with the grant, so leaving it is what "one grant, one spawn" means for
-        the 15 minutes the grant lives. Deleting it here freed the jti the
-        instant the create completed, and the only barriers left were a
-        PROCESS-LOCAL tombstone on the target and coord's ``consumed_at`` —
-        which a single detached no-retry POST sets. A coord blip during that
-        POST plus a target restart inside the TTL let the source replay the
-        identical frame into a second PTY, repeatably, once per restart.
-
-        Attach keeps the delete: re-presenting an attach grant is the documented
-        reattach path, not a replay.
-        """
-        redis = await self._get_redis()
-        if att.kind == KIND_CREATE:
-            await redis.delete(grant_key(att.grant_jti))
-        else:
-            await redis.delete(claim_key(att.grant_jti), grant_key(att.grant_jti))
-        if att.terminal_id is not None:
-            await _eval(
-                redis,
-                RELEASE_TERMINAL_SCRIPT,
-                terminal_key(att.target_device_id, att.terminal_id),
-                att.grant_jti,
-            )
 
     async def _drop_attachment(self, session: _SourceSession, att: _Attachment) -> None:
         session.grants.pop(att.grant_jti, None)
@@ -1671,7 +1322,7 @@ class RemoteTerminalRelay:
         try:
             # Two commands; shielded so a cancel of the caller (socket
             # teardown) cannot stop after the first and strand the second.
-            await asyncio.shield(self._release_registry(att))
+            await asyncio.shield(self.registry._release_registry(att))
         except Exception as exc:  # noqa: BLE001 - registry cleanup is best effort
             logger.error(
                 "remote_terminal_registry_delete_failed",
@@ -1856,11 +1507,9 @@ class RemoteTerminalRelay:
             # Reached from inside the listener itself (a ``terminal_exit`` on
             # the socket's last attachment to this target). Finish routing
             # this frame; a sibling task cancels and closes us right after.
-            finisher = asyncio.get_running_loop().create_task(
+            self.spawn_background(
                 self._finish_listener(session, target_device_id, pubsub, task)
             )
-            self._background.add(finisher)
-            finisher.add_done_callback(self._background.discard)
             return
         await self._finish_listener(session, target_device_id, pubsub, task)
 
@@ -2167,7 +1816,7 @@ class RemoteTerminalRelay:
                 )
                 return True
             try:
-                bound = await self._bind_terminal(att, terminal_id)
+                bound = await self.registry._bind_terminal(att, terminal_id)
             except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
                 logger.error(
                     "remote_terminal_registry_unavailable",
@@ -2738,11 +2387,7 @@ class RemoteTerminalRelay:
     ) -> None:
         """Arm the single delayed re-present, holding a reference to the task."""
         att.represented = True
-        task = asyncio.get_running_loop().create_task(
-            self._represent_attach(session, att)
-        )
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
+        self.spawn_background(self._represent_attach(session, att))
 
     async def _represent_attach(
         self, session: _SourceSession, att: _Attachment
