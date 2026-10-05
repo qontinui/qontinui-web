@@ -7852,6 +7852,14 @@ async def get_ci_overview(
           "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
         }
 
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
+
     No graceful fallback: a coord predating the route answers 404 and the
     page renders that as an explicit UNKNOWN, never as an empty fleet.
     """
