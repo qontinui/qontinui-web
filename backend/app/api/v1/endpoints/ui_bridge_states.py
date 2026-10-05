@@ -8,7 +8,6 @@ Provides endpoints to:
 - Manage domain knowledge and link it to states
 """
 
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -20,19 +19,19 @@ from qontinui_schemas.commands.state_machine import (
     UIBridgePathfindRequest,
     UIBridgePathfindResponse,
 )
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
+from app.crud import project as project_crud
+from app.crud import ui_bridge_domain_knowledge as knowledge_crud
+from app.crud import ui_bridge_exploration_session as session_crud
+from app.crud import ui_bridge_state_graph as graph_crud
 from app.models.project import Project
 from app.models.ui_bridge_state import (
-    DomainKnowledge,
     UIBridgeExplorationSession,
     UIBridgeState,
     UIBridgeStateConfig,
-    UIBridgeStateDomainKnowledge,
 )
 from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.user import User
@@ -92,13 +91,7 @@ async def get_project_or_404(
     db: AsyncSession,
 ) -> Project:
     """Get project by ID, ensuring user has access."""
-    result = await db.execute(
-        select(Project).where(
-            Project.id == project_id,
-            Project.owner_id == user_id,
-        )
-    )
-    project = result.scalar_one_or_none()
+    project = await project_crud.get_owned_project(db, project_id, user_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -113,13 +106,7 @@ async def get_config_or_404(
     db: AsyncSession,
 ) -> UIBridgeStateConfig:
     """Get config by ID, ensuring it belongs to project."""
-    result = await db.execute(
-        select(UIBridgeStateConfig).where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
-    )
-    config = result.scalar_one_or_none()
+    config = await graph_crud.get_config(db, project_id, config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -132,21 +119,53 @@ async def get_state_or_404(
     state_id: UUID,
     config_id: UUID,
     db: AsyncSession,
+    *,
+    with_knowledge: bool = False,
 ) -> UIBridgeState:
-    """Get state by ID, ensuring it belongs to config."""
-    result = await db.execute(
-        select(UIBridgeState).where(
-            UIBridgeState.id == state_id,
-            UIBridgeState.config_id == config_id,
-        )
+    """Get state by ID, ensuring it belongs to config.
+
+    ``with_knowledge=True`` eager-loads the knowledge ``state_to_response``
+    reads.
+    """
+    state = await graph_crud.get_state(
+        db, config_id, state_id, with_knowledge=with_knowledge
     )
-    state = result.scalar_one_or_none()
     if not state:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="State not found",
         )
     return state
+
+
+async def get_exploration_session_or_404(
+    session_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> UIBridgeExplorationSession:
+    """Get exploration session by ID, ensuring it belongs to project."""
+    session = await session_crud.get_session(db, project_id, session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exploration session not found",
+        )
+    return session
+
+
+async def get_transition_or_404(
+    transition_id: UUID,
+    config_id: UUID,
+    db: AsyncSession,
+) -> UIBridgeTransition:
+    """Get transition by ID, ensuring it belongs to config."""
+    transition = await graph_crud.get_transition(db, config_id, transition_id)
+    if not transition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transition not found",
+        )
+    return transition
 
 
 def state_to_response(state: UIBridgeState) -> UIBridgeStateResponse:
@@ -194,12 +213,7 @@ async def list_state_configs(
     """List all state configurations for a project."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .where(UIBridgeStateConfig.project_id == project_id)
-        .order_by(UIBridgeStateConfig.updated_at.desc())
-    )
-    configs = result.scalars().all()
+    configs = await graph_crud.list_configs(db, project_id)
 
     return UIBridgeStateConfigListResponse(
         items=[UIBridgeStateConfigResponse.model_validate(c) for c in configs],
@@ -221,19 +235,7 @@ async def get_state_config(
     """Get a state configuration with all its states."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .options(
-            selectinload(UIBridgeStateConfig.states)
-            .selectinload(UIBridgeState.domain_knowledge_refs)
-            .selectinload(UIBridgeStateDomainKnowledge.knowledge)
-        )
-        .where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
-    )
-    config = result.scalar_one_or_none()
+    config = await graph_crud.get_config_with_states(db, project_id, config_id)
 
     if not config:
         raise HTTPException(
@@ -269,16 +271,13 @@ async def create_state_config(
     """Create a new state configuration."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    config = UIBridgeStateConfig(
-        project_id=project_id,
+    config = await graph_crud.create_config(
+        db,
+        project_id,
         name=request.name,
         description=request.description,
         include_html_ids=request.include_html_ids,
     )
-
-    db.add(config)
-    await db.commit()
-    await db.refresh(config)
 
     logger.info(
         "Created UI Bridge state config",
@@ -306,13 +305,9 @@ async def update_state_config(
     await get_project_or_404(project_id, current_user.id, db)
     config = await get_config_or_404(config_id, project_id, db)
 
-    if request.name is not None:
-        config.name = request.name
-    if request.description is not None:
-        config.description = request.description
-
-    await db.commit()
-    await db.refresh(config)
+    config = await graph_crud.update_config(
+        db, config, name=request.name, description=request.description
+    )
 
     return UIBridgeStateConfigResponse.model_validate(config)
 
@@ -331,8 +326,7 @@ async def delete_state_config(
     await get_project_or_404(project_id, current_user.id, db)
     config = await get_config_or_404(config_id, project_id, db)
 
-    await db.delete(config)
-    await db.commit()
+    await graph_crud.delete_config(db, config)
 
     logger.info(
         "Deleted UI Bridge state config",
@@ -362,17 +356,7 @@ async def list_states(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeState)
-        .options(
-            selectinload(UIBridgeState.domain_knowledge_refs).selectinload(
-                UIBridgeStateDomainKnowledge.knowledge
-            )
-        )
-        .where(UIBridgeState.config_id == config_id)
-        .order_by(UIBridgeState.name)
-    )
-    states = result.scalars().all()
+    states = await graph_crud.list_states(db, config_id)
 
     return UIBridgeStateListResponse(
         items=[state_to_response(s) for s in states],
@@ -396,25 +380,7 @@ async def get_state(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeState)
-        .options(
-            selectinload(UIBridgeState.domain_knowledge_refs).selectinload(
-                UIBridgeStateDomainKnowledge.knowledge
-            )
-        )
-        .where(
-            UIBridgeState.id == state_id,
-            UIBridgeState.config_id == config_id,
-        )
-    )
-    state = result.scalar_one_or_none()
-
-    if not state:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="State not found",
-        )
+    state = await get_state_or_404(state_id, config_id, db, with_knowledge=True)
 
     return state_to_response(state)
 
@@ -436,37 +402,9 @@ async def update_state(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeState)
-        .options(
-            selectinload(UIBridgeState.domain_knowledge_refs).selectinload(
-                UIBridgeStateDomainKnowledge.knowledge
-            )
-        )
-        .where(
-            UIBridgeState.id == state_id,
-            UIBridgeState.config_id == config_id,
-        )
-    )
-    state = result.scalar_one_or_none()
+    state = await get_state_or_404(state_id, config_id, db, with_knowledge=True)
 
-    if not state:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="State not found",
-        )
-
-    if request.name is not None:
-        state.name = request.name
-    if request.description is not None:
-        state.description = request.description
-    if request.acceptance_criteria is not None:
-        state.acceptance_criteria = request.acceptance_criteria
-    if request.extra_metadata is not None:
-        state.extra_metadata = request.extra_metadata
-
-    await db.commit()
-    await db.refresh(state)
+    state = await graph_crud.update_state(db, state, request)
 
     return state_to_response(state)
 
@@ -488,35 +426,12 @@ async def link_domain_knowledge(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeState)
-        .options(
-            selectinload(UIBridgeState.domain_knowledge_refs).selectinload(
-                UIBridgeStateDomainKnowledge.knowledge
-            )
-        )
-        .where(
-            UIBridgeState.id == state_id,
-            UIBridgeState.config_id == config_id,
-        )
-    )
-    state = result.scalar_one_or_none()
-
-    if not state:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="State not found",
-        )
+    state = await get_state_or_404(state_id, config_id, db, with_knowledge=True)
 
     # Verify knowledge exists and belongs to project or is global
-    knowledge_result = await db.execute(
-        select(DomainKnowledge).where(
-            DomainKnowledge.id == request.knowledge_id,
-            (DomainKnowledge.project_id == project_id)
-            | (DomainKnowledge.project_id.is_(None)),
-        )
+    knowledge = await knowledge_crud.get_visible_knowledge(
+        db, project_id, request.knowledge_id
     )
-    knowledge = knowledge_result.scalar_one_or_none()
 
     if not knowledge:
         raise HTTPException(
@@ -525,39 +440,16 @@ async def link_domain_knowledge(
         )
 
     # Check if already linked
-    existing = await db.execute(
-        select(UIBridgeStateDomainKnowledge).where(
-            UIBridgeStateDomainKnowledge.state_id == state_id,
-            UIBridgeStateDomainKnowledge.knowledge_id == request.knowledge_id,
-        )
-    )
-    if existing.scalar_one_or_none():
+    if await graph_crud.get_knowledge_link(db, state_id, request.knowledge_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Knowledge already linked to state",
         )
 
-    # Create link
-    link = UIBridgeStateDomainKnowledge(
-        state_id=state_id,
-        knowledge_id=request.knowledge_id,
-        order=request.order,
+    # Create link; returns the state reloaded with its new knowledge
+    state = await graph_crud.link_knowledge(
+        db, state, knowledge_id=request.knowledge_id, order=request.order
     )
-    db.add(link)
-    await db.commit()
-
-    # Refresh state with new knowledge
-    await db.refresh(state)
-    result = await db.execute(
-        select(UIBridgeState)
-        .options(
-            selectinload(UIBridgeState.domain_knowledge_refs).selectinload(
-                UIBridgeStateDomainKnowledge.knowledge
-            )
-        )
-        .where(UIBridgeState.id == state_id)
-    )
-    state = result.scalar_one()
 
     return state_to_response(state)
 
@@ -579,17 +471,10 @@ async def unlink_domain_knowledge(
     await get_config_or_404(config_id, project_id, db)
     await get_state_or_404(state_id, config_id, db)
 
-    result = await db.execute(
-        select(UIBridgeStateDomainKnowledge).where(
-            UIBridgeStateDomainKnowledge.state_id == state_id,
-            UIBridgeStateDomainKnowledge.knowledge_id == knowledge_id,
-        )
-    )
-    link = result.scalar_one_or_none()
+    link = await graph_crud.get_knowledge_link(db, state_id, knowledge_id)
 
     if link:
-        await db.delete(link)
-        await db.commit()
+        await graph_crud.delete_knowledge_link(db, link)
 
 
 # =============================================================================
@@ -611,18 +496,9 @@ async def list_domain_knowledge(
     """List domain knowledge for a project."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    query = select(DomainKnowledge)
-    if include_global:
-        query = query.where(
-            (DomainKnowledge.project_id == project_id)
-            | (DomainKnowledge.project_id.is_(None))
-        )
-    else:
-        query = query.where(DomainKnowledge.project_id == project_id)
-
-    query = query.order_by(DomainKnowledge.title)
-    result = await db.execute(query)
-    items = result.scalars().all()
+    items = await knowledge_crud.list_knowledge(
+        db, project_id, include_global=include_global
+    )
 
     return DomainKnowledgeListResponse(
         items=[DomainKnowledgeResponse.model_validate(k) for k in items],
@@ -644,16 +520,7 @@ async def create_domain_knowledge(
     """Create new domain knowledge for a project."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    knowledge = DomainKnowledge(
-        project_id=project_id,
-        title=request.title,
-        content=request.content,
-        tags=request.tags,
-    )
-
-    db.add(knowledge)
-    await db.commit()
-    await db.refresh(knowledge)
+    knowledge = await knowledge_crud.create_knowledge(db, project_id, request)
 
     logger.info(
         "Created domain knowledge",
@@ -679,14 +546,7 @@ async def get_domain_knowledge(
     """Get domain knowledge by ID."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(DomainKnowledge).where(
-            DomainKnowledge.id == knowledge_id,
-            (DomainKnowledge.project_id == project_id)
-            | (DomainKnowledge.project_id.is_(None)),
-        )
-    )
-    knowledge = result.scalar_one_or_none()
+    knowledge = await knowledge_crud.get_visible_knowledge(db, project_id, knowledge_id)
 
     if not knowledge:
         raise HTTPException(
@@ -712,13 +572,8 @@ async def update_domain_knowledge(
     """Update domain knowledge."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(DomainKnowledge).where(
-            DomainKnowledge.id == knowledge_id,
-            DomainKnowledge.project_id == project_id,  # Can only edit project-specific
-        )
-    )
-    knowledge = result.scalar_one_or_none()
+    # Can only edit project-specific
+    knowledge = await knowledge_crud.get_project_knowledge(db, project_id, knowledge_id)
 
     if not knowledge:
         raise HTTPException(
@@ -726,15 +581,7 @@ async def update_domain_knowledge(
             detail="Domain knowledge not found or cannot be edited",
         )
 
-    if request.title is not None:
-        knowledge.title = request.title
-    if request.content is not None:
-        knowledge.content = request.content
-    if request.tags is not None:
-        knowledge.tags = request.tags
-
-    await db.commit()
-    await db.refresh(knowledge)
+    knowledge = await knowledge_crud.update_knowledge(db, knowledge, request)
 
     return DomainKnowledgeResponse.model_validate(knowledge)
 
@@ -752,14 +599,8 @@ async def delete_domain_knowledge(
     """Delete domain knowledge."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(DomainKnowledge).where(
-            DomainKnowledge.id == knowledge_id,
-            DomainKnowledge.project_id
-            == project_id,  # Can only delete project-specific
-        )
-    )
-    knowledge = result.scalar_one_or_none()
+    # Can only delete project-specific
+    knowledge = await knowledge_crud.get_project_knowledge(db, project_id, knowledge_id)
 
     if not knowledge:
         raise HTTPException(
@@ -767,8 +608,7 @@ async def delete_domain_knowledge(
             detail="Domain knowledge not found or cannot be deleted",
         )
 
-    await db.delete(knowledge)
-    await db.commit()
+    await knowledge_crud.delete_knowledge(db, knowledge)
 
     logger.info(
         "Deleted domain knowledge",
@@ -923,7 +763,9 @@ async def discover_and_save_states(
     # Persist the discovery result on the web side. The runner is
     # stateless w.r.t. persistence; the web side owns the
     # ui_bridge_state_configs + ui_bridge_states rows.
-    config = UIBridgeStateConfig(
+    # One commit after the config and every state row are added.
+    config, states = await graph_crud.create_discovered_config(
+        db,
         project_id=project_id,
         name=request.config_name,
         description=request.config_description,
@@ -935,31 +777,23 @@ async def discover_and_save_states(
             "strategy_used": response.strategy_used,
             "strategy_metadata": response.strategy_metadata,
         },
+        states=[
+            {
+                "state_id": str(s["id"]),
+                "name": str(s["name"]),
+                "element_ids": list(s.get("element_ids") or []),
+                "render_ids": list(s.get("render_ids") or []),
+                "confidence": float(s.get("confidence") or 0.0),
+            }
+            for s in response.states
+        ],
     )
-    db.add(config)
-    await db.flush()  # populate config.id
-
-    states: list[UIBridgeState] = []
-    for s in response.states:
-        state_row = UIBridgeState(
-            config_id=config.id,
-            state_id=str(s["id"]),
-            name=str(s["name"]),
-            element_ids=list(s.get("element_ids") or []),
-            render_ids=list(s.get("render_ids") or []),
-            confidence=float(s.get("confidence") or 0.0),
-        )
-        db.add(state_row)
-        states.append(state_row)
-
-    await db.commit()
-
     config_id = config.id
-    await db.refresh(config)
 
+    # Built field by field, not via ``state_to_response``: these rows have
+    # no ``domain_knowledge_refs`` loaded, and an async lazy load raises.
     state_responses: list[UIBridgeStateResponse] = []
     for state_row in states:
-        await db.refresh(state_row)
         state_responses.append(
             UIBridgeStateResponse(
                 id=state_row.id,
@@ -1018,17 +852,9 @@ async def list_exploration_sessions(
     """List exploration sessions for a project."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    query = select(UIBridgeExplorationSession).where(
-        UIBridgeExplorationSession.project_id == project_id
+    sessions = await session_crud.list_sessions(
+        db, project_id, include_completed=include_completed, limit=limit
     )
-
-    if not include_completed:
-        query = query.where(UIBridgeExplorationSession.status != "completed")
-
-    query = query.order_by(UIBridgeExplorationSession.created_at.desc()).limit(limit)
-
-    result = await db.execute(query)
-    sessions = result.scalars().all()
 
     return ExplorationSessionListResponse(
         items=[ExplorationSessionResponse.model_validate(s) for s in sessions],
@@ -1050,25 +876,7 @@ async def create_exploration_session(
     """Create a new exploration session."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    # Generate name if not provided
-    name = request.name or f"Exploration {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
-
-    session = UIBridgeExplorationSession(
-        project_id=project_id,
-        name=name,
-        status="running",
-        target_type=request.target_type,
-        target_url=request.target_url,
-        exploration_config=request.exploration_config,
-        render_logs=[],
-        elements_discovered=0,
-        elements_explored=0,
-        render_count=0,
-    )
-
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
+    session = await session_crud.create_session(db, project_id, request)
 
     logger.info(
         "Created exploration session",
@@ -1094,19 +902,7 @@ async def get_exploration_session(
     """Get an exploration session with render logs."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeExplorationSession).where(
-            UIBridgeExplorationSession.id == session_id,
-            UIBridgeExplorationSession.project_id == project_id,
-        )
-    )
-    session = result.scalar_one_or_none()
-
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Exploration session not found",
-        )
+    session = await get_exploration_session_or_404(session_id, project_id, db)
 
     return ExplorationSessionWithRenders.model_validate(session)
 
@@ -1126,47 +922,10 @@ async def update_exploration_session(
     """Update an exploration session."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeExplorationSession).where(
-            UIBridgeExplorationSession.id == session_id,
-            UIBridgeExplorationSession.project_id == project_id,
-        )
-    )
-    session = result.scalar_one_or_none()
+    session = await get_exploration_session_or_404(session_id, project_id, db)
 
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Exploration session not found",
-        )
-
-    if request.status is not None:
-        session.status = request.status.value
-        if request.status.value in ("completed", "failed", "cancelled"):
-            session.completed_at = datetime.now(UTC)
-
-    if request.render_logs is not None:
-        # Append new render logs
-        session.render_logs = session.render_logs + request.render_logs
-        session.render_count = len(session.render_logs)
-
-    if request.elements_discovered is not None:
-        session.elements_discovered = request.elements_discovered
-
-    if request.elements_explored is not None:
-        session.elements_explored = request.elements_explored
-
-    if request.error_message is not None:
-        session.error_message = request.error_message
-
-    if request.discovery_completed is not None:
-        session.discovery_completed = request.discovery_completed
-
-    if request.saved_config_id is not None:
-        session.saved_config_id = request.saved_config_id
-
-    await db.commit()
-    await db.refresh(session)
+    # render_logs, when present, are appended rather than replaced.
+    session = await session_crud.update_session(db, session, request)
 
     return ExplorationSessionResponse.model_validate(session)
 
@@ -1186,32 +945,9 @@ async def append_renders_to_session(
     """Append render logs to an exploration session."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeExplorationSession).where(
-            UIBridgeExplorationSession.id == session_id,
-            UIBridgeExplorationSession.project_id == project_id,
-        )
-    )
-    session = result.scalar_one_or_none()
+    session = await get_exploration_session_or_404(session_id, project_id, db)
 
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Exploration session not found",
-        )
-
-    # Append render logs
-    session.render_logs = session.render_logs + request.render_logs
-    session.render_count = len(session.render_logs)
-
-    if request.elements_discovered is not None:
-        session.elements_discovered = request.elements_discovered
-
-    if request.elements_explored is not None:
-        session.elements_explored = request.elements_explored
-
-    await db.commit()
-    await db.refresh(session)
+    session = await session_crud.append_renders(db, session, request)
 
     logger.debug(
         "Appended renders to exploration session",
@@ -1236,22 +972,9 @@ async def delete_exploration_session(
     """Delete an exploration session."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeExplorationSession).where(
-            UIBridgeExplorationSession.id == session_id,
-            UIBridgeExplorationSession.project_id == project_id,
-        )
-    )
-    session = result.scalar_one_or_none()
+    session = await get_exploration_session_or_404(session_id, project_id, db)
 
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Exploration session not found",
-        )
-
-    await db.delete(session)
-    await db.commit()
+    await session_crud.delete_session(db, session)
 
     logger.info(
         "Deleted exploration session",
@@ -1302,12 +1025,7 @@ async def list_transitions(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeTransition)
-        .where(UIBridgeTransition.config_id == config_id)
-        .order_by(UIBridgeTransition.name)
-    )
-    transitions = result.scalars().all()
+    transitions = await graph_crud.list_transitions(db, config_id)
 
     return UIBridgeTransitionListResponse(
         items=[transition_to_response(t) for t in transitions],
@@ -1331,27 +1049,8 @@ async def create_transition(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    # Generate transition_id from name
-    import re
-
-    transition_id = re.sub(r"[^a-z0-9]+", "_", request.name.lower()).strip("_")
-
-    transition = UIBridgeTransition(
-        config_id=config_id,
-        transition_id=transition_id,
-        name=request.name,
-        from_states=request.from_states,
-        activate_states=request.activate_states,
-        exit_states=request.exit_states,
-        actions=[a.model_dump(exclude_none=True) for a in request.actions],
-        path_cost=request.path_cost,
-        stays_visible=request.stays_visible,
-        extra_metadata=request.extra_metadata,
-    )
-
-    db.add(transition)
-    await db.commit()
-    await db.refresh(transition)
+    # transition_id is derived from the name (create only; PATCH keeps it)
+    transition = await graph_crud.create_transition(db, config_id, request)
 
     logger.info(
         "Created UI Bridge transition",
@@ -1380,39 +1079,9 @@ async def update_transition(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeTransition).where(
-            UIBridgeTransition.id == transition_id,
-            UIBridgeTransition.config_id == config_id,
-        )
-    )
-    transition = result.scalar_one_or_none()
+    transition = await get_transition_or_404(transition_id, config_id, db)
 
-    if not transition:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transition not found",
-        )
-
-    if request.name is not None:
-        transition.name = request.name
-    if request.from_states is not None:
-        transition.from_states = request.from_states
-    if request.activate_states is not None:
-        transition.activate_states = request.activate_states
-    if request.exit_states is not None:
-        transition.exit_states = request.exit_states
-    if request.actions is not None:
-        transition.actions = [a.model_dump(exclude_none=True) for a in request.actions]
-    if request.path_cost is not None:
-        transition.path_cost = request.path_cost
-    if request.stays_visible is not None:
-        transition.stays_visible = request.stays_visible
-    if request.extra_metadata is not None:
-        transition.extra_metadata = request.extra_metadata
-
-    await db.commit()
-    await db.refresh(transition)
+    transition = await graph_crud.update_transition(db, transition, request)
 
     return transition_to_response(transition)
 
@@ -1432,22 +1101,9 @@ async def delete_transition(
     await get_project_or_404(project_id, current_user.id, db)
     await get_config_or_404(config_id, project_id, db)
 
-    result = await db.execute(
-        select(UIBridgeTransition).where(
-            UIBridgeTransition.id == transition_id,
-            UIBridgeTransition.config_id == config_id,
-        )
-    )
-    transition = result.scalar_one_or_none()
+    transition = await get_transition_or_404(transition_id, config_id, db)
 
-    if not transition:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transition not found",
-        )
-
-    await db.delete(transition)
-    await db.commit()
+    await graph_crud.delete_transition(db, transition)
 
     logger.info(
         "Deleted UI Bridge transition",
@@ -1477,18 +1133,9 @@ async def export_config(
     await get_project_or_404(project_id, current_user.id, db)
 
     # Load config with states and transitions
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .options(
-            selectinload(UIBridgeStateConfig.states),
-            selectinload(UIBridgeStateConfig.transitions),
-        )
-        .where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
+    config = await graph_crud.load_config_graph(
+        db, project_id, config_id, with_knowledge=False
     )
-    config = result.scalar_one_or_none()
 
     if not config:
         raise HTTPException(
@@ -1586,18 +1233,9 @@ async def pathfind(
 
     # Load the persisted config (states + transitions) — this is what
     # the runner reconstructs into a UIBridgeRuntime.
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .options(
-            selectinload(UIBridgeStateConfig.states),
-            selectinload(UIBridgeStateConfig.transitions),
-        )
-        .where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
+    config = await graph_crud.load_config_graph(
+        db, project_id, config_id, with_knowledge=False
     )
-    config = result.scalar_one_or_none()
     if config is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1771,20 +1409,9 @@ async def get_state_config_full(
     """Get a state configuration with all states and transitions."""
     await get_project_or_404(project_id, current_user.id, db)
 
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .options(
-            selectinload(UIBridgeStateConfig.states)
-            .selectinload(UIBridgeState.domain_knowledge_refs)
-            .selectinload(UIBridgeStateDomainKnowledge.knowledge),
-            selectinload(UIBridgeStateConfig.transitions),
-        )
-        .where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
+    config = await graph_crud.load_config_graph(
+        db, project_id, config_id, with_knowledge=True
     )
-    config = result.scalar_one_or_none()
 
     if not config:
         raise HTTPException(
