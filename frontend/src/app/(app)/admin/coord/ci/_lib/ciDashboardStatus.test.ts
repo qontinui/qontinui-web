@@ -519,13 +519,14 @@ describe("hosted — a refusal floor, infra, never content and never 0", () => {
     expect(hb?.tone).not.toBe("attention");
   });
 
-  it("observed refusals hold an otherwise-green strip at amber, never red", () => {
+  it("observed refusals never move the strip level — green stays green, the detail names them", () => {
     const h = healthOf([observed(2)]);
-    expect(h.level).toBe("amber");
-    expect(h.headline).toMatch(
-      /Hosted jobs refused .* infra, not a code failure/
+    expect(h.level).toBe("green");
+    expect(h.headline).toMatch(/^CI healthy/);
+    expect(h.detail).toMatch(
+      /≥2 hosted job\(s\) refused .* infra, not a code failure; cause not stored/
     );
-    expect(h.headline).not.toMatch(/red|Stuck/);
+    expect(badge(h, "hosted")?.tone).toBe("waiting");
   });
 
   it("none_observed → – never 0, with coord's note as the reason", () => {
@@ -563,6 +564,45 @@ describe("hosted — a refusal floor, infra, never content and never 0", () => {
     expect(badge(h, "hosted")?.title).toMatch(/UNKNOWN/);
   });
 
+  it("an otherwise-green strip stays green when hosted is unknown, with a muted hosted – badge", () => {
+    // Intended: D4's no-green rule covers pools, not the hosted block.
+    const h = healthOf([repo({ hosted: { state: "unknown", note: null } })]);
+    expect(h.level).toBe("green");
+    expect(h.detail).toBeNull();
+    const hb = badge(h, "hosted");
+    expect(hb?.label).toBe(`hosted ${DASH}`);
+    expect(hb?.tone).toBe("muted");
+  });
+
+  it("a row with no hosted key → – UNKNOWN in the cell, counted unknown in the strip", () => {
+    const r: CiRepoOverviewWire = repo();
+    delete (r as Partial<CiRepoOverviewWire>).hosted;
+    const c = outcomeCells(r).hosted;
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+    expect(c.reason).toBe("coord sent no hosted block — UNKNOWN");
+    const s = hostedSummary(overview({ repos: [r] }));
+    expect(s.unknownRepos).toEqual(["qontinui/qontinui-web"]);
+    expect(s.refusedFloor).toBeNull();
+    const hb = hostedBadge(s);
+    expect(hb.label).toBe(`hosted ${DASH}`);
+    expect(hb.title).toMatch(/UNKNOWN/);
+  });
+
+  it("an unrecognised hosted state (hosted_disabled) → – and counted unknown", () => {
+    const r = repo({
+      hosted: { state: "hosted_disabled", hosted_refused: 9, note: null },
+    });
+    const c = outcomeCells(r).hosted;
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+    expect(c.reason).toMatch(/^UNKNOWN/);
+    const s = hostedSummary(overview({ repos: [r] }));
+    expect(s.unknownRepos).toEqual(["qontinui/qontinui-web"]);
+    expect(s.refusedFloor).toBeNull();
+    expect(hostedBadge(s).label).toBe(`hosted ${DASH}`);
+  });
+
   it("legacy not_measured (no other fields) → – with its note", () => {
     const c = outcomeCells(repo()).hosted;
     expect(c.text).toBe(DASH);
@@ -576,9 +616,9 @@ describe("hosted — a refusal floor, infra, never content and never 0", () => {
 
   it("billing_refusal present → the strip names GitHub Actions billing", () => {
     const h = healthOf([observed(3, { billing_refusal: billing })]);
-    expect(h.level).toBe("amber");
-    expect(h.headline).toMatch(
-      /^GitHub Actions billing refusing hosted jobs on qontinui\/qontinui-web/
+    expect(h.level).toBe("green");
+    expect(h.detail).toMatch(
+      /^GitHub Actions billing refusing hosted jobs on qontinui\/qontinui-web — infra/
     );
     const hb = badge(h, "hosted");
     expect(hb?.label).toBe("billing refusing hosted ≥3");
@@ -603,7 +643,8 @@ describe("hosted — a refusal floor, infra, never content and never 0", () => {
     expect(outcomeCells(r).hosted.reason).toMatch(/billing refusing hosted/);
     const h = healthOf([r]);
     expect(badge(h, "hosted")?.label).toBe(`billing refusing hosted ${DASH}`);
-    expect(h.headline).toMatch(/GitHub Actions billing refusing hosted jobs/);
+    expect(h.level).toBe("green");
+    expect(h.detail).toMatch(/GitHub Actions billing refusing hosted jobs/);
   });
 
   it("billing never overrides a red verdict, it is added to the detail", () => {

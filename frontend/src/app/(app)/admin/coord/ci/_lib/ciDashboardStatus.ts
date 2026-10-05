@@ -1024,7 +1024,7 @@ export function hostedCell(h: CiHostedWire | null | undefined): CellReading {
   const state = h?.state ?? null;
   const base =
     h === null || h === undefined
-      ? "coord sent no hosted block for this repo — not measured"
+      ? "coord sent no hosted block — UNKNOWN"
       : state === "observed"
         ? "coord reported hosted refusals without a positive count — UNKNOWN, not 0"
         : state === "none_observed"
@@ -1354,15 +1354,22 @@ function reposText(repos: string[]): string {
 }
 
 /**
- * The strip's hosted badge. Tone: `waiting` (amber), never `attention` (red).
- * Why amber, for a cause the operator has to fix (billing): R3's red is
- * reserved here for a CURRENT, measured reading that names content or a stuck
- * pool. A hosted refusal count is a 24 h WINDOW floor — it says refusals
- * happened, not that one is happening now — and a spending-limit refusal
- * clears itself at the billing-cycle rollover; where no billing alert names
- * the cause, the badge is also amber's "we do not know" floor. Above all it
- * must never read as content red: it is never folded into the content-fail
- * badge, the main-red count, or `infra_shaped` (self-hosted only).
+ * The strip's hosted badge. Tone: `waiting` (amber) on the BADGE (and the
+ * row cell), never `attention` (red) — and never on the strip LEVEL.
+ *
+ * Why the badge is amber but the level does not move: hosted CI is
+ * deliberately OFF for this tenant (plan Why section), so every hosted job
+ * is refused and the 24 h refusal floor never empties by itself. Holding the
+ * strip amber would make it permanently amber, breaking R3's promise that
+ * amber clears itself; holding it red would claim someone must act now on a
+ * configured state. This is R3's "third case" — a real fact (and, with a
+ * billing alert, a real operator decision) that blocks nothing: the level
+ * stays whatever the other arms derive, and the ask is stated in WORDS — the
+ * strip detail names it ({@link deriveCiHealth}). The badge itself is a count
+ * that is a signal but not content red, which is what `waiting` is for.
+ * Above all it must never read as content red: it is never folded into the
+ * content-fail badge, the main-red count, or `infra_shaped` (self-hosted
+ * only).
  */
 export function hostedBadge(h: HostedSummary): HealthBadge {
   const billing = h.billingRepos.length > 0;
@@ -1407,10 +1414,10 @@ function hostedDetail(h: HostedSummary): string | null {
 }
 
 /**
- * The strip verdict. Hosted refusals (rule 4) never move red and never touch
- * the content counts: they add their sentence to the detail of whatever arm
- * fired, and they hold an otherwise-green strip at amber, naming the cause —
- * a strip is not "healthy" while GitHub is refusing hosted jobs.
+ * The strip verdict. Hosted refusals (rule 4) never move the LEVEL and never
+ * touch the content counts: they add their sentence (naming the billing cause
+ * when an alert proves it) to the detail of whatever arm fired, green
+ * included — R3's third case, see {@link hostedBadge} for why.
  */
 export function deriveCiHealth(
   overview: OverviewRead,
@@ -1421,17 +1428,6 @@ export function deriveCiHealth(
   const h = hostedSummary(overview.data);
   const sentence = hostedDetail(h);
   if (sentence === null) return base;
-  if (base.level === "green") {
-    return {
-      ...base,
-      level: "amber",
-      headline:
-        h.billingRepos.length > 0
-          ? `${BILLING_REFUSAL_TEXT} on ${reposText(h.billingRepos)} — infra, not a code failure`
-          : `Hosted jobs refused on ${reposText(h.refusedRepos)} (≥${h.refusedFloor} in 24 h) — infra, not a code failure`,
-      detail: `${sentence} Otherwise: ${base.headline}.`,
-    };
-  }
   return {
     ...base,
     detail: [base.detail, sentence].filter(Boolean).join(" "),
