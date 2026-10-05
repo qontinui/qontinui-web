@@ -11,7 +11,6 @@ export async function GET(
     tokenSources: ["cookie", "header"],
     onMissingToken: "401",
     unauthorizedBodyKey: "detail",
-    body: "json",
     errorBody: "detail",
   });
 }

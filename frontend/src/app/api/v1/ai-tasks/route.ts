@@ -8,7 +8,6 @@ const OPTIONS: ProxyOptions = {
   unauthorizedBodyKey: "detail",
   forwardBody: "json",
   query: "reencoded",
-  body: "json",
   errorBody: "detail",
 };
 
