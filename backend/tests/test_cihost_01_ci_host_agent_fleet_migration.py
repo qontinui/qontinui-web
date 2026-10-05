@@ -84,6 +84,7 @@ _COLUMNS: dict[str, set[str]] = {
         "issued_by",
         "host",
         "may_hold_secrets",
+        "isolation",
         "expires_at",
         "redeemed_at",
         "created_at",
@@ -413,6 +414,15 @@ def test_tables_columns_and_security_checks() -> None:
         )
         _exec(engine, code_sql, h="b" * 64, t=tenant_id, host="dell-2020", c=False)
         _exec(engine, code_sql, h="c" * 64, t=tenant_id, host="h", c=True)
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _exec(
+                engine,
+                "INSERT INTO coord.ci_enrol_codes (code_hash, tenant_id, issued_by, host, "
+                "isolation, expires_at) VALUES (:h, :t, 'op', 'h', 'dedicated', "
+                "now() + interval '1 hour')",
+                h="f" * 64,
+                t=tenant_id,
+            )
         for bad in (
             {"h": "CODE-PLAINTEXT", "host": "h", "c": False},
             {"h": "d" * 64, "host": "Upper", "c": False},
@@ -551,6 +561,9 @@ def test_labels_must_be_stored_lower_sorted_distinct_and_non_empty() -> None:
             ["Linux", "qontinui"],  # upper-case
             ["", "a"],  # empty label
             ["a", None],  # NULL label
+            ["a b"],  # space
+            ["ré"],  # non-ASCII
+            ["a/b"],  # outside [a-z0-9._-]
         )
         for i, bad in enumerate(bad_label_sets):
             with pytest.raises(sqlalchemy.exc.IntegrityError):
@@ -561,6 +574,11 @@ def test_labels_must_be_stored_lower_sorted_distinct_and_non_empty() -> None:
                 "SELECT coord.ci_labels_normalized(ARRAY['b','a','B','A','c-d'])::text",
             )
             == "{a,b,c-d}"
+        )
+        assert scalar(engine, "SELECT coord.ci_labels_valid('{}'::text[])") is False
+        assert (
+            scalar(engine, "SELECT coord.ci_labels_valid(ARRAY['x', 'a.b_c-1'])")
+            is True
         )
 
 
@@ -587,7 +605,8 @@ def test_upgrade_is_idempotent_and_up_down_up_leaves_no_residue() -> None:
                 engine,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
                 "ON n.oid = p.pronamespace "
-                "WHERE n.nspname = 'coord' AND p.proname = 'ci_labels_normalized'",
+                "WHERE n.nspname = 'coord' "
+                "AND p.proname IN ('ci_labels_normalized', 'ci_labels_valid')",
             )
             == 0
         )

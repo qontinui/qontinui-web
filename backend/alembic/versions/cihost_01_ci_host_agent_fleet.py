@@ -52,8 +52,8 @@ The tables:
     Operator-issued, single-use, short-lived enrolment codes. Only the code's
     sha256 hex is stored (``code_hash``); the plaintext exists only in the one
     response that issued it. The operator binds ``host`` and
-    ``may_hold_secrets`` at issue time, and the redeem copies both onto the new
-    agent row. ``redeemed_at`` set means the code is spent.
+    ``may_hold_secrets`` and ``isolation`` at issue time, and the redeem copies
+    them onto the new agent row. ``redeemed_at`` set means the code is spent.
 
 ``coord.ci_pool_specs``
     One row per ``(tenant, repo, label set)`` pool: its ``secrets_class`` and
@@ -104,7 +104,9 @@ two parents carry the ``UNIQUE (…, tenant_id)`` keys those FKs need.
 
 An ``IMMUTABLE`` SQL function (``lower`` + ``DISTINCT`` + ``ORDER BY … COLLATE
 "C"``) used by the pool-spec CHECK, because PostgreSQL forbids sub-queries
-inside a CHECK.
+inside a CHECK. Its sibling ``coord.ci_labels_valid(text[])`` checks every
+element against ``^[a-z0-9._-]+$`` (ASCII, no spaces) — a per-element CHECK,
+for the same reason — and is false for an empty array.
 Byte-order collation matches Rust's ``sort`` / ``dedup`` on ``String``, so the
 coord writer and the constraint agree on what "sorted" means.
 
@@ -172,6 +174,20 @@ def upgrade() -> None:
     )
     op.execute(
         """
+        CREATE OR REPLACE FUNCTION coord.ci_labels_valid(labels text[])
+        RETURNS boolean
+        LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+        AS $fn$
+            SELECT COALESCE(
+                bool_and(u.l IS NOT NULL AND u.l ~ '^[a-z0-9._-]+$'),
+                false
+            )
+              FROM unnest(labels) AS u(l)
+        $fn$
+        """
+    )
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS coord.ci_host_agents (
             agent_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id            UUID NOT NULL
@@ -211,6 +227,7 @@ def upgrade() -> None:
             issued_by            TEXT NOT NULL,
             host                 TEXT NOT NULL,
             may_hold_secrets     BOOLEAN NOT NULL DEFAULT false,
+            isolation            TEXT NOT NULL DEFAULT 'shared',
             expires_at           TIMESTAMPTZ NOT NULL,
             redeemed_at          TIMESTAMPTZ,
             created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -219,7 +236,9 @@ def upgrade() -> None:
             CONSTRAINT ck_ci_enrol_codes_expires_after_created
                 CHECK (expires_at > created_at),
             CONSTRAINT ck_ci_enrol_codes_host_lower
-                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$')
+                CHECK (host ~ '^[a-z0-9][a-z0-9._-]{0,62}$'),
+            CONSTRAINT ck_ci_enrol_codes_isolation
+                CHECK (isolation IN ('shared'))
         )
         """
     )
@@ -260,6 +279,8 @@ def upgrade() -> None:
                        AND array_position(labels, '') IS NULL),
             CONSTRAINT ck_ci_pool_specs_labels_normalized
                 CHECK (labels = coord.ci_labels_normalized(labels)),
+            CONSTRAINT ck_ci_pool_specs_labels_charset
+                CHECK (coord.ci_labels_valid(labels)),
             CONSTRAINT ck_ci_pool_specs_mem_gib_positive
                 CHECK (mem_gib > 0),
             CONSTRAINT ck_ci_pool_specs_cores_positive
@@ -390,3 +411,4 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS coord.ci_enrol_codes")
     op.execute("DROP TABLE IF EXISTS coord.ci_host_agents")
     op.execute("DROP FUNCTION IF EXISTS coord.ci_labels_normalized(text[])")
+    op.execute("DROP FUNCTION IF EXISTS coord.ci_labels_valid(text[])")
