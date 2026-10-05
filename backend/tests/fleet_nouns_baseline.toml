@@ -294,7 +294,7 @@
 ["app/services/runner/device_selector.py".repo_layout]
 "qontinui-root" = 1
 
-["app/services/runner/remote_terminal_relay.py".fleet_host_name]
+["app/services/runner/remote_relay/protocol.py".fleet_host_name]
 "merytshost" = 1
 
 ["app/worker/tasks.py".repo_layout]
