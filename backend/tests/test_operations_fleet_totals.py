@@ -17,12 +17,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 
@@ -179,12 +181,12 @@ class TestFleetTotals:
         ]
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=db_devices),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=registry,
             ),
         ):
@@ -237,12 +239,12 @@ class TestFleetTotals:
         ]
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=db_devices),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=_empty_registry(),
             ),
         ):
@@ -286,12 +288,12 @@ class TestFleetTotals:
         ]
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=db_devices),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=_empty_registry(),
             ),
         ):
@@ -324,12 +326,12 @@ class TestFleetTotals:
         ]
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=db_devices),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=_empty_registry(),
             ),
         ):
@@ -378,12 +380,12 @@ class TestFleetTotals:
         db_devices = [_db_device(hostname="db-mine", port=9876, ws_connected=True)]
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=db_devices),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=registry,
             ),
         ):
@@ -403,12 +405,12 @@ class TestFleetTotals:
         from app.services.dev_dashboard_service import FleetRegistry
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+            patch_ops(
+                "runner_crud.list_runners",
                 AsyncMock(return_value=[]),
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_fleet_registry",
+            patch_ops(
+                "get_fleet_registry",
                 return_value=FleetRegistry(),
             ),
         ):
