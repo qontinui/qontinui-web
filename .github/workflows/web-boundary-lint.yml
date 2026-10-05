@@ -40,6 +40,11 @@ on:
       - "scripts/ci/_gate_lib.py"
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
+
 jobs:
   web-boundary-lint:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -48,7 +53,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Scan backend/app for qontinui.* boundary violations
         # Exits 1 on a violation and 2 if it scanned nothing — a gate that

@@ -65,6 +65,13 @@ function row(overrides: Record<string, unknown> = {}) {
     current_version: 1,
     created_at: "2026-08-10T00:00:00Z",
     updated_at: "2026-08-10T00:00:00Z",
+    status_currency: {
+      state: "fed_in_step",
+      as_of: "2026-08-10T00:00:00Z",
+      ref_sha: "c0ffee",
+      ref_age_secs: 5,
+      detail: null,
+    },
     ...overrides,
   };
 }

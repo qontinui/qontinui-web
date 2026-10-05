@@ -10,11 +10,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { listResource } from "@/components/overview/editing/api";
 import { useCanEdit } from "@/components/overview/editing/permissions";
 import {
-  fetchEstimates,
+  ESTIMATES,
   pickBaseline,
-  type EstimateSummary,
+  type EstimateRecord,
 } from "../_lib/estimate-api";
 import { extractGanttChart } from "../_lib/gantt";
 import type { PageRecord } from "../_lib/pages";
@@ -22,7 +23,7 @@ import type { PageRecord } from "../_lib/pages";
 type Baseline =
   | { state: "loading" }
   | { state: "error" }
-  | { state: "ready"; estimate: EstimateSummary | null };
+  | { state: "ready"; estimate: EstimateRecord | null };
 
 export function editorHref(pageId: string): string {
   return `/overview/team/edit?from_document=${encodeURIComponent(pageId)}`;
@@ -46,12 +47,12 @@ export function EstimateSource({
     if (hold) return;
     let live = true;
     setBaseline({ state: "loading" });
-    fetchEstimates().then(
+    listResource<EstimateRecord>(ESTIMATES).then(
       (listed) =>
         live &&
         setBaseline({
           state: "ready",
-          estimate: pickBaseline(listed.estimates),
+          estimate: pickBaseline(listed.items),
         }),
       () => live && setBaseline({ state: "error" })
     );
