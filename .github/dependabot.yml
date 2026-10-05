@@ -15,10 +15,13 @@
 # Verify Session-Id gate. Dependency bumps are done by sessions following
 # plans/2026-06-04-dependabot-backlog-remediation.md (archived in dev-notes).
 version: 2
-exclude-paths:
-  - "qontinui-schemas"
 updates:
   - package-ecosystem: "pip"
+    # Per-update-entry key: Dependabot rejects `exclude-paths` at the top level
+    # ("additional properties outside of the schema"), which fails the
+    # `.github/dependabot.yml` check on every fresh PR head.
+    exclude-paths:
+      - "qontinui-schemas"
     directories:
       - "/"
       - "/backend"

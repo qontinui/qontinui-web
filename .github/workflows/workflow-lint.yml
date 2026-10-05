@@ -141,12 +141,18 @@ jobs:
         # Exit codes (zizmor 1.30.1 docs/usage.md): 0 clean; 11-14 findings
         # (by max severity); 1/2/3 are tool errors, and anything else (101
         # panic, 137 SIGKILL, 143 SIGTERM, ...) is an error too, never FINDINGS.
+        # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
+        # runners are PERSISTENT services, so zizmor's default HTTP cache
+        # (~/.cache/zizmor of the runner user) is shared by every job on the
+        # host -- any PR job could seed it with forged API answers and blind the
+        # online audits (impostor-commit, known-vulnerable-actions) of later
+        # runs. A cold cache costs only the few action lookups this repo makes.
         run: |
           mapfile -t files < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
           mapfile -t -O "${#files[@]}" files < <(find .github/actions -type f \( -name 'action.yml' -o -name 'action.yaml' \) | sort)
           files+=(.github/dependabot.yml)
           set +e
-          out="$(zizmor --no-progress --format github --config .github/zizmor.yml "${files[@]}")"
+          out="$(zizmor --no-progress --cache-dir "${RUNNER_TEMP}/zizmor-cache" --format github --config .github/zizmor.yml "${files[@]}")"
           rc=$?
           set -e
           printf '%s\n' "$out"

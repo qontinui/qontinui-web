@@ -1538,8 +1538,9 @@ jobs:
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The workflow declares no top-level `permissions:`, so the jobs read must
-    # not depend on the repo's default token scope.
+    # Same scopes as the workflow-level `permissions:` today; restated here so
+    # the jobs read this job makes (`actions: read`) survives any later
+    # narrowing of the workflow default.
     permissions:
       actions: read
       contents: read
