@@ -258,9 +258,10 @@ describe("/admin/coord/ci", () => {
     expect(cell.getAttribute("title")).toMatch(/not a code failure/);
     const row = screen.getByTestId(`ci-repo-row-${WEB}`);
     expect(row.textContent).toContain("content fail 0");
-    // Amber (infra, operator billing) — never red.
+    // The level does not move (R3's third case — hosted CI is off, so the
+    // floor never self-clears); the strip DETAIL names the billing cause.
     expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
-      "amber"
+      "green"
     );
     expect(screen.getByTestId("ci-health-strip").textContent).toContain(
       "GitHub Actions billing refusing hosted jobs"
