@@ -3,7 +3,9 @@
 # `kind = "format"` `[[repair]]` in .qontinui/ci.toml names (plan
 # 2026-09-24-coord-deterministic-ci-repair-lane §3 recipe 2).
 #
-# Usage (from the repo root, which is where coord-repair.yml runs it):
+# Usage — coord-repair.yml runs it from the PR-head checkout (work/) as the
+# default branch's copy, `../trusted/.github/scripts/<this>`; it acts on its
+# CWD's git toplevel, never on the tree it was read from:
 #   COORD_REPAIR_CHANGED_FILES=<file> bash .github/scripts/repair-fmt.sh
 #
 #   COORD_REPAIR_CHANGED_FILES  newline-separated repo-relative paths the PR
