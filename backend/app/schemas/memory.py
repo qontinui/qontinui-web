@@ -1014,6 +1014,54 @@ class ListRecordsResponse(BaseModel):
     next_cursor: str | None
 
 
+MemoryRecordState = Literal["live", "superseded", "tombstoned", "expired"]
+
+
+class MemoryRecordByIdResponse(BaseModel):
+    """``GET /memory/records/{id}`` — one row, in WHATEVER state it is in.
+
+    The read-back half of a write receipt (plan
+    ``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``
+    Phase 1). Unlike the list and query surfaces it does NOT filter to live
+    rows: a receipt for a row a peer superseded a minute later must read as
+    ``superseded``, not as a lost write.
+
+    ``state`` is derived from the row's own columns, in precedence order:
+
+    1. ``is_tombstone`` → ``tombstoned`` (deleted). ``title`` and
+       ``content`` are withheld as ``null``; id, state and ``valid_until``
+       are still returned.
+    2. a non-null ``superseded_by`` → ``superseded``.
+    3. ``valid_until`` at or before the effective now → ``expired`` — the
+       validity was ended without a tombstone or a successor (decay
+       invalidate, closed-session expiry, an anchor-gone sweep). "Now" is
+       the SAME clock-skew-safe effective now retrieval uses
+       (``memory_store._EFFECTIVE_NOW_ROW_SQL``).
+    4. otherwise → ``live``: retrievable now on the validity axis. A
+       session-scoped row whose ``valid_until`` is still in the future is
+       ``live`` until that instant passes.
+
+    ``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a
+    multi-bound device can be read as "the wrong tenant was minted" rather
+    than "the write was lost".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    tenant_id: UUID
+    title: str | None
+    content: str | None
+    kind: str
+    scope: str
+    scope_ref: str | None
+    importance: float | None
+    created_at: datetime
+    state: MemoryRecordState
+    superseded_by: UUID | None
+    valid_until: datetime | None
+
+
 # --------------------------------------------------------------------------
 # Memory jobs — backend enqueues, runner executes, backend applies
 # --------------------------------------------------------------------------

@@ -46,6 +46,13 @@ interface UseCiStatusStreamResult {
    * data as unknown. `error` is the channel for "the last read failed".
    */
   seeded: boolean;
+  /**
+   * Coord's `as_of` on the last SUCCESSFUL REST seed — when the seeded rows
+   * were composed. `null` before the first seed and from a coord predating
+   * the stamp (UNKNOWN, never "now"). WS frames carry per-row stamps
+   * (`main_verdict_observed_at` / `pr_checks_observed_at`), not this one.
+   */
+  asOf: string | null;
   /** Force a REST refetch. */
   refetch: () => Promise<void>;
 }
@@ -71,6 +78,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
   const [byRepo, setByRepo] = useState<Map<string, RepoCiRow>>(() => new Map());
   const [connected, setConnected] = useState(false);
   const [seeded, setSeeded] = useState(false);
+  const [asOf, setAsOf] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -103,6 +111,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
         seeded.set(row.repo, row);
       }
       setByRepo(seeded);
+      setAsOf(typeof data.as_of === "string" ? data.as_of : null);
       setSeeded(true);
       setError(null);
     } catch (err) {
@@ -283,6 +292,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
     connected,
     seeded,
     error,
+    asOf,
     refetch: refreshSeed,
   };
 }
