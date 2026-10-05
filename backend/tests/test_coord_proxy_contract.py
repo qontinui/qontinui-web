@@ -1108,8 +1108,15 @@ async def test_post_to_coord_backoff_sequence(
         _captured(helper.vars_module),
         _stub_coord(helper, _next, sleep=sleep) as cls,
     ):
-        with contextlib.suppress(HTTPException):
-            await helper.invoke()
+        if sequence[-1] == "ok_200_json":
+            # Recovered (or first-try) rows must RETURN coord's response,
+            # not raise after the successful attempt.
+            result = await helper.invoke()
+            assert isinstance(result, httpx.Response)
+            assert result.status_code == 200
+        else:
+            with pytest.raises(HTTPException):
+                await helper.invoke()
     assert queue == []
     assert _sent(cls, helper).await_count == len(sequence)
     assert [c.args for c in sleep.await_args_list] == [(s,) for s in expected_sleeps]
