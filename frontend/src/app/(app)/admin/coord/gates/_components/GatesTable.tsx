@@ -83,6 +83,7 @@ import {
 import { ShadowReapEvidence } from "./ShadowReap";
 import { GateActions } from "./GateActions";
 import {
+  GlossaryTerm,
   RecordDetail,
   StatCluster,
   StatusBadge,
@@ -859,12 +860,16 @@ export function GatesTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Gate</TableHead>
+              <TableHead>
+                <GlossaryTerm id="gate">Gate</GlossaryTerm>
+              </TableHead>
               <TableHead>Measures</TableHead>
               <TableHead>Progress</TableHead>
               <TableHead>Expected finish</TableHead>
               <TableHead>Verdict</TableHead>
-              <TableHead>Continuation</TableHead>
+              <TableHead>
+                <GlossaryTerm id="continuation">Continuation</GlossaryTerm>
+              </TableHead>
               <TableHead>Age</TableHead>
               <TableHead>Last evaluated</TableHead>
               <TableHead>Flags</TableHead>
@@ -878,7 +883,8 @@ export function GatesTable({
                   colSpan={10}
                   className="text-center text-sm text-muted-foreground italic py-6"
                 >
-                  No gates match the current filters.
+                  No <GlossaryTerm id="gate">gates</GlossaryTerm> match the
+                  current filters.
                 </TableCell>
               </TableRow>
             ) : (
