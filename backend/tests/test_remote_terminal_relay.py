@@ -64,6 +64,7 @@ from app.services.coord_jwks import CoordTokenExpiredError, CoordTokenInvalidErr
 from app.services.runner import remote_terminal_relay as rtr
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.remote_relay import end as relay_end
+from app.services.runner.remote_relay import target_frames as relay_target_frames
 from app.services.runner.remote_terminal_relay import RemoteTerminalRelay
 from app.services.runner.terminal_relay import TerminalRelayService
 
@@ -81,7 +82,7 @@ TARGET_SESSION = str(uuid4())
 # each tunable with its reader; that phase repoints ONE line here, and the seam
 # tests (``test_*_seam_reaches_*``) prove the patch still reaches the code: a
 # patch on a dead name falls back to the real 3 s / 75 s and trips ``wait_for``.
-_ATTACH_DELAY_MODULE = rtr
+_ATTACH_DELAY_MODULE = relay_target_frames
 _END_TTL_MODULE = relay_end
 
 
@@ -1217,7 +1218,7 @@ async def test_attach_grant_unknown_is_represented_once_with_the_same_jti(
     # The delay is bounded from above by the SOURCE's 20 s ATTACH_TIMEOUT: a
     # re-present that outruns it buys nothing, so pin that it is well under.
     assert 0 < rtr.ATTACH_REPRESENT_DELAY_SECONDS <= 5.0
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
 
     ws = _FakeWS()
     manager = _manager()
@@ -1307,7 +1308,7 @@ async def test_settled_attach_refusal_is_never_represented(
     monkeypatch: pytest.MonkeyPatch,
     code: str,
 ) -> None:
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1348,7 +1349,7 @@ async def test_represent_preserves_cols_rows_and_have_offset(
     ``have_offset`` makes the target ship the whole ring tail, which the source
     renders as a DATA-LOSS marker in a pane that lost nothing.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1398,7 +1399,7 @@ async def test_first_attach_without_have_offset_does_not_gain_one_on_represent(
     relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A FIRST attach takes the tail arm deliberately, on the re-present too."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1427,7 +1428,7 @@ async def test_represented_attach_can_still_be_answered_and_binds(
     relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole point: the second presentation lands and the pane attaches."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1508,7 +1509,7 @@ async def test_represent_skipped_when_source_released_during_delay(
     relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A source that went away in the gap is not re-offered on its behalf."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1530,7 +1531,7 @@ async def test_represent_evicts_when_grant_expired_during_delay(
     the settled answer — under its original attach ``request_id``, so its
     waiter settles instead of timing out.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1564,7 +1565,7 @@ async def test_represent_to_a_gone_target_evicts_as_not_connected(
     evicted and the source gets ``target_not_connected`` under its own attach
     ``request_id``.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1607,7 +1608,7 @@ async def test_refused_create_is_never_represented(
     correlates to, and the absence of a cached attach frame); this pins the
     outcome they jointly promise rather than any one of them.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _create_claims()
@@ -1650,7 +1651,7 @@ async def test_uncorrelated_grant_unknown_naming_a_pending_attach_is_not_represe
     that it did not correlate off ``pending_attach``, and this is the one case
     where that guard is the only one.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -2888,7 +2889,7 @@ async def test_every_target_frame_leaves_a_positive_routing_receipt(
             if c.args and c.args[0] == "remote_terminal_target_frame_routed"
         ]
 
-    with patch.object(rtr, "logger", MagicMock()) as log:
+    with patch.object(relay_target_frames, "logger", MagicMock()) as log:
         ours = await relay.route_target_frame(
             session,
             TARGET_DEVICE,
@@ -4410,7 +4411,7 @@ async def test_every_target_refusal_type_and_code_reaches_the_source(
     # than immediately (see
     # `test_attach_grant_unknown_is_represented_once_with_the_same_jti`), so
     # the sweep drives it through that re-present with no delay.
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
 
     for frame_type in sorted(rtr.TARGET_REFUSAL_FRAME_TYPES):
         for code in sorted(rtr.TARGET_ERROR_CODES):
@@ -5118,14 +5119,27 @@ async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() ->
 
     # Half two: no inline literal escapes the set. This is the mechanical
     # tripwire — mint a code as a bare string in a payload anywhere in the
-    # module without declaring it and this fails.
+    # relay without declaring it and this fails. "The relay" is the facade
+    # module plus every module of the ``remote_relay`` package it was split
+    # into: an inline code moves with the method that mints it.
     #
     # Walked as an AST, not grepped. A regex over the source also matches the
     # module's own PROSE about this pattern — a first cut did exactly that and
     # failed on a docstring, which is a test failing for a reason unrelated to
     # what it claims. The AST sees dict literals and not comments.
+    from pathlib import Path
+
+    relay_module = Path(inspect.getfile(rtr))
+    sources = [
+        relay_module,
+        *sorted((relay_module.parent / "remote_relay").glob("*.py")),
+    ]
     literals: set[str] = set()
-    for node in ast.walk(ast.parse(inspect.getsource(rtr))):
+    for node in (
+        found
+        for source in sources
+        for found in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+    ):
         if not isinstance(node, ast.Dict):
             continue
         for key, value in zip(node.keys, node.values, strict=False):
@@ -5472,8 +5486,8 @@ async def test_input_ack_terminal_mismatch_warns_once_per_grant(
     session = relay._sessions[id(ws)]
 
     with (
-        patch.object(rtr.logger, "warning") as warning,
-        patch.object(rtr.logger, "debug") as debug,
+        patch.object(relay_target_frames.logger, "warning") as warning,
+        patch.object(relay_target_frames.logger, "debug") as debug,
     ):
         for _ in range(3):
             assert (

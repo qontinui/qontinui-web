@@ -59,6 +59,10 @@ class RelayCore(Protocol):
         self, session: _SourceSession, target_device_id: str
     ) -> None: ...
 
+    async def _reap_expired(
+        self, session: _SourceSession, *, except_jti: str | None = None
+    ) -> None: ...
+
     async def _evict(
         self, session: _SourceSession, att: _Attachment, *, code: str, message: str
     ) -> None: ...
@@ -67,6 +71,6 @@ class RelayCore(Protocol):
         self, session: _SourceSession, target_device_id: str
     ) -> Coroutine[Any, Any, None]: ...
 
-    async def route_target_frame(
+    def route_target_frame(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
-    ) -> bool: ...
+    ) -> Coroutine[Any, Any, bool]: ...
