@@ -1,0 +1,185 @@
+# coord-repair: the COMPUTE SANDBOX for coord's repo-declared CI repairs.
+#
+# Plan: 2026-09-24-coord-deterministic-ci-repair-lane, §3 recipes 2 (format)
+# and 3 (regen), §5.1 "Repo-declared workflow (needs a toolchain)".
+#
+# WHO RUNS IT: coord, and nothing else. Coord dispatches this workflow for one
+# PR head whose failing CI step this repo DECLARES as mechanically repairable
+# (a `[[repair]]` block in .qontinui/ci.toml), finds the run by its run-name
+# (`coord-repair <correlation_id>`), downloads the one artifact, re-validates
+# it (paths within allowed_paths, `git apply --check` on head_sha, `git diff -w`
+# empty for a format repair, size cap) and only THEN authors the commit through
+# its own audited push seam.
+#
+# IT PUSHES NOTHING, COMMENTS NOTHING, LABELS NOTHING. `contents: read` is the
+# whole grant and both checkouts drop the credential. A repair that could
+# write from here would be a second writer beside coord's one fenced seam.
+#
+# WHAT DECIDES THE REPAIR: the DEFAULT branch's .qontinui/ci.toml, checked out
+# to `trusted/` — never the PR's, so a PR cannot declare its own repair. The
+# declared `command` and `check` then run in `work/`, the PR head. No matching
+# declaration fails the job with no artifact; coord reads that as a refusal.
+#
+# NO [[repair]] IS DECLARED YET. Declarations land only once runners carrying
+# qontinui-runner#1944 are rolled out: older runners parse ci.toml with
+# deny_unknown_fields, so a `[[repair]]` block would break their CI-node
+# dispatch for this repo. Until then every dispatch fails at "Select".
+#
+# INPUTS reach shell code ONLY through `env:`; nothing below interpolates
+# `${{ inputs.* }}` into a `run:` line (script injection). They are validated
+# before either checkout uses them.
+#
+# THE CONTRACT coord relies on — change it only together with coord's
+# dispatcher: the five inputs; the run-name; the artifact name
+# `coord-repair-<correlation_id>` holding exactly `repair.patch` and
+# `report.json` (schema `coord-repair/1`, see .github/scripts/coord-repair-run.py).
+name: coord-repair
+run-name: coord-repair ${{ inputs.correlation_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number whose head is being repaired
+        required: true
+        type: string
+      head_sha:
+        description: The exact 40-hex PR head commit the repair runs against
+        required: true
+        type: string
+      step:
+        description: The failing CI step name (matched against [[repair]].step)
+        required: true
+        type: string
+      kind:
+        description: format | regen (matched against [[repair]].kind)
+        required: true
+        type: string
+      correlation_id:
+        description: Coord's id for this dispatch; names the run and the artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coord-repair-${{ inputs.pr }}-${{ inputs.step }}
+  cancel-in-progress: true
+
+env:
+  # Same as backend-ci.yml's PYTHON_VERSION.
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  repair:
+    name: coord-repair
+    # Where backend-ci.yml's `lint` and `test` jobs run — the owners of the
+    # steps a repair here can name (see that job's runs-on comment for why it
+    # is ubuntu-latest and not the self-hosted pool).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COORD_REPAIR_PR: ${{ inputs.pr }}
+      COORD_REPAIR_HEAD_SHA: ${{ inputs.head_sha }}
+      COORD_REPAIR_STEP: ${{ inputs.step }}
+      COORD_REPAIR_KIND: ${{ inputs.kind }}
+      COORD_REPAIR_CORRELATION_ID: ${{ inputs.correlation_id }}
+      COORD_REPAIR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=coord-repair::$1"; exit 1; }
+          [[ "$COORD_REPAIR_PR" =~ ^[1-9][0-9]{0,9}$ ]] || fail "pr must be a positive integer"
+          [[ "$COORD_REPAIR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "head_sha must be 40 lowercase hex"
+          [[ "$COORD_REPAIR_KIND" == "format" || "$COORD_REPAIR_KIND" == "regen" ]] || fail "kind must be format or regen"
+          [[ "$COORD_REPAIR_CORRELATION_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || fail "correlation_id must match ^[A-Za-z0-9._-]{1,64}$"
+          [[ -n "${COORD_REPAIR_STEP//[[:space:]]/}" && ${#COORD_REPAIR_STEP} -le 256 ]] || fail "step must be non-empty and <= 256 chars"
+          [[ "$COORD_REPAIR_DEFAULT_BRANCH" =~ ^[A-Za-z0-9._/-]{1,255}$ ]] || fail "default branch name is not a plain ref"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check out the default branch (trusted)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Select the declared repair
+        run: python3 -B trusted/.github/scripts/coord-repair-run.py select --manifest trusted/.qontinui/ci.toml --out "$RUNNER_TEMP/coord-repair/selected.json"
+
+      - name: Check out the PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.head_sha }}
+          path: work
+          fetch-depth: 0
+          persist-credentials: false
+
+      # --- format: ruff only, at exactly the version CI runs ---------------
+      # CI's lint job runs `poetry run ruff` after a full `poetry install`; the
+      # formatter needs none of the app's dependencies, so this installs the
+      # ONE package at the version the PR head's backend/poetry.lock resolves
+      # (the version ruff-version-parity.yml keeps every lane on).
+      - name: "Format: install the ruff backend/poetry.lock resolves"
+        if: inputs.kind == 'format'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(python3 -c '
+          import sys, tomllib
+          with open("work/backend/poetry.lock", "rb") as f:
+              lock = tomllib.load(f)
+          vers = {p["version"] for p in lock.get("package", []) if p.get("name") == "ruff"}
+          if len(vers) != 1:
+              sys.exit(f"backend/poetry.lock resolves {len(vers)} ruff versions: {sorted(vers)}")
+          print(vers.pop())
+          ')"
+          [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected ruff version '$ver'"; exit 1; }
+          python3 -m venv "$RUNNER_TEMP/ruff-venv"
+          "$RUNNER_TEMP/ruff-venv/bin/pip" install --quiet --disable-pip-version-check "ruff==${ver}"
+          echo "$RUNNER_TEMP/ruff-venv/bin" >> "$GITHUB_PATH"
+
+      # --- regen: what backend-ci.yml's `test` job needs to import the app --
+      # backend/pyproject.toml path-depends on sibling repos (../../<name>
+      # from backend/), i.e. beside work/. Same clones as backend-ci.yml.
+      - name: "Regen: check out sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)"
+        if: inputs.kind == 'regen'
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -rf qontinui-schemas qontinui qontinui-cloud-control
+          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+          git clone --depth 1 https://github.com/jspinak/qontinui.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
+
+      - name: "Regen: install Poetry"
+        if: inputs.kind == 'regen'
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: "Regen: install backend dependencies"
+        if: inputs.kind == 'regen'
+        working-directory: work/backend
+        run: |
+          poetry install --no-interaction --no-root
+          poetry run pip install -e ../../qontinui-cloud-control
+
+      - name: Run the repair
+        run: python3 -B trusted/.github/scripts/coord-repair-run.py run --selected "$RUNNER_TEMP/coord-repair/selected.json" --work work --out-dir "$RUNNER_TEMP/coord-repair/out"
+
+      - name: Upload the repair artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coord-repair-${{ inputs.correlation_id }}
+          path: |
+            ${{ runner.temp }}/coord-repair/out/repair.patch
+            ${{ runner.temp }}/coord-repair/out/report.json
+          retention-days: 3
+          if-no-files-found: error
