@@ -83,7 +83,7 @@ data is lost, which is the correct reversal of an additive revision; the alerts
 themselves survive.
 
 Revision ID: coord_alerts_onset_01
-Revises: coordinput_01_operator_inputs
+Revises: coord_ci_pool_observations_01
 Create Date: 2026-09-30
 
 """
@@ -95,7 +95,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "coord_alerts_onset_01"
 # One line, unannotated — see plan_library_06_scan_root_slug_census.
-down_revision = "coordinput_01_operator_inputs"
+down_revision = "coord_ci_pool_observations_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
