@@ -3,7 +3,9 @@
 # --check, the `check`) of a `kind = "regen"` `[[repair]]` in .qontinui/ci.toml
 # (plan 2026-09-24-coord-deterministic-ci-repair-lane §3 recipe 3).
 #
-# Usage (from the repo root, with `poetry install` done in backend/):
+# Usage (cwd inside the tree to regenerate, `poetry install` done in its
+# backend/; coord-repair.yml runs the default branch's copy from work/ as
+# `../trusted/.github/scripts/regen-openapi.sh`):
 #   bash .github/scripts/regen-openapi.sh           # rewrite both snapshots
 #   bash .github/scripts/regen-openapi.sh --check   # exit 1 if a rewrite changes either
 #
@@ -32,8 +34,20 @@ case "$mode" in
   *) printf 'regen-openapi: unknown argument %s (want --check or nothing)\n' "$mode" >&2; exit 2 ;;
 esac
 
-digest() { sha256sum "${SNAPSHOTS[@]}" 2>/dev/null || true; }
-before="$(digest)"
+# A snapshot that does not exist is not "current": --check fails on it rather
+# than letting a missing file hash to nothing on both sides.
+require_snapshots() {
+  local f
+  for f in "${SNAPSHOTS[@]}"; do
+    [[ -f "$f" ]] || { printf 'regen-openapi: snapshot %s is missing (%s)\n' "$f" "$1" >&2; exit 1; }
+  done
+}
+digest() { sha256sum "${SNAPSHOTS[@]}"; }
+before=""
+if [[ "$mode" == "--check" ]]; then
+  require_snapshots "before regeneration"
+  before="$(digest)"
+fi
 
 # The environment backend-ci.yml's step sets, so the app imports cleanly
 # offline. No DB or Redis is contacted (export_openapi.py's docstring).
@@ -50,6 +64,7 @@ export REDIS_ENABLED=false
 )
 
 if [[ "$mode" == "--check" ]]; then
+  require_snapshots "after regeneration"
   after="$(digest)"
   if [[ "$before" != "$after" ]]; then
     echo "regen-openapi: the snapshots are not what the exporter produces for this tree" >&2
