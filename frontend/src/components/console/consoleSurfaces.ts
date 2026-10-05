@@ -39,6 +39,15 @@ import {
   STATUS_BADGE_CLASS,
 } from "./statusRow";
 import { ATTENTION_BY_KIND as PIPELINE_ATTENTION } from "@/components/operations/prPipeline";
+// The operator's one screen — plan
+// `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+// Phase 4. The console's landing page; its table lives beside the other
+// `admin/coord` status modules.
+import {
+  HOME_ATTENTION_BY_KIND,
+  HOME_AUTHOR_GLYPH_KINDS,
+  HOME_KIND_CLASS,
+} from "@/components/admin/coord/coordHomeStatus";
 // Wave 1 surfaces.
 import {
   PLAN_ATTENTION_BY_TONE,
@@ -250,6 +259,15 @@ export interface ConsoleSurface {
  * renders it. One row per surface.
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
+  {
+    surface: "operator home (/admin/coord/home)",
+    module: "components/admin/coord/coordHomeStatus.ts",
+    attentionByKind: HOME_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: HOME_KIND_CLASS,
+      authorGlyphKinds: HOME_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   {
     surface: "findings (/admin/coord/findings)",
     module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
