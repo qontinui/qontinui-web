@@ -2731,3 +2731,30 @@ describe("/admin/coord/devops — Worktree slots (Phase 3)", () => {
     expect(banner).not.toHaveTextContent("does not serve");
   });
 });
+
+describe("/admin/coord/devops — GitHub-hosted CI", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("mounts the panel open, and a coord without the read renders it UNKNOWN", async () => {
+    // `mockRoutes` rejects every route it does not know, which is exactly a
+    // coord/web build that serves neither the hosted-CI read nor the dial yet.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    render(<CoordDevOpsPage />);
+
+    const panel = await screen.findByTestId("github-hosted-ci-panel");
+    expect(
+      await within(panel).findByTestId("github-hosted-ci-repos-error")
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+  });
+});

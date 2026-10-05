@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const api = vi.hoisted(() => ({
+  getResource: vi.fn(),
   listResource: vi.fn(),
   updateResource: vi.fn(),
   createResource: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock("./api", async (importOriginal) => {
 });
 
 import { ResourceError, VersionConflictError } from "./api";
-import { useResourceList } from "./useResource";
+import { useResourceList, useResourceRecord } from "./useResource";
 
 interface Doc {
   id: string;
@@ -90,7 +91,8 @@ describe("useResourceList", () => {
       "intent-documents",
       vision.id,
       { body: "new" },
-      3
+      3,
+      "ui"
     );
 
     await act(async () => {
@@ -102,6 +104,27 @@ describe("useResourceList", () => {
       body: "new (server)",
       version: 4,
     });
+  });
+
+  it("names an import as its source, and drops a deleted record", async () => {
+    const hook = await loaded();
+    api.updateResource.mockResolvedValue({ ...vision, version: 4 });
+    await act(async () => {
+      await hook.result.current.update(
+        vision,
+        { body: "pasted" },
+        { source: "import" }
+      );
+    });
+    expect(api.updateResource).toHaveBeenCalledWith(
+      "intent-documents",
+      vision.id,
+      { body: "pasted" },
+      3,
+      "import"
+    );
+    act(() => hook.result.current.drop(vision.id));
+    expect(items(hook)).toEqual([]);
   });
 
   it("rolls back a failed save and says why in plain words", async () => {
@@ -152,5 +175,101 @@ describe("useResourceList", () => {
     expect(items(hook)).toEqual([vision, created]);
     const key = api.createResource.mock.calls[0][2] as string;
     expect(key.length).toBeGreaterThan(8);
+  });
+});
+
+describe("useResourceRecord", () => {
+  async function record() {
+    api.getResource.mockResolvedValue({ item: vision, can_edit: true });
+    const hook = renderHook(() =>
+      useResourceRecord<Doc>("intent-documents", vision.id, {
+        hold: false,
+        reloadKey: "t1",
+      })
+    );
+    await waitFor(() => expect(hook.result.current.record.state).toBe("ready"));
+    return hook;
+  }
+
+  it("reads nothing until it has an id and the project is known", () => {
+    renderHook(() =>
+      useResourceRecord<Doc>("intent-documents", null, {
+        hold: false,
+        reloadKey: "t1",
+      })
+    );
+    renderHook(() =>
+      useResourceRecord<Doc>("intent-documents", vision.id, {
+        hold: true,
+        reloadKey: "t1",
+      })
+    );
+    expect(api.getResource).not.toHaveBeenCalled();
+  });
+
+  it("writes on the version the working copy was BUILT on, naming its source", async () => {
+    const hook = await record();
+    const saved = { ...vision, version: 4, body: "new" };
+    api.updateResource.mockResolvedValue(saved);
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.update({ body: "new" }, 2, {
+        source: "import",
+      });
+    });
+    expect(api.updateResource).toHaveBeenCalledWith(
+      "intent-documents",
+      vision.id,
+      { body: "new" },
+      2,
+      "import"
+    );
+    expect(result).toEqual({ ok: true, item: saved });
+    const state = hook.result.current.record;
+    expect(state.state === "ready" && state.item).toEqual(saved);
+  });
+
+  it("holds THEIR copy on a conflict and hands it back", async () => {
+    const hook = await record();
+    const theirs = { ...vision, version: 5, body: "theirs" };
+    api.updateResource.mockRejectedValue(new VersionConflictError(theirs));
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.update({ body: "mine" }, 3);
+    });
+    expect(result).toEqual({ ok: false, conflict: theirs });
+    const state = hook.result.current.record;
+    expect(state.state === "ready" && state.item).toEqual(theirs);
+  });
+
+  it("passes the server's reason through, so the caller can offer its fix", async () => {
+    const hook = await record();
+    api.updateResource.mockRejectedValue(
+      new ResourceError(422, "source_page_not_found", "Not a document here.")
+    );
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.update({ source_page_id: "x" }, 3);
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "Not a document here.",
+      code: "source_page_not_found",
+    });
+  });
+
+  it("says when the record is not there, by status", async () => {
+    api.getResource.mockRejectedValue(
+      new ResourceError(404, "not_found", "gone")
+    );
+    const hook = renderHook(() =>
+      useResourceRecord<Doc>("intent-documents", "nope", {
+        hold: false,
+        reloadKey: "t1",
+      })
+    );
+    await waitFor(() => expect(hook.result.current.record.state).toBe("error"));
+    const state = hook.result.current.record;
+    expect(state.state === "error" && state.status).toBe(404);
   });
 });

@@ -19,7 +19,7 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review
- *   Dev Ops ▸ Overview / Trees° / Spawn° / Runner Drain° / Test Targets° /
+ *   Dev Ops ▸ Overview / CI / Trees° / Spawn° / Runner Drain° / Test Targets° /
  *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
  *             Memory° / Onboarding° / Onboarding Status°
  *   Access ▸  Members / Agent Registry                  (° = operator-only)
@@ -37,6 +37,7 @@
 import {
   Activity,
   Anchor,
+  BadgeCheck,
   Bell,
   BookOpen,
   Bot,
@@ -462,6 +463,19 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-devops-overview",
       },
       {
+        // Plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` D1: the POOL
+        // axis (capacity, queue, outcome class) gets its own leaf beside the
+        // machine-axis Overview rather than a sixth section on it. Member-
+        // visible like Overview: "is CI healthy, and where is it stuck?" is a
+        // developer's question about their own repos, and its reads
+        // (`/ci/overview`, `/ci-status`, merge economics) are tenant-member
+        // reads, not admin ones.
+        href: "/admin/coord/ci",
+        label: "CI",
+        icon: BadgeCheck,
+        testId: "coord-nav-ci",
+      },
+      {
         // Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-
         // and-coord-has-no-resource-model` Phase 5: the computer as a record —
         // capacity, usage per lane, watched services, events, workloads. Beside
@@ -607,9 +621,12 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-agent-registry",
       },
       {
-        // Per-tenant switches coord ENFORCES (today: transcript sync, the
-        // session-output ingest consent gate). Plan
-        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`.
+        // Per-tenant switches: transcript sync (the session-output ingest
+        // consent gate coord enforces; plan
+        // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
+        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // spawn (plan
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,
