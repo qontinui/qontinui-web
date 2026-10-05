@@ -43,7 +43,9 @@ os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 #   when set, and is the shape to use with a throwaway database whose
 #   credentials and db name are not the CI ones. The sanctioned way to get one
 #   is `bash qontinui-claude-config/scripts/ephemeral-db.sh start pgvector`,
-#   which labels the container so it is reaped instead of leaking.
+#   which labels the container so `ephemeral-db.sh list`/`stop` can find it.
+#   A query string (`?sslmode=...`) is refused: the same tail feeds asyncpg,
+#   which rejects libpq-only keywords.
 # - QONTINUI_TEST_PG: host:port only, with the CI credentials and db name
 #   (e.g. the canonical dev stack publishes Postgres on 5433).
 def _test_pg_dsn_tail() -> str:
@@ -56,6 +58,11 @@ def _test_pg_dsn_tail() -> str:
             raise RuntimeError(
                 "QONTINUI_TEST_PG_DSN must be a postgresql:// DSN, got a value "
                 "with scheme " + repr(scheme if sep else "<none>")
+            )
+        if "?" in tail:
+            raise RuntimeError(
+                "QONTINUI_TEST_PG_DSN must not carry a query string: the same "
+                "DSN feeds the asyncpg engine, which rejects libpq keywords"
             )
         return tail
     hostport = os.environ.get("QONTINUI_TEST_PG", "localhost:5432")
