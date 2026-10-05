@@ -878,6 +878,18 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
+        # `continue-on-error`, not only `fail_ci_if_error: false` below: that
+        # input covers an UPLOAD the uploader reports as failed, but NOT the
+        # action crashing before it uploads. Measured on the 2026-10-05 nightly
+        # (run 37280089560): Codecov's endpoint refused the TLS handshake
+        # (`write EPROTO ... SSL alert number 40`), the action threw, and all
+        # six shards concluded `failure` with every test passing -- which reds
+        # the `Run Tests` aggregate and turns the `shard-headroom` alarm to
+        # `unknown` (a failed shard is not a measurement). This upload is
+        # coverage telemetry, never a verdict on the suite, so it must not be
+        # able to fail the job. Pinned by
+        # backend/tests/test_codecov_upload_cannot_red_a_shard.py.
+        continue-on-error: true
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./backend/coverage.xml
