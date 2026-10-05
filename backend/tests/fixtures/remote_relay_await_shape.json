@@ -162,8 +162,7 @@
     [
       "await _refuse",
       "await send_terminal",
-      "await _refuse",
-      "call create_task"
+      "await _refuse"
     ]
   ],
   "_get_redis": [
@@ -309,11 +308,6 @@
       "await _listener_lost"
     ]
   ],
-  "_schedule_attach_represent": [
-    [
-      "call create_task"
-    ]
-  ],
   "_send_to_source": [
     [
       "async with send_lock",
@@ -327,7 +321,6 @@
   ],
   "_stop_listener": [
     [
-      "call create_task",
       "await _finish_listener"
     ]
   ],
@@ -402,6 +395,11 @@
   "route_target_frame": [
     [
       "await _dispatch_target_frame"
+    ]
+  ],
+  "spawn_background": [
+    [
+      "call create_task"
     ]
   ]
 }
