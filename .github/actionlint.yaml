@@ -1,0 +1,46 @@
+# actionlint configuration (run by .github/workflows/workflow-lint.yml and
+# pinned to actionlint 1.7.12 there).
+#
+# Self-hosted runner labels this repo's workflows target. actionlint rejects
+# an unknown `runs-on:` label as a typo unless it is declared here. These are
+# the labels of the runners registered to qontinui/qontinui-web
+# (`gh api repos/qontinui/qontinui-web/actions/runners`, 2026-10-04):
+# merytshost-public {public-pool} and spaceship-wsl {qontinui, spaceship}.
+self-hosted-runner:
+  labels:
+    - public-pool
+    - qontinui
+    - spaceship
+
+# shellcheck findings actionlint relays from `run:` bodies, ignored by code.
+# Each entry is a whole-code ignore with its reason; nothing else is muted.
+# SC ignores apply to local runs only: workflow-lint.yml runs actionlint with
+# `-shellcheck=`, so CI never invokes shellcheck and these entries match
+# nothing there. They keep a local `actionlint` (shellcheck on PATH) quiet on
+# the same accepted findings.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # SC2086 (info) "double quote to prevent word splitting": 18 sites at
+      # adoption, none reached by an attacker-controlled value (zizmor's
+      # template-injection audit owns that question). Re-quoting is a
+      # behaviour change where an expansion is meant to split, so it is not
+      # done blind under a lint adoption.
+      - 'SC2086:'
+      # SC2016 (info) "expressions don't expand in single quotes": the one site
+      # at adoption (frontend-ci.yml vercel-install-script) passes a literal
+      # `$` on purpose.
+      - 'SC2016:'
+      # SC2129 (style) "use { cmd; } >> file": a style preference about
+      # repeated `>> "$GITHUB_OUTPUT"` / `>> "$GITHUB_STEP_SUMMARY"` lines.
+      - 'SC2129:'
+      # SC2164 (warning) "use cd ... || exit": GitHub's default `bash` shell is
+      # `bash --noprofile --norc -eo pipefail {0}`, so a failing `cd` already
+      # aborts the step. All 7 sites at adoption run under that default.
+      - 'SC2164:'
+  .github/workflows/style-gate.yml:
+    ignore:
+      # SC2034 (warning) "label appears unused": `local label="$1"` in the
+      # summary-cell helper names its documented first argument; unused, not
+      # wrong.
+      - 'SC2034:'

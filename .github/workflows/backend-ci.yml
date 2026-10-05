@@ -161,6 +161,14 @@ concurrency:
   group: backend-ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read. A job that needs more
+# declares its own `permissions:`.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   lint:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -202,7 +210,9 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
@@ -223,7 +233,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -418,13 +428,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -453,7 +465,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -512,7 +524,7 @@ jobs:
       # local regen and CI.
       - name: Upload CI-generated OpenAPI snapshot on drift
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           # Shard-scoped: upload-artifact rejects a duplicate name within one
           # run, and this job is now a 6-way matrix, so a fixed name would fail
@@ -843,7 +855,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./backend/coverage.xml
           # One flag, six partial uploads: Codecov merges uploads per commit, so
@@ -858,7 +870,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           # Shard-scoped, for the same reason as the OpenAPI artifact above:
           # upload-artifact rejects a duplicate name within a run, and six
@@ -878,7 +890,7 @@ jobs:
       # consumer; on a PR the six artifacts are simply there to download.
       - name: Upload junit results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: junit-results-shard-${{ matrix.shard }}
           path: ./backend/junit-results.xml
@@ -1239,19 +1251,25 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: './backend'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          # The pinned action release defaults to Trivy v0.70.0; name the
+          # engine explicitly so pinning the action does not downgrade the
+          # scanner (master defaulted to v0.75.0 when this was pinned).
+          version: v0.75.0
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
         if: always()
         # SARIF upload requires GitHub Advanced Security on private repos.
         # Without GHAS the API returns 403; don't red-flag the whole job —
@@ -1261,7 +1279,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -1278,7 +1296,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1328,10 +1346,12 @@ jobs:
       # backend/tests/test_pytest_shard_split.py.
       EXPECTED_SHARDS: '6'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1342,7 +1362,7 @@ jobs:
       # arrived and skips rather than going red.
       - name: Download the shards' junit results
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: junit-results-shard-*
           path: junit
@@ -1377,7 +1397,7 @@ jobs:
 
       - name: Upload shard-durations-proposed.json
         if: steps.build.outputs.proposed == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: shard-durations-proposed
           path: shard-durations-proposed.json
@@ -1437,14 +1457,16 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The Dockerfile installs torch from pytorch-cu128 (multi-GB wheels);
       # the runner's default disk allocation isn't enough for the build
       # layers + image cache. Free the host's preinstalled SDKs before
       # docker build runs.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -1477,9 +1499,11 @@ jobs:
       # registrar landed) runs as part of this build, so this job is what gates
       # it on every PR.
       - name: Build Docker image
+        env:
+          CLOUD_CONTROL_SHA: ${{ steps.cloudcontrol.outputs.sha }}
         run: |
           docker build \
-            --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
+            --build-arg CLOUD_CONTROL_SHA=${CLOUD_CONTROL_SHA} \
             -t qontinui-backend:test .
 
       - name: Test Docker image
@@ -1514,8 +1538,9 @@ jobs:
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The workflow declares no top-level `permissions:`, so the jobs read must
-    # not depend on the repo's default token scope.
+    # Same scopes as the workflow-level `permissions:` today; restated here so
+    # the jobs read this job makes (`actions: read`) survives any later
+    # narrowing of the workflow default.
     permissions:
       actions: read
       contents: read
@@ -1527,7 +1552,7 @@ jobs:
       # The `test` job's matrix length, pinned equal by the same test.
       EXPECTED_SHARDS: '6'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Only the script is needed, and nothing here pushes: do not leave the
           # token in .git/config for the rest of the job.

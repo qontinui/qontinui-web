@@ -21,9 +21,9 @@ Asserted
 5. Downgrade drops the three indexes and keeps the rows; upgrade works again.
 6. The TRAP: an INVALID index (killed CONCURRENTLY build) is skipped by a rerun
    of the upgrade and the revision is stamped applied; dropping it alone leaves
-   it missing (``upgrade head`` is a no-op). The DOCUMENTED recovery (detection
-   query, drop, then ``stamp`` back or ``downgrade -1``, then ``upgrade head``)
-   repairs it.
+   it missing (upgrading to this revision is a no-op). The DOCUMENTED recovery
+   (detection query, drop, then stamp back to the parent or downgrade one step,
+   then upgrade this revision; ``-1`` / ``head`` only while it is head) repairs it.
 7. Every expression is total, including for 4000-char readiness / slug ref /
    topic suffix (NULL, not a btree size error) and object-valued refs.
 """
@@ -554,29 +554,38 @@ def test_findings_dossier_idx_01_expression_indexes() -> None:
             "IF NOT EXISTS skips an invalid index and the revision is stamped"
         )
         #    Documented recovery: detect, drop, step the stamp back, upgrade.
-        #    The drop alone does nothing: upgrade head is a no-op when stamped.
+        #    The drop alone does nothing: upgrading to this revision is a no-op
+        #    while it is stamped.
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(
                 text(
                     "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_findings_dossier_slug"
                 )
             )
-        run_alembic(root, url, "upgrade", "head")
+        #    Targets are pinned to this revision, not "head": once later revisions
+        #    chain on top (journey_01, coord_ci_pool_observations_01, ...), "head"
+        #    and "-1" address THEM, and the recovery under test never runs.
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert not index_exists(engine, "idx_findings_dossier_slug"), (
-            "upgrade head after the drop is a no-op while the revision is stamped"
+            "upgrade after the drop is a no-op while the revision is stamped"
         )
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        run_alembic(root, url, "upgrade", "head")
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _invalid_names(engine) == []
         _indexes_valid_and_partial(engine)
         _assert_indexes_used(engine)
         _assert_cases(engine, before, "after stamp-based repair")
 
-        #    Alternative documented step: downgrade -1 instead of stamp.
+        #    Alternative documented step: downgrade one step instead of stamp
+        #    ("downgrade -1" while this revision is head; spelled as the parent
+        #    here so the step still targets this revision once it is not).
+        #    TEST DB ONLY: it stops at this revision. On a real database with
+        #    descendants, `downgrade mdroles_01` would also undo every later
+        #    revision; use the revision's documented stamp recipe there.
         _invalidate(engine, "idx_findings_dossier_recurrence")
         assert _invalid_names(engine) == ["idx_findings_dossier_recurrence"]
-        run_alembic(root, url, "downgrade", "-1")
-        run_alembic(root, url, "upgrade", "head")
+        run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _invalid_names(engine) == []
         _indexes_valid_and_partial(engine)
         _assert_indexes_used(engine)
