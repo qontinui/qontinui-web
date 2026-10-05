@@ -29,6 +29,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 PATH = f"{API_PREFIX}/tenant-policy/transcript-sync"
 
@@ -83,16 +85,16 @@ def _mock_response(status_code: int = 200, json_data=None) -> MagicMock:
 @contextmanager
 def _patch_identity(effective_tenant=SWITCHED_TENANT, effective_roles=("admin",)):
     with (
-        patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=MagicMock()),
         ),
-        patch(
-            "app.api.v1.endpoints.operations._effective_tenant_id",
+        patch_ops(
+            "_effective_tenant_id",
             MagicMock(return_value=effective_tenant),
         ),
-        patch(
-            "app.api.v1.endpoints.operations._effective_tenant_roles",
+        patch_ops(
+            "_effective_tenant_roles",
             MagicMock(return_value=tuple(effective_roles)),
         ),
     ):
