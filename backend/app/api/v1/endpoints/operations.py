@@ -3800,9 +3800,12 @@ async def get_dev_action_detail(
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
+# - GET    /operations/alerts/fault-to-visibility        — onset→visible p50/p90
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/domain-cost                       — autonomy-domain
+#                                                          cost ledger
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
@@ -4338,6 +4341,42 @@ async def get_coord_alerts(
     return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
 
 
+@router.get("/alerts/fault-to-visibility")
+async def get_coord_alerts_fault_to_visibility(
+    window: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's fault-to-visibility interval per alert kind.
+
+    Proxies coord ``GET /coord/alerts/fault-to-visibility`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 4, G1). The interval is ``visible_at - onset_at`` over
+    ``coord.alerts`` episodes: how long a fault existed before anyone who can
+    act on it could see it. p50/p90 are computed per kind **only over
+    episodes whose onset is known**, and coord ships ``onset_known_n`` beside
+    ``episodes_n`` so that share is read as the headline next to the
+    percentile, never dropped. An episode whose ``onset_basis`` is ``none``
+    counts in ``episodes_n`` and not in the percentile — its onset is
+    UNKNOWN, and ``first_seen_at`` is never substituted for it (that would
+    report a zero interval for exactly the faults this read exists to find).
+    A ``null`` percentile is "no known-onset episode", not zero seconds.
+
+    ``window`` is forwarded verbatim when set; coord owns its grammar and its
+    default, and a value it cannot parse comes back as coord's own 4xx rather
+    than being re-validated (and eventually mis-validated) here. The body is
+    passed through untouched — no ``response_model`` — so a field coord adds
+    reaches the console without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if window is not None:
+        params["window"] = window
+    return await _proxy_coord_get(
+        "/coord/alerts/fault-to-visibility",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Notifications (append-only event feed; sibling of /alerts) ----------
 #
 # Plan ``2026-08-05-coord-notifications-type-and-tab.md`` Change 4.
@@ -4655,6 +4694,49 @@ async def get_fleet_health(
     (``[policy: silent-empty-is-unknown]``).
     """
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
+
+
+# ---- Domain cost (autonomy-domain cost ledger) ----------------------------
+
+
+@router.get("/domain-cost")
+async def get_domain_cost(
+    as_of: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's per-autonomy-domain cost ledger.
+
+    Proxies coord ``GET /coord/domain-cost`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 2), the read the ``/overview`` Intent section's "Domain cost" card
+    renders. Per domain in the tenant's autonomy-domain roster (a
+    ``steering/autonomy-domains.toml`` coord reads from its repo mirror,
+    named in the response's ``roster_source``) and for ``shared``, coord
+    reports work units by
+    status class, wall-clock, PRs, sessions, operator touches and tokens, each
+    in the ``{value, coverage_n, population_n, basis}`` shape; the marginal
+    cost ratio ``R`` per dimension with its coverage floor; and a ``verdict``
+    by fixed comparison. Beside them: ``unmapped_areas``,
+    ``unattributed_units_n``, ``roster_source`` and ``computed_at``.
+
+    Unknown is first-class on this wire and the proxy preserves it: a
+    dimension with no producer arrives as ``value: null`` with a ``reason``
+    (``tokens`` and the session-trailer arm ship ``"no_producer"``), a
+    dimension below its coverage floor arrives with ``R: null``, and an
+    unreadable roster arrives as HTTP 200 with ``roster: null`` plus
+    ``roster_error`` and every ratio ``null`` — never an empty domain list. A
+    database failure is coord's typed error, raised here, never zeros.
+
+    ``as_of`` is forwarded verbatim when set; coord owns its grammar. The body
+    is passed through untouched — no ``response_model`` — so a field coord
+    adds reaches the card without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if as_of is not None:
+        params["as_of"] = as_of
+    return await _proxy_coord_get(
+        "/coord/domain-cost", params=params or None, tenant_id=tenant_id
+    )
 
 
 # ---- Machine drain / undrain --------------------------------------------
@@ -7769,6 +7851,14 @@ async def get_ci_overview(
           "pools": [{repo, pool, state, state_reason, observed_at, ...}],
           "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
         }
+
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
 
     No graceful fallback: a coord predating the route answers 404 and the
     page renders that as an explicit UNKNOWN, never as an empty fleet.
