@@ -7013,7 +7013,7 @@ async def get_release(
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 4.4. Drives the "currently editing" sub-line on each
 # `MachineCard`. The tree-sitter `symbol_watcher` daemon (Phase 4.1,
 # qontinui-supervisor) posts `ClaimKind::Symbol` claims as agents edit
@@ -7106,7 +7106,7 @@ async def get_symbol_claims(
 
 # ---- Device-status surface (Phase 1.3) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 1.3. Two endpoints back the live `currentActivity` sub-line on
 # each `MachineCard` in the operations dashboard:
 #
@@ -7733,7 +7733,7 @@ async def websocket_coord_events(
 
 # ---- CI Status Dashboard surface (Phase 3 + Phase 5) --------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-25-ci-status-dashboard-plan.md`
+# Plan: `2026-05-25-ci-status-dashboard-plan`
 # Phases 3 + 5. Three endpoints back the per-tenant CI status panel on
 # the operations dashboard:
 #
@@ -8243,7 +8243,7 @@ async def websocket_ci_status(
 
 # ---- Coord-Native Session Coordination — Phase 5 ------------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-22-coord-native-session-coordination.md`
+# Plan: `2026-05-22-coord-native-session-coordination`
 # Phase 5. The dashboard `/sessions` panel reads from coord's
 # `/sessions` REST + SSE surface (Phase 1 SHIPPED, LIVE at
 # `coord.qontinui.io`).
