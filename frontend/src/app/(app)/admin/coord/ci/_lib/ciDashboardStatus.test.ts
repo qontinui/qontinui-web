@@ -4,8 +4,8 @@
  * Pins plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 3's vitest
  * list: every non-measured state renders `–` with its reason; a `0` appears
  * only when `state == measured`; green is unreachable while any pool is not
- * measured or any pool's `required` is null; `hosted` renders `–`, never a
- * count; and the 2026-10-04T12:08Z capture (`capacity_reading:
+ * measured or any pool's `required` is null; `hosted` is a refusal floor
+ * (`≥N`, infra) only when observed and `–` otherwise, never `0`; and the 2026-10-04T12:08Z capture (`capacity_reading:
  * unknown_unrefreshed`, 65 `ci-failed`) derives UNKNOWN capacity, not
  * "0 runners". Plus the palette agrees with the attention table, and an
  * infra-shaped share never folds into the content-red count.
@@ -25,6 +25,9 @@ import {
   deriveCiHealth,
   formatDuration,
   groupPools,
+  hostedBadge,
+  hostedCell,
+  hostedSummary,
   outcomeCells,
   poolGroupCells,
   poolLabel,
@@ -32,6 +35,7 @@ import {
   poolRowStatus,
   repoRowStatus,
   stripLevel,
+  type CiHostedWire,
   type CiOverviewWire,
   type CiPoolAlertWire,
   type CiUnattachedAlertWire,
@@ -474,20 +478,159 @@ describe("palettes agree with their attention tables", () => {
   });
 });
 
-describe("hosted is never a count", () => {
-  it("renders – with coord's note when the repo is measured", () => {
+describe("hosted — a refusal floor, infra, never content and never 0", () => {
+  const billing = {
+    alert_id: "5521",
+    opened_at: "2026-10-04T08:00:00Z",
+    last_seen_at: "2026-10-04T12:00:00Z",
+  };
+  const observed = (n: number, over: Partial<CiHostedWire> = {}) =>
+    repo({
+      hosted: {
+        state: "observed",
+        hosted_refused: n,
+        last_refused_at: "2026-10-04T11:40:00Z",
+        billing_refusal: null,
+        note: "hosted jobs GitHub never started",
+        ...over,
+      },
+    });
+  const healthOf = (repos: CiRepoOverviewWire[]) =>
+    deriveCiHealth(read(overview({ repos })), status(), NOW);
+  const badge = (h: ReturnType<typeof deriveCiHealth>, key: string) =>
+    h.badges.find((b) => b.key === key);
+
+  it("observed → the count shows as an infra floor, not in content_fail", () => {
+    const cells = outcomeCells(observed(4));
+    expect(cells.hosted.known).toBe(true);
+    expect(cells.hosted.text).toBe("≥4 refused");
+    expect(cells.hosted.tone).toBe("infra");
+    expect(cells.hosted.note).toMatch(/not a code failure/);
+    expect(cells.hosted.note).toMatch(/Cause not stored/);
+    // content_fail is the fixture's own 3, untouched by the 4 refusals.
+    expect(cells.content_fail.text).toBe("3");
+    const h = healthOf([observed(4)]);
+    expect(badge(h, "content-fail")?.label).toBe("content fail 24h 3");
+    expect(badge(h, "infra")?.label).toBe("infra-shaped 24h 7");
+    expect(badge(h, "main-red")).toBeUndefined();
+    const hb = badge(h, "hosted");
+    expect(hb?.label).toBe("hosted refused ≥4");
+    expect(hb?.tone).toBe("waiting");
+    expect(hb?.tone).not.toBe("attention");
+  });
+
+  it("observed refusals hold an otherwise-green strip at amber, never red", () => {
+    const h = healthOf([observed(2)]);
+    expect(h.level).toBe("amber");
+    expect(h.headline).toMatch(
+      /Hosted jobs refused .* infra, not a code failure/
+    );
+    expect(h.headline).not.toMatch(/red|Stuck/);
+  });
+
+  it("none_observed → – never 0, with coord's note as the reason", () => {
+    const c = hostedCell({
+      state: "none_observed",
+      hosted_refused: null,
+      last_refused_at: null,
+      billing_refusal: null,
+      note: "no hosted job seen in 24h",
+    });
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+    expect(c.reason).toMatch(/not a measured zero/);
+    expect(c.reason).toMatch(/no hosted job seen in 24h/);
+    const h = healthOf([
+      repo({ hosted: { state: "none_observed", note: "x" } }),
+    ]);
+    expect(badge(h, "hosted")?.label).toBe(`hosted ${DASH}`);
+    expect(badge(h, "hosted")?.label).not.toMatch(/0/);
+  });
+
+  it("a contract-violating observed 0 still renders –, never 0", () => {
+    const c = hostedCell({ state: "observed", hosted_refused: 0 });
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+  });
+
+  it("unknown → – UNKNOWN", () => {
+    const c = hostedCell({ state: "unknown", note: "jobs read failed" });
+    expect(c.text).toBe(DASH);
+    expect(c.known).toBe(false);
+    expect(c.reason).toMatch(/^UNKNOWN — jobs read failed/);
+    const h = healthOf([repo({ hosted: { state: "unknown", note: null } })]);
+    expect(badge(h, "hosted")?.label).toBe(`hosted ${DASH}`);
+    expect(badge(h, "hosted")?.title).toMatch(/UNKNOWN/);
+  });
+
+  it("legacy not_measured (no other fields) → – with its note", () => {
     const c = outcomeCells(repo()).hosted;
     expect(c.text).toBe(DASH);
     expect(c.known).toBe(false);
     expect(c.reason).toMatch(/hosted-only workflows are not sampled/);
-  });
-  it("renders – when there is no outcome row at all", () => {
     expect(outcomeCells(null).hosted.text).toBe(DASH);
+    const h = healthOf([repo()]);
+    expect(badge(h, "hosted")?.label).toBe(`hosted ${DASH}`);
+    expect(h.level).toBe("green");
   });
-  it("the strip's hosted badge carries no number", () => {
-    const h = deriveCiHealth(read(overview()), status(), NOW);
-    const hosted = h.badges.find((b) => b.key === "hosted");
-    expect(hosted?.label).toBe(`hosted ${DASH}`);
+
+  it("billing_refusal present → the strip names GitHub Actions billing", () => {
+    const h = healthOf([observed(3, { billing_refusal: billing })]);
+    expect(h.level).toBe("amber");
+    expect(h.headline).toMatch(
+      /^GitHub Actions billing refusing hosted jobs on qontinui\/qontinui-web/
+    );
+    const hb = badge(h, "hosted");
+    expect(hb?.label).toBe("billing refusing hosted ≥3");
+    expect(hb?.tone).toBe("waiting");
+    expect(hb?.title).toMatch(/spending limit/);
+    const c = outcomeCells(observed(3, { billing_refusal: billing })).hosted;
+    expect(c.text).toBe("≥3 refused (billing)");
+    expect(c.note).toMatch(/Actions billing \/ spending limit/);
+  });
+
+  it("billing_refusal with none_observed still surfaces billing, as –", () => {
+    const r = repo({
+      hosted: {
+        state: "none_observed",
+        hosted_refused: null,
+        last_refused_at: null,
+        billing_refusal: billing,
+        note: "none in window",
+      },
+    });
+    expect(outcomeCells(r).hosted.text).toBe(DASH);
+    expect(outcomeCells(r).hosted.reason).toMatch(/billing refusing hosted/);
+    const h = healthOf([r]);
+    expect(badge(h, "hosted")?.label).toBe(`billing refusing hosted ${DASH}`);
+    expect(h.headline).toMatch(/GitHub Actions billing refusing hosted jobs/);
+  });
+
+  it("billing never overrides a red verdict, it is added to the detail", () => {
+    const h = deriveCiHealth(
+      read(overview({ repos: [observed(1, { billing_refusal: billing })] })),
+      status([ciRow({ main_verdict: "red" })]),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toMatch(/^Main is red/);
+    expect(h.detail).toMatch(/GitHub Actions billing refusing hosted jobs/);
+  });
+
+  it("the summed badge is a floor (≥) across observed repos only", () => {
+    const s = hostedSummary(
+      overview({
+        repos: [
+          observed(2),
+          { ...observed(5), repo: "qontinui/qontinui-coord" },
+          repo({ repo: "a/b", hosted: { state: "unknown" } }),
+          repo({ repo: "c/d", hosted: { state: "none_observed" } }),
+        ],
+      })
+    );
+    expect(s.refusedFloor).toBe(7);
+    expect(s.unknownRepos).toEqual(["a/b"]);
+    expect(hostedBadge(s).label).toBe("hosted refused ≥7");
   });
 });
 

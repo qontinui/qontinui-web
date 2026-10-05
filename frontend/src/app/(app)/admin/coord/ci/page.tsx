@@ -16,9 +16,10 @@
  *  2. **Pools** — one row per runner label set, expanding in place (R5) to
  *     each repo that uses it and its open alerts.
  *  3. **Repos** — main verdict, PR checks, candidate-CI p90, and the 24 h
- *     outcome split, content and infra-shaped ALWAYS separate, hosted always
- *     `–`. Train blockers are NOT rebuilt: each row links to the pipeline
- *     Train tab, which owns that axis (D2).
+ *     outcome split, content and infra-shaped ALWAYS separate; hosted is the
+ *     refused-job FLOOR (`≥N`, amber INFRA — never content red) or `–`.
+ *     Train blockers are NOT rebuilt: each row links to the pipeline Train
+ *     tab, which owns that axis (D2).
  *  4. **Machines link line** — per-machine occupancy stays on the Overview.
  *
  * ## Reads (one poll per route)
@@ -87,10 +88,21 @@ function CellText({
   "data-testid"?: string;
 }) {
   if (reading.known) {
+    // `infra` is the hosted-refusal floor: amber, never content red.
     return (
-      <span className="tabular-nums" data-testid={testId} data-known="true">
+      <span
+        className="tabular-nums"
+        title={reading.note ?? undefined}
+        data-testid={testId}
+        data-known="true"
+        data-tone={reading.tone}
+      >
         {label ? <span className="text-muted-foreground">{label} </span> : null}
-        {reading.text}
+        {reading.tone === "infra" ? (
+          <span className="text-amber-300">{reading.text}</span>
+        ) : (
+          reading.text
+        )}
       </span>
     );
   }
@@ -381,7 +393,11 @@ function RepoRow({
           <CellText reading={row.candidateP90} label="cand. p90" />
           <CellText reading={outcomes.content_fail} label="content fail" />
           <CellText reading={outcomes.infra_shaped} label="infra" />
-          <CellText reading={outcomes.hosted} label="hosted" />
+          <CellText
+            reading={outcomes.hosted}
+            label="hosted"
+            data-testid={`ci-repo-hosted-${row.repo}`}
+          />
           <Freshness
             at={row.outcomesObservedAt}
             verb="Newest job outcome observed"
