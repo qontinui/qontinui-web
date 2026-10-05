@@ -35,7 +35,6 @@ from app.services.runner.remote_relay.protocol import (
     CODE_VERIFIER_UNAVAILABLE,
     KIND_ATTACH,
 )
-from app.services.runner.remote_relay.registry import RelayRegistry
 from app.services.runner.remote_relay.state import _Attachment, _SourceSession
 
 logger = structlog.get_logger(__name__)
@@ -44,9 +43,8 @@ logger = structlog.get_logger(__name__)
 class GrantAuthorizer:
     """Verify and admit grants. Refusals go back through the core (plan D2)."""
 
-    def __init__(self, core: RelayCore, registry: RelayRegistry) -> None:
+    def __init__(self, core: RelayCore) -> None:
         self.core = core
-        self.registry = registry
 
     async def _verify_grant(
         self,
