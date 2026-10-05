@@ -62,27 +62,7 @@
   "_dispatch_target_frame": [
     [
       "await _reap_expired",
-      "await _send_to_source",
-      "await _bind_terminal",
-      "await _detach_target",
-      "await _drop_attachment",
-      "await _refuse",
-      "await _detach_target",
-      "await _drop_attachment",
-      "await _refuse",
-      "await _send_to_source",
-      "await _send_to_source",
-      "await _drop_attachment",
-      "await _bound_attachment",
-      "await _send_to_source",
-      "await _bound_attachment",
-      "await _send_to_source",
-      "await _drop_attachment",
-      "await _route_buffer_response",
-      "await _route_end_reply",
-      "await _route_input_ack",
-      "await _route_runner_disconnected",
-      "await _route_target_error"
+      "await handler"
     ]
   ],
   "_drop_attachment": [
@@ -264,10 +244,29 @@
       "await _evict"
     ]
   ],
+  "_route_attached": [
+    [
+      "await _send_to_source",
+      "await _bind_terminal",
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _send_to_source"
+    ]
+  ],
   "_route_buffer_response": [
     [
       "await _attachment_by_remote_mark",
       "await _send_to_source"
+    ]
+  ],
+  "_route_created": [
+    [
+      "await _send_to_source",
+      "await _drop_attachment"
     ]
   ],
   "_route_end_error": [
@@ -280,9 +279,22 @@
       "await _answer_end_and_release"
     ]
   ],
+  "_route_exit": [
+    [
+      "await _bound_attachment",
+      "await _send_to_source",
+      "await _drop_attachment"
+    ]
+  ],
   "_route_input_ack": [
     [
       "await _attachment_by_remote_mark",
+      "await _send_to_source"
+    ]
+  ],
+  "_route_output": [
+    [
+      "await _bound_attachment",
       "await _send_to_source"
     ]
   ],

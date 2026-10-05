@@ -19,6 +19,7 @@ relay facade.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
 from typing import Any
 from uuid import uuid4
 
@@ -58,6 +59,11 @@ from app.services.runner.remote_relay.state import (
 
 logger = structlog.get_logger(__name__)
 
+# One entry of the dispatch table: answers whether the frame was ours.
+_TargetFrameHandler = Callable[
+    [_SourceSession, str, dict[str, Any]], Coroutine[Any, Any, bool]
+]
+
 # How long to wait before the single re-present.
 # (The re-present itself is described at ``TARGET_CODE_ATTACH_GRANT_UNKNOWN`` in
 # ``remote_relay/protocol.py``.)
@@ -81,6 +87,34 @@ class TargetFrameRouter:
         self.core = core
         self.end = end
         self.registry = registry
+        # Frame type -> handler, one flat table. Every handler answers whether
+        # the frame was this socket's (False: not ours).
+        self._target_frame_handlers: dict[str, _TargetFrameHandler] = {
+            # Membership, not equality: a target refusal typed
+            # ``remote_terminal_error`` takes the SAME path as one typed
+            # ``error`` and gets no shortcut for wearing the relay's outbound
+            # type. ``_route_target_error`` rebuilds the payload and puts
+            # ``code`` through ``namespace_target_code``, so the namespacing a
+            # target must not escape is applied identically either way. See
+            # ``TARGET_REFUSAL_FRAME_TYPES``. Listed first, so a named entry
+            # below would win a clash, as the ``if`` chain this replaced did;
+            # there is none by construction.
+            **dict.fromkeys(TARGET_REFUSAL_FRAME_TYPES, self._route_target_error),
+            "terminal_attached": self._route_attached,
+            "terminal_created": self._route_created,
+            "terminal_output": self._route_output,
+            "terminal_exit": self._route_exit,
+            "terminal_buffer_response": self._route_buffer_response,
+            TARGET_END_REPLY_FRAME_TYPE: self._route_end_reply,
+            TARGET_INPUT_ACK_FRAME_TYPE: self._route_input_ack,
+            # A RELAY-authored notice, not a target refusal, which is why it
+            # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES``:
+            # ``RunnerWebSocketManager.unregister`` publishes it device-wide,
+            # so its payload is never target-supplied and there is nothing to
+            # namespace. It settles attachments rather than translating a
+            # frame.
+            "runner_disconnected": self._route_runner_disconnected,
+        }
 
     def _pop_correlated(
         self,
@@ -192,250 +226,238 @@ class TargetFrameRouter:
     async def _dispatch_target_frame(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
-        """The type dispatch behind :meth:`route_target_frame`."""
+        """The type dispatch behind :meth:`route_target_frame`.
+
+        The expiry sweep runs FIRST, before any handler: every handler may then
+        assume an attachment it finds is live (``_route_input_ack`` relies on
+        it). A type with no handler is not ours.
+        """
         await self.core._reap_expired(session)
-        frame_type = frame.get("type")
-        # Declared once for the whole dispatch. The correlated arms below narrow
-        # it to non-Optional behind their own `is None` guards, which would
-        # otherwise fix the inferred type at `_Attachment` and reject the
-        # terminal-routed arms that legitimately assign `_Attachment | None`.
-        att: _Attachment | None
+        # Target-supplied and looked up as it came, exactly as the ``if`` chain
+        # this table replaced compared it: a type with no entry (a non-string
+        # one included) is not ours. ``Any``, not ``str``, for that reason.
+        frame_type: Any = frame.get("type")
+        handler = self._target_frame_handlers.get(frame_type)
+        if handler is None:
+            return False
+        return await handler(session, target_device_id, frame)
 
-        if frame_type == "terminal_attached":
-            # Correlated by the MINTED id and bound to the device the grant
-            # names — see ``_pop_correlated``.
-            popped = self._pop_correlated(
+    async def _route_attached(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Bind the terminal a target ``terminal_attached`` names; answer the source."""
+        # Correlated by the MINTED id and bound to the device the grant
+        # names — see ``_pop_correlated``.
+        popped = self._pop_correlated(
+            session,
+            session.pending_attach,
+            frame.get("request_id"),
+            target_device_id,
+            what="terminal_attached",
+        )
+        if popped is None or popped[1] is None:
+            return False
+        correlated, att = popped[0], popped[1]
+        source_request_id, _jti = correlated
+        terminal_id = frame.get("terminal_id")
+        if not isinstance(terminal_id, str) or not terminal_id:
+            await self.core._send_to_source(
                 session,
-                session.pending_attach,
-                frame.get("request_id"),
-                target_device_id,
-                what="terminal_attached",
+                {
+                    "type": "remote_terminal_error",
+                    "request_id": source_request_id,
+                    "grant_jti": att.grant_jti,
+                    "code": "attach_terminal_missing",
+                    "message": "target named no terminal_id in terminal_attached",
+                },
             )
-            if popped is None or popped[1] is None:
-                return False
-            correlated, att = popped[0], popped[1]
-            source_request_id, _jti = correlated
-            terminal_id = frame.get("terminal_id")
-            if not isinstance(terminal_id, str) or not terminal_id:
-                await self.core._send_to_source(
-                    session,
-                    {
-                        "type": "remote_terminal_error",
-                        "request_id": source_request_id,
-                        "grant_jti": att.grant_jti,
-                        "code": "attach_terminal_missing",
-                        "message": "target named no terminal_id in terminal_attached",
-                    },
-                )
-                return True
-            try:
-                bound = await self.registry._bind_terminal(att, terminal_id)
-            except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
-                logger.error(
-                    "remote_terminal_registry_unavailable",
-                    source_device_id=session.device_id,
+            return True
+        try:
+            bound = await self.registry._bind_terminal(att, terminal_id)
+        except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
+            logger.error(
+                "remote_terminal_registry_unavailable",
+                source_device_id=session.device_id,
+                grant_jti=att.grant_jti,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            await self.core._detach_target(session, att, terminal_id)
+            await self.core._drop_attachment(session, att)
+            await self.core._refuse(
+                session,
+                CODE_REGISTRY_UNAVAILABLE,
+                "attachment registry temporarily unavailable",
+                request_id=source_request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=terminal_id,
+            )
+            return True
+        if not bound:
+            # Another grant holds this terminal. The target has just
+            # bound ours to it, so tell it to unbind before dropping.
+            await self.core._detach_target(session, att, terminal_id)
+            await self.core._drop_attachment(session, att)
+            await self.core._refuse(
+                session,
+                CODE_TERMINAL_BUSY,
+                "terminal is already held by another attachment",
+                request_id=source_request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=terminal_id,
+            )
+            return True
+        if (
+            att.requested_terminal_id is not None
+            and att.requested_terminal_id != terminal_id
+        ):
+            logger.info(
+                "remote_terminal_attached_other_terminal",
+                source_device_id=session.device_id,
+                target_device_id=target_device_id,
+                grant_jti=att.grant_jti,
+                requested_terminal_id=att.requested_terminal_id,
+                terminal_id=terminal_id,
+            )
+        await self.core._send_to_source(
+            session,
+            {
+                "type": "remote_terminal_attached",
+                "request_id": source_request_id,
+                "grant_jti": att.grant_jti,
+                "terminal_id": terminal_id,
+                "buffer": frame.get("buffer", frame.get("data")),
+                "start_offset": frame.get("start_offset"),
+                # Where the target's ring actually BEGINS, which is below
+                # `start_offset` whenever the attach shipped only the
+                # bounded tail. It is the source's `history_start`, and
+                # `RemotePaneIo::history_range()` returns None without it —
+                # so dropping it does not degrade lazy scrollback, it
+                # switches the feature off with nothing to say so.
+                "ring_start_offset": frame.get("ring_start_offset"),
+                "total_bytes_produced": frame.get("total_bytes_produced"),
+            },
+        )
+        return True
+
+    async def _route_created(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Forward a target ``terminal_created`` as ``remote_terminal_created``; spend the grant."""
+        # Correlated by the MINTED id and bound to the device the grant
+        # names. Both halves live in ``_pop_correlated``: an uncorrelated
+        # frame is not ours (the mobile path shares this channel and creates
+        # terminals on it too), and one from the wrong device is not the
+        # answer — the source would otherwise label the tab B and mint an
+        # attach grant against whatever session id C's frame carried.
+        popped = self._pop_correlated(
+            session,
+            session.pending_create,
+            frame.get("request_id"),
+            target_device_id,
+            what="terminal_created",
+        )
+        if popped is None or popped[1] is None:
+            return False
+        correlated, att = popped[0], popped[1]
+        source_request_id, _jti = correlated
+        terminal = frame.get("terminal")
+        terminal_id = (
+            terminal.get("id")
+            if isinstance(terminal, dict)
+            else frame.get("terminal_id")
+        )
+        # `coord_session_id` is FIRST-CLASS here, not smuggled inside
+        # `terminal`. The source needs it to mint the session-addressed
+        # attach grant that drives what it just created, and the only
+        # zero-relay-change route was an undeclared key on `terminal` — a
+        # schema-typed object this relay forwards verbatim today. That
+        # works right up until something validates `terminal`, at which
+        # point create-then-attach breaks SILENTLY. Reading it from either
+        # place keeps the older target working while the field is the
+        # declared contract.
+        coord_session_id = frame.get("coord_session_id")
+        if coord_session_id is None and isinstance(terminal, dict):
+            coord_session_id = terminal.get("coordSessionId")
+        # A UUID or nothing. The source turns this straight into
+        # ``POST /coord/sessions/{id}/attach-grants``, so an unparseable or
+        # non-string value must read as "created but not addressable"
+        # (which the source already reports) rather than travel on as an id.
+        # The type check is cheap; what it forecloses is the field becoming
+        # a free-text channel into a coord URL path.
+        if not _is_uuid(coord_session_id):
+            if coord_session_id is not None:
+                logger.warning(
+                    "remote_terminal_created_bad_session_id",
                     grant_jti=att.grant_jti,
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
-                await self.core._detach_target(session, att, terminal_id)
-                await self.core._drop_attachment(session, att)
-                await self.core._refuse(
-                    session,
-                    CODE_REGISTRY_UNAVAILABLE,
-                    "attachment registry temporarily unavailable",
-                    request_id=source_request_id,
-                    grant_jti=att.grant_jti,
-                    terminal_id=terminal_id,
-                )
-                return True
-            if not bound:
-                # Another grant holds this terminal. The target has just
-                # bound ours to it, so tell it to unbind before dropping.
-                await self.core._detach_target(session, att, terminal_id)
-                await self.core._drop_attachment(session, att)
-                await self.core._refuse(
-                    session,
-                    CODE_TERMINAL_BUSY,
-                    "terminal is already held by another attachment",
-                    request_id=source_request_id,
-                    grant_jti=att.grant_jti,
-                    terminal_id=terminal_id,
-                )
-                return True
-            if (
-                att.requested_terminal_id is not None
-                and att.requested_terminal_id != terminal_id
-            ):
-                logger.info(
-                    "remote_terminal_attached_other_terminal",
-                    source_device_id=session.device_id,
                     target_device_id=target_device_id,
-                    grant_jti=att.grant_jti,
-                    requested_terminal_id=att.requested_terminal_id,
-                    terminal_id=terminal_id,
                 )
-            await self.core._send_to_source(
-                session,
-                {
-                    "type": "remote_terminal_attached",
-                    "request_id": source_request_id,
-                    "grant_jti": att.grant_jti,
-                    "terminal_id": terminal_id,
-                    "buffer": frame.get("buffer", frame.get("data")),
-                    "start_offset": frame.get("start_offset"),
-                    # Where the target's ring actually BEGINS, which is below
-                    # `start_offset` whenever the attach shipped only the
-                    # bounded tail. It is the source's `history_start`, and
-                    # `RemotePaneIo::history_range()` returns None without it —
-                    # so dropping it does not degrade lazy scrollback, it
-                    # switches the feature off with nothing to say so.
-                    "ring_start_offset": frame.get("ring_start_offset"),
-                    "total_bytes_produced": frame.get("total_bytes_produced"),
-                },
-            )
-            return True
+            coord_session_id = None
+        await self.core._send_to_source(
+            session,
+            {
+                "type": "remote_terminal_created",
+                "request_id": source_request_id,
+                "grant_jti": att.grant_jti,
+                "terminal_id": terminal_id,
+                "terminal": terminal,
+                # Absent stays ABSENT, never guessed: a create that landed
+                # with no coord row is "created but not addressable", and
+                # the source says exactly that rather than inventing an id
+                # to attach to.
+                "coord_session_id": coord_session_id,
+            },
+        )
+        # Spent. A create grant bought one spawn; driving what it spawned
+        # needs an attach grant for the new session, which coord mints
+        # against the target's own attach preference. Dropping it here is
+        # what makes that non-optional rather than a convention.
+        await self.core._drop_attachment(session, att)
+        return True
 
-        if frame_type == "terminal_created":
-            # Correlated by the MINTED id and bound to the device the grant
-            # names. Both halves live in ``_pop_correlated``: an uncorrelated
-            # frame is not ours (the mobile path shares this channel and creates
-            # terminals on it too), and one from the wrong device is not the
-            # answer — the source would otherwise label the tab B and mint an
-            # attach grant against whatever session id C's frame carried.
-            popped = self._pop_correlated(
-                session,
-                session.pending_create,
-                frame.get("request_id"),
-                target_device_id,
-                what="terminal_created",
-            )
-            if popped is None or popped[1] is None:
-                return False
-            correlated, att = popped[0], popped[1]
-            source_request_id, _jti = correlated
-            terminal = frame.get("terminal")
-            terminal_id = (
-                terminal.get("id")
-                if isinstance(terminal, dict)
-                else frame.get("terminal_id")
-            )
-            # `coord_session_id` is FIRST-CLASS here, not smuggled inside
-            # `terminal`. The source needs it to mint the session-addressed
-            # attach grant that drives what it just created, and the only
-            # zero-relay-change route was an undeclared key on `terminal` — a
-            # schema-typed object this relay forwards verbatim today. That
-            # works right up until something validates `terminal`, at which
-            # point create-then-attach breaks SILENTLY. Reading it from either
-            # place keeps the older target working while the field is the
-            # declared contract.
-            coord_session_id = frame.get("coord_session_id")
-            if coord_session_id is None and isinstance(terminal, dict):
-                coord_session_id = terminal.get("coordSessionId")
-            # A UUID or nothing. The source turns this straight into
-            # ``POST /coord/sessions/{id}/attach-grants``, so an unparseable or
-            # non-string value must read as "created but not addressable"
-            # (which the source already reports) rather than travel on as an id.
-            # The type check is cheap; what it forecloses is the field becoming
-            # a free-text channel into a coord URL path.
-            if not _is_uuid(coord_session_id):
-                if coord_session_id is not None:
-                    logger.warning(
-                        "remote_terminal_created_bad_session_id",
-                        grant_jti=att.grant_jti,
-                        target_device_id=target_device_id,
-                    )
-                coord_session_id = None
-            await self.core._send_to_source(
-                session,
-                {
-                    "type": "remote_terminal_created",
-                    "request_id": source_request_id,
-                    "grant_jti": att.grant_jti,
-                    "terminal_id": terminal_id,
-                    "terminal": terminal,
-                    # Absent stays ABSENT, never guessed: a create that landed
-                    # with no coord row is "created but not addressable", and
-                    # the source says exactly that rather than inventing an id
-                    # to attach to.
-                    "coord_session_id": coord_session_id,
-                },
-            )
-            # Spent. A create grant bought one spawn; driving what it spawned
-            # needs an attach grant for the new session, which coord mints
-            # against the target's own attach preference. Dropping it here is
-            # what makes that non-optional rather than a convention.
-            await self.core._drop_attachment(session, att)
-            return True
+    async def _route_output(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Forward ``terminal_output`` for a bound terminal as ``remote_terminal_output``."""
+        att = await self._bound_attachment(
+            session, target_device_id, frame.get("terminal_id")
+        )
+        if att is None:
+            return False
+        await self.core._send_to_source(
+            session,
+            {
+                "type": "remote_terminal_output",
+                "grant_jti": att.grant_jti,
+                "terminal_id": att.terminal_id,
+                "data": frame.get("data"),
+            },
+        )
+        return True
 
-        if frame_type == "terminal_output":
-            att = await self._bound_attachment(
-                session, target_device_id, frame.get("terminal_id")
-            )
-            if att is None:
-                return False
-            await self.core._send_to_source(
-                session,
-                {
-                    "type": "remote_terminal_output",
-                    "grant_jti": att.grant_jti,
-                    "terminal_id": att.terminal_id,
-                    "data": frame.get("data"),
-                },
-            )
-            return True
-
-        if frame_type == "terminal_exit":
-            att = await self._bound_attachment(
-                session, target_device_id, frame.get("terminal_id")
-            )
-            if att is None:
-                return False
-            await self.core._send_to_source(
-                session,
-                {
-                    "type": "remote_terminal_exit",
-                    "grant_jti": att.grant_jti,
-                    "terminal_id": att.terminal_id,
-                    "exit_code": frame.get("exit_code"),
-                },
-            )
-            await self.core._drop_attachment(session, att)
-            return True
-
-        if frame_type == "terminal_buffer_response":
-            return await self._route_buffer_response(session, target_device_id, frame)
-
-        if frame_type == TARGET_END_REPLY_FRAME_TYPE:
-            return await self._route_end_reply(session, target_device_id, frame)
-
-        if frame_type == TARGET_INPUT_ACK_FRAME_TYPE:
-            return await self._route_input_ack(session, target_device_id, frame)
-
-        if frame_type == "runner_disconnected":
-            # A RELAY-authored notice, not a target refusal, which is why it
-            # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES`` and above it:
-            # ``RunnerWebSocketManager.unregister`` publishes it device-wide,
-            # so its payload is never target-supplied and there is nothing to
-            # namespace. It settles attachments rather than translating a
-            # frame. Order is documentation here, not behaviour — the two
-            # conditions are disjoint by construction.
-            return await self._route_runner_disconnected(session, target_device_id)
-
-        if frame_type in TARGET_REFUSAL_FRAME_TYPES:
-            # Membership, not equality: a target refusal typed
-            # ``remote_terminal_error`` takes the SAME path as one typed
-            # ``error`` and gets no shortcut for wearing the relay's outbound
-            # type. ``_route_target_error`` rebuilds the payload and puts
-            # ``code`` through ``namespace_target_code``, so the namespacing a
-            # target must not escape is applied identically either way. See
-            # ``TARGET_REFUSAL_FRAME_TYPES``.
-            return await self._route_target_error(session, target_device_id, frame)
-
-        return False
+    async def _route_exit(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Forward ``terminal_exit`` for a bound terminal, then drop its attachment."""
+        att = await self._bound_attachment(
+            session, target_device_id, frame.get("terminal_id")
+        )
+        if att is None:
+            return False
+        await self.core._send_to_source(
+            session,
+            {
+                "type": "remote_terminal_exit",
+                "grant_jti": att.grant_jti,
+                "terminal_id": att.terminal_id,
+                "exit_code": frame.get("exit_code"),
+            },
+        )
+        await self.core._drop_attachment(session, att)
+        return True
 
     async def _route_runner_disconnected(
-        self, session: _SourceSession, target_device_id: str
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
         """Settle every attachment on a target whose relay socket just died.
 
@@ -472,6 +494,9 @@ class TargetFrameRouter:
         Returns False when this socket holds nothing on that target — the
         frame is a device-wide notice every watcher sees, and one that settles
         none of our attachments or ends is not ours.
+
+        ``frame`` is not read: the notice carries nothing but its type. The
+        parameter is the dispatch table's one handler shape.
         """
         ends = await self.end._settle_pending_ends_on_target(
             session,
