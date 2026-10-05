@@ -47,15 +47,24 @@ objects); the coord-side 23505 mapping is harmless while the index is absent.
   between two agent creates, and constraining operator authoring is not this
   revision's business.
 
-## Existing duplicates — create nothing rather than fail the deploy
+## Why a plain CONCURRENTLY build, with no duplicate guard
 
-A UNIQUE index cannot be built over rows that already violate it, and a failed
-migration blocks every later deploy. Agent-authored rows in these domains only
-become possible with qontinui-coord#2601, so duplicates are not expected — but
-the cost asymmetry decides it: when any exist, this revision skips the index and
-RAISEs a NOTICE naming the count, leaving coord's read-then-insert as the guard.
-A later revision can dedupe and retry. The index is ``IF NOT EXISTS`` so a
-re-run is a no-op.
+The index's population is EMPTY in production when this lands: the only writer
+that stamps an agent ``created_by`` into these two domains is the agent door,
+qontinui-coord#2601, which is not deployed (``next_step_settings`` and the
+operator door stamp ``operator:...``; ``agent_desired_state`` writes a
+different domain). So the build cannot meet a duplicate, and a guard against
+one would only cost the migration its static-SQL shape — coord's migration
+classifier refuses a ``DO $$`` block, an f-string or a non-literal
+``op.execute`` argument, and would hold this PR for an operator. ``CONCURRENTLY``
+takes no lock that blocks policy writes, so there is no unbounded wait behind a
+long coord transaction either. Land this BEFORE #2601 deploys; if it ever runs
+after agent rows exist and a duplicate does, the build fails loudly and leaves
+an INVALID index to drop, which is the visible failure rather than a silent one.
+
+An OPERATOR rename (``PATCH /coord/policies/:id`` keeps ``created_by``) of an
+agent-authored row onto another agent row's name in the same tenant and domain
+now fails on this index — the one way it touches operator authoring.
 
 ``down_revision`` chains off the single live alembic head at authoring time
 (``findings_keyset_01``, computed with ``ScriptDirectory.get_heads()``).
@@ -72,54 +81,30 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-_PREDICATE = """
-    kind IS NULL
-    AND decision_domain IN ('pr_fix', 'red_main_fix')
-    AND (starts_with(created_by, 'session:')
-         OR starts_with(created_by, 'agent:')
-         OR starts_with(created_by, 'device:'))
-"""
-
-# No `%` anywhere in this file's SQL, deliberately: SQLAlchemy escapes a literal
-# `%` to `%%` on its way to psycopg2, which then reaches PL/pgSQL unexpanded and
-# breaks a `RAISE NOTICE '... % ...'` format (measured in pdtier_03). Hence
-# `starts_with` rather than `LIKE 'x%'`, and `USING MESSAGE =` concatenation.
-
-_CREATE_IF_NO_DUPLICATES = f"""
-DO $$
-DECLARE
-    dup_groups integer;
-BEGIN
-    SELECT count(*) INTO dup_groups FROM (
-        SELECT 1
-          FROM coord.policy_rules
-         WHERE {_PREDICATE}
-         GROUP BY tenant_id, decision_domain, name
-        HAVING count(*) > 1
-    ) d;
-    IF dup_groups > 0 THEN
-        RAISE NOTICE USING MESSAGE =
-            'policy_rules_agent_name_uq_01: ' || dup_groups::text
-            || ' duplicate (tenant, decision_domain, name) group(s) among agent-authored '
-            || 'rows; uq_policy_rules_agent_domain_name NOT created; coord''s '
-            || 'read-then-insert remains the guard';
-    ELSE
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_policy_rules_agent_domain_name
-            ON coord.policy_rules (tenant_id, decision_domain, name)
-            WHERE {_PREDICATE};
-    END IF;
-END
-$$;
-"""
-
-_DROP_INDEX = "DROP INDEX IF EXISTS coord.uq_policy_rules_agent_domain_name"
+_DROP_INDEX = (
+    "DROP INDEX CONCURRENTLY IF EXISTS coord.uq_policy_rules_agent_domain_name"
+)
 
 
 def upgrade() -> None:
-    """Additive and idempotent: the partial unique index, unless duplicates exist."""
-    op.execute(_CREATE_IF_NO_DUPLICATES)
+    """Additive and idempotent: the partial unique index."""
+    # CONCURRENTLY cannot run inside a transaction. The SQL is an inline literal
+    # (not a module constant) so coord's migration classifier can read it.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_policy_rules_agent_domain_name
+                ON coord.policy_rules (tenant_id, decision_domain, name)
+                WHERE kind IS NULL
+                  AND decision_domain IN ('pr_fix', 'red_main_fix')
+                  AND (starts_with(created_by, 'session:')
+                       OR starts_with(created_by, 'agent:')
+                       OR starts_with(created_by, 'device:'))
+            """
+        )
 
 
 def downgrade() -> None:
     """Reverse exactly this revision."""
-    op.execute(_DROP_INDEX)
+    with op.get_context().autocommit_block():
+        op.execute(_DROP_INDEX)
