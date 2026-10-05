@@ -16,12 +16,15 @@ fails on any of:
   ``httpx.AsyncClient``, which resolves to the global ``httpx`` module and so
   reaches every caller wherever its body lives;
 * ``patch.object`` / ``patch.multiple`` / ``monkeypatch.setattr`` /
-  ``setattr`` / ``delattr`` whose first argument is the operations module (or
-  an attribute of it), however it was imported — an alias, the full dotted
+  ``setattr`` / ``delattr`` whose target (first positional argument, or the
+  ``target=`` keyword) is the operations module, a submodule of it, or an
+  attribute of either, however it was imported — an alias (including
+  ``from <package> import <submodule> as f``), the full dotted
   ``app.api.v1.endpoints.operations`` chain, or the package path string;
 * a plain ``<operations module>.<attr> = ...`` assignment;
 * a patch target BUILT from the bare package path string (literal, or a name
-  bound to it) — ``patch(PKG + ".x")``, ``patch(f"{PKG}.{name}")``, or the
+  bound to it) — ``patch(PKG + ".x")`` (``PKG`` on either side of any ``+``,
+  however nested), ``patch(f"{PKG}.{name}")``, or the
   same expression parked in a name first. Building a module name for any
   other purpose (``PKG + ".fleet"`` for an import, a prefix test) is not a
   patch and is not flagged. ``tests/_ops_patch.py`` is exempt: it defines
@@ -38,6 +41,7 @@ import pytest
 
 from tests._ops_patch import (
     OPS_PACKAGE,
+    ops_submodules,
     patch_ops,
     resolve_ops_targets,
     setattr_ops,
@@ -61,16 +65,29 @@ def _names_ops_module(node: ast.expr) -> bool:
     )
 
 
-def _module_aliases(tree: ast.AST) -> set[str]:
-    """Local names bound to the operations module (or a module under it)."""
+def _module_aliases(tree: ast.AST, submodules: frozenset[str]) -> set[str]:
+    """Local names bound to the operations module (or a module under it).
+
+    ``submodules`` are the dotted submodule names of the package: ``from
+    <operations package> import fleet as f`` binds ``f`` to a module under
+    the package only when ``fleet`` is one of them (otherwise it is a name
+    the module merely binds, such as the shared ``runner_crud`` module,
+    whose own patch reaches every caller).
+    """
     aliases: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.level == 0:
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             if node.module == OPS_PACKAGE.rpartition(".")[0]:
                 aliases.update(
                     a.asname or a.name
                     for a in node.names
                     if a.name == OPS_PACKAGE.rpartition(".")[2]
+                )
+            elif node.module == OPS_PACKAGE or node.module.startswith(_PREFIX):
+                aliases.update(
+                    a.asname or a.name
+                    for a in node.names
+                    if f"{node.module}.{a.name}" in submodules
                 )
         elif isinstance(node, ast.Import):
             for a in node.names:
@@ -139,8 +156,9 @@ def _is_package_ref(node: ast.expr, names: set[str]) -> bool:
 def _builds_target_from_package(node: ast.expr, names: set[str]) -> bool:
     """``PKG + ...`` (however nested) or an f-string with ``{PKG}.``."""
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return _is_package_ref(node.left, names) or _builds_target_from_package(
-            node.left, names
+        return any(
+            _is_package_ref(side, names) or _builds_target_from_package(side, names)
+            for side in (node.left, node.right)
         )
     if isinstance(node, ast.JoinedStr):
         values = node.values
@@ -168,10 +186,29 @@ def _built_target_names(tree: ast.AST, names: set[str]) -> set[str]:
     return built
 
 
-def scan_source(source: str) -> tuple[list[str], int]:
-    """``(violations, allowed httpx targets)`` for one test module's source."""
+def _target_arg(node: ast.Call) -> ast.expr | None:
+    """The patch target of a call: its first positional argument, else its
+    ``target=`` keyword (``patch(target=...)``, ``patch.object(target=...)``,
+    ``monkeypatch.setattr(target=...)``)."""
+    if node.args:
+        return node.args[0]
+    for keyword in node.keywords:
+        if keyword.arg == "target":
+            return keyword.value
+    return None
+
+
+def scan_source(
+    source: str, submodules: frozenset[str] | None = None
+) -> tuple[list[str], int]:
+    """``(violations, allowed httpx targets)`` for one test module's source.
+
+    ``submodules`` defaults to the operations package's submodules on disk.
+    """
+    if submodules is None:
+        submodules = ops_submodules()
     tree = ast.parse(source)
-    aliases = _module_aliases(tree)
+    aliases = _module_aliases(tree, submodules)
     package_names = _package_path_names(tree)
     built_names = _built_target_names(tree, package_names)
     violations: list[str] = []
@@ -186,7 +223,7 @@ def scan_source(source: str) -> tuple[list[str], int]:
                 allowed += 1
             else:
                 violations.append(f"{node.lineno}: string target {node.value!r}")
-        elif isinstance(node, ast.Call) and node.args:
+        elif isinstance(node, ast.Call) and (first := _target_arg(node)) is not None:
             func = node.func
             patching = (
                 isinstance(func, ast.Attribute) and func.attr in _PATCHING_ATTRS
@@ -194,7 +231,6 @@ def scan_source(source: str) -> tuple[list[str], int]:
             takes_target = (
                 isinstance(func, ast.Attribute) and func.attr in _TARGET_ATTRS
             ) or (isinstance(func, ast.Name) and func.id in _TARGET_NAMES)
-            first = node.args[0]
             if takes_target and (
                 _builds_target_from_package(first, package_names)
                 or (isinstance(first, ast.Name) and first.id in built_names)
@@ -207,7 +243,7 @@ def scan_source(source: str) -> tuple[list[str], int]:
                 _is_ops_object(first, aliases) or _is_package_ref(first, package_names)
             ):
                 violations.append(
-                    f"{node.lineno}: {ast.unparse(func)}({ast.unparse(node.args[0])}, ...)"
+                    f"{node.lineno}: {ast.unparse(func)}({ast.unparse(first)}, ...)"
                 )
         elif isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
@@ -280,6 +316,62 @@ def test_operations_patch_targets_go_through_patch_ops() -> None:
 def test_the_patch_target_scan_flags_every_form(snippet: str) -> None:
     violations, _ = scan_source(snippet)
     assert violations, f"the scan missed: {snippet!r}"
+
+
+# A ``fleet.py`` submodule under ``operations/`` (the package is one file today).
+_FAKE_SUBMODULES = frozenset({OPS_PACKAGE + ".fleet"})
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # (a) the package path on the right of a nested ``+``.
+        'MOD = "app.api.v1.endpoints.operations"\npatch(("" + MOD) + ".logger")',
+        'patch(("" + "app.api.v1.endpoints.operations") + ".logger")',
+        'MOD = "app.api.v1.endpoints.operations"\nmock.patch("" + (MOD + ".x"))',
+        # (b) the target passed by keyword.
+        'MOD = "app.api.v1.endpoints.operations"\npatch(target=MOD + ".logger")',
+        "from app.api.v1.endpoints import operations\n"
+        'patch.object(target=operations, attribute="logger")',
+        "import app.api.v1.endpoints.operations as ops\n"
+        'monkeypatch.setattr(target=ops, name="X", value=1)',
+        # (c) a submodule bound by ``from ... import <sub> as f`` / ``import``.
+        "from app.api.v1.endpoints.operations import fleet as f\n"
+        'patch.object(f, "logger")',
+        "from app.api.v1.endpoints.operations import fleet\n"
+        'monkeypatch.setattr(fleet, "X", 1)',
+        "from app.api.v1.endpoints.operations import fleet as f\nf.X = 1",
+        'import app.api.v1.endpoints.operations.fleet as f\npatch.object(f, "logger")',
+    ],
+)
+def test_the_patch_target_scan_flags_nested_keyword_and_submodule_forms(
+    snippet: str,
+) -> None:
+    violations, _ = scan_source(snippet, _FAKE_SUBMODULES)
+    assert violations, f"the scan missed: {snippet!r}"
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # A non-submodule name imported from the package is not the module:
+        # patching the shared object it binds reaches every caller.
+        "from app.api.v1.endpoints.operations import runner_crud\n"
+        'patch.object(runner_crud, "list_runners")',
+        "from app.api.v1.endpoints.operations import router\n"
+        'monkeypatch.setattr(router, "X", 1)',
+        # A keyword that is not the target is not inspected.
+        'MOD = "app.api.v1.endpoints.operations"\n'
+        'patch.object(other, "X", new=MOD + ".y")',
+        'PKG = "app.api.v1.endpoints.operations"\n'
+        'importlib.import_module(name=("" + PKG) + ".fleet")',
+    ],
+)
+def test_the_patch_target_scan_allows_non_submodule_and_non_target_forms(
+    snippet: str,
+) -> None:
+    violations, _ = scan_source(snippet, _FAKE_SUBMODULES)
+    assert violations == [], violations
 
 
 @pytest.mark.parametrize(
