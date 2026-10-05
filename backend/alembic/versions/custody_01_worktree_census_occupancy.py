@@ -52,13 +52,14 @@ Same rules as ``runprov_01_worktree_census_build_target``:
 * **TEXT, not enums** — ``wip_state`` and the identifiers are vocabularies the
   runner and the custody recorder own; coord must not pin them.
 
-Additive and reversible: ``downgrade`` drops exactly these eight columns.
+Additive, idempotent and reversible. The DDL is ONE static ``ALTER TABLE ...
+ADD COLUMN IF NOT EXISTS`` literal (coord's migration classifier refuses a bare
+``op.add_column``; precedent ``sched_cond_01_scheduled_tasks_conditions``), and
+``downgrade`` drops exactly these eight columns with ``DROP COLUMN IF EXISTS``.
+``IF NOT EXISTS`` is type-blind, which is why the test pins every type.
 """
 
 from collections.abc import Sequence
-
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -68,32 +69,43 @@ down_revision: str = "cihost_01_ci_host_agent_fleet"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_TABLE = "worktree_census"
-_SCHEMA = "coord"
-
-# The column NAMES are the interface coord's `worktree_census.rs` reads; a
-# rename here idles its degrade-on-42703 tier forever with no error.
-_CUSTODY_COLUMNS: tuple[tuple[str, sa.types.TypeEngine], ...] = (
-    ("custody_session_id", sa.Text()),
-    ("custody_session_name", sa.Text()),
-    ("custody_last_seen", sa.DateTime(timezone=True)),
-    ("custody_wip_state", sa.Text()),
-    ("custody_wip_ref", sa.Text()),
-    ("custody_work_unit_id", sa.Text()),
-    ("custody_plan_slug", sa.Text()),
-    ("custody_occupants", postgresql.JSONB(astext_type=sa.Text())),
-)
-
 
 def upgrade() -> None:
-    for name, type_ in _CUSTODY_COLUMNS:
-        op.add_column(
-            _TABLE,
-            sa.Column(name, type_, nullable=True),
-            schema=_SCHEMA,
-        )
+    """Add the eight nullable custody columns. Idempotent.
+
+    The SQL is written INLINE: coord's migration classifier
+    (``pr_merge/migration_classifier.rs`` ``static_execute_sql``) accepts only
+    string literals directly inside ``op.execute(...)`` and treats a name as
+    dynamic SQL. The column names and types are the interface coord's
+    ``worktree_census.rs`` reads; the test pins both.
+    """
+    op.execute(
+        """
+        ALTER TABLE coord.worktree_census
+            ADD COLUMN IF NOT EXISTS custody_session_id TEXT,
+            ADD COLUMN IF NOT EXISTS custody_session_name TEXT,
+            ADD COLUMN IF NOT EXISTS custody_last_seen TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS custody_wip_state TEXT,
+            ADD COLUMN IF NOT EXISTS custody_wip_ref TEXT,
+            ADD COLUMN IF NOT EXISTS custody_work_unit_id TEXT,
+            ADD COLUMN IF NOT EXISTS custody_plan_slug TEXT,
+            ADD COLUMN IF NOT EXISTS custody_occupants JSONB
+        """
+    )
 
 
 def downgrade() -> None:
-    for name, _ in reversed(_CUSTODY_COLUMNS):
-        op.drop_column(_TABLE, name, schema=_SCHEMA)
+    """Drop the eight custody columns."""
+    op.execute(
+        """
+        ALTER TABLE coord.worktree_census
+            DROP COLUMN IF EXISTS custody_occupants,
+            DROP COLUMN IF EXISTS custody_plan_slug,
+            DROP COLUMN IF EXISTS custody_work_unit_id,
+            DROP COLUMN IF EXISTS custody_wip_ref,
+            DROP COLUMN IF EXISTS custody_wip_state,
+            DROP COLUMN IF EXISTS custody_last_seen,
+            DROP COLUMN IF EXISTS custody_session_name,
+            DROP COLUMN IF EXISTS custody_session_id
+        """
+    )
