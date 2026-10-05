@@ -1,0 +1,2115 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`workflow-documentation service contract > CRUD and comments behave as recorded > comments 1`] = `
+[
+  {
+    "actionId": "a1",
+    "author": "ann",
+    "comment": "first",
+    "created": "2026-01-02T03:04:05.000Z",
+    "id": "comment-1767323045000-4fzzzxjyl",
+    "updated": "2026-01-02T03:04:05.000Z",
+    "workflowId": "wf",
+  },
+  {
+    "actionId": "a2",
+    "author": undefined,
+    "comment": "second",
+    "created": "2026-01-02T03:04:06.000Z",
+    "id": "comment-1767323046000-4fzzzxjyl",
+    "updated": "2026-01-02T03:04:06.000Z",
+    "workflowId": "wf",
+  },
+]
+`;
+
+exports[`workflow-documentation service contract > CRUD and comments behave as recorded > remaining comments 1`] = `
+[
+  {
+    "actionId": "a1",
+    "author": "ann",
+    "comment": "first, edited",
+    "created": "2026-01-02T03:04:05.000Z",
+    "id": "comment-1767323045000-4fzzzxjyl",
+    "updated": "2026-01-02T03:04:06.000Z",
+    "workflowId": "wf",
+  },
+]
+`;
+
+exports[`workflow-documentation service contract > CRUD and comments behave as recorded > updated comment 1`] = `
+{
+  "actionId": "a1",
+  "author": "ann",
+  "comment": "first, edited",
+  "created": "2026-01-02T03:04:05.000Z",
+  "id": "comment-1767323045000-4fzzzxjyl",
+  "updated": "2026-01-02T03:04:06.000Z",
+  "workflowId": "wf",
+}
+`;
+
+exports[`workflow-documentation service contract > CRUD and comments behave as recorded > version cap 1`] = `
+[
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  21,
+  21,
+  21,
+  21,
+  21,
+]
+`;
+
+exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all html 1`] = `
+"# Workflow Documentation
+
+Generated: 2026-01-02T03:04:05.000Z
+
+Total Workflows: 1
+
+
+---
+
+<p>---
+Workflow ID: wf-login
+Version: 1
+Created: 2026-01-02T03:04:05.000Z
+Updated: 2026-01-02T03:04:05.000Z
+Author: bob
+Tags: auth, generated
+---</p><p><h1>Login "Flow"</h1></p><p>
+<h2>Overview</h2></p><p><strong>Name:</strong> Login "Flow"
+<strong>Version:</strong> 1.2.0
+<strong>Category:</strong> Authentication
+<strong>Format:</strong> Graph-based workflow</p><p><strong>Description:</strong> Logs a user in, retrying until the dashboard appears.
+<strong>Created:</strong> LOCALE(2025-12-01T10:00:00.000Z)
+<strong>Last Updated:</strong> LOCALE(2025-12-15T11:30:00.000Z)
+<strong>Author:</strong> qa-team
+<strong>Tags:</strong> auth, smoke</p><p><h2>Purpose and Use Cases</h2></p><p>Logs a user in, retrying until the dashboard appears.</p><p><strong>Characteristics:</strong>
+<li>Contains conditional logic and control flow</li>
+<li>Includes UI automation actions</li>
+<li>Performs data processing operations</li>
+<li>Total of 12 action(s)</li></p><p><h2>Input Requirements</h2></p><p><h3>Required Variables:</h3></p><p><strong>Local Variables:</strong>
+<li><code>username</code>: string = "alice"</li>
+<li><code>retries</code>: number = 3</li></p><p><strong>Process Variables:</strong>
+<li><code>sessionId</code>: object = null</li></p><p><strong>Global Variables:</strong>
+<li><code>debug</code>: boolean = true</li></p><p><h3>Required Initial States:</h3></p><p><li>state-login-page</li>
+<li>state-browser-open</li></p><p><h3>Initial Screenshot: <code>shot-initial</code></h3></p><p><h2>Output & Side Effects</h2></p><p><h3>Actions with Output:</h3></p><p><li><strong>Init attempts</strong> (SET_VARIABLE)</li>
+  - Sets variable: <code>attempts</code>
+  - Scope: process
+<li><strong>Logout fallback</strong> (RUN_WORKFLOW)</li>
+  - Executes workflow: <code>wf-logout</code>
+<li><strong>Capture dashboard</strong> (SCREENSHOT)</li>
+  - Saves screenshot: <code>done.png</code></p><p><h2>Action Flow</h2></p><p>Step-by-step execution flow:</p><p>1. <strong>Find login button</strong> (<code>FIND</code>)
+   2. <strong>Init attempts</strong> (<code>SET_VARIABLE</code>)
+      3. <strong>Retry loop</strong> (<code>LOOP</code>)
+         4. <strong>Is logged in?</strong> (<code>IF</code>)
+            5. <strong>Click login</strong> (<code>CLICK</code>)
+               6. <strong>Guard submit</strong> (<code>TRY_CATCH</code>)
+                  7. <strong>Read attempts</strong> (<code>GET_VARIABLE</code>)
+            8. <strong>type</strong> (<code>TYPE</code>)
+         9. <strong>Stop</strong> (<code>BREAK</code>)</p><p><h2>Variables Used</h2></p><p>| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| <code>username</code> | local | string | Predefined |  |
+| <code>retries</code> | local | number | Predefined |  |
+| <code>sessionId</code> | process | object | Predefined |  |
+| <code>debug</code> | global | boolean | Predefined |  |
+| <code>attempts</code> | process | unknown | Set | Init attempts, Read attempts |</p><p><h2>Dependencies</h2></p><p><li><strong>[Required]</strong> <strong>login-button.png</strong> (resource)</li>
+  Image used in action: Find login button
+<li><strong>[Required]</strong> <strong>login.png</strong> (resource)</li>
+  Image used in action: Click login
+<li><strong>[Required]</strong> <strong>wf-logout</strong> (workflow)</li>
+  Called from action: Logout fallback</p><p><h2>Complexity Metrics</h2></p><p><li><strong>Total Actions:</strong> 12</li>
+<li><strong>Branching Points:</strong> 2</li>
+<li><strong>Loops:</strong> 1</li>
+<li><strong>Max Depth:</strong> 7</li>
+<li><strong>Cyclomatic Complexity:</strong> 2</li>
+<li><strong>Cognitive Complexity:</strong> 4</li></p><p><strong>Overall Complexity:</strong> Low</p><p><h2>Visual Flowchart</h2></p><p><code></code>\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+<code></code>\`</p><p><h2>Error Handling</h2></p><p>This workflow includes 1 error handling block(s):</p><p><li><strong>Guard submit</strong>: Catches and handles errors from its try block</li></p><p><h2>Recent Changes</h2></p><p>Last updated: LOCALE(2025-12-15T11:30:00.000Z)</p>"
+`;
+
+exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all markdown 1`] = `
+"# Workflow Documentation
+
+Generated: 2026-01-02T03:04:05.000Z
+
+Total Workflows: 1
+
+
+---
+
+---
+Workflow ID: wf-login
+Version: 1
+Created: 2026-01-02T03:04:05.000Z
+Updated: 2026-01-02T03:04:05.000Z
+Author: bob
+Tags: auth, generated
+---
+
+# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)"
+`;
+
+exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > project readme 1`] = `
+"# Workflow Project Documentation
+
+Generated: 2026-01-02T03:04:05.000Z
+
+## Table of Contents
+
+- [Authentication](#authentication)
+- [Uncategorized](#uncategorized)
+
+## Authentication
+
+### Login "Flow"
+Logs a user in, retrying until the dashboard appears.
+- **Version:** 1.2.0
+- **Actions:** 12
+- **Tags:** auth, smoke
+
+[View Full Documentation →]
+
+
+## Uncategorized
+
+### Other
+Logs a user in, retrying until the dashboard appears.
+- **Version:** 1.2.0
+- **Actions:** 12
+"
+`;
+
+exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination 1`] = `
+{
+  "default": "# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)",
+  "html:all": "<p>---
+Workflow ID: wf-login
+Version: 1
+Created: 2026-01-02T03:04:05.000Z
+Updated: 2026-01-02T03:04:05.000Z
+Author: bob
+Tags: auth, generated
+---</p><p><h2>Table of Contents</h2></p><p><li>[Login "Flow"](#login-flow)</li>
+  - [Overview](#overview)
+  - [Purpose and Use Cases](#purpose-and-use-cases)
+  - [Input Requirements](#input-requirements)
+    - [Required Variables:](#required-variables)
+    - [Required Initial States:](#required-initial-states)
+    - [Initial Screenshot: <code>shot-initial</code>](#initial-screenshot-shot-initial)
+  - [Output & Side Effects](#output-side-effects)
+    - [Actions with Output:](#actions-with-output)
+  - [Action Flow](#action-flow)
+  - [Variables Used](#variables-used)
+  - [Dependencies](#dependencies)
+  - [Complexity Metrics](#complexity-metrics)
+  - [Visual Flowchart](#visual-flowchart)
+  - [Error Handling](#error-handling)
+  - [Recent Changes](#recent-changes)</p><p><h1>Login "Flow"</h1></p><p>
+<h2>Overview</h2></p><p><strong>Name:</strong> Login "Flow"
+<strong>Version:</strong> 1.2.0
+<strong>Category:</strong> Authentication
+<strong>Format:</strong> Graph-based workflow</p><p><strong>Description:</strong> Logs a user in, retrying until the dashboard appears.
+<strong>Created:</strong> LOCALE(2025-12-01T10:00:00.000Z)
+<strong>Last Updated:</strong> LOCALE(2025-12-15T11:30:00.000Z)
+<strong>Author:</strong> qa-team
+<strong>Tags:</strong> auth, smoke</p><p><h2>Purpose and Use Cases</h2></p><p>Logs a user in, retrying until the dashboard appears.</p><p><strong>Characteristics:</strong>
+<li>Contains conditional logic and control flow</li>
+<li>Includes UI automation actions</li>
+<li>Performs data processing operations</li>
+<li>Total of 12 action(s)</li></p><p><h2>Input Requirements</h2></p><p><h3>Required Variables:</h3></p><p><strong>Local Variables:</strong>
+<li><code>username</code>: string = "alice"</li>
+<li><code>retries</code>: number = 3</li></p><p><strong>Process Variables:</strong>
+<li><code>sessionId</code>: object = null</li></p><p><strong>Global Variables:</strong>
+<li><code>debug</code>: boolean = true</li></p><p><h3>Required Initial States:</h3></p><p><li>state-login-page</li>
+<li>state-browser-open</li></p><p><h3>Initial Screenshot: <code>shot-initial</code></h3></p><p><h2>Output & Side Effects</h2></p><p><h3>Actions with Output:</h3></p><p><li><strong>Init attempts</strong> (SET_VARIABLE)</li>
+  - Sets variable: <code>attempts</code>
+  - Scope: process
+<li><strong>Logout fallback</strong> (RUN_WORKFLOW)</li>
+  - Executes workflow: <code>wf-logout</code>
+<li><strong>Capture dashboard</strong> (SCREENSHOT)</li>
+  - Saves screenshot: <code>done.png</code></p><p><h2>Action Flow</h2></p><p>Step-by-step execution flow:</p><p>1. <strong>Find login button</strong> (<code>FIND</code>)
+   2. <strong>Init attempts</strong> (<code>SET_VARIABLE</code>)
+      3. <strong>Retry loop</strong> (<code>LOOP</code>)
+         4. <strong>Is logged in?</strong> (<code>IF</code>)
+            5. <strong>Click login</strong> (<code>CLICK</code>)
+               6. <strong>Guard submit</strong> (<code>TRY_CATCH</code>)
+                  7. <strong>Read attempts</strong> (<code>GET_VARIABLE</code>)
+            8. <strong>type</strong> (<code>TYPE</code>)
+         9. <strong>Stop</strong> (<code>BREAK</code>)</p><p><h2>Variables Used</h2></p><p>| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| <code>username</code> | local | string | Predefined |  |
+| <code>retries</code> | local | number | Predefined |  |
+| <code>sessionId</code> | process | object | Predefined |  |
+| <code>debug</code> | global | boolean | Predefined |  |
+| <code>attempts</code> | process | unknown | Set | Init attempts, Read attempts |</p><p><h2>Dependencies</h2></p><p><li><strong>[Required]</strong> <strong>login-button.png</strong> (resource)</li>
+  Image used in action: Find login button
+<li><strong>[Required]</strong> <strong>login.png</strong> (resource)</li>
+  Image used in action: Click login
+<li><strong>[Required]</strong> <strong>wf-logout</strong> (workflow)</li>
+  Called from action: Logout fallback</p><p><h2>Complexity Metrics</h2></p><p><li><strong>Total Actions:</strong> 12</li>
+<li><strong>Branching Points:</strong> 2</li>
+<li><strong>Loops:</strong> 1</li>
+<li><strong>Max Depth:</strong> 7</li>
+<li><strong>Cyclomatic Complexity:</strong> 2</li>
+<li><strong>Cognitive Complexity:</strong> 4</li></p><p><strong>Overall Complexity:</strong> Low</p><p><h2>Visual Flowchart</h2></p><p><code></code>\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+<code></code>\`</p><p><h2>Error Handling</h2></p><p>This workflow includes 1 error handling block(s):</p><p><li><strong>Guard submit</strong>: Catches and handles errors from its try block</li></p><p><h2>Recent Changes</h2></p><p>Last updated: LOCALE(2025-12-15T11:30:00.000Z)</p><p><h2>Action Comments</h2></p><p><li><strong>try</strong>: Falls back to logout</li>
+</p>",
+  "html:plain": "<p><h1>Login "Flow"</h1></p><p>
+<h2>Overview</h2></p><p><strong>Name:</strong> Login "Flow"
+<strong>Version:</strong> 1.2.0
+<strong>Category:</strong> Authentication
+<strong>Format:</strong> Graph-based workflow</p><p><strong>Description:</strong> Logs a user in, retrying until the dashboard appears.
+<strong>Created:</strong> LOCALE(2025-12-01T10:00:00.000Z)
+<strong>Last Updated:</strong> LOCALE(2025-12-15T11:30:00.000Z)
+<strong>Author:</strong> qa-team
+<strong>Tags:</strong> auth, smoke</p><p><h2>Purpose and Use Cases</h2></p><p>Logs a user in, retrying until the dashboard appears.</p><p><strong>Characteristics:</strong>
+<li>Contains conditional logic and control flow</li>
+<li>Includes UI automation actions</li>
+<li>Performs data processing operations</li>
+<li>Total of 12 action(s)</li></p><p><h2>Input Requirements</h2></p><p><h3>Required Variables:</h3></p><p><strong>Local Variables:</strong>
+<li><code>username</code>: string = "alice"</li>
+<li><code>retries</code>: number = 3</li></p><p><strong>Process Variables:</strong>
+<li><code>sessionId</code>: object = null</li></p><p><strong>Global Variables:</strong>
+<li><code>debug</code>: boolean = true</li></p><p><h3>Required Initial States:</h3></p><p><li>state-login-page</li>
+<li>state-browser-open</li></p><p><h3>Initial Screenshot: <code>shot-initial</code></h3></p><p><h2>Output & Side Effects</h2></p><p><h3>Actions with Output:</h3></p><p><li><strong>Init attempts</strong> (SET_VARIABLE)</li>
+  - Sets variable: <code>attempts</code>
+  - Scope: process
+<li><strong>Logout fallback</strong> (RUN_WORKFLOW)</li>
+  - Executes workflow: <code>wf-logout</code>
+<li><strong>Capture dashboard</strong> (SCREENSHOT)</li>
+  - Saves screenshot: <code>done.png</code></p><p><h2>Action Flow</h2></p><p>Step-by-step execution flow:</p><p>1. <strong>Find login button</strong> (<code>FIND</code>)
+   2. <strong>Init attempts</strong> (<code>SET_VARIABLE</code>)
+      3. <strong>Retry loop</strong> (<code>LOOP</code>)
+         4. <strong>Is logged in?</strong> (<code>IF</code>)
+            5. <strong>Click login</strong> (<code>CLICK</code>)
+               6. <strong>Guard submit</strong> (<code>TRY_CATCH</code>)
+                  7. <strong>Read attempts</strong> (<code>GET_VARIABLE</code>)
+            8. <strong>type</strong> (<code>TYPE</code>)
+         9. <strong>Stop</strong> (<code>BREAK</code>)</p><p><h2>Variables Used</h2></p><p>| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| <code>username</code> | local | string | Predefined |  |
+| <code>retries</code> | local | number | Predefined |  |
+| <code>sessionId</code> | process | object | Predefined |  |
+| <code>debug</code> | global | boolean | Predefined |  |
+| <code>attempts</code> | process | unknown | Set | Init attempts, Read attempts |</p><p><h2>Dependencies</h2></p><p><li><strong>[Required]</strong> <strong>login-button.png</strong> (resource)</li>
+  Image used in action: Find login button
+<li><strong>[Required]</strong> <strong>login.png</strong> (resource)</li>
+  Image used in action: Click login
+<li><strong>[Required]</strong> <strong>wf-logout</strong> (workflow)</li>
+  Called from action: Logout fallback</p><p><h2>Complexity Metrics</h2></p><p><li><strong>Total Actions:</strong> 12</li>
+<li><strong>Branching Points:</strong> 2</li>
+<li><strong>Loops:</strong> 1</li>
+<li><strong>Max Depth:</strong> 7</li>
+<li><strong>Cyclomatic Complexity:</strong> 2</li>
+<li><strong>Cognitive Complexity:</strong> 4</li></p><p><strong>Overall Complexity:</strong> Low</p><p><h2>Visual Flowchart</h2></p><p><code></code>\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+<code></code>\`</p><p><h2>Error Handling</h2></p><p>This workflow includes 1 error handling block(s):</p><p><li><strong>Guard submit</strong>: Catches and handles errors from its try block</li></p><p><h2>Recent Changes</h2></p><p>Last updated: LOCALE(2025-12-15T11:30:00.000Z)</p>",
+  "markdown:all": "---
+Workflow ID: wf-login
+Version: 1
+Created: 2026-01-02T03:04:05.000Z
+Updated: 2026-01-02T03:04:05.000Z
+Author: bob
+Tags: auth, generated
+---
+
+## Table of Contents
+
+- [Login "Flow"](#login-flow)
+  - [Overview](#overview)
+  - [Purpose and Use Cases](#purpose-and-use-cases)
+  - [Input Requirements](#input-requirements)
+    - [Required Variables:](#required-variables)
+    - [Required Initial States:](#required-initial-states)
+    - [Initial Screenshot: \`shot-initial\`](#initial-screenshot-shot-initial)
+  - [Output & Side Effects](#output-side-effects)
+    - [Actions with Output:](#actions-with-output)
+  - [Action Flow](#action-flow)
+  - [Variables Used](#variables-used)
+  - [Dependencies](#dependencies)
+  - [Complexity Metrics](#complexity-metrics)
+  - [Visual Flowchart](#visual-flowchart)
+  - [Error Handling](#error-handling)
+  - [Recent Changes](#recent-changes)
+
+# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)
+
+## Action Comments
+
+- **try**: Falls back to logout
+",
+  "markdown:plain": "# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)",
+  "missing": null,
+  "pdf:all": "[PDF Export] ---
+Workflow ID: wf-login
+Version: 1
+Created: 2026-01-02T03:04:05.000Z
+Updated: 2026-01-02T03:04:05.000Z
+Author: bob
+Tags: auth, generated
+---
+
+## Table of Contents
+
+- [Login "Flow"](#login-flow)
+  - [Overview](#overview)
+  - [Purpose and Use Cases](#purpose-and-use-cases)
+  - [Input Requirements](#input-requirements)
+    - [Required Variables:](#required-variables)
+    - [Required Initial States:](#required-initial-states)
+    - [Initial Screenshot: \`shot-initial\`](#initial-screenshot-shot-initial)
+  - [Output & Side Effects](#output-side-effects)
+    - [Actions with Output:](#actions-with-output)
+  - [Action Flow](#action-flow)
+  - [Variables Used](#variables-used)
+  - [Dependencies](#dependencies)
+  - [Complexity Metrics](#complexity-metrics)
+  - [Visual Flowchart](#visual-flowchart)
+  - [Error Handling](#error-handling)
+  - [Recent Changes](#recent-changes)
+
+# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)
+
+## Action Comments
+
+- **try**: Falls back to logout
+",
+  "pdf:plain": "[PDF Export] # Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)",
+}
+`;
+
+exports[`workflow-documentation service contract > flowchart, variables table and dependencies list text > dependencies list 1`] = `
+"## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback"
+`;
+
+exports[`workflow-documentation service contract > flowchart, variables table and dependencies list text > flowchart 1`] = `
+"## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`"
+`;
+
+exports[`workflow-documentation service contract > flowchart, variables table and dependencies list text > variables table 1`] = `
+"## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |"
+`;
+
+exports[`workflow-documentation service contract > generateDocumentation handles a workflow with no variables, outputs or handlers 1`] = `
+"# Bare
+
+
+## Overview
+
+**Name:** Bare
+**Version:** 0.1.0
+**Category:** Uncategorized
+**Format:** Graph-based workflow
+
+## Purpose and Use Cases
+
+**Characteristics:**
+- Includes UI automation actions
+- Total of 2 action(s)
+
+## Input Requirements
+
+*No predefined variables required.*
+
+## Output & Side Effects
+
+*No explicit outputs defined. Side effects may include UI interactions.*
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **a** (\`CLICK\`)
+   2. **b** (\`TYPE\`)
+
+## Variables Used
+
+*No variables detected in this workflow.*
+
+## Dependencies
+
+*No external dependencies detected.*
+
+## Complexity Metrics
+
+- **Total Actions:** 2
+- **Branching Points:** 0
+- **Loops:** 0
+- **Max Depth:** 2
+- **Cyclomatic Complexity:** 1
+- **Cognitive Complexity:** 0
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    a["a<br/>(CLICK)"]
+    b["b<br/>(TYPE)"]
+    a --> b
+\`\`\`
+
+## Error Handling
+
+*No explicit error handling defined.*
+
+Note: Model-based automation is resilient by design and continues execution even if individual actions fail.
+
+## Recent Changes
+"
+`;
+
+exports[`workflow-documentation service contract > generateDocumentation renders every section for a branching, looping workflow > action flow 1`] = `
+"## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            *Checks for the dashboard header*
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)"
+`;
+
+exports[`workflow-documentation service contract > generateDocumentation renders every section for a branching, looping workflow > complexity metrics 1`] = `
+"## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low"
+`;
+
+exports[`workflow-documentation service contract > generateDocumentation renders every section for a branching, looping workflow > full document 1`] = `
+"# Login "Flow"
+
+
+## Overview
+
+**Name:** Login "Flow"
+**Version:** 1.2.0
+**Category:** Authentication
+**Format:** Graph-based workflow
+
+**Description:** Logs a user in, retrying until the dashboard appears.
+**Created:** LOCALE(2025-12-01T10:00:00.000Z)
+**Last Updated:** LOCALE(2025-12-15T11:30:00.000Z)
+**Author:** qa-team
+**Tags:** auth, smoke
+
+## Purpose and Use Cases
+
+Logs a user in, retrying until the dashboard appears.
+
+**Characteristics:**
+- Contains conditional logic and control flow
+- Includes UI automation actions
+- Performs data processing operations
+- Total of 12 action(s)
+
+## Input Requirements
+
+### Required Variables:
+
+**Local Variables:**
+- \`username\`: string = "alice"
+- \`retries\`: number = 3
+
+**Process Variables:**
+- \`sessionId\`: object = null
+
+**Global Variables:**
+- \`debug\`: boolean = true
+
+### Required Initial States:
+
+- state-login-page
+- state-browser-open
+
+### Initial Screenshot: \`shot-initial\`
+
+## Output & Side Effects
+
+### Actions with Output:
+
+- **Init attempts** (SET_VARIABLE)
+  - Sets variable: \`attempts\`
+  - Scope: process
+- **Logout fallback** (RUN_WORKFLOW)
+  - Executes workflow: \`wf-logout\`
+- **Capture dashboard** (SCREENSHOT)
+  - Saves screenshot: \`done.png\`
+
+## Action Flow
+
+Step-by-step execution flow:
+
+1. **Find login button** (\`FIND\`)
+   2. **Init attempts** (\`SET_VARIABLE\`)
+      3. **Retry loop** (\`LOOP\`)
+         4. **Is logged in?** (\`IF\`)
+            *Checks for the dashboard header*
+            5. **Click login** (\`CLICK\`)
+               6. **Guard submit** (\`TRY_CATCH\`)
+                  7. **Read attempts** (\`GET_VARIABLE\`)
+            8. **type** (\`TYPE\`)
+         9. **Stop** (\`BREAK\`)
+
+## Variables Used
+
+| Variable | Scope | Type | Usage | Actions |
+|----------|-------|------|-------|---------|
+| \`username\` | local | string | Predefined |  |
+| \`retries\` | local | number | Predefined |  |
+| \`sessionId\` | process | object | Predefined |  |
+| \`debug\` | global | boolean | Predefined |  |
+| \`attempts\` | process | unknown | Set | Init attempts, Read attempts |
+
+## Dependencies
+
+- **[Required]** **login-button.png** (resource)
+  Image used in action: Find login button
+- **[Required]** **login.png** (resource)
+  Image used in action: Click login
+- **[Required]** **wf-logout** (workflow)
+  Called from action: Logout fallback
+
+## Complexity Metrics
+
+- **Total Actions:** 12
+- **Branching Points:** 2
+- **Loops:** 1
+- **Max Depth:** 7
+- **Cyclomatic Complexity:** 2
+- **Cognitive Complexity:** 4
+
+**Overall Complexity:** Low
+
+## Visual Flowchart
+
+\`\`\`mermaid
+graph TD
+    find["Find login button<br/>(FIND)"]
+    set["Init attempts<br/>(SET_VARIABLE)"]
+    loop(["Retry loop<br/>(LOOP)"])
+    if{"Is logged in?<br/>(IF)"}
+    click["Click login<br/>(CLICK)"]
+    type["type<br/>(TYPE)"]
+    try(["Guard submit<br/>(TRY_CATCH)"])
+    get["Read attempts<br/>(GET_VARIABLE)"]
+    sub["Logout fallback<br/>(RUN_WORKFLOW)"]
+    shot["Capture dashboard<br/>(SCREENSHOT)"]
+    filter["Filter rows<br/>(FILTER)"]
+    brk(["Stop<br/>(BREAK)"])
+    find --> set
+    set --> loop
+    loop --> if
+    loop -->|false| brk
+    if --> click
+    if -->|false| type
+    click --> try
+    type --> loop
+    try --> get
+    try -.->|error| sub
+    get ==>|success| shot
+    shot --> filter
+\`\`\`
+
+## Error Handling
+
+This workflow includes 1 error handling block(s):
+
+- **Guard submit**: Catches and handles errors from its try block
+
+## Recent Changes
+
+Last updated: LOCALE(2025-12-15T11:30:00.000Z)
+
+### Version History:
+
+- Version 1 (LOCALE(2026-01-02T03:04:05.000Z)): Initial documentation
+- Version 2 (LOCALE(2026-01-02T03:04:05.000Z)): Second pass"
+`;
+
+exports[`workflow-documentation service contract > round-trips through localStorage under the same three keys > raw localStorage 1`] = `
+{
+  "workflow-action-comments": "[["comment-1767323045000-4fzzzxjyl",{"id":"comment-1767323045000-4fzzzxjyl","workflowId":"wf-login","actionId":"if","comment":"persisted comment","created":"2026-01-02T03:04:05.000Z","updated":"2026-01-02T03:04:05.000Z","author":"bob"}]]",
+  "workflow-documentation": "[["wf-login",{"workflowId":"wf-login","content":"# Persisted v2","format":"markdown","created":"2026-01-02T03:04:05.000Z","updated":"2026-01-02T03:04:05.000Z","version":2,"author":"bob","tags":["x"]}]]",
+  "workflow-documentation-versions": "[["wf-login",[{"version":1,"content":"# Persisted","timestamp":"2026-01-02T03:04:05.000Z","changeDescription":"Initial documentation"},{"version":2,"content":"# Persisted v2","timestamp":"2026-01-02T03:04:05.000Z","changeDescription":"edit"}]]]",
+}
+`;
+
+exports[`workflow-documentation service contract > round-trips through localStorage under the same three keys > reloaded state 1`] = `
+{
+  "comments": [
+    {
+      "actionId": "if",
+      "author": "bob",
+      "comment": "persisted comment",
+      "created": "2026-01-02T03:04:05.000Z",
+      "id": "comment-1767323045000-4fzzzxjyl",
+      "updated": "2026-01-02T03:04:05.000Z",
+      "workflowId": "wf-login",
+    },
+  ],
+  "doc": {
+    "author": "bob",
+    "content": "# Persisted v2",
+    "created": "2026-01-02T03:04:05.000Z",
+    "format": "markdown",
+    "tags": [
+      "x",
+    ],
+    "updated": "2026-01-02T03:04:05.000Z",
+    "version": 2,
+    "workflowId": "wf-login",
+  },
+  "history": [
+    {
+      "changeDescription": "Initial documentation",
+      "content": "# Persisted",
+      "timestamp": "2026-01-02T03:04:05.000Z",
+      "version": 1,
+    },
+    {
+      "changeDescription": "edit",
+      "content": "# Persisted v2",
+      "timestamp": "2026-01-02T03:04:05.000Z",
+      "version": 2,
+    },
+  ],
+}
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > after updateTOC 1`] = `
+"# Login "Flow" - UI Test
+
+## Table of Contents
+
+- [Login "Flow" - UI Test](#login-flow---ui-test)
+  - [Test Objective](#test-objective)
+  - [Test Preconditions](#test-preconditions)
+  - [Test Steps](#test-steps)
+  - [Expected Results](#expected-results)
+  - [Pass/Fail Criteria](#passfail-criteria)
+  - [Known Issues](#known-issues)
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+"
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > applied template doc 1`] = `
+{
+  "author": undefined,
+  "content": "# Login "Flow" - UI Test
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+",
+  "created": "2026-01-02T03:04:05.000Z",
+  "format": "markdown",
+  "tags": [
+    "ui-test",
+  ],
+  "updated": "2026-01-02T03:04:05.000Z",
+  "version": 1,
+  "workflowId": "wf-login",
+}
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > compare versions 1`] = `
+{
+  "added": [
+    "## Table of Contents",
+    "- [Login "Flow" - UI Test](#login-flow---ui-test)",
+    "  - [Test Objective](#test-objective)",
+    "  - [Test Preconditions](#test-preconditions)",
+    "  - [Test Steps](#test-steps)",
+    "  - [Expected Results](#expected-results)",
+    "  - [Pass/Fail Criteria](#passfail-criteria)",
+    "  - [Known Issues](#known-issues)",
+  ],
+  "modified": [],
+  "removed": [],
+}
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > find by content 1`] = `
+[
+  "wf-login",
+  "wf-2",
+]
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > history 1`] = `
+[
+  {
+    "changeDescription": "Initial documentation",
+    "content": "# Login "Flow" - UI Test
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+",
+    "timestamp": "2026-01-02T03:04:05.000Z",
+    "version": 1,
+  },
+  {
+    "changeDescription": "Updated table of contents",
+    "content": "# Login "Flow" - UI Test
+
+## Table of Contents
+
+- [Login "Flow" - UI Test](#login-flow---ui-test)
+  - [Test Objective](#test-objective)
+  - [Test Preconditions](#test-preconditions)
+  - [Test Steps](#test-steps)
+  - [Expected Results](#expected-results)
+  - [Pass/Fail Criteria](#passfail-criteria)
+  - [Known Issues](#known-issues)
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+",
+    "timestamp": "2026-01-02T03:04:05.000Z",
+    "version": 2,
+  },
+]
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > search 1`] = `
+[
+  {
+    "doc": {
+      "author": undefined,
+      "content": "# Login "Flow" - UI Test
+
+## Table of Contents
+
+- [Login "Flow" - UI Test](#login-flow---ui-test)
+  - [Test Objective](#test-objective)
+  - [Test Preconditions](#test-preconditions)
+  - [Test Steps](#test-steps)
+  - [Expected Results](#expected-results)
+  - [Pass/Fail Criteria](#passfail-criteria)
+  - [Known Issues](#known-issues)
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+",
+      "created": "2026-01-02T03:04:05.000Z",
+      "format": "markdown",
+      "tags": [
+        "ui-test",
+      ],
+      "updated": "2026-01-02T03:04:05.000Z",
+      "version": 2,
+      "workflowId": "wf-login",
+    },
+    "excerpt": "...# Login "Flow" - UI Test
+
+## Table of Contents
+
+- [Login "Flow" - UI Test]...",
+    "matches": 14,
+    "workflowId": "wf-login",
+  },
+  {
+    "doc": {
+      "author": undefined,
+      "content": "test test test login",
+      "created": "2026-01-02T03:04:05.000Z",
+      "format": "markdown",
+      "tags": [],
+      "updated": "2026-01-02T03:04:05.000Z",
+      "version": 1,
+      "workflowId": "wf-2",
+    },
+    "excerpt": "...test test test login...",
+    "matches": 3,
+    "workflowId": "wf-2",
+  },
+]
+`;
+
+exports[`workflow-documentation service contract > templates, TOC, search and version comparison > templates 1`] = `
+[
+  {
+    "category": "standard",
+    "content": "# {workflow.name}
+
+## Overview
+{workflow.description}
+
+## Purpose
+Describe the purpose of this workflow.
+
+## Prerequisites
+- List any required setup
+- Required variables
+- Required states
+
+## Steps
+1. First step
+2. Second step
+3. Third step
+
+## Expected Results
+Describe what should happen when this workflow completes.
+
+## Notes
+Any additional notes or considerations.
+",
+    "description": "Basic workflow documentation template",
+    "name": "Standard Workflow",
+  },
+  {
+    "category": "api",
+    "content": "# {workflow.name} - API Integration
+
+## API Endpoint
+- **URL:**
+- **Method:**
+- **Authentication:**
+
+## Request Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+|           |      |          |             |
+
+## Response Format
+\`\`\`json
+{
+  "example": "response"
+}
+\`\`\`
+
+## Error Codes
+- **200:** Success
+- **400:** Bad Request
+- **401:** Unauthorized
+- **500:** Server Error
+
+## Example Usage
+Describe how to use this integration.
+",
+    "description": "Template for API integration workflows",
+    "name": "API Integration",
+  },
+  {
+    "category": "ui-test",
+    "content": "# {workflow.name} - UI Test
+
+## Test Objective
+Describe what this test validates.
+
+## Test Preconditions
+- Browser state
+- Required test data
+- Initial screen/state
+
+## Test Steps
+1. [ ] Navigate to page
+2. [ ] Verify element exists
+3. [ ] Perform action
+4. [ ] Verify result
+
+## Expected Results
+- What should be visible
+- What state changes should occur
+- What data should be present
+
+## Pass/Fail Criteria
+- **Pass:**
+- **Fail:**
+
+## Known Issues
+List any known issues or limitations.
+",
+    "description": "Template for UI testing workflows",
+    "name": "UI Test",
+  },
+  {
+    "category": "data-processing",
+    "content": "# {workflow.name} - Data Processing
+
+## Input Data
+- **Format:**
+- **Source:**
+- **Example:**
+\`\`\`json
+{
+  "sample": "data"
+}
+\`\`\`
+
+## Processing Steps
+1. **Filter:**
+2. **Transform:**
+3. **Aggregate:**
+
+## Output Data
+- **Format:**
+- **Destination:**
+- **Example:**
+\`\`\`json
+{
+  "result": "data"
+}
+\`\`\`
+
+## Data Validation
+- Input validation rules
+- Output validation rules
+
+## Performance
+- Expected processing time
+- Data volume limits
+",
+    "description": "Template for data processing workflows",
+    "name": "Data Processing",
+  },
+  {
+    "category": "error-handling",
+    "content": "# {workflow.name} - Error Handling
+
+## Error Types Handled
+- **Type 1:** Description
+- **Type 2:** Description
+- **Type 3:** Description
+
+## Error Detection
+How errors are detected in this workflow.
+
+## Recovery Actions
+1. **For Error Type 1:**
+   - Action to take
+   - Fallback behavior
+
+2. **For Error Type 2:**
+   - Action to take
+   - Fallback behavior
+
+## Logging
+- What is logged
+- Where logs are stored
+- Log format
+
+## Notifications
+- Who is notified
+- When notifications are sent
+- Notification format
+
+## Retry Strategy
+- Number of retries
+- Retry delay
+- Backoff strategy
+",
+    "description": "Template for error handling workflows",
+    "name": "Error Handling",
+  },
+]
+`;
