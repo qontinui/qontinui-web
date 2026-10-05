@@ -30,6 +30,7 @@ import ast
 import re
 import sys
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -367,6 +368,14 @@ def test_live_uniqueness_and_checks() -> None:
             (
                 "pr_holds_released_coherent_check",
                 {"head_branch": "c", "released_by": "operator"},
+            ),
+            (
+                "pr_holds_released_coherent_check",
+                {"head_branch": "c2", "released_at": datetime.now(UTC)},
+            ),
+            (
+                "pr_holds_repo_lowercase_check",
+                {"head_branch": "u", "repo": "Qontinui/PRH01"},
             ),
         ):
             _assert_rejected_by(engine, expected, **bad)
