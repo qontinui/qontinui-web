@@ -283,6 +283,12 @@ _POST_TO_COORD_503 = Cell(
 
 EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_get": _get_family(operations.CoordTransportUnavailable),
+    # Transport arms stay CoordTransportUnavailable; only a JSON OBJECT error
+    # body becomes a dict detail — empty/HTML fall back to ``resp.text``.
+    "ops_get_structured_errors": {
+        **_get_family(operations.CoordTransportUnavailable),
+        "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
+    },
     "ops_post": _get_family(HTTPException),
     "ops_post_structured_errors": {
         **_get_family(HTTPException),
@@ -419,6 +425,16 @@ DELETE_BODY = {"role": "admin"}
 HELPERS: dict[str, Helper] = {
     "ops_get": Helper(
         _OPS_TARGET, "get", _fwd(operations._proxy_coord_get, PATH, tenant_id=TENANT)
+    ),
+    "ops_get_structured_errors": Helper(
+        _OPS_TARGET,
+        "get",
+        _fwd(
+            operations._proxy_coord_get,
+            PATH,
+            tenant_id=TENANT,
+            structured_errors=True,
+        ),
     ),
     "ops_post": Helper(
         _OPS_TARGET,
@@ -1217,8 +1233,9 @@ async def test_client_timeout(
 
 def test_timeout_rows_cover_every_helper() -> None:
     covered = {row[1] for row in _TIMEOUT_ROWS}
-    # The three flag variants of post share ops_post's constructor call.
+    # The flag variants share their base helper's constructor call.
     assert covered | {
+        "ops_get_structured_errors",
         "ops_post_structured_errors",
         "ops_post_return_status",
         "ops_post_non_json_success_as_empty",
