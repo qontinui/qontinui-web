@@ -1,7 +1,7 @@
 """coord.machine_ci_hosts + coord.maintenance_windows — the machine/CI-host join and the maintenance-window ledger
 
 Revision ID: coord_maintenance_windows_01
-Revises: cinode_03_dispatch_pr_head_base_sha
+Revises: findings_keyset_01
 Create Date: 2026-09-28
 
 Phase 1 of plan
@@ -124,8 +124,8 @@ these tables (3 and 4) land after this revision is applied in production.
 
 ## Head choice
 
-``down_revision`` is ``cinode_03_dispatch_pr_head_base_sha``, the single head
-of ``origin/main`` at ``1400265cb`` when this was written. If main has moved
+``down_revision`` is ``findings_keyset_01``, the single head
+of ``origin/main`` at ``fd5250c29`` when this was last re-pointed. If main has moved
 before this lands, re-point it at the new single head. Do not add an
 ``alembic merge``: this repo keeps strict single-head discipline.
 
@@ -155,7 +155,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_maintenance_windows_01"
-down_revision: str | Sequence[str] | None = "cinode_03_dispatch_pr_head_base_sha"
+down_revision: str | Sequence[str] | None = "findings_keyset_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
