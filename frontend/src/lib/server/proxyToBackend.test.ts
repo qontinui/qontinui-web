@@ -192,6 +192,19 @@ describe("proxyToBackend", () => {
       expect(sent(f).init.body).toBe('{"a":1}');
     });
 
+    it("an unresolved backend answers 503 even with an unparseable body", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("BACKEND_URL", "");
+      vi.stubEnv("NEXT_PUBLIC_API_URL", "");
+      cookieToken = "t";
+      const res = await proxyToBackend(
+        req({ method: "POST", body: "not json" }),
+        PATH,
+        { ...DETAIL_401, forwardBody: "json" }
+      );
+      expect(res.status).toBe(503);
+    });
+
     it("forwardBody json: an unparseable body is a caught 500", async () => {
       cookieToken = "t";
       const f = upstream("{}");
@@ -254,16 +267,28 @@ describe("proxyToBackend", () => {
       expect(res.headers.get("Content-Type")).toBe("application/json");
     });
 
-    it("answers an upstream 204 with an empty 204", async () => {
+    it.each([204, 205, 304])(
+      "answers an upstream %i with an empty body and that status",
+      async (status) => {
+        cookieToken = "t";
+        upstream(null, status);
+        const res = await proxyToBackend(
+          req({ method: "DELETE" }),
+          PATH,
+          DETAIL_401
+        );
+        expect(res.status).toBe(status);
+        expect(await res.text()).toBe("");
+        expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      }
+    );
+
+    it("sets X-Content-Type-Options: nosniff on a proxied answer", async () => {
       cookieToken = "t";
-      upstream(null, 204);
-      const res = await proxyToBackend(
-        req({ method: "DELETE" }),
-        PATH,
-        DETAIL_401
-      );
-      expect(res.status).toBe(204);
-      expect(await res.text()).toBe("");
+      upstream("<html></html>", 200, "text/html");
+      const res = await proxyToBackend(req(), PATH, DETAIL_401);
+      expect(res.headers.get("Content-Type")).toBe("text/html");
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     });
   });
 
