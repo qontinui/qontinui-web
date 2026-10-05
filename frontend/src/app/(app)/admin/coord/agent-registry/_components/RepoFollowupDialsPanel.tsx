@@ -10,6 +10,7 @@ import {
   RefreshButton,
   StatusBadge,
   UNKNOWN_AMBER,
+  WAITING_AMBER,
 } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   DELIVERY_LABEL,
   DELIVERY_MODES,
   DELIVERY_PROVENANCE_NOTE,
+  deliveryCurrentLabel,
   EMPTY_READING,
   FOLLOWUP_SCOPES,
   FOLLOWUP_SCOPE_PALETTE,
@@ -137,9 +139,11 @@ export function RepoFollowupDialsPanel() {
 
         <div
           className={`rounded-md border px-3 py-2 text-xs ${
-            headline.amber || mode === "shadow"
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-              : "border-border bg-card/30"
+            headline.amber
+              ? UNKNOWN_AMBER
+              : mode === "shadow"
+                ? WAITING_AMBER
+                : "border-border bg-card/30"
           }`}
           data-testid="repo-followup-rollout"
           data-rollout-mode={mode ?? "unknown"}
@@ -206,12 +210,33 @@ export function RepoFollowupDialsPanel() {
 function Notice({ testId, children }: { testId: string; children: ReactNode }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+      className={`flex items-start gap-2 rounded-md border px-3 py-2 ${UNKNOWN_AMBER}`}
       data-testid={testId}
     >
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-      <p className="text-xs text-amber-800 dark:text-amber-200">{children}</p>
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <p className="text-xs">{children}</p>
     </div>
+  );
+}
+
+/**
+ * An inline caveat in the ignorance-floor amber (R3) — the registered
+ * `UNKNOWN_AMBER` primitive as a callout, so no amber is hand-typed here.
+ */
+function AmberNote({
+  testId,
+  children,
+}: {
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <p
+      className={`rounded-md border px-2 py-1 text-xs ${UNKNOWN_AMBER}`}
+      data-testid={testId}
+    >
+      {children}
+    </p>
   );
 }
 
@@ -264,20 +289,14 @@ function RepoRow({
           scopeWriteError || deliveryWriteError ? (
             <div className="space-y-1">
               {scopeWriteError && (
-                <p
-                  className="text-xs text-amber-700 dark:text-amber-300"
-                  data-testid="repo-followup-scope-write-error"
-                >
+                <AmberNote testId="repo-followup-scope-write-error">
                   The scope change was not applied: {scopeWriteError}.
-                </p>
+                </AmberNote>
               )}
               {deliveryWriteError && (
-                <p
-                  className="text-xs text-amber-700 dark:text-amber-300"
-                  data-testid="repo-followup-delivery-write-error"
-                >
+                <AmberNote testId="repo-followup-delivery-write-error">
                   The delivery change was not applied: {deliveryWriteError}.
-                </p>
+                </AmberNote>
               )}
             </div>
           ) : undefined
@@ -354,7 +373,13 @@ function ScopeEditor({
     draftPaths.every((p, i) => p === stored[i]);
   // Nothing to save: same scope and same globs as coord's answer. (For
   // `code_only` the body always carries its globs, so compare them directly.)
-  const unchanged = known && draftScope === view.scope && sameGlobs;
+  // A repo on the undeclared default can still record `all` explicitly — an
+  // operator's "every merge" is a different fact from nobody having chosen.
+  const unchanged =
+    known &&
+    draftScope === view.scope &&
+    sameGlobs &&
+    view.resolved_scope !== "default";
 
   return (
     <div className="space-y-2" data-testid="repo-followup-scope-editor">
@@ -380,11 +405,11 @@ function ScopeEditor({
         </p>
       )}
       {!known && (
-        <p className="text-xs text-amber-700 dark:text-amber-300">
+        <AmberNote>
           The current scope is unknown, so nothing is pre-selected. Saving sets
           the scope you choose; any globs coord has stored are kept unless you
           enter new ones here.
-        </p>
+        </AmberNote>
       )}
 
       <div className="space-y-1">
@@ -410,12 +435,9 @@ function ScopeEditor({
       </div>
 
       {plan !== null && "error" in plan && (
-        <p
-          className="text-xs text-amber-700 dark:text-amber-300"
-          data-testid="repo-followup-scope-invalid"
-        >
+        <AmberNote testId="repo-followup-scope-invalid">
           {plan.error}.
-        </p>
+        </AmberNote>
       )}
 
       <Button
@@ -454,6 +476,10 @@ function DeliveryEditor({
 }) {
   /** The mode whose write is in flight, so only its button spins. */
   const [pending, setPending] = useState<DeliveryMode | null>(null);
+  // Coord's read is fail-open, so a value it resolves is not proof that it
+  // was set: `provenance_known: false` renders it qualified, never as a
+  // confirmed setting.
+  const confirmed = reading.delivery?.provenance_known === true;
   const current: DeliveryMode | null =
     reading.deliveryReadbackError === null
       ? (reading.delivery?.mode ?? null)
@@ -473,7 +499,10 @@ function DeliveryEditor({
             key={m}
             size="sm"
             variant={current === m ? "default" : "outline"}
-            disabled={!canEdit || busy || current === m}
+            // While coord cannot confirm the value was SET (fail-open read),
+            // the shown mode may be the default — so it can still be written
+            // explicitly.
+            disabled={!canEdit || busy || (current === m && confirmed)}
             onClick={() => {
               setPending(m);
               onChoose(m);
@@ -490,10 +519,11 @@ function DeliveryEditor({
         ))}
         <Badge
           variant="outline"
-          className={`text-[11px] ${current === null ? UNKNOWN_AMBER : ""}`}
+          className={`text-[11px] ${current === null || !confirmed ? UNKNOWN_AMBER : ""}`}
           data-testid="repo-followup-delivery-current"
+          data-provenance={confirmed ? "confirmed" : "unconfirmed"}
         >
-          {current === null ? UNKNOWN_DASH : DELIVERY_LABEL[current]}
+          {deliveryCurrentLabel(current, confirmed)}
         </Badge>
       </div>
       {current !== null && (
@@ -502,13 +532,10 @@ function DeliveryEditor({
         </p>
       )}
       {problem && (
-        <p
-          className="text-xs text-amber-700 dark:text-amber-300"
-          data-testid="repo-followup-delivery-problem"
-        >
+        <AmberNote testId="repo-followup-delivery-problem">
           The delivery mode is {current === null ? "unknown" : "possibly stale"}
           : {problem}.
-        </p>
+        </AmberNote>
       )}
       <p className="text-[11px] text-muted-foreground">
         {DELIVERY_PROVENANCE_NOTE}

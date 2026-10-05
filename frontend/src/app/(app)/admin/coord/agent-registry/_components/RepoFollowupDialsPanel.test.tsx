@@ -234,7 +234,7 @@ describe("RepoFollowupDialsPanel", () => {
     await waitFor(() =>
       expect(
         within(detail).getByTestId("repo-followup-delivery-current").textContent
-      ).toBe("Notify only")
+      ).toBe("Notify only (resolved, not confirmed)")
     );
   });
 
@@ -334,5 +334,87 @@ describe("RepoFollowupDialsPanel", () => {
     expect(screen.getByTestId("repo-followup-rollout").textContent).toContain(
       "last good read"
     );
+  });
+
+  it("an unconfirmed delivery mode is qualified, amber, and can be re-written", async () => {
+    serve({
+      [NOTES]: scopeView(NOTES, "all"),
+      [WEB]: scopeView(WEB, "all"),
+    });
+    render(<RepoFollowupDialsPanel />);
+    await waitFor(() =>
+      expect(rowFor(WEB).textContent).toContain("Every merge")
+    );
+    fireEvent.click(
+      within(rowFor(WEB)).getByRole("button", { expanded: false })
+    );
+    const detail = await screen.findByTestId("repo-followup-detail");
+    const current = within(detail).getByTestId(
+      "repo-followup-delivery-current"
+    );
+    await waitFor(() =>
+      expect(current.textContent).toBe(
+        "In the author's session (resolved, not confirmed)"
+      )
+    );
+    expect(current.getAttribute("data-provenance")).toBe("unconfirmed");
+    expect(current.className).toContain("bg-amber-500/10");
+    // The resolved value may be the fail-open default, so writing it
+    // explicitly stays possible.
+    expect(
+      (
+        within(detail).getByTestId(
+          "repo-followup-delivery-in_session_with_spawn_fallback"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(false);
+  });
+
+  it("a repo on the undeclared default can save `all` explicitly", async () => {
+    serve({
+      [NOTES]: scopeView(NOTES, "all", { resolved: "default" }),
+      [WEB]: scopeView(WEB, "all", { resolved: "repo" }),
+    });
+    render(<RepoFollowupDialsPanel />);
+    await waitFor(() => expect(rowFor(NOTES).textContent).toContain("default"));
+    fireEvent.click(
+      within(rowFor(NOTES)).getByRole("button", { expanded: false })
+    );
+    let detail = await screen.findByTestId("repo-followup-detail");
+    expect(
+      (
+        within(detail).getByTestId(
+          "repo-followup-scope-save"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(false);
+    httpPut.mockResolvedValueOnce({
+      ok: true,
+      repo: NOTES,
+      written_scope: "all",
+      stored_code_paths: [],
+      updated_by: null,
+      effective: scopeView(NOTES, "all", { resolved: "repo" }),
+      readback_error: null,
+    });
+    fireEvent.click(within(detail).getByTestId("repo-followup-scope-save"));
+    await waitFor(() =>
+      expect(httpPut).toHaveBeenCalledWith(
+        "/api/v1/operations/post-merge-followup-scope",
+        { repo: NOTES, scope: "all" }
+      )
+    );
+    // Already declared `all`: nothing left to save.
+    fireEvent.click(
+      within(rowFor(WEB)).getByRole("button", { expanded: false })
+    );
+    detail = await screen.findByTestId("repo-followup-detail");
+    expect(
+      (
+        within(detail).getByTestId(
+          "repo-followup-scope-save"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
   });
 });
