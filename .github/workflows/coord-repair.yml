@@ -181,13 +181,13 @@ jobs:
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
-      # Pinned, where backend-ci.yml installs whatever is latest: 2.4.1 is the
-      # Poetry that wrote the repo-root poetry.lock (the newest lock here), so
-      # it is the version CI has most recently been resolving with.
+      # Pinned, where backend-ci.yml installs whatever is latest: 2.1.3 is the
+      # Poetry that generated backend/poetry.lock — the lock this step
+      # installs from (the repo-root poetry.lock is a different project).
       - name: "Regen: install Poetry"
         if: inputs.kind == 'regen'
         env:
-          POETRY_VERSION: "2.4.1"
+          POETRY_VERSION: "2.1.3"
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
