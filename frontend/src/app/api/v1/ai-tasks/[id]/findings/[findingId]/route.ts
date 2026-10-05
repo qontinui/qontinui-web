@@ -15,7 +15,6 @@ export async function PATCH(
       onMissingToken: "401",
       unauthorizedBodyKey: "detail",
       forwardBody: "json",
-      body: "json",
       errorBody: "detail",
     }
   );

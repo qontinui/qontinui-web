@@ -41,14 +41,6 @@ export type ProxyOptions = {
    * `"reencoded"` is `searchParams.toString()`. Default `"drop"`.
    */
   query?: "drop" | "raw" | "reencoded";
-  /**
-   * `"json"` re-serialises the upstream body with `response.json()` (a
-   * non-JSON body is a caught error); `"passthrough"` forwards the text with
-   * the upstream `Content-Type` and keeps a 204.
-   */
-  body: "json" | "passthrough";
-  /** `"json"` only: answer an upstream 204 with an empty 204. */
-  keep204?: boolean;
   errorBody: ErrorBody;
 } & (
   | { onMissingToken: "401"; unauthorizedBodyKey: "detail" | "error" }
@@ -133,16 +125,8 @@ async function forward(
     }
   );
 
-  if (
-    response.status === 204 &&
-    (options.body === "passthrough" || options.keep204)
-  ) {
+  if (response.status === 204) {
     return new NextResponse(null, { status: 204 });
-  }
-  if (options.body === "json") {
-    return NextResponse.json(await response.json(), {
-      status: response.status,
-    });
   }
   return new NextResponse(await response.text(), {
     status: response.status,
@@ -155,7 +139,9 @@ async function forward(
 
 /**
  * Forward `request` to `${backend}${backendPath}` with the caller's bearer
- * token. An unresolved backend base answers the structured 503 from
+ * token, and pass the upstream answer through as it came: its status, its
+ * text and its `Content-Type` (`application/json` when it sends none), with a
+ * 204 kept empty. An unresolved backend base answers the structured 503 from
  * `backendBaseOrResponse()`; a missing token answers 401 before that.
  */
 export async function proxyToBackend(

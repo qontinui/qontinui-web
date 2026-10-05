@@ -7,7 +7,6 @@ const OPTIONS: ProxyOptions = {
   onMissingToken: "forward",
   forwardBody: "text",
   query: "raw",
-  body: "passthrough",
   errorBody: "throw",
 };
 

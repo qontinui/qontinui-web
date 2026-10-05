@@ -12,7 +12,6 @@ export async function GET(
     onMissingToken: "401",
     unauthorizedBodyKey: "error",
     query: "raw",
-    body: "json",
     errorBody: { error: "Failed to fetch jobs" },
   });
 }

@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
     tokenSources: ["cookie", "header"],
     onMissingToken: "401",
     unauthorizedBodyKey: "error",
-    body: "json",
     errorBody: "details",
   });
 }

@@ -7,7 +7,6 @@ const OPTIONS: ProxyOptions = {
   onMissingToken: "401",
   unauthorizedBodyKey: "detail",
   forwardBody: "json",
-  body: "json",
   errorBody: "detail",
 };
 
@@ -29,8 +28,5 @@ export async function PUT(request: NextRequest, { params }: Context) {
 
 export async function DELETE(request: NextRequest, { params }: Context) {
   const { runId } = await params;
-  return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, {
-    ...OPTIONS,
-    keep204: true,
-  });
+  return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
 }
