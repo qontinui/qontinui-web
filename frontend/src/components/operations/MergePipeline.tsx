@@ -66,7 +66,7 @@
 // one collapsed residue panel), and the row gained the three things an
 // operator previously had to scroll and cross-reference to find.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -289,9 +289,11 @@ function PipelineHealthStrip({
     () => deriveCandidateChurn(economicsByRepo),
     [economicsByRepo]
   );
+  // Before the first good read these are counts of rows nobody has fetched:
+  // a dash, not a 0 that would read as an idle pipeline.
   const badges: HealthBadge[] = [
-    { key: "queue", label: `queue ${health.queueDepth}` },
-    { key: "in-flight", label: `in flight ${health.inFlight}` },
+    { key: "queue", label: `queue ${loaded ? health.queueDepth : "–"}` },
+    { key: "in-flight", label: `in flight ${loaded ? health.inFlight : "–"}` },
   ];
   if (health.needsAttention > 0) {
     badges.push({
@@ -900,6 +902,8 @@ export function MergePipeline() {
     prs,
     mergedPrs,
     mergedError,
+    prsError,
+    prsLoaded,
     mergedCount,
     economicsByRepo,
     suggestions,
@@ -919,15 +923,30 @@ export function MergePipeline() {
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
+  // Deep link `?tab=train&repo=<owner/name>` — how `/admin/coord/ci`'s repo
+  // rows hand the operator to the train blockers this page owns (plan
+  // `2026-10-04-ci-dashboard-in-the-dev-ops-console` D2: link, never
+  // re-render). Read once after mount rather than in the state initialisers,
+  // so the server render and the first client render agree, and without
+  // `useSearchParams` (which would demand a Suspense boundary on the route).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "train") setFilter("train");
+    const repo = params.get("repo");
+    if (repo) setQuery(repo);
+  }, []);
+
   // Merge-train liveness — its own hook on its own slower cadence, and only
   // while the Train tab is open (coord's health read scales with the
-  // ready-unmerged backlog, and every dashboard request pins a backend DB
-  // connection for its whole lifetime).
+  // ready-unmerged backlog, and every dashboard request is coord work).
   const { health: trainHealth, loaded: trainHealthLoaded } = useTrainHealth(
     filter === "train"
   );
 
-  const loaded = proposals !== null && prs !== null;
+  // `prsLoaded`, not `prs !== null`: a first PR read that fails leaves `prs`
+  // as `[]`, and treating that as loaded would show a green "merging normally"
+  // strip and an empty list beside a notice saying the pipeline is unknown.
+  const loaded = proposals !== null && prsLoaded;
   const rows = useMemo(() => {
     // ONE row per PR, across AND within the two reads — see `fusePipelinePrs`.
     //
@@ -1067,8 +1086,10 @@ export function MergePipeline() {
         tabs={FILTERS.map((f) => ({
           id: f.id,
           label: f.label,
-          count:
-            f.id === "merged" && mergedPrs === null
+          // Unloaded is unknown, not zero: same `–` rule, for every tab.
+          count: !loaded
+            ? null
+            : f.id === "merged" && mergedPrs === null
               ? mergedCount
               : counts[f.id],
           attention: f.id === "attention" && counts[f.id] > 0,
@@ -1083,6 +1104,22 @@ export function MergePipeline() {
       />
 
       {error && <p className="text-xs text-red-300">{error}</p>}
+
+      {/* The PR list feeds every tab, Train included, and a failed read keeps
+          the previous rows: without this the page passes for current while
+          coord is slow. Before the first good read the list is empty for want
+          of an answer, which must not read as "nothing in flight". */}
+      {prsError && (
+        <p
+          className="text-xs text-amber-300"
+          role="status"
+          data-testid="prs-read-failed"
+        >
+          {prsLoaded
+            ? `Pull requests could not be refreshed (${prsError}). Showing the last successful read, which may be out of date.`
+            : `Pull requests could not be loaded (${prsError}). The pipeline is unknown, not empty.`}
+        </p>
+      )}
 
       {/* A failed merged read is an INCOMPLETE history, not an empty one, and
           the list would otherwise pass for the whole thing: the only landed rows

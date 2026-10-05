@@ -271,15 +271,14 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
 )
-# Project Overview — the business-leader surface (overview.*). Phase 2 of
-# ``2026-09-19-project-overview-for-business-leaders``: the estimate baseline.
-# Tenant-scoped on the active coord tenant, so the frontend attaches
+# Project Overview — the business-leader surface (overview.*): the project
+# settings, hand-written. Tenant-scoped on the active coord tenant, so the frontend attaches
 # ``X-Qontinui-Active-Tenant`` to this prefix (``ACTIVE_TENANT_URL_PREFIXES``
 # in ``frontend/src/services/http-client.ts``).
 api_router.include_router(overview.router, prefix="/overview", tags=["overview"])
 # The overview authoring contract (plan 2026-09-20-overview-authoring-layer):
 # the resource catalog, the change log, and the generic CRUD routes the
-# registry builds. Same prefix, disjoint paths.
+# registry builds (the estimate among them). Same prefix, disjoint paths.
 api_router.include_router(
     overview_authoring_router, prefix="/overview", tags=["overview"]
 )
