@@ -16,7 +16,7 @@ from tests._alembic_harness import backend_root, load_revision_module
 # `_PARENT_REVISION_ID` MUST equal the revision's own `down_revision`; re-point
 # both together if a sibling lands underneath this revision.
 _REVISION_ID = "custody_01_worktree_census_occupancy"
-_PARENT_REVISION_ID = "journey_01_edge_ledger"
+_PARENT_REVISION_ID = "cihost_01_ci_host_agent_fleet"
 
 _EXPECTED: tuple[tuple[str, type], ...] = (
     ("custody_session_id", sa.Text),

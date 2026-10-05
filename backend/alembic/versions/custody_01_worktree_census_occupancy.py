@@ -1,7 +1,7 @@
 """custody 01 — coord.worktree_census checkout-occupancy (custody) columns
 
 Revision ID: custody_01_worktree_census_occupancy
-Revises: journey_01_edge_ledger
+Revises: cihost_01_ci_host_agent_fleet
 Create Date: 2026-09-26
 
 Phase 1a (web migration) of plan
@@ -64,7 +64,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "custody_01_worktree_census_occupancy"
-down_revision: str = "journey_01_edge_ledger"
+down_revision: str = "cihost_01_ci_host_agent_fleet"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
