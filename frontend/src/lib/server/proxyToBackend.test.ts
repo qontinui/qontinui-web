@@ -24,13 +24,11 @@ const DETAIL_401: ProxyOptions = {
   tokenSources: ["cookie", "header"],
   onMissingToken: "401",
   unauthorizedBodyKey: "detail",
-  body: "json",
   errorBody: "detail",
 };
 const FORWARD: ProxyOptions = {
   tokenSources: ["cookie"],
   onMissingToken: "forward",
-  body: "passthrough",
   errorBody: "throw",
 };
 
@@ -225,31 +223,24 @@ describe("proxyToBackend", () => {
   });
 
   describe("response body", () => {
-    it("json re-serialises the upstream JSON with its status", async () => {
+    it("keeps the upstream JSON byte-for-byte with its status", async () => {
       cookieToken = "t";
       upstream('{ "a" : 1 }', 422, "application/json");
       const res = await proxyToBackend(req(), PATH, DETAIL_401);
       expect(res.status).toBe(422);
-      expect(await res.text()).toBe('{"a":1}');
+      expect(await res.text()).toBe('{ "a" : 1 }');
     });
 
-    it("json: a non-JSON upstream body is a caught 500", async () => {
+    it("keeps a non-JSON upstream text, status and Content-Type", async () => {
       cookieToken = "t";
       upstream("Bad Gateway", 502, "text/plain");
       const res = await proxyToBackend(req(), PATH, DETAIL_401);
-      expect(res.status).toBe(500);
-    });
-
-    it("passthrough keeps the upstream text, status and Content-Type", async () => {
-      cookieToken = "t";
-      upstream("Bad Gateway", 502, "text/plain");
-      const res = await proxyToBackend(req(), PATH, FORWARD);
       expect(res.status).toBe(502);
       expect(res.headers.get("Content-Type")).toBe("text/plain");
       expect(await res.text()).toBe("Bad Gateway");
     });
 
-    it("passthrough defaults a missing Content-Type to application/json", async () => {
+    it("defaults a missing Content-Type to application/json", async () => {
       cookieToken = "t";
       vi.stubGlobal(
         "fetch",
@@ -262,32 +253,8 @@ describe("proxyToBackend", () => {
       const res = await proxyToBackend(req(), PATH, FORWARD);
       expect(res.headers.get("Content-Type")).toBe("application/json");
     });
-  });
 
-  describe("204", () => {
-    it("passthrough answers an upstream 204 with an empty 204", async () => {
-      cookieToken = "t";
-      upstream(null, 204);
-      const res = await proxyToBackend(
-        req({ method: "DELETE" }),
-        PATH,
-        FORWARD
-      );
-      expect(res.status).toBe(204);
-      expect(await res.text()).toBe("");
-    });
-
-    it("json + keep204 answers an upstream 204 with an empty 204", async () => {
-      cookieToken = "t";
-      upstream(null, 204);
-      const res = await proxyToBackend(req({ method: "DELETE" }), PATH, {
-        ...DETAIL_401,
-        keep204: true,
-      });
-      expect(res.status).toBe(204);
-    });
-
-    it("json without keep204: an upstream 204 is a caught 500", async () => {
+    it("answers an upstream 204 with an empty 204", async () => {
       cookieToken = "t";
       upstream(null, 204);
       const res = await proxyToBackend(
@@ -295,7 +262,8 @@ describe("proxyToBackend", () => {
         PATH,
         DETAIL_401
       );
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe("");
     });
   });
 

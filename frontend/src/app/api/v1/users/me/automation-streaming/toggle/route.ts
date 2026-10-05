@@ -11,7 +11,6 @@ export async function POST(request: NextRequest) {
       onMissingToken: "401",
       unauthorizedBodyKey: "error",
       forwardBody: "json",
-      body: "json",
       errorBody: "details",
     }
   );

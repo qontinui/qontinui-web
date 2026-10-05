@@ -14,7 +14,6 @@ export async function GET(
       tokenSources: ["cookie", "header"],
       onMissingToken: "401",
       unauthorizedBodyKey: "error",
-      body: "json",
       errorBody: { error: "Failed to fetch RAG dashboard" },
     }
   );

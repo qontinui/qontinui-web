@@ -15,7 +15,6 @@ export async function GET(
       onMissingToken: "401",
       unauthorizedBodyKey: "detail",
       query: "raw",
-      body: "json",
       errorBody: "detail",
     }
   );

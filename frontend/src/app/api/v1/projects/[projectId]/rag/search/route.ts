@@ -12,7 +12,6 @@ export async function POST(
     onMissingToken: "401",
     unauthorizedBodyKey: "error",
     forwardBody: "text",
-    body: "json",
     errorBody: { error: "Failed to perform search" },
   });
 }
