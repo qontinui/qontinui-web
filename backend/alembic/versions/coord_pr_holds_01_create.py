@@ -18,7 +18,14 @@ authoritative hold: ``is_held = active coord.pr_holds row OR pr_state =
 
 One row per hold. A row is LIVE while ``released_at IS NULL``.
 
-* ``repo`` TEXT NOT NULL, ``owner/name``.
+* ``repo`` TEXT NOT NULL, ``owner/name``, LOWERCASE (CHECK
+  ``repo_lowercase``). GitHub treats ``owner/name`` case-insensitively and
+  coord's PR rows carry ``full_name`` as GitHub sent it, so the writer
+  lowercases and the reader matches on ``lower(pr.repo)``. Without the CHECK a
+  differently-cased hold would read as no hold and the PR would land: a
+  fail-OPEN miss the fail-closed read cannot catch. Same rule as
+  ``coord_ci_pool_observations_01``. ``head_branch`` is NOT lowercased: git
+  branch names are case-sensitive.
 * ``head_branch`` TEXT NOT NULL. The hold is keyed by branch so it can be
   placed BEFORE the PR exists (plan D3): ``coord_create_pr { hold: true }``
   inserts the hold first and creates the PR second, so there is no window in
@@ -128,7 +135,9 @@ def upgrade() -> None:
             CONSTRAINT pr_holds_held_by_nonblank_check
                 CHECK (length(btrim(held_by)) > 0),
             CONSTRAINT pr_holds_released_coherent_check
-                CHECK ((released_at IS NULL) = (released_by IS NULL))
+                CHECK ((released_at IS NULL) = (released_by IS NULL)),
+            CONSTRAINT pr_holds_repo_lowercase_check
+                CHECK (repo = lower(repo))
         )
         """
     )
@@ -157,6 +166,12 @@ def upgrade() -> None:
         """
         COMMENT ON COLUMN coord.pr_holds.pr_number IS
             'NULL until coord binds the hold to the PR when it opens (ingest_pull_request). A NULL here means not yet bound, never no PR.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.pr_holds.repo IS
+            'owner/name, lowercased by the writer (repo_lowercase CHECK). Readers match on lower() of the PR row repo.'
         """
     )
     op.execute(
