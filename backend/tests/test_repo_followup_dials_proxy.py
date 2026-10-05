@@ -492,3 +492,138 @@ def test_routes_are_mounted_under_operations_in_the_real_app():
     paths = {getattr(r, "path", None) for r in app.routes}
     assert f"{API_PREFIX}/post-merge-followup-scope" in paths
     assert f"{API_PREFIX}/continuation-delivery-mode" in paths
+
+
+# ---------------------------------------------------------------------------
+# Authorization — the REAL dependencies, not the passing overrides above
+# ---------------------------------------------------------------------------
+
+
+def _identity(roles: tuple[str, ...]):
+    """A coord identity whose ONLY membership (home) carries ``roles``."""
+    from app.services.coord_identity import CoordIdentity, CoordTenant
+
+    home = uuid4()
+    return CoordIdentity(
+        operator_id=uuid4(),
+        home_tenant_id=home,
+        email="operator@example.com",
+        roles=roles,
+        tenants=(CoordTenant(tenant_id=home, slug="home", roles=roles),),
+        # The cross-tenant union is set TRUE throughout: a gate that read it
+        # instead of the effective tenant's roles would wrongly pass.
+        is_admin=True,
+    )
+
+
+def _real_auth_app() -> FastAPI:
+    """The router with ONLY the user dependency stubbed (non-superuser), so
+    ``require_coord_tenant_admin`` / ``get_tenant_id`` run for real."""
+    from app.api.deps import get_current_active_user_async
+    from app.api.v1.endpoints.repo_followup_dials import router
+
+    app = FastAPI()
+    user = MagicMock()
+    user.is_superuser = False
+    app.dependency_overrides[get_current_active_user_async] = lambda: user
+    app.include_router(router, prefix=API_PREFIX)
+    return app
+
+
+@contextmanager
+def _real_identity(identity):
+    with (
+        patch(
+            "app.api.v1.endpoints.operations.get_coord_identity",
+            AsyncMock(return_value=identity),
+        ),
+        patch(
+            "app.api.v1.endpoints.repo_followup_dials.get_coord_identity",
+            AsyncMock(return_value=identity),
+        ),
+    ):
+        yield
+
+
+class TestAuthorization:
+    @pytest.mark.parametrize(
+        "path,body",
+        [
+            ("post-merge-followup-scope", {"repo": REPO, "scope": "none"}),
+            ("continuation-delivery-mode", {"repo": REPO, "mode": "notify_only"}),
+        ],
+    )
+    def test_a_non_admin_put_is_refused_before_any_coord_call(self, path, body):
+        """Every other test overrides the PUT gate with a passing resolver, so
+        swapping a PUT to ``get_tenant_id`` would keep them green. This runs the
+        real ``require_coord_tenant_admin`` against a Developer."""
+        client = TestClient(_real_auth_app())
+        put = AsyncMock(return_value=_mock_response(200, {"ok": True}))
+        get = AsyncMock(return_value=_mock_response(200, COORD_SCOPE_DEFAULT))
+        with _coord(get=get, put=put), _real_identity(_identity(("developer",))):
+            resp = client.put(f"{API_PREFIX}/{path}", json=body)
+        assert resp.status_code == 403
+        assert "not_coord_tenant_admin" in resp.text
+        put.assert_not_awaited()
+        get.assert_not_awaited()
+
+    def test_an_admin_put_forwards_bearer_and_active_tenant_to_coord(self):
+        """Coord builds its OperatorContext from the bearer and re-scopes on
+        the active-tenant header — both must reach the PUT and the read-back."""
+        identity = _identity(("admin",))
+        active = str(identity.home_tenant_id)
+        client = TestClient(_real_auth_app())
+        put = AsyncMock(
+            return_value=_mock_response(200, dict(COORD_SCOPE_DECLARED, ok=True))
+        )
+        get = AsyncMock(return_value=_mock_response(200, COORD_SCOPE_DECLARED))
+        with _coord(get=get, put=put), _real_identity(identity):
+            resp = client.put(
+                f"{API_PREFIX}/post-merge-followup-scope",
+                json={"repo": REPO, "scope": "code_only", "code_paths": ["a/**"]},
+                headers={
+                    "Authorization": "Bearer caller-token",
+                    "X-Qontinui-Active-Tenant": active,
+                },
+            )
+        assert resp.status_code == 200
+        for call in (put.call_args, get.call_args):
+            headers = call.kwargs["headers"]
+            assert headers["Authorization"] == "Bearer caller-token"
+            assert headers["X-Qontinui-Active-Tenant"] == active
+
+    def test_a_member_get_forwards_bearer_and_reports_can_edit_false(self):
+        client = TestClient(_real_auth_app())
+        get = AsyncMock(return_value=_mock_response(200, COORD_SCOPE_DEFAULT))
+        with _coord(get=get), _real_identity(_identity(("developer",))):
+            resp = client.get(
+                f"{API_PREFIX}/continuation-delivery-mode",
+                params={"repo": REPO},
+                headers={"Authorization": "Bearer member-token"},
+            )
+        # COORD_SCOPE_DEFAULT has no effective_level: a 502, but the call
+        # still went out with the member's bearer.
+        assert get.call_args.kwargs["headers"]["Authorization"] == (
+            "Bearer member-token"
+        )
+        assert resp.status_code == 502
+
+    @pytest.mark.parametrize(
+        "path,body",
+        [
+            ("post-merge-followup-scope", {"repo": REPO, "scope": "none"}),
+            ("continuation-delivery-mode", {"repo": REPO, "mode": "notify_only"}),
+        ],
+    )
+    def test_coords_admin_required_403_passes_through(
+        self, client: TestClient, path, body
+    ):
+        """The web gate passed but coord's ``rbac::is_tenant_admin`` refused:
+        coord's own reason must reach the operator, not a generic failure."""
+        put = AsyncMock(return_value=_mock_response(403, {"error": "admin_required"}))
+        get = AsyncMock()
+        with _coord(put=put, get=get):
+            resp = client.put(f"{API_PREFIX}/{path}", json=body)
+        assert resp.status_code == 403
+        assert "admin_required" in resp.text
+        get.assert_not_awaited()

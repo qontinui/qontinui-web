@@ -9,6 +9,7 @@ import {
   FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
   UNKNOWN_DASH,
   buildScopeWrite,
+  deliveryCurrentLabel,
   fleetRolloutMode,
   parseGlobLines,
   readErrorText,
@@ -117,10 +118,14 @@ describe("rollout mode", () => {
     ]);
     expect(disagree.mode).toBeNull();
     expect(disagree.unknownCause).toBe("disagree");
-    expect(
-      fleetRolloutMode([reading(view()), reading(view({ mode: null }))])
-        .unknownCause
-    ).toBe("disagree");
+    const missing = fleetRolloutMode([
+      reading(view()),
+      reading(view({ mode: null })),
+    ]);
+    expect(missing.unknownCause).toBe("missing");
+    expect(rolloutHeadline(missing).detail).toContain(
+      "without saying which rollout mode"
+    );
   });
 
   it("names WHY it is unknown — in flight, no repos, or every read failed", () => {
@@ -238,5 +243,19 @@ describe("parseGlobLines / readErrorText", () => {
     expect(readErrorText("GET x failed: 404 - Not Found")).toContain(
       "does not offer"
     );
+  });
+});
+
+describe("deliveryCurrentLabel", () => {
+  it("qualifies a value coord resolved but cannot confirm was set", () => {
+    expect(deliveryCurrentLabel("notify_only", false)).toBe(
+      "Notify only (resolved, not confirmed)"
+    );
+  });
+  it("renders a confirmed value plainly, and unknown as a dash", () => {
+    expect(deliveryCurrentLabel("spawn_always", true)).toBe(
+      "Always a new session"
+    );
+    expect(deliveryCurrentLabel(null, false)).toBe(UNKNOWN_DASH);
   });
 });

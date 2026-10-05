@@ -66,9 +66,6 @@ export const DELIVERY_MODES: readonly DeliveryMode[] = [
   "spawn_always",
   "notify_only",
 ];
-/** Coord's `ContinuationDeliveryMode::default()`. */
-export const DEFAULT_DELIVERY_MODE: DeliveryMode =
-  "in_session_with_spawn_fallback";
 
 /** Mirrors the backend's `PostMergeFollowupScopeView`. */
 export interface PostMergeFollowupScopeView {
@@ -178,6 +175,20 @@ export const DELIVERY_HELP: Record<DeliveryMode, string> = {
 };
 
 /** What the delivery read can and cannot say, in operator words. */
+/**
+ * The delivery mode as displayed. Unconfirmed provenance (coord's fail-open
+ * read) is qualified in words, never rendered as a confirmed setting.
+ */
+export function deliveryCurrentLabel(
+  mode: DeliveryMode | null,
+  confirmed: boolean
+): string {
+  if (mode === null) return UNKNOWN_DASH;
+  return confirmed
+    ? DELIVERY_LABEL[mode]
+    : `${DELIVERY_LABEL[mode]} (resolved, not confirmed)`;
+}
+
 export const DELIVERY_PROVENANCE_NOTE =
   "Coord reads this setting fail-open: a repo nobody configured and a read that failed both show the default, so this is what coord currently resolves, not proof that it was set.";
 
@@ -221,6 +232,7 @@ export type RolloutUnknownCause =
   | "loading"
   | "no_repos"
   | "all_failed"
+  | "missing"
   | "disagree";
 
 export interface FleetRollout {
@@ -259,9 +271,12 @@ export function fleetRolloutMode(
         : "all_failed";
     return { mode: null, unknownCause: cause, stale: false };
   }
+  if (used.some(({ view }) => view.mode === null)) {
+    return { mode: null, unknownCause: "missing", stale: false };
+  }
   let seen: RolloutMode | null = null;
   for (const { view } of used) {
-    if (view.mode === null || (seen !== null && seen !== view.mode)) {
+    if (seen !== null && seen !== view.mode) {
       return { mode: null, unknownCause: "disagree", stale: false };
     }
     seen = view.mode;
@@ -275,6 +290,8 @@ const ROLLOUT_UNKNOWN_DETAIL: Record<RolloutUnknownCause, string> = {
     "Whether coord acts on these scopes is unknown — this tenant has no repos to read it through.",
   all_failed:
     "Whether coord acts on these scopes is unknown — no repo's scope could be read. Do not assume a scope set here stops anything.",
+  missing:
+    "Whether coord acts on these scopes is unknown — coord answered without saying which rollout mode is in force. Do not assume a scope set here stops anything.",
   disagree:
     "Whether coord acts on these scopes is unknown — the reads did not report one consistent mode (coord may have just been redeployed). Refresh to re-check, and do not assume a scope set here stops anything.",
 };
