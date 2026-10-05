@@ -101,6 +101,14 @@ concurrency:
 env:
   PYTHON_VERSION: '3.12'
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read. A job that needs more
+# declares its own `permissions:`.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   produce:
     name: Per-test coverage -> coord
@@ -207,13 +215,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -242,7 +252,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'

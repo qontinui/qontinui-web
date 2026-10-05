@@ -3,13 +3,12 @@ name: Verify Frontend Deploy (run)
 # Post-deploy behavioral smoke for the qontinui-web FRONTEND + auto-rollback.
 #
 # The frontend has no GitHub Actions deploy workflow: it auto-deploys via
-# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`). Vercel
-# emits a GitHub `deployment_status` event when a deploy reaches a terminal
-# state; for a successful PRODUCTION deploy that event carries the new prod URL
-# in `environment_url` and `environment: Production`. We hang a behavioral
-# smoke off that event — the frontend half of replacing the removed manual
-# deploy gate (the backend half is the behavioral smoke + circuit-breaker
-# rollback in deploy-web.yml).
+# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`), which
+# builds a PRODUCTION deployment for each push to main. This workflow runs on
+# that same push, waits for Vercel's production deployment of the pushed
+# commit to reach READY, and then hangs a behavioral smoke off it -- the
+# frontend half of replacing the removed manual deploy gate (the backend half
+# is the behavioral smoke + circuit-breaker rollback in deploy-web.yml).
 #
 # What the smoke checks: it drives a headless Chromium over the app's PUBLIC
 # routes on the freshly-deployed prod URL and asserts the SAME run-level
@@ -43,154 +42,217 @@ name: Verify Frontend Deploy (run)
 # Auto-rollback: on a GENUINE smoke failure (EITHER the public-route smoke OR
 # the authed smoke found a console error, a same-origin 5xx, a bounce to
 # /login, or a missing authed landmark) we re-point the Production alias to the
-# prior READY Production deployment via `vercel promote`. A HARNESS error (no
+# prior READY Production deployment via `vercel promote` -- unless the alias no
+# longer serves the deployment this run smoked (a newer push has deployed), in
+# which case nothing is smoked or promoted. A HARNESS error (no
 # token, couldn't find a prior deployment, couldn't reach the Vercel API, or
 # the authed smoke could not obtain ci-bot creds) fails/skips WITHOUT rolling
 # back — we never roll back a possibly-fine deploy because our own tooling or a
 # missing credential broke.
 #
-# WHY THIS FILE IS SEPARATE FROM verify-frontend-deploy.yml (plan
-# 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share, review
-# finding S1). GitHub runs a `deployment_status` workflow from the DEPLOYMENT'S
-# commit, and Vercel deploys (and reports) every commit it builds -- branch and
-# preview commits included -- by SHA. A job holding AWS credentials on that
-# trigger would therefore run whatever copy of the file sits at that commit, so
-# the OIDC role could only be trusted at ANY ref, and anyone able to get a
-# commit deployed could read the Vercel token and the ci-bot login out of SSM.
+# WHY THE TRIGGER IS `push` TO MAIN, NOT `deployment_status` (plan
+# 2026-10-02-frontend-post-deploy-smoke-misses-most-production-deploys). The
+# smoke used to be dispatched by verify-frontend-deploy.yml on Vercel's GitHub
+# `deployment_status` event. Vercel creates that GitHub deployment record for
+# only some production deploys (5 of 29 in 48 h, measured 2026-10-02 against
+# the Vercel deployments API and GitHub's deployment records; coord finding
+# `c4f43823`), so most
+# deploys went live unsmoked. That dispatcher is deleted. This file now runs on
+# every push to main and resolves the production deployment itself, by commit
+# SHA, from the Vercel API (frontend/tests/spec-ci/resolve-prod-deployment.ts).
 #
-# So the split is:
-#   * verify-frontend-deploy.yml (`deployment_status`) holds NO AWS access and
-#     NO secrets. It applies the cheap success/vercel[bot]/Production gate and
-#     dispatches THIS workflow on `main` with the deployment id.
-#   * THIS workflow (`workflow_dispatch`, always run from main) trusts none of
-#     its inputs: the `validate` job re-reads the deployment from the GitHub
-#     API with the job token and re-checks creator, environment, latest status
-#     and that main contains the deployed SHA. Only if every check passes does
-#     the `verify` job run, and only a run of THIS file at refs/heads/main can
-#     assume qontinui-web-verify-frontend (see
-#     .github/aws-iam/qontinui-web-verify-frontend.trust.json).
+# Trust boundary. Both triggers run THIS file from main: a `push` run is the
+# pushed main commit's copy, and a `workflow_dispatch` run is refused unless it
+# was dispatched on refs/heads/main. The qontinui-web-verify-frontend role
+# trusts exactly one OIDC subject,
+#   repo:qontinui/qontinui-web:ref:refs/heads/main:job_workflow_ref:qontinui/qontinui-web/.github/workflows/verify-frontend-run.yml@refs/heads/main
+# (the repo's OIDC template is repo + context + job_workflow_ref; see
+# .github/aws-iam/qontinui-web-verify-frontend.trust.json and
+# .github/aws-iam/README.md). A branch, fork or preview commit cannot produce
+# that subject, so `validate` reading the Vercel token from SSM is exactly as
+# safe as `verify` doing so. The old split existed only because a
+# `deployment_status` run executes the DEPLOYED commit's copy of the file
+# (review finding S1 of plan
+# 2026-09-29-retire-the-admin-aws-key-ci-and-the-operator-box-share); with that
+# trigger gone, no AWS-holding job runs any copy but main's.
+#
+# Outcomes of `validate` (plan D3):
+#   * READY production deployment of the SHA          -> ok=true, `verify` runs
+#   * no (or only a CANCELED) deployment of the SHA,
+#     and main has moved on to a deployed head        -> green named skip
+#                                                        (::notice::), ok=false
+#   * the SHA's production deployment is in ERROR     -> red
+#   * still not READY after 15 min                    -> red
+#   * Vercel/GitHub API unreachable, or no token      -> red
+#   * refused dispatch input (bad SHA, not on main,
+#     dispatched from another ref)                    -> green ::notice::, ok=false
+# It never exits green having smoked nothing without saying why.
+#
+# NOT COVERED, by name: a production deployment that no push to main created
+# (a manual Vercel redeploy or promote). Re-smoke one by hand with
+#   gh workflow run verify-frontend-run.yml --ref main -f sha=<40-hex sha>
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
-      deployment_id:
+      sha:
         description: >-
-          GitHub deployment id to verify. The ONLY input read, and it is not
-          trusted: everything else (URL, SHA, environment, creator, state) is
-          re-read from the GitHub API and re-validated.
-        required: true
+          Main commit to (re-)smoke, 40-hex. Optional: empty means the head of
+          main. Not trusted: it must be contained in main, and the deployment,
+          URL and state are read from the Vercel API, never from inputs.
+        required: false
         type: string
 
 # Concurrency lives on the `verify` job below, keyed on the VALIDATED URL, so an
 # unvalidated dispatch can neither join nor block a real verify's group.
 
 jobs:
-  # Re-validates the dispatched deployment against the GitHub API. Any failed
-  # check ends this job GREEN with a ::notice:: and ok=false, which skips
-  # `verify` -- a refused dispatch is not a red run. Holds no AWS access.
+  # Resolves the Vercel production deployment of the pushed (or dispatched)
+  # main commit. A refused dispatch input, or a commit superseded by a newer
+  # main head, ends this job GREEN with a ::notice:: and ok=false, which skips
+  # `verify`. A failed production build, a timeout or an API error ends it RED.
   validate:
-    name: Validate dispatched deployment
+    name: Resolve production deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # The resolver waits up to 15 min for Vercel. Build time, measured
+    # 2026-10-02 via the Vercel v6 deployments API as `ready - created` over
+    # the last 100 production deployments: p50 167 s, p90 ~224 s, max 496 s.
+    # 20 leaves room for setup and retries.
+    timeout-minutes: 20
     permissions:
       contents: read
-      deployments: read
+      # OIDC: assumes qontinui-web-verify-frontend to read the Vercel token.
+      # Safe on both triggers -- see the trust-boundary note in the header.
+      id-token: write
     outputs:
-      ok: ${{ steps.check.outputs.ok }}
-      deployment_id: ${{ steps.check.outputs.deployment_id }}
-      environment_url: ${{ steps.check.outputs.environment_url }}
-      sha: ${{ steps.check.outputs.sha }}
+      ok: ${{ steps.resolve.outputs.ok || 'false' }}
+      # The Vercel deployment uid (dpl_...), not a GitHub deployment id.
+      deployment_id: ${{ steps.resolve.outputs.deployment_id }}
+      environment_url: ${{ steps.resolve.outputs.environment_url }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    env:
+      SSM_REGION: eu-central-1
     steps:
-      - name: Re-validate deployment from the GitHub API
-        id: check
+      - name: Check the trigger and pick the commit
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -uo pipefail
           refuse() {
-            # The message can quote API-sourced strings (creator, environment,
-            # URL). Flatten CR/LF so none can start a workflow command line.
+            # The message can quote the dispatch input. Flatten CR/LF so it can
+            # never start a workflow command line.
             local msg="${1//$'\n'/ }"
             msg="${msg//$'\r'/ }"
             echo "::notice title=verify-frontend-run refused this dispatch::${msg} Nothing was smoked, no AWS role was assumed."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
           # 1. Only a run of the main-branch copy of this file may proceed.
           if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            refuse "Dispatched on '${GITHUB_REF}', not refs/heads/main."
+            refuse "Ran on '${GITHUB_REF}', not refs/heads/main."
           fi
 
-          # 2. The id is interpolated into an API path: digits only.
-          id="${INPUT_DEPLOYMENT_ID}"
-          if [ -z "$id" ] || [ -n "${id//[0-9]/}" ]; then
-            refuse "deployment_id '${id}' is not a positive integer."
+          # 2. The commit. A push smokes what it pushed; a dispatch smokes its
+          #    `sha` input, or main's head when that is empty.
+          sha="${GITHUB_SHA}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_SHA}" ]; then
+            sha="${INPUT_SHA}"
+            # Interpolated into an API path below: 40 lowercase hex only.
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              refuse "sha '${sha}' is not a 40-character lowercase hex commit SHA."
+            fi
+            # main must CONTAIN it. compare/<sha>...main is `identical` (main
+            # is that commit) or `ahead` (main descends from it); `behind` /
+            # `diverged` mean a branch or fork commit.
+            if ! rel=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq '.status' 2>/dev/null); then
+              refuse "Could not compare ${sha} against main."
+            fi
+            case "$rel" in
+              identical|ahead) ;;
+              *) refuse "SHA ${sha} is not on main (compare status '${rel}')." ;;
+            esac
           fi
 
-          # 3. The deployment itself, from the API -- never from inputs.
-          if ! dep=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}" 2>/dev/null); then
-            refuse "Deployment ${id} could not be read from the GitHub API."
-          fi
-          creator=$(jq -r '.creator.login // ""' <<<"$dep")
-          environment=$(jq -r '.environment // ""' <<<"$dep")
-          sha=$(jq -r '.sha // ""' <<<"$dep")
-          if [ "$creator" != "vercel[bot]" ]; then
-            refuse "Deployment ${id} was created by '${creator}', not vercel[bot]."
-          fi
-          case "$environment" in
-            Production|production) ;;
-            *) refuse "Deployment ${id} targets environment '${environment}', not Production." ;;
-          esac
-          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-            refuse "Deployment ${id} carries no valid commit SHA ('${sha}')."
-          fi
-
-          # 4. Its LATEST status must be success (statuses list newest-first).
-          #    A deploy that a newer one has since marked inactive is skipped:
-          #    the newer deployment's own run verifies the same public URL.
-          if ! st=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses?per_page=1" --jq '.[0] // {}' 2>/dev/null); then
-            refuse "Statuses of deployment ${id} could not be read."
-          fi
-          state=$(jq -r '.state // ""' <<<"$st")
-          url=$(jq -r '(.environment_url | select(. != null and . != "")) // .target_url // ""' <<<"$st")
-          if [ "$state" != "success" ]; then
-            refuse "Latest status of deployment ${id} is '${state}', not success."
-          fi
-          if ! [[ "$url" =~ ^https://[A-Za-z0-9.-]+(/[^[:space:]]*)?$ ]]; then
-            refuse "Deployment ${id} reports no usable https environment_url ('${url}')."
-          fi
-
-          # 5. main must CONTAIN the deployed SHA. compare/<sha>...main is
-          #    `identical` (main is that commit) or `ahead` (main descends from
-          #    it); `behind` / `diverged` mean a branch or fork commit.
-          if ! rel=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq '.status' 2>/dev/null); then
-            refuse "Could not compare ${sha} against main."
-          fi
-          case "$rel" in
-            identical|ahead) ;;
-            *) refuse "Deployed SHA ${sha} is not on main (compare status '${rel}')." ;;
-          esac
-
-          echo "Validated deployment ${id}: ${environment} by ${creator}, sha ${sha}, url ${url}"
+          echo "Resolving the production deployment of ${sha} (${GITHUB_EVENT_NAME})"
           {
-            echo "ok=true"
-            echo "deployment_id=${id}"
-            echo "environment_url=${url}"
+            echo "proceed=true"
             echo "sha=${sha}"
           } >> "$GITHUB_OUTPUT"
+
+      # The trusted resolver: this run's own commit, which is main (step 1).
+      # Sparse -- only the resolver's directory is needed.
+      - name: Check out qontinui-web
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          sparse-checkout: frontend/tests/spec-ci
+          persist-credentials: false
+
+      - name: Setup Node
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.proceed == 'true'
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
+          role-session-name: verify-frontend-validate-${{ github.run_id }}
+          aws-region: ${{ env.SSM_REGION }}
+
+      # Same source as `verify`'s "Resolve Vercel token": SSM
+      # /qontinui/vercel/token (there is no repo or org VERCEL_TOKEN secret).
+      # A missing token is NOT handled here: the resolver turns it into a red
+      # run, since without it no deployment can be resolved (plan D3).
+      - name: Resolve Vercel token
+        if: steps.gate.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          TOKEN=""
+          if SSM_VAL=$(aws ssm get-parameter \
+                --name /qontinui/vercel/token \
+                --with-decryption --region "${SSM_REGION}" \
+                --query Parameter.Value --output text 2>/dev/null); then
+            if [ -n "$SSM_VAL" ] && [ "$SSM_VAL" != "None" ]; then
+              TOKEN="$SSM_VAL"
+              echo "Vercel token source: SSM /qontinui/vercel/token"
+            fi
+          fi
+          if [ -n "$TOKEN" ]; then
+            # Mask + export without printing the value.
+            echo "::add-mask::$TOKEN"
+            echo "VERCEL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          fi
+
+      # Polls the Vercel API (every 15 s, up to 15 min) and maps what it sees
+      # onto the outcomes listed in the header. Writes ok / deployment_id /
+      # environment_url / sha to $GITHUB_OUTPUT. Node built-ins only, so no
+      # `npm ci`: tsx is fetched at the version frontend/package-lock.json pins.
+      - name: Resolve the production deployment
+        id: resolve
+        if: steps.gate.outputs.proceed == 'true'
+        working-directory: ./frontend
+        env:
+          RESOLVE_SHA: ${{ steps.gate.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --yes tsx@4.22.4 tests/spec-ci/resolve-prod-deployment.ts
 
   verify:
     name: Smoke new prod frontend + auto-rollback
     needs: validate
-    # Runs only for a deployment `validate` accepted: a successful Vercel
-    # PRODUCTION deploy (creator vercel[bot], environment Production/production)
-    # whose SHA is on main. The creator gate is decisive: a GitHub-Actions job
-    # that declares `environment: production` (the backend deploy-web.yml /
-    # migrate.yml) creates deployments whose creator is the workflow actor and
-    # whose environment_url is a github.com Actions job URL -- NOT a deployable
-    # surface; smoking that fired spurious rollbacks before this gate existed.
+    # Runs only for a deployment `validate` resolved: a READY, promoted Vercel
+    # PRODUCTION deployment of a commit on main, read off the Vercel API by
+    # its commit SHA. GitHub deployment records play no part any more, so the
+    # backend's own `environment: production` records (deploy-web.yml /
+    # migrate.yml, whose environment_url is a github.com job URL -- the cause
+    # of spurious rollbacks before the old creator gate) cannot reach here.
     if: needs.validate.outputs.ok == 'true'
     runs-on: ubuntu-latest
     # One verify per prod URL. Cancel-in-progress is OFF: a rollback mid-flight
@@ -202,7 +264,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      deployments: read
       # For the "Page on frontend rollback" step (auto-filed de-duped issue —
       # the one channel that emails repo watchers; see migrate.yml's sibling)
       # and the step that closes that issue once both smokes run clean.
@@ -219,22 +280,23 @@ jobs:
       id-token: write
 
     env:
-      # The validated deployment (from the `validate` job, read off the GitHub
+      # The resolved deployment (from the `validate` job, read off the Vercel
       # API -- never a dispatch input), used ONLY for logging + the rollback
-      # target capture (the prior deployment) -- NOT as the smoke target. For a
-      # vercel[bot] Production deploy this is the `*.vercel.app` deployment URL.
+      # target capture (the prior deployment) -- NOT as the smoke target. This
+      # is the `*.vercel.app` deployment URL.
       NEW_PROD_URL: ${{ needs.validate.outputs.environment_url }}
-      # The deployed commit (validated to be on main). Stands in for GITHUB_SHA,
-      # which under workflow_dispatch is main's tip rather than the deployment.
+      # The deployed commit (on main). Stands in for GITHUB_SHA, which under a
+      # workflow_dispatch re-smoke is main's tip rather than the deployment.
       DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
+      # The Vercel deployment uid (dpl_...), not a GitHub deployment id.
       DEPLOYMENT_ID: ${{ needs.validate.outputs.deployment_id }}
       # The PUBLIC production surface the smokes actually crawl. We do NOT smoke
       # NEW_PROD_URL: raw `*.vercel.app` deployment URLs sit behind Vercel
       # Deployment Protection (HTTP 401 + a FedCM "Vercel authentication" wall),
       # so crawling them only sees the protection page, never the app, and fails
-      # every deploy. By the time this event fires, Vercel has re-pointed the
-      # prod alias to the new deployment, so the public domain serves the new
-      # code. Overridable if the public prod domain ever changes.
+      # every deploy. `validate` waits for the deployment to be READY and
+      # PROMOTED, i.e. Vercel has re-pointed the prod alias to it, so the public
+      # domain serves the new code (unless a newer deploy has since replaced it). Overridable if the public prod domain ever changes.
       PROD_PUBLIC_URL: https://qontinui.io
       # The production backend API base the authed smoke logs ci-bot into. The
       # prod frontend talks to api.qontinui.io; overridable via repo/env config
@@ -268,17 +330,31 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      # Checks out the DEPLOYED commit, as the deployment_status run did (its
-      # GITHUB_SHA was the deployment SHA), so the smoke scripts match the code
-      # being smoked. `validate` has already proven main contains this SHA, so
-      # it is trusted code; this workflow file itself always runs from main.
+      # Checks out the DEPLOYED commit (for a push run, that is GITHUB_SHA
+      # itself), so the smoke scripts match the code being smoked. It is on
+      # main (the push itself, or `validate`'s compare check for a dispatched
+      # sha), so it is trusted code; this workflow file always runs from main.
       - name: Check out qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+
+      # The deployment resolver (`prior` and `alias` modes) runs from THIS
+      # workflow's own commit -- main, the same commit whose copy of this file
+      # is running -- never from DEPLOY_SHA, which on a manual re-smoke of an
+      # older commit may predate the resolver entirely. One file, sparse.
+      - name: Check out the deployment resolver (workflow's own commit)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: resolver
+          sparse-checkout: frontend/tests/spec-ci/resolve-prod-deployment.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -288,22 +364,20 @@ jobs:
       # GitHub OIDC (no stored AWS key). It can read exactly three eu-central-1
       # SSM params — /qontinui/vercel/token and /qontinui/spec-ci/auth-* — so
       # the Vercel token comes from SSM, consistent with the backend, no extra
-      # GH secret. The resolve-token step below probes SSM first, then falls
-      # back to secrets.VERCEL_TOKEN.
+      # GH secret.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-verify-frontend
           role-session-name: verify-frontend-${{ github.run_id }}
           aws-region: ${{ env.SSM_REGION }}
 
-      # Resolve the Vercel token. PREFERENCE ORDER:
-      #   1. SSM SecureString /qontinui/vercel/token (eu-central-1) — the
-      #      autonomous-work vault, consistent with the backend smoke's
-      #      SSM-sourced creds. The param exists (confirmed 2026-09-30 via
-      #      `aws ssm describe-parameters`; it did not when this was authored).
-      #   2. secrets.VERCEL_TOKEN — the fallback the operator must provision
-      #      until/unless the SSM param is created.
+      # Resolve the Vercel token from the SSM SecureString
+      # /qontinui/vercel/token (eu-central-1) — the autonomous-work vault,
+      # consistent with the backend smoke's SSM-sourced creds (the param
+      # exists: confirmed 2026-09-30 via `aws ssm describe-parameters`). There
+      # is no VERCEL_TOKEN secret at repo or org level, so SSM is the only
+      # source.
       # A missing token is a HARNESS error (token_missing=1) handled by the
       # smoke gate below — NOT a smoke failure, so it never triggers a rollback.
       # The token is written to GITHUB_ENV (masked) and never echoed.
@@ -312,8 +386,8 @@ jobs:
         run: |
           set -uo pipefail
           TOKEN=""
-          # Try SSM first (best-effort; a ParameterNotFound / AccessDenied is
-          # not fatal here — we fall through to the GH secret).
+          # Best-effort: a ParameterNotFound / AccessDenied is not fatal here;
+          # it becomes token_missing=1 below.
           if SSM_VAL=$(aws ssm get-parameter \
                 --name /qontinui/vercel/token \
                 --with-decryption --region "${SSM_REGION}" \
@@ -323,15 +397,8 @@ jobs:
               echo "Vercel token source: SSM /qontinui/vercel/token"
             fi
           fi
-          # Fall back to the GH secret.
           if [ -z "$TOKEN" ]; then
-            TOKEN="${{ secrets.VERCEL_TOKEN }}"
-            if [ -n "$TOKEN" ]; then
-              echo "Vercel token source: secrets.VERCEL_TOKEN"
-            fi
-          fi
-          if [ -z "$TOKEN" ]; then
-            echo "::warning::No Vercel token found (neither SSM /qontinui/vercel/token nor secrets.VERCEL_TOKEN). The smoke will run but rollback is impossible — provision one."
+            echo "::warning::No Vercel token found (SSM /qontinui/vercel/token could not be read). The smoke will run but rollback is impossible — check the parameter and the role."
             echo "token_missing=1" >> "$GITHUB_OUTPUT"
           else
             # Mask + export without printing the value.
@@ -340,71 +407,31 @@ jobs:
             echo "token_missing=0" >> "$GITHUB_OUTPUT"
           fi
 
-      # Capture the PRIOR READY Production deployment (the last-known-good
-      # rollback target) BEFORE smoking, so it reflects the deploy that was live
-      # immediately before this one. `vercel ls --prod` lists production
-      # deployments newest-first; the just-deployed one is index 0 (matches
-      # NEW_PROD_URL), the prior READY one is the rollback target.
+      # Capture the rollback target BEFORE smoking: the newest production
+      # deployment that is READY and was promoted (not STAGED), created
+      # strictly before THIS one, and not this one. Resolved through the Vercel
+      # API by frontend/tests/spec-ci/resolve-prod-deployment.ts (`prior`
+      # mode, `selectRollbackTarget()`), keyed on THIS deployment's uid -- not
+      # by list position, which ignored state and, once a newer push had
+      # deployed, picked this deployment or a newer one.
       #
       # This is HARNESS work: if no token, or the API can't be reached, or no
-      # prior READY deployment exists (e.g. the very first prod deploy), we
-      # record prior_found=0. The smoke still runs (a broken frontend should
-      # still fail loudly), but the rollback step is skipped — failing the job
-      # WITHOUT rolling back, since there is nothing safe to roll back to.
+      # such deployment exists (e.g. the very first prod deploy), the resolver
+      # warns and records prior_found=0 (it never fails the step). The smoke
+      # still runs (a broken frontend should still fail loudly), but the
+      # rollback step is skipped -- failing the job WITHOUT rolling back, since
+      # there is nothing safe to roll back to.
       - name: Capture prior Production deployment (rollback target)
         id: prior
         if: steps.token.outputs.token_missing == '0'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # Fail-soft: a missing resolver or a failed tsx fetch is HARNESS too.
         run: |
-          set -uo pipefail
-          # `npx --yes` auto-installs vercel@latest without an interactive
-          # prompt. `vercel ls --prod` prints production deployments newest-first;
-          # we parse the *.vercel.app deployment URLs from the listing.
-          # --scope qontinui pins the team: CI's fresh checkout has no `.vercel`
-          # link, so without it the listing defaults to the token's scope. The
-          # provisioned token is team-scoped (so this is currently redundant)
-          # but pinning keeps it robust to a future full-account token. Slug
-          # confirmed via `vercel teams ls`.
-          if ! npx --yes vercel@latest ls --prod --scope qontinui --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
-            echo "::warning::could not list Vercel production deployments (harness):"
-            sed -e 's/[A-Za-z0-9._-]*'"$VERCEL_TOKEN"'[A-Za-z0-9._-]*/[redacted]/g' vercel_ls.err || true
+          npx --yes tsx@4.22.4 "${GITHUB_WORKSPACE}/resolver/frontend/tests/spec-ci/resolve-prod-deployment.ts" prior || {
+            echo "::warning::rollback-target resolver could not run; auto-rollback is impossible for this run (harness)."
             echo "prior_found=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Extract production deployment URLs, newest-first. The CLI's human
-          # table prints the deployment URL in column 1; we keep only lines that
-          # name a *.vercel.app deployment URL, preserving newest-first order.
-          grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app[^[:space:]]*' vercel_ls.txt > urls.txt || true
-          # The freshly-deployed URL is the newest (first line of urls.txt); the
-          # PRIOR (rollback target) is the next distinct deployment URL below it.
-          # We skip by POSITION (line 0 = the deploy we just made) rather than by
-          # string-matching NEW_PROD_URL, because NEW_PROD_URL may be a custom
-          # domain alias rather than the *.vercel.app deployment URL the listing
-          # prints — a string match would then never find index 0.
-          PRIOR=""
-          while IFS= read -r u; do
-            u="${u%/}"
-            [ -z "$u" ] && continue
-            # Skip the just-deployed URL (and the alias form, if NEW_PROD_URL is
-            # a custom domain rather than the *.vercel.app deployment URL the
-            # very-newest line will simply be the new deploy → skip index 0).
-            if [ -z "$PRIOR" ]; then
-              # First line = newest = the deploy we just made. Skip it.
-              PRIOR="__skip__"
-              continue
-            fi
-            if [ "$PRIOR" = "__skip__" ]; then
-              PRIOR="$u"
-              break
-            fi
-          done < urls.txt
-          if [ -z "$PRIOR" ] || [ "$PRIOR" = "__skip__" ]; then
-            echo "::warning::no prior READY Production deployment found — cannot auto-rollback (first prod deploy?)."
-            echo "prior_found=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "Prior (last-known-good) Production deployment = $PRIOR"
-            echo "prior_deployment=$PRIOR" >> "$GITHUB_OUTPUT"
-            echo "prior_found=1" >> "$GITHUB_OUTPUT"
-          fi
+          }
 
       - name: Install frontend deps
         working-directory: ./frontend
@@ -557,7 +584,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
           path: ~/.cache/qontinui-apt-playwright
@@ -717,7 +744,7 @@ jobs:
         # mistaken for the apt failure this plan exists to report. Belt and
         # braces.
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
@@ -743,8 +770,38 @@ jobs:
       #   1  -> GENUINE smoke failure (console error / same-origin 5xx found)
       #   2  -> HARNESS error (couldn't reach the public prod URL at all / launch
       #         failure). A harness error must NOT roll back.
+      # Supersession guard, read as late as possible before the smokes. Both
+      # smokes crawl PROD_PUBLIC_URL, so they judge whatever the production
+      # alias serves NOW. If that is no longer THIS deployment (a newer push
+      # has deployed since), smoking would judge the newer deployment and a
+      # failure would roll IT back under this run's name. So, via the Vercel
+      # API (`alias pre_smoke` mode, `aliasDecision()`):
+      #   * alias serves this uid   -> proceed
+      #   * alias serves another    -> alias_action=skip: a ::notice:: naming
+      #     the serving deployment; the smokes, the rollback and the
+      #     close-the-rollback-issue step are all skipped. Green, NOT a pass:
+      #     the newer deployment's own run judges prod.
+      #   * alias unreadable (no token, API error) -> ::warning:: and proceed,
+      #     the pre-guard behaviour.
+      # Never fails the job: any unexpected resolver exit (including tsx
+      # itself failing to run) reads as unreadable, i.e. proceed. Before the
+      # rollback the same exit reads as unreadable too, i.e. block.
+      - name: Check the production alias still serves this deployment
+        id: alias
+        working-directory: ./frontend
+        run: |
+          set -uo pipefail
+          # `|| rc=$?`: the default run shell is `bash -e`, and exit 3 is an answer.
+          rc=0
+          npx --yes tsx@4.22.4 "${GITHUB_WORKSPACE}/resolver/frontend/tests/spec-ci/resolve-prod-deployment.ts" alias pre_smoke || rc=$?
+          if [ "$rc" != "0" ] && [ "$rc" != "3" ]; then
+            echo "::warning::alias check exited ${rc}; treating the alias as unreadable and smoking anyway."
+          fi
+          exit 0
+
       - name: Post-deploy behavioral smoke (public routes)
         id: smoke
+        if: steps.alias.outputs.alias_action != 'skip'
         working-directory: ./frontend
         env:
           SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
@@ -792,6 +849,7 @@ jobs:
       # Creds are exported to the script's env and NEVER echoed.
       - name: Post-deploy authed smoke
         id: authed_smoke
+        if: steps.alias.outputs.alias_action != 'skip'
         working-directory: ./frontend
         env:
           SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
@@ -852,8 +910,14 @@ jobs:
       # captured. A build/install/harness/creds failure leaves the new deploy
       # live and this step correctly skips (failing the job without a rollback).
       # Re-points the Production alias to the last-known-good deployment via
-      # `vercel promote`.
+      # `vercel promote` -- but only after re-reading the alias (`alias
+      # pre_rollback`) and finding it STILL serves this deployment. If a newer
+      # deployment went live during the smoke, or the alias cannot be read,
+      # nothing is promoted (rollback_blocked=1): promoting on a different or
+      # unknown state would revert a deploy this run never judged.
       - name: Auto-rollback on behavioral smoke failure
+        id: rollback
+        working-directory: ./frontend
         if: >-
           failure() &&
           ((steps.smoke.conclusion == 'failure' &&
@@ -863,16 +927,41 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1')) &&
           steps.token.outputs.token_missing == '0' &&
           steps.prior.outputs.prior_found == '1'
+        env:
+          PRIOR_UID_OUT: ${{ steps.prior.outputs.prior_uid }}
         run: |
           set -uo pipefail
-          PRIOR="${{ steps.prior.outputs.prior_deployment }}"
+          # `vercel promote` takes a deployment id or URL (Vercel docs,
+          # /docs/instant-rollback "Undo a rollback": `vercel promote
+          # [deployment-id or url]`); the uid is the unambiguous one.
+          PRIOR="${PRIOR_UID_OUT}"
           if [ -z "$PRIOR" ]; then
             echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
             exit 1
           fi
+          # Supersession guard, second read. The resolver emits the ::error::
+          # itself when it withholds the promote.
+          # `|| rc=$?`: the default run shell is `bash -e`, and exit 3 is an answer.
+          # pre_rollback_read=1 tells the page step this read was attempted, so
+          # an UNREADABLE result (serving_uid empty) is not mistaken for "the
+          # rollback step never ran" when deciding what to record as failed.
+          echo "pre_rollback_read=1" >> "$GITHUB_OUTPUT"
+          rc=0
+          npx --yes tsx@4.22.4 "${GITHUB_WORKSPACE}/resolver/frontend/tests/spec-ci/resolve-prod-deployment.ts" alias pre_rollback || rc=$?
+          if [ "$rc" != "0" ]; then
+            [ "$rc" = "3" ] || echo "::error::alias check exited ${rc}; prod state unknown, so NO rollback was done."
+            echo "rollback_blocked=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           echo "Behavioral smoke failed — rolling back Production alias to last-known-good: $PRIOR"
-          # --scope qontinui: pin the team (same rationale as the ls above).
-          npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"
+          # --scope qontinui pins the team: CI's fresh checkout has no
+          # `.vercel` link, so without it the CLI defaults to the token's scope.
+          if ! npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"; then
+            echo "::error::frontend post-deploy smoke failed AND \`vercel promote $PRIOR\` failed. The bad deploy may be STILL LIVE — roll back by hand."
+            echo "rollback_blocked=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "rolled_back=1" >> "$GITHUB_OUTPUT"
           echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
           exit 1
 
@@ -888,8 +977,11 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1')) &&
           (steps.token.outputs.token_missing == '1' ||
            steps.prior.outputs.prior_found != '1')
+        env:
+          TOKEN_MISSING: ${{ steps.token.outputs.token_missing }}
+          PRIOR_FOUND: ${{ steps.prior.outputs.prior_found }}
         run: |
-          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
+          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${TOKEN_MISSING}, prior_found=${PRIOR_FOUND}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
           exit 1
 
       # ── Resolve the open frontend-deploy-rollback issue (best-effort) ─────
@@ -899,9 +991,12 @@ jobs:
       # 2026-06-19 through months of smoke-green deploys). Mirrors migrate.yml's
       # "Resolve open migration-failure issue". Both smokes crawl
       # PROD_PUBLIC_URL — what prod actually serves now, which may be a newer
-      # deploy or a rollback target rather than the dispatched one — so a
+      # deploy or a rollback target rather than the resolved one — so a
       # clean pass of BOTH settles every page state (rolled back, bad deploy
       # live): prod is serving a behaviourally clean deploy.
+      # A run whose smokes were skipped because a newer deployment is live
+      # (alias_action=skip) settles nothing: it is excluded explicitly, on top
+      # of the smoke-outcome gates that already exclude it.
       # Gated on each smoke's own success, never on a merely green job: an
       # authed smoke SKIPPED for a creds gap exits 0 yet verified nothing
       # authed, and an authed regression is exactly what can file this issue.
@@ -915,6 +1010,7 @@ jobs:
       - name: Resolve open frontend-deploy-rollback issue
         if: >-
           success() &&
+          steps.alias.outputs.alias_action != 'skip' &&
           steps.smoke.outcome == 'success' &&
           steps.authed_smoke.outcome == 'success' &&
           steps.authed_smoke.outputs.authed_skipped != '1'
@@ -947,11 +1043,17 @@ jobs:
               continue
             fi
             echo "Closing frontend-deploy-rollback issue #${N}: both smokes passed against prod."
+            # The page step locks these issues (their comments are the failure
+            # record); unlock to post the closing comment, then re-lock so a
+            # closed issue cannot be flooded back into the record's window.
+            gh issue unlock "${N}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
             gh issue close "${N}" \
               --repo "${GITHUB_REPOSITORY}" \
               --reason completed \
-              --comment "Resolved: verify run ${RUN_URL} (dispatched for deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
+              --comment "Resolved: verify run ${RUN_URL} (Vercel deployment ${DEPLOYMENT_ID}, head ${DEPLOY_SHA}) found the live prod frontend at ${PROD_PUBLIC_URL} passing both the public and the authed behavioral smoke, so prod is serving a smoke-clean deploy. A later failure files a new issue." \
               || echo "::warning::could not close issue #${N} (best-effort)"
+            gh issue lock "${N}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+              || echo "::warning::could not re-lock issue #${N}; its comments can be flooded by anyone until it is locked."
           done <<< "${OPEN}"
           exit 0
 
@@ -978,14 +1080,43 @@ jobs:
             steps.authed_smoke.outputs.authed_skipped != '1'))
         continue-on-error: true
         env:
+          ROLLED_BACK: ${{ steps.rollback.outputs.rolled_back }}
+          ROLLBACK_BLOCKED: ${{ steps.rollback.outputs.rollback_blocked }}
           GH_TOKEN: ${{ github.token }}
+          # What the alias served before the smokes, and (if the rollback step
+          # ran) what it served before the promote. Both are uids validated by
+          # the resolver, passed as env rather than interpolated.
+          PRE_SMOKE_SERVING_UID: ${{ steps.alias.outputs.serving_uid }}
+          PRE_ROLLBACK_SERVING_UID: ${{ steps.rollback.outputs.serving_uid }}
+          PRE_ROLLBACK_READ: ${{ steps.rollback.outputs.pre_rollback_read }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHORT_SHA="$(printf '%s' "${DEPLOY_SHA}" | cut -c1-9)"
+          # Durable record of a deployment whose smoke failed, posted as a
+          # COMMENT (append-only, so concurrent runs cannot clobber each
+          # other). The resolver's `prior` mode (parseFailedDeploymentUids)
+          # reads these markers from github-actions[bot] comments on
+          # frontend-deploy-rollback issues and never offers such a deployment
+          # as a rollback target again: it stays READY and PROMOTED in Vercel
+          # after being rolled away from. Keep the literal in step with
+          # FAILED_MARKER_RE there.
+          #
+          # The failure is charged to this deployment ONLY when we know it is
+          # what the smokes judged: the alias read before the smokes named it,
+          # and, if the rollback step re-read the alias, that read did not see
+          # a different deployment (one that may have gone live mid-smoke).
+          MARKER=""
+          if [ -n "${DEPLOYMENT_ID}" ] && [ "${PRE_SMOKE_SERVING_UID}" = "${DEPLOYMENT_ID}" ] \
+             && { [ "${PRE_ROLLBACK_READ}" != "1" ] || [ "${PRE_ROLLBACK_SERVING_UID}" = "${DEPLOYMENT_ID}" ]; }; then
+            MARKER="<!-- verify-frontend-failed-deployment: ${DEPLOYMENT_ID} -->"
+          else
+            echo "::warning::not recording deployment ${DEPLOYMENT_ID} as failed: the alias was not confirmed to serve it throughout (before smokes: '${PRE_SMOKE_SERVING_UID}', before rollback: '${PRE_ROLLBACK_SERVING_UID}')."
+          fi
 
-          if [ "${{ steps.token.outputs.token_missing }}" = "0" ] && \
-             [ "${{ steps.prior.outputs.prior_found }}" = "1" ]; then
+          if [ "${ROLLED_BACK}" = "1" ]; then
             STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
+          elif [ "${ROLLBACK_BLOCKED}" = "1" ]; then
+            STATE="Auto-rollback was WITHHELD — prod was serving a different deployment than the one smoked, its state could not be read, or the promote failed (see the run's errors). Prod may still be serving the failing deploy."
           else
             STATE="Auto-rollback was NOT possible — the failing deploy is STILL LIVE on prod."
           fi
@@ -1002,7 +1133,7 @@ jobs:
 
           Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
 
-          _Auto-filed by .github/workflows/verify-frontend-run.yml (dispatched by verify-frontend-deploy.yml); closed automatically by the next verify run whose public and authed smokes both pass._"
+          _Auto-filed by .github/workflows/verify-frontend-run.yml (runs on every push to main); closed automatically by the next verify run whose public and authed smokes both pass._"
 
           gh label create frontend-deploy-rollback \
             --repo "${GITHUB_REPOSITORY}" \
@@ -1016,20 +1147,49 @@ jobs:
             --json number \
             --jq '.[0].number // empty' || true)
 
+          # Lock the issue so only collaborators (and this bot) can comment: the
+          # failure record is read from its comments with a page cap, and an
+          # unlocked issue would let anyone flood it past the cap and switch
+          # auto-rollback off (the read fails closed). An existing issue is
+          # UNLOCKED before this run comments on it and re-locked after, so the
+          # marker never depends on whether this token may comment on a locked
+          # issue. A failed lock/unlock is a visible warning, never fatal.
+          lock_issue() {
+            gh issue lock "$1" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+              || gh api "repos/${GITHUB_REPOSITORY}/issues/${1##*/}" --jq .locked 2>/dev/null | grep -qx true \
+              || echo "::warning::could not lock issue $1; its comments (the failure record) can be flooded by anyone until it is locked."
+          }
+
           if [ -n "${EXISTING}" ]; then
             echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
-            gh issue comment "${EXISTING}" \
+            ISSUE="${EXISTING}"
+            gh issue unlock "${ISSUE}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || true
+            # The marker rides in the same comment: one write, nothing to race.
+            gh issue comment "${ISSUE}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --body "Still failing: ${RUN_URL} (head ${DEPLOY_SHA}). ${STATE}" \
-              || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
+              --body "Still failing: ${RUN_URL} (head ${DEPLOY_SHA}, deployment ${DEPLOYMENT_ID}). ${STATE}
+          ${MARKER}" \
+              || echo "::warning::could not comment on issue #${ISSUE} (best-effort)${MARKER:+; deployment ${DEPLOYMENT_ID} is NOT recorded as failed, so a later rollback could pick it}"
           else
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${TITLE}" \
-              --label frontend-deploy-rollback \
-              --body "${BODY}" \
-              || echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
+            if ISSUE=$(gh issue create \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${TITLE}" \
+                --label frontend-deploy-rollback \
+                --body "${BODY}"); then
+              if [ -n "${MARKER}" ]; then
+                gh issue comment "${ISSUE}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --body "Failed deployment ${DEPLOYMENT_ID} (head ${DEPLOY_SHA}).
+          ${MARKER}" \
+                  || echo "::warning::could not record deployment ${DEPLOYMENT_ID} as failed on ${ISSUE}; a later rollback could pick it (best-effort)"
+              fi
+            else
+              echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
+            fi
           fi
+          # Lock AFTER the writes above, so they never depend on whether this
+          # token may comment on a locked issue.
+          [ -n "${ISSUE:-}" ] && lock_issue "${ISSUE}"
           exit 0
 
       # ----------------------------------------------------------------------

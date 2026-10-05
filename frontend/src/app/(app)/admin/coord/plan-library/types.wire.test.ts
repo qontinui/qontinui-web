@@ -43,6 +43,8 @@ import {
   SCAN_ROOT_ROLLUP_STATES,
   SCAN_ROOT_ROW_NULLABLE,
   SCAN_ROOT_STATES,
+  STATUS_CURRENCY_NULLABLE,
+  STATUS_CURRENCY_STATES,
 } from "./types";
 
 /** Both snapshots backend CI regenerates: the composed one and the OSS base. */
@@ -56,6 +58,7 @@ interface SchemaProperty {
   enum?: string[];
   anyOf?: { type?: string; enum?: string[] }[];
   items?: { $ref?: string };
+  $ref?: string;
 }
 
 interface ObjectSchema {
@@ -121,6 +124,28 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const corpus = component(file, "CorpusHealth");
   const coverage = component(file, "PlanCoverage");
   const side = component(file, "PlanCensusSide");
+  const currency = component(file, "StatusCurrency");
+  const summary = component(file, "WorkArtifactSummary");
+  const candidate = component(file, "PlanCandidate");
+
+  it("a row's status currency admits exactly STATUS_CURRENCY_STATES", () => {
+    expect(enumOf(currency, "state")).toEqual(sorted(STATUS_CURRENCY_STATES));
+  });
+
+  it("every artifact row REQUIRES its status currency — no default", () => {
+    expect(summary.required ?? []).toContain("status_currency");
+    expect(summary.properties.status_currency?.$ref).toBe(
+      "#/components/schemas/StatusCurrency"
+    );
+    expect(admitsNull(summary.properties.status_currency ?? {})).toBe(false);
+  });
+
+  it("a candidate carries it too — null only on a work-unit-only row", () => {
+    expect(candidate.required ?? []).toEqual(
+      expect.arrayContaining(["status_currency", "content_sha256"])
+    );
+    expect(admitsNull(candidate.properties.status_currency ?? {})).toBe(true);
+  });
 
   it("the row's verdict admits exactly SCAN_ROOT_STATES", () => {
     expect(enumOf(row, "state")).toEqual(sorted(SCAN_ROOT_STATES));
@@ -190,6 +215,7 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     ["ScanRootSourceRollup", rollup, SCAN_ROOT_ROLLUP_NULLABLE],
     ["PlanCoverage", coverage, PLAN_COVERAGE_NULLABLE],
     ["PlanCensusSide", side, PLAN_CENSUS_SIDE_NULLABLE],
+    ["StatusCurrency", currency, STATUS_CURRENCY_NULLABLE],
   ] as const)("%s", (_name, schema, witness) => {
     it("names exactly the fields the backend serves", () => {
       expect(sorted(Object.keys(witness))).toEqual(

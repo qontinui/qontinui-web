@@ -8,10 +8,11 @@
 // call inside its batch, for two reasons:
 //
 //   1. Only the Train tab needs it. Folding it into the shared batch would add
-//      a request to EVERY dashboard poll on every tab, which is exactly the
-//      load the 2026-07-21 prod incident was caused by — the operations proxy
-//      pins a backend DB connection for the whole outbound coord round-trip,
-//      so request volume is connection-pool cost, one-for-one.
+//      a request to EVERY dashboard poll on every tab, which is the kind of
+//      load behind the 2026-07-21 prod incident. Then, each proxy request held
+//      a backend DB connection for its whole coord round-trip; that ended with
+//      `d77d79072` (2026-07-26), and the cost today is coord's own work per
+//      request, one-for-one with request volume.
 //   2. coord's `assemble_health` resolves effective settings per ready-unmerged
 //      PR, so its cost scales with the ready backlog — the exact condition
 //      under which an operator is staring at this tab. It gets its own slower
@@ -129,7 +130,7 @@ export function useTrainHealth(enabled: boolean): TrainHealthState {
     // rather than waiting out the remaining interval — but THROTTLED, not on
     // every reveal. Rapid hide/reveal churn (alt-tab, a monitor sleeping,
     // window-manager events) would otherwise issue one proxy request per
-    // reveal, each pinning a backend DB session for its whole coord round-trip.
+    // reveal, each a full coord health read.
     // The sibling hook throttles its equivalent for exactly this reason.
     const onVisibility = () => {
       if (document.hidden || cleanedUpRef.current) return;
