@@ -897,8 +897,8 @@ jobs:
           # the flag stays `backend` and the union is the suite's coverage. The
           # NAME is shard-scoped so the six uploads are distinguishable in
           # Codecov's own UI rather than six rows called the same thing.
-          # `fail_ci_if_error: false` (below, unchanged) is why a merge surprise
-          # here cannot red the lane -- confirm the delta on the first run.
+          # `fail_ci_if_error: false` (below), together with `continue-on-error`
+          # above, is why a merge surprise here cannot red the lane.
           flags: backend
           name: backend-coverage-shard-${{ matrix.shard }}
           fail_ci_if_error: false
