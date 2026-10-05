@@ -138,16 +138,30 @@ jobs:
     environment: production
     permissions:
       contents: read
+      # OIDC: lets configure-aws-credentials exchange this job's GitHub token
+      # for the scoped qontinui-web-deploy role (no stored AWS key).
+      id-token: write
 
     steps:
       - name: Check out qontinui-web
-        uses: actions/checkout@v5
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          persist-credentials: false
+
+      # Assumes the scoped qontinui-web-deploy role via GitHub OIDC (trusts
+      # this repo's `production` environment claim). The role is least-privilege
+      # for exactly what this job calls: ECR push to qontinui-web-backend, the
+      # qontinui-staging-web task-def/service/one-off task, the web log group,
+      # and the two eu-central-1 spec-ci SSM params. 7200s is headroom, not a
+      # current need: the job's timeout-minutes (45) already ends it inside
+      # the 1-hour default. It is kept so that a future raise of that timeout
+      # cannot expire the credential mid-rollback.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-deploy
+          role-session-name: deploy-web-${{ github.run_id }}
+          role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve ECR registry
@@ -166,9 +180,12 @@ jobs:
       - name: Resolve rollback artifact
         id: rollback_artifact
         if: ${{ inputs.rollback == 'true' }}
+        env:
+          INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          ART="${{ inputs.source_image_or_commit }}"
-          REGISTRY="${{ steps.ecr.outputs.registry }}"
+          ART="${INPUT_SOURCE_IMAGE_OR_COMMIT}"
+          REGISTRY="${ECR_REGISTRY}"
           if [ -z "$ART" ]; then
             echo "::error::rollback=true but source_image_or_commit is empty"
             exit 1
@@ -231,9 +248,11 @@ jobs:
           echo "qontinui-cloud-control pin = $SHA"
 
       - name: Login to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           aws ecr get-login-password --region "${AWS_REGION}" \
-            | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.registry }}"
+            | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
       # Context is backend/ — the Dockerfile COPYs pyproject/poetry.lock and the
       # app tree from there and clones schemas in-image. Tag both the immutable
@@ -241,22 +260,29 @@ jobs:
       # pointer so :staging never lags the live service again).
       - name: Build backend image
         if: ${{ inputs.rollback != 'true' }}
+        env:
+          SCHEMAS_SHA: ${{ steps.schemas.outputs.sha }}
+          CLOUD_CONTROL_SHA: ${{ steps.cloudcontrol.outputs.sha }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
             -f backend/Dockerfile \
-            --build-arg SCHEMAS_SHA=${{ steps.schemas.outputs.sha }} \
-            --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
-            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
-            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging" \
+            --build-arg SCHEMAS_SHA=${SCHEMAS_SHA} \
+            --build-arg CLOUD_CONTROL_SHA=${CLOUD_CONTROL_SHA} \
+            --build-arg BUILD_SHA="${GITHUB_SHA}" \
+            -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:staging" \
             --load \
             backend
 
       - name: Push backend image
         if: ${{ inputs.rollback != 'true' }}
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
-          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:staging"
 
       # Record the currently-live task-def BEFORE we point the service at the
       # new revision. This is the deterministic last-known-good rollback target
@@ -308,6 +334,11 @@ jobs:
       - name: Declare deploy effect signature
         id: declare
         continue-on-error: true
+        env:
+          INPUT_ROLLBACK: ${{ inputs.rollback }}
+          INPUT_CORRELATION_ID: ${{ inputs.correlation_id }}
+          INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
+          INPUT_TARGET_ENV: ${{ inputs.target_environment || 'production' }}
         run: |
           set -uo pipefail
 
@@ -315,15 +346,15 @@ jobs:
           # its own signature — declared with the PRIOR artifact as the target,
           # source `orchestrator`, and correlation_id = the FAILED deploy's
           # signature id (forwarded by the dispatcher), so the two chain.
-          ROLLBACK="${{ inputs.rollback }}"
+          ROLLBACK="${INPUT_ROLLBACK}"
           DECLARE_SHA="$GITHUB_SHA"
           SOURCE="ci"
           TARGET_ENV="production"
-          CORR="${{ inputs.correlation_id }}"
+          CORR="${INPUT_CORRELATION_ID}"
           if [ "$ROLLBACK" = "true" ]; then
-            DECLARE_SHA="${{ inputs.source_image_or_commit }}"
+            DECLARE_SHA="${INPUT_SOURCE_IMAGE_OR_COMMIT}"
             SOURCE="orchestrator"
-            TARGET_ENV="${{ inputs.target_environment || 'production' }}"
+            TARGET_ENV="${INPUT_TARGET_ENV}"
           fi
 
           # 1. Land correlation (best-effort, normal mode only): the land
@@ -349,13 +380,20 @@ jobs:
           # 2. Probe set from .qontinui/deploy.toml ([[deploy.health_probes]]).
           #    Tolerates the file being absent (coord then derives its default
           #    GET /health probe server-side).
-          PROBES=$(python3 - <<'PY' || echo '[]'
-          import json, pathlib, tomllib
+          #    A probe marked `skip_on_rollback = true` is left out in rollback
+          #    mode: this file is read from HEAD, but a rollback serves a PRIOR
+          #    image, which may predate the route the probe checks, and the
+          #    probe would then record a correct rollback as a Failure.
+          PROBES=$(ROLLBACK="$ROLLBACK" python3 - <<'PY' || echo '[]'
+          import json, os, pathlib, tomllib
           path = pathlib.Path(".qontinui/deploy.toml")
+          rollback = os.environ.get("ROLLBACK") == "true"
           probes = []
           if path.exists():
               cfg = tomllib.loads(path.read_text())
               for p in cfg.get("deploy", {}).get("health_probes") or []:
+                  if rollback and p.get("skip_on_rollback") is True:
+                      continue
                   out = {
                       "endpoint": p["endpoint"],
                       "expected_status": int(p.get("expected_status", 200)),
@@ -416,13 +454,17 @@ jobs:
       # and circuit-breaker rollback has a clean prior target.
       - name: Register task-def revision + update service
         id: deploy
+        env:
+          INPUT_ROLLBACK: ${{ inputs.rollback }}
+          ROLLBACK_IMAGE: ${{ steps.rollback_artifact.outputs.image }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           # Normal mode deploys the image built above; rollback mode deploys
           # the resolved prior artifact (digest-pinned) without a rebuild.
-          if [ "${{ inputs.rollback }}" = "true" ]; then
-            NEW_IMAGE="${{ steps.rollback_artifact.outputs.image }}"
+          if [ "${INPUT_ROLLBACK}" = "true" ]; then
+            NEW_IMAGE="${ROLLBACK_IMAGE}"
           else
-            NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+            NEW_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           fi
           aws ecs describe-task-definition \
             --task-definition "${ECS_TASK_FAMILY}" \
@@ -840,10 +882,10 @@ jobs:
             # Harness/permissions gap, NOT a behavioral failure. Skipping the
             # authed probe degrades the smoke to its health+routing gate (which
             # already passed) rather than failing — a missing IAM grant must
-            # never trigger a rollback of a likely-fine deploy. Grant the deploy
-            # IAM principal ssm:GetParameter + kms:Decrypt on
-            # /qontinui/spec-ci/auth-* in ${SSM_REGION} to enable the full
-            # authenticated smoke.
+            # never trigger a rollback of a likely-fine deploy. The
+            # qontinui-web-deploy role grants ssm:GetParameter + kms:Decrypt on
+            # /qontinui/spec-ci/auth-* in ${SSM_REGION}; a failure here means
+            # that grant drifted.
             echo "::warning::could not read CI-bot creds from SSM (${SSM_REGION}); skipping the authenticated probe (health + routing checks passed). NOT rolling back — a creds/harness gap is not a behavioral failure."
             exit 0
           fi
@@ -891,8 +933,10 @@ jobs:
       # to stabilize, and fails the job loudly.
       - name: Auto-rollback on behavioral smoke failure
         if: ${{ failure() && steps.smoke.conclusion == 'failure' }}
+        env:
+          PRIOR_TD_OUT: ${{ steps.prior.outputs.prior_td }}
         run: |
-          PRIOR_TD="${{ steps.prior.outputs.prior_td }}"
+          PRIOR_TD="${PRIOR_TD_OUT}"
           if [ -z "$PRIOR_TD" ] || [ "$PRIOR_TD" = "None" ]; then
             echo "::error::behavioral smoke failed but no prior task-def was captured; cannot auto-rollback. Investigate ${ECS_SERVICE} manually."
             exit 1
@@ -924,13 +968,15 @@ jobs:
       - name: Backfill GitHub identities
         if: success()
         continue-on-error: true
+        env:
+          NEW_TD: ${{ steps.deploy.outputs.new_td }}
         run: |
           SUBNETS_JSON=$(echo "${ECS_SUBNETS}" | python3 -c 'import sys,json; print(json.dumps([s.strip() for s in sys.stdin.read().split(",") if s.strip()]))')
           OVERRIDES=$(python3 -c 'import json,os; print(json.dumps({"containerOverrides":[{"name":os.environ["ECS_CONTAINER"],"command":["python","-m","scripts.backfill_github_identities"]}]}))')
 
           TASK_ARN=$(aws ecs run-task \
             --cluster "${ECS_CLUSTER}" \
-            --task-definition "${{ steps.deploy.outputs.new_td }}" \
+            --task-definition "${NEW_TD}" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
             --overrides "$OVERRIDES" \
@@ -964,6 +1010,55 @@ jobs:
           if [ "${EXIT_CODE}" != "0" ]; then
             echo "::warning::GitHub-identity backfill exited ${EXIT_CODE} (non-fatal; deploy already healthy). Inspect /ecs/qontinui-staging/web web/web/${TASK_ID}"
           fi
+
+      # ── Served build identity: the COMMIT, not just the task-def ──────────
+      # "Assert serving revision identity" proves the task-def this run
+      # registered is serving. It cannot prove that the image behind it carries
+      # this run's commit, or that the image carries a commit at all: a dropped
+      # `--build-arg BUILD_SHA` would bake `unknown` and nothing would notice.
+      # GET /meta/served-routes reports `build_sha` (QONTINUI_BUILD_SHA, baked
+      # by the build step above), and coord's route-serving observer reads that
+      # field to tell a rollout from a removed route, so a wrong value there is
+      # a wrong input to coord (plan
+      # 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb,
+      # whose Phase 4 is gated on this route being DEPLOYED).
+      #
+      # Placed after the backfill so a failure here skips nothing, and it does
+      # NOT roll back: a mis-stamped image that passed the behavioral smoke is
+      # serving correctly, so the red job is the signal. A mismatch is retried
+      # to absorb ALB draining; a transient 5xx/000 is retried too. Rollback
+      # mode redeploys a prior image without building, so it is skipped there.
+      - name: Assert served build sha
+        if: ${{ success() && inputs.rollback != 'true' }}
+        run: |
+          set -uo pipefail
+          URL="${API_BASE}/meta/served-routes"
+          got=""
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s --max-time 20 -o /tmp/served_routes -w '%{http_code}' "$URL") || code=000
+            if [ "$code" = "200" ]; then
+              got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("build_sha",""))' /tmp/served_routes 2>/dev/null || echo "")
+            else
+              got=""
+            fi
+            echo "  attempt $i: GET $URL -> $code build_sha=${got:-<none>} (want ${GITHUB_SHA})"
+            if [ "$got" = "$GITHUB_SHA" ]; then
+              echo "Serving image carries ${GITHUB_SHA}."
+              exit 0
+            fi
+            # A settled non-200 that is not transient will not self-heal.
+            if [ "$code" != "200" ] && [ "$code" != "000" ] && [ "${code:0:1}" != "5" ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "$code" = "200" ]; then
+            echo "::error::GET $URL reports build_sha=${got:-<none>}, not ${GITHUB_SHA}. The task-def identity gate passed, so the image itself is mis-stamped: check the BUILD_SHA build-arg and backend/Dockerfile."
+          else
+            echo "::error::GET $URL answered ${code}, not 200: the served-routes route is missing (404), behind auth (401/403) or unreachable (5xx/000). coord's route-serving observer falls back to options mode without it."
+          fi
+          head -c 300 /tmp/served_routes 2>/dev/null || true; echo
+          exit 1
 
       # ── Deploy effect signature: VERIFY (best-effort, report-only) ────────
       # Fires one verification after the rollout settled (or failed + rolled
@@ -1004,8 +1099,10 @@ jobs:
       - name: Verify deploy effect signature
         if: ${{ always() && steps.declare.outputs.signature_id != '' }}
         continue-on-error: true
+        env:
+          SIGNATURE_ID: ${{ steps.declare.outputs.signature_id }}
         run: |
-          SIG="${{ steps.declare.outputs.signature_id }}"
+          SIG="${SIGNATURE_ID}"
           RESP=$(curl -s --max-time 60 -X POST "$COORD_BASE_URL/coord/deploys/verify" \
             -H 'Content-Type: application/json' \
             -d "{\"signature_id\":\"$SIG\"}" || true)

@@ -1,55 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   bodyWithoutLeadHeading,
-  classifyIntent,
+  positionsAfterMove,
   sortIntentEntries,
   titleOfDocument,
   hasContent,
-  skeletonEntry,
   stripFrontmatter,
   toIntentEntry,
-  unreadableEntry,
+  type IntentDocument,
 } from "./intent";
-import type { PromptDocument } from "@/app/(app)/admin/coord/prompt-documents/types";
 
-describe("classifyIntent", () => {
-  it("trusts coord's served verdict over the version fallback", () => {
-    expect(
-      classifyIntent({
-        default_source: "prompt_doc/product_intent/main/v1",
-        current_version: 1,
-        unedited_seed: false,
-      })
-    ).toBe("authored");
-    expect(
-      classifyIntent({
-        default_source: "prompt_doc/product_intent/main/v1",
-        current_version: 4,
-        unedited_seed: true,
-      })
-    ).toBe("skeleton");
-  });
-
-  it("falls back to origin and version when coord serves no verdict", () => {
-    expect(classifyIntent({ default_source: null, current_version: 1 })).toBe(
-      "authored"
-    );
-    expect(
-      classifyIntent({ default_source: "seed/v1", current_version: 1 })
-    ).toBe("skeleton");
-    // Edited since seeding, but only the body could say how much: never guessed.
-    expect(
-      classifyIntent({ default_source: "seed/v1", current_version: 2 })
-    ).toBe("unknown");
-    expect(
-      classifyIntent({
-        default_source: "seed/v1",
-        current_version: 2,
-        unedited_seed: null,
-      })
-    ).toBe("unknown");
-  });
-});
+/** A served `intent-documents` row. Classification is the server's
+ *  (`test_overview_authoring.py` pins `_state`), so tests name the state. */
+function served(overrides: Partial<IntentDocument>): IntentDocument {
+  return {
+    id: "product_intent:vision",
+    kind: "product_intent",
+    name: "vision",
+    description: null,
+    body: "",
+    frontmatter: null,
+    overview_order: null,
+    state: "authored",
+    error: null,
+    status: null,
+    withdrawn: false,
+    version: 2,
+    updated_at: "2026-09-20T10:00:00Z",
+    updated_by: null,
+    ...overrides,
+  };
+}
 
 describe("stripFrontmatter", () => {
   it("removes a leading frontmatter block", () => {
@@ -65,65 +46,52 @@ describe("stripFrontmatter", () => {
 });
 
 describe("toIntentEntry", () => {
-  const base = {
-    id: "d1",
-    tenant_id: "t1",
-    kind: "product_intent",
-    name: "main",
-    description: "What we are building",
-    format: "markdown",
-    current_version: 1,
-    updated_at: "2026-09-19T10:00:00Z",
-  } as unknown as PromptDocument;
-
   it("never passes a skeleton's template text through", () => {
-    const entry = toIntentEntry({
-      ...base,
-      default_source: "seed/v1",
-      body: "# Product intent\n\n_Describe the product here._",
-    });
+    const entry = toIntentEntry(
+      served({
+        state: "skeleton",
+        body: "# Product intent\n\n_Describe the product here._",
+      })
+    );
     expect(entry.state).toBe("skeleton");
     expect(entry.body).toBe("");
+    // …nor offers it to an editor as a starting point.
+    expect(entry.source).toBe("");
   });
 
-  it("keeps an authored body, minus frontmatter", () => {
-    const entry = toIntentEntry({
-      ...base,
-      default_source: null,
-      body: "---\nowner: x\n---\nA portal for partners.",
-    });
+  it("keeps an authored body, and the prose an editor starts from", () => {
+    const entry = toIntentEntry(
+      served({ body: "# Vision\n\nA portal for partners.", version: 7 })
+    );
     expect(entry.state).toBe("authored");
     expect(entry.body).toBe("A portal for partners.");
+    expect(entry.source).toBe("# Vision\n\nA portal for partners.");
+    expect(entry.version).toBe(7);
+    expect(entry.id).toBe("product_intent:vision");
+  });
+
+  it("reads the served position", () => {
+    expect(toIntentEntry(served({ overview_order: 2 })).order).toBe(2);
   });
 });
 
 describe("hasContent", () => {
-  const summary = {
-    id: "d2",
-    kind: "initiative",
-    name: "x",
-    description: null,
-    format: "markdown",
-    default_source: null,
-    current_version: 2,
-    updated_at: "2026-09-19T10:00:00Z",
-  } as unknown as PromptDocument;
-
   it("treats an authored document with an empty body as not written", () => {
-    const entry = toIntentEntry({
-      ...summary,
-      body: "---\nowner: x\n---\n   \n",
-    });
+    const entry = toIntentEntry(served({ body: "   \n" }));
     expect(entry.state).toBe("authored");
     expect(hasContent(entry)).toBe(false);
   });
 
   it("never lets a skeleton read as written", () => {
-    expect(hasContent(skeletonEntry(summary))).toBe(false);
+    expect(hasContent(toIntentEntry(served({ state: "skeleton" })))).toBe(
+      false
+    );
   });
 
   it("reports an unreadable document instead of calling it unwritten", () => {
-    const entry = unreadableEntry(summary, "GET /x failed: 502 - {}");
+    const entry = toIntentEntry(
+      served({ state: "unreadable", error: "GET /x failed: 502 - {}" })
+    );
     expect(hasContent(entry)).toBe(true);
     expect(entry.error).toContain("502");
   });
@@ -225,18 +193,7 @@ describe("sortIntentEntries", () => {
 });
 
 describe("the title and the body agree on one heading", () => {
-  const doc = (body: string) =>
-    ({
-      id: "d",
-      kind: "product_intent",
-      name: "vision",
-      description: null,
-      format: "markdown",
-      default_source: null,
-      current_version: 2,
-      updated_at: "2026-09-20T10:00:00Z",
-      body,
-    }) as unknown as PromptDocument;
+  const doc = (body: string) => served({ body });
 
   it("ignores a # comment inside a fenced code block", () => {
     const body =
@@ -296,17 +253,7 @@ describe("the title and the body agree on one heading", () => {
 });
 
 describe("a document that does not open with a heading keeps its first line", () => {
-  const doc = (body: string) =>
-    ({
-      id: "d",
-      kind: "product_intent",
-      name: "vision",
-      format: "markdown",
-      default_source: null,
-      current_version: 2,
-      updated_at: "2026-09-20T10:00:00Z",
-      body,
-    }) as unknown as PromptDocument;
+  const doc = (body: string) => served({ body });
 
   // A `---` under a quote, a list item or an HTML block is a thematic break,
   // not a heading underline. Reading one as a heading DELETED that line.
@@ -486,5 +433,62 @@ describe("deep tail", () => {
     const body = "```bash\n===\necho hi\n```\n";
     expect(bodyWithoutLeadHeading(body)).toBe(body);
     expect(titleOfDocument("vision", body)).toBe("Vision");
+  });
+});
+
+describe("positionsAfterMove", () => {
+  const entry = (name: string, order: number | null) =>
+    toIntentEntry(
+      served({ id: `product_intent:${name}`, name, overview_order: order })
+    );
+
+  it("numbers every document so a move cannot tie with a neighbour", () => {
+    // Nobody has set a position yet: moving the second up writes all three.
+    const section = [
+      entry("vision", null),
+      entry("non-goals", null),
+      entry("q", null),
+    ];
+    const writes = positionsAfterMove(section, 1, 0);
+    expect(writes.map((w) => [w.entry.name, w.order])).toEqual([
+      ["non-goals", 1],
+      ["vision", 2],
+      ["q", 3],
+    ]);
+  });
+
+  it("writes only what changes", () => {
+    const section = [entry("a", 1), entry("b", 2), entry("c", 3)];
+    expect(
+      positionsAfterMove(section, 2, 1).map((w) => [w.entry.name, w.order])
+    ).toEqual([
+      ["c", 2],
+      ["b", 3],
+    ]);
+  });
+
+  it("does nothing at the ends", () => {
+    const section = [entry("a", 1), entry("b", 2)];
+    expect(positionsAfterMove(section, 0, -1)).toEqual([]);
+    expect(positionsAfterMove(section, 1, 2)).toEqual([]);
+  });
+
+  it("produces the order the page then sorts into", () => {
+    const section = [
+      entry("vision", null),
+      entry("non-goals", null),
+      entry("q", null),
+    ];
+    const writes = positionsAfterMove(section, 0, 2);
+    const byName = new Map(writes.map((w) => [w.entry.name, w.order]));
+    const after = section.map((e) => ({
+      ...e,
+      order: byName.get(e.name) ?? e.order,
+    }));
+    expect(sortIntentEntries(after).map((e) => e.name)).toEqual([
+      "non-goals",
+      "q",
+      "vision",
+    ]);
   });
 });

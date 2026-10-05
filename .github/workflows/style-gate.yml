@@ -93,6 +93,14 @@ concurrency:
   group: style-gate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read. A job that needs more
+# declares its own `permissions:`.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   style-gate:
     name: Style Gate (shadow)
@@ -181,7 +189,9 @@ jobs:
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # Read the pinned qontinui-schemas SHA from style-gate.lock. The SHA is
       # NEVER hardcoded in this YAML — a bump is a reviewable change to the lock
@@ -236,20 +246,23 @@ jobs:
       # clone convention in backend-ci.yml / migrate.yml. Clone into a sibling of
       # the workspace (../qontinui-schemas) and check out the pinned SHA.
       - name: Checkout pinned qontinui-schemas (analyzer source)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qontinui/qontinui-schemas
           ref: ${{ steps.lock.outputs.schemas_sha }}
           path: qontinui-schemas
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
 
       # Cache cargo registry + the analyzer's build output, keyed on the pinned
       # SHA so a schemas bump invalidates cleanly.
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry
@@ -300,7 +313,7 @@ jobs:
           "$BIN_PATH" --help || true
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -457,7 +470,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
           path: ~/.cache/qontinui-apt-playwright
@@ -611,7 +624,7 @@ jobs:
         # mistaken for the apt failure this plan exists to report. Belt and
         # braces.
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
@@ -666,12 +679,12 @@ jobs:
           done
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
       - name: Cache pip dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
@@ -738,9 +751,9 @@ jobs:
           set -euo pipefail
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
-      # Some alembic migrations reference the `runner` schema, created in dev by
-      # init-scripts/01-create-runner-schema.sql. CI service containers don't run
-      # those init scripts, so create it explicitly (same as e2e-tests.yml).
+      # Some alembic migrations reference the `runner` schema, and nothing creates
+      # it in a fresh CI service container, so create it explicitly (same as
+      # e2e-playwright-stack.yml).
       - name: Create runner schema
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
@@ -883,6 +896,9 @@ jobs:
         # skipped by an earlier failure.
         if: always()
         env:
+          LOCK_SCHEMAS_SHA: ${{ steps.lock.outputs.schemas_sha }}
+          LOCK_CRATE: ${{ steps.lock.outputs.crate }}
+          LOCK_BIN: ${{ steps.lock.outputs.bin }}
           ENFORCE: ${{ steps.mode.outputs.enforce }}
         run: |
           set -uo pipefail
@@ -926,7 +942,7 @@ jobs:
             echo ""
             echo "> SHADOW never blocks: this check stays GREEN regardless of findings or capture availability. If routes show \`CAPTURE-UNAVAILABLE\`, the capture environment is still being wired (Stage-A burn-in) — that is NOT a code regression."
             echo ""
-            echo "Pinned qontinui-schemas: \`${{ steps.lock.outputs.schemas_sha }}\` (crate \`${{ steps.lock.outputs.crate }}\`, bin \`${{ steps.lock.outputs.bin }}\`)"
+            echo "Pinned qontinui-schemas: \`${LOCK_SCHEMAS_SHA}\` (crate \`${LOCK_CRATE}\`, bin \`${LOCK_BIN}\`)"
             echo ""
             echo "Each route runs two passes: **analyze** (page-wide findings, \`--fail-on critical\`; the primary day-one signal) and **assert** (committed invariant specs; grows with baselines). Both honor shadow/enforce."
             echo ""
@@ -1074,7 +1090,7 @@ jobs:
 
       - name: Upload style-gate artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: style-gate-artifacts
           # `.artifacts/` is a HIDDEN dir; upload-artifact skips hidden files

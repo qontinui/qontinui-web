@@ -161,7 +161,9 @@ jobs:
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # Both backend pyproject.toml and frontend package.json have path
       # deps on these five sibling repos. Without this clone, `pip
@@ -190,14 +192,14 @@ jobs:
           done
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
       # Node 20 was the sole entry of the old job's `node-version` matrix; it
       # is pinned here rather than exposed as an input nobody varies.
       - name: Set up Node.js 20
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
           cache: 'npm'
@@ -252,7 +254,7 @@ jobs:
       # here runs apt and the infrastructure marker must never be able to
       # name it.
       - name: Restore Next.js compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
           path: frontend/.next/cache
@@ -262,11 +264,16 @@ jobs:
 
       # `npm run build` = build-id injection + `next build` + the standalone
       # sw.js stamp (frontend/package.json). The build bakes NEXT_PUBLIC_*
-      # and the rewrite targets (BACKEND_URL / COORD_URL) in — so this step
-      # deliberately sets none of them, exactly as the `npm run dev` server
-      # this replaces was given none: both fall back to the config's
-      # localhost defaults, and the built app points at the same run-local
-      # stack the test step starts.
+      # and the rewrite targets (BACKEND_URL / COORD_URL) in. A production
+      # build no longer falls back to a localhost backend by itself (plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists,
+      # B5: unset, the `/api/:path*` rewrite and the `src/app/api/v1` route
+      # handlers answer a 503 naming the variable), so this step and the
+      # test step's `next start` both set BACKEND_URL explicitly to the
+      # run-local backend the test step starts — at build time for the
+      # rewrite table, at runtime for the route handlers. COORD_URL stays
+      # unset: no coord runs here, and `/coord-api/*` now answers the same
+      # structured 503 instead of a refused loopback connection.
       #
       # NEXT_PUBLIC_DEV_RESET is the one dev-only dependency the suite
       # ASSERTS on (plan Phase 1): `src/app/dev/reset/page.tsx` renders
@@ -317,6 +324,7 @@ jobs:
         working-directory: ./frontend
         env:
           NEXT_PUBLIC_DEV_RESET: 'true'
+          BACKEND_URL: http://localhost:8000
         run: npm run build
 
       # `npx playwright install --with-deps <engines>` was THREE things fused
@@ -466,7 +474,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
           path: ~/.cache/qontinui-apt-playwright
@@ -624,7 +632,7 @@ jobs:
         # mistaken for the apt failure this plan exists to report. Belt and
         # braces.
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
@@ -678,10 +686,8 @@ jobs:
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       # Some alembic migrations (unify_runner_concepts onward) reference
-      # the `runner` schema, which is created by
-      # qontinui-web/init-scripts/01-create-runner-schema.sql in dev's
-      # docker-entrypoint-initdb.d. CI service containers don't run
-      # those init scripts, so create the schema explicitly.
+      # the `runner` schema, and nothing creates it in a fresh CI service
+      # container, so create the schema explicitly.
       - name: Create runner schema
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
         # psql/DDL against this job's own postgres service, not the external
@@ -748,6 +754,10 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # Runtime half of the build step's BACKEND_URL: `next start` (the
+          # webServer) inherits this env, and the route handlers read it per
+          # request. See the comment on the build step.
+          BACKEND_URL: http://localhost:8000
           # The config's default, spelled out so the log and the file agree:
           # Playwright's webServer is `next start` on the build above. `dev`
           # is a local-iteration opt-in only (playwright.config.ts).
@@ -835,7 +845,7 @@ jobs:
       # shard job always produced -- and `changed-specs` from the PR lane.
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: playwright-report-${{ inputs.artifact_suffix }}
           path: frontend/playwright-report/
@@ -843,7 +853,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: frontend-test-results-${{ inputs.artifact_suffix }}
           path: frontend/test-results/
@@ -851,7 +861,7 @@ jobs:
 
       - name: Upload test artifacts (screenshots, videos)
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: playwright-artifacts-${{ inputs.artifact_suffix }}
           path: |

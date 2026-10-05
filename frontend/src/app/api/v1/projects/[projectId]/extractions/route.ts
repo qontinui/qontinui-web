@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
 import { cookies } from "next/headers";
-
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
 
 async function proxyToBackend(
   request: NextRequest,
@@ -23,7 +19,9 @@ async function proxyToBackend(
   }
 
   const url = new URL(request.url);
-  const backendUrl = `${BACKEND_URL}/api/v1/projects/${projectId}/extractions${url.search}`;
+  const base = backendBaseOrResponse();
+  if (base instanceof NextResponse) return base;
+  const backendUrl = `${base}/api/v1/projects/${projectId}/extractions${url.search}`;
 
   const fetchOptions: RequestInit = {
     method: request.method,

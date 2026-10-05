@@ -79,11 +79,14 @@ import {
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
+import { StatusCurrencyBadge } from "../plan-library/_components/StatusCurrencyBadge";
 import {
   CANDIDATE_PALETTE,
+  candidateCurrency,
   deriveCandidateDisclosure,
   deriveCandidateHealth,
   describeCandidateWindow,
+  describeCandidateDifficulty,
   describeCoordLink,
   describePrState,
   describeReadiness,
@@ -99,10 +102,13 @@ const DEFAULT_PAGE_SIZE = 25;
 
 function CandidateRow({
   candidate,
+  tiers,
   expanded,
   onToggle,
 }: {
   candidate: PlanCandidate;
+  /** The response's `model_tiers` — one map for the page, not per row. */
+  tiers: Readonly<Record<string, string>> | undefined;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -114,6 +120,7 @@ function CandidateRow({
   // response that did not carry `document_state` has not said which corpus
   // layer this row came from, and rendering `doc: present` would state it.
   const documentState = candidate.document_state ?? null;
+  const currency = candidateCurrency(candidate);
 
   return (
     <RecordRow
@@ -164,6 +171,16 @@ function CandidateRow({
           >
             doc: {documentState ?? "unstated"}
           </span>
+          {/* `null` only on a work-unit-only row, where `doc:` above says
+              why; `candidateCurrency` resolves every other shape to a badge. */}
+          {currency !== null && (
+            <span className="hidden sm:inline-flex">
+              <StatusCurrencyBadge
+                currency={currency}
+                testId="coord-candidate-currency"
+              />
+            </span>
+          )}
           <span
             className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
             data-testid="coord-candidate-coord"
@@ -309,7 +326,10 @@ function CandidateRow({
               </div>
             )}
             <div>work_unit_slug: {candidate.work_unit_slug ?? "null"}</div>
-            <div>difficulty: {candidate.difficulty ?? "unrated"}</div>
+            <div data-testid="coord-candidate-difficulty">
+              difficulty:{" "}
+              {describeCandidateDifficulty(candidate.difficulty, tiers)}
+            </div>
           </div>
         }
       />
@@ -534,6 +554,7 @@ export default function CoordPlanCandidatesPage() {
         renderRow={(candidate, ctx) => (
           <CandidateRow
             candidate={candidate}
+            tiers={data?.model_tiers}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
           />

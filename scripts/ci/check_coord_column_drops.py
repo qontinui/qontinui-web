@@ -82,6 +82,21 @@ tables ``coord.prompt_documents`` and feeds them through a loop variable, so
 the scanner sees a bare name and the cross-check finds the qualified literal.
 A column of ``*`` declares a whole-table drop.
 
+Edited landed revisions (``--base-ref`` lane only). A changed revision file
+that already exists at the merge base has LANDED — alembic never re-runs it,
+and its drops were judged when it was added — so it is judged by its DELTA
+(``delta_scan``): only a resolved drop whose ``(table, column)`` is new versus
+the merge-base version counts (qontinui-web#1457, which restored ``SET LOCAL
+lock_timeout`` across landed revisions, was otherwise held red on drops that
+landed long before it). The delta applies only when the edit leaves the
+``revision`` / ``down_revision`` identity, the declaration, the unresolved
+sites and the static violations unchanged; any other difference judges the
+file whole. An ADDED file, and every file under ``--files``, is judged whole.
+The scan summary names each delta-judged file and how many landed drops it
+did not re-judge, and both pass verdicts (no drop added; every drop unread)
+repeat the total — so a delta pass never reads as "the changed files drop
+nothing".
+
 What it consults
 ----------------
 Zero ``coord.*`` drops across the changed files — the common case — exits 0
@@ -133,6 +148,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -145,6 +161,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _gate_lib  # noqa: E402
 from _gate_lib import (  # noqa: E402
     EXIT_VACUOUS,
     EXIT_VIOLATION,
@@ -172,6 +189,27 @@ NO_REASON_SERVED = "no reason served"
 FETCH_TIMEOUT_S = 20.0
 FETCH_TRIES = 3
 WHOLE_TABLE = "*"
+
+#: The machine-readable form of the null-`main` UNKNOWN (plan
+#: 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate,
+#: Phase 4). coord reads this job's log on a red run, takes the FIRST line
+#: that starts with :data:`PRECONDITION_MARKER_PREFIX` followed by a JSON
+#: object, and — only if it is a ``sql_count`` whose ``query_id``, ``op`` and
+#: ``n`` match :data:`MAIN_AT_HEAD_PRECONDITION` — registers a gate that may
+#: re-run this job once the count is >= 1
+#: (qontinui-coord ``crates/coord/src/guard_rerun.rs``, ``MARKER_PREFIX`` and
+#: ``parse_precondition_markers``). The count is >= 1 exactly when
+#: ``GET {MANIFEST_ROUTE}`` serves a non-null `main` half whose sha is coord
+#: main's tip, which is the condition the human sentence beside it states.
+#: coord's allowlist admits ONLY this predicate for this guard: do not print a
+#: marker for any other UNKNOWN, it would be refused.
+PRECONDITION_MARKER_PREFIX = "UNKNOWN-PENDING-PRECONDITION: "
+MAIN_AT_HEAD_PRECONDITION: dict[str, object] = {
+    "kind": "sql_count",
+    "query_id": "schema_read_surfaces_main_at_head",
+    "op": "gte",
+    "n": 1,
+}
 
 #: Statuses that mean coord does not SERVE :data:`MANIFEST_ROUTE` at all, as
 #: opposed to serving it and refusing this caller. Measured against controls on
@@ -239,6 +277,10 @@ class FileScan:
     unresolved: list[Unresolved] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
     declared: list[tuple[str, str]] | None = None
+    # Set only by ``delta_scan``: the resolved drops of an EDITED landed
+    # revision that were judged when it landed and are not re-judged now.
+    # ``None`` means the file was judged whole.
+    landed_drops: list[Drop] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -825,6 +867,124 @@ def scan_file(path: Path) -> FileScan:
     return scan_source(path.read_text(encoding="utf-8"), path)
 
 
+def merge_base(base_ref: str) -> str:
+    """The merge base of ``base_ref`` and HEAD. Raises on a git failure."""
+    mb = subprocess.run(
+        ["git", "merge-base", base_ref, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if mb.returncode != 0:
+        raise RuntimeError(
+            f"git merge-base {base_ref} HEAD failed (exit {mb.returncode}): "
+            f"{mb.stderr.strip() or '(no stderr)'}"
+        )
+    return mb.stdout.strip()
+
+
+def base_source(base_sha: str, path: Path) -> str | None:
+    """The revision file's source at ``base_sha`` (the merge base), or ``None``
+    when ``git cat-file -e`` says the path is not there.
+
+    ``None`` sends the file down the ADDED arm, which judges it whole — so any
+    ``cat-file`` failure, not only "path absent", fails STRICT. A ``git show``
+    failure after the path was found, or a non-UTF-8 body, raises (UNKNOWN).
+    """
+    rel = repo_relative(path)
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if exists.returncode != 0:
+        return None
+    shown = subprocess.run(
+        ["git", "show", f"{base_sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if shown.returncode != 0:
+        raise RuntimeError(
+            f"git show <merge-base>:{rel} failed (exit {shown.returncode}): "
+            f"{shown.stderr.decode('utf-8', 'replace').strip() or '(no stderr)'}"
+        )
+    try:
+        return shown.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"<merge-base>:{rel} is not UTF-8: {exc}") from exc
+
+
+_REVISION_LINE = re.compile(
+    r"^(revision|down_revision)\s*(?::[^=]*)?=\s*(.+)$", re.MULTILINE
+)
+
+
+def _revision_identity(source: str) -> list[tuple[str, str]]:
+    return [(m.group(1), m.group(2).strip()) for m in _REVISION_LINE.finditer(source)]
+
+
+def _static_violations(scan: FileScan) -> list[str]:
+    """The scan's static violations with ``<file>:<line>`` locations reduced to
+    ``<file>``, sorted — so an edit that only shifts lines (a ``SET LOCAL`` line
+    inserted above everything) compares equal, while one that ADDS a violation
+    (e.g. removes the only other mention of a declared name, so the declaration
+    cross-check now fails) does not."""
+    label = re.escape(repo_relative(scan.path))
+    return sorted(re.sub(rf"({label}):\d+", r"\1", v) for v in scan.violations)
+
+
+def delta_scan(
+    head: FileScan, base: FileScan, head_source: str, base_source_text: str
+) -> FileScan:
+    """Judge an EDITED landed revision by the resolved drops its edit ADDS.
+
+    A revision that exists at the merge base has already landed (alembic never
+    re-runs it), and every DROP it performed was judged when it was added. So
+    re-judging those drops fails any PR that merely touches a landed revision —
+    qontinui-web#1457, which restores ``SET LOCAL lock_timeout`` across landed
+    revisions, was held red on drops that landed long before it.
+
+    The delta applies ONLY when the edit left everything else the gate reasons
+    about identical: the ``revision`` / ``down_revision`` identity (a rewritten
+    identity is a new migration that WILL run), the declaration, the multiset
+    of unresolved sites up to line numbers (a new or changed site could name a
+    new column the declaration silently covers), and the static violations up
+    to line numbers (an edit must not launder a violation it introduces, such
+    as a declaration whose cross-check it breaks). Any difference returns the
+    head scan unchanged, i.e. the file is judged whole — the strict direction.
+    When the delta applies, a resolved drop is judged only if its
+    ``(table, column)`` is new relative to the base version; a NEW drop in a
+    landed revision is still judged.
+    """
+    same_identity = _revision_identity(head_source) == _revision_identity(
+        base_source_text
+    )
+    same_unresolved = sorted((u.how, u.detail) for u in head.unresolved) == sorted(
+        (u.how, u.detail) for u in base.unresolved
+    )
+    same_violations = _static_violations(head) == _static_violations(base)
+    if not (
+        same_identity
+        and same_unresolved
+        and same_violations
+        and head.declared == base.declared
+    ):
+        return head
+    base_drops = {(d.table, d.column) for d in base.drops}
+    return FileScan(
+        path=head.path,
+        drops=[d for d in head.drops if (d.table, d.column) not in base_drops],
+        unresolved=[],
+        violations=[],
+        declared=head.declared,
+        landed_drops=[d for d in head.drops if (d.table, d.column) in base_drops],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Input selection
 # ---------------------------------------------------------------------------
@@ -956,6 +1116,8 @@ def parse_manifest(raw: bytes | str) -> Manifest:
         raise ManifestUnavailableError(
             f"manifest is not an object: {type(payload).__name__}"
         )
+    # `deployed` is read first: when BOTH halves are null it is the one reported,
+    # and no marker is printed (its condition has no coord predicate).
     deployed_sha, deployed_rows = _half(payload, "deployed", "build_sha")
     main_sha, main_rows = _half(payload, "main", "sha")
 
@@ -992,6 +1154,10 @@ def parse_manifest(raw: bytes | str) -> Manifest:
 # The verdict
 # ---------------------------------------------------------------------------
 
+# The "wait for it to DEPLOY" step below names a condition (the serving
+# build_sha descends from a coord change) for which no coord predicate exists
+# yet, so no marker is printed for it. Plan:
+# 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
 REMEDY = """
 Why this gate is blocking: coord reads that column/table by name in SQL
 (or its readiness probe requires it). Dropping it while a build that
@@ -1027,12 +1193,34 @@ def _report_scan(scans: list[FileScan], label: str) -> None:
         "unresolved site(s)."
     )
     for s in scans:
-        note(
-            f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
-        )
+        line = f"  {repo_relative(s.path)}: {len(s.drops)} drop(s), {len(s.unresolved)} unresolved"
+        if s.landed_drops is not None:
+            # Say so rather than let a delta-judged file read as drop-free.
+            line += (
+                f" — edited landed revision, judged by its delta; "
+                f"{len(s.landed_drops)} drop(s) it performed when it landed "
+                "not re-judged"
+            )
+        note(line)
     # stdout is block-buffered under CI; flush so the scan summary lands
     # BEFORE any verdict written to stderr rather than after it.
     sys.stdout.flush()
+
+
+def _landed_drop_count(scans: list[FileScan]) -> int:
+    """Drops in edited landed revisions that ``delta_scan`` did not re-judge."""
+    return sum(len(s.landed_drops or []) for s in scans)
+
+
+def _note_landed_drops(landed: int) -> None:
+    """On a pass, say so when a delta skipped landed drops — a delta pass must
+    not read as "the changed files drop nothing"."""
+    if landed:
+        note(
+            f"  {landed} drop(s) in edited landed revision(s) were judged when "
+            "those revisions landed and were NOT re-checked against coord now "
+            "(see the per-file lines above)."
+        )
 
 
 def check_drops(
@@ -1086,6 +1274,49 @@ def check_drops(
     return violations, waivers
 
 
+def _workflow_command_data(text: str) -> str:
+    """Escape ``text`` for the message part of a GitHub workflow command."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_pending_precondition(predicate: dict[str, object], human: str) -> None:
+    """Name the remote condition this UNKNOWN waits on, for coord and for people.
+
+    Three outputs, none of which changes the exit code (UNKNOWN stays exit 2):
+
+    * the marker line on stderr — plain, line-anchored, compact JSON — which
+      coord parses to register a re-run gate on ``predicate``;
+    * a ``::warning`` annotation (never ``::error``) so ``gh pr checks`` and
+      the PR UI show the red is pending, not a violation;
+    * the same sentence in ``$GITHUB_STEP_SUMMARY`` when Actions provides one.
+
+    Call it at most once per run: coord registers the first marker only.
+    """
+    marker = PRECONDITION_MARKER_PREFIX + json.dumps(predicate, separators=(",", ":"))
+    print(marker, file=sys.stderr)
+    # Say only what the guard knows: coord skips the re-run on merge-candidate
+    # refs and re-runs at most once per head (guard_rerun.rs).
+    legible = (
+        f"UNKNOWN — pending precondition {human}. coord may re-run this check "
+        "once when it holds (not on merge-candidate refs; at most once per "
+        "head). Not a violation."
+    )
+    if _gate_lib.ANNOTATIONS:
+        print(
+            "::warning title=UNKNOWN-PENDING-PRECONDITION::"
+            + _workflow_command_data(legible),
+            file=sys.stderr,
+        )
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        try:
+            with open(summary, "a", encoding="utf-8") as fh:
+                fh.write(legible + "\n")
+        except OSError as exc:
+            # The summary is a courtesy; the marker above already carries it.
+            err(f"cannot append to $GITHUB_STEP_SUMMARY ({summary}): {exc}")
+
+
 def _explain_null_half(half: str, manifest_url: str) -> None:
     """The per-half remediation for a manifest whose ``half`` was served null.
 
@@ -1104,7 +1335,14 @@ def _explain_null_half(half: str, manifest_url: str) -> None:
             "reads. No edit inside this PR changes it. Re-run once "
             f"`GET {manifest_url}` serves `main.sha`."
         )
+        _emit_pending_precondition(
+            MAIN_AT_HEAD_PRECONDITION,
+            f"`GET {manifest_url}` serves a `main` half at coord main's tip",
+        )
     elif half == "deployed":
+        # No coord predicate exists for this condition yet, so no marker: coord's
+        # allowlist would refuse one. Plan:
+        # 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
         err(
             "The `deployed` half is compiled into the serving coord binary and "
             "carries its `build_sha`; coord serves it null rather than fabricate a "
@@ -1219,10 +1457,28 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
 
     # 2. Scan each one.
     scans: list[FileScan] = []
+    # ``--files`` mode has no base to compare against, so it always judges
+    # every file whole (strict); only the ``--base-ref`` lane applies the
+    # landed-revision delta.
+    base_sha: str | None = None
+    if args.files is None and files:
+        try:
+            base_sha = merge_base(args.base_ref)
+        except (RuntimeError, OSError) as exc:
+            err(f"could not resolve the merge base with {args.base_ref}: {exc}")
+            return EXIT_VACUOUS
     for path in files:
         try:
-            scans.append(scan_file(path))
-        except OSError as exc:
+            head_text = path.read_text(encoding="utf-8")
+            scan = scan_source(head_text, path)
+            if base_sha is not None:
+                # A revision already on the base has landed: judge only the
+                # drops this PR's edit ADDS to it (see delta_scan).
+                prior = base_source(base_sha, path)
+                if prior is not None:
+                    scan = delta_scan(scan, scan_source(prior, path), head_text, prior)
+            scans.append(scan)
+        except (OSError, RuntimeError) as exc:
             err(f"cannot read {path}: {exc}")
             return EXIT_VACUOUS
         except SyntaxError as exc:
@@ -1249,13 +1505,18 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         note(
             "No coord.* DROP/RENAME in the upgrade path; nothing to check against coord."
         )
+        landed = _landed_drop_count(scans)
+        subject = (
+            "this PR's edits ADD no drop" if landed else "this revision drops nothing"
+        )
         note(
-            "  NB: this pass says this revision drops nothing in coord.*'s UPGRADE "
+            f"  NB: this pass says {subject} in coord.*'s UPGRADE "
             "path. It is NOT evidence that a drop was checked against coord's read "
             "contract — it means none was found in the upgrade path; a DROP written "
             "inside downgrade() (or a helper only downgrade() reaches) is not "
             "scanned, no manifest was fetched, and none was needed."
         )
+        _note_landed_drops(landed)
         return 0
 
     # 4. Only now is coord consulted.
@@ -1301,6 +1562,8 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
             return 0
         return EXIT_VIOLATION
     if waivers:
+        # No coord predicate for "the waiver is resolved" exists yet, so no marker.
+        # Plan: 2026-09-13-a-machine-checkable-precondition-written-as-prose-is-an-unregistered-gate
         err(
             "coord-column-drop-guard: cannot decide — coord's read contract has a waiver on this table:"
         )
@@ -1318,6 +1581,7 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         f"OK: none of the {len(drops)} dropped surface(s) is read by coord's deployed "
         f"build ({manifest.deployed_sha}) or main ({manifest.main_sha})."
     )
+    _note_landed_drops(_landed_drop_count(scans))
     return 0
 
 

@@ -29,11 +29,17 @@ Two snapshots, one exporter:
   generates types from.
 * ``--base`` — ``openapi-schema.base.json``: the app with the cloud-control
   side-effect import suppressed (``QONTINUI_DISABLE_CLOUD_EXTENSIONS=1``,
-  honored in ``app/main.py``) even where the package is installed. This is the
-  surface **prod api.qontinui.io actually serves** (the prod image does not
-  install cloud-control), so it is the declared-route source coord's
-  Ξ_RouteServing observer reads for that host — using the extended spec there
-  false-positives ``route_missing`` on every extension route.
+  honored in ``app/main.py``) even where the package is installed. It is the
+  declared-route source coord's Ξ_RouteServing observer reads for
+  api.qontinui.io. **It is a SUBSET of what prod serves, not all of it:** since
+  2026-08-26 (``2547cdf4e``) the prod image composes cloud-control and fails
+  its build when that does not load (``backend/Dockerfile``, COMPOSE-OR-FAIL),
+  so prod also serves the extension routes. This file used to say the prod
+  image does not install cloud-control; that stopped being true on that date.
+  Every route declared here is served, so the observer raises no false
+  ``route_missing``; but a reader that compares prod's served set against this
+  file (``GET /api/v1/meta/served-routes``) will see the extension routes as
+  undeclared.
 
 The two variants need separate *processes* (the app is built at import time;
 one process cannot re-import it with different env), so CI runs the script

@@ -28,9 +28,10 @@ import {
   toNumber,
 } from "@/components/overview/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/auth-context";
+import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useTenant } from "@/contexts/tenant-context";
 import { useEstimate } from "../_hooks/useEstimate";
+import { SourceDocumentLine } from "../_components/SourceDocumentLine";
 import type { EstimateRollup } from "../_lib/estimate-api";
 import { EffortByRole } from "./_components/EffortByRole";
 import { FteMatrix } from "./_components/FteMatrix";
@@ -265,7 +266,7 @@ function NoEstimate({ canEdit }: { canEdit: boolean }) {
         </Link>
       ) : (
         <p className="mt-5 text-sm text-muted-foreground">
-          An administrator of this project can enter one.
+          Somebody who can edit this project&rsquo;s overview can enter one.
         </p>
       )}
     </section>
@@ -273,7 +274,10 @@ function NoEstimate({ canEdit }: { canEdit: boolean }) {
 }
 
 export default function TeamPage() {
-  const { isCoordAdmin } = useAuth();
+  // The served permission for THIS project — `isCoordAdmin` is a union
+  // across every project the viewer belongs to, and promised edits here that
+  // the server then refused (plan 2026-09-20-overview-authoring-layer §4a).
+  const canEdit = useCanEdit("estimates");
   const {
     activeTenantId,
     loading: tenantsLoading,
@@ -319,7 +323,15 @@ export default function TeamPage() {
 
       {data.state === "ready" && (
         <>
-          {isCoordAdmin && data.estimate && (
+          {data.estimate?.source_page_id && (
+            <div className="mb-4">
+              <SourceDocumentLine
+                pageId={data.estimate.source_page_id}
+                uiBridgeId="overview.team.source"
+              />
+            </div>
+          )}
+          {canEdit && data.estimate && (
             <div className="mb-8 flex justify-end">
               <Link
                 href={EDITOR_ROUTE}
@@ -331,7 +343,7 @@ export default function TeamPage() {
             </div>
           )}
           {data.rollup === null ? (
-            <NoEstimate canEdit={isCoordAdmin} />
+            <NoEstimate canEdit={canEdit} />
           ) : (
             <TeamBody
               rollup={data.rollup}

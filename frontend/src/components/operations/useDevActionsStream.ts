@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlight } from "./useSingleFlightPoll";
 import {
   DEV_ACTIONS_API,
   DEV_ACTIONS_LIMIT,
@@ -55,7 +57,8 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
       const resp = await httpClient.fetch(
-        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`
+        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
@@ -76,6 +79,12 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
     }
   }, []);
 
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // every call of `fetchOnce` goes through this latch, so a tick that finds
+  // a read outstanding is skipped and a refetch during one runs once after it.
+  const { refresh: refreshOnce, tick: tickOnce } = useSingleFlight(fetchOnce);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -86,20 +95,20 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
   const startPolling = useCallback(() => {
     stopPolling();
     pollTimerRef.current = setInterval(() => {
-      if (!document.hidden) void fetchOnce();
+      if (!document.hidden) tickOnce();
     }, DEV_ACTIONS_POLL_MS);
-  }, [fetchOnce, stopPolling]);
+  }, [tickOnce, stopPolling]);
 
   // Mount: seed + start polling.
   useEffect(() => {
     cleanedUpRef.current = false;
-    void fetchOnce();
+    void refreshOnce();
     startPolling();
     return () => {
       cleanedUpRef.current = true;
       stopPolling();
     };
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
   // Tab-visibility — pause polling while hidden, resume on return.
   useEffect(() => {
@@ -107,18 +116,18 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
       if (document.hidden) {
         stopPolling();
       } else {
-        void fetchOnce();
+        void refreshOnce();
         startPolling();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
   return {
     actions,
     seeded,
     error,
-    refetch: fetchOnce,
+    refetch: refreshOnce,
   };
 }

@@ -6,12 +6,23 @@ on:
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+      # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
+      - "fleet-nouns.pin.toml"
+      - ".github/actions/fleet-nouns-vocab/**"
   push:
     branches: [main, develop]
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+      # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
+      - "fleet-nouns.pin.toml"
+      - ".github/actions/fleet-nouns-vocab/**"
   workflow_dispatch:
+
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
 
 jobs:
   lint-and-typecheck:
@@ -23,10 +34,19 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -36,6 +56,11 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      # `npm run lint` is `next lint` (src/) followed by `lint:config`: the
+      # files beside src/ — next.config.mjs, config/ (the rewrite resolver)
+      # and scripts/ — get the full rule set too,
+      # @qontinui-web/no-dev-stack-fallback included. Errors fail; console
+      # warnings in CLI scripts do not.
       - name: Lint
         working-directory: ./frontend
         run: npm run lint
@@ -54,6 +79,27 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
+
+      # ADVISORY, last, bounded, and unable to fail the job: has schemas main
+      # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump
+      # recipe — the pin exists so that a vocabulary edit is adopted by a
+      # reviewed PR here, never by an unrelated one going red.
+      - name: Fleet-noun vocabulary drift from schemas main (advisory)
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          read -r PIN_REF PIN_SHA256 < <(python3 -c 'import tomllib; p = tomllib.load(open("fleet-nouns.pin.toml", "rb"))["fleet_nouns"]; print(p["ref"], p["sha256"])')
+          main_file="$RUNNER_TEMP/fleet-nouns-main.toml"
+          if ! curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 -o "$main_file" https://raw.githubusercontent.com/qontinui/qontinui-schemas/main/fleet-nouns.toml; then
+            echo "::warning title=fleet-noun vocabulary drift::could not fetch schemas main's fleet-nouns.toml -- drift from the pin ($PIN_REF) is UNKNOWN"
+            exit 0
+          fi
+          main_sha256="$(sha256sum "$main_file" | cut -d' ' -f1)"
+          if [ "$main_sha256" = "$PIN_SHA256" ]; then
+            echo "fleet-nouns.toml on schemas main matches the pin ($PIN_REF)."
+          else
+            echo "::warning title=fleet-noun vocabulary drift::schemas main's fleet-nouns.toml (sha256 $main_sha256) differs from the pin ($PIN_REF, sha256 $PIN_SHA256). Bump fleet-nouns.pin.toml in a PR, rebaseline with QONTINUI_FLEET_NOUNS_REBASELINE=1 (backend/tests/test_fleet_nouns_ratchet.py) and review the diff."
+          fi
 
   vercel-install-script:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -78,10 +124,12 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -185,19 +233,29 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # actions/checkout cannot write outside $GITHUB_WORKSPACE, so the
       # sibling lands inside it. The overlay script takes the path explicitly,
       # so it does not have to be the usual `../qontinui-cloud-control`.
       - name: Checkout qontinui-cloud-control
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qontinui/qontinui-cloud-control
           path: .sibling/qontinui-cloud-control
+          persist-credentials: false
+
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"

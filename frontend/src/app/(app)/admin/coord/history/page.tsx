@@ -34,7 +34,7 @@
  * would be exactly the lie R6's dash rule forbids.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import {
@@ -47,6 +47,8 @@ import {
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
@@ -90,32 +92,37 @@ const EMPTY_SECTION: SectionState = {
 function useSection(status: SectionId): SectionState & { refetch: () => void } {
   const [state, setState] = useState<SectionState>(EMPTY_SECTION);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const qs = new URLSearchParams();
-      qs.set("status", status);
-      qs.set("limit", "50");
-      const body = await httpClient.get<{ plans?: CoordPlanRow[] }>(
-        `${API}/plans?${qs.toString()}`
-      );
-      const plans = body.plans ?? [];
-      setState({ plans, count: plans.length, settled: true, error: null });
-    } catch (e) {
-      setState((prev) => ({
-        ...prev,
-        settled: true,
-        error: e instanceof Error ? e.message : String(e),
-      }));
-    }
-  }, [status]);
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set("status", status);
+        qs.set("limit", "50");
+        const body = await httpClient.get<{ plans?: CoordPlanRow[] }>(
+          `${API}/plans?${qs.toString()}`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        const plans = body.plans ?? [];
+        setState({ plans, count: plans.length, settled: true, error: null });
+      } catch (e) {
+        if (!isCurrent()) return;
+        setState((prev) => ({
+          ...prev,
+          settled: true,
+          error: e instanceof Error ? e.message : String(e),
+        }));
+      }
+    },
+    [status]
+  );
 
-  useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
+  const refetch = useCallback(() => {
+    void refresh();
+  }, [refresh]);
 
-  return { ...state, refetch: fetchData };
+  return { ...state, refetch };
 }
 
 export default function CoordHistoryPage() {
@@ -179,7 +186,11 @@ export default function CoordHistoryPage() {
       <div className="flex flex-wrap items-center gap-2">
         <FilterTabs<SectionId>
           tabs={[
-            { id: "shipped", label: SECTION_LABEL.shipped, count: shipped.count },
+            {
+              id: "shipped",
+              label: SECTION_LABEL.shipped,
+              count: shipped.count,
+            },
             {
               id: "archived",
               label: SECTION_LABEL.archived,
@@ -226,12 +237,9 @@ export default function CoordHistoryPage() {
           <PlanRow plan={p} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
         empty={
-          current.error ? (
-            // Gated on `error`: asserting "no shipped plans" on a request that
-            // never answered is the empty-is-not-unknown mistake. The failure
-            // message above is the honest rendering.
-            null
-          ) : (
+          current.error ? // never answered is the empty-is-not-unknown mistake. The failure // Gated on `error`: asserting "no shipped plans" on a request that
+          // message above is the honest rendering.
+          null : (
             <p className="text-sm text-muted-foreground italic">
               No {active} plans in the last 50.
             </p>

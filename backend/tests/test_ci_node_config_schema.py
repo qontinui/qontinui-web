@@ -5,9 +5,11 @@ Plan ``2026-08-07-runner-local-ci-parity-and-web-configuration`` §Phase 4.
 the properties that make it a CONSENT surface rather than a preferences blob,
 so a later "convenience" edit has to delete a test to weaken them:
 
-1. The defaults are the RUNNER's defaults — off, empty allowlist, 1 build, 20
-   GiB. A machine nobody has configured must round-trip as the posture the
-   runner actually ships with, never a friendlier one.
+1. The defaults are the RUNNER's defaults — off, empty allowlist, capacity
+   unset (``None``: the runner derives it from the host, qontinui-runner#1684),
+   20 GiB. A machine nobody has configured must round-trip as the posture the
+   runner actually ships with, never a friendlier one — and never pinned to a
+   number the web invented.
 2. There is no wildcard. ``*`` and ``all`` are rejected with their own message,
    because "allow everything" is precisely the affordance this feature must
    not have and a caller reaching for it deserves to be told so.
@@ -31,7 +33,7 @@ def test_defaults_match_the_runner_defaults() -> None:
     cfg = CiNodeConfig()
     assert cfg.enabled is False
     assert cfg.repo_allowlist == []
-    assert cfg.max_concurrent_builds == 1
+    assert cfg.max_concurrent_builds is None
     assert cfg.min_free_disk_gb == 20
 
 
@@ -76,11 +78,43 @@ def test_disk_floor_cannot_be_disabled_from_this_surface() -> None:
     assert CiNodeConfig(min_free_disk_gb=1).min_free_disk_gb == 1
 
 
-def test_concurrent_builds_stay_within_a_sane_band() -> None:
+@pytest.mark.parametrize("value", [0, 65, -1])
+def test_concurrent_builds_stay_within_a_sane_band(value: int) -> None:
     with pytest.raises(ValidationError):
-        CiNodeConfig(max_concurrent_builds=0)
-    with pytest.raises(ValidationError):
-        CiNodeConfig(max_concurrent_builds=65)
+        CiNodeConfig(max_concurrent_builds=value)
+
+
+@pytest.mark.parametrize("value", [1, 3, 64])
+def test_an_explicit_concurrency_is_kept_as_an_override(value: int) -> None:
+    assert CiNodeConfig(max_concurrent_builds=value).max_concurrent_builds == value
+
+
+def test_unset_concurrency_round_trips_as_none() -> None:
+    """``None`` ("use the host's suggestion") survives the stored JSON envelope
+    — as an explicit ``null`` or as an absent key — and never comes back as a
+    number."""
+    original = CiNodeConfig(enabled=True, repo_allowlist=["qontinui/qontinui-web"])
+    stored = original.model_dump(mode="json")
+    assert stored["max_concurrent_builds"] is None
+    assert CiNodeConfig.model_validate(stored) == original
+    stored.pop("max_concurrent_builds")
+    assert CiNodeConfig.model_validate(stored).max_concurrent_builds is None
+
+
+def test_coord_payload_omits_an_unset_concurrency() -> None:
+    """Deploy-order guard: a coord predating the Option-typed relay reads the
+    field as ``u32`` and refuses a ``null``; an absent key falls back to its
+    default there and reads as ``None`` on a newer coord."""
+    body = CiNodeConfig(enabled=True).coord_payload()
+    assert "max_concurrent_builds" not in body
+    # Every other field is still carried, including the falsy/empty ones.
+    assert body == {"enabled": True, "repo_allowlist": [], "min_free_disk_gb": 20}
+
+
+def test_coord_payload_carries_an_explicit_concurrency() -> None:
+    body = CiNodeConfig(max_concurrent_builds=4).coord_payload()
+    assert body["max_concurrent_builds"] == 4
+    assert body == CiNodeConfig(max_concurrent_builds=4).model_dump(mode="json")
 
 
 def test_round_trips_through_the_stored_json_envelope() -> None:

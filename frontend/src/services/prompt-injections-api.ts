@@ -15,6 +15,7 @@
 
 import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
+import type { HttpOptions } from "@/services/http-client";
 
 /** Base URL for the admin prompt-injections surface. */
 export const PROMPT_INJECTIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/admin/prompt-injections`;
@@ -107,9 +108,10 @@ async function parseError(res: Response): Promise<PromptInjectionsApiError> {
   return new PromptInjectionsApiError(res.status, message);
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, options?: HttpOptions): Promise<T> {
   const res = await httpClient.fetch(`${PROMPT_INJECTIONS_API}${path}`, {
     cache: "no-store",
+    ...options,
   });
   if (!res.ok) {
     throw await parseError(res);
@@ -129,8 +131,16 @@ export interface ListPromptInjectionsParams {
   since?: string;
 }
 
+/**
+ * `options` are per-request `httpClient` options — the dashboard's poll passes
+ * `COORD_DASHBOARD_POLL_OPTIONS` so a failing read costs one request, not the
+ * client's 5xx retry chain. Errors still surface as `PromptInjectionsApiError`
+ * carrying the real `status`: the options change how many requests go out,
+ * never how a failure is reported.
+ */
 export function listPromptInjections(
-  params: ListPromptInjectionsParams = {}
+  params: ListPromptInjectionsParams = {},
+  options?: HttpOptions
 ): Promise<PromptInjectionsListResponse> {
   const search = new URLSearchParams();
   if (params.limit != null) search.set("limit", String(params.limit));
@@ -140,7 +150,7 @@ export function listPromptInjections(
     search.set("agent_session_id", params.agent_session_id);
   if (params.since) search.set("since", params.since);
   const qs = search.toString();
-  return request<PromptInjectionsListResponse>(qs ? `?${qs}` : "");
+  return request<PromptInjectionsListResponse>(qs ? `?${qs}` : "", options);
 }
 
 /** Fetch the full event detail. Throws status 404 on not-found. */

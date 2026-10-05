@@ -24,6 +24,7 @@ here without touching importers.
 
 from app.api.v1.endpoints.operations import (
     _COORD_MERGED_READ_TIMEOUT,
+    _COORD_PR_LIST_TIMEOUT,
     ACTIVE_TENANT_HEADER,
     _caller_active_tenant,
     _caller_bearer,
@@ -38,6 +39,7 @@ from app.api.v1.endpoints.operations import (
 __all__ = [
     "ACTIVE_TENANT_HEADER",
     "_COORD_MERGED_READ_TIMEOUT",
+    "_COORD_PR_LIST_TIMEOUT",
     "_caller_active_tenant",
     "_caller_bearer",
     "_extract_caller_token",

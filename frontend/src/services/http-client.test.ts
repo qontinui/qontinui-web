@@ -769,6 +769,22 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // scopes candidates to the active tenant.
     "https://api.test/api/v1/devices/resolve",
     "https://api.test/api/v1/dispatch/fresh-host?app_id=web&strategy=best_effort",
+    // Regression Tests: condition groups live in one project, so a missing
+    // entry shows (and edits) the home project's groups under another name.
+    "https://api.test/api/v1/conditions/groups",
+    // Listed in ACTIVE_TENANT_URL_PREFIXES long before they were tested here.
+    "https://api.test/api/v1/helper-tasks",
+    "https://api.test/api/v1/devices/pair-codes",
+    "https://api.test/api/v1/agent-registry",
+    // Found by the backend drift guard
+    // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
+    // the caller's tenant, so a missing entry serves the home project.
+    "https://api.test/api/v1/admin/prompt-injections?limit=50",
+    "https://api.test/api/v1/design-policies",
+    "https://api.test/api/v1/digital-twin/subspaces",
+    "https://api.test/api/v1/memory/records",
+    "https://api.test/api/v1/plan-library/candidates",
+    "https://api.test/api/v1/session-repository/unfinished",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -814,6 +830,30 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     await client.fetch(url);
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
+
+  // The narrow-prefix choices: siblings of a scoped family that ignore the
+  // tenant must stay header-free (see the drift guard's _EXCLUSIONS).
+  it.each([
+    "https://api.test/api/v1/fleet/apps",
+    // Tenant-resolving, but excluded until the PUT goes through coord's
+    // binding-checked upsert (drift guard _EXCLUSIONS).
+    "https://api.test/api/v1/fleet/test-targets/dev-1/web",
+    "https://api.test/api/v1/users/me/preferences",
+    "https://api.test/api/v1/auth/users/me",
+    "https://api.test/api/v1/devices/abc/dispatch",
+    "https://api.test/api/v1/devenv/environments/e1/canonical",
+  ])(
+    "does NOT attach the header on a header-free or excluded route: %s",
+    async (url) => {
+      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+      const captured = captureFetchHeaders();
+      const client = new HttpClient(
+        makeTokenManager() as unknown as TokenManager
+      );
+      await client.fetch(url);
+      expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+    }
+  );
 
   it("does NOT attach the header on /constraints/ (runner proxy, not coord)", async () => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
@@ -1411,5 +1451,54 @@ describe("HttpClient honours a caller AbortSignal", () => {
     await settled;
     expect(seen?.aborted).toBe(true);
     expect(caller.signal.aborted).toBe(false);
+  });
+});
+
+describe("HttpClient request bodies", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function capturedHeaders(): { headers: () => Headers } {
+    let seen: HeadersInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        seen = init.headers;
+        return new Response("{}", { status: 200 });
+      })
+    );
+    return { headers: () => new Headers(seen) };
+  }
+
+  it("leaves a FormData body's Content-Type to the browser", async () => {
+    // A JSON default would replace the multipart boundary and the server
+    // could not parse the upload at all.
+    const stub = capturedHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const form = new FormData();
+    form.append("file", new Blob(["x"]), "a.txt");
+    await client.fetch("https://api.test/api/v1/x", {
+      method: "POST",
+      body: form,
+      maxRetries: 0,
+    });
+    expect(stub.headers().has("content-type")).toBe(false);
+    expect(stub.headers().get("authorization")).toBe("Bearer tok");
+  });
+
+  it("still defaults a JSON body to application/json", async () => {
+    const stub = capturedHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    await client.fetch("https://api.test/api/v1/x", {
+      method: "POST",
+      body: "{}",
+      maxRetries: 0,
+    });
+    expect(stub.headers().get("content-type")).toBe("application/json");
   });
 });

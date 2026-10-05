@@ -1,0 +1,70 @@
+name: Fleet-noun vocabulary (pinned)
+description: >-
+  Check out qontinui-schemas/fleet-nouns.toml at the commit fleet-nouns.pin.toml
+  pins (sparse, one file), verify its sha256, and export
+  QONTINUI_FLEET_NOUNS_FILE for the two consumers —
+  backend/tests/test_fleet_nouns_ratchet.py and
+  frontend/eslint-rules/no-dev-stack-fallback.vocabulary.test.mjs. Both also
+  verify the digest; this step fails first so a broken fetch reads as itself.
+  Requires the qontinui-web checkout to have run first (the pin is read from it).
+  Drift of schemas main from the pin is a separate, advisory, last step in
+  frontend-ci.yml, never part of this action.
+
+runs:
+  using: composite
+  steps:
+    # The vocabulary is PINNED, never read at schemas main: a vocabulary edit
+    # there would otherwise redden every PR here; at a pin, a red can only come
+    # from this repo's change. Same pattern as qontinui-claude-config check #71.
+    - name: Read the fleet-noun vocabulary pin
+      id: pin
+      shell: bash
+      # tomllib, not sed: exactly [fleet_nouns].ref / .sha256, so a comment,
+      # a reordered key or a second table cannot be misread as the pin.
+      run: |
+        python3 - "$GITHUB_WORKSPACE/fleet-nouns.pin.toml" >> "$GITHUB_OUTPUT" <<'PY'
+        import re, sys, tomllib
+        path = sys.argv[1]
+        with open(path, "rb") as fh:
+            pin = tomllib.load(fh).get("fleet_nouns", {})
+        ref, sha = pin.get("ref", ""), pin.get("sha256", "")
+        if not (isinstance(ref, str) and re.fullmatch(r"[0-9a-f]{40}", ref)
+                and isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha)):
+            print(f"::error title=fleet-noun pin::{path} must carry [fleet_nouns] ref (40 hex) and sha256 (64 hex)", file=sys.stderr)
+            sys.exit(1)
+        print(f"ref={ref}")
+        print(f"sha256={sha}")
+        PY
+
+    # PUBLIC sibling, at the pinned commit; only the vocabulary file is read.
+    # actions/checkout cannot write outside $GITHUB_WORKSPACE, so it lands in
+    # .sibling/ (the path frontend-ci already uses for cloud-control) — NOT at
+    # ../qontinui-schemas, which backend-ci clones at main for the path deps.
+    - name: Checkout qontinui-schemas fleet-nouns.toml (public sibling, pinned ref)
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      with:
+        repository: qontinui/qontinui-schemas
+        ref: ${{ steps.pin.outputs.ref }}
+        path: .sibling/qontinui-schemas-fleet-nouns
+        sparse-checkout: fleet-nouns.toml
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    - name: Verify the digest and export QONTINUI_FLEET_NOUNS_FILE
+      shell: bash
+      env:
+        PIN_REF: ${{ steps.pin.outputs.ref }}
+        PIN_SHA256: ${{ steps.pin.outputs.sha256 }}
+      run: |
+        file="$GITHUB_WORKSPACE/.sibling/qontinui-schemas-fleet-nouns/fleet-nouns.toml"
+        if [ ! -f "$file" ]; then
+          echo "::error title=fleet-noun vocabulary::$file absent after checking out qontinui-schemas at $PIN_REF"
+          exit 1
+        fi
+        got="$(sha256sum "$file" | cut -d' ' -f1)"
+        if [ "$got" != "$PIN_SHA256" ]; then
+          echo "::error title=fleet-noun vocabulary::$file has sha256 $got; fleet-nouns.pin.toml pins $PIN_SHA256 at $PIN_REF"
+          exit 1
+        fi
+        echo "fleet-nouns.toml at $PIN_REF verified (sha256 $got)."
+        echo "QONTINUI_FLEET_NOUNS_FILE=$file" >> "$GITHUB_ENV"

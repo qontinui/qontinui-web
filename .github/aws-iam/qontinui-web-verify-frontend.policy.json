@@ -1,0 +1,30 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ReadVercelTokenAndSpecCiSsmParams",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter"
+            ],
+            "Resource": [
+                "arn:aws:ssm:eu-central-1:047719635665:parameter/qontinui/vercel/token",
+                "arn:aws:ssm:eu-central-1:047719635665:parameter/qontinui/spec-ci/auth-email",
+                "arn:aws:ssm:eu-central-1:047719635665:parameter/qontinui/spec-ci/auth-password"
+            ]
+        },
+        {
+            "Sid": "DecryptSsmSecureStringViaSsm",
+            "Effect": "Allow",
+            "Action": [
+                "kms:Decrypt"
+            ],
+            "Resource": "arn:aws:kms:eu-central-1:047719635665:key/464deccc-ffdc-4209-b776-86770947401c",
+            "Condition": {
+                "StringEquals": {
+                    "kms:ViaService": "ssm.eu-central-1.amazonaws.com"
+                }
+            }
+        }
+    ]
+}

@@ -22,10 +22,15 @@
  * deliberately deleted.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 import type { ResourceSamplesResponse } from "./fleetResources";
+import {
+  COORD_DASHBOARD_POLL_OPTIONS,
+  describeCoordPollError,
+} from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
 export const FLEET_RESOURCE_SAMPLES_API = `${OPERATIONS_API}/fleet/resource-samples`;
 
@@ -70,47 +75,43 @@ export function useFleetResourceSamples(options?: {
   const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
 
-  const refresh = useCallback(async () => {
-    try {
-      const body = await httpClient.get<ResourceSamplesResponse>(
-        `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${encodeURIComponent(
-          String(windowSecs)
-        )}`
-      );
-      if (cancelledRef.current) return;
-      setData(body);
-      // Stamped ONLY on success. A failed poll must not refresh the clock the
-      // staleness rule reads, or an outage would keep resetting every row to
-      // "fresh" — the frozen-`age_secs` bug in a new costume.
-      setFetchedAtMs(Date.now());
-      setError(null);
-    } catch (e) {
-      if (cancelledRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (!cancelledRef.current) setLoading(false);
-    }
-  }, [windowSecs]);
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): one
+  // request outstanding at most, and a failed poll is retried by the next
+  // tick rather than by `httpClient`'s 5xx backoff chain.
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const body = await httpClient.get<ResourceSamplesResponse>(
+          `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${encodeURIComponent(
+            String(windowSecs)
+          )}`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setData(body);
+        // Stamped ONLY on success. A failed poll must not refresh the clock the
+        // staleness rule reads, or an outage would keep resetting every row to
+        // "fresh" — the frozen-`age_secs` bug in a new costume.
+        setFetchedAtMs(Date.now());
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(describeCoordPollError(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [windowSecs]
+  );
 
-  useEffect(() => {
-    // Reset on every run: leaving the ref `true` from a prior cleanup would
-    // make a later manual refresh() silently discard its own response.
-    //
-    // There is no `enabled` switch here any more. It existed so
-    // `FleetResourcesSection` could stand down while the pipeline page
-    // injected its own poll from above; Phase 4 of
-    // `2026-08-25-coord-console-intent-and-devops-sections` deleted that page
-    // poll, and with it the only caller that ever passed `false`.
-    cancelledRef.current = false;
-    refresh();
-    const id = setInterval(refresh, RESOURCE_POLL_INTERVAL_MS);
-    return () => {
-      cancelledRef.current = true;
-      clearInterval(id);
-    };
-  }, [refresh]);
+  // There is no `enabled` switch here any more. It existed so
+  // `FleetResourcesSection` could stand down while the pipeline page injected
+  // its own poll from above; Phase 4 of
+  // `2026-08-25-coord-console-intent-and-devops-sections` deleted that page
+  // poll, and with it the only caller that ever passed `false`.
+  const { refresh } = useSingleFlightPoll(poll, RESOURCE_POLL_INTERVAL_MS);
 
   return { data, loading, error, fetchedAtMs, refresh };
 }

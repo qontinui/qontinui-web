@@ -296,6 +296,53 @@ class CandidateCoordLink(BaseModel):
     unavailable_reason: str | None = None
 
 
+# ─────────────────────── status currency ───────────────────────
+#
+# Plan ``2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-
+# whether-it-is-current``, Phase 1 (design decisions D3/D4). A row's ``status``
+# is whatever its last writer asserted; this block says how far that assertion
+# can be trusted NOW. It is a signal, never a filter (D5).
+
+#: The closed vocabulary. ``unknown`` is a member, and no arm but ``unfed_key``
+#: is reachable by absence — and that one is positive evidence that no reading
+#: covers the row's key.
+#:
+#: * ``fed_in_step`` — a FRESH, applied, ``measured`` scan-root reading for this
+#:   row's ``source_repo`` read a ref it fetched within the runner's window
+#:   (``counts_are_floors: false``). Keyed on the feeder's REF, never on
+#:   ``behind`` — ``behind`` measures how parked the checkout's HEAD is, which
+#:   says nothing about the body the sync read (the plan's 2026-09-29 vet).
+#: * ``fed_stale_ref`` — fresh, applied, ``measured`` readings exist for the
+#:   key, but every one is a floor: the feeder is alive, reading an old ref.
+#: * ``unfed_key`` — no (non-retired) reading names this ``source_repo``.
+#: * ``asserted_once`` — ``captured_by`` is ``agent``/``operator``: a door
+#:   write no feeder maintains.
+#: * ``unknown`` — readings name the key but none is fresh+applied+measured,
+#:   or the scan-root readings could not be read; ``detail`` says which.
+StatusCurrencyState = Literal[
+    "fed_in_step", "fed_stale_ref", "unfed_key", "asserted_once", "unknown"
+]
+
+
+class StatusCurrency(BaseModel):
+    """How current a row's ``status`` can be taken to be — with its evidence.
+
+    ``as_of`` is the newest ``received_at`` among the readings that produced
+    THIS verdict — the in-step readings for ``fed_in_step`` (a floor reading
+    beside them does not move it), the floor readings for ``fed_stale_ref``;
+    the row's ``updated_at`` for ``asserted_once``; null for
+    ``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the
+    freshest-ref reading among the same set, null otherwise. ``behind`` is
+    deliberately NOT carried: it is not a property of the body.
+    """
+
+    state: StatusCurrencyState
+    as_of: IsoDatetime | None
+    ref_sha: str | None
+    ref_age_secs: int | None
+    detail: str | None
+
+
 # ───────────────────────── responses ─────────────────────────
 
 
@@ -332,6 +379,10 @@ class WorkArtifactSummary(BaseORMSchema):
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
     difficulty_rubric_version: int | None = None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: REQUIRED with no default: a default here would be a healthy-looking
+    #: verdict nobody computed, which is the defect this field exists to close.
+    status_currency: StatusCurrency
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -563,6 +614,13 @@ class WorkArtifactListResponse(BaseModel):
     offset: int
     limit: int
     corpus_health: CorpusHealth
+    #: The level → model maps, served on every page so a consumer routing on
+    #: an item's ``difficulty`` reads the map in the same call. Corpus
+    #: constants, so envelope-level rather than per item; byte-identical to
+    #: ``/candidates`` and ``/difficulty``. See :class:`PlanDifficultyResponse`.
+    model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ─────────────────── candidate selection (Phase 6) ───────────────────
@@ -665,6 +723,15 @@ class PlanCandidate(BaseModel):
     difficulty_conceptual: DifficultyLevel | None = None
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
+    #: The backing artifact's ``sha256(body)`` — what a byte comparison against
+    #: the ref needs without a second read per row. ``None`` on a work-unit-only
+    #: row (there is no body). Required key, no default.
+    content_sha256: str | None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: ``None`` on a work-unit-only row, where ``document_state`` already says
+    #: there is no artifact whose currency could be judged. Required key, no
+    #: default.
+    status_currency: StatusCurrency | None
 
 
 # ─────────────── difficulty map ───────────────
@@ -703,7 +770,13 @@ class PlanDifficultyResponse(BaseModel):
     row that is still unrated is left OUT of ``items`` — absent here means
     "no rating", which the console renders as unrated, never as "low".
     ``model_tiers`` maps each level to the model tier it routes to, served so
-    every consumer names the same models.
+    every consumer names the same models. It is DISPLAY COPY — never parse it.
+    ``model_selectors`` is the machine-readable twin: each level's harness
+    selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
+    Code Agent tool's ``model`` values). A consumer whose harness does not
+    match that vocabulary treats the selector map as absent. All three are
+    served, byte-identical, on ``GET /plan-library`` and
+    ``/plan-library/candidates`` too.
     """
 
     items: list[PlanDifficultyItem]
@@ -721,6 +794,8 @@ class PlanDifficultyResponse(BaseModel):
     rerate_failed_reason: str | None = None
     rubric_version: int
     model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
@@ -815,6 +890,14 @@ class PlanCandidateResponse(BaseModel):
     #: Why ``corpus_health`` is null (a ``read_failed:`` line naming only the
     #: error class); null whenever the block was read.
     corpus_health_unavailable_reason: str | None
+    #: **Additive.** The level → model maps, so a sweep routing on each
+    #: item's ``difficulty`` reads the map on the read it already makes rather
+    #: than pinning one in its own skill file. Envelope-level (corpus
+    #: constants); byte-identical to ``GET /plan-library`` and ``/difficulty``.
+    #: See :class:`PlanDifficultyResponse` for the display-vs-selector split.
+    model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────
@@ -1033,3 +1116,70 @@ class ReconciliationResponse(BaseModel):
     axis_c_scope: AxisCScope = "page"
     axis_c_computed_count: int
     facets: ReconciliationFacets
+
+
+# ─────────────── write vocabulary (evidence-posture Phase 3) ───────────────
+#
+# ``GET /plan-library/vocabulary`` — plan
+# ``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.
+# Every value below is DERIVED from the ``Literal``s above with
+# ``typing.get_args`` (``app/services/plan_library_vocabulary.py``); nothing
+# here retypes a vocabulary.
+
+
+class VocabularyTerm(BaseModel):
+    """One accepted value and what writing it asserts."""
+
+    value: str
+    meaning: str
+
+
+class ClosedFieldVocabulary(BaseModel):
+    """The accepted set of one closed field on the plan-library write doors."""
+
+    #: The field's name as the write door spells it.
+    field: str
+    #: Where the value is written — a request-body property, or the plan
+    #: body's header stamp for a field the server parses out of the body.
+    written_as: str
+    #: ``METHOD path`` of every write door that accepts the field. Empty for
+    #: a ``server_set`` field.
+    accepted_by: list[str]
+    #: ``True`` when no caller writes the field — the server sets it (a
+    #: value served so a READER can interpret it, not a value to send).
+    server_set: bool = False
+    #: The value a write gets when it omits the field, or ``None`` when the
+    #: field is required or has no default.
+    default: str | None = None
+    values: list[VocabularyTerm]
+    #: Guidance a caller needs BEFORE choosing a value — ``None`` when the
+    #: per-value meanings say it all.
+    note: str | None = None
+
+
+class WriteDoorCorrection(BaseModel):
+    """How a WRONG write through one plan-library door is corrected.
+
+    Rendered from ``app.core.evidence_posture.ROUTE_POSTURE`` — the same table
+    the posture test pins — so this cannot drift from what the build checks.
+    """
+
+    method: str
+    path: str
+    posture: Literal["read", "ephemeral", "evidence"]
+    #: One sentence per assertion the door makes. A sentence that starts
+    #: ``NO CORRECTION VERB TODAY`` means the write is final: choose the value
+    #: before writing it.
+    corrections: list[str]
+    #: Plan stems that own closing each ``Gap`` on this door (empty when none).
+    tracked_by: list[str]
+
+
+class PlanLibraryVocabularyResponse(BaseModel):
+    """Every closed field the plan-library write doors accept, and how a
+    wrong write through each door is corrected."""
+
+    fields: list[ClosedFieldVocabulary]
+    #: ``len(fields)``.
+    count: int
+    write_doors: list[WriteDoorCorrection]

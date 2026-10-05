@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   CheckCircle,
   Filter,
@@ -245,76 +246,85 @@ function ActiveClaimsSection({
   const [data, setData] = useState<ActiveClaimsResponse | null>(null);
   // Preferred coord-native source. `null` = not yet resolved / empty for
   // tenant (→ render the fallback); a non-empty array = render structured.
-  const [agentStatus, setAgentStatus] = useState<AgentStatusRow[] | null>(
-    null
-  );
+  const [agentStatus, setAgentStatus] = useState<AgentStatusRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    // --- Preferred read: coord-native agent_status ----------------------
-    // Best-effort. Any failure (HTTP error, coord unreachable, network)
-    // never surfaces as a dashboard error — we just fall through to the
-    // legacy claim path below so the section never goes blank/500 during
-    // the migration. On success-with-rows we short-circuit the fallback.
-    let usedAgentStatus = false;
-    try {
-      const res = await fetch(AGENT_STATUS_API);
-      if (res.ok) {
-        const body: AgentStatusResponse = await res.json();
-        const rows = Array.isArray(body.agents) ? body.agents : [];
-        if (rows.length > 0) {
-          setAgentStatus(rows);
-          setError(null);
-          usedAgentStatus = true;
+  const fetchData = useCallback(
+    async (isCurrent: () => boolean) => {
+      // --- Preferred read: coord-native agent_status ----------------------
+      // Best-effort. Any failure (HTTP error, coord unreachable, network)
+      // never surfaces as a dashboard error — we just fall through to the
+      // legacy claim path below so the section never goes blank/500 during
+      // the migration. On success-with-rows we short-circuit the fallback.
+      let usedAgentStatus = false;
+      try {
+        const res = await fetch(AGENT_STATUS_API);
+        if (res.ok) {
+          const body: AgentStatusResponse = await res.json();
+          if (!isCurrent()) return;
+          const rows = Array.isArray(body.agents) ? body.agents : [];
+          if (rows.length > 0) {
+            setAgentStatus(rows);
+            setError(null);
+            usedAgentStatus = true;
+          } else {
+            // No agent_status rows for this tenant yet → dual-read fallback.
+            setAgentStatus(null);
+          }
         } else {
-          // No agent_status rows for this tenant yet → dual-read fallback.
+          if (!isCurrent()) return;
           setAgentStatus(null);
         }
-      } else {
+      } catch {
+        // Swallow — fall through to the legacy claim path.
+        if (!isCurrent()) return;
         setAgentStatus(null);
       }
-    } catch {
-      // Swallow — fall through to the legacy claim path.
-      setAgentStatus(null);
-    }
 
-    if (usedAgentStatus) {
-      setLoading(false);
-      return;
-    }
-
-    // --- Fallback read: legacy claim metadata ---------------------------
-    try {
-      const url = new URL(`${API}/list`, window.location.origin);
-      url.searchParams.set("kind", kind);
-      if (prefix) url.searchParams.set("prefix", prefix);
-      const res = await fetch(url.toString());
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+      if (usedAgentStatus) {
+        setLoading(false);
+        return;
       }
-      const body: ActiveClaimsResponse = await res.json();
-      setData(body);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [kind, prefix]);
 
+      // --- Fallback read: legacy claim metadata ---------------------------
+      try {
+        const url = new URL(`${API}/list`, window.location.origin);
+        url.searchParams.set("kind", kind);
+        if (prefix) url.searchParams.set("prefix", prefix);
+        const res = await fetch(url.toString());
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+        }
+        const body: ActiveClaimsResponse = await res.json();
+        if (!isCurrent()) return;
+        setData(body);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [kind, prefix]
+  );
+
+  // Declared BEFORE the poll: a new question shows the skeleton again.
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  const { refresh: refreshData } = useSingleFlightPoll(
+    fetchData,
+    POLL_INTERVAL_MS
+  );
 
   const usingAgentStatus = agentStatus !== null && agentStatus.length > 0;
   const count = usingAgentStatus
     ? agentStatus.length
-    : data?.holders.length ?? 0;
+    : (data?.holders.length ?? 0);
 
   return (
     <Card data-testid="claims-active-section">
@@ -365,7 +375,7 @@ function ActiveClaimsSection({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchData()}
+              onClick={() => void refreshData()}
               data-testid="claims-active-refresh"
             >
               <RefreshCw className="h-3 w-3" />
@@ -376,7 +386,7 @@ function ActiveClaimsSection({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchData()}
+              onClick={() => void refreshData()}
               data-testid="claims-active-refresh"
             >
               <RefreshCw className="h-3 w-3" />
@@ -449,57 +459,54 @@ function ActiveClaimsSection({
                 <TableHead className="w-[120px] text-right">
                   ttl_seconds
                 </TableHead>
-                <TableHead className="w-[80px] text-right">
-                  gates
-                </TableHead>
+                <TableHead className="w-[80px] text-right">gates</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.holders.map((h) => {
                 const gateCount =
-                  openGateCountsByAnchor.get(
-                    `${h.kind}:${h.resource_key}`
-                  ) ?? 0;
+                  openGateCountsByAnchor.get(`${h.kind}:${h.resource_key}`) ??
+                  0;
                 return (
-                <TableRow
-                  key={`${h.kind}:${h.resource_key}`}
-                  data-testid="claims-active-row"
-                >
-                  <TableCell className="font-mono text-xs">
-                    {h.resource_key}
-                    {h.status_text ? (
-                      <div
-                        className="mt-1 font-sans text-xs italic text-muted-foreground whitespace-normal"
-                        data-testid="claims-status-text"
-                      >
-                        {h.status_text}
-                      </div>
-                    ) : null}
-                    {h.blocked_on ? (
-                      <div
-                        className="mt-1 font-sans text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-normal"
-                        data-testid="claims-blocked-on"
-                      >
-                        ⛔ blocked: {h.blocked_on}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {shortId(h.machine_id)}
-                  </TableCell>
-                  <TableCell className="text-right text-xs tabular-nums">
-                    {h.ttl_seconds}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {gateCount > 0 ? (
-                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
-                        {gateCount} open
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
+                  <TableRow
+                    key={`${h.kind}:${h.resource_key}`}
+                    data-testid="claims-active-row"
+                  >
+                    <TableCell className="font-mono text-xs">
+                      {h.resource_key}
+                      {h.status_text ? (
+                        <div
+                          className="mt-1 font-sans text-xs italic text-muted-foreground whitespace-normal"
+                          data-testid="claims-status-text"
+                        >
+                          {h.status_text}
+                        </div>
+                      ) : null}
+                      {h.blocked_on ? (
+                        <div
+                          className="mt-1 font-sans text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-normal"
+                          data-testid="claims-blocked-on"
+                        >
+                          ⛔ blocked: {h.blocked_on}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {shortId(h.machine_id)}
+                    </TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {h.ttl_seconds}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {gateCount > 0 ? (
+                        <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                          {gateCount} open
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
                 );
               })}
             </TableBody>
@@ -524,25 +531,23 @@ function RecentConflictsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const res = await fetch(`${API}/recent-conflicts?limit=50`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
+      if (!isCurrent()) return;
       setEntries(Array.isArray(body.entries) ? body.entries : []);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  useSingleFlightPoll(fetchData, POLL_INTERVAL_MS);
 
   return (
     <Card data-testid="claims-conflicts-section">
@@ -614,25 +619,23 @@ function RecentStealsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const res = await fetch(`${API}/steals?limit=50`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
+      if (!isCurrent()) return;
       setRows(Array.isArray(body.rows) ? body.rows : []);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  useSingleFlightPoll(fetchData, POLL_INTERVAL_MS);
 
   return (
     <Card data-testid="claims-steals-section">
@@ -717,7 +720,7 @@ function GatesSection({
   const [error, setError] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const res = await fetch(`${API_GATES}/list`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -725,22 +728,23 @@ function GatesSection({
       const list: GateEntry[] = Array.isArray(body)
         ? body
         : Array.isArray(body.gates)
-        ? body.gates
-        : [];
+          ? body.gates
+          : [];
+      if (!isCurrent()) return;
       setEntries(list);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  const { refresh: refreshData } = useSingleFlightPoll(
+    fetchData,
+    POLL_INTERVAL_MS
+  );
 
   // Merge externally-provided gates with self-fetched data.
   // Use self-fetched entries as canonical (they include all gates,
@@ -759,7 +763,7 @@ function GatesSection({
           throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
         }
         // Re-fetch immediately after action
-        await fetchData();
+        await refreshData();
         onRefresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -767,7 +771,7 @@ function GatesSection({
         setActionInFlight(null);
       }
     },
-    [fetchData, onRefresh]
+    [refreshData, onRefresh]
   );
 
   const handleReject = useCallback(
@@ -781,7 +785,7 @@ function GatesSection({
           const body = await res.text();
           throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
         }
-        await fetchData();
+        await refreshData();
         onRefresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -789,7 +793,7 @@ function GatesSection({
         setActionInFlight(null);
       }
     },
-    [fetchData, onRefresh]
+    [refreshData, onRefresh]
   );
 
   const openCount = allGates.filter((g) => g.verdict === "open").length;
@@ -834,8 +838,8 @@ function GatesSection({
                   g.claim_kind && g.resource_key
                     ? `${g.claim_kind}:${g.resource_key}`
                     : g.plan_id && g.phase_name
-                    ? `plan:${g.phase_name}`
-                    : g.plan_id ?? "—";
+                      ? `plan:${g.phase_name}`
+                      : (g.plan_id ?? "—");
                 const isOperatorApproval =
                   g.predicate?.kind === "operator_approval";
 
@@ -895,9 +899,7 @@ function GatesSection({
                           </div>
                         </CoordAdminOnly>
                       ) : (
-                        <span className="text-xs text-muted-foreground">
-                          —
-                        </span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -924,7 +926,7 @@ export default function AgentClaimsDashboard() {
   // with active claims and pass to the GatesSection.
   const [gates, setGates] = useState<GateEntry[]>([]);
 
-  const fetchGates = useCallback(async () => {
+  const fetchGates = useCallback(async (isCurrent: () => boolean) => {
     try {
       const res = await fetch(`${API_GATES}/list`);
       if (!res.ok) return;
@@ -932,19 +934,22 @@ export default function AgentClaimsDashboard() {
       const list: GateEntry[] = Array.isArray(body)
         ? body
         : Array.isArray(body.gates)
-        ? body.gates
-        : [];
+          ? body.gates
+          : [];
+      if (!isCurrent()) return;
       setGates(list);
     } catch {
       // Swallow — the GatesSection component has its own error display.
     }
   }, []);
 
-  useEffect(() => {
-    fetchGates();
-    const interval = setInterval(fetchGates, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchGates]);
+  // Single-flight (plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-
+  // safe-reland` D5): a tick that finds the previous read outstanding is
+  // skipped. Raw `fetch`, so there is no retry layer to switch off here.
+  const { refresh: refreshGates } = useSingleFlightPoll(
+    fetchGates,
+    POLL_INTERVAL_MS
+  );
 
   // Build a map of open gate counts keyed by "claim_kind:resource_key"
   // for the active-claims badge overlay (D5.3).
@@ -961,10 +966,7 @@ export default function AgentClaimsDashboard() {
   }, [gates]);
 
   return (
-    <div
-      className="space-y-6"
-      data-testid="agent-claims-dashboard"
-    >
+    <div className="space-y-6" data-testid="agent-claims-dashboard">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <TimerOff className="h-3 w-3" />
         Polls every {POLL_INTERVAL_MS / 1000}s · backed by{" "}
@@ -975,7 +977,7 @@ export default function AgentClaimsDashboard() {
       <ActiveClaimsSection openGateCountsByAnchor={openGateCountsByAnchor} />
       <RecentConflictsSection />
       <RecentStealsSection />
-      <GatesSection gates={gates} onRefresh={fetchGates} />
+      <GatesSection gates={gates} onRefresh={refreshGates} />
     </div>
   );
 }

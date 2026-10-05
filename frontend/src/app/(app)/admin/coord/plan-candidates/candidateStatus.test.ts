@@ -18,9 +18,12 @@ import {
   type PlanCandidateResponse,
   deriveCandidateDisclosure,
   deriveCandidateHealth,
+  describeCandidateDifficulty,
   describeCandidateWindow,
   describeCoordLink,
   describeCorpusHealth,
+  describeStatusCurrency,
+  candidateCurrency,
   describePopulation,
   describePrState,
   describeReadiness,
@@ -288,6 +291,115 @@ describe("the population flag is read before the total means anything", () => {
     expect(lines.map((l) => l.key)).toContain("corpus-health");
   });
 
+  describe("status currency tally", () => {
+    const fed = {
+      state: "fed_in_step" as const,
+      as_of: "2026-10-04T00:00:00Z",
+      ref_sha: "abc",
+      ref_age_secs: 5,
+      detail: null,
+    };
+
+    it("counts only rows that owe a currency, and resolves the unserved arms to UNKNOWN", () => {
+      const line = describeStatusCurrency(
+        response({
+          items: [
+            candidate({ slug: "a", status_currency: fed }),
+            candidate({
+              slug: "b",
+              status_currency: { ...fed, state: "unfed_key" },
+            }),
+            // Absent key — a backend predating the field.
+            candidate({ slug: "c" }),
+            // Null beside `doc: present` — the contract broken.
+            candidate({ slug: "d", status_currency: null }),
+            // Work-unit-only row — owes none.
+            candidate({
+              slug: "e",
+              id: null,
+              document_state: "absent",
+              status_currency: null,
+            }),
+          ],
+        })
+      );
+      expect(line?.level).toBe("caveat");
+      expect(line?.text).toMatch(
+        /^3 of the 4 rows on this page that owe a status currency cannot vouch/
+      );
+      expect(line?.text).toMatch(/this page only/);
+      expect(line?.items).toEqual(["Unfed key: 1", "Currency unknown: 2"]);
+    });
+
+    it("reads all-in-step as a note, never a caveat", () => {
+      const line = describeStatusCurrency(
+        response({ items: [candidate({ status_currency: fed })] })
+      );
+      expect(line?.level).toBe("note");
+      expect(line?.text).toMatch(
+        /^The row on this page that owes a status currency was read/
+      );
+      expect(line?.items).toBeUndefined();
+      const two = describeStatusCurrency(
+        response({
+          items: [
+            candidate({ slug: "a", status_currency: fed }),
+            candidate({ slug: "b", status_currency: fed }),
+          ],
+        })
+      );
+      expect(two?.text).toMatch(
+        /^All 2 rows on this page that owe a status currency were read/
+      );
+    });
+
+    it("counts a row as UNKNOWN when a backend serves neither the key nor document_state", () => {
+      const line = describeStatusCurrency(
+        response({ items: [candidate({ document_state: undefined })] })
+      );
+      expect(line?.items).toEqual(["Currency unknown: 1"]);
+    });
+
+    it("emits no line when no row on the page owes a currency", () => {
+      expect(
+        describeStatusCurrency(
+          response({
+            items: [
+              candidate({
+                id: null,
+                document_state: "unsynced",
+                status_currency: null,
+              }),
+            ],
+          })
+        )
+      ).toBeNull();
+      expect(describeStatusCurrency(response({ items: [] }))).toBeNull();
+    });
+
+    it("rides the disclosure after the corpus-health line", () => {
+      const keys = deriveCandidateDisclosure(
+        response({ items: [candidate({ status_currency: fed })] })
+      ).map((l) => l.key);
+      expect(keys).toContain("status-currency");
+      expect(keys.indexOf("status-currency")).toBeGreaterThan(
+        keys.indexOf("corpus-health")
+      );
+    });
+
+    it("gives a null-on-present row an UNKNOWN currency naming the broken contract", () => {
+      const c = candidateCurrency(candidate({ status_currency: null }));
+      expect(c?.state).toBe("unknown");
+      expect(c?.detail).toMatch(/broke its own contract/);
+      expect(
+        candidateCurrency(
+          candidate({ document_state: "absent", status_currency: null })
+        )
+      ).toBeNull();
+      expect(candidateCurrency(candidate())).toBeUndefined();
+    });
+  });
+
   it("marks the window's total inadmissible on the degraded arm", () => {
     expect(
       describeCandidateWindow(
@@ -332,5 +444,34 @@ describe("the window reports the declared ordering and nothing else", () => {
     const w = describeCandidateWindow(response({ total: undefined, limit: 1 }));
     expect(w.total).toBeNull();
     expect(w.hasMore).toBe(true);
+  });
+});
+
+describe("difficulty names its tier from the served map, and unrated is not low", () => {
+  const tiers = { high: "Fable 5.1", medium: "Opus 5", low: "Fast tier" };
+
+  it("appends the tier the envelope maps the level to", () => {
+    expect(describeCandidateDifficulty("medium", tiers)).toBe(
+      "medium — route to Opus 5"
+    );
+  });
+
+  it("renders the level alone when the backend served no map", () => {
+    expect(describeCandidateDifficulty("high", undefined)).toBe("high");
+    expect(describeCandidateDifficulty("high", {})).toBe("high");
+  });
+
+  it("renders a null rating as unrated, never as a tier", () => {
+    expect(describeCandidateDifficulty(null, tiers)).toBe("unrated");
+  });
+
+  it("renders an unserved field as unknown, not unrated", () => {
+    expect(describeCandidateDifficulty(undefined, tiers)).toBe(
+      "unknown (not served)"
+    );
+  });
+
+  it("never reads an inherited key as a tier", () => {
+    expect(describeCandidateDifficulty("constructor", {})).toBe("constructor");
   });
 });
