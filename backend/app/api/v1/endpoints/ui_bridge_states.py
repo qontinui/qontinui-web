@@ -9,20 +9,13 @@ Provides endpoints to:
 """
 
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from qontinui_schemas.commands.state_machine import (
-    UIBridgeDiscoverRequest,
-    UIBridgeDiscoverResponse,
-    UIBridgePathfindRequest,
-    UIBridgePathfindResponse,
-)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.config.redis_config import get_redis
 from app.crud import project as project_crud
 from app.crud import ui_bridge_domain_knowledge as knowledge_crud
 from app.crud import ui_bridge_exploration_session as session_crud
@@ -49,7 +42,6 @@ from app.schemas.ui_bridge_state import (
     ExportResponse,
     PathfindingRequest,
     PathfindingResponse,
-    PathfindingStep,
     UIBridgeDiscoverAndSaveRequest,
     UIBridgeDiscoverAndSaveResponse,
     UIBridgeStateConfigCreate,
@@ -67,13 +59,7 @@ from app.schemas.ui_bridge_state import (
     UIBridgeTransitionResponse,
     UIBridgeTransitionUpdate,
 )
-from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
-)
-from app.services.runner_websocket_manager import get_runner_websocket_manager
+from app.services import ui_bridge_runner_commands as runner_commands
 
 logger = structlog.get_logger(__name__)
 
@@ -623,12 +609,6 @@ async def delete_domain_knowledge(
 # =============================================================================
 
 
-_UI_BRIDGE_DISCOVER_ENDPOINT = "/api/v1/projects/{project_id}/ui-bridge-discover"
-_UI_BRIDGE_PATHFIND_ENDPOINT = (
-    "/api/v1/projects/{project_id}/ui-bridge-configs/{config_id}/pathfind"
-)
-
-
 @router.post(
     "/projects/{project_id}/ui-bridge-discover",
     response_model=UIBridgeDiscoverAndSaveResponse,
@@ -667,133 +647,18 @@ async def discover_and_save_states(
     """
     await get_project_or_404(project_id, current_user.id, db)
 
-    redis = await get_redis()
-    manager = await get_runner_websocket_manager(redis)
-
-    if runner_id is not None:
-        from app.crud import runner_crud
-
-        owned_runner = await runner_crud.get_runner(db, runner_id=runner_id)
-        if owned_runner is None or owned_runner.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "runner_not_found", "runner_id": str(runner_id)},
-            )
-        if not manager.registry.is_runner_connected(str(owned_runner.id)):
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-        runner = owned_runner
-    else:
-        picked = await pick_active_runner_for_user(
-            current_user.id, db, manager.registry
-        )
-        if picked is None:
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-        runner = picked
-
-    request_id = uuid4()
-    cmd = UIBridgeDiscoverRequest(
-        request_id=request_id,
-        project_id=project_id,
-        renders=request.renders,
-        config_name=request.config_name,
-        config_description=request.config_description,
-        include_html_ids=request.include_html_ids,
-        cooccurrence_export=request.cooccurrence_export,
-        strategy=request.strategy.value,
-    ).model_dump(mode="json")
-
-    logger.info(
-        "ui_bridge_discover_save_dispatch",
-        runner_id=str(runner.id),
-        request_id=str(request_id),
-        project_id=str(project_id),
-        render_count=len(request.renders),
-        strategy=request.strategy.value,
-        config_name=request.config_name,
-    )
-
-    try:
-        raw_response = await manager.relay.dispatch_and_wait(
-            str(runner.id),
-            cmd,
-            request_id=str(request_id),
-            timeout_s=30.0,
-        )
-    except RunnerNotConnectedError:
-        logger.warning(
-            "ui_bridge_discover_save_runner_disconnected_mid_dispatch",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-    except RunnerCommandTimeoutError:
-        logger.error(
-            "ui_bridge_discover_save_timeout",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "error": "runner_timeout",
-                "endpoint": _UI_BRIDGE_DISCOVER_ENDPOINT,
-                "request_id": str(request_id),
-            },
-        )
-
-    if raw_response.get("error"):
-        logger.error(
-            "ui_bridge_discover_save_runner_error",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-            error=raw_response.get("error"),
-            message=raw_response.get("message"),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "runner_error",
-                "runner_error": raw_response.get("error"),
-                "message": raw_response.get("message") or "Runner returned an error.",
-            },
-        )
-
-    response = UIBridgeDiscoverResponse.model_validate(raw_response)
-
-    # Persist the discovery result on the web side. The runner is
-    # stateless w.r.t. persistence; the web side owns the
-    # ui_bridge_state_configs + ui_bridge_states rows.
-    # One commit after the config and every state row are added.
-    config, states = await graph_crud.create_discovered_config(
+    result = await runner_commands.discover_and_persist(
         db,
+        user=current_user,
         project_id=project_id,
-        name=request.config_name,
-        description=request.config_description,
-        render_count=response.render_count,
-        element_count=response.unique_element_count,
-        include_html_ids=request.include_html_ids,
-        discovery_result={
-            "element_to_renders": response.element_to_renders,
-            "strategy_used": response.strategy_used,
-            "strategy_metadata": response.strategy_metadata,
-        },
-        states=[
-            {
-                "state_id": str(s["id"]),
-                "name": str(s["name"]),
-                "element_ids": list(s.get("element_ids") or []),
-                "render_ids": list(s.get("render_ids") or []),
-                "confidence": float(s.get("confidence") or 0.0),
-            }
-            for s in response.states
-        ],
+        request=request,
+        runner_id=runner_id,
     )
-    config_id = config.id
 
     # Built field by field, not via ``state_to_response``: these rows have
     # no ``domain_knowledge_refs`` loaded, and an async lazy load raises.
     state_responses: list[UIBridgeStateResponse] = []
-    for state_row in states:
+    for state_row in result.states:
         state_responses.append(
             UIBridgeStateResponse(
                 id=state_row.id,
@@ -812,23 +677,11 @@ async def discover_and_save_states(
             )
         )
 
-    logger.info(
-        "ui_bridge_discover_save_completed",
-        runner_id=str(runner.id),
-        request_id=str(request_id),
-        project_id=str(project_id),
-        config_id=str(config_id),
-        states_persisted=len(state_responses),
-        render_count=response.render_count,
-        element_count=response.unique_element_count,
-        strategy_used=response.strategy_used,
-    )
-
     return UIBridgeDiscoverAndSaveResponse(
-        config=UIBridgeStateConfigResponse.model_validate(config),
+        config=UIBridgeStateConfigResponse.model_validate(result.config),
         states=state_responses,
-        render_count=response.render_count,
-        unique_element_count=response.unique_element_count,
+        render_count=result.render_count,
+        unique_element_count=result.unique_element_count,
     )
 
 
@@ -1242,151 +1095,14 @@ async def pathfind(
             detail="State configuration not found",
         )
 
-    config_payload: dict[str, Any] = {
-        "states": [
-            {
-                "state_id": s.state_id,
-                "name": s.name,
-                "element_ids": list(s.element_ids or []),
-            }
-            for s in config.states
-        ],
-        "transitions": [
-            {
-                "transition_id": t.transition_id,
-                "name": t.name,
-                "from_states": list(t.from_states or []),
-                "activate_states": list(t.activate_states or []),
-                "exit_states": list(t.exit_states or []),
-                "actions": list(t.actions or []),
-                "path_cost": float(t.path_cost),
-                "stays_visible": bool(t.stays_visible),
-            }
-            for t in config.transitions
-        ],
-    }
-
-    redis = await get_redis()
-    manager = await get_runner_websocket_manager(redis)
-
-    if runner_id is not None:
-        from app.crud import runner_crud
-
-        owned_runner = await runner_crud.get_runner(db, runner_id=runner_id)
-        if owned_runner is None or owned_runner.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "runner_not_found", "runner_id": str(runner_id)},
-            )
-        if not manager.registry.is_runner_connected(str(owned_runner.id)):
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_PATHFIND_ENDPOINT)
-        runner = owned_runner
-    else:
-        picked = await pick_active_runner_for_user(
-            current_user.id, db, manager.registry
-        )
-        if picked is None:
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_PATHFIND_ENDPOINT)
-        runner = picked
-
-    request_id = uuid4()
-    cmd = UIBridgePathfindRequest(
-        request_id=request_id,
+    return await runner_commands.pathfind(
+        db,
+        user=current_user,
         project_id=project_id,
         config_id=config_id,
-        from_states=list(request.from_states),
-        target_states=list(request.target_states),
-        config=config_payload,
-    ).model_dump(mode="json")
-
-    logger.info(
-        "ui_bridge_pathfind_dispatch",
-        runner_id=str(runner.id),
-        request_id=str(request_id),
-        config_id=str(config_id),
-        from_state_count=len(request.from_states),
-        target_state_count=len(request.target_states),
-        state_count=len(config_payload["states"]),
-        transition_count=len(config_payload["transitions"]),
-    )
-
-    try:
-        raw_response = await manager.relay.dispatch_and_wait(
-            str(runner.id),
-            cmd,
-            request_id=str(request_id),
-            timeout_s=30.0,
-        )
-    except RunnerNotConnectedError:
-        logger.warning(
-            "ui_bridge_pathfind_runner_disconnected_mid_dispatch",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise runner_bridge_503_no_runner(_UI_BRIDGE_PATHFIND_ENDPOINT)
-    except RunnerCommandTimeoutError:
-        logger.error(
-            "ui_bridge_pathfind_timeout",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "error": "runner_timeout",
-                "endpoint": _UI_BRIDGE_PATHFIND_ENDPOINT,
-                "request_id": str(request_id),
-            },
-        )
-
-    if raw_response.get("error") and raw_response.get("type") == "command_response":
-        # Distinguish "no path" (UIBridgePathfindResponse with found=False
-        # and a string `error`) from runner-side exceptions
-        # (UIBridgePathfindError with a `traceback` field and an enum
-        # `error` literal). The latter has no `found` field.
-        if "found" not in raw_response:
-            logger.error(
-                "ui_bridge_pathfind_runner_error",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-                error=raw_response.get("error"),
-                message=raw_response.get("message"),
-            )
-            return PathfindingResponse(
-                found=False,
-                error=(
-                    f"Runner error ({raw_response.get('error')}): "
-                    f"{raw_response.get('message') or 'unknown'}"
-                ),
-            )
-
-    response = UIBridgePathfindResponse.model_validate(raw_response)
-
-    logger.info(
-        "ui_bridge_pathfind_completed",
-        runner_id=str(runner.id),
-        request_id=str(request_id),
-        config_id=str(config_id),
-        found=response.found,
-        step_count=len(response.steps),
-        total_cost=response.total_cost,
-    )
-
-    return PathfindingResponse(
-        found=response.found,
-        steps=[
-            PathfindingStep(
-                transition_id=step.transition_id,
-                transition_name=step.transition_name,
-                from_states=list(step.from_states),
-                activate_states=list(step.activate_states),
-                exit_states=list(step.exit_states),
-                path_cost=step.path_cost,
-            )
-            for step in response.steps
-        ],
-        total_cost=response.total_cost,
-        error=response.error,
+        config=config,
+        request=request,
+        runner_id=runner_id,
     )
 
 
