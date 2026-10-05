@@ -28,7 +28,7 @@ It refuses it with a read-then-insert (``name_taken`` before the INSERT), which
 two concurrent creates can both pass. This index closes that race in the
 database: the second INSERT fails with SQLSTATE 23505 on this index name. At
 #2601's head the shared create core turns that into a 500 (the row is still
-refused); coord's follow-up PR maps 23505 on this index to the same
+refused); a coord follow-up maps 23505 on this index to the same
 ``409 policy_name_taken``, and that mapping is inert while the index is absent.
 coord does not READ the index, so there is no read-side deploy ordering to wait
 on (served policy ``production-and-cost`` ``alembic-sole-authorship`` governs

@@ -22,9 +22,11 @@ What is asserted
 3. A second AGENT row with the same (tenant, decision_domain, name) is refused
    with SQLSTATE 23505 naming this index — for each of the three agent actor
    spellings.
+   The same holds in ``red_main_fix``.
 4. The predicate's edges are NOT constrained: two OPERATOR rows with one name,
    two agent rows in an unlisted domain, two agent rows in different tenants,
-   and an agent row sharing an operator row's name all insert.
+   an agent row sharing an operator row's name, and two agent rows with a
+   non-NULL (v1) ``kind`` all insert.
 5. Downgrade removes the index; rows survive.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
@@ -76,6 +78,7 @@ def _insert(
     created_by: str,
     domain: str = "pr_fix",
     tenant: uuid.UUID = _TENANT,
+    kind: str | None = None,
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -84,7 +87,7 @@ def _insert(
                 INSERT INTO coord.policy_rules
                     (policy_id, tenant_id, name, kind, decision_domain, mode,
                      payload, condition, action, priority, created_by, updated_by)
-                VALUES (:pid, :t, :name, NULL, :domain, 'guidance',
+                VALUES (:pid, :t, :name, :kind, :domain, 'guidance',
                         '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 100, :by, :by)
                 """
             ),
@@ -94,6 +97,7 @@ def _insert(
                 "name": name,
                 "domain": domain,
                 "by": created_by,
+                "kind": kind,
             },
         )
 
@@ -169,6 +173,15 @@ def test_policy_rules_agent_name_uq_01_refuses_agent_duplicates_only() -> None:
             assert getattr(exc.value.orig, "pgcode", None) == "23505"
             assert _INDEX_NAME in str(exc.value.orig)
 
+        # 3b. ...and in the second allowlisted domain, so dropping
+        # 'red_main_fix' from the predicate fails here too.
+        _insert(engine, name="red-main", created_by="device:x", domain="red_main_fix")
+        with pytest.raises(IntegrityError) as exc:
+            _insert(
+                engine, name="red-main", created_by="device:y", domain="red_main_fix"
+            )
+        assert getattr(exc.value.orig, "pgcode", None) == "23505"
+
         # 4. The predicate's edges stay unconstrained.
         before = _count(engine)
         _insert(engine, name="op-row", created_by="operator:a:b")
@@ -180,7 +193,11 @@ def test_policy_rules_agent_name_uq_01_refuses_agent_duplicates_only() -> None:
             engine, name="cross-tenant", created_by="device:x", tenant=_OTHER_TENANT
         )
         _insert(engine, name="op-row", created_by="device:x")
-        assert _count(engine) == before + 7
+        # A v1 (non-NULL kind) row is outside the predicate: dropping
+        # `kind IS NULL` would refuse the second of these.
+        _insert(engine, name="v1-row", created_by="device:x", kind="escalation_rule")
+        _insert(engine, name="v1-row", created_by="device:x", kind="escalation_rule")
+        assert _count(engine) == before + 9
 
         # 5. Downgrade drops the index; rows survive.
         rows = _count(engine)
