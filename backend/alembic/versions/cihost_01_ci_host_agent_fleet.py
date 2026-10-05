@@ -18,8 +18,7 @@ each host should run, which hosts may hold secrets — and these tables are wher
 it keeps it.
 
 Plan AMENDMENT 2026-10-04 (A2 / A2a) collapsed the trust split: there is ONE
-pool vocabulary of capability labels, no ``public`` class, and pool labels never
-describe trust. What remains is a SECRETS-PLACEMENT choice (plan D7's trusted
+pool vocabulary of capability labels, and pool labels never describe trust. What remains is a SECRETS-PLACEMENT choice (plan D7's trusted
 pool, decided per secret) and an ``isolation`` attribute that is the seam for a
 future isolation tier:
 
