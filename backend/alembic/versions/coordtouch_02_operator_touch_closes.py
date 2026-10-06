@@ -1,7 +1,7 @@
 """coord.operator_touch_closes — the append-only close sidecar for operator touches
 
 Revision ID: coordtouch_02_operator_touch_closes
-Revises: twin_11_seed_qontinui_production_url
+Revises: gatecorr_01_coord_gate_corrections
 Create Date: 2026-10-05
 
 Phase 1 of plan ``2026-10-05-operator-touch-close-path`` (VETTED 2026-10-05).
@@ -187,7 +187,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coordtouch_02_operator_touch_closes"
-down_revision: str | Sequence[str] | None = "twin_11_seed_qontinui_production_url"
+down_revision: str | Sequence[str] | None = "gatecorr_01_coord_gate_corrections"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
