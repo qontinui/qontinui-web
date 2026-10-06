@@ -212,12 +212,19 @@ const RAW_BODY = '{ "k" : 1 }';
 const QUERY = { drop: "", raw: "?a=b%20c&x=1", reencoded: "?a=b+c&x=1" };
 const FORWARDED_BODY = { none: undefined, json: '{"k":1}', text: RAW_BODY };
 
-function call(verb: Verb, path: string, handler: Handler, query = "") {
+function call(
+  verb: Verb,
+  path: string,
+  handler: Handler,
+  query = "",
+  headers: Record<string, string> = {}
+) {
   const takesBody = verb === "POST" || verb === "PUT" || verb === "PATCH";
   return handler(
     new NextRequest(`http://app.test/api/v1/${path}${query}`, {
       method: verb,
       body: takesBody ? RAW_BODY : undefined,
+      headers,
     }),
     { params: Promise.resolve(PARAMS) }
   );
@@ -286,6 +293,23 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
         expect(init.method).toBe(verb);
         expect(init.body).toBe(FORWARDED_BODY[body]);
         expect(init.headers.Authorization).toBe("Bearer t");
+        expect(init.headers["Content-Type"]).toBe("application/json");
+      });
+
+      // The cookie-only handler (extractions) ignores an Authorization header
+      // and forwards without auth; every other handler falls back to it.
+      it(`with only an Authorization header: ${auth === "forward" ? "ignores it" : "forwards it"}`, async () => {
+        const f = stubFetch(ok);
+        await call(verb, path, handler, "", { Authorization: "Bearer h" });
+        expect(f).toHaveBeenCalledOnce();
+        const init = f.mock.calls[0]![1] as RequestInit & {
+          headers: Record<string, string>;
+        };
+        if (auth === "forward") {
+          expect(init.headers).not.toHaveProperty("Authorization");
+        } else {
+          expect(init.headers.Authorization).toBe("Bearer h");
+        }
       });
 
       it("answers its own 500 body when the upstream call fails", async () => {
