@@ -1,25 +1,27 @@
 /**
- * Reading the two tables a delivery plan is actually written in — the role
- * list and the phase × role FTE matrix — pasted as CSV.
+ * The estimate's CSV column mappings: the three tables a delivery plan is
+ * actually written in — the role list, the phase × role FTE matrix and the
+ * task × role person-day split — read from a paste.
  *
- * Pure functions with no clock, no network and no React: the editor holds the
- * result, shows it for confirmation and only then saves. Kept separate from
- * the components on purpose, so the shared overview authoring layer (plan
- * `2026-09-20-overview-authoring-layer`) can reuse the parsing without the UI.
+ * Pure functions with no clock, no network and no React. The authoring kit's
+ * `CsvPasteDialog` runs them, shows what was read (and every line that could
+ * not be) for confirmation, and only then hands the rows to the working copy.
+ * The line splitting and the issue shape are the kit's
+ * (`@/components/overview/editing/csv`), shared by every record table.
  *
  * A row that cannot be read becomes an `issue` naming its line and what was
  * expected. Nothing is guessed and nothing is dropped silently.
  */
 
+import {
+  nonEmptyLines,
+  splitCsvLine,
+  type CsvIssue,
+  type CsvResult,
+} from "@/components/overview/editing/csv";
 import { parseAmountToMicros } from "@/components/overview/money";
 
-export interface CsvIssue {
-  /** 1-based line number in the pasted text. */
-  line: number;
-  text: string;
-  message: string;
-  severity: "error" | "warning";
-}
+export type { CsvIssue, CsvResult };
 
 export interface ParsedRoleRow {
   code: string;
@@ -34,54 +36,6 @@ export interface ParsedAllocationRow {
   phase_code: string;
   role_code: string;
   fte: string;
-}
-
-export interface CsvResult<T> {
-  rows: T[];
-  issues: CsvIssue[];
-}
-
-/**
- * One CSV line into fields, honouring double quotes and `""` escapes. Written
- * out rather than pulled from a library because the whole input is one pasted
- * table and a dependency for 30 lines is not worth the supply chain.
- */
-export function splitCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          field += '"';
-          i += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === "," || ch === "\t") {
-      fields.push(field.trim());
-      field = "";
-    } else {
-      field += ch;
-    }
-  }
-  fields.push(field.trim());
-  return fields;
-}
-
-function nonEmptyLines(text: string): { line: number; text: string }[] {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((text, index) => ({ line: index + 1, text }))
-    .filter((row) => row.text.trim() !== "");
 }
 
 const TRUE_WORDS = new Set(["true", "yes", "y", "1", "client", "client-side"]);
@@ -104,8 +58,9 @@ function looksLikeHeader(fields: string[]): boolean {
 export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
   const issues: CsvIssue[] = [];
   const rows: ParsedRoleRow[] = [];
+  const rowLines: number[] = [];
   const lines = nonEmptyLines(text);
-  if (lines.length === 0) return { rows, issues };
+  if (lines.length === 0) return { rows, issues, lines: rowLines };
 
   const start = looksLikeHeader(splitCsvLine(lines[0]?.text ?? "")) ? 1 : 0;
   const seen = new Set<string>();
@@ -179,6 +134,7 @@ export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
     }
 
     seen.add(code);
+    rowLines.push(entry.line);
     rows.push({
       code,
       name: name || code,
@@ -189,7 +145,7 @@ export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
     });
   }
 
-  return { rows, issues };
+  return { rows, issues, lines: rowLines };
 }
 
 /**
@@ -208,8 +164,9 @@ export function parseAllocationsCsv(
 ): CsvResult<ParsedAllocationRow> {
   const issues: CsvIssue[] = [];
   const rows: ParsedAllocationRow[] = [];
+  const rowLines: number[] = [];
   const lines = nonEmptyLines(text);
-  if (lines.length === 0) return { rows, issues };
+  if (lines.length === 0) return { rows, issues, lines: rowLines };
 
   const first = lines[0];
   const header = splitCsvLine(first?.text ?? "");
@@ -222,7 +179,7 @@ export function parseAllocationsCsv(
         "the first row has to name the phases, e.g. `role,A0,A1,A2` — nothing after the first column was found",
       severity: "error",
     });
-    return { rows, issues };
+    return { rows, issues, lines: rowLines };
   }
 
   const seen = new Set<string>();
@@ -272,11 +229,12 @@ export function parseAllocationsCsv(
         return;
       }
       if (Number(cell) === 0) return;
+      rowLines.push(entry.line);
       rows.push({ phase_code: phaseCode, role_code: roleCode, fte: cell });
     });
   }
 
-  return { rows, issues };
+  return { rows, issues, lines: rowLines };
 }
 
 export interface ParsedEffortRow {
@@ -305,8 +263,9 @@ export interface ParsedEffortRow {
 export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
   const issues: CsvIssue[] = [];
   const rows: ParsedEffortRow[] = [];
+  const rowLines: number[] = [];
   const lines = nonEmptyLines(text);
-  if (lines.length === 0) return { rows, issues };
+  if (lines.length === 0) return { rows, issues, lines: rowLines };
 
   const firstCell = (splitCsvLine(lines[0]?.text ?? "")[0] ?? "").toLowerCase();
   const start = firstCell === "phase" ? 1 : 0;
@@ -376,6 +335,7 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
       });
     }
     seen.add(key);
+    rowLines.push(entry.line);
     rows.push({
       phase_code: phase,
       task_number: task,
@@ -384,7 +344,7 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
     });
   }
 
-  return { rows, issues };
+  return { rows, issues, lines: rowLines };
 }
 
 /**

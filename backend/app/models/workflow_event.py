@@ -26,6 +26,39 @@ class WorkflowEventType(StrEnum):
     BUILD_FAILED = "build_failed"
     VERIFICATION_FAILED = "verification_failed"
     PHASE_COMPLETED = "phase_completed"
+    # New-project creation funnel (telemetry, not notifications). Emitted by
+    # the runner's ``create_new_project`` command, correlated by ``run_id``
+    # (the flow id). See ``TELEMETRY_EVENT_TYPES``.
+    NEW_PROJECT_STARTED = "new_project_started"
+    NEW_PROJECT_NAME_OK = "new_project_name_ok"
+    NEW_PROJECT_REPO_CREATED = "new_project_repo_created"
+    NEW_PROJECT_PUSHED = "new_project_pushed"
+    NEW_PROJECT_ENROLLED = "new_project_enrolled"
+    NEW_PROJECT_FINISHED = "new_project_finished"
+    NEW_PROJECT_LIVE = "new_project_live"
+
+
+# Event types that are TELEMETRY rather than user-facing notifications. They
+# are ingested and stored like any other workflow event, but must never send a
+# push notification nor appear in the user's event feed / unread badge. This
+# is the ONE predicate both gates consume (push dispatch and the feed routes),
+# so the two suppressions cannot drift apart.
+TELEMETRY_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        WorkflowEventType.NEW_PROJECT_STARTED.value,
+        WorkflowEventType.NEW_PROJECT_NAME_OK.value,
+        WorkflowEventType.NEW_PROJECT_REPO_CREATED.value,
+        WorkflowEventType.NEW_PROJECT_PUSHED.value,
+        WorkflowEventType.NEW_PROJECT_ENROLLED.value,
+        WorkflowEventType.NEW_PROJECT_FINISHED.value,
+        WorkflowEventType.NEW_PROJECT_LIVE.value,
+    }
+)
+
+
+def is_telemetry(event_type: str) -> bool:
+    """Return True if ``event_type`` is telemetry (no push, not in the feed)."""
+    return str(event_type) in TELEMETRY_EVENT_TYPES
 
 
 class WorkflowEvent(Base):

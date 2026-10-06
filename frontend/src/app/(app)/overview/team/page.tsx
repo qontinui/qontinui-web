@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useTenant } from "@/contexts/tenant-context";
 import { useEstimate } from "../_hooks/useEstimate";
+import { SourceDocumentLine } from "../_components/SourceDocumentLine";
 import type { EstimateRollup } from "../_lib/estimate-api";
 import { EffortByRole } from "./_components/EffortByRole";
 import { FteMatrix } from "./_components/FteMatrix";
@@ -322,6 +323,14 @@ export default function TeamPage() {
 
       {data.state === "ready" && (
         <>
+          {data.estimate?.source_page_id && (
+            <div className="mb-4">
+              <SourceDocumentLine
+                pageId={data.estimate.source_page_id}
+                uiBridgeId="overview.team.source"
+              />
+            </div>
+          )}
           {canEdit && data.estimate && (
             <div className="mb-8 flex justify-end">
               <Link

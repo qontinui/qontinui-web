@@ -132,9 +132,13 @@ export function describeWriteFailure(err: unknown): string {
 }
 
 async function readError(response: Response): Promise<ResourceError> {
-  const text = await response.text().catch(() => "");
+  return errorFrom(response.status, await response.text().catch(() => ""));
+}
+
+/** A refusal from its status and body text. */
+function errorFrom(status: number, text: string): ResourceError {
   let code: string | null = null;
-  let message = text || `The request failed (${response.status}).`;
+  let message = text || `The request failed (${status}).`;
   try {
     const body = JSON.parse(text) as Record<string, unknown>;
     const detail = (body.detail ?? body) as unknown;
@@ -158,7 +162,24 @@ async function readError(response: Response): Promise<ResourceError> {
   } catch {
     // Not JSON — keep the raw text.
   }
-  return new ResourceError(response.status, code, message);
+  return new ResourceError(status, code, message);
+}
+
+/**
+ * Whether a failed write was definitely refused — the server answered and
+ * said no — as opposed to lost (a timeout, a dropped connection, a 5xx), when
+ * it may well have been applied. A retry of a LOST create must reuse its
+ * Idempotency-Key so the server answers with what the first attempt made;
+ * only a refused one is a new request.
+ */
+export function isRefusal(err: unknown): boolean {
+  return (
+    err instanceof ResourceError &&
+    err.status >= 400 &&
+    err.status < 500 &&
+    err.status !== 408 &&
+    err.status !== 429
+  );
 }
 
 interface SendOptions {
@@ -171,7 +192,7 @@ interface SendOptions {
 async function send(
   method: "GET" | "POST" | "PATCH" | "DELETE",
   url: string,
-  options: SendOptions = {}
+  options: SendOptions & { form?: FormData; timeoutMs?: number } = {}
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (options.ifMatch !== undefined)
@@ -182,11 +203,34 @@ async function send(
   return httpClient.fetch(`${ApiConfig.getBaseUrl()}${url}`, {
     method,
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body:
+      options.form ??
+      (options.body === undefined ? undefined : JSON.stringify(options.body)),
     // A create carrying an Idempotency-Key is safe to re-issue: the server
     // answers a repeat with the record the first attempt made.
     idempotent: method === "POST" && Boolean(options.idempotencyKey),
+    ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
   });
+}
+
+/** A 409 carrying the server's copy becomes a {@link VersionConflictError};
+ *  any other refusal a {@link ResourceError}. */
+async function refusal<T>(response: Response): Promise<ResourceError> {
+  if (response.status === 409) {
+    const text = await response.text();
+    try {
+      const body = JSON.parse(text) as { error?: string; current?: T };
+      if (body.error === "version_conflict" && body.current) {
+        return new VersionConflictError<T>(body.current);
+      }
+    } catch {
+      // Not JSON: reported as the text below.
+    }
+    // Any other 409 (a name already taken, a key reused) reads like any
+    // other refusal: its message, not its raw body.
+    return errorFrom(409, text);
+  }
+  return readError(response);
 }
 
 function query(params?: Record<string, string | readonly string[]>): string {
@@ -239,18 +283,119 @@ export async function updateResource<T>(
     `${OVERVIEW_API}/${path}/${encodeURIComponent(id)}`,
     { body: patch, ifMatch: version, source }
   );
-  if (response.status === 409) {
-    const text = await response.text();
-    try {
-      const body = JSON.parse(text) as { error?: string; current?: T };
-      if (body.error === "version_conflict" && body.current) {
-        throw new VersionConflictError<T>(body.current);
-      }
-    } catch (err) {
-      if (err instanceof VersionConflictError) throw err;
-    }
-    throw new ResourceError(409, null, text || "Conflict");
-  }
+  if (!response.ok) throw await refusal<T>(response);
+  return ((await response.json()) as ResourceItem<T>).item;
+}
+
+// Resource-specific calls. Each spells its own path, so the route walker
+// (`lib/api/route-walker.test.ts`) can check it against the OpenAPI snapshot;
+// a generic `path` parameter would leave it unresolved.
+
+/** Delete an uploaded file; `version` is the one on screen (always 1). */
+export async function deleteFile<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/files/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a milestone, built on `version` (the one on screen). A stale
+ *  version is a {@link VersionConflictError} carrying the server's copy. */
+export async function deleteMilestone<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/milestones/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** A page's versions, newest first. */
+export async function fetchPageVersions<T>(pageId: string): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/** One version of a page, with its text. */
+export async function fetchPageVersion<T>(
+  pageId: string,
+  version: number
+): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions/${version}`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/** The pages that link to this one. */
+export async function fetchPageBacklinks<T>(pageId: string): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/backlinks`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/** Restore `version` of a page, written on `current` (the version on
+ *  screen). Answers the page as the restore left it. */
+export async function revertPage<T>(
+  pageId: string,
+  version: number,
+  current: number
+): Promise<T> {
+  const response = await send(
+    "POST",
+    `${OVERVIEW_API}/pages/${encodeURIComponent(pageId)}/versions/${version}/revert`,
+    { ifMatch: current, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+  return ((await response.json()) as ResourceItem<T>).item;
+}
+
+/** A stored file's bytes, from its authenticated download route (a plain link
+ *  would carry no credentials). */
+export async function fetchFileBlob(fileId: string): Promise<Blob> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/files/${encodeURIComponent(fileId)}/content`
+  );
+  if (!response.ok) throw await readError(response);
+  return response.blob();
+}
+
+/** Upload one file (multipart). `pageId` attaches it to a document. */
+export async function uploadFile<T>(
+  file: File,
+  idempotencyKey: string,
+  pageId?: string
+): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  if (pageId) form.append("page_id", pageId);
+  const response = await send("POST", `${OVERVIEW_API}/files`, {
+    form,
+    idempotencyKey,
+    source: "ui",
+    // The request timeout runs until the response starts, so it covers the
+    // whole upload: allow for a slow uplink (50 KB/s) with two minutes'
+    // floor, rather than cutting a 25 MB file off at the one-minute default.
+    timeoutMs: Math.max(120_000, Math.ceil(file.size / 50_000) * 1000),
+  });
   if (!response.ok) throw await readError(response);
   return ((await response.json()) as ResourceItem<T>).item;
 }
@@ -270,16 +415,18 @@ export async function createResource<T>(
   return ((await response.json()) as ResourceItem<T>).item;
 }
 
+/** A record's write history, newest first — or, with `recordId` null, the
+ *  whole resource's (every milestone, say). */
 export async function fetchChangeLog(
   resource: string,
-  recordId: string,
+  recordId: string | null,
   limit = 20
 ): Promise<ChangeLogPage> {
   const response = await send(
     "GET",
     `${OVERVIEW_API}/change-log${query({
       resource,
-      record_id: recordId,
+      ...(recordId === null ? {} : { record_id: recordId }),
       limit: String(limit),
     })}`
   );

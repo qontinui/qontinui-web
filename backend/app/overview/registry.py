@@ -15,19 +15,29 @@ without audit or permissions.
 
 from __future__ import annotations
 
+from app.overview.estimates import estimate_store
+from app.overview.files import FileRead, file_store
 from app.overview.intent_documents import (
     IntentDocumentCreate,
     IntentDocumentRead,
     IntentDocumentUpdate,
     intent_document_store,
 )
+from app.overview.milestones import milestone_store
+from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
+from app.overview.phase_progress import phase_progress_store
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
-    EstimateSummary,
+    EstimateRead,
     EstimateUpdate,
+    MilestoneCreate,
+    MilestoneRead,
+    MilestoneUpdate,
     OverviewSettingsRead,
     OverviewSettingsWrite,
+    PhaseProgressRead,
+    PhaseProgressUpdate,
 )
 
 REGISTRY: dict[str, ResourceSpec] = {
@@ -55,16 +65,24 @@ REGISTRY: dict[str, ResourceSpec] = {
             path="estimates",
             title="Estimates",
             description=(
-                "The estimate a project is approved against. Its routes are "
-                "hand-written in app/api/v1/endpoints/overview.py until the "
-                "plan's Phase 3 refits it onto this contract; the entry is "
-                "here so its permission is served like every other resource's."
+                "The estimate a project is approved against: a head row and its "
+                "content graph (roles, phases with tasks and per-role efforts, "
+                "the phase x role FTE matrix, price tiers, cost lines, calendar "
+                "breaks). 'content' on a create or update replaces the whole "
+                "graph in the same version as the head fields beside it; a list "
+                "read carries no graph (content is null). A phase whose code a "
+                "content write keeps keeps its id and its progress; progress "
+                "(actual dates, gate outcomes) is written through phase_progress, "
+                "never through content. Derived figures: GET "
+                "/estimates/{id}/rollup and /estimates/{id}/forecast. Money is "
+                "integer micros."
             ),
             permission="editing_roles",
-            read_model=EstimateSummary,
+            read_model=EstimateRead,
             create_model=EstimateCreate,
             update_model=EstimateUpdate,
             operations=frozenset({"list", "get", "create", "update", "delete"}),
+            store=estimate_store,
             tables=(
                 "estimates",
                 "phases",
@@ -76,6 +94,88 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "cost_lines",
                 "calendar_breaks",
             ),
+        ),
+        ResourceSpec(
+            name="phase_progress",
+            path="phase-progress",
+            title="Phase progress",
+            description=(
+                "What actually happened in each phase of an estimate: actual "
+                "start and end, and the gate's outcome (pending / passed / "
+                "failed / waived, with the date it was decided and a note). "
+                "The id is the phase's id; the plan fields beside them are the "
+                "estimate's and read-only here. Versioned apart from the "
+                "estimate, so recording progress never conflicts with an "
+                "estimate save. A list reads one estimate's phases: "
+                "?estimate_id=, else the baseline. No create or delete — "
+                "phases come from the estimate's plan. The phases table itself "
+                "is owned by estimates."
+            ),
+            permission="editing_roles",
+            read_model=PhaseProgressRead,
+            update_model=PhaseProgressUpdate,
+            operations=frozenset({"list", "get", "update"}),
+            list_filters=("estimate_id",),
+            store=phase_progress_store,
+        ),
+        ResourceSpec(
+            name="milestones",
+            path="milestones",
+            title="Milestones",
+            description=(
+                "Dated markers on the Timeline — pilots, first value, any other "
+                "milestone — each optionally tied to a phase of this project's "
+                "estimate (a phase that goes detaches it, as a logged write). "
+                "A milestone is done exactly when it has a completed_date. "
+                "Filters: phase_id (repeatable; 'none' for unphased), status."
+            ),
+            permission="editing_roles",
+            read_model=MilestoneRead,
+            create_model=MilestoneCreate,
+            update_model=MilestoneUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("phase_id", "status"),
+            store=milestone_store,
+            tables=("milestones",),
+        ),
+        ResourceSpec(
+            name="pages",
+            path="pages",
+            title="Documents and wiki pages",
+            description=(
+                "Markdown documents and wiki pages, with full version history "
+                "(GET /pages/{id}/versions, POST …/versions/{n}/revert) and "
+                "backlinks (GET /pages/{id}/backlinks). Filters: kind, slug, q "
+                "(full-text). A list read carries no bodies (body_md is null)."
+            ),
+            permission="editing_roles",
+            read_model=PageRead,
+            create_model=PageCreate,
+            update_model=PageUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("kind", "slug", "q"),
+            store=page_store,
+            tables=("pages", "page_versions", "page_links"),
+            audit_exclude=frozenset({"body_md"}),
+        ),
+        ResourceSpec(
+            name="files",
+            path="files",
+            title="Uploaded files",
+            description=(
+                "Uploaded files. Upload is multipart POST /files (fields: file, "
+                "optional page_id); download is GET /files/{id}/content. Types: "
+                "pdf, docx, xlsx, pptx, png, jpg, md, csv; 25 MB each, 1 GB per "
+                "project. Filters: page_id, q (filename)."
+            ),
+            permission="editing_roles",
+            read_model=FileRead,
+            # "create" is served by the multipart upload route, not the
+            # generic JSON one (no create_model, so none is mounted).
+            operations=frozenset({"list", "get", "create", "delete"}),
+            list_filters=("page_id", "q"),
+            store=file_store,
+            tables=("files",),
         ),
         ResourceSpec(
             name="settings",

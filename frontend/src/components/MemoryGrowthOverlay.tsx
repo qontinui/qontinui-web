@@ -22,7 +22,7 @@ import {
 } from "@/lib/memory-growth-detector";
 
 // Import stores to register them with the detector
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { useExecutionStore } from "@/stores/execution-store";
 import { useExecutionDebugger } from "@/stores/execution-debugger-store";
 import { useConversionHistoryStore } from "@/stores/conversion-history";

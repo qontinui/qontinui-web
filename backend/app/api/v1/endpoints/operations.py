@@ -130,10 +130,33 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
-# Timeout for the ONE coord read that is not a small JSON payload: the
-# recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
-# resolves a deploy surface per repo and runs a git-ancestry probe per merged
-# PR, so it is slow by construction. Measured against prod on 2026-09-19
+# Timeout for the open-PR LISTING (``GET /pr-merge/prs`` without
+# ``include_merged``), the fleet pipeline's hot poll. It is not a small JSON
+# payload either: coord builds every open PR's row through several batched
+# passes (CI lifecycle, conflict clock, base verdicts) and answers with
+# 100-500 rows. Measured straight to coord (``curl -w %{time_total}`` with a
+# device JWT) after qontinui-coord#2414 removed the pr_events re-scan that was
+# hitting coord's 60s statement timeout: 2.9-12.3s over 5 calls on 2026-09-23
+# (coord finding 685356b1), 2.3-5.7s over 6 calls on 2026-10-01 (finding
+# addc9526). 3 of 5 and 1 of 6 of those would have answered 504 at
+# ``_COORD_TIMEOUT``, and the page kept showing the previous rows with nothing
+# on screen saying they were stale. 20s clears the observed ceiling (12.3s)
+# with headroom and stays under the merged read's budget. The frontend polls
+# it single-flight every 15s, so a slow read stretches the gap rather than
+# stacking. Connect stays short, as below.
+#
+# COST: ``/operations/pr-merge/prs`` holds no backend DB session across the
+# coord call (``get_tenant_id`` resolves identity without one). Its
+# ``/admin-dev/prs`` mirror does: the active-user dependency's session stays
+# checked out until teardown, so each of its reads now pins one pooled
+# connection for coord's real latency instead of at most 5s. That page polls
+# single-flight every 45s, so this is a longer hold, not more requests.
+_COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+
+# Timeout for the slowest coord read: the recently-merged ROWS
+# (``GET /pr-merge/prs?include_merged=<hours>``). coord resolves a deploy
+# surface per repo and runs a git-ancestry probe per merged PR, so it is slow
+# by construction. Measured against prod on 2026-09-19
 # straight to coord with this proxy's own call shape: a 1h window 1.7s, 12h
 # 3.0s, 18h 4.2s, and 24h/48h 14-21s (varying run to run) — so at
 # ``_COORD_TIMEOUT`` every window past roughly 18h answered 504 and the
@@ -145,10 +168,13 @@ _COORD_TIMEOUT = httpx.Timeout(5.0)
 # normal non-2xx path below rather than as a timeout. The connect phase stays
 # at the short default: an unreachable coord should still fail fast.
 #
-# COST: the operations proxy holds a pooled backend DB session across the coord
-# round trip (see the load-discipline note in useMergePipelineData.ts), so this
-# read pins one connection for its 14-21s instead of <5s. The frontend
-# therefore polls it single-flight, never retries it, and skips hidden tabs.
+# COST: on ``/operations/pr-merge/prs`` this read holds no backend DB session
+# (``get_tenant_id`` stopped depending on the active-user session in
+# ``d77d79072``, 2026-07-26), so its cost is coord's: 14-21s of coord work per
+# read. On the ``/admin-dev/prs`` mirror it also pins one pooled connection for
+# that long (see ``_COORD_PR_LIST_TIMEOUT``). The pipeline hook
+# (useMergePipelineData.ts) therefore polls it single-flight, never retries it,
+# and skips hidden tabs (its load-discipline note).
 _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
@@ -244,7 +270,21 @@ def capture_caller_bearer(request: Request) -> None:
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
-    """Dependency: resolve the current user's home tenant_id (UUID).
+    """Dependency: resolve the caller's EFFECTIVE coord tenant_id (UUID).
+
+    The effective tenant is the Project-selector choice when the request
+    carries ``X-Qontinui-Active-Tenant`` naming a tenant the operator is a
+    member of, and the operator's home tenant otherwise (no header, a
+    malformed one, or a non-member selection — coord never widens access and
+    never 403s the override). It is NOT always "home": ``get_coord_identity``
+    forwards the header to coord's ``GET /admin/coord/me``, whose
+    ``home_tenant_id`` field is ``ctx.tenant_id`` of the POST-override
+    ``OperatorContext`` (qontinui-coord ``routes_phase3.rs::get_me``, after
+    ``auth::apply_active_tenant_override``). Reading this value as "home" is
+    how whole families went unscoped: the frontend attaches the header only to
+    ``ACTIVE_TENANT_URL_PREFIXES`` (``frontend/src/services/http-client.ts``),
+    so a new route depending on this must be covered there —
+    ``tests/test_active_tenant_prefix_drift_guard.py`` fails until it is.
 
     Identity is sourced from coord's ``GET /admin/coord/me`` over the HTTP
     boundary (no cross-schema read). Coord 403s an operator that isn't a
@@ -277,11 +317,12 @@ async def require_coord_tenant_admin(
     request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
-    """Resolve the user's coord home tenant AND require admin on it.
+    """Resolve the caller's EFFECTIVE coord tenant AND require admin on it.
 
-    Returns the home tenant_id. Raises 403 ``not_coord_tenant_admin`` when
-    coord reports the operator is not an admin (``is_admin`` on
-    ``/admin/coord/me``).
+    Returns the same effective tenant_id as :func:`get_tenant_id` (coord's
+    ``/me`` ``home_tenant_id`` is post-override). Raises 403
+    ``not_coord_tenant_admin`` when the operator holds no admin role in that
+    tenant (per-tenant roles, below) and is not a qontinui superuser.
 
     Web-side gate posture (plan Phase 1 #4): the ``is_admin`` flag from
     coord is the source; the web-side gate is kept so the proxied
@@ -363,8 +404,12 @@ async def require_coord_tenant_admin_target(
 
     :func:`require_coord_tenant_admin` checks admin in the effective tenant
     (the switcher selection when the operator is a member of it, else home)
-    but returns the HOME tenant id. For a pass-through proxy that mismatch is
-    harmless: nothing names a tenant, and coord re-scopes the operator on the
+    and returns whatever coord's ``/me`` reports as ``home_tenant_id`` —
+    post-override, so the effective tenant too. This dependency resolves the
+    effective tenant explicitly, web-side, from the same membership list the
+    admin check used, so the tenant a body NAMES never rests on that coord
+    behaviour. Were the two to diverge, a pass-through proxy would not care:
+    nothing names a tenant, and coord re-scopes the operator on the
     forwarded ``X-Qontinui-Active-Tenant`` header. For a route that NAMES the
     target tenant in a body it writes, it is not — an operator viewing tenant
     B would be admin-checked in B and then written into A, which is either a
@@ -438,6 +483,28 @@ async def report_claude_sessions(report: ClaudeSessionReport) -> dict:
 # ---- Operations dashboard endpoints (auth, user-scoped) ------------------
 
 
+#: The fleet-row keys for a runner whose UI-thread liveness is not known.
+_UI_THREAD_UNKNOWN: dict[str, Any] = {
+    "uiThread": None,
+    "uiThreadSource": None,
+    "uiThreadObservedAt": None,
+}
+
+
+def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
+    """The fleet-row keys for the UI-thread block an in-memory beacon carries.
+
+    A beacon with no block (a runner predating it) yields the UNKNOWN keys.
+    """
+    if beacon.ui_thread is None:
+        return dict(_UI_THREAD_UNKNOWN)
+    return {
+        "uiThread": beacon.ui_thread.model_dump(mode="json"),
+        "uiThreadSource": "beacon_unauthenticated",
+        "uiThreadObservedAt": beacon.last_heartbeat.isoformat(),
+    }
+
+
 @router.get("/fleet")
 async def get_fleet_status(
     *,
@@ -508,10 +575,51 @@ async def get_fleet_status(
     # categorisation above decides how a device is *presented*, never whether
     # the caller owns the host. Narrowing this to workstations would stop a
     # beacon on a CI-runner host from resolving as the caller's own.
-    db_keys = {(r.hostname, r.port) for r in all_devices}
+    db_keys = {((r.hostname or "").lower(), r.port) for r in all_devices}
     owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
+
+    # Native UI-thread liveness (plan
+    # ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``).
+    # The block rides the beacon heartbeat, but a PAIRED runner's row above is
+    # built from its ``coord.devices`` row and the beacon for it is skipped by
+    # the ``db_keys`` check below — so without this overlay the fleet view
+    # would carry ``ui_thread`` only for unpaired beacons, i.e. almost never.
+    #
+    # Every row carries three keys:
+    #   * ``uiThread`` — the block, or ``None`` = UNKNOWN, never "not wedged";
+    #   * ``uiThreadSource`` — where it came from. ``"beacon_unauthenticated"``
+    #     is the in-memory registry fed by the UNAUTHENTICATED
+    #     ``POST /heartbeat``, keyed only by ``(hostname, port)``: any host that
+    #     can reach that route can write it, and two tenants whose runners share
+    #     a hostname and port overwrite each other. A consumer must weigh it
+    #     accordingly — it is a diagnostic hint, not a device-attested fact;
+    #   * ``uiThreadObservedAt`` — when that reading was taken, because a paired
+    #     row's own ``lastHeartbeat`` describes the device, not the beacon.
+    #
+    # A paired row takes the beacon's block only while that beacon is healthy
+    # (heartbeated within 90 s): an aged reading beside a fresh device
+    # heartbeat would read as current. Beacon-only rows keep their last-known
+    # block, because there the row's own ``derivedStatus: "stale"`` and
+    # ``lastHeartbeat`` already describe its age. Hostnames match
+    # case-insensitively, like ``owned_hostnames`` below.
+    # Registry keys are case-sensitive, so two case variants of one host can
+    # both be present; the most recently heard one wins.
+    beacon_by_key: dict[tuple[str, int], RegisteredRunner] = {}
+    for b in fleet_status.runners:
+        key = ((b.hostname or "").lower(), b.port)
+        seen = beacon_by_key.get(key)
+        if seen is None or b.last_heartbeat > seen.last_heartbeat:
+            beacon_by_key[key] = b
+    for wire in wire_runners:
+        beacon = beacon_by_key.get(
+            (str(wire.get("hostname") or "").lower(), wire.get("port") or 0)
+        )
+        if beacon is not None and beacon.is_healthy:
+            wire.update(_ui_thread_wire(beacon))
+        else:
+            wire.update(_UI_THREAD_UNKNOWN)
     for beacon in fleet_status.runners:
-        if (beacon.hostname, beacon.port) in db_keys:
+        if ((beacon.hostname or "").lower(), beacon.port) in db_keys:
             continue
         if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
             # Beacon from a host this caller owns no device on → not theirs.
@@ -535,6 +643,8 @@ async def get_fleet_status(
                 "wsConnected": False,
                 "uiError": None,
                 "recentCrash": None,
+                # Last-reported native UI-thread liveness; None = UNKNOWN.
+                **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
                 # A heartbeat-only beacon has no device WebSocket, so no
                 # instance is connected through this backend — an honest
@@ -898,10 +1008,10 @@ async def _proxy_coord_get(
     Default ``None`` puts nothing extra on the wire.
 
     ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
-    construction (today only the recently-merged rows,
-    :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None`` keeps the 5s
-    fail-fast for every other proxy: coord answering a small JSON read slower
-    than that means something is wrong, and that is worth surfacing.
+    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, and the
+    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
+    keeps the 5s fail-fast for every other proxy: coord answering a small JSON
+    read slower than that means something is wrong, and that is worth surfacing.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1000,9 +1110,12 @@ async def get_pr_merge_prs(
         "/pr-merge/prs",
         params=params or None,
         tenant_id=tenant_id,
-        # Only the merged ROWS are slow; ``merged_count_hours`` is one indexed
-        # count and keeps the 5s fail-fast.
-        timeout=_COORD_MERGED_READ_TIMEOUT if include_merged > 0 else None,
+        # The merged ROWS are the slow read. The plain listing is cheaper but
+        # still measured past 5s (see ``_COORD_PR_LIST_TIMEOUT``);
+        # ``merged_count_hours`` adds only one indexed count to it.
+        timeout=(
+            _COORD_MERGED_READ_TIMEOUT if include_merged > 0 else _COORD_PR_LIST_TIMEOUT
+        ),
     )
 
 
@@ -1961,10 +2074,16 @@ async def get_pr_merge_onboarding_doctor(
     "detail", "remediation"}], "summary": {"pass", "warn", "fail",
     "skip", "ready_to_land"}}``
 
-    with the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /
-    profile_present / merge_enabled / config_yaml / bootstrap_pr /
-    ci_workflow / ruleset_bypass`` and ``status`` in
-    ``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``
+    with coord's 11-check vocabulary ``tenant_mapped / repo_enrolled /
+    repo_archived / profile_present / merge_enabled / config_yaml /
+    bootstrap_pr / ci_workflow / ruleset_bypass / preset_covers_manifests /
+    config_yml_current`` (ids are stable and append-only, but NOT positional
+    -- key on ``id``, never on index) and ``status`` in
+    ``pass|warn|fail|skip``. ``ready_to_land`` is the conjunction of 7 of
+    them passing: ``tenant_mapped / repo_enrolled / profile_present /
+    merge_enabled / bootstrap_pr / ci_workflow / ruleset_bypass``
+    (``repo_archived``, ``config_yaml``, ``preset_covers_manifests`` and
+    ``config_yml_current`` are not part of it). Backs the ``/admin/coord/onboarding-status``
     page (the GitHub App's post-install Setup URL target). Operator
     bearer forwarded; coord scopes by the bearer's tenant.
     """
@@ -3681,12 +3800,18 @@ async def get_dev_action_detail(
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
+# - GET    /operations/alerts/fault-to-visibility        — onset→visible p50/p90
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/domain-cost                       — autonomy-domain
+#                                                          cost ledger
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
+# - GET    /operations/fleet/worktree-cap                — per-device worktree caps
+# - POST   /operations/fleet/worktree-cap                — set one (admin)
+# - POST   /operations/fleet/worktree-cap/clear          — remove one (admin)
 # - GET    /operations/claude-accounts                   — per-device Claude
 #                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
@@ -4216,6 +4341,42 @@ async def get_coord_alerts(
     return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
 
 
+@router.get("/alerts/fault-to-visibility")
+async def get_coord_alerts_fault_to_visibility(
+    window: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's fault-to-visibility interval per alert kind.
+
+    Proxies coord ``GET /coord/alerts/fault-to-visibility`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 4, G1). The interval is ``visible_at - onset_at`` over
+    ``coord.alerts`` episodes: how long a fault existed before anyone who can
+    act on it could see it. p50/p90 are computed per kind **only over
+    episodes whose onset is known**, and coord ships ``onset_known_n`` beside
+    ``episodes_n`` so that share is read as the headline next to the
+    percentile, never dropped. An episode whose ``onset_basis`` is ``none``
+    counts in ``episodes_n`` and not in the percentile — its onset is
+    UNKNOWN, and ``first_seen_at`` is never substituted for it (that would
+    report a zero interval for exactly the faults this read exists to find).
+    A ``null`` percentile is "no known-onset episode", not zero seconds.
+
+    ``window`` is forwarded verbatim when set; coord owns its grammar and its
+    default, and a value it cannot parse comes back as coord's own 4xx rather
+    than being re-validated (and eventually mis-validated) here. The body is
+    passed through untouched — no ``response_model`` — so a field coord adds
+    reaches the console without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if window is not None:
+        params["window"] = window
+    return await _proxy_coord_get(
+        "/coord/alerts/fault-to-visibility",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Notifications (append-only event feed; sibling of /alerts) ----------
 #
 # Plan ``2026-08-05-coord-notifications-type-and-tab.md`` Change 4.
@@ -4535,6 +4696,49 @@ async def get_fleet_health(
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
+# ---- Domain cost (autonomy-domain cost ledger) ----------------------------
+
+
+@router.get("/domain-cost")
+async def get_domain_cost(
+    as_of: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's per-autonomy-domain cost ledger.
+
+    Proxies coord ``GET /coord/domain-cost`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 2), the read the ``/overview`` Intent section's "Domain cost" card
+    renders. Per domain in the tenant's autonomy-domain roster (a
+    ``steering/autonomy-domains.toml`` coord reads from its repo mirror,
+    named in the response's ``roster_source``) and for ``shared``, coord
+    reports work units by
+    status class, wall-clock, PRs, sessions, operator touches and tokens, each
+    in the ``{value, coverage_n, population_n, basis}`` shape; the marginal
+    cost ratio ``R`` per dimension with its coverage floor; and a ``verdict``
+    by fixed comparison. Beside them: ``unmapped_areas``,
+    ``unattributed_units_n``, ``roster_source`` and ``computed_at``.
+
+    Unknown is first-class on this wire and the proxy preserves it: a
+    dimension with no producer arrives as ``value: null`` with a ``reason``
+    (``tokens`` and the session-trailer arm ship ``"no_producer"``), a
+    dimension below its coverage floor arrives with ``R: null``, and an
+    unreadable roster arrives as HTTP 200 with ``roster: null`` plus
+    ``roster_error`` and every ratio ``null`` — never an empty domain list. A
+    database failure is coord's typed error, raised here, never zeros.
+
+    ``as_of`` is forwarded verbatim when set; coord owns its grammar. The body
+    is passed through untouched — no ``response_model`` — so a field coord
+    adds reaches the card without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if as_of is not None:
+        params["as_of"] = as_of
+    return await _proxy_coord_get(
+        "/coord/domain-cost", params=params or None, tenant_id=tenant_id
+    )
+
+
 # ---- Machine drain / undrain --------------------------------------------
 #
 # Plan ``2026-09-01-device-drain-does-not-reach-agent-session-spawning``
@@ -4747,6 +4951,231 @@ async def post_fleet_undrain(
     """
     return await _proxy_coord_post(
         "/coord/fleet/undrain",
+        {"device_id": str(body.device_id), "reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+# ---- Per-device worktree cap (plan 2026-09-18 amendment A3) ---------------
+#
+# The operator door for the override that beats coord's derived worktree cap on
+# ONE machine. Same three shapes as the drain pair above, and deliberately so:
+# the two are the same KIND of act — an operator changing what one machine will
+# accept — and coord runs them through one admission test.
+#
+# The one thing that differs, and it is the reason this is not a drain: there is
+# NO deadline. A drain is a temporary hold and coord requires an expiry because
+# a drain without one is how a machine silently leaves the fleet forever. A cap
+# is a standing decision about capacity; an expiry would make it revert at a
+# moment nobody chose. It is removed explicitly, through the clear route.
+
+#: The floor plan A3 specifies, which coord's write door will enforce once the
+#: coord half of A3 lands. Pinned here so a zero is a local 422 naming the trap,
+#: rather than a round trip that comes back as a Rust string.
+_MIN_WORKTREE_CAP = 1
+
+#: Coord's ``max_worktrees`` is an ``i64``. A value past this is a serde
+#: deserialize failure over there, so it is refused here where the message can
+#: say it is a RANGE and not a policy bound. The browser never reaches it
+#: (``validateWorktreeCap`` stops at ``Number.isSafeInteger``); a direct API
+#: caller does.
+_MAX_I64 = 2**63 - 1
+
+
+class WorktreeCapRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/worktree-cap``.
+
+    ``extra="forbid"`` is not decoration — coord's struct is
+    ``deny_unknown_fields``, so a stray key would return a 422 carrying a serde
+    message. There is deliberately no ``set_by``: coord stamps the author from
+    the authenticated operator context, and an audit trail with a
+    client-asserted author is not an audit trail.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    #: Worktrees coord will allow on this device.
+    #:
+    #: The FLOOR is published here and enforced in ``_at_least_one`` below,
+    #: which is not a redundancy — it is the only arrangement that gives a
+    #: direct API caller both. ``json_schema_extra`` rather than ``ge=``: a
+    #: pydantic field constraint is part of the core schema and runs BEFORE an
+    #: ``after``-mode ``field_validator``, so ``ge=1`` would answer "Input should
+    #: be greater than or equal to 1" and the validator's sentence about being
+    #: locked out of undoing a zero would become unreachable. The whole point of
+    #: that message is that a restated bound does not say what a zero DOES. So
+    #: the schema carries the number for a generated client, and the validator
+    #: keeps the prose for the human reading the 422.
+    #:
+    #: The ``i64`` range is deliberately NOT published as a ``maximum``, and the
+    #: reason is lossiness rather than taste: emitted through JSON Schema's
+    #: number type, ``2**63 - 1`` round-trips as ``9.223372036854776e+18``, which
+    #: is ``2**63`` — strictly ABOVE the largest value this door accepts. A
+    #: published maximum that admits a value the validator refuses is worse than
+    #: no published maximum, so the range stays where it can be stated exactly:
+    #: in ``_at_least_one``'s message. There is no policy ceiling to publish
+    #: either way.
+    max_worktrees: int = Field(
+        ...,
+        json_schema_extra={"minimum": _MIN_WORKTREE_CAP},
+    )
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        """Reject a whitespace-only reason.
+
+        ``min_length`` alone admits ``"   "``. The reason is what every refusal
+        this cap produces will say, so a blank one defeats the record the write
+        exists to leave.
+        """
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+    @field_validator("max_worktrees")
+    @classmethod
+    def _at_least_one(cls, v: int) -> int:
+        """Mirror the floor plan A3 specifies, and say WHY.
+
+        A cap of 0 refuses every allocation on that device — including the
+        worktree an operator would need in order to set it back. (No repo is
+        named here on purpose: `test_fleet_nouns_ratchet` forbids this fleet's
+        own layout nouns in backend app code, and the point does not need one.)
+        Coord's write door will reject it too; naming it here turns a 400
+        carrying a Rust string into a typed 422 at this door. There is
+        deliberately NO upper bound on the CAP: a no-build worktree costs disk
+        rather than RAM, and disk is carried by coord's own disk gate, so a
+        ceiling invented here would be a second policy nobody decided.
+
+        The ``i64`` guard below is a different thing and is NOT that ceiling: it
+        is coord's integer RANGE. A value past it is a serde deserialize failure
+        on coord's side — precisely the "400 with a Rust message" this validator
+        exists to convert into something an operator can read.
+        """
+        if v < _MIN_WORKTREE_CAP:
+            # The REQUESTED value, not a hardcoded ``0``. This route's audience
+            # is a direct API caller (see the i64 note below), and a message
+            # that says "a cap of 0" to somebody who sent ``-4`` describes a
+            # mistake they did not make — which sends them looking for a
+            # different one. The frontend's ``belowFloorMessage`` interpolates
+            # the typed value for exactly this reason; this is the same rule
+            # applied to the only caller that can reach this door directly.
+            raise ValueError(
+                f"max_worktrees must be >= {_MIN_WORKTREE_CAP}. A cap of {v} "
+                "refuses EVERY allocation on that device, including the "
+                "worktree you would need in order to set it back. To stop "
+                "sending a machine work, drain it instead — a drain carries a "
+                "mandatory deadline and this does not."
+            )
+        if v > _MAX_I64:
+            raise ValueError(
+                "max_worktrees is larger than coord's i64 field can hold. That "
+                "is coord's integer range, not a policy ceiling — there is "
+                "deliberately no upper bound on the cap itself."
+            )
+        return v
+
+
+class WorktreeCapClearRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/worktree-cap/clear``.
+
+    A reason is required here too, and for the same purpose: removing a cap is
+    as much an operator decision as setting one, and coord records both.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+
+@router.get("/fleet/worktree-cap")
+async def get_fleet_worktree_cap(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return which devices carry a per-device worktree-cap override.
+
+    Proxies coord's ``GET /coord/fleet/worktree-cap``, body passed through
+    untouched — this route declares no ``response_model``, so nothing here
+    filters a field coord adds.
+
+    **The one thing a caller must not do with a failure here.** Coord keeps
+    "the read succeeded and no device is capped" and "coord could not find out"
+    apart on purpose, in a ``state`` field, and so must every hop after it: a
+    404 (this coord predates the route), a 502/504 from the transport, or a body
+    in an unrecognised shape is UNKNOWN, never "no device is capped"
+    (``[policy: silent-empty-is-unknown]``,
+    ``[policy: unknown-must-not-render-as-a-default]``). The 404 arm in
+    particular is the EXPECTED reading during the window where this console is a
+    deploy ahead of coord, which for this feature is guaranteed to exist: the
+    alembic revision lands first, this console second, coord third.
+    """
+    return await _proxy_coord_get("/coord/fleet/worktree-cap", tenant_id=tenant_id)
+
+
+@router.post("/fleet/worktree-cap")
+async def post_fleet_worktree_cap(
+    body: WorktreeCapRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set how many agent worktrees coord will allow on ONE device.
+
+    Body is assembled from the closed model above — never forwarded verbatim —
+    because coord's request struct is ``deny_unknown_fields``.
+
+    Coord's refusals are typed and mean different things: ``admin_required``
+    (not an admin in your own tenant), ``device_not_in_tenant`` (a cap governs
+    what a shared MACHINE accepts, so the caller must be one of the tenants that
+    uses it), ``schema_pending`` (the qontinui-web alembic revision adding the
+    override column has not been APPLIED yet — nothing was written, and nothing
+    is being reported as capped; that revision is
+    ``wtcap_01_max_worktrees_by_device``, added by qontinui-web#1596, which at
+    the time of writing is open and not yet on ``main``), and a 400 from coord's
+    own floor check. They pass through with coord's own status code so the
+    console can tell them apart rather than rendering one "failed".
+
+    This does NOT stop work already running on the machine, and nothing on this
+    path may imply that it does. It is not a drain: it has no deadline and it
+    does not remove the device from dispatch.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/worktree-cap",
+        {
+            "device_id": str(body.device_id),
+            "max_worktrees": body.max_worktrees,
+            "reason": body.reason,
+        },
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/fleet/worktree-cap/clear")
+async def post_fleet_worktree_cap_clear(
+    body: WorktreeCapClearRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Remove one device's override, so coord derives its cap again.
+
+    Coord answers with ``changed: false`` when the request altered nothing — a
+    clear of a device that carried no override. That is passed through rather
+    than dressed up as a successful removal: "I removed it" and "there was
+    nothing to remove" are different outcomes and the operator is entitled to
+    tell them apart.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/worktree-cap/clear",
         {"device_id": str(body.device_id), "reason": body.reason},
         tenant_id=tenant_id,
         structured_errors=True,
@@ -4994,6 +5423,10 @@ async def get_coord_audit_recent(
 # nothing here should ever surface a path.
 
 COORD_CLAUDE_ACCOUNTS_PATH = "/coord/claude-accounts/usage"
+# The USER-scoped twin of the feed above: every account on every device the
+# logged-in user owns, independent of tenant. Plan
+# `2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector` Phase 2.
+COORD_CLAUDE_ACCOUNTS_MINE_PATH = "/coord/claude-accounts/usage/mine"
 
 
 @router.get("/claude-accounts")
@@ -5141,6 +5574,111 @@ async def get_claude_accounts(
         # prepaid provider is configured" reading. Consumers must not render
         # `None` as `False`.
         "prepaid_table_provisioned": payload.get("prepaid_table_provisioned"),
+    }
+
+
+@router.get("/claude-accounts/mine")
+async def get_my_claude_accounts(
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Return the Claude account roster for the CALLER's own devices (user-scoped).
+
+    Proxies coord ``GET /coord/claude-accounts/usage/mine`` — plan
+    ``2026-09-16-user-scoped-account-usage-and-mobile-tenant-selector``
+    Phase 2. "My accounts" is a fact about the PERSON, not about a tenant: the
+    roster is every account reported by every device the logged-in user owns
+    (``coord.devices.user_id`` with ``capability_user_paired = true``),
+    whichever tenant — if any — each device is currently paired to. So this
+    route deliberately resolves NO tenant: ``get_tenant_id`` is not a
+    dependency, and a caller whose tenant cannot be resolved still gets their
+    own roster. The tenant-scoped :func:`get_claude_accounts` is untouched and
+    remains the tenant-admin view of the whole tenant's devices.
+
+    **Web never tells coord who is asking.** Coord derives the caller's
+    ``auth.users.id`` itself from the verified bearer (``web_user_id_for_operator``
+    over the SSO ``OperatorContext``), so ``current_user.id`` is NOT forwarded —
+    a client-supplied user id would be a new, weaker trust boundary. Web's only
+    job is to capture and forward the bearer (``forward_bearer=True``, since
+    there is no ``tenant_id`` to trigger it); ``current_user`` exists solely to
+    require a logged-in session before anything reaches coord.
+
+    Response envelope — :func:`get_claude_accounts`'s ``accounts`` rows, with
+    the same two provisioning flags::
+
+        {
+          "accounts": [ { "device_id": "<uuid>", "account_label": ".claude-gmail", ... } ],
+          "table_provisioned": true,
+          "columns_provisioned": true
+        }
+
+    **No ``prepaid`` keys.** Prepaid balances are keyed ``(tenant, device,
+    provider)`` — a tenant fact, not a per-person account fact — so they stay
+    on the tenant feed, and coord's ``/mine`` emits none.
+
+    The flags follow the same absence-is-not-zero contract as the tenant route:
+    bare ``.get()`` with no default, so a flag coord omits surfaces as ``None``
+    (unknown) and is never defaulted to ``true``. ``accounts: []`` with both
+    flags ``true`` means genuinely no paired device of this user has reported.
+
+    Coord's refusals propagate with coord's STATUS through
+    :func:`_proxy_coord_get` (``HTTPException(status, detail=resp.text)``), so
+    a client can tell them apart rather than reading a generic 500:
+
+    - ``403 user_not_resolved`` — the bearer maps to no ``auth.users`` row;
+    - ``403 user_email_ambiguous`` — more than one ``auth.users`` row matches,
+      so nothing can pick the right one;
+    - ``500 user_lookup_failed`` — the identity bridge itself errored;
+    - ``500 usage_read_failed`` — the roster read errored.
+
+    **Where a client finds coord's code.** ``detail`` is coord's raw body as a
+    STRING, so the app's shared ``http_exception_handler``
+    (``app/middleware/error_handler.py``) renders it with web's GENERIC code
+    for the status in ``error`` (``FORBIDDEN`` / ``INTERNAL_SERVER_ERROR``) and
+    coord's body, as JSON text, in ``message``. For example a coord 403
+    ``user_email_ambiguous`` arrives as (``message`` is a STRING whose content
+    is coord's body ``{"error":"user_email_ambiguous"}``)::
+
+        {"error": "FORBIDDEN",
+         "message": <string: {"error":"user_email_ambiguous"}>,
+         "timestamp": <float>, "path": "<request url>"}
+
+    So coord's code is ``JSON.parse(body.message).error`` — never
+    ``body.error``, which only ever names the HTTP status class.
+
+    A ``502`` is web's own verdict that coord broke the contract: a body that
+    is not a JSON object, or an ``accounts`` that is not a list. Neither is
+    coerced to an empty roster, which would be indistinguishable from "no
+    paired device of this user has reported".
+    """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
+    # — see the same comment in ``create_user_tenant``: a sync dependency runs
+    # in a threadpool with a COPIED context, the ContextVar never reaches this
+    # coroutine, and coord would answer 403 ``user_not_resolved`` for everyone.
+    capture_caller_bearer(request)
+    payload = await _proxy_coord_get(
+        COORD_CLAUDE_ACCOUNTS_MINE_PATH, forward_bearer=True
+    )
+    if not isinstance(payload, dict):
+        # A non-object body is a coord contract break, not an empty roster.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned an unexpected claude-accounts payload",
+        )
+
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        # Same contract break as a non-object body. Coercing it to `[]` would
+        # read as "no paired device reported" — a false zero, not an unknown.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned a claude-accounts payload with no accounts list",
+        )
+    return {
+        "accounts": accounts,
+        # `.get` with no default: absent stays None (unknown), never True.
+        "table_provisioned": payload.get("table_provisioned"),
+        "columns_provisioned": payload.get("columns_provisioned"),
     }
 
 
@@ -5517,6 +6055,81 @@ async def get_fleet_worktree_slots(
     """
     return await _proxy_coord_passthrough(
         "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
+
+
+# ---- Computers (the physical/virtual machine as a coord entity) -----------
+#
+# Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-
+# coord-has-no-resource-model` Phase 5. Backs `/admin/coord/computers` and its
+# `[computerId]` drill-down. The coord-side reads are that plan's Phase 3.2
+# (`GET /coord/computers`, `GET /coord/computers/:computer_id`), tenant-scoped
+# by coord through `coord.tenant_devices -> coord.devices.computer_id`.
+#
+# **Passthrough, not the generic helpers.** Both reads carry load-bearing
+# refusal and absence states the console renders specifically: a 404 from a
+# coord that predates Phase 3 (route not deployed), a 404 for a computer
+# outside the caller's tenant, and a `schema_pending` answer while the
+# qontinui-web migration has not reached the database coord reads. All three
+# must reach the browser with coord's status and JSON body intact — wrapped in
+# `HTTPException(detail=resp.text)` they collapse into one opaque error string
+# and the page can no longer render them as UNKNOWN rather than as a failure.
+#
+# **Admin-gated, like ``/fleet/ci-runners``.** Both payloads carry the
+# registrar's CI-runner rows (the same data ``get_fleet_ci_runners`` serves
+# only to a tenant admin) and each computer's ``access`` facts (tailnet name,
+# address, SSH user). A Developer-tier member must not read either through a
+# second, looser door, so both routes depend on ``require_coord_tenant_admin``
+# rather than ``get_tenant_id`` — a door is only as strict as its loosest twin.
+#
+# **Honesty (plan §3.5).** Coord computes `freshness.state` and never
+# synthesises a sample, a service row or a capacity figure. This proxy adds no
+# defaults and zero-fills nothing: a computer with no measured PSI axis stays
+# `null`/`not_supported`, and an upstream failure stays an error (502/504/
+# coord's status) rather than an empty computer list.
+
+
+@router.get("/computers")
+async def get_computers(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers`` (tenant-scoped).
+
+    The fleet list: per computer its identity (no raw OS ids), capacity,
+    ``freshness {last_report_at, age_secs, state, stale_after_secs}``, every
+    known lane's newest sample (``lanes``, ``samples_state``,
+    ``lanes_truncated``), ``services_reported`` / ``services_failed``,
+    ``last_event``, ``devices[]`` and ``ci_runners``. At list level:
+    ``unattributed_ci_runners`` (registrar rows no computer claims),
+    ``ambiguous_ci_runners`` (rows two or more computers claim, each with
+    ``claimed_by``), and ``registrar_read_ok``.
+
+    When ``registrar_read_ok`` is false coord's registrar read failed, and
+    every registrar-derived list — each computer's ``ci_runners``,
+    ``unattributed_ci_runners`` and ``ambiguous_ci_runners`` — is ``null``:
+    UNKNOWN, never "no runners". Response shape is coord-authored and passed
+    through untouched; this proxy adds no defaults.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/computers", tenant_id=tenant_id
+    )
+
+
+@router.get("/computers/{computer_id}")
+async def get_computer(
+    computer_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/computers/{computer_id}`` (tenant-scoped).
+
+    One computer's whole answer to "how is this machine": the list fields
+    plus ``services[]``, ``events`` (7 d, newest first), per-lane sample
+    ``history`` (6 h), ``workloads`` and ``divergence[]``. ``computer_id``
+    is validated as a UUID here so a malformed id is a 422 at the web edge
+    and never reaches coord as an arbitrary path segment.
+    """
+    return await _proxy_coord_passthrough(
+        "GET", f"/coord/computers/{computer_id}", tenant_id=tenant_id
     )
 
 
@@ -7032,23 +7645,64 @@ async def websocket_coord_events(
 class RepoCiRow(BaseModel):
     """One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
 
-    ``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering
-    (``green`` / ``red`` / ``unknown``); any amber tone is a frontend
+    ``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /
+    ``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend
     derivation from ``open_pr_checks`` counts, not a backend value.
+    ``vacuously_green`` is coord's zero-baseline arm — no required check has
+    ever reported on main, so "green" is an absence of evidence, not a pass.
+
+    The two ``*_observed_at`` stamps are the freshness of the facts the row
+    carries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):
+    ``main_verdict_observed_at`` is ``max(updated_at)`` over the
+    ``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``
+    is the newest ``pr_check_runs`` row counted. They MUST be declared here:
+    ``response_model`` filtering drops every undeclared key, so an undeclared
+    stamp would leave the page an unbounded read of "the latest observation"
+    with no way to say how old it is. ``None`` is coord saying it has no
+    observation to date the value by (the vacuously-green / memo arms, or no
+    checks at all) — and also an older coord that sends no stamp; both read
+    as UNKNOWN freshness on the page, never as "just now".
+
+    The stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339
+    text reaches the page byte-for-byte (no re-serialisation that rewrites
+    the offset or the precision), and a value this model cannot parse is
+    still delivered rather than 500-ing the whole read.
     """
 
     repo: str
-    main_verdict: str = Field(..., description='"green" | "red" | "unknown"')
+    main_verdict: str = Field(
+        ..., description='"green" | "red" | "unknown" | "vacuously_green"'
+    )
     open_pr_checks: dict[str, int] = Field(
         ..., description="counts keyed by 'success' | 'failure' | 'pending'"
     )
     latest_details_url: str | None = None
     main_head_sha: str | None = None
+    main_verdict_observed_at: str | None = Field(
+        default=None,
+        description=(
+            "max(updated_at) over the ci_baselines rows main_verdict was read "
+            "from; null when no baseline backs the verdict"
+        ),
+    )
+    pr_checks_observed_at: str | None = Field(
+        default=None,
+        description="newest pr_check_runs row counted; null when none",
+    )
 
 
 class CiStatusResponse(BaseModel):
-    """Response wrapper for ``GET /operations/ci-status``."""
+    """Response wrapper for ``GET /operations/ci-status``.
 
+    ``as_of`` is coord's read time. It is optional rather than required so a
+    web deploy that lands before the coord half (Phase 2) keeps serving the
+    page instead of failing response validation with a 500 — an absent
+    ``as_of`` renders as UNKNOWN freshness, never as current.
+    """
+
+    as_of: str | None = Field(
+        default=None, description="when coord composed this response (RFC 3339)"
+    )
     repos: list[RepoCiRow]
 
 
@@ -7164,9 +7818,52 @@ async def get_ci_status(
 
     Wire shape (coord ``CiStatusResponse``)::
 
-        { "repos": [RepoCiRow, ...] }
+        { "as_of": "<rfc3339>", "repos": [RepoCiRow, ...] }
     """
     return await _proxy_coord_get("/coord/ci/status", tenant_id=tenant_id)
+
+
+@router.get("/ci/overview")
+async def get_ci_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-pool CI capacity/queue state and per-repo job-outcome split.
+
+    Proxies coord's ``GET /coord/ci/overview`` (plan
+    ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phases 2-3), the
+    durable read behind ``/admin/coord/ci``. Coord serves it from
+    ``coord.ci_pool_observations`` (written by the leader each queue-wait /
+    eligibility pass) plus tenant-scoped ``ci_job_observations`` counts, so
+    every replica answers the same rows.
+
+    Passed through VERBATIM — deliberately no ``response_model``. Every
+    count on this wire is nullable and every row carries a ``state``
+    (``measured`` / ``stale`` / ``never_observed`` / ``unknown``) plus its
+    ``observed_at`` / ``stale_after_secs``; a declared model that lagged the
+    coord shape would silently drop exactly the fields that let the page
+    say "UNKNOWN" instead of "0" (the ``/ci-status`` freshness bug this same
+    plan had to fix in ``RepoCiRow``).
+
+    Wire shape (coord)::
+
+        {
+          "as_of": "<rfc3339>", "coverage_note": "...", "note": "...|null",
+          "pools": [{repo, pool, state, state_reason, observed_at, ...}],
+          "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
+        }
+
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
+
+    No graceful fallback: a coord predating the route answers 404 and the
+    page renders that as an explicit UNKNOWN, never as an empty fleet.
+    """
+    return await _proxy_coord_get("/coord/ci/overview", tenant_id=tenant_id)
 
 
 @router.post("/ci-status/notify-when-green", response_model=NotifyWhenGreenResponse)
@@ -9293,6 +9990,172 @@ async def put_fleet_policy(
     )
 
 
+# ---- GitHub-hosted CI read proxy -----------------------------------------
+#
+# Plan ``2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting`` Phase 3
+# (D7). Proxies coord's ``GET /coord/ci-hosting/effective`` — the tenant
+# default plus one entry per repo the tenant owns, each with its RESOLVED
+# ``github_hosted_ci`` level and the band it came from. Writes do NOT get a
+# route here: they reuse ``PUT /fleet-policy`` above with
+# ``domain="github_hosted_ci"`` (``scope_band`` ``tenant`` | ``repo``, repo key
+# ``owner/name``, ``level: "inherit"`` clearing a repo override).
+#
+# The one property this projection holds: **``level: null`` is UNKNOWN and
+# stays null.** Coord's typed read returns ``Unknown(reason)`` rather than
+# collapsing to a level, because this domain has two opposite "safe" sides
+# (``off`` is safe for spend, ``on`` is safe for a tenant with no self-hosted
+# runners — plan D5). So unlike :func:`_fleet_policy_view`, which floors a
+# missing level to ``off``, nothing here is floored: a malformed or missing
+# level reads ``None`` with an ``unknown_reason`` naming why.
+#
+# An older coord without the route answers 404, which passes through as a 404
+# so the panel can say "this coord build does not serve the hosted-CI read
+# yet" — never a value.
+
+#: The two levels coord resolves this domain to. Anything else is UNKNOWN.
+_HOSTED_CI_LEVELS = ("on", "off")
+
+#: Coord's 404 code for a ``?repo=`` the caller's tenant does not own.
+_CI_HOSTING_REPO_NOT_IN_TENANT = "repo_not_in_tenant"
+
+
+class CiHostingReading(BaseModel):
+    """One resolved ``github_hosted_ci`` reading. ``level is None`` ⇒ UNKNOWN."""
+
+    level: Literal["on", "off"] | None
+    #: ``"none" | "repo" | "tenant" | "system"`` — the band that answered.
+    #: ``"none"`` means no row matched and the domain default (``on``) applies.
+    resolved_scope: str
+    #: Set when ``level`` is ``None``: a read failure,
+    #: ``repo_not_in_tenant`` for a ``?repo=`` this tenant does not own, or
+    #: ``malformed_level`` when coord answered with a level this proxy does not
+    #: recognise.
+    unknown_reason: str | None = None
+
+
+class CiHostingRepoReading(CiHostingReading):
+    #: ``owner/name`` — the repo-band ``scope_key`` spelling.
+    repo: str
+    #: Whether coord's hosted-job detector polls this repo. ``None`` when
+    #: coord does not report it (an older build) — never read as ``False``.
+    watched: bool | None = None
+
+
+class CiHostingView(BaseModel):
+    domain: str = "github_hosted_ci"
+    tenant_default: CiHostingReading
+    repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
+    can_edit: bool
+
+
+def _ci_hosting_reading(raw: Any) -> dict[str, Any]:
+    body = raw if isinstance(raw, dict) else {}
+    level = body.get("level")
+    scope = body.get("resolved_scope")
+    reason = body.get("unknown_reason")
+    reason = reason if isinstance(reason, str) and reason else None
+    if level is not None and level not in _HOSTED_CI_LEVELS:
+        # Coord said something this build cannot read as on/off. That is
+        # ignorance, not a value — render it as UNKNOWN and say why.
+        reason = reason or f"malformed_level:{level}"
+        level = None
+    elif level is None and reason is None:
+        reason = "no_level_reported" if isinstance(raw, dict) else "missing"
+    return {
+        "level": level,
+        "resolved_scope": scope if isinstance(scope, str) else "none",
+        "unknown_reason": reason,
+    }
+
+
+def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
+    body = payload if isinstance(payload, dict) else {}
+    repos_raw = body.get("repos")
+    repos: list[CiHostingRepoReading] = []
+    if isinstance(repos_raw, list):
+        for entry in repos_raw:
+            if not isinstance(entry, dict):
+                continue
+            repo = entry.get("repo")
+            if not isinstance(repo, str) or not repo:
+                continue
+            watched = entry.get("watched")
+            repos.append(
+                CiHostingRepoReading(
+                    repo=repo,
+                    watched=watched if isinstance(watched, bool) else None,
+                    **_ci_hosting_reading(entry),
+                )
+            )
+    return CiHostingView(
+        tenant_default=CiHostingReading(
+            **_ci_hosting_reading(body.get("tenant_default"))
+        ),
+        repos=repos,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/ci-hosting", response_model=CiHostingView)
+async def get_ci_hosting(
+    request: Request,
+    repo: str | None = Query(
+        None,
+        description="Resolve only this repo (owner/name).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> CiHostingView:
+    """Read the tenant's resolved GitHub-hosted CI setting, per repo.
+
+    ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+    roles in the EFFECTIVE tenant plus the superuser bypass — because the
+    writes this panel makes go through ``PUT /fleet-policy``, which is gated on
+    ``require_coord_tenant_admin``.
+    """
+    params: dict[str, Any] = {}
+    if repo:
+        params["repo"] = repo
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/ci-hosting/effective", params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        # Coord scopes `?repo=` to the caller's own tenant and answers 404
+        # `repo_not_in_tenant` for a repo it does not own. That is a typed
+        # UNKNOWN for THAT repo, not "this coord has no such route" — which
+        # is the other 404, and still passes through.
+        if not (
+            repo
+            and exc.status_code == 404
+            and _CI_HOSTING_REPO_NOT_IN_TENANT in str(exc.detail)
+        ):
+            raise
+        payload = {
+            "tenant_default": {
+                "level": None,
+                "resolved_scope": "none",
+                "unknown_reason": "not_read",
+            },
+            "repos": [
+                {
+                    "repo": repo,
+                    "level": None,
+                    "resolved_scope": "none",
+                    "unknown_reason": _CI_HOSTING_REPO_NOT_IN_TENANT,
+                }
+            ],
+        }
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _ci_hosting_view(payload, can_edit=can_edit)
+
+
 # ---- Tenant transcript-sync consent proxy -------------------------------
 #
 # Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
@@ -11320,9 +12183,9 @@ async def list_prompt_document_proposals(
         raise
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/approve")
 async def approve_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained deliberately though its value is now unused: the dependency is
@@ -11347,15 +12210,15 @@ async def approve_prompt_document_proposal(
     which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/approve",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
 
-@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+@router.post("/coord/prompt-document-proposals/{policy_proposal_id}/reject")
 async def reject_prompt_document_proposal(
-    proposal_id: str,
+    policy_proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     # Retained for the same reason as on approve: this dependency is the
@@ -11370,7 +12233,7 @@ async def reject_prompt_document_proposal(
     operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
-        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        f"{_COORD_PROPOSALS_PATH}/{quote(policy_proposal_id, safe='')}/reject",
         {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
@@ -11602,9 +12465,25 @@ async def get_coord_findings(
             "the unfiltered total by design."
         ),
     ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "Resume a keyset walk: pass the previous response's ``next_cursor`` "
+            "back verbatim, under the SAME filters. Forwarded verbatim — coord "
+            "owns the codec, and a malformed or foreign cursor is coord's typed "
+            "400 ``invalid_query_parameter`` naming ``cursor``."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Every answer is a PAGE of the corpus, never the corpus: coord's envelope
+    carries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's
+    ``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next
+    page (a malformed one is coord's 400, re-raised verbatim). Without that
+    pass-through a client following ``next_cursor`` would be served page 1
+    forever.
 
     Response envelope mirrors coord's:
     ``{"available", "count", "findings": [...], "finding_id_applied",
@@ -11645,6 +12524,8 @@ async def get_coord_findings(
         params["limit"] = limit
     if triaged is not None:
         params["triaged"] = triaged
+    if cursor is not None:
+        params["cursor"] = cursor
     try:
         body = await _proxy_coord_get(
             "/coord/findings", params=params or None, tenant_id=tenant_id
@@ -11655,6 +12536,21 @@ async def get_coord_findings(
                 "available": False,
                 "count": 0,
                 "findings": [],
+                # The bounded-read envelope coord serves on every answer,
+                # spelled as UNKNOWN: an absent key would read as falsy, and
+                # `truncated` missing reads as "complete" to a careless client.
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: `limit` means the cap coord
+                # APPLIED, and no page was read here, so no cap was applied.
+                # Echoing the request (or clamping it locally) would state a cap
+                # coord never used, and a local clamp would copy coord's range.
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
                 "unavailable": (
                     "coord's findings reader is not answering — its "
                     "`/coord/findings` route returned 404, so the deployed "

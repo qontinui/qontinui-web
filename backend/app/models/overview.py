@@ -26,6 +26,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -36,7 +37,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -73,6 +74,12 @@ GATE_STATUSES: tuple[str, ...] = ("pending", "passed", "failed", "waived")
 
 #: Enforced by ``ck_overview_phase_tasks_status``.
 TASK_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done")
+
+#: What a milestone marks. Enforced by ``ck_overview_milestones_kind``.
+MILESTONE_KINDS: tuple[str, ...] = ("milestone", "pilot", "first_value", "other")
+
+#: Enforced by ``ck_overview_milestones_status``.
+MILESTONE_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done", "at_risk")
 
 #: Enforced by ``ck_overview_cost_lines_kind``.
 COST_LINE_KINDS: tuple[str, ...] = ("build_non_labour", "run_annual")
@@ -253,9 +260,10 @@ class Estimate(_AuditMixin, Base):
     notes: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
-    #: Bumped by every write to this estimate or its content graph. The
-    #: content-replace endpoint takes it as ``expected_version`` and refuses a
-    #: write built on a copy the server has moved past.
+    #: Bumped by every write to this estimate or its content graph. It is the
+    #: resource's version on the authoring contract: every write names it in
+    #: ``If-Match`` and is refused (409, with the server's copy) when it is
+    #: built on a copy the server has moved past.
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )
@@ -353,6 +361,23 @@ class Phase(_AuditMixin, Base):
     gate_notes: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
+    #: The version of the phase's PROGRESS (the five fields above, from
+    #: ``actual_start``) — the ``phase_progress`` resource's ``version``. It
+    #: is apart from the estimate's own version on purpose: progress is
+    #: recorded on the Timeline and the plan in the estimate editor, and
+    #: neither write may conflict with, or overwrite, the other.
+    #: NULLABLE only so ``overview_04_timeline`` is provably additive; its
+    #: constant default fills every existing row, and a reader maps a NULL
+    #: to 1.
+    progress_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, server_default=text("1"), default=1
+    )
+    #: Who last recorded progress, and when. ``updated_at``/``updated_by``
+    #: move with every estimate save, so they cannot answer that.
+    progress_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    progress_updated_by: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     estimate: Mapped[Estimate] = relationship(back_populates="phases")
     tasks: Mapped[list["PhaseTask"]] = relationship(
@@ -706,6 +731,64 @@ class CalendarBreak(_AuditMixin, Base):
     estimate: Mapped[Estimate] = relationship(back_populates="calendar_breaks")
 
 
+class Milestone(_AuditMixin, Base):
+    """A dated point on the Timeline: a pilot, the date of first value, or any
+    other marker. Gates are phases, not milestones.
+
+    ``phase_id`` is SET NULL, never cascaded, when its phase goes: a
+    milestone outlives a re-planned schedule. The estimate store detaches it
+    as a write of its own first (version moved, change-log row), so the FK
+    action is the backstop, not the path.
+    """
+
+    __tablename__ = "milestones"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('milestone', 'pilot', 'first_value', 'other')",
+            name="ck_overview_milestones_kind",
+        ),
+        CheckConstraint(
+            "status IN ('planned', 'in_progress', 'done', 'at_risk')",
+            name="ck_overview_milestones_status",
+        ),
+        CheckConstraint(
+            "(status = 'done') = (completed_date IS NOT NULL)",
+            name="ck_overview_milestones_done_has_date",
+        ),
+        Index("ix_overview_milestones_tenant", "tenant_id", "target_date"),
+        Index("ix_overview_milestones_phase", "phase_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    kind: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'milestone'"), default="milestone"
+    )
+    phase_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.phases.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    completed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'planned'"), default="planned"
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
 class ChangeLog(Base):
     """One row per write to any overview resource — the audit trail.
 
@@ -769,6 +852,189 @@ class ChangeLog(Base):
     before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Documents and wiki (overview_03_documents_and_wiki)
+# ---------------------------------------------------------------------------
+
+#: What a page is. ``slides`` is admitted now (a later phase) because widening
+#: the CHECK afterwards would need a DROP. Enforced by ``ck_overview_pages_kind``.
+PAGE_KINDS: tuple[str, ...] = ("document", "wiki", "slides")
+
+#: Enforced by ``ck_overview_page_links_type``.
+PAGE_LINK_TYPES: tuple[str, ...] = ("wiki", "related")
+
+
+#: The one spelling of the page search vector: the migration's generated
+#: column and this model's declare the same expression.
+PAGE_SEARCH_VECTOR_SQL = "to_tsvector('simple'::regconfig, title || ' ' || body_md)"
+
+
+class Page(Base):
+    """One markdown page — a document, a wiki page, or (later) a deck.
+
+    ``current_version`` moves on every content write and is the version a
+    write must name. Every such write also appends :class:`PageVersion`.
+    """
+
+    __tablename__ = "pages"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('document', 'wiki', 'slides')", name="ck_overview_pages_kind"
+        ),
+        UniqueConstraint("tenant_id", "kind", "slug", name="uq_overview_pages_slug"),
+        Index("ix_overview_pages_tenant_kind", "tenant_id", "kind", "title"),
+        Index("ix_overview_pages_search", "search_tsv", postgresql_using="gin"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body_md: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    doc_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+    #: Postgres keeps this; it is never written and, being up to a body's size,
+    #: never loaded unless asked for (search reads it in SQL only).
+    search_tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(PAGE_SEARCH_VECTOR_SQL, persisted=True),
+        deferred=True,
+    )
+
+
+class PageVersion(Base):
+    """A page as it stood after one content write. Append-only; a revert
+    writes a NEW version copying an old one, never rewrites history."""
+
+    __tablename__ = "page_versions"
+    __table_args__ = (
+        UniqueConstraint("page_id", "version", name="uq_overview_page_versions"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    page_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.pages.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False)
+    doc_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+
+
+class PageLink(Base):
+    """What a page points at, by ``(to_kind, to_slug)`` — so a link to a page
+    nobody has written yet is still recorded, and is a backlink the moment
+    that page exists."""
+
+    __tablename__ = "page_links"
+    __table_args__ = (
+        CheckConstraint(
+            "link_type IN ('wiki', 'related')", name="ck_overview_page_links_type"
+        ),
+        CheckConstraint(
+            "to_kind IN ('document', 'wiki', 'slides')",
+            name="ck_overview_page_links_kind",
+        ),
+        Index("ix_overview_page_links_target", "tenant_id", "to_kind", "to_slug"),
+        {"schema": _SCHEMA},
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    from_page_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.pages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    to_kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    to_slug: Mapped[str] = mapped_column(Text, primary_key=True)
+    link_type: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+class OverviewFile(Base):
+    """An uploaded file's metadata; its bytes live in object storage.
+
+    Named ``OverviewFile`` rather than ``File`` so it cannot be mistaken for
+    the builtin or for another upload model in the repo.
+    """
+
+    __tablename__ = "files"
+    __table_args__ = (
+        CheckConstraint("size_bytes >= 0", name="ck_overview_files_size"),
+        Index("ix_overview_files_tenant", "tenant_id", "page_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    page_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.pages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    uploaded_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

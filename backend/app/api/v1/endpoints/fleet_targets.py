@@ -13,7 +13,9 @@ Backs the fleet UI's three write/read surfaces (see plan
 
 Reads are scoped to the caller's owned devices (``Device.user_id ==
 current_user.id``); the ``coord.test_targets`` write additionally stamps the
-caller's coord home tenant (``operations.get_tenant_id``), the same
+caller's EFFECTIVE coord tenant (``operations.get_tenant_id``: home, unless the
+caller sends ``X-Qontinui-Active-Tenant`` naming a tenant it is a member of --
+with no ``coord.tenant_devices`` binding check), the same
 operator-scoped posture the plan's migration prescribes.
 """
 
@@ -236,8 +238,8 @@ async def designate_test_target(
 ) -> TestTargetRow:
     """Designate ``device_id`` as a test host for ``app_id`` (upsert).
 
-    Writes ``coord.test_targets`` stamped with the caller's coord home
-    tenant. Idempotent — re-designating updates ``auto_fresh``. The device
+    Writes ``coord.test_targets`` stamped with the caller's effective coord
+    tenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent — re-designating updates ``auto_fresh``. The device
     must be owned by the caller and the app must be registered.
     """
     device = await _owned_device(db, device_id, current_user.id)
