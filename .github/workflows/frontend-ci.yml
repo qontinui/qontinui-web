@@ -19,6 +19,35 @@ on:
       - ".github/actions/fleet-nouns-vocab/**"
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
+
+# PR-SCOPED SUPERSESSION (shared hosted-job cap relief, 2026-10-05). A FIRST-
+# attempt `pull_request` run joins a per-workflow, per-PR group and cancels the
+# run it supersedes there: a `synchronize` cancels the older head's run, and a
+# `reopened` cancels the same-head run it re-does (coord's ci-abandoned
+# recovery is a close+reopen). Every OTHER run -- whichever of push (main,
+# develop, merge-candidate*/** -- coord's candidate CI), schedule,
+# workflow_dispatch and workflow_run this file has, and EVERY re-run (run_attempt > 1) -- gets a
+# group unique to its run id + attempt, so it is never cancelled, never reaped
+# while pending, and never queues behind anything.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here is
+# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
+# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
+# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# RESIDUAL: two pushes seconds apart can have
+# their runs CREATED out of order, so the older head's run cancels the newer
+# head's; the next push (or a close+reopen) heals it.
+# Pattern: qontinui-claude-config#1475.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
+
 jobs:
   lint-and-typecheck:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -29,7 +58,9 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
       # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
@@ -39,7 +70,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -49,6 +80,11 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      # `npm run lint` is `next lint` (src/) followed by `lint:config`: the
+      # files beside src/ — next.config.mjs, config/ (the rewrite resolver)
+      # and scripts/ — get the full rule set too,
+      # @qontinui-web/no-dev-stack-fallback included. Errors fail; console
+      # warnings in CLI scripts do not.
       - name: Lint
         working-directory: ./frontend
         run: npm run lint
@@ -67,14 +103,6 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
-
-      # `npm run lint` (next lint) covers only src/, so the files beside it —
-      # next.config.mjs, config/ (the rewrite resolver) and scripts/ — get the
-      # full rule set here, @qontinui-web/no-dev-stack-fallback included.
-      # Errors fail; console warnings in CLI scripts do not.
-      - name: Lint next.config.mjs, config/ and scripts/
-        working-directory: ./frontend
-        run: npx eslint next.config.mjs config scripts
 
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump
@@ -120,10 +148,12 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -227,16 +257,19 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # actions/checkout cannot write outside $GITHUB_WORKSPACE, so the
       # sibling lands inside it. The overlay script takes the path explicitly,
       # so it does not have to be the usual `../qontinui-cloud-control`.
       - name: Checkout qontinui-cloud-control
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qontinui/qontinui-cloud-control
           path: .sibling/qontinui-cloud-control
+          persist-credentials: false
 
       # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
       # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
@@ -246,7 +279,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"

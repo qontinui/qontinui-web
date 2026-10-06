@@ -26,13 +26,14 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from tests._alembic_harness import run_alembic
 
 # The revision under test.
 _REVISION_ID = "coord_memory_links"
@@ -131,20 +132,6 @@ def _kind_check_def(engine: Engine) -> str:
     return str(row)
 
 
-def _alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run alembic with a target DB URL injected via env override."""
-    env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
-    return subprocess.run(
-        ["python", "-m", "alembic", "-x", f"db_url={db_url}", *args],
-        cwd=str(cwd),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-
 @pytest.mark.skipif(
     not _can_connect_with_pgvector(_admin_database_url() or ""),
     reason=(
@@ -174,7 +161,7 @@ def test_coord_memory_links_idempotent_roundtrip() -> None:
         # ----------------------------------------------------------------
         # 1. First upgrade — full chain up to coord_memory_links.
         # ----------------------------------------------------------------
-        _alembic(backend_root, temp_db_url, "upgrade", _REVISION_ID)
+        run_alembic(backend_root, temp_db_url, "upgrade", _REVISION_ID)
 
         for schema, table in _CREATED_TABLES:
             assert _table_exists(target_engine, schema, table), (
@@ -191,7 +178,7 @@ def test_coord_memory_links_idempotent_roundtrip() -> None:
         # ----------------------------------------------------------------
         # 2. Downgrade one step — back to the parent.
         # ----------------------------------------------------------------
-        _alembic(backend_root, temp_db_url, "downgrade", parent_revision)
+        run_alembic(backend_root, temp_db_url, "downgrade", parent_revision)
 
         for schema, table in _CREATED_TABLES:
             assert not _table_exists(target_engine, schema, table), (
@@ -204,7 +191,7 @@ def test_coord_memory_links_idempotent_roundtrip() -> None:
         # ----------------------------------------------------------------
         # 3. Re-upgrade — schema returns to the post-upgrade shape.
         # ----------------------------------------------------------------
-        _alembic(backend_root, temp_db_url, "upgrade", _REVISION_ID)
+        run_alembic(backend_root, temp_db_url, "upgrade", _REVISION_ID)
 
         for schema, table in _CREATED_TABLES:
             assert _table_exists(target_engine, schema, table), (

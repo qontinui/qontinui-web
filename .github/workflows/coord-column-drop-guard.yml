@@ -26,7 +26,13 @@
 # change the string the `web-protect-main` ruleset registers (Phase 3 of the
 # plan makes this check REQUIRED, only after this workflow has posted the
 # context on main at least once — a required context that has never posted
-# blocks every PR).
+# blocks every PR). coord's `guard_rerun.rs` `GUARDS` table (added by
+# qontinui-coord#2542) keys on the same string: on a failed run of THIS check
+# it reads the job log for the `UNKNOWN-PENDING-PRECONDITION:` marker and
+# registers a re-run gate, so a renamed check would also leave a stale UNKNOWN
+# red with no gate behind it. A `strategy:` matrix or a job-level `uses:`
+# renames the check run too. backend/tests/test_coord_column_drop_guard.py
+# pins all three.
 #
 # The common case costs no network call: the script exits 0 after an offline
 # AST scan when the changed revisions drop nothing in coord.*. Only a real
@@ -68,6 +74,30 @@ on:
 permissions:
   contents: read
 
+# PR-SCOPED SUPERSESSION (shared hosted-job cap relief, 2026-10-05). A FIRST-
+# attempt `pull_request` run joins a per-workflow, per-PR group and cancels the
+# run it supersedes there: a `synchronize` cancels the older head's run, and a
+# `reopened` cancels the same-head run it re-does (coord's ci-abandoned
+# recovery is a close+reopen). Every OTHER run -- whichever of push (main,
+# develop, merge-candidate*/** -- coord's candidate CI), schedule,
+# workflow_dispatch and workflow_run this file has, and EVERY re-run (run_attempt > 1) -- gets a
+# group unique to its run id + attempt, so it is never cancelled, never reaped
+# while pending, and never queues behind anything.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here is
+# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
+# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
+# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# RESIDUAL: two pushes seconds apart can have
+# their runs CREATED out of order, so the older head's run cancels the newer
+# head's; the next push (or a close+reopen) heals it.
+# Pattern: qontinui-claude-config#1475.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
+
 jobs:
   coord-column-drop-guard:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -76,13 +106,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # The gate diffs `<base>...HEAD` (three-dot: from the merge base),
           # so it needs the base ref AND enough history to find that merge
           # base. A depth-1 checkout has neither; `fetch-depth: 0` is the
           # simplest correct answer and the revision set is small.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Choose the base to diff against
         id: base
@@ -100,14 +131,18 @@ jobs:
         #   candidate ref -> origin/main: the candidate is main plus the PR, so
         #                    the three-dot diff from their merge base is exactly
         #                    the PR's revisions.
+        # Context values reach the script through env, never inline expressions
+        # (zizmor template-injection).
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
+          case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              base="origin/${{ github.base_ref }}" ;;
+              base="origin/${GITHUB_BASE_REF}" ;;
             push)
-              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-                before="${{ github.event.before }}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                before="${EVENT_BEFORE}"
                 if [ -n "$before" ] \
                    && [ "$before" != "0000000000000000000000000000000000000000" ] \
                    && git cat-file -e "${before}^{commit}" 2>/dev/null; then
@@ -119,7 +154,7 @@ jobs:
                 base="origin/main"
               fi ;;
             *)
-              echo "::error::unexpected event ${{ github.event_name }}"; exit 2 ;;
+              echo "::error::unexpected event ${GITHUB_EVENT_NAME}"; exit 2 ;;
           esac
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "diffing ${base}...HEAD"
@@ -132,4 +167,6 @@ jobs:
         # (git error, manifest half missing/null/empty, or a wildcard waiver on
         # the dropped table). Neither is a pass. The common case — no coord.*
         # drop in the diff — exits 0 offline.
-        run: python scripts/ci/check_coord_column_drops.py --base-ref "${{ steps.base.outputs.base }}"
+        env:
+          BASE_REF: ${{ steps.base.outputs.base }}
+        run: python scripts/ci/check_coord_column_drops.py --base-ref "${BASE_REF}"

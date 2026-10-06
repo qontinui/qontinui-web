@@ -29,6 +29,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 from qontinui_schemas.generated.per_type.runner import (
     Runner as RunnerWire,
@@ -50,6 +51,7 @@ from app.api.deps import (
     get_paired_device,
 )
 from app.config.redis_config import get_redis
+from app.core.error_codes import ErrorCode
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.crud import device_machine_credential_crud as dmk_crud
@@ -70,6 +72,7 @@ from app.schemas.device import (
     PairCliResponse,
     PairConfirmRequest,
     PairConfirmResponse,
+    PairConfirmTenantResult,
 )
 from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
@@ -685,6 +688,60 @@ async def get_device_identity(
 # ---------------------------------------------------------------------------
 
 
+def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
+    """The 502 ``detail`` relaying a non-2xx coord pairing answer.
+
+    Coord's pairing refusals are ``{error, code, hint?}`` (plus a token-free
+    per-tenant ``results`` list on a collect-mode batch refusal). ``code``,
+    ``hint`` and the distinct per-tenant ``skipped_reason`` values ride as
+    their own fields, parsed from the FULL body:
+    ``coord_body`` is truncated, and a multi-tenant refusal routinely runs
+    past 500 chars, so a client cannot reliably parse it to tell "not a
+    member" from a retryable coord-side failure or a burned pairing nonce.
+
+    ``error`` and ``message`` are what make those fields reach a client:
+    the app's ``http_exception_handler`` spreads a dict detail carrying
+    ``error`` into the TOP LEVEL of the response, but flattens one without
+    it to ``message: str(detail)`` — a Python repr, every ``coord_*`` field
+    lost.
+    """
+    detail: dict[str, Any] = {
+        "error": ErrorCode.BAD_GATEWAY.value,
+        "coord_status": resp.status_code,
+        "coord_body": resp.text[:500],
+    }
+    try:
+        refusal = resp.json()
+    except ValueError:
+        refusal = None
+    if isinstance(refusal, dict):
+        for field in ("code", "hint"):
+            value = refusal.get(field)
+            if isinstance(value, str) and value:
+                detail[f"coord_{field}"] = value
+        # A batch refusal's top-level code (`no_tenant_authorized`) does not
+        # say WHY; the per-tenant reasons do. Relay only the distinct reason
+        # strings — never the entries themselves.
+        results = refusal.get("results")
+        if isinstance(results, list):
+            reasons = sorted(
+                {
+                    entry["skipped_reason"]
+                    for entry in results
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("skipped_reason"), str)
+                    and entry["skipped_reason"]
+                }
+            )
+            if reasons:
+                detail["coord_skip_reasons"] = reasons
+    code = detail.get("coord_code")
+    detail["message"] = (
+        f"Coord refused pairing (HTTP {resp.status_code}{f': {code}' if code else ''})."
+    )
+    return detail
+
+
 @router.post(
     "/pair-confirm",
     response_model=PairConfirmResponse,
@@ -769,7 +826,7 @@ async def pair_confirm(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"coord_status": resp.status_code, "coord_body": resp.text[:500]},
+            detail=_coord_refusal_detail(resp),
         )
 
     try:
@@ -782,11 +839,54 @@ async def pair_confirm(
 
     coord_device_id = coord_body.get("device_id")
     coord_token = coord_body.get("token")
-    if not coord_device_id or not coord_token:
+    # Collect mode (multi-tenant flow): coord minted one token per tenant and
+    # holds them for the runner's pair-collect. The browser gets only the
+    # per-tenant outcomes, so a token is not required here — and the page
+    # never puts one in the callback URL.
+    raw_collect = coord_body.get("collect")
+    if raw_collect is None:
+        # Absent and an explicit null both mean the legacy single-tenant flow.
+        raw_collect = False
+    if not isinstance(raw_collect, bool):
+        # A non-boolean flag must never fall through to the legacy branch,
+        # which would put coord's token in the response and callback URL.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord pair-complete returned a malformed collect flag.",
+        )
+    collect = raw_collect
+    if not coord_device_id or (not collect and not coord_token):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Coord pair-complete response missing device_id/token.",
         )
+
+    results: list[PairConfirmTenantResult] | None = None
+    if collect:
+        raw_results = coord_body.get("results")
+        # Collect mode always carries at least one per-tenant outcome; coord
+        # answers 403 (not an empty list) when nothing was minted.
+        if not isinstance(raw_results, list) or not raw_results:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coord pair-complete returned malformed results.",
+            )
+        try:
+            # Rebuild each entry from the three named fields only, so a token
+            # coord might ever add to an entry cannot reach the browser.
+            results = [
+                PairConfirmTenantResult(
+                    tenant_id=entry.get("tenant_id"),
+                    status=entry.get("status"),
+                    skipped_reason=entry.get("skipped_reason"),
+                )
+                for entry in raw_results
+            ]
+        except (ValidationError, AttributeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coord pair-complete returned malformed results.",
+            ) from exc
 
     try:
         device_uuid = UUID(str(coord_device_id))
@@ -800,11 +900,17 @@ async def pair_confirm(
         "pair_confirm_completed",
         user_id=str(current_user.id),
         device_id=str(device_uuid),
+        collect=collect,
+        tenants=len(results) if results is not None else None,
     )
     return PairConfirmResponse(
         device_id=device_uuid,
-        token=str(coord_token),
+        # Collect mode: the browser never needs a token (the runner collects all
+        # of them over pair-collect), so none is returned to it at all.
+        token=None if collect else str(coord_token),
         state=payload.state,
+        collect=collect,
+        results=results,
     )
 
 
@@ -908,7 +1014,7 @@ async def pair_cli(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"coord_status": resp.status_code, "coord_body": resp.text[:500]},
+            detail=_coord_refusal_detail(resp),
         )
 
     try:

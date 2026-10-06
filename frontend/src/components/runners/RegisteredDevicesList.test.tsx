@@ -51,11 +51,8 @@ function device(
     lastHeartbeat: null,
     wsConnected: false,
     createdAt: "2026-09-01T00:00:00Z",
-    // What the backend now sends (qontinui-schemas#180 Runner.instances). The
-    // published @qontinui/shared-types 0.5.0 this app resolves does not declare
-    // it yet, and test files are outside `npm run type-check`, so nothing here
-    // type-checks it today; it becomes required when the dependency is bumped
-    // to a release carrying #180.
+    // Required by `Runner` (qontinui-schemas#180 Runner.instances). Test files
+    // are outside `npm run type-check`, so nothing enforces it here.
     instances: [],
     tenant_bindings,
   };

@@ -24,6 +24,7 @@ import { RecordRow, RowTime } from "@/components/console";
 import { cn } from "@/lib/utils";
 import { PAGE_SIZE, usePlanLibrary } from "../_hooks/usePlanLibrary";
 import { ArtifactDetailPanel } from "./ArtifactDetailPanel";
+import { StatusCurrencyBadge } from "./StatusCurrencyBadge";
 import {
   KIND_LABELS,
   WORK_ARTIFACT_KINDS,
@@ -74,6 +75,7 @@ function ArtifactRow({
               {item.status}
             </Badge>
           )}
+          <StatusCurrencyBadge currency={item.status_currency} />
         </span>
       }
       // The card's second muted line — `slug · repo · vN · captured_by · date`
