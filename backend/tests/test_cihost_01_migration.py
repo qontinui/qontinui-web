@@ -43,7 +43,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "cihost_01"
-_PARENT_REVISION_ID = "coord_ci_pool_observations_01"
+_PARENT_REVISION_ID = "spawnadm_01_spawn_admission_ledger"
 _REVISION_FILENAME = "cihost_01_qontinui_tenant_hosted_ci_off.py"
 _TENANT_ID = "c231d9da-0ca8-4fe4-bd81-0e3d6c20339a"
 _UPDATED_BY = "migration:cihost_01"
