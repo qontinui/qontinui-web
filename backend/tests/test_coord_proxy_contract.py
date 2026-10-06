@@ -56,6 +56,7 @@ from app.api.v1.endpoints import (
 )
 from app.core.config import settings
 from app.services import coord_proxy as services_coord_proxy
+from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 TENANT = UUID("00000000-0000-4000-8000-000000000001")
 PATH = "/coord/contract-probe"
@@ -567,18 +568,6 @@ def _captured(
         module._caller_active_tenant.reset(t2)
 
 
-class _ScopedAsyncio:
-    """Stands in for the ``asyncio`` module inside ``app.services.coord_proxy``
-    only: ``sleep`` is the test's mock, every other attribute is the real
-    module's. See :func:`_stub_coord` for why the patch is scoped this way."""
-
-    def __init__(self, sleep: AsyncMock) -> None:
-        self.sleep = sleep
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(asyncio, name)
-
-
 @contextlib.contextmanager
 def _stub_coord(
     helper: Helper,
@@ -591,15 +580,10 @@ def _stub_coord(
 
     For a retrying helper (``helper.sleeps``) ``asyncio.sleep`` is replaced by
     ``sleep`` (a fresh ``AsyncMock`` when not given) so the backoff costs no
-    wall time and can be read back from its ``await_args_list``. The patch
-    rebinds the ``asyncio`` NAME inside ``app.services.coord_proxy`` to a
-    :class:`_ScopedAsyncio` proxy, so only coord_proxy's own sleeps reach the
-    mock. Patching ``app.services.coord_proxy.asyncio.sleep`` instead would
-    replace the attribute on the ONE process-wide ``asyncio`` module, and every
-    ``asyncio.sleep`` awaited elsewhere in the loop while the block is active
-    (a background task's ~0.78 s poll, say) would land in ``await_args_list``
-    and break an exact backoff-sequence assert — the flake seen on
-    qontinui-web#1718's shard 6/6, 2026-10-06."""
+    wall time and can be read back from its ``await_args_list``. The
+    replacement is scoped to coord_proxy alone (see
+    :mod:`tests._coord_proxy_sleep` for why patching ``asyncio.sleep`` by its
+    dotted path is process-wide and made the backoff assert flaky)."""
     instance = AsyncMock()
 
     async def _answer(*_args: Any, **_kwargs: Any) -> Any:
@@ -616,12 +600,7 @@ def _stub_coord(
             patch(helper.patch_target, return_value=instance)
         )
         if helper.sleeps:
-            stack.enter_context(
-                patch(
-                    "app.services.coord_proxy.asyncio",
-                    new=_ScopedAsyncio(sleep if sleep is not None else AsyncMock()),
-                )
-            )
+            stack.enter_context(patch_coord_proxy_sleep(sleep))
         yield client_cls
 
 
@@ -1142,9 +1121,10 @@ async def test_post_to_coord_backoff_sequence(
 @pytest.mark.asyncio
 async def test_backoff_sleep_mock_sees_only_coord_proxy_sleeps() -> None:
     """A sleep awaited OUTSIDE coord_proxy while the stub is active must reach
-    the real ``asyncio.sleep``, not the backoff mock. With the patch on the
-    process-wide module, a concurrent task's sleep landed in the mock and the
-    exact backoff assert above failed intermittently."""
+    the real ``asyncio.sleep``, not the backoff mock. Patched on the
+    process-wide module, ANY such sleep (here a task's; in the 2026-10-06
+    flake, a leftover background poll) was recorded by the mock and broke the
+    exact backoff assert above."""
     helper = HELPERS["post_to_coord"]
     queue = [SCENARIOS["connect_error"]] * 3
 
