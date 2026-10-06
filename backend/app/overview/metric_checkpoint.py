@@ -9,14 +9,20 @@ rows are never partly trusted.
 
 **Strict, never normalising.** Every rule in Appendix A is a refusal, except
 the two the appendix marks as warnings (``cause`` / ``action`` missing on a
-``missed`` / ``unknown`` row: an honest unknown can have no known cause).
+``missed`` / ``unknown`` row: an honest unknown can have no known cause) and an
+undeclared row id (plan D5, which the coordinator ruled governs over Appendix
+A's web-only refusal).
 
 **Two validators, one schema.** Coord validates the same block on write (the
-plan's Phase 3). The checks that need the metric document — the block's
-``checkpoint`` and each row id must be DECLARED in the document's frontmatter —
-are web-only, because coord checks shape without reading the document. The
-golden cases in ``tests/fixtures/metric_checkpoint_v1/cases.json`` mark those
-cases ``web_only`` so coord can copy the rest verbatim.
+plan's Phase 3). The checks that need the metric document are web-only, because
+coord checks shape without reading the document: the block's ``checkpoint``
+must be DECLARED in the document's frontmatter (a refusal — an undeclared
+checkpoint cannot be placed), and a row id that is not a declared criterion is
+a WARNING, not a refusal (D5: the row is shown under its report flagged "not
+in the document's list" and never counts toward a declared criterion, so one
+extra re-reported row cannot blank every verdict in the report). The golden
+cases in ``tests/fixtures/metric_checkpoint_v1/cases.json`` mark those cases
+``web_only`` so coord can copy the rest verbatim.
 """
 
 from __future__ import annotations
@@ -306,9 +312,11 @@ def _check_rows(
             else:
                 seen.add(row_id)
                 if known and row_id not in known:
-                    check.error(
+                    # D5: flagged and shown, never counted — not a refusal.
+                    check.warn(
                         f"{path}.id",
-                        f"{row_id!r} is not one of the document's criteria",
+                        f"{row_id!r} is not one of the document's criteria; "
+                        "shown under the report and not counted",
                     )
         verdict = row.get("verdict")
         if "verdict" in row:

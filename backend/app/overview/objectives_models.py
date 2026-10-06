@@ -153,10 +153,9 @@ class ResultRowRead(BaseModel):
     cause: str | None = None
     action: ActionRead | None = None
     #: False: the id is not one of the document's criteria — shown under its
-    #: report, flagged "not in the document's list". Against a document that
-    #: DECLARES criteria the strict validator refuses such a row (Appendix A,
-    #: web-only), so a valid block carries ``False`` only when the document
-    #: declares no criteria at all.
+    #: report, flagged "not in the document's list", never counted toward any
+    #: declared criterion's verdict, and named in the report's
+    #: ``block_warnings`` (D5; the block stays readable).
     declared: bool = True
 
 

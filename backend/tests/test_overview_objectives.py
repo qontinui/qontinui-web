@@ -644,15 +644,46 @@ class TestMalformedBlocks:
         assert {c.unknown_reason for c in cp.criteria} == {"report_unreadable"}
         assert _criterion(read, "1.2").verdict == "unknown"
 
-    async def test_an_undeclared_row_refuses_the_block_when_criteria_are_declared(
+    async def test_an_undeclared_row_is_flagged_not_a_refused_block(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
-        rows = [{"id": "9.9", "verdict": "met", "value_text": "x"}]
+        """D5: one extra re-reported row must not blank every verdict."""
+        rows = [
+            {"id": "1.2", "verdict": "met", "value_text": "14 lands"},
+            {"id": "9.9", "verdict": "missed", "value_text": "x",
+             "cause": "c", "action": {"kind": "pr", "ref": "x#1"}},
+        ]  # fmt: skip
         findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block(rows=rows))
+        read = await _read(docs, findings)
+        cp = _checkpoint(read, "checkpoint-1")
+        report = cp.report
+        assert report.shape == "structured"
+        assert cp.status == "reported"
+        assert [(r.id, r.declared) for r in report.rows] == [
+            ("1.2", True),
+            ("9.9", False),
+        ]
+        assert any(w.startswith("rows[1].id:") for w in report.block_warnings)
+        # The undeclared row counts toward no declared criterion.
+        assert cp.tally.model_dump() == {"met": 1, "missed": 0, "unknown": 6}
+        assert _criterion(read, "1.2").verdict == "met"
+        assert "9.9" not in {c.id for c in _metric(read).criteria_latest}
+        assert _metric(read).tally_latest.missed == 0
+
+    async def test_an_undeclared_checkpoint_still_refuses_the_block(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """It cannot be placed, so the block is unreadable (Appendix A)."""
+        findings.add(
+            _id(1),
+            keys=[DOC_KEY, "checkpoint-1"],
+            topic="merge-train-metrics",
+            block=_block("checkpoint-9"),
+        )
         read = await _read(docs, findings)
         report = _checkpoint(read, "checkpoint-1").report
         assert report.shape == "unreadable_block"
-        assert "rows[0].id" in report.block_error
+        assert "checkpoint" in report.block_error
 
 
 class TestPlacement:

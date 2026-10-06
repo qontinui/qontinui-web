@@ -1,6 +1,6 @@
 {
   "schema": "metric-checkpoint/v1",
-  "about": "Golden cases for the metric-checkpoint/v1 validator (plan 2026-10-06-overview-objectives-view, Appendix A). Phase 1 (qontinui-web, app/overview/metric_checkpoint.py) runs every case; Phase 3 (qontinui-coord) copies them and skips web_only cases, which need the metric document's declared checkpoints and criteria. error_field is one of the dotted paths the validator must name; warning_fields must be warned, not refused.",
+  "about": "Golden cases for the metric-checkpoint/v1 validator (plan 2026-10-06-overview-objectives-view, Appendix A). Phase 1 (qontinui-web, app/overview/metric_checkpoint.py) runs every case; Phase 3 (qontinui-coord) copies them and skips web_only cases, which need the metric document's declared checkpoints and criteria. An undeclared checkpoint is a web-only refusal; an undeclared row id is a web-only WARNING (plan D5). error_field is one of the dotted paths the validator must name; warning_fields must be warned, not refused.",
   "cases": [
     {
       "name": "appendix_a_example",
@@ -2552,7 +2552,7 @@
       "expect": "invalid",
       "web_only": false,
       "error_field": "rows",
-      "note": "also fails web-only id checks; the shape error is listed first"
+      "note": "also warns on undeclared row ids (web-only); the shape error is listed first"
     },
     {
       "name": "duplicate_row_id",
@@ -3944,7 +3944,7 @@
       "expect": "invalid",
       "web_only": false,
       "error_field": "block",
-      "note": "also fails web-only id checks"
+      "note": "also warns on undeclared row ids (web-only)"
     },
     {
       "name": "checkpoint_not_declared",
@@ -4080,9 +4080,12 @@
         "3.3",
         "3.4"
       ],
-      "expect": "invalid",
+      "expect": "valid",
       "web_only": true,
-      "error_field": "rows[0].id"
+      "warning_fields": [
+        "rows[0].id"
+      ],
+      "note": "D5: an undeclared row id is flagged, not refused; the block stays readable and the row never counts toward a declared criterion"
     }
   ]
 }
