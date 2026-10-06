@@ -8,7 +8,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import type { ContextMenuState } from "../context-menu-types";
 import {
   buildCanvasMenuItems,

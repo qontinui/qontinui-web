@@ -219,6 +219,23 @@ import {
   HOSTED_CI_AUTHOR_GLYPH_KINDS,
   HOSTED_CI_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/devops/_lib/hostedCiStatus";
+// Per-repo follow-up dials (agent registry) — plan
+// `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
+import {
+  FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+  FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS,
+  FOLLOWUP_SCOPE_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus";
+// The CI dashboard — plan `2026-10-04-ci-dashboard-in-the-dev-ops-console`
+// Phase 3. One module, two orthogonal tables: a pool's verdict and a repo's.
+import {
+  CI_POOL_ATTENTION_BY_KIND,
+  CI_POOL_AUTHOR_GLYPH_KINDS,
+  CI_POOL_BADGE_CLASS,
+  CI_REPO_ATTENTION_BY_KIND,
+  CI_REPO_AUTHOR_GLYPH_KINDS,
+  CI_REPO_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/ciDashboardStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -577,6 +594,40 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: HOSTED_CI_BADGE_CLASS,
       authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- per-repo follow-up dials (agent registry) -------------------------
+  {
+    // A configured scope (even `none`) is a setting in effect, so calm; only
+    // an unreadable preference is amber — never painted as the `all` default.
+    surface: "post-merge follow-up scope (/admin/coord/agent-registry)",
+    module: "app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus.ts",
+    attentionByKind: FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FOLLOWUP_SCOPE_BADGE_CLASS,
+      authorGlyphKinds: FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the CI dashboard ------------------------------------------------------
+  {
+    // Every non-measured state is amber BY FLOOR and rendered with its
+    // reason, never calm: a pool coord could not measure is the
+    // "0 runners vs UNKNOWN" defect the plan exists to end.
+    surface: "CI pools (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciDashboardStatus.ts",
+    attentionByKind: CI_POOL_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CI_POOL_BADGE_CLASS,
+      authorGlyphKinds: CI_POOL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "CI repos (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciDashboardStatus.ts",
+    attentionByKind: CI_REPO_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CI_REPO_BADGE_CLASS,
+      authorGlyphKinds: CI_REPO_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
