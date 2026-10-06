@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeProgress, titleOf } from "./progress";
+import { shippedPlans, summarizeProgress, titleOf } from "./progress";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
 const row = (
@@ -107,5 +107,78 @@ describe("titleOf", () => {
     expect(titleOf({ slug: "2026-09-19-partner-portal-login" })).toBe(
       "Partner portal login"
     );
+  });
+});
+
+describe("shippedPlans", () => {
+  const shipped = (rows: CoordPlanRow[], fetchLimit = 500) =>
+    shippedPlans(rows, { fetchLimit });
+
+  it("places each shipped unit on its first-shipped day, oldest first, by title", () => {
+    const s = shipped([
+      row("2026-03-01-late", "shipped", {
+        title: "Later plan",
+        first_shipped_at: "2026-04-10T09:00:00Z",
+      }),
+      row("2026-01-02-early-work", "shipped", {
+        first_shipped_at: "2026-02-01T12:00:00Z",
+      }),
+    ]);
+    expect(s.items).toEqual([
+      {
+        slug: "2026-01-02-early-work",
+        title: "Early work",
+        shippedAt: "2026-02-01T12:00:00Z",
+      },
+      {
+        slug: "2026-03-01-late",
+        title: "Later plan",
+        shippedAt: "2026-04-10T09:00:00Z",
+      },
+    ]);
+  });
+
+  it("counts the same units as the Summary's Done figure", () => {
+    const rows = [
+      row("a", "shipped", { first_shipped_at: "2026-01-01T00:00:00Z" }),
+      row("b", "in_progress", { first_shipped_at: "2026-01-02T00:00:00Z" }),
+      row("c", "superseded", { first_shipped_at: "2026-01-03T00:00:00Z" }),
+      row("d", "shipped"),
+    ];
+    const s = shipped(rows);
+    expect(s.items.map((i) => i.slug)).toEqual(["a"]);
+    // A done unit with no ship date is not dropped silently: it is counted
+    // as undated, so the lane can say it has no day to place it on.
+    expect(s.undated).toBe(1);
+    expect(s.items.length + s.undated).toBe(
+      summarizeProgress(rows, { fetchLimit: 500 }).counts.done
+    );
+  });
+
+  it("orders by instant, not by how the instant is spelled", () => {
+    const s = shipped([
+      // As text "…T00:00Z" sorts before "…T09:00+10:00"; as instants the
+      // second is 23:00 the day before, so it is the earlier.
+      row("later", "shipped", { first_shipped_at: "2026-01-01T00:00:00Z" }),
+      row("earlier", "shipped", {
+        first_shipped_at: "2026-01-01T09:00:00+10:00",
+      }),
+    ]);
+    expect(s.items.map((i) => i.slug)).toEqual(["earlier", "later"]);
+  });
+
+  it("leaves out merge-shepherd bookkeeping units", () => {
+    const s = shipped([
+      row("shepherd-pr-9", "shipped", {
+        first_shipped_at: "2026-01-01T00:00:00Z",
+      }),
+    ]);
+    expect(s.items).toEqual([]);
+    expect(s.undated).toBe(0);
+  });
+
+  it("reports a full page as possibly truncated", () => {
+    expect(shipped([row("a", "shipped")], 1).truncated).toBe(true);
+    expect(shipped([row("a", "shipped")], 2).truncated).toBe(false);
   });
 });

@@ -14,9 +14,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
   type SaveResult,
@@ -30,14 +27,11 @@ import {
   type IntentEntry,
   type SummaryIntentKind,
 } from "../_lib/intent";
+import { PLAN_FETCH_LIMIT, fetchPlanRows } from "../_lib/plans-api";
 import { summarizeProgress, type Progress } from "../_lib/progress";
 
-const API = "/api/v1/operations";
 export const INTENT_RESOURCE = "intent_documents";
 const INTENT_PATH = "intent-documents";
-
-/** Same window the Coord Console's plan list reads. */
-export const PLAN_FETCH_LIMIT = 500;
 
 export type Loadable<T> =
   | { state: "loading" }
@@ -58,15 +52,7 @@ function errorMessage(err: unknown): string {
 }
 
 async function loadProgress(): Promise<Progress> {
-  const qs = new URLSearchParams({
-    limit: String(PLAN_FETCH_LIMIT),
-    exclude_slug_prefix: SHEPHERD_SLUG_PREFIX,
-  });
-  const body = await httpClient.get<{
-    work_units?: CoordPlanRow[];
-    plans?: CoordPlanRow[];
-  }>(`${API}/plans?${qs.toString()}`);
-  const rows = body.work_units ?? body.plans ?? [];
+  const rows = await fetchPlanRows();
   return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
 }
 

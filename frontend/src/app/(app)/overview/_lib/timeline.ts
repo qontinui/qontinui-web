@@ -179,6 +179,69 @@ export function axisMonths(
 }
 
 // ---------------------------------------------------------------------------
+// The shipped-plans lane
+// ---------------------------------------------------------------------------
+
+/** A shipped plan as the lane takes it: its title and when it first shipped. */
+export interface LanePlan {
+  slug: string;
+  title: string;
+  shippedAt: string;
+}
+
+export interface ShippedMark {
+  /** The wire day the mark stands for. */
+  day: string;
+  left: number;
+  /** Every plan that shipped that day, in the order given. */
+  plans: LanePlan[];
+}
+
+/**
+ * The UTC day of a ship time, or null when it cannot be read. Coord sends an
+ * instant; normalising it to UTC first means an offset other than `Z` still
+ * lands on the same day the Coord Console dates it by.
+ */
+export function shipDay(shippedAt: string): string | null {
+  const instant = new Date(shippedAt);
+  return Number.isNaN(instant.getTime())
+    ? null
+    : instant.toISOString().slice(0, 10);
+}
+
+/**
+ * The lane's marks: one per day on which plans shipped, so plans landing the
+ * same day share a mark rather than hiding under each other. Plans outside
+ * the window, and plans whose ship time cannot be read, are counted apart
+ * rather than dropped, so the lane can say what it is not showing and why.
+ */
+export function shippedLane(
+  plans: LanePlan[],
+  window: AxisWindow
+): { marks: ShippedMark[]; outside: number; unreadable: number } {
+  const byDay = new Map<string, ShippedMark>();
+  let outside = 0;
+  let unreadable = 0;
+  for (const plan of plans) {
+    const day = shipDay(plan.shippedAt);
+    const parsed = day ? toDay(day) : null;
+    if (!day || !parsed) {
+      unreadable += 1;
+      continue;
+    }
+    const left = dayOffset(parsed, window);
+    if (left === null) {
+      outside += 1;
+      continue;
+    }
+    const mark = byDay.get(day);
+    if (mark) mark.plans.push(plan);
+    else byDay.set(day, { day, left, plans: [plan] });
+  }
+  return { marks: [...byDay.values()], outside, unreadable };
+}
+
+// ---------------------------------------------------------------------------
 // Words
 // ---------------------------------------------------------------------------
 
