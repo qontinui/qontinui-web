@@ -768,11 +768,14 @@ jobs:
   # nothing else in the head runs in that process. And it emits `success`
   # ONLY when ALL of these hold; every other outcome, including every shape
   # `reverse` skips, is a FAILURE with an `::error::` naming the condition:
-  #   (a) exactly one file under backend/alembic/versions/ is added or
-  #       modified, and it is a top-level `.py` migration file;
-  #   (b) no file under backend/alembic/versions/ is deleted, renamed,
-  #       copied or type-changed (a deletion or rename means this job would
-  #       test a different tree from the one that lands);
+  #   (a) exactly one file under backend/alembic/versions/ is ADDED, and it
+  #       is a regular, top-level `.py` migration file;
+  #   (b) no file under backend/alembic/versions/ is modified, deleted,
+  #       renamed, copied or type-changed (an edit keeps a revision id the
+  #       base already has; a deletion or rename means this job would test a
+  #       different tree from the one that lands), and the added path does
+  #       not already exist at the base TIP (a stale-base PR whose file the
+  #       base has since added would otherwise replace the base's copy);
   #   (c) after the overlay, the revision graph resolves to exactly ONE head,
   #       that head's file IS the overlaid file, alembic raised no duplicate
   #       warning while building it ("present more than once" / "loaded
@@ -781,11 +784,23 @@ jobs:
   #       copy of a base revision is not a new migration);
   #   (d) that head is not a merge revision -- decided from alembic's own
   #       `Revision.down_revision` type (tuple/list => merge), never by text;
-  #   (e) `upgrade head`, `downgrade -1` and `upgrade head` all exit 0,
-  #       AND `alembic_version` -- read by psql in the trusted shell, not by
-  #       anything that imports the migration -- equals the head after each
-  #       upgrade and the head's down_revision after the downgrade (empty
-  #       for a root revision).
+  #   (e) `upgrade <down_revision>`, `upgrade head`, `downgrade -1` and
+  #       `upgrade head` all exit 0; `alembic_version` -- read by psql in the
+  #       trusted shell, not by anything that imports the migration -- equals
+  #       the expected revision after each (the head's down_revision after the
+  #       downgrade, empty for a root revision); AND the database SCHEMA after
+  #       the downgrade is identical to the schema before the upgrade
+  #       (`pg_dump --schema-only`, normalized, compared in the trusted
+  #       shell). The schema comparison is what catches a no-op downgrade of
+  #       a schema-changing upgrade -- `CREATE TABLE IF NOT EXISTS` with
+  #       `def downgrade(): pass` passes up -> down -> up, but leaves the
+  #       table behind.
+  #       DISCLOSED -- what (e) does NOT check: DATA reversibility. A
+  #       data-only migration whose downgrade is `pass`, or a downgrade that
+  #       re-adds a dropped column EMPTY, leaves the schema identical and
+  #       passes. Column ORDER inside a table is also ignored (a downgrade
+  #       that re-adds a dropped column appends it), so a reordering is not
+  #       reported.
   # Every step that imports the migration must end with an explicit
   # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
@@ -798,7 +813,8 @@ jobs:
   # file is UNTRUSTED CODE, and this job EXECUTES it: alembic imports it to
   # build the revision graph and runs its upgrade()/downgrade(). The checks
   # above defeat an accidental or careless migration (an import-time exit,
-  # a no-op downgrade, a stale chain). They do NOT defeat an actively
+  # a downgrade that leaves the schema changed, a stale chain). They do NOT
+  # defeat DATA loss (see (e)), and they do NOT defeat an actively
   # hostile one: code running in this job can print a forged verdict line,
   # write the expected `alembic_version` row itself, or tamper with the
   # runner. Unsetting GITHUB_ENV / GITHUB_OUTPUT / GITHUB_PATH /
@@ -918,13 +934,17 @@ jobs:
           for s, p in touched:
               print(f"  {s}\t{' -> '.join(p)}")
 
-          removed = [(s, p) for s, p in touched if s[:1] not in ("A", "M")]
+          # ONLY an addition qualifies. An edit (M) of an existing migration
+          # keeps that file's revision id -- an id the base already defines --
+          # so it is not a new migration. D/R/C/T would test a different
+          # revision graph from the one that lands.
+          removed = [(s, p) for s, p in touched if s[:1] != "A"]
           if removed:
               shown = "; ".join(f"{s} {' -> '.join(p)}" for s, p in removed)
-              fail("b", f"a file under {VERSIONS} is deleted, renamed, copied or type-changed against the base ({shown}). This job would then test a different revision graph from the one that lands.")
+              fail("b", f"a file under {VERSIONS} is modified, deleted, renamed, copied or type-changed against the base ({shown}). Only a newly ADDED migration file can be the tested migration: an edit keeps a revision id the base already defines, and a deletion or rename tests a different revision graph from the one that lands.")
 
           if len(touched) != 1:
-              fail("a", f"exactly one file under {VERSIONS} must be added or modified; this PR changes {len(touched)}. Split the PR so each migration is tested on its own.")
+              fail("a", f"exactly one file under {VERSIONS} must be added; this PR adds {len(touched)}. Split the PR so each migration is tested on its own.")
 
           status, (path,) = touched[0]
           if not MIGRATION.fullmatch(path):
@@ -954,6 +974,17 @@ jobs:
               exit 1
               ;;
           esac
+
+          # Condition (b), continued: the path must NOT already exist at the
+          # base TIP. The changed set above is three-dot (from the merge base),
+          # but the overlay below lands on the base tip, so a stale-base PR
+          # whose "added" file was meanwhile added on the base too would
+          # otherwise REPLACE the base's own copy -- a file, and a revision id,
+          # the base already has. `cat-file -e` exits 0 iff the object exists.
+          if git cat-file -e "$BASE_SHA:$MRT_MIGRATION" 2>/dev/null; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::$MRT_MIGRATION already exists at the base tip $BASE_SHA. This PR's branch is stale: the file it adds has since been added on the base, so overlaying it would REPLACE a base migration rather than add a new one. Rebase onto the current base and give the migration its own file."
+            exit 1
+          fi
 
           # Detach onto the BASE. Everything -- env.py, alembic.ini, app/,
           # pyproject.toml, poetry.lock, every existing migration -- is now
@@ -1013,9 +1044,9 @@ jobs:
       # definition of that id -- alembic warns and keeps whichever duplicate it
       # maps last -- and the single head could then BE the overlaid file while
       # up -> down -> up exercised the base's own migration: a false
-      # `success`. The base's OWN version of a modified (M) path is excluded
-      # from the set, because the overlay replaces that file rather than adding
-      # a second definition beside it.
+      # `success`. EVERY base revision id is in the set: only an added file
+      # qualifies, and one whose path already exists at the base tip is
+      # refused, so the overlay never replaces a base file.
       # Written under $RUNNER_TEMP, never $GITHUB_ENV.
       - name: Base revision set (pure base tree, before the overlay)
         env:
@@ -1039,25 +1070,19 @@ jobs:
             exit 1
           fi
           poetry run python - "$RUNNER_TEMP/mrt-base-revs" <<'PY'
-          import os
           import sys
 
           from alembic.config import Config
           from alembic.script import ScriptDirectory
 
-          own = os.path.abspath(os.path.join("..", os.environ["MRT_MIGRATION"]))
           script = ScriptDirectory.from_config(Config("alembic.ini"))
-          revs = sorted(
-              sc.revision
-              for sc in script.walk_revisions(base="base", head="heads")
-              if os.path.abspath(sc.path) != own
-          )
+          revs = sorted(sc.revision for sc in script.walk_revisions(base="base", head="heads"))
           if not revs:
               print("::error title=Migration Reversal Tested - condition (c) failed::the base defines no revisions; an empty base set would read as 'nothing to collide with', so refusing.")
               sys.exit(1)
           with open(sys.argv[1], "w", encoding="utf-8") as fh:
               fh.write("".join(f"{r}\n" for r in revs))
-          print(f"Base defines {len(revs)} revision id(s), excluding {os.environ['MRT_MIGRATION']} itself where the base has it.")
+          print(f"Base defines {len(revs)} revision id(s).")
           PY
 
       # The isolation: take exactly one file from the PR head onto the base.
@@ -1086,9 +1111,17 @@ jobs:
         id: apt_psql
         # Same guarded, apt-only, bounded step as `reverse` -- see the long
         # note there for why only apt lives here and why it is bounded.
+        # This job ALSO needs the major-16 pg_dump (the service image is
+        # pgvector/pgvector:pg16; keep the two in step): the reversibility
+        # step compares schema dumps and refuses a pg_dump whose major is not
+        # the server's. The runner image normally ships it, so apt is skipped.
         timeout-minutes: 10
         run: |
-          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          if command -v psql >/dev/null && [ -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            echo "psql and the major-16 pg_dump are present; no apt needed."
+          else
+            sudo apt-get update && sudo apt-get install -y postgresql-client-16
+          fi
 
       - name: Create named schemas + extension
         # Unbounded and without an `id:`, as in `reverse`: a failure here is a
@@ -1096,7 +1129,7 @@ jobs:
         env:
           PGPASSWORD: test_password
         run: |
-          psql -h localhost -U qontinui_user -d qontinui_test \
+          psql -X -h localhost -U qontinui_user -d qontinui_test -v ON_ERROR_STOP=1 \
             -c "CREATE SCHEMA IF NOT EXISTS project;" \
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
@@ -1209,7 +1242,7 @@ jobs:
             exit 1
           fi
           if grep -qxF -- "$head_rev" "$base_revs"; then
-            echo "::error title=Migration Reversal Tested - condition (c) failed::the head revision $head_rev from $MRT_MIGRATION is ALREADY defined by another file in the base. The PR's file is a copy of an existing revision, not a new migration, so upgrade -> downgrade -1 -> upgrade would exercise the base's own migration."
+            echo "::error title=Migration Reversal Tested - condition (c) failed::the head revision $head_rev from $MRT_MIGRATION is ALREADY defined by the base. The PR's file is a copy of an existing revision, not a new migration, so upgrade -> downgrade -1 -> upgrade would exercise the base's own migration."
             exit 1
           fi
           {
@@ -1218,10 +1251,11 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Verdict parsed: head=$head_rev (not in the base's revision set) down=$down_rev."
 
-      # Condition (e). Run exactly as `reverse` runs it -- same env, same
-      # working directory, same database -- but with NO skip path: any
-      # non-zero exit fails the job.
-      - name: Reversibility test (upgrade → downgrade -1 → upgrade)
+      # Condition (e). Same env, working directory and database as `reverse`,
+      # but with NO skip path, and with the schema compared across the step
+      # under test: any non-zero exit, unexpected alembic_version, or schema
+      # difference fails the job.
+      - name: Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -1234,14 +1268,80 @@ jobs:
           # MRT_HEAD / MRT_DOWN were parsed from the identity verdict by the
           # previous step's trusted shell. "None" is a root revision.
           : "${MRT_HEAD:?}" "${MRT_DOWN:?}"
-          # The database's own record of where alembic left it, read by psql
-          # -- nothing here imports the migration. An alembic exit of 0 is
-          # not trusted on its own: an import-time sys.exit(0) exits 0 having
-          # applied nothing.
+          # -X: never read a ~/.psqlrc. Everything below that reads the
+          # database is psql / pg_dump in THIS shell -- nothing here imports
+          # the migration.
+          PSQL=(psql -X -h localhost -U qontinui_user -d qontinui_test -v ON_ERROR_STOP=1 -tA)
+
+          # pg_dump of the SERVER's major version, by explicit path: the
+          # pg_wrapper `pg_dump` on PATH picks the newest installed client,
+          # which need not be the server's. An unreadable server version or a
+          # missing binary is an error, never a skipped comparison.
+          server_num=$("${PSQL[@]}" -c "SHOW server_version_num")
+          if ! [[ "$server_num" =~ ^[0-9]{5,6}$ ]]; then
+            echo "::error title=Migration Reversal Tested - condition (e) failed::could not read the server version (got '$server_num'), so the schema comparison cannot be made -- not passed."
+            exit 1
+          fi
+          server_major=$(( 10#$server_num / 10000 ))
+          PG_DUMP="/usr/lib/postgresql/$server_major/bin/pg_dump"
+          if [ ! -x "$PG_DUMP" ]; then
+            echo "::error title=Migration Reversal Tested - condition (e) failed::no pg_dump for the server's major version $server_major at $PG_DUMP, so the schema comparison cannot be made -- not passed. Keep 'Install postgresql-client' in step with the service image."
+            exit 1
+          fi
+          echo "Server major $server_major; schema snapshots by $("$PG_DUMP" --version)."
+
+          # Normalizes a schema-only dump into a stable form for comparison:
+          # drops comments, blank lines, SET / set_config preamble and the
+          # per-dump random `\restrict` key lines, and sorts the column lines
+          # inside each CREATE TABLE (a downgrade that re-adds a dropped column
+          # appends it; order is DISCLOSED as unchecked in the job header).
+          # Held in a shell variable, not a file, so the migration code that
+          # runs between snapshots cannot rewrite it.
+          NORMALIZE=$(cat <<'PY'
+          import re
+          import sys
+
+          out, block = [], None
+          for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+              if not line.strip() or line.startswith("--"):
+                  continue
+              if line.startswith(("SET ", "SELECT pg_catalog.set_config(", "\\restrict", "\\unrestrict")):
+                  continue
+              if block is not None:
+                  if line.startswith(")"):
+                      out.extend(sorted(x.rstrip().rstrip(",") for x in block))
+                      out.append(line)
+                      block = None
+                  else:
+                      block.append(line)
+                  continue
+              out.append(line)
+              if re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
+                  block = []
+          if block is not None:
+              sys.exit("unterminated CREATE TABLE block in the dump")
+          print("\n".join(out))
+          PY
+          )
+          snapshot() {
+            local label="$1" raw="$RUNNER_TEMP/mrt-schema-$1.raw.sql" norm="$RUNNER_TEMP/mrt-schema-$1.sql"
+            # alembic_version is excluded: it is bookkeeping, checked by
+            # expect_version, and absent before the first upgrade of a root.
+            if ! "$PG_DUMP" -h localhost -U qontinui_user -d qontinui_test \
+                  --schema-only --no-owner --no-privileges \
+                  --exclude-table=public.alembic_version > "$raw"; then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::pg_dump failed taking the '$label' schema snapshot for $MRT_MIGRATION -- not passed."
+              exit 1
+            fi
+            if ! python3 -c "$NORMALIZE" "$raw" > "$norm" || [ ! -s "$norm" ]; then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::could not normalize the '$label' schema snapshot for $MRT_MIGRATION -- not passed."
+              exit 1
+            fi
+            echo "schema snapshot '$label': $(wc -l < "$norm") normalized lines."
+          }
           expect_version() {
             local want="$1" label="$2" got
-            if ! got=$(psql -h localhost -U qontinui_user -d qontinui_test -tA -v ON_ERROR_STOP=1 \
-                  -c "SELECT version_num FROM alembic_version ORDER BY version_num"); then
+            if ! got=$("${PSQL[@]}" -c "SELECT version_num FROM alembic_version ORDER BY version_num"); then
               echo "::error title=Migration Reversal Tested - condition (e) failed::could not read alembic_version after '$label' for $MRT_MIGRATION."
               exit 1
             fi
@@ -1263,10 +1363,42 @@ jobs:
             fi
             expect_version "$2" "$1"
           }
+
+          # 1. The base, up to the migration's parent. For a root revision
+          #    the pre-state is the database as created above.
+          if [ "$MRT_DOWN" = "None" ]; then
+            echo "== root revision: the pre-migration state is the freshly created database =="
+          else
+            step "upgrade $MRT_DOWN (the migration's parent)" "$MRT_DOWN" upgrade "$MRT_DOWN"
+          fi
+          snapshot before
+          # 2. The migration under test, then its downgrade.
           step "upgrade head" "$MRT_HEAD" upgrade head
+          snapshot upgraded
           step "downgrade -1" "$MRT_DOWN" downgrade -1
+          snapshot downgraded
+          # 3. The downgrade must restore the schema exactly.
+          before="$RUNNER_TEMP/mrt-schema-before.sql"
+          if ! schema_diff=$(diff -u --label before-upgrade --label after-downgrade "$before" "$RUNNER_TEMP/mrt-schema-downgraded.sql"); then
+            echo "Schema after 'downgrade -1' differs from the schema before 'upgrade head':"
+            printf '%s\n' "$schema_diff"
+            # `|| true`: under pipefail, printf's SIGPIPE when head closes
+            # early would otherwise abort this shell before the error prints.
+            head_lines=$(printf '%s\n' "$schema_diff" | head -n 20 || true)
+            head_lines=${head_lines//'%'/%25}
+            head_lines=${head_lines//$'\r'/%0D}
+            head_lines=${head_lines//$'\n'/%0A}
+            echo "::error title=Migration Reversal Tested - condition (e) failed::the schema after 'downgrade -1' is NOT the schema before 'upgrade head' for $MRT_MIGRATION: its downgrade does not reverse its upgrade (a no-op downgrade of a schema change is the usual cause). Diff head:%0A${head_lines}"
+            exit 1
+          fi
+          if cmp -s "$before" "$RUNNER_TEMP/mrt-schema-upgraded.sql"; then
+            echo "Note: the upgrade left the schema unchanged (a data-only or idempotent migration); its DATA reversibility is NOT checked."
+          else
+            echo "The upgrade changed the schema, and 'downgrade -1' restored it exactly."
+          fi
+          # 4. Re-apply, as `reverse` does.
           step "upgrade head (re-apply)" "$MRT_HEAD" upgrade head
-          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree."
+          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
