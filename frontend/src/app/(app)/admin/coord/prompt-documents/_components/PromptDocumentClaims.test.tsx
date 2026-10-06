@@ -435,6 +435,36 @@ describe("PromptDocumentClaims — addressed_by join (declared-intent plan Phase
     );
   });
 
+  it("marks a carried-forward verdict as carried, not as this tick's", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({
+              claim_id: "carried-claim",
+              addressed_by: [`${STEM}#5`],
+              addressing_status: "landed_unconfirmed",
+              addressing: [
+                {
+                  addressed_by: `${STEM}#5`,
+                  status: "landed_unconfirmed",
+                  stale_from_read_failure: true,
+                  carried_since: "2026-10-06T00:00:00Z",
+                },
+              ],
+            }),
+          ],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    const link = screen.getByTestId(`doc-claim-link-carried-claim-${STEM}#5`);
+    expect(link).toHaveTextContent("landed_unconfirmed (carried)");
+    expect(link).toHaveAttribute("data-carried", "true");
+  });
+
   it("maps every served status to a family, and an unknown spelling to the amber floor", () => {
     const families = Object.fromEntries(
       PROMPT_DOCUMENT_ADDRESSING_STATUSES.map((s) => [s, addressingFamily(s)])

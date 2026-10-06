@@ -684,8 +684,18 @@ export interface PromptDocumentClaimAddressing {
   /** When the addressing work was first seen delivered, or `null`. */
   landed_since?: string | null;
   work_unit_status?: string | null;
+  /** `<repo>#<number>` of each PR coord counted as delivering the work. */
   citing_prs?: string[];
+  /** Phase indices the delivery view reports delivered for the stem. */
+  phases_delivered?: number[];
   reason?: string;
+  /**
+   * `true` when this tick's read failed and coord carried the PREVIOUS
+   * verdict forward — the status is then not this tick's observation.
+   */
+  stale_from_read_failure?: boolean;
+  /** When the carried verdict was first carried, beside `stale_from_read_failure`. */
+  carried_since?: string;
 }
 
 /**
