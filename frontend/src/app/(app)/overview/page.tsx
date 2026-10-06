@@ -20,6 +20,7 @@ import { useTenant } from "@/contexts/tenant-context";
 import { IntentSection } from "./_components/IntentSection";
 import { ProgressPanel } from "./_components/ProgressPanel";
 import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
+import { summaryMetricsOf, useObjectives } from "./_hooks/useObjectives";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
 
 function ProseSkeleton() {
@@ -44,6 +45,12 @@ export default function OverviewSummaryPage() {
     error: tenantsError,
   } = useTenant();
   const { intent, progress, saveBody, move, createDocument } = useSummaryData(
+    activeTenantId,
+    tenantsLoading || tenantsError !== null
+  );
+  // Read beside the Summary's own: the compact metric list's tallies and
+  // which documents are void (plan `2026-10-06-overview-objectives-view` D1).
+  const { objectives } = useObjectives(
     activeTenantId,
     tenantsLoading || tenantsError !== null
   );
@@ -124,6 +131,11 @@ export default function OverviewSummaryPage() {
                   kind={kind}
                   entries={intent.entries.filter((e) => e.kind === kind)}
                   actions={actions}
+                  metricStatus={
+                    kind === "success_metric"
+                      ? summaryMetricsOf(objectives)
+                      : undefined
+                  }
                 />
               ))
             )}

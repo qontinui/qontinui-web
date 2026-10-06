@@ -134,6 +134,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     );
     expect(overview.map((i) => i.route)).toEqual([
       "/overview",
+      "/overview/objectives",
       "/overview/timeline",
       "/overview/financials",
       "/overview/team",
