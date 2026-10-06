@@ -120,14 +120,22 @@ describe("needsVetImp — free_known OR (attested AND vet_state in {moved, gone}
     }
   );
 
-  it.each(["fresh", "none"])(
-    "does not select an attested plan whose vet_state is %s",
+  it("does not select an attested plan whose vet_state is fresh", () => {
+    expect(
+      needsVetImp(
+        axis({ status: "vetted", status_class: "attested", vet_state: "fresh" })
+      ).need
+    ).toBe("no");
+  });
+
+  it.each(["none", "unchanged", "something-new"])(
+    "calls an attested plan whose vet_state is %s UNDETERMINED, never no",
     (v) => {
       expect(
         needsVetImp(
           axis({ status: "vetted", status_class: "attested", vet_state: v })
         ).need
-      ).toBe("no");
+      ).toBe("undetermined");
     }
   );
 

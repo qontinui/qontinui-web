@@ -82,7 +82,12 @@
  *   CLIENT-side over this page, composed in `rowFilters.ts` and labelled
  *   "filters this page only" wherever they can empty the list.
  * - **Live custody** (`include_custody=true`) — `custody.ts`, never a guessed
- *   name.
+ *   name. Asked for only on the reads an operator causes (first read of a
+ *   window, refresh, paging, search) — never on the 30 s poll, because coord
+ *   resolves it for the whole tenant. A poll answer re-applies the last
+ *   reading with its age stated (`custodyHold.ts`).
+ * - **Other artifact kinds** — this page reads `kind='plan'` only; every kind
+ *   is listed at `/admin/coord/plan-library/artifacts`.
  * - **Throughput** — coord's server-side day buckets, never a client reduce.
  * - **The document** — `ArtifactDetailPanel`, opened in place in a row.
  *
@@ -95,7 +100,8 @@
  * reading is derived in `planReconciliationStatus.ts`, nothing inline here).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Select,
   SelectContent,
@@ -139,6 +145,12 @@ import { PlanDocumentPanel, PlanTriageDetail } from "./PlanRowDetail";
 import { PlanSearchBox, SearchEcho } from "./PlanSearchBox";
 import { ThroughputPanel } from "./ThroughputPanel";
 import { pageForkCount } from "./corpusHealth";
+import {
+  applyHeldCustody,
+  captureCustody,
+  describeCustodyAge,
+  type CustodyHold,
+} from "./custodyHold";
 import { describeDeriveMode } from "./deriveMode";
 import {
   NO_PAGE_FILTERS,
@@ -201,6 +213,16 @@ export default function CoordPlansListPage() {
    * itself as an anonymous one.
    */
   const [violations, setViolations] = useState<string[] | null>(null);
+  /**
+   * The last live-custody reading, held across polls (`custodyHold.ts`). The
+   * ref is what the read consults — putting the state in `fetchData`'s deps
+   * would change the QUESTION every time custody was read. The state copy is
+   * what renders the "custody as of" line.
+   */
+  const custodyHoldRef = useRef<CustodyHold | null>(null);
+  const [custodyHold, setCustodyHold] = useState<CustodyHold | null>(null);
+  /** Is the custody on screen a held reading rather than this read's own? */
+  const [custodyHeld, setCustodyHeld] = useState(false);
 
   /**
    * Phase 4a — the capture census, on its own read state.
@@ -231,15 +253,28 @@ export default function CoordPlansListPage() {
         qs.set("offset", String(offset));
         qs.set("limit", String(limit));
         if (q !== "") qs.set("q", q);
-        // Phase 6 — custody is resolved per page; without this the route
-        // leaves every `live_sessions` null (UNKNOWN), never "no live claim".
-        qs.set("include_custody", "true");
+        // Phase 6 — custody makes coord resolve live sessions for the whole
+        // tenant, so it is asked for only on reads an operator caused (a new
+        // window or search, a refresh) — never on the background poll. A poll
+        // answer re-applies the held reading, and the page says how old it is.
+        const withCustody = guard.trigger !== "poll";
+        if (withCustody) qs.set("include_custody", "true");
         const body = await httpClient.get<ReconciliationResponse>(
           `${ENDPOINT}?${qs.toString()}`,
           RECONCILIATION_REQUEST_OPTIONS
         );
         if (!guard.isNewest()) return;
-        setData(body);
+        if (withCustody) {
+          const hold = captureCustody(body, Date.now());
+          custodyHoldRef.current = hold;
+          setCustodyHold(hold);
+          setCustodyHeld(false);
+          setData(body);
+        } else {
+          const merged = applyHeldCustody(body, custodyHoldRef.current);
+          setCustodyHeld(custodyHoldRef.current !== null);
+          setData(merged.body);
+        }
         setError(null);
         setViolations(null);
       } catch (e) {
@@ -304,8 +339,11 @@ export default function CoordPlansListPage() {
     () => describeDeriveMode(deriveModeState),
     [deriveModeState]
   );
-  const { reading: throughput, refresh: refreshThroughput } =
-    useThroughput(throughputDays);
+  const {
+    reading: throughput,
+    refreshFailure: throughputRefreshFailure,
+    refresh: refreshThroughput,
+  } = useThroughput(throughputDays);
   const refreshAfterKindCorrection = useCallback(
     () => refreshReconciliation(),
     [refreshReconciliation]
@@ -395,6 +433,11 @@ export default function CoordPlansListPage() {
   const documentAxisSuppressed =
     disclosure !== null && !disclosure.documentAxisAdmissible;
 
+  const custodyAge = useMemo(
+    () => describeCustodyAge(custodyHold, custodyHeld),
+    [custodyHold, custodyHeld]
+  );
+
   const canPageBack = offset > 0;
   const canPageForward = window?.hasMore ?? false;
 
@@ -418,6 +461,7 @@ export default function CoordPlansListPage() {
         reading={throughput}
         days={throughputDays}
         onDaysChange={setThroughputDays}
+        refreshFailure={throughputRefreshFailure}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -479,6 +523,14 @@ export default function CoordPlansListPage() {
           title={`Re-reads the reconciliation now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
         />
+        <Link
+          href="/admin/coord/plan-library/artifacts"
+          className="ml-auto text-xs text-muted-foreground underline hover:text-foreground"
+          data-testid="coord-plans-all-kinds-link"
+          title="This page lists plans only (kind = plan). Every captured artifact kind is listed on the artifact library page."
+        >
+          All artifact kinds
+        </Link>
       </div>
 
       {data && <SearchEcho sent={q} echoed={data.q} />}
@@ -543,6 +595,16 @@ export default function CoordPlansListPage() {
             {window.ordering ?? "unstated"}
           </span>
           .
+        </p>
+      )}
+
+      {data && custodyAge && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-custody-as-of"
+          data-held={custodyHeld ? "true" : "false"}
+        >
+          Live {custodyAge}.
         </p>
       )}
 
@@ -670,7 +732,7 @@ export default function CoordPlansListPage() {
               This window held no plan stem at the last good read — it has not
               refreshed since.
             </p>
-          ) : q !== "" && data?.q !== undefined ? (
+          ) : q !== "" && data?.q === q ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-search-empty"

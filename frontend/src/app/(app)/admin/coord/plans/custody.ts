@@ -14,11 +14,15 @@
  * | `ambiguous` | "N sessions active on this device" |
  * | `unresolved` | "custody UNKNOWN" |
  * | `live_sessions: []` | "no live claim" — ONLY here |
- * | `custody_resolved` false / absent | "custody not resolved (older coord)" |
+ * | `custody_resolved: false` | "custody not resolved (coord did not resolve names)" |
+ * | `custody_resolved` absent | "custody not reported" |
  *
  * **Never collapse one of these into another.** "No live claim" is a
  * measured zero and is said only for an empty `live_sessions` list; an absent
- * list, an unresolved custody and an older coord are three different UNKNOWNs.
+ * list, an unresolved custody, a coord that did not resolve names and a read
+ * that reported no custody at all are four different UNKNOWNs. When coord did
+ * not resolve names on every page the route nulls EVERY custody object, so
+ * the "not resolved" label is true of the whole read, not just this row.
  * An ambiguous device is a COUNT — naming the most recent of its sessions
  * would address a peer by guess, which is exactly what coord's
  * `sole_live_session_for_device` refuses to do.
@@ -58,8 +62,10 @@ export type CustodyKind =
   | "not_applicable"
   /** Axis A unreadable: whether anyone holds it is UNKNOWN. */
   | "axis_unknown"
-  /** `custody_resolved` false or absent, with claim rows (or none reported). */
-  | "older_coord"
+  /** `custody_resolved: false` — coord did not resolve session names. */
+  | "not_resolved"
+  /** `custody_resolved` absent — this read reported no custody at all. */
+  | "not_reported"
   /** Resolved, but coord reported no live-session list for this unit. */
   | "sessions_unknown"
   /** A real, measured zero. */
@@ -201,14 +207,22 @@ export function describeCustody(
       claims: [],
     };
   }
+  if (axis.custody_resolved === false) {
+    return {
+      kind: "not_resolved",
+      label: "custody not resolved (coord did not resolve names)",
+      title:
+        'coord did not echo resolve_session_names: true on every page of this read (an older coord, or a failed live-session join), so who holds this unit was not resolved — UNKNOWN, never "nobody".',
+      unknown: true,
+      claims: [],
+    };
+  }
   if (!resolved) {
     return {
-      kind: "older_coord",
-      label: "custody not resolved (older coord)",
+      kind: "not_reported",
+      label: "custody not reported",
       title:
-        axis.custody_resolved === false
-          ? "coord did not echo resolve_session_names: true, so who holds this unit was not resolved."
-          : "This backend did not report custody resolution for this read, so who holds this unit was not resolved.",
+        "This read carried no custody resolution (not asked for, or a backend that does not report it), so who holds this unit is UNKNOWN.",
       unknown: true,
       claims: [],
     };

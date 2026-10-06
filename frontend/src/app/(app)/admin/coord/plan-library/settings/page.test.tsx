@@ -25,5 +25,8 @@ describe("/admin/coord/plan-library/settings", () => {
     expect(
       screen.getByTestId("plan-library-settings-plans-link")
     ).toHaveAttribute("href", "/admin/coord/plans");
+    expect(
+      screen.getByTestId("plan-library-settings-artifacts-link")
+    ).toHaveAttribute("href", "/admin/coord/plan-library/artifacts");
   });
 });

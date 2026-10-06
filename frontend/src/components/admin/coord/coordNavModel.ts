@@ -46,6 +46,7 @@ import {
   CornerDownRight,
   Cpu,
   FileText,
+  Files,
   Gauge,
   Gavel,
   GitBranch,
@@ -229,6 +230,16 @@ export const GROUPS: NavGroup[] = [
         label: "Plan Library Settings",
         icon: Library,
         testId: "coord-nav-plan-library",
+      },
+      {
+        // Every captured artifact KIND — prompts, findings reports, handoffs
+        // and the rest. Plans reads `kind = 'plan'` only, so without this leaf
+        // the other kinds would have no browsable surface at all. Sibling
+        // path of the settings page; neither prefixes the other.
+        href: "/admin/coord/plan-library/artifacts",
+        label: "Artifact Library",
+        icon: Files,
+        testId: "coord-nav-plan-library-artifacts",
       },
       // Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store`.
       // Three purpose-built plan-library joins had shipped with tests, an

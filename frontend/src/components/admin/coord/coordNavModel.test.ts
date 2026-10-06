@@ -73,6 +73,7 @@ describe("coordNavModel", () => {
       "Plans",
       "Work Units",
       "Plan Library Settings",
+      "Artifact Library",
       "Plan Candidates",
       "Plan Forks",
       "Plan Follow-ups",

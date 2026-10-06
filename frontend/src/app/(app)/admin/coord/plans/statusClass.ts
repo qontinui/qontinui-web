@@ -171,6 +171,14 @@ export function matchesStatusClass(
 /** The vet-freshness verdicts that mean the attested plan has changed. */
 const DECAYED_VET_STATES: ReadonlySet<string> = new Set(["moved", "gone"]);
 
+/**
+ * The ONE verdict that means "verified unchanged": coord's
+ * `anchor_observer.rs` `vet_state::FRESH`, set only when EVERY anchor
+ * resolved `Unchanged`. `none` (no anchors to check) and any word this
+ * console does not know verify nothing, so they are undetermined — never no.
+ */
+const VERIFIED_UNCHANGED_VET_STATE = "fresh";
+
 export type VetImpNeed = "yes" | "no" | "undetermined";
 
 export interface VetImpReading {
@@ -184,7 +192,9 @@ export interface VetImpReading {
  *
  * The third answer exists because the predicate's second arm reads a value
  * that is often absent: an attested unit whose `vet_state` is `null` is NOT
- * "no" — nobody knows whether its plan moved.
+ * "no" — nobody knows whether its plan moved. Only `fresh` (every anchor
+ * verified unchanged) answers "no"; `none` and unknown words are
+ * undetermined.
  */
 export function needsVetImp(axis: ReconciliationAxisA): VetImpReading {
   const cls = describeStatusClass(axis);
@@ -222,9 +232,18 @@ export function needsVetImp(axis: ReconciliationAxisA): VetImpReading {
         why: `Attested, but the plan it judged has ${vet === "gone" ? "gone" : "moved"} since (vet_state ${vet}).`,
       };
     }
+    if (vet === VERIFIED_UNCHANGED_VET_STATE) {
+      return {
+        need: "no",
+        why: `Attested, and coord verified every anchor of the plan unchanged (vet_state ${vet}).`,
+      };
+    }
     return {
-      need: "no",
-      why: `Attested, and coord's vet-freshness verdict is "${vet}".`,
+      need: "undetermined",
+      why:
+        vet === "none"
+          ? 'Attested, but the plan has no anchors for coord to check (vet_state "none") — whether it has moved since it was vetted is not known.'
+          : `Attested, but coord's vet-freshness verdict "${vet}" is not one this console knows — whether the plan has moved is UNKNOWN.`,
     };
   }
   return {

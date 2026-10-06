@@ -121,7 +121,7 @@ import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import get_args
+from typing import cast, get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -191,6 +191,7 @@ from app.schemas.plan_library import (
     ReconciliationLiveSession,
     ReconciliationResponse,
     ReconciliationRow,
+    ReconciliationStatusClass,
     ReconciliationVerdict,
     StatusCurrency,
     WorkArtifactDetail,
@@ -206,7 +207,7 @@ from app.schemas.plan_library import (
     WorkUnitPopulationState,
 )
 from app.schemas.plan_library_scan_roots import ScanRootListResponse, ScanRootRow
-from app.services import plan_status, work_unit_status_class
+from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
 from app.services.plan_difficulty import (
     MODEL_SELECTOR_VOCABULARY,
@@ -1502,6 +1503,7 @@ class _ReconcileUnitExtras:
     UNKNOWN throughout (see :class:`ReconciliationAxisA`).
     """
 
+    status_class: ReconciliationStatusClass | None = None
     vet_state: str | None = None
     vet_checked_at: datetime | None = None
     live_sessions: list[ReconciliationLiveSession] | None = None
@@ -1546,7 +1548,9 @@ def _coord_custody(raw: object) -> ReconciliationCustody | None:
     return None
 
 
-def _coord_live_sessions(raw: object) -> list[ReconciliationLiveSession] | None:
+def _coord_live_sessions(
+    raw: object, *, custody_resolved: bool = True
+) -> list[ReconciliationLiveSession] | None:
     """A unit row's ``live_sessions`` list, or ``None`` when it is UNKNOWN.
 
     coord attaches the key ONLY when the join was asked for and succeeded
@@ -1555,6 +1559,11 @@ def _coord_live_sessions(raw: object) -> list[ReconciliationLiveSession] | None:
     entry this read cannot parse (no string ``device_id``) is also ``None``
     rather than the parseable remainder: a partial list would undercount the
     sessions and read as a smaller, confident answer.
+
+    ``custody_resolved=False`` keeps every session row but drops its
+    ``custody`` to ``None``: when coord did not echo name resolution on EVERY
+    page, no custody object in the response may read as resolved — the
+    response-level ``custody_resolved: false`` is then true of every row.
     """
     if not isinstance(raw, list):
         return None
@@ -1572,31 +1581,62 @@ def _coord_live_sessions(raw: object) -> list[ReconciliationLiveSession] | None:
                 correlation_topic=topic if isinstance(topic, str) else None,
                 updated_at=_coord_datetime(entry.get("updated_at")),
                 expires_at=_coord_datetime(entry.get("expires_at")),
-                custody=_coord_custody(entry.get("custody")),
+                custody=(
+                    _coord_custody(entry.get("custody")) if custody_resolved else None
+                ),
             )
         )
     return sessions
 
 
+#: coord's five ``status_class`` words, read off the schema's own ``Literal``.
+_STATUS_CLASSES: frozenset[str] = frozenset(get_args(ReconciliationStatusClass))
+
+
+def _coord_status_class(raw: dict[str, object]) -> ReconciliationStatusClass | None:
+    """coord's ``status_class`` for one list row, or ``None`` (UNKNOWN).
+
+    Forwarded, never computed: coord's ``WorkUnitRow`` carries the class on
+    every list row, derived by its own ``work_unit_status_class::classify``.
+    A row with no ``status`` string, a missing ``status_class``, or a word
+    outside the five is ``None`` — a coord that predates the field or a value
+    this build does not know is UNKNOWN, never coerced into a confident class.
+    """
+    if not isinstance(raw.get("status"), str):
+        return None
+    status_class = raw.get("status_class")
+    if isinstance(status_class, str) and status_class in _STATUS_CLASSES:
+        return cast(ReconciliationStatusClass, status_class)
+    return None
+
+
 def _reconcile_unit_extras(
-    raw: object, *, include_custody: bool
+    raw: object, *, include_custody: bool, custody_resolved: bool = True
 ) -> _ReconcileUnitExtras:
     """The axis-A annotations on one raw coord list row.
 
+    ``status_class`` is coord's own (:func:`_coord_status_class`).
     ``vet_state`` / ``vet_checked_at`` are on every list row coord serves
     (``WorkUnitRow``, filled by ``attach_vet_state``); a coord predating them,
     or a page whose freshness surface was unreadable, yields ``None``.
     ``live_sessions`` is read only when this request asked for custody — a key
-    coord sent unasked would be another caller's concern, not this one's.
+    coord sent unasked would be another caller's concern, not this one's —
+    and ``custody_resolved=False`` (coord did not echo name resolution on
+    every page) nulls each session's ``custody`` while keeping the rows.
     """
     if not isinstance(raw, dict):
         return _ReconcileUnitExtras()
     vet_state = raw.get("vet_state")
     return _ReconcileUnitExtras(
+        status_class=_coord_status_class(raw),
         vet_state=vet_state if isinstance(vet_state, str) else None,
         vet_checked_at=_coord_datetime(raw.get("vet_checked_at")),
         live_sessions=(
-            _coord_live_sessions(raw.get("live_sessions")) if include_custody else None
+            _coord_live_sessions(
+                raw.get("live_sessions"), custody_resolved=custody_resolved
+            )
+            if include_custody
+            else None
         ),
     )
 
@@ -1992,7 +2032,13 @@ class _CoordProbe:
                 continue
             units.append(unit)
             extras[unit.slug] = _reconcile_unit_extras(
-                raw, include_custody=include_custody
+                raw,
+                include_custody=include_custody,
+                # One page without coord's echo makes the whole read
+                # unresolved: no custody object may survive from the pages
+                # that did echo, or ``custody_resolved: false`` would be
+                # contradicted row by row.
+                custody_resolved=custody_echoed,
             )
         return (
             _ReconcileUnits(
@@ -2837,12 +2883,8 @@ def _reconcile_row(
             readable=True,
             present=unit is not None,
             status=unit.status if unit is not None else None,
-            # ONE classifier, vendored from coord — never a second word list.
-            status_class=(
-                work_unit_status_class.classify(unit.status)
-                if unit is not None
-                else None
-            ),
+            # coord's own class, forwarded — never re-derived here.
+            status_class=extras.status_class if unit is not None else None,
             vet_state=extras.vet_state if unit is not None else None,
             vet_checked_at=extras.vet_checked_at if unit is not None else None,
             live_sessions=extras.live_sessions if unit is not None else None,
@@ -3158,10 +3200,8 @@ async def reconcile_plan_status(
     ``q``, ``total``, every facet and every completeness count describe the
     FILTERED population; the response echoes ``q`` so a consumer can tell.
 
-    **Axis A carries coord's per-unit annotations.** ``status_class`` is
-    derived web-side by the vendored classifier
-    (:mod:`app.services.work_unit_status_class`); ``vet_state`` /
-    ``vet_checked_at`` are forwarded from coord's list row; under
+    **Axis A carries coord's per-unit annotations.** ``status_class``,
+    ``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under
     ``include_custody`` the unit's ``live_sessions`` arrive with coord's
     ``custody`` resolution, and ``custody_resolved`` says whether coord
     actually resolved them. Each absent value is UNKNOWN, never a default.

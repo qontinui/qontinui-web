@@ -108,17 +108,18 @@ describe("describeCustody", () => {
     expect(absent.label).not.toBe("no live claim");
   });
 
-  it("custody_resolved false → custody not resolved (older coord)", () => {
+  it("custody_resolved false → custody not resolved (coord did not resolve names)", () => {
     const r = describeCustody(
       axis({ custody_resolved: false, live_sessions: [session()] }),
       NOW
     );
-    expect(r.label).toBe("custody not resolved (older coord)");
+    expect(r.kind).toBe("not_resolved");
+    expect(r.label).toBe("custody not resolved (coord did not resolve names)");
     expect(r.unknown).toBe(true);
     expect(r.label).not.toContain("planlib-phase-6");
   });
 
-  it("custody_resolved ABSENT (older backend) → custody not resolved (older coord)", () => {
+  it("custody_resolved ABSENT → custody not reported (a distinct UNKNOWN)", () => {
     const r = describeCustody(
       {
         readable: true,
@@ -127,7 +128,9 @@ describe("describeCustody", () => {
       },
       NOW
     );
-    expect(r.label).toBe("custody not resolved (older coord)");
+    expect(r.kind).toBe("not_reported");
+    expect(r.label).toBe("custody not reported");
+    expect(r.unknown).toBe(true);
   });
 
   it("an unreadable axis A is custody UNKNOWN", () => {

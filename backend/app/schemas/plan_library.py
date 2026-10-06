@@ -950,8 +950,9 @@ AxisCScope = Literal["page"]
 
 
 #: coord's derived ``status_class`` wire vocabulary — five members, exhaustive.
-#: Computed web-side by ``app.services.work_unit_status_class.classify``, the
-#: vendored mirror of coord's ``work_unit_status_class::classify``.
+#: FORWARDED from coord's work-unit list row (``WorkUnitRow::status_class``,
+#: computed by coord's ``work_unit_status_class::classify``) — never derived
+#: web-side, so there is no second copy of coord's word list to drift.
 ReconciliationStatusClass = Literal[
     "free_known", "attested", "derived", "off_vocabulary", "unset"
 ]
@@ -1008,9 +1009,11 @@ class ReconciliationAxisA(BaseModel):
     no vocabulary reads as OPEN rather than as an error.
 
     ``status_class`` is that status's derived class (coord's five-member
-    vocabulary). It is ``None`` only when axis A is unreadable or no unit
-    exists for the stem — there is no status to classify — and an empty
-    stored status is ``unset``, never ``None``.
+    vocabulary), forwarded verbatim from coord's list row. It is ``None``
+    (UNKNOWN) when axis A is unreadable, no unit exists for the stem, coord's
+    row omitted the field or carried a word outside the five, or the row
+    carried no ``status`` string at all — a missing status is never given a
+    confident class.
 
     ``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness
     verdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),
@@ -1023,8 +1026,11 @@ class ReconciliationAxisA(BaseModel):
     not requested or when coord did not answer the field for this unit
     (UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord
     echoed ``resolve_session_names: true`` on every page it read — ``False``
-    means an older coord (or a failed live-session join), and every
-    ``custody`` is then ``None``; ``None`` means custody was not requested.
+    means an older coord (or a failed live-session join) on at least one page,
+    and EVERY ``custody`` in the response is then ``None``, including those
+    from pages that did echo, so no row reads as resolved when the read as a
+    whole was not; the ``live_sessions`` rows themselves are kept. ``None``
+    means custody was not requested.
     """
 
     readable: bool

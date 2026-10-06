@@ -16,7 +16,7 @@
  * discrete action and applies at once.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,18 @@ export function PlanSearchBox({
   onSearch: (q: string) => void;
 }) {
   const [typed, setTyped] = useState(applied);
+  const lastApplied = useRef(applied);
+
+  // `applied` changed from OUTSIDE (not by this box's own debounce): follow it
+  // — but only when the box holds no edit of its own. An in-progress edit
+  // (text that differs from the search that was in force) wins, so this never
+  // fights the operator's typing; its debounce then applies it.
+  useEffect(() => {
+    const previous = lastApplied.current;
+    lastApplied.current = applied;
+    if (applied === previous) return;
+    setTyped((current) => (current.trim() === previous ? applied : current));
+  }, [applied]);
 
   useEffect(() => {
     const next = typed.trim();
