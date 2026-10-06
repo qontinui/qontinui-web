@@ -375,3 +375,5 @@ def downgrade() -> None:
         """
     )
     op.execute("RESET lock_timeout")
+
+# [throwaway, do not merge] r4 case (i): an EDIT of the base head migration
