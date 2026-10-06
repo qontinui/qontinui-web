@@ -791,7 +791,8 @@ jobs:
   #       downgrade, empty for a root revision); AND the database SCHEMA after
   #       the downgrade is identical to the schema before the upgrade
   #       (`pg_dump --schema-only`, normalized, compared in the trusted
-  #       shell). The schema comparison is what catches a no-op downgrade of
+  #       shell), and the re-applied upgrade re-produces the first
+  #       upgrade's schema. The schema comparison is what catches a no-op downgrade of
   #       a schema-changing upgrade -- `CREATE TABLE IF NOT EXISTS` with
   #       `def downgrade(): pass` passes up -> down -> up, but leaves the
   #       table behind.
@@ -800,7 +801,9 @@ jobs:
   #       re-adds a dropped column EMPTY, leaves the schema identical and
   #       passes. Column ORDER inside a table is also ignored (a downgrade
   #       that re-adds a dropped column appends it), so a reordering is not
-  #       reported.
+  #       reported. Nor are privileges (the dump is --no-privileges),
+  #       ownership (--no-owner), `SET` lines such as a default_tablespace
+  #       switch, or comment-only changes, which the normalizer drops.
   # Every step that imports the migration must end with an explicit
   # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
@@ -981,6 +984,12 @@ jobs:
           # whose "added" file was meanwhile added on the base too would
           # otherwise REPLACE the base's own copy -- a file, and a revision id,
           # the base already has. `cat-file -e` exits 0 iff the object exists.
+          # The base commit must resolve first, so "path absent" below can
+          # only mean absent, never "base object unreadable".
+          if ! git rev-parse --quiet --verify "$BASE_SHA^{commit}" >/dev/null; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::the base commit $BASE_SHA does not resolve in this checkout, so whether $MRT_MIGRATION already exists at the base tip is UNKNOWN -- not passed."
+            exit 1
+          fi
           if git cat-file -e "$BASE_SHA:$MRT_MIGRATION" 2>/dev/null; then
             echo "::error title=Migration Reversal Tested - condition (b) failed::$MRT_MIGRATION already exists at the base tip $BASE_SHA. This PR's branch is stale: the file it adds has since been added on the base, so overlaying it would REPLACE a base migration rather than add a new one. Rebase onto the current base and give the migration its own file."
             exit 1
@@ -1277,9 +1286,8 @@ jobs:
           # pg_wrapper `pg_dump` on PATH picks the newest installed client,
           # which need not be the server's. An unreadable server version or a
           # missing binary is an error, never a skipped comparison.
-          server_num=$("${PSQL[@]}" -c "SHOW server_version_num")
-          if ! [[ "$server_num" =~ ^[0-9]{5,6}$ ]]; then
-            echo "::error title=Migration Reversal Tested - condition (e) failed::could not read the server version (got '$server_num'), so the schema comparison cannot be made -- not passed."
+          if ! server_num=$("${PSQL[@]}" -c "SHOW server_version_num") || ! [[ "$server_num" =~ ^[0-9]{5,6}$ ]]; then
+            echo "::error title=Migration Reversal Tested - condition (e) failed::could not read the server version as a plain version number, so the schema comparison cannot be made -- not passed."
             exit 1
           fi
           server_major=$(( 10#$server_num / 10000 ))
@@ -1320,6 +1328,8 @@ jobs:
                   block = []
           if block is not None:
               sys.exit("unterminated CREATE TABLE block in the dump")
+          if not out:
+              sys.exit("the dump normalized to nothing")
           print("\n".join(out))
           PY
           )
@@ -1333,7 +1343,13 @@ jobs:
               echo "::error title=Migration Reversal Tested - condition (e) failed::pg_dump failed taking the '$label' schema snapshot for $MRT_MIGRATION -- not passed."
               exit 1
             fi
-            if ! python3 -c "$NORMALIZE" "$raw" > "$norm" || [ ! -s "$norm" ]; then
+            # pg_dump writes this trailer only after a complete dump, so a
+            # truncated or empty dump can never compare equal to another.
+            if ! grep -qx -- '-- PostgreSQL database dump complete' "$raw"; then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::the '$label' schema snapshot for $MRT_MIGRATION has no 'dump complete' trailer (truncated or empty) -- not passed."
+              exit 1
+            fi
+            if ! python3 -c "$NORMALIZE" "$raw" > "$norm"; then
               echo "::error title=Migration Reversal Tested - condition (e) failed::could not normalize the '$label' schema snapshot for $MRT_MIGRATION -- not passed."
               exit 1
             fi
@@ -1396,9 +1412,23 @@ jobs:
           else
             echo "The upgrade changed the schema, and 'downgrade -1' restored it exactly."
           fi
-          # 4. Re-apply, as `reverse` does.
+          # 4. Re-apply, as `reverse` does, and snapshot it.
           step "upgrade head (re-apply)" "$MRT_HEAD" upgrade head
-          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade."
+          snapshot reapplied
+          # 5. The re-applied upgrade must land on the same schema as the
+          #    first: an upgrade that differs the second time (e.g. one that
+          #    hid behind IF NOT EXISTS) is not the migration that was tested.
+          if ! reapply_diff=$(diff -u --label first-upgrade --label re-applied-upgrade "$RUNNER_TEMP/mrt-schema-upgraded.sql" "$RUNNER_TEMP/mrt-schema-reapplied.sql"); then
+            echo "Schema after the re-applied 'upgrade head' differs from the schema after the first:"
+            printf '%s\n' "$reapply_diff"
+            head_lines=$(printf '%s\n' "$reapply_diff" | head -n 20 || true)
+            head_lines=${head_lines//'%'/%25}
+            head_lines=${head_lines//$'\r'/%0D}
+            head_lines=${head_lines//$'\n'/%0A}
+            echo "::error title=Migration Reversal Tested - condition (e) failed::the schema after re-applying 'upgrade head' is NOT the schema the first 'upgrade head' produced for $MRT_MIGRATION. Diff head:%0A${head_lines}"
+            exit 1
+          fi
+          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade and re-produced by the re-applied upgrade."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
