@@ -1,7 +1,7 @@
 """coord.machine_ci_hosts + coord.maintenance_windows — the machine/CI-host join and the maintenance-window ledger
 
 Revision ID: coord_maintenance_windows_01
-Revises: findings_keyset_01
+Revises: pindisp_01_gates_continuation_pin_disposition
 Create Date: 2026-09-28
 
 Phase 1 of plan
@@ -155,7 +155,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_maintenance_windows_01"
-down_revision: str | Sequence[str] | None = "findings_keyset_01"
+down_revision: str | Sequence[str] | None = "pindisp_01_gates_continuation_pin_disposition"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

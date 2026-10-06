@@ -69,7 +69,7 @@ _REVISION_FILENAME = "coord_maintenance_windows_01_create.py"
 
 # Pinned as a literal, not read back from the module: the test must notice a
 # re-point, not follow it.
-_PARENT_REVISION_ID = "findings_keyset_01"
+_PARENT_REVISION_ID = "pindisp_01_gates_continuation_pin_disposition"
 
 _SCHEMA = "coord"
 _HOSTS = "machine_ci_hosts"
