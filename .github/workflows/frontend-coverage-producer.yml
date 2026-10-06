@@ -33,6 +33,11 @@ concurrency:
   group: frontend-coverage-producer-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
+
 jobs:
   produce:
     name: Per-file coverage -> coord
@@ -43,7 +48,9 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
       # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
@@ -55,7 +62,7 @@ jobs:
       # Mirror frontend-ci.yml's setup so coverage runs in the same environment
       # the gating lane validates.
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
