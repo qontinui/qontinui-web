@@ -16,9 +16,10 @@
  *  2. **Pools** — one row per runner label set, expanding in place (R5) to
  *     each repo that uses it and its open alerts.
  *  3. **Repos** — main verdict, PR checks, candidate-CI p90, and the 24 h
- *     outcome split, content and infra-shaped ALWAYS separate, hosted always
- *     `–`. Train blockers are NOT rebuilt: each row links to the pipeline
- *     Train tab, which owns that axis (D2).
+ *     outcome split, content and infra-shaped ALWAYS separate; hosted is the
+ *     refused-job FLOOR (`≥N`, amber INFRA — never content red) or `–`.
+ *     Train blockers are NOT rebuilt: each row links to the pipeline Train
+ *     tab, which owns that axis (D2).
  *  4. **Machines link line** — per-machine occupancy stays on the Overview.
  *
  * ## Reads (one poll per route)
@@ -60,14 +61,17 @@ import {
   CI_POOL_PALETTE,
   CI_REPO_PALETTE,
   DASH,
+  alertAgeText,
   buildRepoRows,
   deriveCiHealth,
   poolGroupCells,
   poolLabel,
   poolMemberCells,
   stripLevel,
+  unattachedAlerts,
   type CellReading,
   type CiOverviewWire,
+  type CiUnattachedAlertWire,
   type PoolGroup,
   type RepoRowModel,
 } from "./_lib/ciDashboardStatus";
@@ -84,10 +88,21 @@ function CellText({
   "data-testid"?: string;
 }) {
   if (reading.known) {
+    // `infra` is the hosted-refusal floor: amber, never content red.
     return (
-      <span className="tabular-nums" data-testid={testId} data-known="true">
+      <span
+        className="tabular-nums"
+        title={reading.note ?? undefined}
+        data-testid={testId}
+        data-known="true"
+        data-tone={reading.tone}
+      >
         {label ? <span className="text-muted-foreground">{label} </span> : null}
-        {reading.text}
+        {reading.tone === "infra" ? (
+          <span className="text-amber-300">{reading.text}</span>
+        ) : (
+          reading.text
+        )}
       </span>
     );
   }
@@ -125,6 +140,40 @@ function Freshness({
         }}
       />
     </span>
+  );
+}
+
+/**
+ * Open alerts that match no persisted pool row. Coord holds no current
+ * reading of their pool, so nothing can confirm or clear them: each is amber
+ * (the ignorance floor), labelled with when it fired and was last
+ * re-confirmed — never "Stuck", never red.
+ */
+function UnattachedAlerts({ alerts }: { alerts: CiUnattachedAlertWire[] }) {
+  if (alerts.length === 0) return null;
+  return (
+    <section className="mt-3 space-y-1" data-testid="ci-unattached-alerts">
+      <h3 className="text-xs font-medium text-muted-foreground m-0">
+        Alerts with no current pool reading
+      </h3>
+      <ul className="space-y-1 m-0 p-0 list-none">
+        {alerts.map((a) => (
+          <li
+            key={`${a.repo}:${a.alert_id}`}
+            {...rowAccentProps(
+              { attention: "waiting" },
+              "flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 text-xs"
+            )}
+            data-testid={`ci-alert-unattached-${a.alert_id}`}
+          >
+            <span className="font-mono text-[11px]">{poolLabel(a.pool)}</span>
+            <span className="text-muted-foreground">{a.repo}</span>
+            <span className="text-amber-200">unconfirmed</span>
+            <span>{alertAgeText(a)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -318,13 +367,11 @@ function RepoRow({
   expanded,
   onToggle,
   economicsAsOf,
-  overviewAsOf,
 }: {
   row: RepoRowModel;
   expanded: boolean;
   onToggle: () => void;
   economicsAsOf: string | null;
-  overviewAsOf: string | null;
 }) {
   const { status, outcomes } = row;
   return (
@@ -346,7 +393,25 @@ function RepoRow({
           <CellText reading={row.candidateP90} label="cand. p90" />
           <CellText reading={outcomes.content_fail} label="content fail" />
           <CellText reading={outcomes.infra_shaped} label="infra" />
-          <CellText reading={outcomes.hosted} label="hosted" />
+          <CellText
+            reading={outcomes.hosted}
+            label="hosted"
+            data-testid={`ci-repo-hosted-${row.repo}`}
+          />
+          <Freshness
+            at={row.outcomesObservedAt}
+            verb="Newest job outcome observed"
+            testId={`ci-freshness-repo-outcomes-${row.repo}`}
+          />
+          {row.poolsWatched === false ? (
+            <span
+              className="text-muted-foreground"
+              title="Coord's queue watcher watches no self-hosted pool for this repo — a configuration fact, not an error."
+              data-testid={`ci-repo-no-pools-${row.repo}`}
+            >
+              no watched pools
+            </span>
+          ) : null}
         </span>
       }
       status={
@@ -417,9 +482,9 @@ function RepoRow({
             </dd>
             <dd className="m-0">
               <Freshness
-                at={overviewAsOf}
-                verb="Outcomes read"
-                testId={`ci-freshness-outcomes-${row.repo}`}
+                at={row.outcomesObservedAt}
+                verb="Newest job outcome observed"
+                testId={`ci-freshness-repo-outcomes-detail-${row.repo}`}
               />
             </dd>
           </dl>
@@ -497,7 +562,6 @@ function ReposSection({
           expanded={ctx.expanded}
           onToggle={ctx.onToggle}
           economicsAsOf={economics.asOf}
-          overviewAsOf={overview?.as_of ?? null}
         />
       )}
     />
@@ -548,6 +612,10 @@ export default function CoordCiPage() {
     (g) => g.state !== "measured"
   ).length;
   const reposAttention = ciRows.filter((r) => r.main_verdict === "red").length;
+  const unattached = useMemo(
+    () => unattachedAlerts(overview.data),
+    [overview.data]
+  );
   // The Repos panel's collapsed-header count: the union of both reads' repos,
   // or a dash while neither has landed (never a 0 for "not read").
   const repoCount = useMemo(() => {
@@ -628,6 +696,11 @@ export default function CoordCiPage() {
                 not measured {unmeasuredPools}
               </span>
             ) : null}
+            {unattached.length > 0 ? (
+              <span className="text-amber-200">
+                alerts unconfirmed {unattached.length}
+              </span>
+            ) : null}
           </span>
         }
       >
@@ -655,6 +728,7 @@ export default function CoordCiPage() {
             />
           )}
         />
+        <UnattachedAlerts alerts={unattached} />
       </CollapsiblePanel>
 
       <CollapsiblePanel

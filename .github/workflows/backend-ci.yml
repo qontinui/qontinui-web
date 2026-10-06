@@ -148,8 +148,8 @@ env:
 #
 # `cancel-in-progress` is an EXPRESSION, not `true`: only a `pull_request` run
 # is ever superseded. A run on a `push` or `schedule` lane is never cancelled
-# by this block, though note that a still-PENDING run in a group IS reaped when
-# a newer run enters it -- GitHub keeps at most one pending run per group.
+# by this block, and since 2026-10-05 it is not reaped while PENDING either:
+# the per-run suffix below makes it the only member of its group.
 #
 # NOTE this workflow has no `push` lane on the DEFAULT branch, and that is what
 # makes a group safe here. A top-level group on a workflow that runs on
@@ -157,9 +157,21 @@ env:
 # blocking set from soft (relaxable by the optimism gate) to a hard block --
 # see `merge_safety_from_observation`, whose soft-blocking arm requires those
 # runs to share NO concurrency group.
+#
+# PR-SCOPED SUPERSESSION, re-run- and push-safe (shared hosted-job cap relief,
+# 2026-10-05; pattern: qontinui-claude-config#1475). Only a FIRST-attempt
+# `pull_request` run uses the bare per-PR group below and cancels within it.
+# Every other run -- push (incl. merge-candidate*/**, coord's candidate CI),
+# schedule, workflow_dispatch, and EVERY re-run (run_attempt > 1) -- appends
+# `-run-<id>-<attempt>`, so it is the sole member of its group: never
+# cancelled, never reaped while pending, and a re-run of an older head can no
+# longer cancel the current head's run. The existing literal prefix is kept
+# because coord models a template by interpolating only `github.event_name` /
+# `github.ref` and collapsing every other expression (the suffix included) to
+# "" -- so coord's modelled group is byte-identical to before the suffix.
 concurrency:
-  group: backend-ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: backend-ci-${{ github.event_name }}-${{ github.ref }}${{ !(github.event_name == 'pull_request' && github.run_attempt == 1) && format('-run-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
 # repo; `actions: read` is for the job-timeout explainer's
@@ -949,7 +961,7 @@ jobs:
           # declared at this job's `timeout-minutes` -- now the PER-SHARD budget.
           JOB_TIMEOUT_MINUTES: '45'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request'`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a pull_request run a newer push to the same ref supersedes it; on any other lane a RUNNING job is never auto-superseded, though a run still PENDING in the group is reaped when a newer one enters it, and a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
+            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request' && github.run_attempt == 1`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a first-attempt pull_request run a newer push to the same PR supersedes it (and a reopen supersedes the same-head run it re-does); every other run (push, schedule, dispatch, any re-run) is alone in a per-run group and is never auto-superseded or reaped while pending, so a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
@@ -1538,8 +1550,9 @@ jobs:
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The workflow declares no top-level `permissions:`, so the jobs read must
-    # not depend on the repo's default token scope.
+    # Same scopes as the workflow-level `permissions:` today; restated here so
+    # the jobs read this job makes (`actions: read`) survives any later
+    # narrowing of the workflow default.
     permissions:
       actions: read
       contents: read

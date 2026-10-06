@@ -95,7 +95,7 @@ const UNKNOWN_POOL = measuredPool({
   eligibility_observed_at: null,
 });
 
-function overviewBody(pools: unknown[]) {
+function overviewBody(pools: unknown[], hosted?: unknown) {
   return {
     as_of: NOW_ISO,
     coverage_note: "self-hosted jobs only",
@@ -114,7 +114,7 @@ function overviewBody(pools: unknown[]) {
           neutral: 0,
           unknown: 0,
         },
-        hosted: {
+        hosted: hosted ?? {
           state: "not_measured",
           note: "hosted-only workflows are not sampled",
         },
@@ -230,10 +230,62 @@ describe("/admin/coord/ci", () => {
     expect(screen.getByTestId(`ci-freshness-main-${WEB}`)).toBeTruthy();
     expect(screen.getByTestId("ci-freshness-overview")).toBeTruthy();
     expect(screen.getByTestId("ci-freshness-ci-status")).toBeTruthy();
-    // Hosted is never a count.
+    // A legacy (not_measured) hosted block is a dash, never a count.
     expect(screen.getByTestId(`ci-repo-row-${WEB}`).textContent).toContain(
       "hosted –"
     );
+  });
+
+  it("an observed hosted refusal renders as an infra floor on the repo row, never content red", async () => {
+    route(
+      overviewBody([measuredPool()], {
+        state: "observed",
+        hosted_refused: 3,
+        last_refused_at: NOW_ISO,
+        billing_refusal: {
+          alert_id: "77",
+          opened_at: NOW_ISO,
+          last_seen_at: NOW_ISO,
+        },
+        note: "hosted jobs GitHub never started",
+      })
+    );
+    render(<CoordCiPage />);
+    const cell = await screen.findByTestId(`ci-repo-hosted-${WEB}`);
+    expect(cell.getAttribute("data-known")).toBe("true");
+    expect(cell.getAttribute("data-tone")).toBe("infra");
+    expect(cell.textContent).toBe("hosted ≥3 refused (billing)");
+    expect(cell.getAttribute("title")).toMatch(/not a code failure/);
+    const row = screen.getByTestId(`ci-repo-row-${WEB}`);
+    expect(row.textContent).toContain("content fail 0");
+    // The level does not move (R3's third case — hosted CI is off, so the
+    // floor never self-clears); the strip DETAIL names the billing cause.
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "green"
+    );
+    expect(screen.getByTestId("ci-health-strip").textContent).toContain(
+      "GitHub Actions billing refusing hosted jobs"
+    );
+    expect(screen.getByTestId("ci-health-badge-hosted").textContent).toBe(
+      "billing refusing hosted ≥3"
+    );
+  });
+
+  it("a none_observed hosted block renders –, never 0", async () => {
+    route(
+      overviewBody([measuredPool()], {
+        state: "none_observed",
+        hosted_refused: null,
+        last_refused_at: null,
+        billing_refusal: null,
+        note: "no hosted refusal in the window",
+      })
+    );
+    render(<CoordCiPage />);
+    const cell = await screen.findByTestId(`ci-repo-hosted-${WEB}`);
+    expect(cell.getAttribute("data-known")).toBe("false");
+    expect(cell.textContent).toBe("hosted –");
+    expect(cell.getAttribute("title")).toMatch(/not a measured zero/);
   });
 
   it("expands a pool row in place to its per-repo members", async () => {
@@ -332,6 +384,71 @@ describe("/admin/coord/ci", () => {
     const row = await screen.findByTestId(`ci-repo-row-${WEB}`);
     // 600 s from the economics fixture.
     await waitFor(() => expect(row.textContent).toContain("cand. p90 10m"));
+  });
+
+  it("lists unattached alerts amber, keyed by alert id, and never turns the strip red", async () => {
+    const body = {
+      ...overviewBody([measuredPool()]),
+      unattached_alerts: [
+        {
+          repo: WEB,
+          pool: "qontinui,self-hosted",
+          alert_id: "47990",
+          kind: "ci_pool_no_eligible_runner",
+          opened_at: "2026-10-03T08:12:00Z",
+          last_seen_at: "2026-10-03T08:40:00Z",
+          occurrences: 3,
+          summary: "0 eligible runners",
+          current_state_note: "no persisted pool row matches this alert",
+        },
+      ],
+    };
+    route(body);
+    render(<CoordCiPage />);
+    const row = await screen.findByTestId("ci-alert-unattached-47990");
+    expect(row.getAttribute("data-attention")).toBe("waiting");
+    expect(row.textContent).toContain("fired 2026-10-03T08:12:00Z");
+    expect(row.textContent).toContain("no persisted pool row matches");
+    expect(screen.getByTestId("ci-page").getAttribute("data-ci-health")).toBe(
+      "unknown"
+    );
+    expect(screen.getByTestId("ci-health-strip").textContent).not.toContain(
+      "Stuck"
+    );
+  });
+
+  it("stamps repo outcomes with last_observed_at and notes unwatched pools", async () => {
+    const body = overviewBody([measuredPool()]);
+    body.repos[0] = {
+      ...body.repos[0]!,
+      last_observed_at: NOW_ISO,
+      pools_watched: false,
+    } as (typeof body.repos)[number];
+    route(body);
+    render(<CoordCiPage />);
+    const stamp = await screen.findByTestId(
+      `ci-freshness-repo-outcomes-${WEB}`
+    );
+    expect(stamp.textContent).not.toMatch(/NaN|freshness unknown/);
+    expect(screen.getByTestId(`ci-repo-no-pools-${WEB}`).textContent).toBe(
+      "no watched pools"
+    );
+  });
+
+  it("a pool with a null observed_at shows 'freshness unknown', never NaN or '–ago'", async () => {
+    route(
+      overviewBody([
+        { ...UNKNOWN_POOL, observed_at: null, stale_after_secs: null },
+      ])
+    );
+    render(<CoordCiPage />);
+    const stamp = await screen.findByTestId(
+      "ci-freshness-pool-qontinui-ccfg,self-hosted"
+    );
+    expect(stamp.textContent).toBe("freshness unknown");
+    expect(
+      screen.getByTestId("ci-pool-row-qontinui-ccfg,self-hosted").textContent
+    ).not.toMatch(/NaN|–ago|undefined/);
   });
 
   it("links the machine axis to the Dev Ops overview", async () => {
