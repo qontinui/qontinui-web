@@ -3989,7 +3989,7 @@ async def list_coord_plans(
         default=None,
         description=(
             "Attach each unit's non-expired ``live_sessions`` (coord's "
-            "``coord.agent_status`` join). Absent from a row = UNKNOWN; ``[]`` "
+            "agent-status join). Absent from a row = UNKNOWN; ``[]`` "
             "is a real zero. A session drops out within STATUS_TTL of its last "
             "heartbeat, not when it ends — compare ``expires_at``."
         ),

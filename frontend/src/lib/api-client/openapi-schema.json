@@ -98000,7 +98000,7 @@
             }
           },
           {
-            "description": "Attach each unit's non-expired ``live_sessions`` (coord's ``coord.agent_status`` join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
+            "description": "Attach each unit's non-expired ``live_sessions`` (coord's agent-status join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
             "in": "query",
             "name": "include_live_sessions",
             "required": false,
@@ -98013,7 +98013,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Attach each unit's non-expired ``live_sessions`` (coord's ``coord.agent_status`` join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
+              "description": "Attach each unit's non-expired ``live_sessions`` (coord's agent-status join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
               "title": "Include Live Sessions"
             }
           },
