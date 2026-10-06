@@ -113,7 +113,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Rocket } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
 // The guard's PREDICATE and its COPY are shared with `/plans`' row action, so
 // the two entry points cannot answer "does this deserve a confirm?"
 // differently. Only the layout below is this file's.
@@ -124,21 +123,7 @@ import {
   type SpawnBodySubject,
 } from "@/components/admin/coord/planBodySignal";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-// The fleet-health wire shapes are IMPORTED, not re-declared. This file used
-// to carry its own copy of `FleetHealthDevice`, and it drifted exactly the way
-// a second mirror does: coord grew a fifth `DeviceState` (`stale`, a derived
-// overlay meaning the heartbeat is fine and the resource sampler has gone
-// quiet), the operations copy learned it, and this one went on documenting
-// four. The device list rendered below comes from the same
-// `GET /operations/fleet/health` read, so it reads the same shape.
-import type {
-  FleetHealthDevice,
-  FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
-import {
-  DevicePicker,
-  findRosterDevice,
-} from "@/components/operations/DevicePicker";
+import { DevicePicker } from "@/components/operations/DevicePicker";
 import {
   describeSpawnPlacement,
   describeSpawnRefusal,
@@ -146,397 +131,16 @@ import {
   parseRequiredCapabilities,
   type SpawnRefusal,
 } from "@/components/admin/coord/spawnPlacement";
-
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
-
-/**
- * Canonical repo slug list. Mirrors the set coord uses for
- * `declared_overlap_paths` repo scoping. Operators can still
- * declare repos that aren't in this list by typing them into the
- * "other repos" field — we union both before submit.
- */
-const KNOWN_REPOS = [
-  "qontinui-web",
-  "qontinui-runner",
-  "qontinui-coord",
-  "qontinui-schemas",
-  "qontinui-mobile",
-  "qontinui-ui-bridge",
-  "qontinui-dev-notes",
-] as const;
-
-/** One row of coord's per-device Claude account feed, as served by the
- *  qontinui-web proxy `GET /operations/claude-accounts` (plan
- *  `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
- *  Phase 2).
- *
- *  Identity on the wire is `account_label` — the config-dir BASENAME
- *  (`.claude-gmail`), never a local path. That is a deliberate contract of
- *  the runner's ingest side, so nothing here may render or send a path.
- *  Note the read side spells it `account_label`, not `label`.
- *
- *  Every observation-shaped field is `| null` on purpose: coord serves
- *  `is_active` / `account_selection_mode` as null on a deployment whose
- *  `coord.claude_account_usage` predates alembic `coord_claude_acct_usage_02`,
- *  and null there means UNKNOWN — never `false`, and never the
- *  `least_usage` default. */
-export interface ClaudeAccountRow {
-  device_id: string;
-  account_label: string;
-  weekly_utilization?: number | null;
-  weekly_resets_at?: string | null;
-  session_utilization?: number | null;
-  session_resets_at?: string | null;
-  model_limits?: unknown[];
-  exhausted?: boolean | null;
-  source?: string | null;
-  error?: boolean | null;
-  /** Coord's computed freshness verdict (30 min since the device's last
-   *  report). `true` means the feed STOPPED — the numbers beside it are a
-   *  last-known snapshot, not a current one. */
-  stale?: boolean | null;
-  /** Which account the machine's rotation actually picked. `null`/absent =
-   *  unknown (the reporting runner predates the field). */
-  is_active?: boolean | null;
-  /** `manual` | `least_usage` | null. Null = unknown, NOT `least_usage`. */
-  account_selection_mode?: string | null;
-}
-
-interface ClaudeAccountsPayload {
-  accounts?: unknown;
-  /** `false` = coord has no `coord.claude_account_usage` table yet;
-   *  `null`/absent = coord did not say. Both are UNKNOWN, not "no accounts". */
-  table_provisioned?: boolean | null;
-  /** `false` = the table predates the `is_active` / `account_selection_mode`
-   *  columns, so the SELECTION half of every row is unknown while the usage
-   *  half is real. */
-  columns_provisioned?: boolean | null;
-}
-
-/** The sentinel the account `Select` carries for "no pin".
- *
- *  It is NOT sent: `buildSpawnRequestBody` receives `""` for this state and
- *  omits the key. Radix `SelectItem` rejects `value=""` outright (it reserves
- *  the empty string for "clear the selection"), so the no-pin choice needs a
- *  value of its own rather than the natural one. */
-export const ACCOUNT_AUTO = "__machine_chooses__";
-
-/** Device ids reach this component in two spellings — coord's hyphenated
- *  uuid from the roster, and whatever the operator typed, which `UUID_RE`
- *  also accepts in simple 32-hex form. Comparing them raw would silently
- *  filter the account roster down to nothing for a perfectly valid id. */
-function normalizeDeviceId(value: string): string {
-  return value.trim().toLowerCase().replace(/-/g, "");
-}
-
-export function filterAccountsForDevice(
-  accounts: ClaudeAccountRow[],
-  deviceId: string
-): ClaudeAccountRow[] {
-  const wanted = normalizeDeviceId(deviceId);
-  if (wanted === "") return [];
-  return accounts.filter((a) => normalizeDeviceId(a.device_id) === wanted);
-}
-
-/** What the modal can honestly say about the account roster right now.
- *
- *  The whole point of this type is that "coord has no accounts for this
- *  machine" and "we could not read the roster" are DIFFERENT answers with
- *  different fixes, and rendering them identically is the defect this
- *  mirrors from the device roster above. `ready` is the only state that may
- *  offer accounts to pin; every other state must SAY which one it is. */
-export type AccountRosterState =
-  | { kind: "loading"; message: string }
-  | { kind: "no-device"; message: string }
-  | { kind: "fault"; message: string }
-  | { kind: "unknown"; message: string }
-  | { kind: "empty"; message: string }
-  | { kind: "ready"; accounts: ClaudeAccountRow[] };
-
-export function deriveAccountRoster(input: {
-  loading: boolean;
-  /** Non-null when the fetch failed, returned a non-2xx, or came back in a
-   *  shape this surface cannot read. */
-  fault: string | null;
-  tableProvisioned: boolean | null | undefined;
-  /** Whether a device is picked at all — the roster is per-machine. */
-  deviceChosen: boolean;
-  /** How many rows the tenant-wide roster carried, so "no accounts anywhere"
-   *  and "none for THIS machine" can be told apart. */
-  tenantRosterSize: number;
-  deviceAccounts: ClaudeAccountRow[];
-}): AccountRosterState {
-  if (input.loading) {
-    return { kind: "loading", message: "Loading the account roster…" };
-  }
-  if (input.fault !== null) {
-    return {
-      kind: "fault",
-      message:
-        `Could not read the Claude account roster — ${input.fault} ` +
-        "This is UNKNOWN, not “no accounts”: leaving the pin alone still " +
-        "works, but what the machine will then pick is not visible here.",
-    };
-  }
-  if (!input.deviceChosen) {
-    return {
-      kind: "no-device",
-      message:
-        "No device is named, so coord picks the machine and that machine's " +
-        "own rule picks the account. Name a device to pin an account — the " +
-        "roster and the selection rule are per-machine.",
-    };
-  }
-  // Rows in hand are rows in hand. `table_provisioned` is load-bearing ONLY
-  // for interpreting an EMPTY list, so it is checked below this rather than
-  // above it: coord serves the flag as null on any build predating its own
-  // read route's flags, and gating `ready` on it would throw a roster we
-  // just successfully read on the floor and then call it unreadable.
-  if (input.deviceAccounts.length > 0) {
-    return { kind: "ready", accounts: input.deviceAccounts };
-  }
-  // Nothing for this machine. NOW the flag decides whether that is an
-  // ANSWER or an unknown: `true` is the only value that licenses reading an
-  // empty list as "nothing has reported". `false` (coord has no table) and
-  // null/absent (coord did not say) are both unknown, and defaulting either
-  // to `true` would assert provisioning nobody observed.
-  //
-  // A non-empty TENANT roster is its own proof that the table exists and
-  // outranks a flag claiming otherwise — rows cannot come from a table that
-  // is not there.
-  if (input.tableProvisioned !== true && input.tenantRosterSize === 0) {
-    return {
-      kind: "unknown",
-      message:
-        (input.tableProvisioned === false
-          ? "Coord has no `coord.claude_account_usage` table on this deployment, so no account has ever been observed. "
-          : "Coord did not report whether its account table is provisioned, so an empty roster cannot be read as an answer. ") +
-        "UNKNOWN, not “no accounts” — spawn without a pin and the machine " +
-        "chooses by its own rule.",
-    };
-  }
-  return {
-    kind: "empty",
-    message:
-      input.tenantRosterSize === 0
-        ? "Coord's account table is provisioned and holds no rows for this " +
-          "tenant: no runner has reported its Claude accounts yet. A device " +
-          "reports on its ~10-minute usage refresh, so a machine that just " +
-          "started is legitimately absent."
-        : "Coord has account rows for this tenant but none for this device: " +
-          "that machine's runner has not reported its Claude accounts yet.",
-  };
-}
-
-const SELECTION_MODE_LABELS: Record<string, string> = {
-  least_usage: "least-usage rotation across its accounts",
-  manual: "the account pinned in its own settings",
-};
-
-/** The *"this machine will use: &lt;mode&gt;"* line.
- *
- *  `known: false` is a first-class answer. `account_selection_mode` is
- *  `#[serde(default)]` on coord's row and null on any deployment whose
- *  columns predate `coord_claude_acct_usage_02`, so the honest rendering of
- *  a missing mode is "unknown" — printing the `least_usage` default would
- *  state a machine-global behaviour we did not observe. */
-export function describeSelectionMode(
-  deviceAccounts: ClaudeAccountRow[],
-  columnsProvisioned: boolean | null | undefined,
-  /** Why the roster looks the way it does. Without it this function sees
-   *  only an empty array and cannot tell "the machine reported no mode"
-   *  from "we never got to ask" — and it would then state a CAUSE it did
-   *  not observe, which is the same class of lie as printing the
-   *  `least_usage` default. Defaults to `ready`, the only state in which an
-   *  empty array really does mean the machine said nothing. */
-  rosterKind: AccountRosterState["kind"] = "ready"
-): { known: boolean; text: string } {
-  const declared = Array.from(
-    new Set(
-      deviceAccounts
-        .map((a) => a.account_selection_mode)
-        .filter(
-          (m): m is string => typeof m === "string" && m.trim().length > 0
-        )
-        .map((m) => m.trim())
-    )
-  );
-  const [only] = declared;
-  if (declared.length === 1 && only !== undefined) {
-    return { known: true, text: SELECTION_MODE_LABELS[only] ?? only };
-  }
-  if (declared.length > 1) {
-    // Rows of different vintages can disagree (the ingest upserts and never
-    // deletes). Picking the first would silently resolve a contradiction.
-    return {
-      known: false,
-      text:
-        `unknown — this machine's rows disagree about the rule (${declared.join(", ")}), ` +
-        "so none of them can be reported as current.",
-    };
-  }
-  const cause =
-    rosterKind === "loading"
-      ? "unknown — the account roster has not been read yet."
-      : rosterKind === "fault"
-        ? "unknown — the account roster could not be read, so this machine was never asked."
-        : rosterKind === "no-device"
-          ? "unknown until a device is chosen — the selection rule is per-machine."
-          : rosterKind === "unknown"
-            ? "unknown — coord could not say whether it has ever observed this machine's accounts."
-            : columnsProvisioned === false
-              ? "unknown — coord's account table predates the selection columns, so no mode has been recorded."
-              : "unknown — this machine has not reported a selection mode.";
-  return {
-    known: false,
-    // The trailing clause is load-bearing: `least_usage` is the RUNNER's
-    // `#[default]`, and an operator who knows that would otherwise fill the
-    // blank in with it themselves.
-    text:
-      rosterKind === "no-device"
-        ? cause
-        : `${cause} It is not necessarily least-usage.`,
-  };
-}
-
-/** Render a 0..1 utilization as a percentage, or `null` when there is no
- *  number to render. A missing utilization is unknown, not 0%. */
-export function formatUtilization(
-  value: number | null | undefined
-): string | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return `${Math.round(value * 100)}%`;
-}
-
-/** Extract the `plan_phase` value coord will accept from the free-text
- *  Phase input.
- *
- *  The input is deliberately free text ("the plan owns phase
- *  nomenclature") but coord types the field `Option<u32>`. So: take the
- *  leading integer, and return `undefined` when there is none so the
- *  caller OMITS the key rather than sending a string.
- *
- *  The range check is not paranoia: `u32` is the constraint, so a phase
- *  like "99999999999" parses fine in JS and then 422s on coord for the
- *  very reason this exists. Out of range → omit, same as no digits. */
-const U32_MAX = 4294967295;
-
-export function parsePlanPhase(phase: string): number | undefined {
-  const digits = phase.trim().match(/\d+/)?.[0];
-  if (digits === undefined) return undefined;
-  const n = Number(digits);
-  if (!Number.isInteger(n) || n < 0 || n > U32_MAX) return undefined;
-  return n;
-}
-
-/** Build the `POST /agents/spawn` body.
- *
- *  Extracted from `handleSubmit` purely to give the wire contract a test
- *  seam — this body must match coord's `SpawnRequest`
- *  (`agents_spawn.rs:86-104`), which axum extracts with
- *  `Json(req): Json<SpawnRequest>`, i.e. strict serde, so a mismatch is a
- *  hard 422 BEFORE any handler logic runs. This modal previously sent
- *  `device_id` (a key coord does not read, leaving the REQUIRED
- *  `target_device_id` absent), `repos` as bare strings, and `plan_phase`
- *  as free text, so every submit 422'd. Do not "simplify" these back:
- *    - target_device_id: `Option<Uuid>` since coord#2403. OMITTED — never
- *                        `""`, which is not a Uuid and 422s — for an
- *                        automatic spawn; present, it is a checked pin.
- *    - required_capabilities: `Vec<String>`, omitted when empty.
- *    - override_drain:   sent ONLY with a named device. Coord 400s it
- *                        without one (`override_drain_requires_target`), and
- *                        a coord-placed device is never knowingly drained.
- *    - repos:            Vec<AllocateRepoSpec> = [{ repo, parent_sha? }],
- *                        NOT string[]
- *    - plan_phase:       Option<u32>, so a non-numeric phase must be
- *                        OMITTED rather than sent as a string
- *
- *  Stage 4a of plan `2026-07-28-coord-post-plan-slug-surfaces-rename`
- *  moved this writer from `plan_slug` to `work_unit_slug`. Coord's
- *  `SpawnRequest` opened the dual-accept window in Stage 2
- *  (`#[serde(alias = "plan_slug")]`, coord#1332, serving since
- *  `651c4e78`). Send exactly ONE of the two spellings, never both:
- *  serde's derive treats an alias as the SAME field, so a body carrying
- *  `plan_slug` AND `work_unit_slug` is rejected outright as a
- *  `duplicate field` error rather than resolved last-one-wins.
- *
- *  ⚠️ **Empty string is ABSENCE only if we omit the key — coord will not
- *  save us.** `work_unit_slug`, `intent` and `declared_overlap_paths` are
- *  `Option<…>` on `SpawnRequest`, so `""` deserializes as `Some("")`, not
- *  `None`. An empty slug then flows into `derive_intent`
- *  (`agents_spawn.rs:830-834`), which matches `Some(slug)` and synthesizes
- *  the literal intent `"plan:"`; into the prompt-injection audit as
- *  `trigger_text: "spawn for plan "`; and into `LaunchPayload.work_unit_slug`
- *  and on to the runner's session registration — manufacturing a phantom
- *  work-unit row on the plans page for a session that has no plan. So every
- *  optional is TRIMMED FIRST and then OMITTED when empty, exactly as
- *  `plan_phase` already was. */
-export function buildSpawnRequestBody(input: {
-  /** Optional — omitted from the body when blank (an unanchored spawn). */
-  workUnitSlug?: string;
-  /** Optional free text; only its leading integer reaches the wire. */
-  phase?: string;
-  /** `""` (or blank) = automatic placement: the key is OMITTED and coord
-   *  picks. Anything else is the pin. */
-  deviceId: string;
-  /** Optional — omitted from the body when empty. */
-  requiredCapabilities?: string[];
-  /** Override a KNOWN drain on the named device. Ignored — never sent — when
-   *  no device is named. */
-  overrideDrain?: boolean;
-  repos: string[];
-  /** Optional — omitted from the body when blank. */
-  intent?: string;
-  /** Optional — omitted from the body when empty. */
-  declaredOverlapPaths?: string[];
-  /** Optional Claude-account pin — the config-dir BASENAME
-   *  (`.claude-gmail`), never a local path. Omitted from the body when
-   *  absent or blank, which IS "let the machine choose": coord types it
-   *  `Option<String>` with `#[serde(default)]`, so absence restores today's
-   *  unchanged rotation, while `""` would deserialize as `Some("")` — a pin
-   *  on an account no machine has. */
-  account?: string;
-  initialPrompt: string;
-}): Record<string, unknown> {
-  const planPhase = parsePlanPhase(input.phase ?? "");
-  const workUnitSlug = (input.workUnitSlug ?? "").trim();
-  const intent = (input.intent ?? "").trim();
-  const overlapPaths = input.declaredOverlapPaths ?? [];
-  const account = (input.account ?? "").trim();
-  const deviceId = input.deviceId.trim();
-  const capabilities = input.requiredCapabilities ?? [];
-  return {
-    // Omitted — never `""` — when the spawn is unanchored. See the
-    // empty-string note above: `""` here manufactures a phantom plan.
-    ...(workUnitSlug === "" ? {} : { work_unit_slug: workUnitSlug }),
-    // Omitted entirely when the operator's free-text phase carries no
-    // digits — the field is optional, and sending a string 422s.
-    ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
-    // Omitted — never `""` — for automatic placement: coord places it.
-    ...(deviceId === "" ? {} : { target_device_id: deviceId }),
-    ...(capabilities.length === 0
-      ? {}
-      : { required_capabilities: capabilities }),
-    // Only a NAMED device can have its drain overridden.
-    ...(deviceId !== "" && input.overrideDrain === true
-      ? { override_drain: true }
-      : {}),
-    // Omitted — never `""` — when the operator left the machine to choose.
-    ...(account === "" ? {} : { account }),
-    repos: input.repos.map((repo) => ({ repo })),
-    ...(intent === "" ? {} : { intent }),
-    ...(overlapPaths.length === 0
-      ? {}
-      : { declared_overlap_paths: overlapPaths }),
-    initial_prompt: input.initialPrompt.trim(),
-  };
-}
-
-/** Coord types `target_device_id` as `Uuid`, whose deserializer accepts the
- *  hyphenated form AND the simple 32-hex form — so a hyphens-only guard would
- *  reject input coord would happily take. */
-const UUID_RE =
-  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i;
+import {
+  ACCOUNT_AUTO,
+  API,
+  KNOWN_REPOS,
+  UUID_RE,
+  buildSpawnRequestBody,
+  canSubmitSpawn,
+  formatUtilization,
+} from "@/components/admin/coord/spawnModel";
+import { useSpawnRoster } from "@/components/admin/coord/useSpawnRoster";
 
 export interface SpawnModalProps {
   /** Whether the modal is open. */
@@ -632,56 +236,29 @@ export function SpawnModal({
    *  never flagged. */
   const [bodyAcknowledged, setBodyAcknowledged] = useState(false);
 
-  const [devices, setDevices] = useState<FleetHealthDevice[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
-  /** Why the roster is unusable, when it is. `null` = a usable roster.
-   *
-   *  An empty roster and a FAILED roster fetch used to render identically
-   *  ("No devices reporting"), because the catch below only reached
-   *  `console.warn`. They have opposite fixes — one is a coord-side
-   *  liveness question, the other an auth/proxy fault — so the operator
-   *  has to be able to tell them apart without opening devtools.
-   *
-   *  `kind` is carried as DATA rather than inferred from the message text:
-   *  `empty` is information (coord answered, honestly, with nothing), while
-   *  `fault` is an error, and they are styled differently. Sniffing the
-   *  prose to tell them apart later is exactly the bug this shape avoids. */
-  const [devicesError, setDevicesError] = useState<{
-    kind: "empty" | "fault";
-    message: string;
-  } | null>(null);
-  /** Type a device id instead of picking one. Auto-armed whenever the
-   *  roster comes back unusable, so an empty dropdown is never a dead end
-   *  (the roster is a CONVENIENCE — `target_device_id` is just a uuid). */
-  const [manualDevice, setManualDevice] = useState(false);
-
-  /** The operator's account pin. `ACCOUNT_AUTO` — the default — means NO
-   *  pin: the key is omitted from the body and the machine's own
-   *  `AccountSelectionMode` decides, exactly as it does today. */
-  const [account, setAccount] = useState(ACCOUNT_AUTO);
-  /** The TENANT-wide roster; the per-device view is derived below. Kept
-   *  whole so "no rows anywhere" and "no rows for this machine" stay
-   *  distinguishable. */
-  const [accounts, setAccounts] = useState<ClaudeAccountRow[]>([]);
-  /** Starts TRUE. The fetch effect below runs after the first commit, so
-   *  an initial `false` would paint one frame of "coord did not report
-   *  whether its table is provisioned" before the request is even issued —
-   *  an unknown asserted about a read that has not happened. */
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  /** Why the account roster is unreadable, when it is: a transport failure,
-   *  a non-2xx, or a body this surface cannot parse. `null` = the fetch
-   *  answered; it does NOT mean the answer was non-empty. */
-  const [accountsFault, setAccountsFault] = useState<string | null>(null);
-  /** Rows coord served that carried no usable `device_id`/`account_label`.
-   *  Dropped rather than guessed at, and then SAID — a roster you can only
-   *  partly parse is not one to pin a spawn from silently. */
-  const [unreadableAccountRows, setUnreadableAccountRows] = useState(0);
-  const [tableProvisioned, setTableProvisioned] = useState<boolean | null>(
-    null
-  );
-  const [columnsProvisioned, setColumnsProvisioned] = useState<boolean | null>(
-    null
-  );
+  /** The typed value, normalized the same way the wire body normalizes it. */
+  const deviceIdValue = deviceId.trim();
+  /** A roster pick is a uuid by construction; a TYPED one is not. Guard here
+   *  so an obviously-bad id costs a hint rather than a round trip to a 422. */
+  const deviceIdValid = UUID_RE.test(deviceIdValue);
+  const {
+    devices,
+    devicesLoading,
+    devicesError,
+    manualDevice,
+    setManualDevice,
+    unreadableAccountRows,
+    columnsProvisioned,
+    accountRoster,
+    selectionMode,
+    account,
+    setAccount,
+    accountPin,
+    pinnedRow,
+    deviceLabel,
+    deviceHeadlineName,
+    resetRoster,
+  } = useSpawnRoster(open, deviceIdValue);
 
   // Reset form state on every open so a fresh spawn doesn't inherit
   // the previous one.
@@ -689,15 +266,7 @@ export function SpawnModal({
     if (!open) return;
     setPhase(initialPhase ?? "");
     setDeviceId("");
-    setManualDevice(false);
-    setDevicesError(null);
-    setDevices([]);
-    setAccount(ACCOUNT_AUTO);
-    setAccounts([]);
-    setAccountsFault(null);
-    setUnreadableAccountRows(0);
-    setTableProvisioned(null);
-    setColumnsProvisioned(null);
+    resetRoster();
     setSelectedRepos([]);
     setOtherRepos("");
     setIntent("");
@@ -719,142 +288,7 @@ export function SpawnModal({
     setBodyAcknowledged(false);
     setRefusal(null);
     setSubmitting(false);
-  }, [open, initialPhase, bodyRisk, planSlug, workUnitTitle]);
-
-  // Populate device dropdown from coord fleet health.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setDevicesLoading(true);
-    setDevicesError(null);
-    fetch(`${API}/fleet/health`)
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error(`fleet/health returned HTTP ${res.status}`)
-            )
-      )
-      .then((body: FleetHealthPayload) => {
-        if (cancelled) return;
-        const roster = body.devices ?? [];
-        setDevices(roster);
-        // A 200 with an empty roster is a real answer, not a failure. Coord
-        // lists a device only when it is BOTH bound to the reading
-        // principal's tenant (an INNER JOIN on `coord.tenant_devices`) and
-        // inside the liveness window. Say so, rather than leaving a blank
-        // dropdown to be read as "the fleet is down".
-        //
-        // Deliberately does NOT name a cause: an empty roster has several,
-        // and this surface cannot tell them apart. An earlier draft asserted
-        // a specific one (a heartbeat-cadence gap) that was later falsified —
-        // wrong prose in a user-facing string is worse than none.
-        if (roster.length === 0) {
-          setDevicesError({
-            kind: "empty",
-            message:
-              "Coord reported 0 live devices for this tenant. A device is " +
-              "listed only if it is bound to this tenant and its last heartbeat " +
-              "is recent, so a healthy machine can still be absent. Enter the " +
-              "device id directly if you know it.",
-          });
-          setManualDevice(true);
-        }
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const detail = e instanceof Error ? e.message : String(e);
-        console.warn("[SpawnModal] fleet/health fetch failed", e);
-        setDevices([]);
-        setDevicesError({
-          kind: "fault",
-          message: `Could not load the device roster — ${detail}.`,
-        });
-        setManualDevice(true);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setDevicesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  // Populate the Claude account roster from coord's per-device usage feed.
-  //
-  // Same discipline as the device roster above, for the same reason: a
-  // failed read and an honestly-empty one have opposite fixes, so they are
-  // carried as different STATES rather than collapsed into a blank list.
-  // The roster is a CONVENIENCE — it never gates submit, because a spawn
-  // with no pin is the unchanged default behaviour.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setAccountsLoading(true);
-    setAccountsFault(null);
-    fetch(`${API}/claude-accounts`)
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error(`claude-accounts returned HTTP ${res.status}`)
-            )
-      )
-      .then((body: ClaudeAccountsPayload) => {
-        if (cancelled) return;
-        const raw = body?.accounts;
-        if (!Array.isArray(raw)) {
-          // Our own proxy always emits an `accounts` array, so a body
-          // without one is a contract break, not an empty roster.
-          setAccounts([]);
-          setTableProvisioned(null);
-          setColumnsProvisioned(null);
-          setUnreadableAccountRows(0);
-          setAccountsFault(
-            "coord returned no `accounts` array, so the roster could not be read."
-          );
-          return;
-        }
-        // A row without a NON-EMPTY device id and label is unusable: the
-        // label is both the pin's wire value and the `SelectItem` value, and
-        // Radix rejects `value=""` outright.
-        const rows = raw.filter((r): r is ClaudeAccountRow => {
-          if (typeof r !== "object" || r === null) return false;
-          const row = r as ClaudeAccountRow;
-          return (
-            typeof row.device_id === "string" &&
-            row.device_id.trim().length > 0 &&
-            typeof row.account_label === "string" &&
-            row.account_label.trim().length > 0
-          );
-        });
-        setAccounts(rows);
-        setUnreadableAccountRows(raw.length - rows.length);
-        // `?? null` and never `?? true`: an absent flag is coord declining
-        // to say, which is unknown. Defaulting it to `true` would let an
-        // empty list be read as "this machine has no Claude accounts".
-        setTableProvisioned(body.table_provisioned ?? null);
-        setColumnsProvisioned(body.columns_provisioned ?? null);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const detail = e instanceof Error ? e.message : String(e);
-        console.warn("[SpawnModal] claude-accounts fetch failed", e);
-        setAccounts([]);
-        setUnreadableAccountRows(0);
-        setTableProvisioned(null);
-        setColumnsProvisioned(null);
-        setAccountsFault(`${detail}.`);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setAccountsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  }, [open, initialPhase, bodyRisk, planSlug, workUnitTitle, resetRoster]);
 
   const toggleRepo = useCallback((repo: string) => {
     setSelectedRepos((prev) =>
@@ -879,34 +313,11 @@ export function SpawnModal({
     [overlapPaths]
   );
 
-  /** The typed value, normalized the same way the wire body normalizes it. */
-  const deviceIdValue = deviceId.trim();
-  /** A roster pick is a uuid by construction; a TYPED one is not. Guard here
-   *  so an obviously-bad id costs a hint rather than a round trip to a 422. */
-  const deviceIdValid = UUID_RE.test(deviceIdValue);
   /** No device named = coord places the session. The DEFAULT. */
   const automatic = deviceIdValue === "";
   const parsedCapabilities = useMemo(
     () => parseRequiredCapabilities(capabilities),
     [capabilities]
-  );
-
-  /** A device id as an operator recognises it: the roster's hostname when
-   *  the roster names it, the id otherwise. */
-  const deviceLabel = useCallback(
-    (id: string) => {
-      const row = findRosterDevice(devices, id);
-      return row?.hostname ? `${row.hostname} (${id})` : id;
-    },
-    [devices]
-  );
-  /** The name a refusal HEADLINE may carry: the hostname, or a plain phrase
-   *  when the roster does not know one — never a raw id (R8; the id goes on
-   *  the detail line). */
-  const deviceHeadlineName = useCallback(
-    (id: string) =>
-      findRosterDevice(devices, id)?.hostname || "The device you named",
-    [devices]
   );
 
   /** A refusal is about what was sent. Changing the device — including back
@@ -916,78 +327,14 @@ export function SpawnModal({
     setRefusal(null);
   }, [deviceIdValue, capabilities]);
 
-  /** The chosen machine's accounts, out of the tenant-wide roster. */
-  const deviceAccounts = useMemo(
-    () =>
-      deviceIdValid ? filterAccountsForDevice(accounts, deviceIdValue) : [],
-    [accounts, deviceIdValue, deviceIdValid]
-  );
-
-  const accountRoster = useMemo(
-    () =>
-      deriveAccountRoster({
-        loading: accountsLoading,
-        fault: accountsFault,
-        tableProvisioned,
-        deviceChosen: deviceIdValid,
-        tenantRosterSize: accounts.length,
-        deviceAccounts,
-      }),
-    [
-      accountsLoading,
-      accountsFault,
-      tableProvisioned,
-      deviceIdValid,
-      accounts.length,
-      deviceAccounts,
-    ]
-  );
-
-  const selectionMode = useMemo(
-    () =>
-      describeSelectionMode(
-        deviceAccounts,
-        columnsProvisioned,
-        accountRoster.kind
-      ),
-    [deviceAccounts, columnsProvisioned, accountRoster.kind]
-  );
-
-  /** An account label only means something on the machine that reported it,
-   *  so changing the device drops the pin rather than carrying a stale label
-   *  onto a machine that has never heard of it. */
-  useEffect(() => {
-    setAccount(ACCOUNT_AUTO);
-  }, [deviceIdValue]);
-
-  /** `""` — i.e. "no pin", the key omitted — unless a real label is chosen. */
-  const accountPin = account === ACCOUNT_AUTO ? "" : account;
-  const pinnedRow = deviceAccounts.find((a) => a.account_label === accountPin);
-
-  /** Exactly what coord requires — nothing more.
-   *
-   *  A non-empty `repos[]` and `initial_prompt` are the fields
-   *  `POST /agents/spawn` rejects the body without; `target_device_id` has
-   *  been optional since coord#2403 (blank = automatic placement). Slug / phase / intent / overlap paths are
-   *  all `Option<…>` there, so requiring them here was a frontend
-   *  invention that made "run this prompt on that machine" inexpressible
-   *  without inventing a plan to carry it.
-   *
-   *  The device predicate is "blank OR a valid uuid", NOT "anything": coord
-   *  types a present `target_device_id` as `Uuid`, so a typed non-uuid is a
-   *  422 either way — catching it here is strictly cheaper.
-   *
-   *  The body guard is the ONE frontend-invented predicate here, and it is
-   *  deliberate: it costs a single click on the rows that earn it and nothing
-   *  at all on every other spawn. It gates the button rather than the request
-   *  — coord would accept this body — because the point is that the operator
-   *  reads what the session will have to do, not that the spawn is refused. */
-  const canSubmit =
-    !submitting &&
-    (automatic || deviceIdValid) &&
-    allRepos.length > 0 &&
-    initialPrompt.trim().length > 0 &&
-    (bodyConfirm === null || bodyAcknowledged);
+  const canSubmit = canSubmitSpawn({
+    submitting,
+    automatic,
+    deviceIdValid,
+    repoCount: allRepos.length,
+    initialPrompt,
+    bodyCleared: bodyConfirm === null || bodyAcknowledged,
+  });
 
   const handleSubmit = useCallback(
     /** `overrideFor` — the device whose drain the operator chose to
@@ -1000,7 +347,7 @@ export function SpawnModal({
       const overrideDrain = pinned && overrideFor === sentDevice;
       try {
         // Shape is dictated by coord's `SpawnRequest` and pinned by
-        // `SpawnModal.test.ts` — see `buildSpawnRequestBody` above.
+        // `SpawnModal.test.ts` — see `buildSpawnRequestBody` in `spawnModel.ts`.
         const body = buildSpawnRequestBody({
           workUnitSlug: planSlug,
           phase,

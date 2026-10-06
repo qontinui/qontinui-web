@@ -508,6 +508,12 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_journey_edge_retention() -> Any:
+    from app.jobs.journey_edge_retention import run_journey_edge_retention
+
+    return await _run_committed(run_journey_edge_retention)
+
+
 def install_default_tasks(service: SchedulerService) -> None:
     """Register the canonical Qontinui schedule on ``service``.
 
@@ -676,6 +682,19 @@ def install_default_tasks(service: SchedulerService) -> None:
         ScheduledTask(
             name="render_log_retention",
             coro=_job_render_log_retention,
+            interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Journey edge ledger retention (JOURNEY_EDGE_RETENTION_DAYS, default 90).
+    # Same hourly + at-boot cadence as render-log retention. A database the
+    # journey_01 migration has not reached logs the absence and returns rather
+    # than failing the task.
+    service.register(
+        ScheduledTask(
+            name="journey_edge_retention",
+            coro=_job_journey_edge_retention,
             interval_seconds=3600.0,
             run_at_boot=True,
         )

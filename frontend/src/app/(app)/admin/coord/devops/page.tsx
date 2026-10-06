@@ -137,6 +137,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
 import { isActiveTenantCoordAdmin } from "@/lib/coord-admin";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
+import { GithubHostedCiPanel } from "./_components/GithubHostedCiPanel";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
 // defeats every downstream useMemo keyed on it.
@@ -411,6 +412,15 @@ export default function CoordDevOpsPage() {
         nowMs={nowMs}
         onNavigate={navigate}
       />
+
+      {/* GitHub-hosted CI — a per-tenant setting with per-repo overrides
+          (plan `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting`
+          Phase 3). Right under the conditions it can cause: an `off` tenant
+          whose workflows still target hosted runners is what coord flags as
+          mis-targeted. Writes are offered to an admin of the ACTIVE tenant
+          only — the same predicate as the computers link below, and the one
+          `require_coord_tenant_admin` applies to the write. */}
+      <GithubHostedCiPanel isAdmin={canReadComputers} />
 
       {/* The join this page is keyed on, stated once, before the list it
           shapes. Rows here come from coord's device registry, and the bridge

@@ -79,8 +79,10 @@ import {
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
+import { StatusCurrencyBadge } from "../plan-library/_components/StatusCurrencyBadge";
 import {
   CANDIDATE_PALETTE,
+  candidateCurrency,
   deriveCandidateDisclosure,
   deriveCandidateHealth,
   describeCandidateWindow,
@@ -118,6 +120,7 @@ function CandidateRow({
   // response that did not carry `document_state` has not said which corpus
   // layer this row came from, and rendering `doc: present` would state it.
   const documentState = candidate.document_state ?? null;
+  const currency = candidateCurrency(candidate);
 
   return (
     <RecordRow
@@ -168,6 +171,16 @@ function CandidateRow({
           >
             doc: {documentState ?? "unstated"}
           </span>
+          {/* `null` only on a work-unit-only row, where `doc:` above says
+              why; `candidateCurrency` resolves every other shape to a badge. */}
+          {currency !== null && (
+            <span className="hidden sm:inline-flex">
+              <StatusCurrencyBadge
+                currency={currency}
+                testId="coord-candidate-currency"
+              />
+            </span>
+          )}
           <span
             className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
             data-testid="coord-candidate-coord"
