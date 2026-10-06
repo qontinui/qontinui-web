@@ -1,7 +1,7 @@
 """coord.worktree_census_latest + coord.worktree_census_history — census presence/history split
 
 Revision ID: wtcensus_split_01_latest_and_history
-Revises: spawnadm_01_spawn_admission_ledger
+Revises: cihost_01
 Create Date: 2026-09-25
 
 Phase B of plan
@@ -97,11 +97,12 @@ to DROP a ``coord.*`` table. The runner's generated schema dump
 
 ## Head choice
 
-``down_revision`` is ``spawnadm_01_spawn_admission_ledger``, the single head of
-``origin/main`` (``0e2bec2dd``) when this revision was re-pointed on 2026-10-06
+``down_revision`` is ``cihost_01``, the single head of
+``origin/main`` (``8c96d4ce8``) when this revision was re-pointed on 2026-10-06
 (``scripts/ci/count_alembic_heads.py`` reported one head). It was first authored
 against ``coord_wu_authored_at_02``, then ``overview_02_authoring_core`` (PR
-#1507), then ``coord_agent_questions_effect``. If main moves again before this lands, re-point ``down_revision``, the
+#1507), then ``coord_agent_questions_effect``, then
+``spawnadm_01_spawn_admission_ledger``. If main moves again before this lands, re-point ``down_revision``, the
 ``Revises:`` header and ``_PARENT_REVISION_ID`` in
 ``tests/test_wtcensus_split_01_migration.py`` at the new single head. Do not add
 an ``alembic merge``.
@@ -130,7 +131,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wtcensus_split_01_latest_and_history"
-down_revision: str | Sequence[str] | None = "spawnadm_01_spawn_admission_ledger"
+down_revision: str | Sequence[str] | None = "cihost_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
