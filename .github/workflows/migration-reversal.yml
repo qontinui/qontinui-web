@@ -815,15 +815,16 @@ jobs:
   #       role names are listed). Outside dollar-quoted bodies the normalizer
   #       drops blank lines, column-0 `--` comment lines, and `SET ` /
   #       `set_config(` / `\restrict` lines -- so a `SET default_tablespace`
-  #       switch between tables is not compared. Nor is a blank or column-0
-  #       `--` line that sits inside a multi-line string literal (a
-  #       multi-line DEFAULT or CHECK inside a `CREATE TABLE`, or a
-  #       multi-line `COMMENT ON`): it is dropped like any other, because
-  #       only dollar-quoted bodies are protected. A line that BEGINS inside
-  #       a dollar-quoted body (`$$ ... $$`, `$tag$ ... $tag$`) is kept
-  #       unchanged, except that inside a `CREATE TABLE` column list an
-  #       item's last line loses its trailing comma; the line that OPENS a
-  #       body goes through the outside rules. `COMMENT ON` statements ARE
+  #       switch between tables is not compared. A line that BEGINS inside
+  #       a dollar-quoted body (`$$ ... $$`, `$tag$ ... $tag$`) or inside a
+  #       quoted literal or identifier that spans lines (a multi-line
+  #       DEFAULT or CHECK inside a `CREATE TABLE`, a multi-line
+  #       `COMMENT ON`) is kept unchanged and never dropped -- even when it
+  #       is blank or starts with `--` or `SET ` -- and inside a
+  #       `CREATE TABLE` column list it stays part of the item it continues;
+  #       the one change is that an item's last line loses its trailing
+  #       comma. The line that OPENS a body or literal goes through the
+  #       outside rules. `COMMENT ON` statements ARE
   #       compared. Body boundaries come from a lexer that skips quoted
   #       literals, quoted identifiers and comments outside a body, and the
   #       normalizer fails the snapshot -- it does not guess -- on a `$tag$`
@@ -1372,13 +1373,16 @@ jobs:
           # CREATE TABLE (a downgrade that re-adds a dropped column appends
           # it; order is DISCLOSED as unchecked in the job header). An item
           # is a 4-space-indented line plus any following non-indented
-          # continuation lines, so a multi-line default stays whole. A line
-          # that BEGINS inside a dollar-quoted body (a function or DO body) is
-          # kept unchanged: a body line that happens to start with `--` or
-          # `SET ` is part of the code and is compared. (Two qualifications:
-          # the line that OPENS a body goes through the outside rules, and
-          # inside a CREATE TABLE column list the last line of each item
-          # loses its trailing comma before sorting.)
+          # continuation lines, plus any line that begins inside a body or a
+          # literal, so a multi-line default stays whole. A line that BEGINS
+          # inside a dollar-quoted body (a function or DO body) or inside a
+          # single-quoted literal or double-quoted identifier that spans lines
+          # is kept unchanged and never dropped: a body line, or a literal's
+          # continuation line, that happens to be blank or start with `--` or
+          # `SET ` is part of the value and is compared. (Two qualifications:
+          # the line that OPENS a body or literal goes through the outside
+          # rules, and inside a CREATE TABLE column list the last line of each
+          # item loses its trailing comma before sorting.)
           # Which lines are in a body is decided by a lexer, not by counting
           # `$tag$` tokens on the raw line: a blank or column-0 `--` line
           # outside a body is dropped BEFORE it is lexed (pg_dump's
@@ -1398,7 +1402,7 @@ jobs:
           import re
           import sys
 
-          DOLLAR = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+          DOLLAR = re.compile(r"\$(?:[A-Za-z_\x80-\U0010FFFF][A-Za-z0-9_\x80-\U0010FFFF]*)?\$")
 
 
           def scan(lineno, line, tag, quote, quote_line):
@@ -1450,14 +1454,17 @@ jobs:
           out, block, tag, quote, quote_line = [], None, None, None, None
           for lineno, line in enumerate(open(sys.argv[1], encoding="utf-8").read().splitlines(), 1):
               in_body = tag is not None
+              in_quote = quote is not None
               # Outside a body and outside a literal, a blank or column-0 `--` line
               # is dropped BEFORE it is lexed, so a `$` in a comment (pg_dump's
               # `-- Name:` headers carry unquoted object names) never moves the state.
               if not in_body and quote is None and (not line.strip() or line.startswith("--")):
                   continue
               tag, quote, quote_line = scan(lineno, line, tag, quote, quote_line)
-              if in_body:
-                  # Began inside a dollar-quoted body: kept as is.
+              if in_body or in_quote:
+                  # Began inside a dollar-quoted body or inside a multi-line
+                  # literal or identifier: kept as is, never dropped, and inside a
+                  # CREATE TABLE column list it stays part of the item it continues.
                   if block:
                       block[-1].append(line)
                   elif block is not None:
