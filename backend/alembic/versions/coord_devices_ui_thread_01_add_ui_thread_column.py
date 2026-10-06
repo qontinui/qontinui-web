@@ -1,7 +1,7 @@
 """add coord.devices.ui_thread — the runner's native UI-thread liveness block
 
 Revision ID: coord_devices_ui_thread_01
-Revises: strategy_p4_01_drop_schema
+Revises: gatecorr_01_coord_gate_corrections
 Create Date: 2026-09-26
 
 Plan ``2026-09-09-the-runner-ui-thread-liveness-block-is-emitted-to-three-sinks-and-read-by-none``,
@@ -39,7 +39,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_devices_ui_thread_01"
-down_revision: str = "strategy_p4_01_drop_schema"
+down_revision: str = "gatecorr_01_coord_gate_corrections"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
