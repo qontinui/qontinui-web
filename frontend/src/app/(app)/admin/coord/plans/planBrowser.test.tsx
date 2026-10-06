@@ -273,6 +273,69 @@ describe("custody across the background poll", () => {
     }
   });
 
+  it("a poll asks for custody again when the operator-caused read failed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let n = 0;
+      route({
+        "/plan-library/reconciliation": () => {
+          n += 1;
+          if (n === 1) throw new Error("503 transient");
+          return body({ items: [sole] });
+        },
+      });
+      render(<CoordPlansListPage />);
+      await waitFor(() => expect(reconciliationCalls().length).toBe(1));
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() => expect(reconciliationCalls().length).toBe(2));
+      expect(reconciliationCalls()[1]).toContain("include_custody=true");
+      expect(await screen.findByTestId("coord-plan-custody")).toHaveTextContent(
+        "claimed by plan-foo"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not claim a held reading when the poll's rows took none of it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const other = row({
+        slug: "2026-09-30-some-other-plan",
+        axis_a: {
+          readable: true,
+          present: true,
+          status: "in_progress",
+          status_class: "free_known",
+          live_sessions: null,
+          custody_resolved: null,
+        },
+      });
+      route({
+        "/plan-library/reconciliation": (url: string) =>
+          url.includes("include_custody=true")
+            ? body({ items: [sole] })
+            : body({ items: [other] }),
+      });
+      render(<CoordPlansListPage />);
+      await screen.findByTestId("coord-plans-custody-as-of");
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() => expect(reconciliationCalls().length).toBe(2));
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-plans-custody-as-of")).toHaveAttribute(
+          "data-held",
+          "false"
+        )
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a manual refresh asks for custody again", async () => {
     const user = userEvent.setup();
     render(<CoordPlansListPage />);

@@ -85,12 +85,20 @@ export function applyHeldCustody(
 }
 
 /** The page-level age line for a custody reading. */
+/** Past this age the custody line also states the date. */
+const STALE_DATE_AFTER_MS = 6 * 60 * 60 * 1000;
+
 export function describeCustodyAge(
   hold: CustodyHold | null,
   held: boolean
 ): string | null {
   if (hold === null) return null;
-  const at = clockTime(new Date(hold.at).toISOString()) ?? "an unknown time";
+  const iso = new Date(hold.at).toISOString();
+  // A clock time alone is ambiguous once the reading may be from another day.
+  const at =
+    Date.now() - hold.at > STALE_DATE_AFTER_MS
+      ? `${iso.slice(0, 10)} ${clockTime(iso) ?? "an unknown time"}`
+      : (clockTime(iso) ?? "an unknown time");
   return held
     ? `custody as of ${at} — held from an earlier read; the 30 s background poll does not re-resolve custody (refresh to re-read it)`
     : `custody as of ${at}`;

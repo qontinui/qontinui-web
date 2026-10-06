@@ -223,6 +223,12 @@ export default function CoordPlansListPage() {
   const [custodyHold, setCustodyHold] = useState<CustodyHold | null>(null);
   /** Is the custody on screen a held reading rather than this read's own? */
   const [custodyHeld, setCustodyHeld] = useState(false);
+  /**
+   * Has a custody read succeeded for the CURRENT question (window + search)?
+   * Until one has, a poll asks for custody too — otherwise one failed
+   * operator-caused read would leave custody dark until a manual refresh.
+   */
+  const custodyReadForQuestion = useRef(false);
 
   /**
    * Phase 4a — the capture census, on its own read state.
@@ -257,7 +263,8 @@ export default function CoordPlansListPage() {
         // tenant, so it is asked for only on reads an operator caused (a new
         // window or search, a refresh) — never on the background poll. A poll
         // answer re-applies the held reading, and the page says how old it is.
-        const withCustody = guard.trigger !== "poll";
+        const withCustody =
+          guard.trigger !== "poll" || !custodyReadForQuestion.current;
         if (withCustody) qs.set("include_custody", "true");
         const body = await httpClient.get<ReconciliationResponse>(
           `${ENDPOINT}?${qs.toString()}`,
@@ -267,12 +274,14 @@ export default function CoordPlansListPage() {
         if (withCustody) {
           const hold = captureCustody(body, Date.now());
           custodyHoldRef.current = hold;
+          custodyReadForQuestion.current = true;
           setCustodyHold(hold);
           setCustodyHeld(false);
           setData(body);
         } else {
           const merged = applyHeldCustody(body, custodyHoldRef.current);
-          setCustodyHeld(custodyHoldRef.current !== null);
+          // Only claim a held reading when one was actually applied to a row.
+          setCustodyHeld(merged.applied);
           setData(merged.body);
         }
         setError(null);
@@ -303,6 +312,12 @@ export default function CoordPlansListPage() {
     setData(null);
     setError(null);
     setViolations(null);
+    // A held custody reading answers the OLD window; never re-apply it, or
+    // date it, against a new one.
+    custodyReadForQuestion.current = false;
+    custodyHoldRef.current = null;
+    setCustodyHold(null);
+    setCustodyHeld(false);
   }, []);
 
   const { refresh: refreshReconciliation } = useGuardedPoll({
