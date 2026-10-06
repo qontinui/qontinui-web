@@ -1006,25 +1006,33 @@ def repoint_sites(
             # advice never tells an author to delete what they wrote.
             lhs = down_before[: down_match.start(1) - down_match.start(0)]
             rhs = down_before[len(lhs) :]
-            value, hash_sign, comment = split_comment(rhs)
-            literal = (
-                re.search(r"([\"'])" + re.escape(old_parent) + r"\1", value)
-                if old_parent is not None
-                else None
+            # The old parent's literal is located on the SAME token stream
+            # `parent_refs` reads, so a comment is skipped wherever it sits —
+            # including on an earlier line of a wrapped right-hand side, where a
+            # `partition("#")` would swallow every line after it as "comment"
+            # and the advice would no longer parse as Python.
+            literal = next(
+                (
+                    m
+                    for m in _RHS_TOKEN_RE.finditer(rhs)
+                    if old_parent is not None and m.group(1) == old_parent
+                ),
+                None,
             )
-            if literal:
-                quote = literal.group(1)
-                new_value = (
-                    value[: literal.start()]
+            if literal is not None:
+                quote = rhs[literal.start()]
+                down_after = (
+                    lhs
+                    + rhs[: literal.start()]
                     + f"{quote}{new_parent}{quote}"
-                    + value[literal.end() :]
+                    + rhs[literal.end() :]
                 )
             else:
                 # `None` (a chain root) or no readable literal: write the
                 # target, keeping whatever spacing preceded a comment.
+                value, hash_sign, comment = split_comment(rhs)
                 trailing = value[len(value.rstrip()) :]
-                new_value = f'"{new_parent}"' + trailing
-            down_after = lhs + new_value + hash_sign + comment
+                down_after = lhs + f'"{new_parent}"' + trailing + hash_sign + comment
         revises_match = REVISES_RE.search(revision_source)
         revises = (
             (

@@ -1987,24 +1987,46 @@ def test_the_sites_quote_the_authors_own_lines() -> None:
 def test_a_wrapped_down_revision_with_a_paren_comment_is_quoted_whole() -> None:
     """``repoint_sites`` reads the raw source with ``DOWN_RE`` too.
 
-    With ``[^)]*`` the before-line stopped at the comment's ``)``, so the
-    advice quoted half a tuple and dropped the second parent and the closer.
+    With ``[^)]*`` the before-line stopped at the comment's ``)``, so the advice
+    quoted half the block. A fork root is never a merge revision, so the
+    reachable form is a wrapped SCALAR; the after-line must stay valid Python
+    with only the literal changed.
     """
     source = (
         'revision: str = "mine"\n'
         "down_revision: str | Sequence[str] | None = (\n"
-        '    "a",  # see (x)\n'
-        '    "b",\n'
+        '    "a"  # was (b)\n'
         ")\n"
     )
-    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None), ("b", "a"))})
-    down_before = repoint_sites(scan, "mine", "landed", source, {}).down_revision[0]
-    assert down_before == (
-        "down_revision: str | Sequence[str] | None = (\n"
-        '    "a",  # see (x)\n'
-        '    "b",\n'
-        ")"
+    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None))})
+    before, after = repoint_sites(scan, "mine", "landed", source, {}).down_revision
+    assert before == (
+        'down_revision: str | Sequence[str] | None = (\n    "a"  # was (b)\n)'
     )
+    assert after == (
+        'down_revision: str | Sequence[str] | None = (\n    "landed"  # was (b)\n)'
+    )
+
+
+def test_a_comment_before_the_wrapped_literal_does_not_swallow_it() -> None:
+    """The literal is found on the token stream, not after a ``partition("#")``.
+
+    A comment on the opening line used to make everything after it read as
+    "comment": the old parent was never found, and the advice prepended a new
+    literal to a block that still held the old one.
+    """
+    source = (
+        'revision: str = "mine"\n'
+        "down_revision: str | Sequence[str] | None = (  # note\n"
+        '    "a"\n'
+        ")\n"
+    )
+    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None))})
+    after = repoint_sites(scan, "mine", "landed", source, {}).down_revision[1]
+    assert after == (
+        'down_revision: str | Sequence[str] | None = (  # note\n    "landed"\n)'
+    )
+    compile(after.replace(": str | Sequence[str] | None", ""), "<advice>", "exec")
 
 
 def test_the_counter_main_names_the_pin_it_found_on_disk(
