@@ -25,6 +25,21 @@ import type {
 import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
 
 const get = vi.fn();
+/**
+ * The plan-browser's side reads (2026-09-19 plan) — difficulty, the overview's
+ * derive mode, throughput, scan roots — answered here so the tests below keep
+ * asserting on the two reads they are about. `planBrowser.test.tsx` pins
+ * those side reads themselves.
+ */
+const SIDE_READS: Array<[string, unknown]> = [
+  ["/plan-library/difficulty", { items: [], model_tiers: {} }],
+  ["/operations/plans/overview", { derive_mode: "live" }],
+  ["/operations/plans/throughput", { buckets: [], since: null, until: null }],
+  ["/plan-library/scan-roots", { state: "unknown", rows: [] }],
+];
+function sideRead(url: string): unknown {
+  return SIDE_READS.find(([path]) => url.includes(path))?.[1];
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -39,7 +54,10 @@ vi.mock("@/contexts/auth-context", () => ({
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
+    get: (...args: unknown[]) => {
+      const side = sideRead(String(args[0]));
+      return side !== undefined ? Promise.resolve(side) : get(...args);
+    },
     post: vi.fn(),
   },
 }));

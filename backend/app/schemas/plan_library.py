@@ -472,6 +472,10 @@ class DivergentVariant(BaseORMSchema):
     status: str
     current_version: int
     updated_at: IsoDatetime
+    #: How this copy got into the store — ``runner_scan`` / ``agent`` /
+    #: ``operator`` (the row's ``captured_by`` column). ``None`` only if a
+    #: projection ever omits it, and then it is UNKNOWN, not a default.
+    captured_by: str | None = None
 
 
 class DivergentGroup(BaseModel):
@@ -945,6 +949,56 @@ ReconciliationVerdict = Literal["agree", "disagree", "unknown"]
 AxisCScope = Literal["page"]
 
 
+#: coord's derived ``status_class`` wire vocabulary — five members, exhaustive.
+#: Computed web-side by ``app.services.work_unit_status_class.classify``, the
+#: vendored mirror of coord's ``work_unit_status_class::classify``.
+ReconciliationStatusClass = Literal[
+    "free_known", "attested", "derived", "off_vocabulary", "unset"
+]
+
+#: coord's ``work_unit_custody::Custody`` states, exactly as it emits them.
+ReconciliationCustodyState = Literal["sole", "ambiguous", "unresolved"]
+
+
+class ReconciliationCustody(BaseModel):
+    """Who holds a live session's device, as coord resolved it.
+
+    Forwarded from coord's ``custody`` object (``work_unit_custody.rs``); never
+    derived here.
+
+    * ``sole`` — exactly one live session on the device in this tenant.
+      ``session_name`` is its display name, and ``None`` there means the
+      session has NO name — not that the name is unknown.
+    * ``ambiguous`` — ``live_session_count`` (≥ 2) sessions share the device,
+      so naming any one would be a guess. Render "N sessions".
+    * ``unresolved`` — coord could not establish custody (a failed count, a
+      race, or a session in another tenant). UNKNOWN, never "nobody".
+
+    A custody object coord sent in a state this model does not recognise is
+    dropped to ``None`` on the session row (UNKNOWN) rather than coerced.
+    """
+
+    state: ReconciliationCustodyState
+    session_name: str | None = None
+    live_session_count: int | None = None
+
+
+class ReconciliationLiveSession(BaseModel):
+    """One non-expired ``coord.agent_status`` row naming this unit's slug.
+
+    A session drops out within ``STATUS_TTL`` of its last heartbeat, not when
+    it ends — compare ``expires_at``, never read membership as proof of life.
+    """
+
+    device_id: str
+    correlation_topic: str | None = None
+    updated_at: IsoDatetime | None = None
+    expires_at: IsoDatetime | None = None
+    #: ``None`` when custody was not resolved for this page (not requested, an
+    #: older coord, or a state this model does not recognise) — UNKNOWN.
+    custody: ReconciliationCustody | None = None
+
+
 class ReconciliationAxisA(BaseModel):
     """Axis A — coord's STORED ``work_units.status``.
 
@@ -952,11 +1006,35 @@ class ReconciliationAxisA(BaseModel):
     OPAQUE here as everywhere else in this module: coord accepts an
     off-vocabulary status deliberately (its Free transition tier), so a word in
     no vocabulary reads as OPEN rather than as an error.
+
+    ``status_class`` is that status's derived class (coord's five-member
+    vocabulary). It is ``None`` only when axis A is unreadable or no unit
+    exists for the stem — there is no status to classify — and an empty
+    stored status is ``unset``, never ``None``.
+
+    ``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness
+    verdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),
+    forwarded from coord's list row. ``None`` is UNKNOWN — never checked, a
+    coord that predates the field, or an unreadable freshness surface — and
+    never "fresh".
+
+    ``live_sessions`` / ``custody_resolved`` are populated only when the
+    request asked for ``include_custody``. ``live_sessions`` is ``None`` when
+    not requested or when coord did not answer the field for this unit
+    (UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord
+    echoed ``resolve_session_names: true`` on every page it read — ``False``
+    means an older coord (or a failed live-session join), and every
+    ``custody`` is then ``None``; ``None`` means custody was not requested.
     """
 
     readable: bool
     present: bool
     status: str | None = None
+    status_class: ReconciliationStatusClass | None = None
+    vet_state: str | None = None
+    vet_checked_at: IsoDatetime | None = None
+    live_sessions: list[ReconciliationLiveSession] | None = None
+    custody_resolved: bool | None = None
     unreadable_reason: str | None = None
 
 
@@ -1085,9 +1163,14 @@ class ReconciliationResponse(BaseModel):
 
     items: list[ReconciliationRow]
     #: The whole population's size — the facets' denominator, not ``len(items)``.
+    #: When ``q`` is set this is the FILTERED population, and so are the facets.
     total: int
     offset: int
     limit: int
+    #: The ``q`` filter this page answered, echoed verbatim; ``None`` when the
+    #: request carried none. A consumer reads it to tell a filtered
+    #: denominator from the whole corpus.
+    q: str | None = None
     #: The stable default ordering, named so a consumer can assert it did not
     #: silently become something else. Plan stems are date-prefixed, so slug
     #: order is chronological order, and it is stable across requests in a way

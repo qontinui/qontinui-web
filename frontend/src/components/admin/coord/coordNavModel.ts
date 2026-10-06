@@ -218,12 +218,15 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-work-units",
       },
       {
-        // Sits beside Plans deliberately: Plans is coord's work units, this is
-        // the prompt/plan CORPUS those units are authored from. Distinct path
-        // (not /plans/library) so the Plans item's startsWith active-match
-        // doesn't double-highlight — same reasoning as the Onboarding pair.
-        href: "/admin/coord/plan-library",
-        label: "Plan Library",
+        // The plan library's two policy dials (`plan_capture`,
+        // `citation_scope_backfill_write`). Its browsing page folded into
+        // Plans (plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`
+        // Phase 1) and `/admin/coord/plan-library` now redirects there, so the
+        // leaf names the one page the old route still owns. Distinct path (not
+        // /plans/settings) so the Plans item's startsWith active-match doesn't
+        // double-highlight — same reasoning as the Onboarding pair.
+        href: "/admin/coord/plan-library/settings",
+        label: "Plan Library Settings",
         icon: Library,
         testId: "coord-nav-plan-library",
       },

@@ -57,15 +57,6 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind as WorkArtifactKind] ?? kind;
 }
 
-export const CAPTURE_DOORS = ["runner_scan", "agent", "operator"] as const;
-export type CaptureDoor = (typeof CAPTURE_DOORS)[number];
-
-export const CAPTURE_DOOR_LABELS: Record<CaptureDoor, string> = {
-  runner_scan: "Runner scan",
-  agent: "Agent write door",
-  operator: "Operator",
-};
-
 export type WorkArtifactRelation =
   | "produced_report"
   | "feeds"
@@ -202,63 +193,6 @@ export interface CorpusHealth {
    * "unknown"` with no rows is "no device has reported", never "current".
    */
   scan_roots: ScanRootListResponse;
-}
-
-export interface WorkArtifactListResponse {
-  items: WorkArtifactSummary[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  corpus_health: CorpusHealth;
-}
-
-// ───────────────────────────── divergence ─────────────────────────────
-
-export interface DivergentVariant {
-  id: string;
-  kind: string;
-  kind_locked: boolean;
-  content_sha256: string;
-  source_repo: string | null;
-  source_path: string | null;
-  title: string;
-  status: string;
-  current_version: number;
-  updated_at: string;
-}
-
-/** Same `(kind, slug)`, different content digest. */
-export interface DivergentGroup {
-  kind: string;
-  slug: string;
-  variant_count: number;
-  variants: DivergentVariant[];
-}
-
-/**
- * Same `(slug, source_repo)`, DIFFERENT kind — a fork whose whole
- * distinguishing feature is the kind, which grouping by `(kind, slug)`
- * structurally cannot see.
- *
- * `resolvable: false` means no single corrected (`kind_locked`) row exists to
- * prefer, so the scanner refuses to pick and an operator must correct one.
- */
-export interface KindForkGroup {
-  slug: string;
-  source_repo: string | null;
-  kinds: string[];
-  variant_count: number;
-  resolvable: boolean;
-  variants: DivergentVariant[];
-}
-
-export interface DivergentResponse {
-  groups: DivergentGroup[];
-  total: number;
-  kind_forks: KindForkGroup[];
-  kind_fork_total: number;
 }
 
 // ─────────────────────────── capture health ───────────────────────────

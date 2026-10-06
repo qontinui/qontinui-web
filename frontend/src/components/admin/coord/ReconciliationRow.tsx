@@ -34,6 +34,7 @@
  * fact and the detail panel carries the navigation.
  */
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { GitFork } from "lucide-react";
 import {
@@ -90,10 +91,23 @@ export function ReconciliationRow({
   row,
   expanded,
   onToggle,
+  badges,
+  detailExtra,
+  actions,
 }: {
   row: ReconciliationRowData;
   expanded: boolean;
   onToggle: () => void;
+  /**
+   * Extra NON-INTERACTIVE markers for the row line (the page's triage
+   * badges). They render inside `RecordRow`'s `<button>`, so they must not
+   * contain a link or a control — see the module doc.
+   */
+  badges?: ReactNode;
+  /** Extra readings appended to the detail panel's problems section. */
+  detailExtra?: ReactNode;
+  /** The detail panel's actions section (e.g. opening the document). */
+  actions?: ReactNode;
 }) {
   const verdict = describeVerdict(row);
   const a = describeAxisA(row.axis_a);
@@ -176,6 +190,7 @@ export function ReconciliationRow({
               {variantCount(row.axis_b)} copies
             </span>
           )}
+          {badges}
         </>
       }
       // The route's own sentence naming the values that decided the class —
@@ -260,8 +275,10 @@ export function ReconciliationRow({
                 </span>
               </div>
             )}
+            {detailExtra}
           </div>
         }
+        actions={actions}
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 space-y-0.5">
             <div>class: {row.classification}</div>

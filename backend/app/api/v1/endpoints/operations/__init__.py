@@ -3985,6 +3985,25 @@ async def list_coord_plans(
         min_length=1,
         description="Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
     ),
+    include_live_sessions: bool | None = Query(
+        default=None,
+        description=(
+            "Attach each unit's non-expired ``live_sessions`` (coord's "
+            "``coord.agent_status`` join). Absent from a row = UNKNOWN; ``[]`` "
+            "is a real zero. A session drops out within STATUS_TTL of its last "
+            "heartbeat, not when it ends — compare ``expires_at``."
+        ),
+    ),
+    resolve_session_names: bool | None = Query(
+        default=None,
+        description=(
+            "With ``include_live_sessions``: attach coord's ``custody`` object "
+            "(``sole`` + ``session_name`` / ``ambiguous`` + "
+            "``live_session_count`` / ``unresolved``) to every live session. "
+            "coord echoes ``resolve_session_names: true`` only when it "
+            "resolved them; no echo means an older coord (UNKNOWN)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # OPTIONAL, and that is deliberate: this route is gated by
@@ -4038,6 +4057,14 @@ async def list_coord_plans(
     string here is the honest failure; coord normalizes it as well, so neither
     side depends on the other for this.
 
+    ``include_live_sessions`` / ``resolve_session_names`` are forwarded only
+    when given (plan
+    ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0c):
+    coord then attaches ``live_sessions`` per row and, under both, a
+    ``custody`` object per session plus a top-level
+    ``resolve_session_names: true`` echo. A coord that predates either ignores
+    it (its ``ListQuery`` is permissive), so a missing key is UNKNOWN.
+
     ``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk
     (plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``
     Phase 1). ``order=authored_desc`` makes coord answer in
@@ -4078,6 +4105,12 @@ async def list_coord_plans(
         params["after_authored_at"] = after_authored_at
     if after_slug is not None:
         params["after_slug"] = after_slug
+    # Spelled ``true``/``false`` — the value both of coord's flag grammars
+    # (the permissive ``truthy_query_flag`` and a strict ``bool``) accept.
+    if include_live_sessions is not None:
+        params["include_live_sessions"] = "true" if include_live_sessions else "false"
+    if resolve_session_names is not None:
+        params["resolve_session_names"] = "true" if resolve_session_names else "false"
     payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -4117,8 +4150,59 @@ async def get_coord_plans_overview(
     them only when the operator asks (``exclude_slug_prefix``); under that
     exclusion the console states the difference rather than comparing unlike
     totals.
+
+    The body is passed through UNMODELLED, so fields coord adds reach the
+    console without a change here — notably ``derive_mode``
+    (``"shadow"`` | ``"live"``, the deployment-wide decay-detection posture).
+    An overview without it is an older coord: render the mode UNKNOWN, never
+    as live.
     """
     return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
+
+
+# Declared BEFORE ``/plans/{slug}`` for the same reason ``/plans/overview`` is.
+@router.get("/plans/throughput")
+async def get_coord_plans_throughput(
+    since: str = Query(
+        ...,
+        min_length=1,
+        max_length=64,
+        description=(
+            "REQUIRED window start: an RFC 3339 timestamp "
+            "(``2026-09-01T00:00:00Z``) or a UTC date (``2026-09-01``), at most "
+            "366 days back. coord validates the grammar and bound and answers "
+            "``400 invalid_throughput_window`` naming the parameter."
+        ),
+    ),
+    until: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="Exclusive window end, same grammar; coord defaults it to now.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's day-bucketed work-unit throughput (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/throughput`` (plan
+    ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0b):
+    ``{"since", "until", "bucket": "day", "timezone": "UTC", "statuses":
+    ["in_progress", "shipped"], "count": N, "buckets": [{"day", "to_status",
+    "count"}]}``, passed through unchanged. A day with no transition into a
+    status is ABSENT from ``buckets`` by construction; do not backfill it as
+    zero client-side. Read the window from the ``since``/``until`` echo rather
+    than inferring it.
+
+    ``since`` is required here as well as in coord so an unbounded scan is a
+    422 at this door instead of a round trip. The value grammar and the
+    366-day bound are coord's to enforce; its 400 body is forwarded.
+    """
+    params: dict[str, Any] = {"since": since}
+    if until is not None:
+        params["until"] = until
+    return await _proxy_coord_get(
+        "/coord/work-units/throughput", params=params, tenant_id=tenant_id
+    )
 
 
 @router.get("/plans/{slug}")
