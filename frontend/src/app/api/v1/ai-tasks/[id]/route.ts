@@ -1,155 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
-import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
-import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
+import { proxyToBackend, type ProxyOptions } from "@/lib/server/proxyToBackend";
 
-/**
- * API Route Handler for /api/v1/ai-tasks/[id]
- *
- * This route reads the access token from HttpOnly cookies and forwards
- * requests to the backend with proper Bearer authentication.
- *
- * Required because Next.js rewrites don't forward cookies to the backend.
- */
+/** /api/v1/ai-tasks/[id] — proxied via `proxyToBackend`. */
+const OPTIONS: ProxyOptions = {
+  tokenSources: ["cookie", "header"],
+  onMissingToken: "401",
+  unauthorizedBodyKey: "detail",
+  forwardBody: "json",
+  errorBody: "detail",
+};
 
-async function getAccessToken(request: NextRequest): Promise<string | null> {
-  // Get the access token from cookie (preferred) or Authorization header (fallback)
-  const cookieStore = await cookies();
-  const accessTokenCookie = cookieStore.get("access_token");
-  const authorizationHeader = request.headers.get("Authorization");
+type Context = { params: Promise<{ id: string }> };
 
-  if (accessTokenCookie?.value) {
-    return accessTokenCookie.value;
-  } else if (authorizationHeader?.startsWith("Bearer ")) {
-    return authorizationHeader.substring(7);
-  }
-  return null;
+export async function GET(request: NextRequest, { params }: Context) {
+  const { id } = await params;
+  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const accessToken = await getAccessToken(request);
-    const { id } = await params;
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Not authenticated" },
-        { status: 401 }
-      );
-    }
-
-    const base = backendBaseOrResponse();
-    if (base instanceof NextResponse) return base;
-    const backendUrl = `${base}/api/v1/ai-tasks/${id}`;
-
-    const response = await fetch(backendUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error("[AI Tasks API Route] Error:", error);
-    return NextResponse.json(
-      {
-        detail: "Failed to proxy request to backend",
-        error: (error as Error).message,
-      },
-      { status: 500 }
-    );
-  }
+export async function PATCH(request: NextRequest, { params }: Context) {
+  const { id } = await params;
+  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const accessToken = await getAccessToken(request);
-    const { id } = await params;
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Not authenticated" },
-        { status: 401 }
-      );
-    }
-
-    const body = await request.json();
-    const base = backendBaseOrResponse();
-    if (base instanceof NextResponse) return base;
-    const backendUrl = `${base}/api/v1/ai-tasks/${id}`;
-
-    const response = await fetch(backendUrl, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error("[AI Tasks API Route] Error:", error);
-    return NextResponse.json(
-      {
-        detail: "Failed to proxy request to backend",
-        error: (error as Error).message,
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const accessToken = await getAccessToken(request);
-    const { id } = await params;
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Not authenticated" },
-        { status: 401 }
-      );
-    }
-
-    const base = backendBaseOrResponse();
-    if (base instanceof NextResponse) return base;
-    const backendUrl = `${base}/api/v1/ai-tasks/${id}`;
-
-    const response = await fetch(backendUrl, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.status === 204) {
-      return new NextResponse(null, { status: 204 });
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error("[AI Tasks API Route] Error:", error);
-    return NextResponse.json(
-      {
-        detail: "Failed to proxy request to backend",
-        error: (error as Error).message,
-      },
-      { status: 500 }
-    );
-  }
+export async function DELETE(request: NextRequest, { params }: Context) {
+  const { id } = await params;
+  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
 }
