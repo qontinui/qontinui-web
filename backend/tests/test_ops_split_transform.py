@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import os
 import subprocess
 import sys
 import textwrap
@@ -24,7 +25,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from restructure.ops_split import DOMAINS, DomainSpec, SplitRefused, apply, plan_split
+from restructure import ops_split
+from restructure.ops_split import (
+    DOMAINS,
+    DomainSpec,
+    SplitRefused,
+    apply,
+    first_route_line,
+    free_names,
+    measure_order,
+    plan_split,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -115,13 +126,11 @@ def toy(tmp_path: Path) -> Iterator[tuple[Path, str]]:
             f"""\
             from unittest.mock import patch
 
-            HELPER = "{pkg}._shared_helper"
             TENANT = "{pkg}.get_tenant"
-            NESTED = '{pkg}.AlphaItem.model_validate'
 
 
             def test_x():
-                with patch("{pkg}.list_alpha"):
+                with patch("{pkg}.get_tenant"):
                     pass
             """
         ),
@@ -218,8 +227,9 @@ def test_split_preserves_the_route_table_and_order_within_each_domain(toy):
     assert client.get("/ops/beta/k").json()["tenant"] == "tenant-1"
 
 
-def test_split_keeps_compat_names_and_rewrites_patch_targets(toy):
+def test_split_keeps_compat_names_and_rewrites_no_test(toy):
     root, pkg = toy
+    tests_before = (root / "tests" / "test_toy.py").read_bytes()
     _split(root, pkg, ALPHA)
     module = _import_fresh(root, pkg)
     alpha = importlib.import_module(f"{pkg}.alpha")
@@ -229,11 +239,8 @@ def test_split_keeps_compat_names_and_rewrites_patch_targets(toy):
     # Not re-exported: nothing reaches list_alpha through the package.
     assert not hasattr(module, "list_alpha")
 
-    test_src = (root / "tests" / "test_toy.py").read_text(encoding="utf-8")
-    assert f'HELPER = "{pkg}.alpha._shared_helper"' in test_src
-    assert f'TENANT = "{pkg}.get_tenant"' in test_src  # not moved: untouched
-    assert f"NESTED = '{pkg}.alpha.AlphaItem.model_validate'" in test_src
-    assert f'patch("{pkg}.alpha.list_alpha")' in test_src
+    # D7 step 4 is superseded: no test file is ever rewritten.
+    assert (root / "tests" / "test_toy.py").read_bytes() == tests_before
 
 
 def test_only_provably_dead_imports_are_pruned_from_init(toy):
@@ -380,3 +387,322 @@ def test_the_real_domain_table_is_well_formed():
     assert len(orders) == len(set(orders))
     for name, spec in DOMAINS.items():
         assert name.isidentifier() and spec.names
+
+
+# ---------------------------------------------------------------------------
+# Review findings (one block per finding; each test fails without its fix)
+# ---------------------------------------------------------------------------
+
+
+def _write_init(root: Path, pkg: str, text: str) -> None:
+    (root / pkg / "__init__.py").write_text(text, encoding="utf-8")
+
+
+_COUNTER_ROUTE = """
+_counter = 0
+
+
+@router.post("/alpha/bump")
+async def bump_alpha() -> dict[str, int]:
+    global _counter
+    _counter += 1
+    return {"n": _counter}
+
+
+"""
+
+
+# 1. ``global`` -------------------------------------------------------------
+
+
+def test_global_rebind_of_a_name_init_still_reads_is_refused(toy):
+    root, pkg = toy
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace("# ---- beta", _COUNTER_ROUTE.lstrip("\n") + "# ---- beta")
+        + '\n\n@router.get("/gamma/counter")\nasync def gamma_counter() -> int:\n'
+        "    return _counter\n",
+    )
+    before = _snapshot(root)
+    spec = DomainSpec(names=(*ALPHA.names, "_counter", "bump_alpha"), order=20)
+    with pytest.raises(SplitRefused, match=r"_counter.*global"):
+        _split(root, pkg, spec)
+    assert _snapshot(root) == before
+
+
+def test_global_declared_name_counts_as_referenced_d4(toy):
+    root, pkg = toy
+    # The moved route only WRITES _counter; the binding stays in __init__.
+    write_only = _COUNTER_ROUTE.replace("    _counter += 1\n", "    _counter = 1\n")
+    write_only = write_only.replace('{"n": _counter}', '{"n": 1}')
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace("# ---- beta", write_only.lstrip("\n") + "# ---- beta"),
+    )
+    before = _snapshot(root)
+    spec = DomainSpec(names=(*ALPHA.names, "bump_alpha"), order=20)
+    with pytest.raises(SplitRefused, match=r"D4.*_counter"):
+        _split(root, pkg, spec)
+    assert _snapshot(root) == before
+
+
+# 2. scope ------------------------------------------------------------------
+
+_SCOPE_CASES = [
+    # A nested class body does not see the enclosing class namespace.
+    ("class A:\n    json = 1\n    class B:\n        v = json\n", "json", None),
+    # Nor does a method body, a lambda, or a comprehension element.
+    ("class A:\n    json = 1\n    def m(self):\n        return json\n", "json", None),
+    ("class A:\n    json = 1\n    f = lambda: json\n", "json", None),
+    ("class A:\n    json = 1\n    xs = [json for _ in range(2)]\n", "json", None),
+    # Only the FIRST iterable evaluates in the class scope.
+    (
+        "class A:\n    json = 1\n    xs = [i for i in range(2) for j in json]\n",
+        "json",
+        None,
+    ),
+    ("class A:\n    json = 1\n    xs = [i for i in json]\n", None, "json"),
+    # Defaults and decorators evaluate in the class body: class names bind,
+    # module names stay free.
+    ("class A:\n    LIM = 1\n    def m(self, x=LIM, y=TOP): ...\n", "TOP", "LIM"),
+    (
+        "class A:\n    def deco(f): return f\n    @deco\n    @module_deco\n"
+        "    def m(self): ...\n",
+        "module_deco",
+        "deco",
+    ),
+    # Enclosing FUNCTION scopes stay visible through a class body.
+    (
+        "def f():\n    k = 1\n    class C:\n        def m(self):\n            return k\n",
+        None,
+        "k",
+    ),
+]
+
+
+@pytest.mark.parametrize(("src", "free", "bound"), _SCOPE_CASES)
+def test_free_names_follow_python_class_scoping(src, free, bound):
+    names = free_names(ast.parse(src).body)
+    if free is not None:
+        assert free in names
+    if bound is not None:
+        assert bound not in names
+
+
+def test_nested_class_body_reference_gets_its_module_import(toy):
+    root, pkg = toy
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace(
+            "class AlphaItem(BaseModel):\n    name: str\n",
+            "class AlphaItem(BaseModel):\n    name: str\n\n"
+            "    class Meta:\n        json = 1\n\n"
+            "        class Inner:\n            encoded = json.dumps(1)\n",
+        ),
+    )
+    _split(root, pkg, ALPHA)
+    assert "import json\n" in (root / pkg / "alpha.py").read_text(encoding="utf-8")
+    _import_fresh(root, pkg)  # alpha.py imports cleanly: json resolves
+
+
+# 3. DomainSpec.copy ----------------------------------------------------------
+
+
+def test_copy_of_anything_but_a_logger_factory_is_refused(toy):
+    root, pkg = toy
+    before = _snapshot(root)
+    spec = DomainSpec(names=ALPHA.names, order=20, copy=("_LIMIT",))
+    with pytest.raises(SplitRefused, match="_LIMIT"):
+        _split(root, pkg, spec)
+    assert _snapshot(root) == before
+
+
+def test_copy_of_the_module_logger_is_allowed(toy):
+    root, pkg = toy
+    text = TOY_INIT.replace("import json\n", "import json\n\nimport structlog\n")
+    text = text.replace(
+        "_LIMIT = 10\n", "_LIMIT = 10\nlogger = structlog.get_logger(__name__)\n"
+    )
+    text = text.replace(
+        "    return _shared_helper(item.name)\n",
+        '    logger.info("alpha")\n    return _shared_helper(item.name)\n',
+    )
+    text = text.replace(
+        '    return {"limit": _LIMIT}\n',
+        '    logger.info("gamma")\n    return {"limit": _LIMIT}\n',
+    )
+    _write_init(root, pkg, text)
+    _split(root, pkg, DomainSpec(names=ALPHA.names, order=20, copy=("logger",)))
+    factory = "logger = structlog.get_logger(__name__)"
+    assert factory in (root / pkg / "alpha.py").read_text(encoding="utf-8")
+    assert factory in (root / pkg / "__init__.py").read_text(encoding="utf-8")
+
+
+def test_name_defined_in_init_and_a_sibling_is_never_resolved_to_the_sibling(toy):
+    root, pkg = toy
+    (root / pkg / "zeta.py").write_text(
+        'def get_tenant() -> str:\n    return "other"\n', encoding="utf-8"
+    )
+    before = _snapshot(root)
+    with pytest.raises(SplitRefused, match=r"D4.*get_tenant"):
+        _split(root, pkg, DomainSpec(names=("get_beta",), order=50), domain="beta")
+    assert _snapshot(root) == before
+
+
+# 4. atomic apply ---------------------------------------------------------------
+
+
+def test_apply_failure_on_second_replace_leaves_tree_byte_identical(toy, monkeypatch):
+    root, pkg = toy
+    before = _snapshot(root)
+    plan = plan_split(
+        "alpha",
+        ALPHA,
+        package_dir=root / pkg,
+        package_module=pkg,
+        tests_dir=root / "tests",
+        scan_dirs=(root / "app", root / "tests"),
+    )
+    assert len(plan.writes) >= 2
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated replace failure")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    with pytest.raises(OSError, match="simulated"):
+        apply(plan)
+    assert calls["n"] == 2
+    assert _snapshot(root) == before  # also: no staged temp file left behind
+
+
+# 5. coord_proxy cycle ----------------------------------------------------------
+
+
+def _proxy_split(root: Path, pkg: str, proxy_src: str) -> None:
+    proxy = root / f"{pkg}_proxy.py"
+    proxy.write_text(proxy_src, encoding="utf-8")
+    plan = plan_split(
+        "alpha",
+        ALPHA,
+        package_dir=root / pkg,
+        package_module=pkg,
+        tests_dir=root / "tests",
+        scan_dirs=(root / "app", root / "tests"),
+        coord_proxy_path=proxy,
+        coord_proxy_module=f"{pkg}_proxy",
+    )
+    apply(plan)
+
+
+def _use_proxy_thing(root: Path, pkg: str) -> None:
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace(
+            '    return [item.upper() for item in ("a", "b")]',
+            '    return [proxy_thing(item) for item in ("a", "b")]',
+        ),
+    )
+
+
+def test_resolving_to_coord_proxy_is_refused_while_it_imports_the_package(toy):
+    root, pkg = toy
+    _use_proxy_thing(root, pkg)
+    proxy_src = f"from {pkg} import get_tenant\n\n\ndef proxy_thing(x):\n    return x\n"
+    (root / f"{pkg}_proxy.py").write_text(proxy_src, encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(SplitRefused, match=r"proxy_thing.*cycle"):
+        _proxy_split(root, pkg, proxy_src)
+    assert _snapshot(root) == before
+
+
+def test_resolving_to_coord_proxy_is_allowed_once_the_cycle_is_gone(toy):
+    root, pkg = toy
+    _use_proxy_thing(root, pkg)
+    _proxy_split(root, pkg, "def proxy_thing(x):\n    return x.upper()\n")
+    alpha_src = (root / pkg / "alpha.py").read_text(encoding="utf-8")
+    assert f"from {pkg}_proxy import proxy_thing" in alpha_src
+
+
+# 6. D5 scan --------------------------------------------------------------------
+
+
+def test_bare_import_dotted_access_gets_a_compat_reexport(toy):
+    root, pkg = toy
+    (root / "app" / "bare.py").write_text(
+        f"import {pkg}\n\n\ndef f():\n    return {pkg}.list_alpha\n", encoding="utf-8"
+    )
+    _split(root, pkg, ALPHA)
+    module = _import_fresh(root, pkg)
+    assert module.list_alpha is importlib.import_module(f"{pkg}.alpha").list_alpha
+
+
+def test_relative_import_inside_the_package_gets_a_compat_reexport(toy):
+    root, pkg = toy
+    (root / pkg / "zeta.py").write_text(
+        "from . import post_alpha\n\n__all__ = ['post_alpha']\n", encoding="utf-8"
+    )
+    _split(root, pkg, ALPHA)
+    module = _import_fresh(root, pkg)
+    assert module.post_alpha is importlib.import_module(f"{pkg}.alpha").post_alpha
+    assert importlib.import_module(f"{pkg}.zeta").post_alpha is module.post_alpha
+
+
+def test_unparseable_scanned_file_is_refused_naming_it(toy):
+    root, pkg = toy
+    (root / "app" / "broken.py").write_text("def broken(:\n", encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(SplitRefused, match=r"broken\.py"):
+        _split(root, pkg, ALPHA)
+    assert _snapshot(root) == before
+
+
+# 7. string patch targets: refused, never rewritten -----------------------------
+
+
+def test_string_patch_target_on_a_moved_name_is_refused_with_file_line(toy):
+    root, pkg = toy
+    (root / "tests" / "test_stale.py").write_text(
+        f'from unittest.mock import patch\n\nT = "{pkg}.httpx.AsyncClient"\n'
+        f'P = patch("{pkg}._shared_helper.__call__")\n',
+        encoding="utf-8",
+    )
+    before = _snapshot(root)
+    with pytest.raises(SplitRefused, match=r"tests/test_stale\.py:4"):
+        _split(root, pkg, ALPHA)
+    assert _snapshot(root) == before
+
+
+# 8. include-list order is pinned at the original file ---------------------------
+
+
+def test_first_route_line_is_the_first_route_decorator_of_the_named_defs():
+    line = TOY_INIT.splitlines().index('@router.get("/alpha/list")') + 1
+    assert first_route_line(TOY_INIT, ALPHA.names) == line
+    with pytest.raises(SplitRefused):
+        first_route_line(TOY_INIT, ("_shared_helper", "AlphaItem"))
+
+
+def _base_available() -> bool:
+    probe = subprocess.run(
+        ["git", "cat-file", "-e", f"{ops_split.ORDER_BASE_SHA}^{{commit}}"],
+        cwd=BACKEND_DIR,
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
+def test_order_is_measured_at_the_original_single_file():
+    if not _base_available():
+        pytest.skip(f"{ops_split.ORDER_BASE_SHA} is not in this clone")
+    assert measure_order(("report_claude_sessions", "runner_heartbeat")) == 458
+    for name, spec in DOMAINS.items():
+        assert spec.order == measure_order(spec.names), name
