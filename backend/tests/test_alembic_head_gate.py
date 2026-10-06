@@ -63,6 +63,8 @@ import notify_forked_open_prs as notifier  # noqa: E402
 from _alembic_graph import (  # noqa: E402
     duplicate_groups,
     fork_root,
+    parent_refs,
+    parse_source,
     plan_remediation,
     safe_id,
     scan_sources,
@@ -267,13 +269,12 @@ def test_a_docstring_cannot_supply_a_revision_id_either() -> None:
     assert scan.heads == ("a",)
 
 
-def test_a_close_paren_inside_a_comment_is_the_documented_reach_limit() -> None:
-    """Pinned as a LIMIT, not as correct behaviour.
+def test_a_close_paren_inside_a_comment_does_not_truncate_the_tuple() -> None:
+    """A ``)`` in a comment no longer ends the wrapped right-hand side.
 
-    ``[^)]*`` stops at the first ``)``, so a comment holding one truncates the
-    right-hand side and the parents are lost. Both the old and the new pattern
-    read this as no parents, so it is not a regression — it is the boundary the
-    module comment states, and a test is what keeps the statement honest.
+    The paren alternative used to be ``[^)]*``, which stopped at the first
+    ``)`` — here the one in ``build_chain(x)`` — so ``m`` declared no parents
+    and ``b`` read as a second head. It now steps over comments and literals.
     """
     sources = {
         **_tree(("a", None), ("b", "a")),
@@ -285,7 +286,54 @@ def test_a_close_paren_inside_a_comment_is_the_documented_reach_limit() -> None:
             ")\n"
         ),
     }
-    assert scan_sources(sources).heads == ("b", "m")
+    assert scan_sources(sources).heads == ("m",)
+
+
+def test_a_close_paren_in_an_inner_comment_keeps_every_parent() -> None:
+    """The plan's worked example: the ``)`` sits after the first parent."""
+    source = (
+        'revision: str = "m"\n'
+        "down_revision: str | Sequence[str] | None = (\n"
+        '    "a",  # see (x)\n'
+        '    "b",\n'
+        ")\n"
+    )
+    parsed = parse_source(source)
+    assert parsed is not None
+    assert parent_refs(parsed[1]) == ["a", "b"]
+    sources = {**_tree(("a", None), ("b", "a")), Path("m.py"): source}
+    assert scan_sources(sources).heads == ("m",)
+
+
+def test_a_close_paren_inside_a_quoted_parent_keeps_every_parent() -> None:
+    """``)`` is in the parse alphabet, so ``"a)"`` is a legal parent id."""
+    parsed = parse_source(
+        'revision: str = "m"\n'
+        "down_revision: str | Sequence[str] | None = (\n"
+        '    "a)",\n'
+        '    "b",\n'
+        ")\n"
+    )
+    assert parsed is not None
+    assert parent_refs(parsed[1]) == ["a)", "b"]
+
+
+def test_an_unterminated_tuple_full_of_comments_fails_fast() -> None:
+    """A comment is pinned to end of line, so a miss cannot backtrack.
+
+    Without ``(?![^\\n])`` the generic class could also eat a comment's tail,
+    and an unclosed ``(`` followed by N commented lines took ~2**N steps. Run
+    in a subprocess so a regression is a timeout, not a hung suite.
+    """
+    script = (
+        "import sys; sys.path.insert(0, sys.argv[1]); import _alembic_graph as g\n"
+        "src = 'down_revision = (\\n' + '    \"a\",  # c c c c\\n' * 40\n"
+        "m = g.DOWN_RE.search(src)\n"
+        "assert m is not None and not m.group(1).startswith('(\\n')\n"
+    )
+    subprocess.run(
+        [sys.executable, "-c", script, str(SCRIPTS_CI)], check=True, timeout=20
+    )
 
 
 def test_a_single_line_down_revision_with_a_trailing_comment_is_unchanged() -> None:
@@ -1933,6 +1981,29 @@ def test_the_sites_quote_the_authors_own_lines() -> None:
     assert repoint_sites(scan, "mine", "landed", single, {}).down_revision == (
         "down_revision = 'a'",
         "down_revision = 'landed'",
+    )
+
+
+def test_a_wrapped_down_revision_with_a_paren_comment_is_quoted_whole() -> None:
+    """``repoint_sites`` reads the raw source with ``DOWN_RE`` too.
+
+    With ``[^)]*`` the before-line stopped at the comment's ``)``, so the
+    advice quoted half a tuple and dropped the second parent and the closer.
+    """
+    source = (
+        'revision: str = "mine"\n'
+        "down_revision: str | Sequence[str] | None = (\n"
+        '    "a",  # see (x)\n'
+        '    "b",\n'
+        ")\n"
+    )
+    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None), ("b", "a"))})
+    down_before = repoint_sites(scan, "mine", "landed", source, {}).down_revision[0]
+    assert down_before == (
+        "down_revision: str | Sequence[str] | None = (\n"
+        '    "a",  # see (x)\n'
+        '    "b",\n'
+        ")"
     )
 
 

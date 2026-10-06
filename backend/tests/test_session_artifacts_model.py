@@ -58,6 +58,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
     table_exists,
@@ -328,15 +329,10 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     of unrelated non-idempotent revisions — surfacing as a ``DuplicateTable``
     from a migration this test never meant to touch.
     """
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        _revision_source(),
-        re.MULTILINE,
-    )
-    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
-    assert match.group("parent") == _PARENT_REVISION_ID, (
+    declared = declared_parent_revision_id(_revision_source(), _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID, (
         f"{_REVISION_FILENAME} declares down_revision="
-        f"{match.group('parent')!r} but this test pins "
+        f"{declared!r} but this test pins "
         f"_PARENT_REVISION_ID={_PARENT_REVISION_ID!r}. Re-point both together."
     )
 
