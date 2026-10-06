@@ -112,8 +112,12 @@ jobs:
           persist-credentials: false
       - name: Detect alembic migration changes
         id: detect
+        # The base sha reaches the script through `env:`, never as an inline
+        # expression in `run:` (zizmor template-injection hygiene).
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
+          base="$BASE_SHA"
           if git diff --name-only "$base"...HEAD | grep -qE '^backend/alembic/versions/.*\.py$'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             echo "Alembic migration changes detected — reversibility test will run."
@@ -773,9 +777,33 @@ jobs:
   #       and that head's file IS the overlaid file;
   #   (d) that head is not a merge revision -- decided from alembic's own
   #       `Revision.down_revision` type (tuple/list => merge), never by text;
-  #   (e) `upgrade head`, `downgrade -1` and `upgrade head` all exit 0.
-  # The changed set is computed three-dot (`base...HEAD`), exactly as
-  # `detect` computes it.
+  #   (e) `upgrade head`, `downgrade -1` and `upgrade head` all exit 0,
+  #       AND `alembic_version` -- read by psql in the trusted shell, not by
+  #       anything that imports the migration -- equals the head after each
+  #       upgrade and the head's down_revision after the downgrade (empty
+  #       for a root revision).
+  # Every step that imports the migration must end with an explicit
+  # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
+  # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
+  # migration exits 0 with nothing checked).
+  # The changed set is computed three-dot from the PR HEAD sha
+  # (`base...<head sha>`), the same sha the overlay reads, so the file that
+  # is counted and the file that is tested come from one ref.
+  #
+  # ⚠️ TRUST BOUNDARY -- read before relying on this check. The migration
+  # file is UNTRUSTED CODE, and this job EXECUTES it: alembic imports it to
+  # build the revision graph and runs its upgrade()/downgrade(). The checks
+  # above defeat an accidental or careless migration (an import-time exit,
+  # a no-op downgrade, a stale chain). They do NOT defeat an actively
+  # hostile one: code running in this job can print a forged verdict line,
+  # write the expected `alembic_version` row itself, or tamper with the
+  # runner. Unsetting GITHUB_ENV / GITHUB_OUTPUT / GITHUB_PATH /
+  # GITHUB_STEP_SUMMARY / BASH_ENV for those commands narrows the obvious
+  # channels into later steps; it is not a sandbox. So coord MUST NOT treat
+  # this check's `success` as adversarial proof of reversibility -- it is
+  # evidence about a migration written in good faith, nothing stronger
+  # (plan 2026-10-05-coord-clears-a-migration-on-a-reversal-gate-it-cannot-
+  # attribute, section 7).
   #
   # Consumer: coord's agent evidence door for a classifier-rejected
   # migration (Phases 2-4 of the plan). It is NOT a required check -- see
@@ -844,7 +872,9 @@ jobs:
           # Rename detection is forced on (`-M`), and NUL-separated output
           # (`-z`) is parsed rather than whitespace-split, so no path spelling
           # can smuggle a second entry past the count.
-          git diff -z --name-status -M "$BASE_SHA"...HEAD > "$RUNNER_TEMP/mrt-diff.bin"
+          # Three-dot from the HEAD SHA (not the merge ref's `HEAD`), so the
+          # changed set and the overlay below read the same commit.
+          git diff -z --name-status -M "$BASE_SHA"..."$HEAD_SHA" > "$RUNNER_TEMP/mrt-diff.bin"
           python3 - "$RUNNER_TEMP/mrt-diff.bin" <<'PY'
           import os
           import re
@@ -906,11 +936,28 @@ jobs:
 
           MRT_MIGRATION=$(cat "$RUNNER_TEMP/mrt-path")
 
+          # Condition (a), continued: the migration must be a REGULAR file at
+          # the head. A symlink (mode 120000) pointing at an existing revision
+          # would make alembic load that revision twice, and the head check
+          # would then be comparing a file with itself.
+          mode=$(git ls-tree "$HEAD_SHA" -- "$MRT_MIGRATION" | cut -d' ' -f1)
+          case "$mode" in
+            100644|100755) ;;
+            *)
+              echo "::error title=Migration Reversal Tested - condition (a) failed::$MRT_MIGRATION is not a regular file at the PR head (git mode '${mode:-<absent>}'; a symlink is 120000). Only a regular .py migration file can be the tested migration."
+              exit 1
+              ;;
+          esac
+
           # The isolation. Detach onto the BASE, then take exactly one file
           # from the PR head. Everything else -- env.py, alembic.ini, app/,
           # pyproject.toml, poetry.lock -- is the base's.
           git checkout --quiet --detach "$BASE_SHA"
           git checkout "$HEAD_SHA" -- "$MRT_MIGRATION"
+          if [ ! -f "$MRT_MIGRATION" ] || [ -L "$MRT_MIGRATION" ]; then
+            echo "::error title=Migration Reversal Tested - condition (a) failed::after the overlay, $MRT_MIGRATION is not a regular file in the working tree (missing or a symlink)."
+            exit 1
+          fi
           echo "Tree is base $BASE_SHA plus $MRT_MIGRATION from head $HEAD_SHA:"
           git status --short
           # Prove the overlay is the ONLY difference from the base, rather
@@ -990,8 +1037,16 @@ jobs:
           # Toolchain first, so a broken env is an infra failure, not a
           # misreported condition.
           poetry run alembic --version
-          poetry run python - <<'PY'
+          # Building the revision graph IMPORTS the migration, so this python
+          # runs untrusted code: strip the channels into later steps (see the
+          # job's TRUST BOUNDARY note), and never read its exit code as a
+          # pass -- the verdict is the final `MRT_VERDICT ok` line, parsed
+          # below in this trusted shell.
+          set +e
+          env -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_OUTPUT -u GITHUB_STEP_SUMMARY -u GITHUB_STATE -u BASH_ENV \
+            poetry run python - <<'PY' | tee "$RUNNER_TEMP/mrt-identity.out"
           import os
+          import re
           import sys
 
           from alembic.config import Config
@@ -1001,26 +1056,53 @@ jobs:
               print(f"::error title=Migration Reversal Tested - condition ({cond}) failed::{msg}")
               sys.exit(1)
 
-          overlaid = os.path.realpath(os.path.join("..", os.environ["MRT_MIGRATION"]))
+          # abspath, NOT realpath: realpath would let a symlink and its target
+          # compare equal, which is exactly the shape condition (a) refuses.
+          overlaid = os.path.abspath(os.path.join("..", os.environ["MRT_MIGRATION"]))
           try:
               script = ScriptDirectory.from_config(Config("alembic.ini"))
               heads = script.get_heads()
-          except Exception as exc:  # the graph itself does not resolve
+          except BaseException as exc:  # incl. SystemExit/KeyboardInterrupt from an import-time exit
               fail("c", f"the revision graph does not resolve on the base plus {os.environ['MRT_MIGRATION']}: {type(exc).__name__}: {exc}")
 
           if len(heads) != 1:
               fail("c", f"the base plus this migration has {len(heads)} heads ({', '.join(sorted(heads))}), not exactly one. The migration must chain off the base's single head; re-point its down_revision onto the current head.")
 
           head = script.get_revision(heads[0])
-          head_path = os.path.realpath(head.path)
+          if os.path.islink(head.path):
+              fail("c", f"the single head {heads[0]} is loaded from a symlink ({head.path}); only a regular migration file can be the tested migration.")
+          head_path = os.path.abspath(head.path)
           if head_path != overlaid:
               fail("c", f"the single head is {heads[0]} ({os.path.relpath(head_path)}), not the PR's migration {os.environ['MRT_MIGRATION']}. Only the head is exercised by upgrade -> downgrade -1 -> upgrade, so this PR's migration would not be the one tested.")
 
           if isinstance(head.down_revision, (tuple, list)):
               fail("d", f"the head {heads[0]} is a merge revision (down_revision = {head.down_revision!r}); 'downgrade -1' is ambiguous at a merge point, so there is no single step for this job to exercise.")
 
-          print(f"Conditions (c) and (d) hold: single head {heads[0]} is {os.environ['MRT_MIGRATION']}, down_revision {head.down_revision!r}.")
+          REV = re.compile(r"[A-Za-z0-9_]+")
+          down = head.down_revision
+          if not REV.fullmatch(heads[0]) or not (down is None or (isinstance(down, str) and REV.fullmatch(down))):
+              fail("c", f"head {heads[0]!r} / down_revision {down!r} is not a plain [A-Za-z0-9_]+ revision id this job can verify against alembic_version.")
+
+          print(f"Conditions (c) and (d) hold: single head {heads[0]} is {os.environ['MRT_MIGRATION']}, down_revision {down!r}.")
+          sys.stdout.flush()
+          print(f"MRT_VERDICT ok head={heads[0]} down={'None' if down is None else down}")
           PY
+          rc=${PIPESTATUS[0]}
+          set -e
+          last=$(tail -n 1 "$RUNNER_TEMP/mrt-identity.out")
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Migration Reversal Tested - condition (c) failed::the head-identity check exited $rc."
+            exit 1
+          fi
+          if ! [[ "$last" =~ ^MRT_VERDICT\ ok\ head=([A-Za-z0-9_]+)\ down=([A-Za-z0-9_]+)$ ]]; then
+            echo "::error title=Migration Reversal Tested - condition (c) failed::the head-identity check exited 0 without its final 'MRT_VERDICT ok head=<rev> down=<rev>' line (last line: '${last}'). An exit code of 0 is not a verdict: a migration that calls sys.exit(0) at import ends the check with nothing verified."
+            exit 1
+          fi
+          {
+            echo "MRT_HEAD=${BASH_REMATCH[1]}"
+            echo "MRT_DOWN=${BASH_REMATCH[2]}"
+          } >> "$GITHUB_ENV"
+          echo "Verdict parsed: head=${BASH_REMATCH[1]} down=${BASH_REMATCH[2]}."
 
       # Condition (e). Run exactly as `reverse` runs it -- same env, same
       # working directory, same database -- but with NO skip path: any
@@ -1031,19 +1113,45 @@ jobs:
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
           TESTING: 1
+          PGPASSWORD: test_password
         run: |
           cd backend
           set -euo pipefail
-          step() {
-            echo "== $1 =="
-            if ! poetry run alembic "${@:2}"; then
-              echo "::error title=Migration Reversal Tested - condition (e) failed::'alembic ${*:2}' exited non-zero for $MRT_MIGRATION (step: $1)."
+          # MRT_HEAD / MRT_DOWN were parsed from the identity verdict by the
+          # previous step's trusted shell. "None" is a root revision.
+          : "${MRT_HEAD:?}" "${MRT_DOWN:?}"
+          # The database's own record of where alembic left it, read by psql
+          # -- nothing here imports the migration. An alembic exit of 0 is
+          # not trusted on its own: an import-time sys.exit(0) exits 0 having
+          # applied nothing.
+          expect_version() {
+            local want="$1" label="$2" got
+            if ! got=$(psql -h localhost -U qontinui_user -d qontinui_test -tA -v ON_ERROR_STOP=1 \
+                  -c "SELECT version_num FROM alembic_version ORDER BY version_num"); then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::could not read alembic_version after '$label' for $MRT_MIGRATION."
               exit 1
             fi
+            if [ "$want" = "None" ]; then want=""; fi
+            if [ "$got" != "$want" ]; then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::after '$label', alembic_version is '${got//$'\n'/,}' but must be '${want:-<empty: root downgraded>}' for $MRT_MIGRATION."
+              exit 1
+            fi
+            echo "alembic_version after '$label': '${got:-<empty>}' (expected)."
           }
-          step "upgrade head" upgrade head
-          step "downgrade -1" downgrade -1
-          step "upgrade head (re-apply)" upgrade head
+          step() {
+            echo "== $1 =="
+            # Untrusted code runs here (the migration): strip the channels into
+            # later steps -- see the job's TRUST BOUNDARY note.
+            if ! env -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_OUTPUT -u GITHUB_STEP_SUMMARY -u GITHUB_STATE -u BASH_ENV \
+                poetry run alembic "${@:3}"; then
+              echo "::error title=Migration Reversal Tested - condition (e) failed::'alembic ${*:3}' exited non-zero for $MRT_MIGRATION (step: $1)."
+              exit 1
+            fi
+            expect_version "$2" "$1"
+          }
+          step "upgrade head" "$MRT_HEAD" upgrade head
+          step "downgrade -1" "$MRT_DOWN" downgrade -1
+          step "upgrade head (re-apply)" "$MRT_HEAD" upgrade head
           echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree."
 
       # ----------------------------------------------------------------------
@@ -1402,9 +1510,10 @@ jobs:
         env:
           DETECT_RELEVANT: ${{ needs.detect.outputs.relevant }}
           DETECT_RESULT: ${{ needs.detect.result }}
+          REVERSE_RESULT: ${{ needs.reverse.result }}
         run: |
           relevant="${DETECT_RELEVANT}"
-          result="${{ needs.reverse.result }}"
+          result="${REVERSE_RESULT}"
           echo "detect.result=$DETECT_RESULT relevant=$relevant reverse.result=$result"
           # A failed or cancelled `detect` writes no `relevant` output, and an
           # empty `relevant` is not "true" -- so without this check the branch
