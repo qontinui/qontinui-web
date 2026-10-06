@@ -12,60 +12,14 @@ import type { StateCreator } from "zustand";
 import type {
   CanvasStore,
   ClipboardSlice,
-  Action,
   Connection,
   Connections,
 } from "./types";
-
-/**
- * Generate a unique ID for actions
- */
-function generateActionId(): string {
-  return `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Deep clone an action with a new ID
- */
-function cloneAction(
-  action: Action,
-  offset: { x: number; y: number } = { x: 0, y: 0 }
-): Action {
-  return {
-    ...action,
-    id: generateActionId(),
-    position: [action.position[0] + offset.x, action.position[1] + offset.y],
-  };
-}
-
-/**
- * Update connections when actions are cloned
- */
-function updateConnectionsForClonedActions(
-  connections: Connections,
-  oldToNewIdMap: Map<string, string>
-): Connections {
-  const newConnections: Connections = {};
-
-  for (const [sourceId, connectionTypes] of Object.entries(connections)) {
-    const newSourceId = oldToNewIdMap.get(sourceId) || sourceId;
-
-    newConnections[newSourceId] = {};
-
-    for (const [type, outputs] of Object.entries(connectionTypes)) {
-      (newConnections[newSourceId][
-        type as keyof (typeof newConnections)[typeof newSourceId]
-      ] as Connection[][]) = outputs.map((outputConnections) =>
-        outputConnections.map((conn) => ({
-          ...conn,
-          action: oldToNewIdMap.get(conn.action) || conn.action,
-        }))
-      );
-    }
-  }
-
-  return newConnections;
-}
+import {
+  cloneAction,
+  isValidConnectionType,
+  updateConnectionsForClonedActions,
+} from "./utils";
 
 export const createClipboardSlice: StateCreator<
   CanvasStore,
@@ -94,11 +48,14 @@ export const createClipboardSlice: StateCreator<
       connectionsToCopy[nodeId] = {};
 
       for (const [type, outputs] of Object.entries(connections)) {
-        (connectionsToCopy[nodeId][
-          type as keyof typeof connections
-        ] as Connection[][]) = outputs?.map((outputConns) =>
-          outputConns.filter((conn) => selectedSet.has(conn.action))
-        );
+        if (outputs && Array.isArray(outputs) && isValidConnectionType(type)) {
+          (connectionsToCopy[nodeId] as Record<string, unknown>)[type] =
+            outputs.map((outputConns: Connection[]) =>
+              outputConns.filter((conn: Connection) =>
+                selectedSet.has(conn.action)
+              )
+            );
+        }
       }
     }
 
@@ -149,10 +106,17 @@ export const createClipboardSlice: StateCreator<
           state.workflow.connections[sourceId] = {};
         }
 
+        const sourceConns = state.workflow.connections[sourceId];
+        if (!sourceConns) continue;
+
         for (const [type, outputs] of Object.entries(connections)) {
-          (state.workflow.connections[sourceId][
-            type as keyof typeof connections
-          ] as Connection[][]) = outputs;
+          if (
+            outputs &&
+            Array.isArray(outputs) &&
+            isValidConnectionType(type)
+          ) {
+            (sourceConns as Record<string, unknown>)[type] = outputs;
+          }
         }
       }
 

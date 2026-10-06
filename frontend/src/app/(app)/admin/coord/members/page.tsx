@@ -126,9 +126,28 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
-import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
+import { relativeTime } from "@/components/operations/utils";
+import {
+  addTenantMember,
+  fetchMembers,
+  fetchMyTenants,
+  grantMemberRole,
+  revokeMemberRole,
+} from "@/lib/api/operations/coordMembers";
+import {
+  addCognitoGroupUser,
+  createCognitoGroup,
+  createGroupTenantRole,
+  deleteCognitoGroup,
+  deleteGroupTenantRole,
+  fetchCognitoGroupBlastRadius,
+  fetchCognitoGroups,
+  fetchCognitoGroupUsers,
+  fetchGroupTenantRoles,
+  removeCognitoGroupUser,
+  type CognitoGroupCreate,
+} from "@/lib/api/operations/cognitoGroups";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -142,298 +161,48 @@ import {
   type RenameTarget,
 } from "@/components/admin/coord/CoordProjectRenameDialog";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
+import type {
+  CognitoGroupRow,
+  CognitoGroupsResponse,
+  CognitoGroupUserRow,
+  CognitoGroupUsersResponse,
+  CoordRole,
+  GroupTenantRoleRow,
+  GroupTenantRolesResponse,
+  MembersResponse,
+  MyTenantsResponse,
+  OperatorRow,
+  TenantRoleEntry,
+} from "./_types";
+import {
+  blastRadiusReadCause,
+  HOME_GROUP_SUFFIX,
+  parseBlastRadiusVerdict,
+  plural,
+  pluralNoun,
+  type BlastRadiusRead,
+} from "./_lib/blastRadius";
+import {
+  groupNameProblem,
+  requireRows,
+  suggestGroupName,
+} from "./_lib/groupName";
+import {
+  historicalRenameTarget,
+  historicalSlugTooltip,
+  homeTenantName,
+  renameTargetFor,
+  TENANT_SLUG_RE,
+  TIER_OPTIONS,
+  tierLabel,
+  tenantName,
+} from "./_lib/tenantLabels";
 import {
   backendErrorMessage,
-  bounded,
-  MAX_CAUSE_LENGTH,
-  messageFromErrorBody,
   plainSentence,
 } from "@/lib/errors/backend-error-message";
 
 const log = createLogger("CoordMembersPage");
-
-// ---------------------------------------------------------------------------
-// Tier ↔ coord role mapping
-// ---------------------------------------------------------------------------
-
-/** Coord role string. The wire contract uses bare role names. */
-type CoordRole = "admin" | "operator";
-
-interface TierOption {
-  /** Coord role sent to the API. */
-  role: CoordRole;
-  /** Product-tier label shown in the UI. */
-  label: string;
-}
-
-/** Primary tier choices offered in every role selector. */
-const TIER_OPTIONS: TierOption[] = [
-  { role: "admin", label: "Administrator" },
-  { role: "operator", label: "Developer" },
-];
-
-/** Render a coord role as its product-tier label (falls back to the raw role). */
-function tierLabel(role: string): string {
-  const opt = TIER_OPTIONS.find((t) => t.role === role);
-  return opt ? opt.label : role;
-}
-
-/**
- * Human-facing name for a tenant entry. coord's `/admin/coord/me` returns the
- * slug as `slug`; we also accept `tenant_slug` in case a future proxy remaps it.
- * UUIDs are the last resort — they are not user-facing.
- */
-function tenantName(t: TenantRoleEntry): string {
-  return t.slug ?? t.tenant_slug ?? t.tenant_id ?? "—";
-}
-
-/**
- * Human-facing name for the home tenant. coord returns only `home_tenant_id`,
- * so resolve the slug by matching it against the tenant list (the home tenant
- * is always one of the operator's tenants).
- */
-function homeTenantName(data: MyTenantsResponse): string {
-  if (data.home_tenant_slug) return data.home_tenant_slug;
-  const match = data.tenants?.find(
-    (t) => t.tenant_id != null && t.tenant_id === data.home_tenant_id
-  );
-  return match ? tenantName(match) : (data.home_tenant_id ?? "—");
-}
-
-// ---------------------------------------------------------------------------
-// Wire types — mirror the web backend's /coord/* proxy responses.
-// ---------------------------------------------------------------------------
-
-interface OperatorRow {
-  operator_id: string;
-  email: string | null;
-  display_name: string | null;
-  sso_provider: string | null;
-  last_login_at: string | null;
-  created_at: string | null;
-  roles: string[];
-}
-
-interface MembersResponse {
-  operators: OperatorRow[];
-}
-
-interface GroupTenantRoleRow {
-  group_id: string;
-  tenant_slug: string;
-  role: string;
-  auto_create_tenant: boolean;
-  created_at: string | null;
-  tenant_id: string | null;
-  /**
-   * Additive fields from coord (qontinui-coord#2473). A mapping stored under a
-   * slug its tenant was RENAMED AWAY from is listed for the renamed tenant:
-   * `current_slug` is the slug that tenant carries today, and `historical_slug`
-   * is true exactly when the stored `tenant_slug` differs from it. Such a row
-   * still grants at every login; `tenant_slug` stays the DELETE key. Older
-   * coord builds omit both, so absent means "not known to be historical".
-   */
-  current_slug?: string;
-  historical_slug?: boolean;
-}
-
-/**
- * The rename target for a mapping coord flags as stored under a historical
- * slug, or `null` when the row is not known to be historical. Only an explicit
- * `historical_slug === true` with a usable `current_slug` qualifies.
- */
-function historicalRenameTarget(row: GroupTenantRoleRow): string | null {
-  if (row.historical_slug !== true) return null;
-  return row.current_slug && row.current_slug.length > 0
-    ? row.current_slug
-    : null;
-}
-
-/**
- * Tooltip for a historical-slug mapping. `where` names the surface: the
- * mappings table row IS the thing to delete (and carries the one-click "Move
- * to" action that does both steps), but a Cognito group chip has no
- * per-mapping delete (the destructive action beside it is the POOL-WIDE group
- * delete), so the chip points at the mappings table instead.
- */
-function historicalSlugTooltip(
-  currentSlug: string,
-  where: "table-row" | "group-chip"
-): string {
-  const prefix =
-    "This mapping names a slug this tenant was renamed away from. It still " +
-    `grants at every login. Re-create it under ${currentSlug}, then delete `;
-  return where === "table-row"
-    ? `${prefix}this row. “Move to ${currentSlug}” does both.`
-    : `${prefix}the old mapping in the group → tenant mappings table.`;
-}
-
-interface GroupTenantRolesResponse {
-  group_tenant_roles: GroupTenantRoleRow[];
-}
-
-interface CognitoGroupRow {
-  group_name: string;
-  description: string | null;
-  creation_date: string | null;
-  last_modified_date: string | null;
-  precedence: number | null;
-}
-
-interface CognitoGroupsResponse {
-  groups: CognitoGroupRow[];
-}
-
-interface CognitoGroupUserRow {
-  username: string;
-  email: string | null;
-  status: string | null;
-  enabled: boolean | null;
-}
-
-interface CognitoGroupUsersResponse {
-  users: CognitoGroupUserRow[];
-}
-
-interface TenantRoleEntry {
-  tenant_id?: string;
-  /** coord `/admin/coord/me` returns the slug here; `tenant_slug` is a fallback. */
-  slug?: string;
-  tenant_slug?: string;
-  /** The tenant's human-chosen name; null/absent for a tenant that never got one. */
-  display_name?: string | null;
-  roles?: string[];
-}
-
-/**
- * The rename target for a "Your tenant & roles" row, or `null` when the row
- * gets no Rename action.
- *
- * Offered only where the caller holds `admin` IN THAT tenant — the one role
- * coord's `is_tenant_admin` accepts for `PATCH /coord/tenants/:tenant_id`
- * (plan `2026-09-17-tenant-rename` D1/D6). `owner` is deliberately not enough:
- * a control coord would refuse is a control that lies. A row with no id or
- * slug cannot be addressed or pre-filled, so it gets none either.
- */
-function renameTargetFor(t: TenantRoleEntry): RenameTarget | null {
-  const slug = t.slug ?? t.tenant_slug;
-  if (!t.tenant_id || !slug) return null;
-  if (!(t.roles ?? []).includes("admin")) return null;
-  return { id: t.tenant_id, slug, name: t.display_name || slug };
-}
-
-interface MyTenantsResponse {
-  home_tenant_id?: string | null;
-  home_tenant_slug?: string | null;
-  tenants?: TenantRoleEntry[];
-  roles?: string[];
-}
-
-// ---------------------------------------------------------------------------
-// Payload shape — a successful STATUS is not a successful READ
-// ---------------------------------------------------------------------------
-
-/**
- * The list a 200 promised, or a throw.
- *
- * Every read on this page renders `loading` → `error` → `rows.length === 0` →
- * the table. That ordering is right, and it is not the gap. The gap is one
- * layer up: `setRows(json.things ?? [])` turns a body that never carried the
- * list into a **successful, empty** read — `error` stays null, the error arm is
- * skipped, and the page prints its absence copy for a table it never saw. The
- * `?? []` is dead per the wire types (every list field here is declared
- * non-optional) and live at runtime, which is exactly why it survived review.
- *
- * A non-array value is worse than a missing one: `.length` succeeds on a
- * string, so the `=== 0` guard does not fire, the value reaches `.map()`, and
- * the panel throws.
- *
- * The predicate lives here rather than at each call site for the reason
- * `console/readFailure.ts` gives for its own: seven sites each spelling it
- * themselves will drift, and the drift is invisible because every spelling
- * looks right.
- *
- * It stays local for one reason only — no second page needs it yet. NOT
- * because the `console/` barrel is off-limits to wire concerns: that barrel
- * says "nothing here fetches, polls, or knows a route", but it exports
- * `readFailure.ts`, whose `isNotFoundError` parses an HTTP status out of a
- * `GET <url> failed: <status> - <body>` message. So the barrel already holds a
- * predicate about a wire body, and citing "presentation only" as the reason
- * would be a rule this file's own precedent breaks. Promote this the first
- * time a second consumer appears.
- *
- * Throwing is the whole mechanism: each caller already has a `catch` that sets
- * the error state, so refusing the body here routes it to the unknown arm the
- * page already renders. No caller learns a new failure mode.
- */
-function requireRows<T>(value: unknown, what: string): T[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`malformed ${what} payload`);
-  }
-  return value as T[];
-}
-
-// ---------------------------------------------------------------------------
-// Tenant slug validation (matches the backend / coord constraint).
-// ---------------------------------------------------------------------------
-
-const TENANT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-// ---------------------------------------------------------------------------
-// Cognito group-name validation (mirrors the backend, next to the input)
-// ---------------------------------------------------------------------------
-//
-// Cognito constrains `groupName` to `[\p{L}\p{M}\p{S}\p{N}\p{P}]+`, which
-// excludes whitespace — so `test admins` is rejected. The backend now answers
-// that with a 400 naming the reason (web #1099 for create; its follow-up for
-// delete / list-members / add-member / remove-member). This is the layer in
-// front of that: the operator should never have to make a network round-trip,
-// or read an HTTP status, to learn that a space is not allowed.
-//
-// `\p{…}` escapes need the `u` flag, which is why this regex can say exactly
-// what AWS says rather than approximating it.
-
-const COGNITO_GROUP_NAME_RE = /^[\p{L}\p{M}\p{S}\p{N}\p{P}]+$/u;
-const COGNITO_GROUP_NAME_MAX = 128;
-
-/**
- * Why `name` cannot be a Cognito group name, as a sentence for a human — or
- * `null` when it can.
- *
- * Deliberately NOT the regex itself. The tenant-slug field one card up prints
- * `Must match ^[a-z0-9][a-z0-9-]{0,63}$`, which is a machine constraint pasted
- * into a human sentence; an operator reading it still has to work out what
- * they typed wrong. Mirrors the backend's `invalid_group_name_reason` in the
- * same order, so the two layers never disagree about which rule bit.
- */
-function groupNameProblem(name: string): string | null {
-  if (!name) return "A group name is required.";
-  if (name.length > COGNITO_GROUP_NAME_MAX) {
-    return `Group names are at most ${COGNITO_GROUP_NAME_MAX} characters.`;
-  }
-  if (COGNITO_GROUP_NAME_RE.test(name)) return null;
-  if (/\s/.test(name)) return "Group names can't contain spaces.";
-  return "Group names can't contain spaces or control characters.";
-}
-
-/**
- * A valid name derived from `name`, or `null` when there is nothing to offer.
- *
- * Offered as a one-click fix rather than printed as advice: the operator's
- * intent (`test admins`) is unambiguous, and retyping it is work the page can
- * simply do.
- */
-function suggestGroupName(name: string): string | null {
-  const fixed = name
-    // Every character Cognito rejects is whitespace or a control character,
-    // so one class covers the whole complement.
-    .replace(/[\s\p{C}]+/gu, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, COGNITO_GROUP_NAME_MAX);
-  if (!fixed || fixed === name || groupNameProblem(fixed) !== null) return null;
-  return fixed;
-}
 
 /**
  * The inline validation line under a group-name input: the reason, and the
@@ -508,7 +277,7 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
+      const res = await fetchMyTenants();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MyTenantsResponse | null;
       // This read is cast straight into state with no check at all. A `null`
@@ -732,7 +501,7 @@ function MembersTable({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
+      const res = await fetchMembers();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MembersResponse;
       // The third sibling. A malformed 200 here fabricates "No members yet." —
@@ -773,12 +542,7 @@ function MembersTable({
     async (operatorId: string, role: CoordRole) => {
       setBusy(operatorId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/members/${encodeURIComponent(
-            operatorId
-          )}/roles`,
-          { method: "POST", body: JSON.stringify({ role }) }
-        );
+        const res = await grantMemberRole(operatorId, role);
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Granted ${tierLabel(role)}`);
         await load();
@@ -799,12 +563,7 @@ function MembersTable({
     async (operatorId: string, role: string) => {
       setBusy(operatorId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/members/${encodeURIComponent(
-            operatorId
-          )}/roles`,
-          { method: "DELETE", body: JSON.stringify({ role }) }
-        );
+        const res = await revokeMemberRole(operatorId, role);
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Revoked ${tierLabel(role)}`);
         await load();
@@ -1227,10 +986,7 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
     setSubmitting(true);
     setOutcome(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/tenant-members`,
-        { method: "POST", body: JSON.stringify({ email: addr, role }) }
-      );
+      const res = await addTenantMember(addr, role);
       // 409 is the resolver's ambiguity verdict (more than one Cognito user
       // carries this email), NOT a generic conflict — same wording the Cognito
       // group member add already uses, because it is the same condition and an
@@ -1497,9 +1253,7 @@ function GroupTenantRolesSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/group-tenant-roles`
-      );
+      const res = await fetchGroupTenantRoles();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as GroupTenantRolesResponse;
       // A successful STATUS is not a successful READ — the same rule the
@@ -1553,16 +1307,10 @@ function GroupTenantRolesSection({
       let groupCreated = false;
       let groupReused = false;
       if (alsoCreateGroup && isSuperuser) {
-        const gres = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              group_name: gid,
-              description: `${tierLabel(role)} for ${slug}`,
-            }),
-          }
-        );
+        const gres = await createCognitoGroup({
+          group_name: gid,
+          description: `${tierLabel(role)} for ${slug}`,
+        });
         if (gres.status === 409) {
           // Reusing an existing group is correct — SAYING so is the fix. This
           // arm used to be silent, and the success toast then read "Mapping
@@ -1581,18 +1329,12 @@ function GroupTenantRolesSection({
         }
       }
       // Step 2: the group → tenant → role mapping.
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/group-tenant-roles`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            group_id: gid,
-            tenant_slug: slug,
-            role,
-            auto_create_tenant: autoCreate,
-          }),
-        }
-      );
+      const res = await createGroupTenantRole({
+        group_id: gid,
+        tenant_slug: slug,
+        role,
+        auto_create_tenant: autoCreate,
+      });
       if (!res.ok) {
         const reason = await backendErrorMessage(res);
         // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
@@ -1646,17 +1388,11 @@ function GroupTenantRolesSection({
       const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
       setBusy(key);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "DELETE",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: row.tenant_slug,
-              role: row.role,
-            }),
-          }
-        );
+        const res = await deleteGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: row.tenant_slug,
+          role: row.role,
+        });
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success("Mapping deleted");
         await load();
@@ -1696,35 +1432,23 @@ function GroupTenantRolesSection({
           r.role === row.role
       );
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: currentSlug,
-              role: row.role,
-              auto_create_tenant:
-                existing?.auto_create_tenant ?? row.auto_create_tenant,
-            }),
-          }
-        );
+        const res = await createGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: currentSlug,
+          role: row.role,
+          auto_create_tenant:
+            existing?.auto_create_tenant ?? row.auto_create_tenant,
+        });
         if (!res.ok) {
           throw new Error(
             `${await backendErrorMessage(res)} The mapping under ${row.tenant_slug} is unchanged.`
           );
         }
-        const del = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`,
-          {
-            method: "DELETE",
-            body: JSON.stringify({
-              group_id: row.group_id,
-              tenant_slug: row.tenant_slug,
-              role: row.role,
-            }),
-          }
-        );
+        const del = await deleteGroupTenantRole({
+          group_id: row.group_id,
+          tenant_slug: row.tenant_slug,
+          role: row.role,
+        });
         if (!del.ok) {
           const reason = await backendErrorMessage(del);
           toast.error(
@@ -2028,11 +1752,7 @@ function CognitoGroupMembers({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          groupName
-        )}/users`
-      );
+      const res = await fetchCognitoGroupUsers(groupName);
       // This route answers 400 naming the reason for a `group_name` Cognito
       // could never hold, so a bare `HTTP ${res.status}` throws that sentence
       // away and renders the section error as literally "HTTP 400" — the
@@ -2061,12 +1781,7 @@ function CognitoGroupMembers({
     async (email: string) => {
       setBusy(email);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-            groupName
-          )}/users`,
-          { method: "DELETE", body: JSON.stringify({ email }) }
-        );
+        const res = await removeCognitoGroupUser(groupName, email);
         // ONE prefix, not two — the `catch` below adds "Remove failed:". This
         // route already answered 404 (no such user) and 409 (ambiguous email)
         // with a real sentence, and now answers 400 for an email or group name
@@ -2157,228 +1872,6 @@ function CognitoGroupMembers({
       })}
     </div>
   );
-}
-
-/** Suffix coord treats as a home-tenant pin (`auth_sso::HOME_GROUP_SUFFIX`). */
-const HOME_GROUP_SUFFIX = "-home";
-
-/**
- * What deleting one Cognito group would take down, POOL-WIDE — the delete's
- * own verdict, read ahead of the click from
- * `GET /coord/cognito/groups/{name}/blast-radius`.
- *
- * Partial by design: slugs are named for the caller's OWN tenant only and
- * every other tenant is an integer, so the two `*_total` fields are the honest
- * sizes and the lists never are. A reader that renders a list as "everything
- * affected" is reading it wrong.
- */
-interface BlastRadiusVerdict {
-  group_name: string;
-  /** ROW count, pool-wide. */
-  mapped_total: number;
-  /** Own-tenant slugs, sorted + deduplicated by the backend. */
-  mapped_own_tenant: string[];
-  /** ROWS in tenants the caller does not administer. */
-  mapped_other_tenant_rows: number;
-  /** ROWS whose tenant is not materialised yet. */
-  mapped_unmaterialized_rows: number;
-  /** Distinct TENANTS the delete would leave with no admin at all. */
-  strands_total: number;
-  strands_own_tenant: string[];
-  strands_other_tenant_count: number;
-}
-
-/** The two codes `_coord_group_blast_radius` raises when the PREVIEW read
- * fails. Named rather than inferred, because at the level this now reads them
- * every error body has an `error` key — see {@link blastRadiusReadCause}. */
-const BLAST_RADIUS_CAUSE_CODES = [
-  "mapping_check_unavailable",
-  "mapping_check_unreadable",
-] as const;
-
-/** Whether `value` is one of the two codes {@link blastRadiusReadCause} speaks
- * for. A type guard rather than a bare `includes`, so both arms narrow. */
-function isBlastRadiusCauseCode(
-  value: unknown
-): value is (typeof BLAST_RADIUS_CAUSE_CODES)[number] {
-  return (
-    typeof value === "string" &&
-    (BLAST_RADIUS_CAUSE_CODES as readonly string[]).includes(value)
-  );
-}
-
-/**
- * A short cause for a failed blast-radius PREVIEW read.
- *
- * The backend's 502 detail is structured (`{error, coord_status, message}`)
- * and its `message` is the delete's own refusal sentence. For a preview the
- * useful part is the code and coord's status — "mapping_check_unavailable,
- * coord answered 404" tells an operator the route is not deployed yet; the
- * message's "Nothing was deleted" tells them about a click they never made.
- * Anything not in that shape falls back to `backendErrorMessage`.
- *
- * ## It has to read the ENVELOPE too, not only `detail`
- *
- * This read `detail` alone, which is FastAPI's own shape and what a test app
- * produces. In PRODUCTION `http_exception_handler` splices a dict detail to
- * the TOP LEVEL and emits no `detail` key at all (`error_handler.py`), so on a
- * deployed backend the branch never matched and the whole thing fell through
- * to `messageFromErrorBody` — which returns the refusal sentence. The 300
- * ceiling hid that by refusing the sentence for its length; raising the
- * ceiling to fit the backend's real copy exposed it, and the dialog would have
- * told an operator "Nothing was deleted." about a delete they never clicked.
- *
- * Recognition is by CODE rather than by "an `error` key is present", because
- * at the top level every error body has one and matching on presence would
- * capture bodies this helper has nothing to say about. The SAME test applies
- * to the `detail` arm, which used to match on presence alone: without it, a
- * backend running no middleware (a test app, a local dev server — the exact
- * configuration the rest of this file goes out of its way to serve) had any
- * `{"detail": {"error": …}}` refusal on this route reduced to its bare code
- * with its sentence discarded, while production rendered the sentence. One
- * rule, both arms.
- */
-async function blastRadiusReadCause(res: Response): Promise<string> {
-  const text = await res.text();
-  try {
-    const parsed = JSON.parse(text) as { detail?: unknown };
-    // `detail` when the middleware did not run, the body ITSELF when it did.
-    // No second code test guards this choice: the one below decides, and it
-    // reaches the same verdict on either shape, so a test here would read like
-    // a guard while being a no-op.
-    const detail = parsed?.detail ?? parsed;
-    if (detail && typeof detail === "object") {
-      const { error, coord_status, reason } = detail as {
-        error?: unknown;
-        coord_status?: unknown;
-        reason?: unknown;
-      };
-      if (isBlastRadiusCauseCode(error)) {
-        // Three shapes, and ABSENT is not `null`. `mapping_check_unavailable`
-        // always carries `coord_status` — a number for coord's own answer,
-        // `null` when coord never completed one. `mapping_check_unreadable`
-        // carries no `coord_status` at all, deliberately: coord DID answer,
-        // with a body that is not the verdict, and it carries a `reason`
-        // instead. Reading absent as `null` would tell the operator coord
-        // never answered in exactly the case where it did.
-        if (typeof coord_status === "number") {
-          return `${error}, coord answered ${coord_status}`;
-        }
-        if (coord_status === null) {
-          return `${error}, coord never completed an answer`;
-        }
-        // GUARDED, and bounded to THIS SURFACE rather than to the toast's
-        // ceiling. `reason` is `_raise_mapping_check_unreadable`'s argument,
-        // and one of its thirteen call sites is `_verdict_is_about`, which
-        // interpolates coord's ECHOED `group_id` — a value
-        // `_is_attributable` checks for printability and non-emptiness but NOT
-        // for length. So this is a body-controlled string.
-        //
-        // It lands in `ConfirmDestructiveDialog`, which renders into an
-        // `AlertDialogContent` that is `fixed`, vertically centred, and
-        // carries no `max-h` and no `overflow-y-auto`. A value at the toast's
-        // 2000-character ceiling is ~33 lines at `max-w-lg`, which pushes the
-        // type-to-confirm input and BOTH BUTTONS out of the viewport with no
-        // way to scroll to them — on an irreversible pool-wide delete.
-        // Bounding to the toast's ceiling is not enough here; the surface
-        // decides the bound, and this one is a diagnostic code plus a short
-        // clause, never prose.
-        const safeReason =
-          typeof reason === "string" && reason
-            ? plainSentence(reason, MAX_CAUSE_LENGTH)
-            : null;
-        // The COMPOSITION is what the dialog receives, so that is what the
-        // surface cap applies to — bounding only the half leaves the code and
-        // its separator on top of it, which is the composed-return mistake
-        // this file already made once at the rung level.
-        return safeReason
-          ? bounded(`${error}: ${safeReason}`, MAX_CAUSE_LENGTH)
-          : error;
-      }
-    }
-  } catch {
-    // Not JSON — fall through to the generic reader, which returns the raw
-    // body when it is a plain-text gateway sentence.
-  }
-  // The SURFACE bound, on this return too. Both of this function's
-  // operator-facing returns land in the same dialog `<li>`, so an argument
-  // about that `<li>` covers both; bounding one of them was the same
-  // half-a-fix as bounding one half of a composition.
-  //
-  // No production body reaches here long today — every refusal this route
-  // raises is a cause code or a short sentence. A DEV backend does:
-  // `general_exception_handler` returns `str(exc)` unbounded under
-  // `ENVIRONMENT == "development"`. Passing the limit costs one argument and
-  // removes the need to re-derive that reachability argument every time a
-  // refusal is added to the route.
-  return messageFromErrorBody(text, res.status, MAX_CAUSE_LENGTH);
-}
-
-/**
- * The dialog's read of the verdict. `idle` while the dialog is closed;
- * `error` is UNKNOWN — a failed, refused or unreadable read — and is never
- * rendered as "breaks nothing".
- */
-type BlastRadiusRead =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "error"; message: string }
-  | { state: "ok"; verdict: BlastRadiusVerdict };
-
-function isCount(v: unknown): v is number {
-  // `typeof true === "boolean"`, so a boolean never passes — but say it
-  // anyway: the backend refuses a boolean count for the same reason
-  // (`isinstance(True, int)` in Python), and the two sides should read alike.
-  return typeof v === "number" && Number.isInteger(v) && v >= 0;
-}
-
-function isSlugList(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every((s) => typeof s === "string" && s !== "");
-}
-
-/**
- * The verdict out of a 200 body — or `null` when the body is not one.
- *
- * A successful STATUS is not a successful READ. The backend has already
- * validated coord's answer field by field and would have answered 502 rather
- * than pass a malformed one through, so this is a shape check on OUR proxy's
- * body, not a re-run of coord's contract. It matters for the same reason the
- * section's `requireRows` does: `?? 0` on a missing count would fabricate
- * exactly the all-clear the dialog exists to stop fabricating.
- */
-function parseBlastRadiusVerdict(body: unknown): BlastRadiusVerdict | null {
-  if (!body || typeof body !== "object") return null;
-  const b = body as Record<string, unknown>;
-  if (
-    typeof b.group_name !== "string" ||
-    !isCount(b.mapped_total) ||
-    !isSlugList(b.mapped_own_tenant) ||
-    !isCount(b.mapped_other_tenant_rows) ||
-    !isCount(b.mapped_unmaterialized_rows) ||
-    !isCount(b.strands_total) ||
-    !isSlugList(b.strands_own_tenant) ||
-    !isCount(b.strands_other_tenant_count)
-  ) {
-    return null;
-  }
-  return {
-    group_name: b.group_name,
-    mapped_total: b.mapped_total,
-    mapped_own_tenant: b.mapped_own_tenant,
-    mapped_other_tenant_rows: b.mapped_other_tenant_rows,
-    mapped_unmaterialized_rows: b.mapped_unmaterialized_rows,
-    strands_total: b.strands_total,
-    strands_own_tenant: b.strands_own_tenant,
-    strands_other_tenant_count: b.strands_other_tenant_count,
-  };
-}
-
-function pluralNoun(n: number, noun: string): string {
-  return `${noun}${n === 1 ? "" : "s"}`;
-}
-
-function plural(n: number, noun: string): string {
-  return `${n} ${pluralNoun(n, noun)}`;
 }
 
 /**
@@ -2508,11 +2001,7 @@ function CognitoGroupItem({
     setBlastRadius({ state: "loading" });
     void (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-            group.group_name
-          )}/blast-radius`
-        );
+        const res = await fetchCognitoGroupBlastRadius(group.group_name);
         // A 502 here is the backend's own `mapping_check_unavailable` /
         // `mapping_check_unreadable` — coord could not say, so neither can
         // we. Render the CAUSE (`error` + coord's status), not the detail's
@@ -2560,12 +2049,7 @@ function CognitoGroupItem({
     }
     setAdding(true);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          group.group_name
-        )}/users`,
-        { method: "POST", body: JSON.stringify({ email }) }
-      );
+      const res = await addCognitoGroupUser(group.group_name, email);
       if (res.status === 404) {
         toast.error("No Cognito user with that email; they must sign up first.");
         return;
@@ -2601,13 +2085,9 @@ function CognitoGroupItem({
       // deliberately no `allow_mapped` control: when coord maps the group the
       // backend 409s and the fix is to remove the mapping first — that
       // ordering is the guard's whole purpose, and a checkbox would erase it.
-      const query = allowHomeGroup ? "?allow_home_group=true" : "";
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-          group.group_name
-        )}${query}`,
-        { method: "DELETE" }
-      );
+      const res = await deleteCognitoGroup(group.group_name, {
+        allowHomeGroup,
+      });
       if (!res.ok) {
         throw new Error(await backendErrorMessage(res));
       }
@@ -3055,9 +2535,7 @@ function CognitoGroupsSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups`
-      );
+      const res = await fetchCognitoGroups();
       if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as CognitoGroupsResponse;
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
@@ -3087,9 +2565,7 @@ function CognitoGroupsSection({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/coord/group-tenant-roles`
-        );
+        const res = await fetchGroupTenantRoles();
         if (!res.ok) throw new Error(await backendErrorMessage(res));
         const json = (await res.json()) as GroupTenantRolesResponse;
         // A successful STATUS is not a successful READ. `group_tenant_roles`
@@ -3142,11 +2618,7 @@ function CognitoGroupsSection({
       await Promise.all(
         groups.map(async (g) => {
           try {
-            const res = await httpClient.fetch(
-              `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
-                g.group_name
-              )}/users`
-            );
+            const res = await fetchCognitoGroupUsers(g.group_name);
             if (!res.ok) throw new Error(await backendErrorMessage(res));
             const json = (await res.json()) as CognitoGroupUsersResponse;
             // `memberErrors` is the mechanism #1111 held up as the model — a
@@ -3194,12 +2666,9 @@ function CognitoGroupsSection({
     }
     setCreating(true);
     try {
-      const body: Record<string, unknown> = { group_name };
+      const body: CognitoGroupCreate = { group_name };
       if (newDescription.trim()) body.description = newDescription.trim();
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/cognito/groups`,
-        { method: "POST", body: JSON.stringify(body) }
-      );
+      const res = await createCognitoGroup(body);
       if (res.status === 409) {
         toast.error(`A Cognito group named "${group_name}" already exists.`);
         return;
