@@ -67,7 +67,23 @@ _SNAPSHOT = (
 )
 
 # Calls recorded whether or not they are awaited: each one spawns or suspends.
-_SPAWN_OR_SUSPEND_CALLS = frozenset({"create_task", "shield", "sleep", "gather"})
+# ``spawn_background`` is the relay's single ``create_task`` site since the
+# split (plan D3), so its call sites are where a background spawn now sits in
+# each caller's order. ``route_target_frame``, ``_ensure_listener`` and
+# ``publish_target_frame`` are plain ``def`` delegators returning a coroutine,
+# so recording the call pins where that coroutine is created.
+_SPAWN_OR_SUSPEND_CALLS = frozenset(
+    {
+        "create_task",
+        "shield",
+        "sleep",
+        "gather",
+        "spawn_background",
+        "route_target_frame",
+        "_ensure_listener",
+        "publish_target_frame",
+    }
+)
 
 _Shape = list[str]
 

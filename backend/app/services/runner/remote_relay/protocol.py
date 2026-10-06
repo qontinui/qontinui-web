@@ -302,11 +302,13 @@ TARGET_CODE_ATTACH_GRANT_UNKNOWN = "attach_grant_unknown"
 #   of use rather than as a constant. That set is still hand-written — a
 #   string literal inside a function body cannot be swept out of the module
 #   namespace — but it is now the ONLY hand-written half, and
-#   ``test_relay_error_codes_covers_every_inline_code_literal`` scans the
-#   relay module's source (``remote_terminal_relay``, where the literals are
-#   minted) for ``"code": "<literal>"`` and fails on any that is not here. The
-#   two must agree. That test also reads the ``CODE_*`` constants through the
-#   relay facade, so a new constant here is re-exported there as well.
+#   ``test_relay_error_codes_is_derived_and_covers_every_inline_literal`` scans
+#   the source of the relay facade and every ``remote_relay`` module (wherever
+#   the literals are minted) for ``"code": "<literal>"`` and fails on any that
+#   is not here. The two must agree. That test also reads the ``CODE_*``
+#   constants through the relay facade, so a new constant here is re-exported
+#   there as well, and it fails if any other ``remote_relay`` module defines a
+#   ``CODE_*`` constant of its own.
 #
 # ``TARGET_ERROR_CODES`` and this set deliberately intersect on exactly
 # ``attach_grant_expired``: the source's handling is identical either way, so
