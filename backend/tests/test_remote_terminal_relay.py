@@ -5117,6 +5117,32 @@ async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() ->
     assert constants <= rtr.RELAY_ERROR_CODES
     assert rtr.RELAY_ERROR_CODES == constants | rtr._INLINE_RELAY_ERROR_CODES
 
+    # Since the split the sweep runs over ``protocol``'s namespace only, so a
+    # ``CODE_*`` constant defined in any other module of the package would
+    # escape it, and so would a reference to it in a payload (half two sees only
+    # literals). Pin the invariant the sweep relies on: ``protocol`` is the one
+    # module that defines ``CODE_*`` constants.
+    import importlib
+    import pkgutil
+
+    from app.services.runner import remote_relay
+
+    for mod_info in pkgutil.iter_modules(remote_relay.__path__):
+        if mod_info.name == "protocol":
+            continue
+        mod = importlib.import_module(f"{remote_relay.__name__}.{mod_info.name}")
+        stray = sorted(
+            name
+            for name, value in vars(mod).items()
+            if name.startswith("CODE_")
+            and isinstance(value, str)
+            and getattr(remote_relay.protocol, name, None) is not value
+        )
+        assert not stray, (
+            f"remote_relay.{mod_info.name} defines {stray}; CODE_* constants "
+            "belong in remote_relay.protocol, where RELAY_ERROR_CODES sweeps them"
+        )
+
     # Half two: no inline literal escapes the set. This is the mechanical
     # tripwire — mint a code as a bare string in a payload anywhere in the
     # relay without declaring it and this fails. "The relay" is the facade
