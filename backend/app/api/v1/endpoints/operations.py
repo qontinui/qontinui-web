@@ -3800,9 +3800,12 @@ async def get_dev_action_detail(
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
+# - GET    /operations/alerts/fault-to-visibility        — onset→visible p50/p90
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/domain-cost                       — autonomy-domain
+#                                                          cost ledger
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
@@ -4338,6 +4341,42 @@ async def get_coord_alerts(
     return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
 
 
+@router.get("/alerts/fault-to-visibility")
+async def get_coord_alerts_fault_to_visibility(
+    window: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's fault-to-visibility interval per alert kind.
+
+    Proxies coord ``GET /coord/alerts/fault-to-visibility`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 4, G1). The interval is ``visible_at - onset_at`` over
+    ``coord.alerts`` episodes: how long a fault existed before anyone who can
+    act on it could see it. p50/p90 are computed per kind **only over
+    episodes whose onset is known**, and coord ships ``onset_known_n`` beside
+    ``episodes_n`` so that share is read as the headline next to the
+    percentile, never dropped. An episode whose ``onset_basis`` is ``none``
+    counts in ``episodes_n`` and not in the percentile — its onset is
+    UNKNOWN, and ``first_seen_at`` is never substituted for it (that would
+    report a zero interval for exactly the faults this read exists to find).
+    A ``null`` percentile is "no known-onset episode", not zero seconds.
+
+    ``window`` is forwarded verbatim when set; coord owns its grammar and its
+    default, and a value it cannot parse comes back as coord's own 4xx rather
+    than being re-validated (and eventually mis-validated) here. The body is
+    passed through untouched — no ``response_model`` — so a field coord adds
+    reaches the console without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if window is not None:
+        params["window"] = window
+    return await _proxy_coord_get(
+        "/coord/alerts/fault-to-visibility",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Notifications (append-only event feed; sibling of /alerts) ----------
 #
 # Plan ``2026-08-05-coord-notifications-type-and-tab.md`` Change 4.
@@ -4655,6 +4694,49 @@ async def get_fleet_health(
     (``[policy: silent-empty-is-unknown]``).
     """
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
+
+
+# ---- Domain cost (autonomy-domain cost ledger) ----------------------------
+
+
+@router.get("/domain-cost")
+async def get_domain_cost(
+    as_of: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's per-autonomy-domain cost ledger.
+
+    Proxies coord ``GET /coord/domain-cost`` (plan
+    ``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``
+    Phase 2), the read the ``/overview`` Intent section's "Domain cost" card
+    renders. Per domain in the tenant's autonomy-domain roster (a
+    ``steering/autonomy-domains.toml`` coord reads from its repo mirror,
+    named in the response's ``roster_source``) and for ``shared``, coord
+    reports work units by
+    status class, wall-clock, PRs, sessions, operator touches and tokens, each
+    in the ``{value, coverage_n, population_n, basis}`` shape; the marginal
+    cost ratio ``R`` per dimension with its coverage floor; and a ``verdict``
+    by fixed comparison. Beside them: ``unmapped_areas``,
+    ``unattributed_units_n``, ``roster_source`` and ``computed_at``.
+
+    Unknown is first-class on this wire and the proxy preserves it: a
+    dimension with no producer arrives as ``value: null`` with a ``reason``
+    (``tokens`` and the session-trailer arm ship ``"no_producer"``), a
+    dimension below its coverage floor arrives with ``R: null``, and an
+    unreadable roster arrives as HTTP 200 with ``roster: null`` plus
+    ``roster_error`` and every ratio ``null`` — never an empty domain list. A
+    database failure is coord's typed error, raised here, never zeros.
+
+    ``as_of`` is forwarded verbatim when set; coord owns its grammar. The body
+    is passed through untouched — no ``response_model`` — so a field coord
+    adds reaches the card without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if as_of is not None:
+        params["as_of"] = as_of
+    return await _proxy_coord_get(
+        "/coord/domain-cost", params=params or None, tenant_id=tenant_id
+    )
 
 
 # ---- Machine drain / undrain --------------------------------------------
@@ -7563,23 +7645,64 @@ async def websocket_coord_events(
 class RepoCiRow(BaseModel):
     """One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
 
-    ``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering
-    (``green`` / ``red`` / ``unknown``); any amber tone is a frontend
+    ``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /
+    ``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend
     derivation from ``open_pr_checks`` counts, not a backend value.
+    ``vacuously_green`` is coord's zero-baseline arm — no required check has
+    ever reported on main, so "green" is an absence of evidence, not a pass.
+
+    The two ``*_observed_at`` stamps are the freshness of the facts the row
+    carries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):
+    ``main_verdict_observed_at`` is ``max(updated_at)`` over the
+    ``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``
+    is the newest ``pr_check_runs`` row counted. They MUST be declared here:
+    ``response_model`` filtering drops every undeclared key, so an undeclared
+    stamp would leave the page an unbounded read of "the latest observation"
+    with no way to say how old it is. ``None`` is coord saying it has no
+    observation to date the value by (the vacuously-green / memo arms, or no
+    checks at all) — and also an older coord that sends no stamp; both read
+    as UNKNOWN freshness on the page, never as "just now".
+
+    The stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339
+    text reaches the page byte-for-byte (no re-serialisation that rewrites
+    the offset or the precision), and a value this model cannot parse is
+    still delivered rather than 500-ing the whole read.
     """
 
     repo: str
-    main_verdict: str = Field(..., description='"green" | "red" | "unknown"')
+    main_verdict: str = Field(
+        ..., description='"green" | "red" | "unknown" | "vacuously_green"'
+    )
     open_pr_checks: dict[str, int] = Field(
         ..., description="counts keyed by 'success' | 'failure' | 'pending'"
     )
     latest_details_url: str | None = None
     main_head_sha: str | None = None
+    main_verdict_observed_at: str | None = Field(
+        default=None,
+        description=(
+            "max(updated_at) over the ci_baselines rows main_verdict was read "
+            "from; null when no baseline backs the verdict"
+        ),
+    )
+    pr_checks_observed_at: str | None = Field(
+        default=None,
+        description="newest pr_check_runs row counted; null when none",
+    )
 
 
 class CiStatusResponse(BaseModel):
-    """Response wrapper for ``GET /operations/ci-status``."""
+    """Response wrapper for ``GET /operations/ci-status``.
 
+    ``as_of`` is coord's read time. It is optional rather than required so a
+    web deploy that lands before the coord half (Phase 2) keeps serving the
+    page instead of failing response validation with a 500 — an absent
+    ``as_of`` renders as UNKNOWN freshness, never as current.
+    """
+
+    as_of: str | None = Field(
+        default=None, description="when coord composed this response (RFC 3339)"
+    )
     repos: list[RepoCiRow]
 
 
@@ -7695,9 +7818,52 @@ async def get_ci_status(
 
     Wire shape (coord ``CiStatusResponse``)::
 
-        { "repos": [RepoCiRow, ...] }
+        { "as_of": "<rfc3339>", "repos": [RepoCiRow, ...] }
     """
     return await _proxy_coord_get("/coord/ci/status", tenant_id=tenant_id)
+
+
+@router.get("/ci/overview")
+async def get_ci_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-pool CI capacity/queue state and per-repo job-outcome split.
+
+    Proxies coord's ``GET /coord/ci/overview`` (plan
+    ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phases 2-3), the
+    durable read behind ``/admin/coord/ci``. Coord serves it from
+    ``coord.ci_pool_observations`` (written by the leader each queue-wait /
+    eligibility pass) plus tenant-scoped ``ci_job_observations`` counts, so
+    every replica answers the same rows.
+
+    Passed through VERBATIM — deliberately no ``response_model``. Every
+    count on this wire is nullable and every row carries a ``state``
+    (``measured`` / ``stale`` / ``never_observed`` / ``unknown``) plus its
+    ``observed_at`` / ``stale_after_secs``; a declared model that lagged the
+    coord shape would silently drop exactly the fields that let the page
+    say "UNKNOWN" instead of "0" (the ``/ci-status`` freshness bug this same
+    plan had to fix in ``RepoCiRow``).
+
+    Wire shape (coord)::
+
+        {
+          "as_of": "<rfc3339>", "coverage_note": "...", "note": "...|null",
+          "pools": [{repo, pool, state, state_reason, observed_at, ...}],
+          "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
+        }
+
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
+
+    No graceful fallback: a coord predating the route answers 404 and the
+    page renders that as an explicit UNKNOWN, never as an empty fleet.
+    """
+    return await _proxy_coord_get("/coord/ci/overview", tenant_id=tenant_id)
 
 
 @router.post("/ci-status/notify-when-green", response_model=NotifyWhenGreenResponse)
@@ -12299,9 +12465,25 @@ async def get_coord_findings(
             "the unfiltered total by design."
         ),
     ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "Resume a keyset walk: pass the previous response's ``next_cursor`` "
+            "back verbatim, under the SAME filters. Forwarded verbatim — coord "
+            "owns the codec, and a malformed or foreign cursor is coord's typed "
+            "400 ``invalid_query_parameter`` naming ``cursor``."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Every answer is a PAGE of the corpus, never the corpus: coord's envelope
+    carries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's
+    ``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next
+    page (a malformed one is coord's 400, re-raised verbatim). Without that
+    pass-through a client following ``next_cursor`` would be served page 1
+    forever.
 
     Response envelope mirrors coord's:
     ``{"available", "count", "findings": [...], "finding_id_applied",
@@ -12342,6 +12524,8 @@ async def get_coord_findings(
         params["limit"] = limit
     if triaged is not None:
         params["triaged"] = triaged
+    if cursor is not None:
+        params["cursor"] = cursor
     try:
         body = await _proxy_coord_get(
             "/coord/findings", params=params or None, tenant_id=tenant_id
@@ -12352,6 +12536,21 @@ async def get_coord_findings(
                 "available": False,
                 "count": 0,
                 "findings": [],
+                # The bounded-read envelope coord serves on every answer,
+                # spelled as UNKNOWN: an absent key would read as falsy, and
+                # `truncated` missing reads as "complete" to a careless client.
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: `limit` means the cap coord
+                # APPLIED, and no page was read here, so no cap was applied.
+                # Echoing the request (or clamping it locally) would state a cap
+                # coord never used, and a local clamp would copy coord's range.
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
                 "unavailable": (
                     "coord's findings reader is not answering — its "
                     "`/coord/findings` route returned 404, so the deployed "

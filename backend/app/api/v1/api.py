@@ -103,6 +103,7 @@ from app.api.v1.endpoints import (
     recordings,
     releases,
     render_logs,
+    repo_followup_dials,
     runner_chat,
     runner_chat_ws,
     runner_command_ws,
@@ -234,6 +235,14 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
+# mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
+# the same `/operations` prefix as the fleet-policy proxy they copy, so the
+# frontend's `/api/v1/operations/` active-tenant prefix already covers them.
+# Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
+api_router.include_router(
+    repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
 # ``2026-08-10-plan-and-prompt-library-in-web``.

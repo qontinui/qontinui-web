@@ -66,7 +66,7 @@
 // one collapsed residue panel), and the row gained the three things an
 // operator previously had to scroll and cross-reference to find.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -922,6 +922,19 @@ export function MergePipeline() {
 
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  // Deep link `?tab=train&repo=<owner/name>` — how `/admin/coord/ci`'s repo
+  // rows hand the operator to the train blockers this page owns (plan
+  // `2026-10-04-ci-dashboard-in-the-dev-ops-console` D2: link, never
+  // re-render). Read once after mount rather than in the state initialisers,
+  // so the server render and the first client render agree, and without
+  // `useSearchParams` (which would demand a Suspense boundary on the route).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "train") setFilter("train");
+    const repo = params.get("repo");
+    if (repo) setQuery(repo);
+  }, []);
 
   // Merge-train liveness — its own hook on its own slower cadence, and only
   // while the Train tab is open (coord's health read scales with the
