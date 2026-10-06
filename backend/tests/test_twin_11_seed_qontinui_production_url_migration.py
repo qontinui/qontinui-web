@@ -6,8 +6,9 @@ data half: seed ``production_url`` on qontinui's own ``vercel`` /
 
 Without a database (always runs):
 
-1. Chain wiring: the parent is ``sched_cond_01`` (which sits on twin_10, the
-   revision that added the column) and the ``Revises:`` header agrees.
+1. Chain wiring: the parent is the current single head (a descendant of
+   twin_10, the revision that added the column) and the ``Revises:`` header
+   agrees.
 2. ``upgrade()`` is exactly one static, ``coord.``-qualified ``UPDATE`` that
    fills NULL only and matches both system-tenant slugs; ``downgrade()`` runs
    nothing.
@@ -50,7 +51,7 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "twin_11_seed_qontinui_production_url"
 _REVISION_FILENAME = "twin_11_seed_qontinui_production_url.py"
-_PARENT_REVISION_ID = "sched_cond_01_scheduled_tasks_conditions"
+_PARENT_REVISION_ID = "findings_keyset_01"
 
 _SEED_URL = "https://qontinui.io/"
 _SYSTEM_SLUGS = ("qontinui", "personal-jspinak")
@@ -100,8 +101,17 @@ def test_revision_ids_are_wired_onto_the_current_head() -> None:
     assert module.down_revision == _PARENT_REVISION_ID
     assert module.branch_labels is None
     assert module.depends_on is None
-    parent = backend_root() / "alembic" / "versions" / f"{_PARENT_REVISION_ID}.py"
-    assert parent.is_file()
+    # Find the parent by its DECLARED revision, not by filename: revision files
+    # carry a descriptive suffix, and the parent moves on every re-point.
+    declares_parent = re.compile(
+        rf'^revision[^=]*=\s*["\']{re.escape(_PARENT_REVISION_ID)}["\']', re.M
+    )
+    parents = [
+        path.name
+        for path in (backend_root() / "alembic" / "versions").glob("*.py")
+        if declares_parent.search(path.read_text(encoding="utf-8"))
+    ]
+    assert len(parents) == 1, parents
 
     source = _revision_path().read_text(encoding="utf-8")
     assert re.search(rf"^Revision ID: {re.escape(_REVISION_ID)}$", source, re.M)
