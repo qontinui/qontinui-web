@@ -19,6 +19,7 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints.operations import _proxy_coord_get
 from app.overview.metric_checkpoint import (
+    Problem,
     ValidationResult,
     is_uuid,
     validate_metric_checkpoint,
@@ -62,6 +63,8 @@ DUE_WINDOW = timedelta(days=2)
 #: checkpoint key (the late path, Phase 0's reconciliation). Auxiliary findings
 #: are barred from this title, so a notice never matches it.
 LATE_PATH_TITLE = re.compile(r"^Merge-train checkpoint (\d+)\b")
+#: A resource key shaped like a checkpoint id (``checkpoint-<n>``).
+_CHECKPOINT_KEY = re.compile(r"^checkpoint-\d+$")
 
 # ===========================================================================
 # Talking to coord's findings
@@ -243,21 +246,25 @@ def _row(raw: dict[str, Any], declared: set[str]) -> ResultRowRead:
     )
 
 
-def _addressed_block(finding: dict[str, Any], name: str) -> Any:
-    """The finding's ``metric_checkpoint`` block when it names THIS document;
-    ``None`` when absent or addressed to another metric."""
+def _addressed_block(finding: dict[str, Any], name: str) -> tuple[Any, bool]:
+    """``(block, names_this)``: the finding's ``metric_checkpoint`` block
+    unless it is absent or addressed to another metric (then ``None``), and
+    whether its ``document.name`` actually names THIS document."""
     refs = finding.get("artifact_refs")
     if not isinstance(refs, dict) or "metric_checkpoint" not in refs:
-        return None
+        return None, False
     block = refs["metric_checkpoint"]
     document = block.get("document") if isinstance(block, dict) else None
-    if isinstance(document, dict) and document.get("name") == name:
-        return block
-    if isinstance(document, dict) and isinstance(document.get("name"), str):
-        return None  # another metric's result
+    doc_name = document.get("name") if isinstance(document, dict) else None
+    if doc_name == name:
+        return block, True
+    if isinstance(doc_name, str):
+        return None, False  # another metric's result
     # A block with no readable document name cannot be said to be another
-    # metric's; it is this report's unreadable block.
-    return block
+    # metric's — but it does not name this one either, so it never places a
+    # report by rule (a). Rules (b)/(c) may still place it, as an unreadable
+    # block; otherwise it is a Related note.
+    return block, False
 
 
 def _str(value: Any) -> str | None:
@@ -286,19 +293,15 @@ def _place(
 ) -> ReportRead | None:
     """D6 point 2: a report if rule (a), (b) or (c) places it; else None."""
     fid = str(finding["finding_id"])
-    block = _addressed_block(finding, metric.name)
+    block, names_this = _addressed_block(finding, metric.name)
     validation: ValidationResult | None = None
     a_cp: str | None = None
     if block is not None:
-        validation = validate_metric_checkpoint(
-            block,
-            resource_keys=_keys(finding),
-            declared_checkpoints=declared_cps,
-            declared_criteria=declared_criteria,
-        )
+        validation = _validate(block, finding, declared_cps, declared_criteria)
         cp = block.get("checkpoint") if isinstance(block, dict) else None
         if (
-            isinstance(cp, str)
+            names_this
+            and isinstance(cp, str)
             and cp.strip()
             and (not declared_cps or cp in declared_cps)
         ):
@@ -352,12 +355,45 @@ def _place(
         report.block_error = validation.summary()
         return report
     assert isinstance(block, dict)
+    try:
+        rows = [_row(r, declared_criteria) for r in block["rows"]]
+    except Exception as exc:  # one finding degrades, never the page
+        report.shape = "unreadable_block"
+        report.block_error = _crash_reason("its rows could not be read", exc)
+        return report
     report.shape = "structured"
     report.measured_at = block["measured_at"]
     report.document_version = block["document"]["version"]
     report.gate_id = block.get("gate_id")
-    report.rows = [_row(r, declared_criteria) for r in block["rows"]]
+    report.rows = rows
     return report
+
+
+def _crash_reason(what: str, exc: Exception) -> str:
+    return f"block: {what} ({type(exc).__name__})"
+
+
+def _validate(
+    block: Any,
+    finding: dict[str, Any],
+    declared_cps: list[str],
+    declared_criteria: set[str],
+) -> ValidationResult:
+    """The validator, with any unexpected exception turned into a refusal: a
+    block that crashes the check is a block that could not be read."""
+    try:
+        return validate_metric_checkpoint(
+            block,
+            resource_keys=_keys(finding),
+            declared_checkpoints=declared_cps,
+            declared_criteria=declared_criteria,
+        )
+    except Exception as exc:
+        result = ValidationResult()
+        result.errors.append(
+            Problem("block", f"could not be checked ({type(exc).__name__})")
+        )
+        return result
 
 
 def _unknown_reason_for(
@@ -452,7 +488,12 @@ def join_results(
     for fid, finding in pool.items():
         if fid in superseded:
             continue
-        report = _place(finding, metric, declared_cps, declared_criteria, recorded)
+        try:
+            report = _place(finding, metric, declared_cps, declared_criteria, recorded)
+        except Exception as exc:  # one finding degrades, never the page
+            notes.append(_unplaceable_note(fid, finding, exc))
+            keyed.add(fid)  # never a late-path candidate either
+            continue
         if report is not None:
             by_checkpoint.setdefault(report.checkpoint, []).append(
                 _Placed(report, _ts(report.created_at))
@@ -464,12 +505,14 @@ def join_results(
                     "Recorded in the document's results list, but nothing "
                     "places it under a checkpoint."
                 )
-            elif _addressed_block(finding, metric.name) is not None:
+            elif _addressed_block(finding, metric.name)[0] is not None:
                 note = (
                     "Carries a result block that names no checkpoint this "
                     "document declares."
                 )
-            if any(k in declared_cps for k in _keys(finding)):
+            # ANY checkpoint-id-shaped key bars the late path, declared or not:
+            # the finding names a checkpoint, just not one this rule reads.
+            if any(_CHECKPOINT_KEY.match(k) for k in _keys(finding)):
                 keyed.add(fid)
             notes.append(
                 RelatedNoteRead(
@@ -510,6 +553,24 @@ def join_results(
     metric.tally_latest = _tally(metric.criteria_latest)
     notes.sort(key=lambda n: _ts(n.created_at), reverse=True)
     metric.related_notes = notes
+    # An unresolved entry naming no checkpoint has no checkpoint row to sit
+    # on; the card shows it at metric level instead of nowhere.
+    metric.unresolved_results = [u for u in unresolved if not u.checkpoint]
+
+
+def _unplaceable_note(
+    fid: str, finding: dict[str, Any], exc: Exception
+) -> RelatedNoteRead:
+    return RelatedNoteRead(
+        finding_id=fid,
+        title=_str(finding.get("title")),
+        topic=_str(finding.get("topic")),
+        created_at=_str(finding.get("created_at")),
+        note=(
+            "This finding could not be read as a report "
+            f"({type(exc).__name__}), so it is listed here."
+        ),
+    )
 
 
 def _unresolved(

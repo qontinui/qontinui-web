@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   baselineLine,
   checkpointStatusCopy,
+  currentValueText,
   definitionHref,
   groupObjectives,
   hiddenCopy,
+  noInitiativeWritten,
   outOfDateNotice,
+  placementDisagreement,
   shortDay,
   sourceNotices,
   summaryMetricRows,
@@ -14,6 +17,7 @@ import {
   tallyText,
   targetLines,
   unknownReasonText,
+  unresolvedResultText,
   VERDICT_LOOK,
 } from "./objectives";
 import type {
@@ -77,6 +81,7 @@ function metric(overrides: Partial<MetricRead> = {}): MetricRead {
     criteria_latest: [],
     tally_latest: { met: 0, missed: 0, unknown: 0 },
     related_notes: [],
+    unresolved_results: [],
     current_value: {
       status: "not_measured",
       source_query_type: "manual",
@@ -551,6 +556,56 @@ describe("the Summary's compact list", () => {
   it("carries the void count so the Summary can say what it hid", () => {
     const status = summaryMetricsFrom(read({ void_hidden: 4 }));
     expect(status.state === "ready" && status.voidHidden).toBe(4);
+  });
+});
+
+describe("review round 1", () => {
+  it("says the definition can't be read instead of the source-type reason", () => {
+    const shown = currentValueText(metric({ frontmatter_error: "bad yaml" }));
+    expect(shown.reason).not.toContain("Measured by hand");
+    expect(shown.reason).toMatch(/definition can.t be read/);
+    expect(currentValueText(metric()).reason).toBe(
+      "Measured by hand; no automatic reading."
+    );
+  });
+
+  it("words a results entry that names no checkpoint honestly", () => {
+    expect(
+      unresolvedResultText({
+        checkpoint: null,
+        finding_id: "not-a-uuid",
+        reason: "invalid_id",
+        detail: "The recorded finding id is not a uuid.",
+      })
+    ).toBe(
+      "A recorded result names no checkpoint and could not be shown: The recorded finding id is not a uuid."
+    );
+    expect(
+      unresolvedResultText({
+        checkpoint: "checkpoint-1",
+        finding_id: null,
+        reason: "invalid_id",
+        detail: "x",
+      })
+    ).toBe("A recorded report could not be shown: x");
+  });
+
+  it("flags a placement disagreement on the checkpoint row", () => {
+    expect(placementDisagreement(checkpoint())).toBeNull();
+    const cp = checkpoint({
+      report: report({ checkpoint_mismatch: "Placed under checkpoint-1 …" }),
+    });
+    expect(placementDisagreement(cp)).toMatch(/disagree/);
+  });
+
+  it("tells 'no initiative written' apart from 'can't be read'", () => {
+    expect(noInitiativeWritten(read({ initiatives: [] }))).toBe(true);
+    expect(
+      noInitiativeWritten(read({ initiatives: [], objectives_readable: false }))
+    ).toBe(false);
+    expect(noInitiativeWritten(read({ initiatives: [initiative()] }))).toBe(
+      false
+    );
   });
 });
 

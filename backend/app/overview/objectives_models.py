@@ -331,6 +331,9 @@ class MetricRead(BaseModel):
     criteria_latest: list[CriterionResultRead] = Field(default_factory=list)
     tally_latest: TallyRead = Field(default_factory=TallyRead)
     related_notes: list[RelatedNoteRead] = Field(default_factory=list)
+    #: ``results:`` entries that name no checkpoint and whose finding could
+    #: not be shown — no checkpoint row can carry them, so the card does.
+    unresolved_results: list[UnresolvedResultRead] = Field(default_factory=list)
     current_value: CurrentValueRead
 
 

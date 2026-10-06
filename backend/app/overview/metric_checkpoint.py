@@ -320,7 +320,9 @@ def _check_rows(
                     )
         verdict = row.get("verdict")
         if "verdict" in row:
-            if verdict in counts:
+            # Type-check before every membership test: an unhashable value
+            # (a list, an object) is a refusal, never a TypeError.
+            if isinstance(verdict, str) and verdict in counts:
                 counts[verdict] += 1
             else:
                 check.error(f"{path}.verdict", "must be met, missed or unknown")
@@ -348,12 +350,13 @@ def _check_row_fields(
         check.error(f"{path}.value_text", f"a {verdict} row must carry value_text")
 
     reason = row.get("unknown_reason")
-    if verdict == "unknown" and reason not in UNKNOWN_REASONS:
+    known_reason = isinstance(reason, str) and reason in UNKNOWN_REASONS
+    if verdict == "unknown" and not known_reason:
         check.error(
             f"{path}.unknown_reason",
             "an unknown row needs one of " + ", ".join(sorted(UNKNOWN_REASONS)),
         )
-    elif reason is not None and reason not in UNKNOWN_REASONS:
+    elif reason is not None and not known_reason:
         check.error(f"{path}.unknown_reason", "is not a known reason")
 
     window = row.get("window")
@@ -375,7 +378,10 @@ def _check_row_fields(
             check.error(f"{path}.action", "must be {kind, ref} or null")
         else:
             check.exact_keys(action, ACTION_KEYS, f"{path}.action", ("kind", "ref"))
-            if "kind" in action and action["kind"] not in ACTION_KINDS:
+            kind = action.get("kind")
+            if "kind" in action and not (
+                isinstance(kind, str) and kind in ACTION_KINDS
+            ):
                 check.error(
                     f"{path}.action.kind",
                     "must be one of " + ", ".join(sorted(ACTION_KINDS)),

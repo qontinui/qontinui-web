@@ -21,6 +21,7 @@ import type {
   ReportRead,
   SourceRead,
   TallyRead,
+  UnresolvedResultRead,
   Verdict,
 } from "./objectives-api";
 
@@ -289,10 +290,33 @@ export function currentValueText(metric: MetricRead): {
   text: string;
   reason: string;
 } {
-  return {
-    text: "Current value: not measured yet",
-    reason: metric.current_value.reason,
-  };
+  // A definition that can't be read cannot say where its value comes from;
+  // the source-type reason would describe a source nobody could read.
+  const reason = metric.frontmatter_error
+    ? "the measure's definition can't be read, so where its value comes from is unknown."
+    : metric.current_value.reason;
+  return { text: "Current value: not measured yet", reason };
+}
+
+/** One `results:` entry whose report could not be shown, in plain words. */
+export function unresolvedResultText(u: UnresolvedResultRead): string {
+  return u.checkpoint
+    ? `A recorded report could not be shown: ${u.detail}`
+    : `A recorded result names no checkpoint and could not be shown: ${u.detail}`;
+}
+
+/** D6: the one-line flag a checkpoint row carries when the placement rules
+ *  disagreed about which checkpoint its report belongs to. */
+export function placementDisagreement(cp: CheckpointResultRead): string | null {
+  return cp.report?.checkpoint_mismatch
+    ? "Placement disagreement: the report's sources disagree about which checkpoint it is for (details in the report)."
+    : null;
+}
+
+/** The objectives are readable and no initiative has been written — which
+ *  is not the same as "can't be read". */
+export function noInitiativeWritten(read: ObjectivesRead): boolean {
+  return read.objectives_readable && read.initiatives.length === 0;
 }
 
 // ---------------------------------------------------------------------------

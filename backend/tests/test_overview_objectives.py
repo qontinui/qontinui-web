@@ -152,6 +152,7 @@ class FakeDocs:
         self.docs: dict[tuple[str, str], dict[str, Any]] = {}
         self.fail_get: set[tuple[str, str]] = set()
         self.list_error: Exception | None = None
+        self.degraded: str | None = None
 
     def seed(
         self,
@@ -182,7 +183,7 @@ class FakeDocs:
             {k: v for k, v in d.items() if k not in ("body", "attrs")}
             for d in self.docs.values()
         ]
-        return {"documents": rows, "total": len(rows)}
+        return {"documents": rows, "total": len(rows), "degraded": self.degraded}
 
     async def get(self, tenant_id: UUID, kind: str, name: str) -> dict[str, Any]:
         if (kind, name) in self.fail_get:
@@ -626,8 +627,30 @@ class TestMalformedBlocks:
             (lambda b: b["tally"].update(met=2), "tally"),
             (lambda b: b["rows"][0].update(verdict="partial"), "rows[0].verdict"),
             (lambda b: b["rows"][0].update(value_text=None), "rows[0].value_text"),
+            # Unhashable values: a refusal, never a TypeError (review round 1).
+            (lambda b: b["rows"][0].update(verdict=[]), "rows[0].verdict"),
+            (
+                lambda b: b["rows"][0].update(
+                    verdict="unknown",
+                    unknown_reason={},
+                    cause="c",
+                    action={"kind": "pr", "ref": "x#1"},
+                ),
+                "rows[0].unknown_reason",
+            ),  # fmt: skip
+            (
+                lambda b: b["rows"][0].update(action={"kind": [], "ref": "x"}),
+                "rows[0].action.kind",
+            ),
         ],
-        ids=["tally_mismatch", "bad_enum", "met_without_value_text"],
+        ids=[
+            "tally_mismatch",
+            "bad_enum",
+            "met_without_value_text",
+            "verdict_a_list",
+            "unknown_reason_an_object",
+            "action_kind_a_list",
+        ],
     )
     async def test_a_malformed_block_is_reported_but_unreadable(
         self, docs: FakeDocs, findings: FakeFindings, mutate: Any, field: str
@@ -669,6 +692,108 @@ class TestMalformedBlocks:
         assert _criterion(read, "1.2").verdict == "met"
         assert "9.9" not in {c.id for c in _metric(read).criteria_latest}
         assert _metric(read).tally_latest.missed == 0
+
+    async def test_an_unhashable_value_leaves_the_page_200_and_other_metrics_intact(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("success_metric", "remote-session-interactivity",
+                  REMOTE_BODY.replace("unit: percent of sessions\n",
+                                      "unit: percent of sessions\n"
+                                      "checkpoints:\n  - id: \"checkpoint-1\"\n"
+                                      "    due: \"2026-10-08\"\n"))  # fmt: skip
+        remote_block = _block()
+        remote_block["document"]["name"] = "remote-session-interactivity"
+        findings.add(
+            _id(2),
+            keys=["prompt_document:success_metric/remote-session-interactivity"],
+            block=remote_block,
+        )
+        block = _block()
+        block["rows"][0]["verdict"] = []
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=block)
+        response = await _get(docs, findings)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        merge = next(m for m in body["metrics"] if m["name"] == MERGE_TRAIN)
+        cp = next(c for c in merge["checkpoint_results"] if c["id"] == "checkpoint-1")
+        assert cp["report"]["shape"] == "unreadable_block"
+        assert "rows[0].verdict" in cp["report"]["block_error"]
+        remote = next(
+            m for m in body["metrics"] if m["name"] == "remote-session-interactivity"
+        )
+        assert remote["checkpoint_results"][0]["status"] == "reported"
+        assert len(body["metrics"]) == 4
+
+    async def test_a_validator_crash_marks_only_that_report_unreadable(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import app.overview.objectives_join as join
+
+        real = join.validate_metric_checkpoint
+
+        def flaky(block: Any, **kw: Any) -> Any:
+            if block.get("checkpoint") == "checkpoint-2":
+                raise RuntimeError("unexpected")
+            return real(block, **kw)
+
+        monkeypatch.setattr(join, "validate_metric_checkpoint", flaky)
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        findings.add(_id(2), keys=[DOC_KEY, "checkpoint-2"],
+                     block=_block("checkpoint-2", rows=[
+                         {"id": "2.1", "verdict": "met", "value_text": "ok"}]))  # fmt: skip
+        read = await _read(docs, findings)
+        bad = _checkpoint(read, "checkpoint-2")
+        assert bad.status == "reported_unreadable"
+        assert bad.report.shape == "unreadable_block"
+        assert "RuntimeError" in (bad.report.block_error or "")
+        assert _checkpoint(read, "checkpoint-1").status == "reported"
+
+    async def test_a_placement_crash_is_a_note_not_a_500(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import app.overview.objectives_join as join
+
+        real = join._place
+
+        def flaky(finding: dict[str, Any], *a: Any) -> Any:
+            if finding["finding_id"] == _id(2):
+                raise KeyError("boom")
+            return real(finding, *a)
+
+        monkeypatch.setattr(join, "_place", flaky)
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        findings.add(_id(2), keys=[DOC_KEY, "checkpoint-2"], block=_block())
+        read = await _read(docs, findings)
+        assert _checkpoint(read, "checkpoint-1").status == "reported"
+        notes = _metric(read).related_notes
+        assert [n.finding_id for n in notes] == [_id(2)]
+        assert "KeyError" in (notes[0].note or "")
+
+    async def test_one_metrics_join_crash_degrades_only_that_metric(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import app.overview.objectives as objectives
+
+        real = objectives.join_results
+        calls: list[str] = []
+
+        def flaky(metric: Any, *a: Any) -> None:
+            calls.append(metric.name)
+            if metric.name == MERGE_TRAIN and calls.count(MERGE_TRAIN) == 1:
+                raise TypeError("unhashable")
+            real(metric, *a)
+
+        monkeypatch.setattr(objectives, "join_results", flaky)
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        read = await _read(docs, findings)
+        merge = _metric(read)
+        assert merge.findings_read == "unavailable"
+        assert all(c.report is None for c in merge.checkpoint_results)
+        assert {c.verdict for c in merge.criteria_latest} == {"unknown"}
+        assert read.sources.findings.status == "unavailable"
+        assert MERGE_TRAIN in read.sources.findings.affected
+        assert "TypeError" in read.sources.findings.details[MERGE_TRAIN]
+        assert _metric(read, "development-speed").findings_read == "ok"
 
     async def test_an_undeclared_checkpoint_still_refuses_the_block(
         self, docs: FakeDocs, findings: FakeFindings
@@ -779,6 +904,36 @@ class TestPlacement:
         read = await _read(docs, findings)
         assert _checkpoint(read, "checkpoint-1").report is None
         assert [n.finding_id for n in _metric(read).related_notes] == [_id(1)]
+
+    async def test_a_nameless_block_keyed_under_two_metrics_is_placed_by_a_under_neither(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        block = _block()
+        del block["document"]["name"]
+        findings.add(
+            _id(1),
+            keys=[DOC_KEY, "prompt_document:success_metric/development-speed"],
+            block=block,
+        )
+        read = await _read(docs, findings)
+        assert _checkpoint(read, "checkpoint-1").report is None
+        assert _metric(read, "development-speed").checkpoint_results == []
+        for name in (MERGE_TRAIN, "development-speed"):
+            notes = _metric(read, name).related_notes
+            assert [n.finding_id for n in notes] == [_id(1)]
+            assert "result block" in (notes[0].note or "")
+
+    async def test_a_nameless_block_placed_by_its_key_is_an_unreadable_report(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        block = _block()
+        del block["document"]["name"]
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=block)
+        read = await _read(docs, findings)
+        report = _checkpoint(read, "checkpoint-1").report
+        assert report.placed_by == ["checkpoint_key"]
+        assert report.shape == "unreadable_block"
+        assert "document.name" in (report.block_error or "")
 
 
 class TestRecordedResults:
@@ -946,6 +1101,43 @@ class TestRecordedResults:
         read = await _read(docs, findings)
         assert _metric(read).related_notes[0].possible_report_for is None
 
+    async def test_an_undeclared_checkpoint_key_also_bars_the_late_path(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(
+            _id(1),
+            title="Merge-train checkpoint 1 (3 MET)",
+            keys=[DOC_KEY, "checkpoint-7"],
+            created_at="2026-10-06T19:00:00Z",
+        )
+        read = await _read(docs, findings)
+        assert _metric(read).related_notes[0].possible_report_for is None
+        assert _checkpoint(read, "checkpoint-1").status != "possible_report_unrecorded"
+
+    async def test_a_results_entry_with_no_checkpoint_or_id_is_shown_on_the_metric(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        body = MERGE_TRAIN_BODY.replace(
+            "\nresults: []\n",
+            "\nresults:\n"
+            '  - finding_id: "not-a-uuid"\n'
+            f'  - finding_id: "{_id(5)}"\n'
+            '  - checkpoint: "checkpoint-1"\n',
+            1,
+        )
+        docs.seed("success_metric", MERGE_TRAIN, body)
+        read = await _read(docs, findings)
+        metric = _metric(read)
+        assert [(u.finding_id, u.reason) for u in metric.unresolved_results] == [
+            ("not-a-uuid", "invalid_id"),
+            (_id(5), "superseded_or_missing"),
+        ]
+        # The checkpoint-named entry still shows under its checkpoint.
+        cp = _checkpoint(read, "checkpoint-1")
+        assert [u.reason for u in cp.unresolved_results] == ["invalid_id"]
+        error = metric.field_errors.get("results", "")
+        assert "no checkpoint" in error and "no finding_id" in error
+
     async def test_a_duplicated_checkpoint_key_still_places_by_rule_c(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
@@ -1003,6 +1195,35 @@ class TestDocumentShapes:
         assert read.initiatives[0].state == "unreadable"
         assert len(read.metrics) == 4  # the measures still show
 
+    async def test_no_initiative_written_is_readable_and_empty_not_unreadable(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        del docs.docs[("initiative", "current-initiative")]
+        read = await _read(docs, findings)
+        assert read.objectives_readable is True
+        assert read.initiatives == []
+        assert read.sources.intent_documents.status == "ok"
+        assert len(read.metrics) == 4
+
+    async def test_no_initiative_on_a_degraded_listing_is_not_readable(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """A degraded list cannot vouch that no initiative exists."""
+        del docs.docs[("initiative", "current-initiative")]
+        docs.degraded = "the store answered a partial page"
+        read = await _read(docs, findings)
+        assert read.objectives_readable is False
+        assert read.sources.intent_documents.status == "degraded"
+
+    async def test_an_initiative_frontmatter_error_is_not_readable(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("initiative", "current-initiative",
+                  "---\nstarts: 2026-02-30\n---\n\n# I\n")  # fmt: skip
+        read = await _read(docs, findings)
+        assert read.objectives_readable is False
+        assert "can't be read" in (read.sources.intent_documents.reason or "")
+
     async def test_a_skeleton_only_initiative_degrades(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
@@ -1029,11 +1250,23 @@ class TestDocumentShapes:
         )
         assert metric.title == "Development speed"
 
+    @pytest.mark.parametrize(
+        "frontmatter",
+        [
+            "metric: [unclosed\ntarget: : :\n",
+            # PyYAML raises ValueError, not YAMLError, for an impossible date.
+            "metric: dev\nbaseline_as_of: 2026-02-30\n",
+            "metric: dev\nbaseline_as_of: 2026-10-08 25:00:00\n",
+            # ...and RecursionError for nesting deeper than the stack.
+            "metric: " + "[" * 3000 + "]" * 3000 + "\n",
+        ],
+        ids=["syntax", "impossible_date", "impossible_time", "too_deep"],
+    )
     async def test_unparseable_yaml_never_fails_the_page(
-        self, docs: FakeDocs, findings: FakeFindings
+        self, docs: FakeDocs, findings: FakeFindings, frontmatter: str
     ) -> None:
         docs.seed("success_metric", "development-speed",
-                  "---\nmetric: [unclosed\ntarget: : :\n---\n\n# Dev\n")  # fmt: skip
+                  f"---\n{frontmatter}---\n\n# Dev\n")  # fmt: skip
         read = await _read(docs, findings)
         metric = _metric(read, "development-speed")
         assert (
@@ -1139,7 +1372,7 @@ class TestVerdicts:
         # The denominator is the declared criteria, all 17.
         assert len(_metric(read).criteria_latest) == 17
 
-    async def test_rows_are_flagged_undeclared_only_when_nothing_is_declared(
+    async def test_rows_are_flagged_undeclared_when_the_document_declares_no_criteria(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
         docs.seed("success_metric", MERGE_TRAIN,

@@ -23,6 +23,7 @@ import { useOverviewProject } from "../_hooks/useOverviewProject";
 import {
   groupObjectives,
   hiddenCopy,
+  noInitiativeWritten,
   shortDay,
   sourceNotices,
   type InitiativeGroupModel,
@@ -174,6 +175,15 @@ function Objectives({
       <div className="space-y-3">
         <Notices read={read} />
       </div>
+      {noInitiativeWritten(read) && (
+        <p
+          className={MUTED}
+          data-ui-bridge-id="overview.objectives.no-initiative"
+        >
+          No initiative has been written yet, so the project has no declared
+          objectives to group its measures under.
+        </p>
+      )}
       {model.live.map((group) => (
         <InitiativeBlock
           key={group.initiative.name}

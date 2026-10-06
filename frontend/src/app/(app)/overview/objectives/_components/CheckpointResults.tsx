@@ -10,7 +10,12 @@
  */
 
 import { Fragment } from "react";
-import { checkpointStatusCopy, shortDay } from "../../_lib/objectives";
+import {
+  checkpointStatusCopy,
+  placementDisagreement,
+  shortDay,
+  unresolvedResultText,
+} from "../../_lib/objectives";
 import type {
   CheckpointResultRead,
   MetricRead,
@@ -32,6 +37,7 @@ function CheckpointBlock({
   const copy = checkpointStatusCopy(cp);
   const due = shortDay(cp.due);
   const undeclared = (cp.report?.rows ?? []).filter((r) => !r.declared);
+  const disagreement = placementDisagreement(cp);
   return (
     <li className="py-4" data-ui-bridge-id={uiBridgeId}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -62,15 +68,21 @@ function CheckpointBlock({
           <span className="block text-xs">Why: {copy.detail}</span>
         )}
       </p>
+      {disagreement && (
+        <p
+          className={`mt-1 ${MUTED}`}
+          data-ui-bridge-id={`${uiBridgeId}.placement-disagreement`}
+        >
+          {disagreement}
+        </p>
+      )}
       {cp.unresolved_results.length > 0 && (
         <ul
           className={`mt-1 ${MUTED}`}
           data-ui-bridge-id={`${uiBridgeId}.unresolved`}
         >
           {cp.unresolved_results.map((u, i) => (
-            <li key={u.finding_id ?? i}>
-              A recorded report could not be shown: {u.detail}
-            </li>
+            <li key={u.finding_id ?? i}>{unresolvedResultText(u)}</li>
           ))}
         </ul>
       )}

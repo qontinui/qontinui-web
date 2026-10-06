@@ -31,6 +31,7 @@ import {
   metricAnchor,
   shortDay,
   targetLines,
+  unresolvedResultText,
   type FigureLine,
 } from "../../_lib/objectives";
 import type { MetricRead } from "../../_lib/objectives-api";
@@ -282,6 +283,20 @@ export function MetricCard({
             </p>
           )}
         </>
+      )}
+
+      {metric.unresolved_results.length > 0 && (
+        <ul
+          className={`mt-3 ${NOTICE} ${MUTED}`}
+          role="status"
+          data-ui-bridge-id={`${base}.unresolved-results`}
+        >
+          {metric.unresolved_results.map((u, i) => (
+            <li key={`${u.finding_id ?? "none"}-${i}`}>
+              {unresolvedResultText(u)}
+            </li>
+          ))}
+        </ul>
       )}
 
       <div className="mt-3 flex flex-col items-start">

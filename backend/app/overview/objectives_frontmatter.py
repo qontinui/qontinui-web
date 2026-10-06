@@ -132,8 +132,10 @@ def parse_frontmatter(block: str | None) -> tuple[dict[str, Any], str | None]:
     inner = "\n".join(lines[1:-1])
     try:
         loaded = yaml.safe_load(inner)
-    except yaml.YAMLError as exc:
-        message = " ".join(str(exc).split())
+    except (yaml.YAMLError, ValueError, RecursionError) as exc:
+        # PyYAML raises ValueError (not YAMLError) for an impossible date such
+        # as `2026-02-30`, and RecursionError for nesting deeper than the stack.
+        message = " ".join(str(exc).split()) or type(exc).__name__
         return {}, f"The YAML block could not be parsed: {message[:300]}"
     if loaded is None:
         return {}, None
@@ -287,21 +289,33 @@ def _parse_results(value: Any, errors: dict[str, str]) -> list[ResultEntryRead]:
         return []
     out: list[ResultEntryRead] = []
     bad = 0
-    for item in value:
+    problems: list[str] = []
+    for i, item in enumerate(value):
         if not isinstance(item, dict):
             bad += 1
             continue
-        out.append(
-            ResultEntryRead(
-                checkpoint=_text(item.get("checkpoint")),
-                finding_id=_text(item.get("finding_id")),
-                posted_at=_text(item.get("posted_at")),
+        entry = ResultEntryRead(
+            checkpoint=_text(item.get("checkpoint")),
+            finding_id=_text(item.get("finding_id")),
+            posted_at=_text(item.get("posted_at")),
+        )
+        missing = [
+            what
+            for what, present in (
+                ("no checkpoint", bool(entry.checkpoint and entry.checkpoint.strip())),
+                ("no finding_id", bool(entry.finding_id and entry.finding_id.strip())),
             )
-        )
+            if not present
+        ]
+        if missing:
+            problems.append(f"entry {i + 1} has {' and '.join(missing)}")
+        out.append(entry)
     if bad:
-        errors["results"] = (
-            f"{bad} results entr{'y is' if bad == 1 else 'ies are'} not a mapping."
+        problems.insert(
+            0, f"{bad} results entr{'y is' if bad == 1 else 'ies are'} not a mapping"
         )
+    if problems:
+        errors["results"] = "; ".join(problems) + "."
     return out
 
 

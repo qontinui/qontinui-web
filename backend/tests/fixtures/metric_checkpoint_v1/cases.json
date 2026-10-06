@@ -3340,6 +3340,294 @@
       "error_field": "rows[0].action.kind"
     },
     {
+      "name": "verdict_a_list",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": [],
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].verdict",
+      "note": "an unhashable verdict is a refusal, never a crash"
+    },
+    {
+      "name": "unknown_reason_an_object",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "unknown",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": {},
+            "cause": "x",
+            "action": {
+              "kind": "gate",
+              "ref": "g"
+            }
+          }
+        ],
+        "tally": {
+          "met": 0,
+          "missed": 0,
+          "unknown": 1
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].unknown_reason",
+      "note": "an unhashable unknown_reason is a refusal, never a crash"
+    },
+    {
+      "name": "action_kind_a_list",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": {
+              "kind": [],
+              "ref": "x"
+            }
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].action.kind",
+      "note": "an unhashable action kind is a refusal, never a crash"
+    },
+    {
+      "name": "met_row_with_unknown_reason_a_list",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": [
+              "no_data"
+            ],
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].unknown_reason",
+      "note": "an unhashable unknown_reason on a non-unknown row is a refusal, never a crash"
+    },
+    {
       "name": "action_extra_key",
       "block": {
         "schema": "metric-checkpoint/v1",

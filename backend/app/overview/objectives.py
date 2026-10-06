@@ -111,8 +111,16 @@ def _group(
 
 
 def _initiative_problems(
-    initiatives: list[InitiativeRead], skeletons: int, voids: int = 0
+    initiatives: list[InitiativeRead],
+    skeletons: int,
+    voids: int = 0,
+    degraded: str | None = None,
 ) -> list[str]:
+    """Why the objectives can't be read; empty when they can.
+
+    No initiative document at all is NOT a problem — the project simply has
+    none written yet, and the page says so. But a degraded listing cannot
+    vouch for that absence, so it is one."""
     problems: list[str] = []
     for i in initiatives:
         if i.state == "unreadable":
@@ -131,8 +139,11 @@ def _initiative_problems(
             problems.append(
                 "no initiative has been written yet (only coord's skeleton exists)"
             )
-        else:
-            problems.append("there is no initiative document")
+        elif degraded:
+            problems.append(
+                "coord's document list is incomplete, so whether an initiative "
+                "exists is unknown"
+            )
     return problems
 
 
@@ -241,7 +252,7 @@ async def build_objectives(
     read_now = dict(zip(to_read, by_id_reads, strict=True))
     by_id.update(read_now)
     for metric in readable:
-        join_results(metric, listed[metric.name], by_id, now)
+        _join_one(metric, listed, by_id, now)
 
     return ObjectivesRead(
         tenant_id=tenant_id,
@@ -249,7 +260,7 @@ async def build_objectives(
         initiatives=initiatives,
         earlier_initiatives_count=sum(1 for i in initiatives if not i.live),
         objectives_readable=not _initiative_problems(
-            initiatives, initiative_skeletons, initiative_voids
+            initiatives, initiative_skeletons, initiative_voids, listing.degraded
         ),
         metrics=metrics,
         initiative_named_metrics=initiative_named,
@@ -270,6 +281,37 @@ async def build_objectives(
     )
 
 
+def _join_one(
+    metric: MetricRead,
+    listed: dict[str, MetricFindings],
+    by_id: dict[str, ByIdResult],
+    now: datetime,
+) -> None:
+    """Join one metric's reports. An unexpected crash degrades THAT metric —
+    its findings read as unavailable, its criteria UNKNOWN with the reason —
+    and never fails the page."""
+    try:
+        join_results(metric, listed[metric.name], by_id, now)
+        return
+    except Exception as exc:
+        failed = MetricFindings(
+            state="unavailable",
+            reason=(
+                "the checkpoint reports could not be joined to this measure "
+                f"({type(exc).__name__})."
+            ),
+        )
+    listed[metric.name] = failed
+    try:
+        join_results(metric, failed, {}, now)
+    except Exception:
+        metric.findings_read = "unavailable"
+        metric.checkpoint_results = []
+        metric.criteria_latest = []
+        metric.related_notes = []
+        metric.unresolved_results = []
+
+
 def _documents_source(
     degraded: str | None,
     initiatives: list[InitiativeRead],
@@ -282,7 +324,9 @@ def _documents_source(
     details: dict[str, str] = {}
     if degraded:
         reasons.append(f"coord's document list is degraded: {degraded}")
-    problems = _initiative_problems(initiatives, initiative_skeletons, initiative_voids)
+    problems = _initiative_problems(
+        initiatives, initiative_skeletons, initiative_voids, degraded
+    )
     if problems:
         reasons.append("The project's objectives can't be read: " + "; ".join(problems))
     for metric in metrics:

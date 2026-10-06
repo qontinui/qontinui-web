@@ -252,6 +252,8 @@ export interface MetricRead {
   criteria_latest: CriterionResultRead[];
   tally_latest: TallyRead;
   related_notes: RelatedNoteRead[];
+  /** `results:` entries that name no checkpoint and could not be shown. */
+  unresolved_results: UnresolvedResultRead[];
   current_value: CurrentValueRead;
 }
 
