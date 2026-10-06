@@ -16,6 +16,7 @@ import type {
   CheckpointResultRead,
   CriterionResultRead,
   InitiativeRead,
+  LaterReportNotice,
   MetricRead,
   ObjectivesRead,
   ReportRead,
@@ -80,6 +81,9 @@ const UNKNOWN_REASONS: Record<string, string> = {
   results_not_fully_read:
     "The results were not fully read (the findings page came back full)",
   results_unreadable: "The results can't be read",
+  checkpoint_results_unreadable:
+    "Results can't be read (the checkpoint results read failed)",
+  rows_not_recorded: "Reported; rows not yet recorded",
   reported_prose_only: "Reported in prose only — see the report",
   report_unreadable: "Reported, but the result could not be read",
   could_not_run: "The measurement could not be run",
@@ -125,6 +129,12 @@ export function checkpointStatusCopy(cp: CheckpointResultRead): StatusCopy {
         detail: cp.status_reason,
         unknown: true,
       };
+    case "reported_rows_not_recorded":
+      return {
+        text: "Reported; rows not yet recorded",
+        detail: cp.status_reason,
+        unknown: true,
+      };
     case "awaiting":
       return {
         text: `${due} — awaiting the checkpoint report`,
@@ -146,6 +156,12 @@ export function checkpointStatusCopy(cp: CheckpointResultRead): StatusCopy {
     case "unreadable":
       return {
         text: `${due} — results can't be read`,
+        detail: cp.status_reason,
+        unknown: true,
+      };
+    case "checkpoint_results_unreadable":
+      return {
+        text: `${due} — results can't be read (the checkpoint results read failed)`,
         detail: cp.status_reason,
         unknown: true,
       };
@@ -180,16 +196,37 @@ export function checkpointName(
   return day ? `the ${day} checkpoint` : checkpointId.replace(/-/g, " ");
 }
 
+const LATER_SHAPE_WORDS: Record<LaterReportNotice["shape"], string> = {
+  structured: "with a result",
+  prose_only: "in prose only",
+  unreadable_block: "with a result that could not be read",
+  rows_not_recorded: "whose rows are not yet recorded",
+  rows_unread: "whose rows could not be read",
+};
+
 /** D7: the notice an earlier verdict carries when a later report has no rows. */
 export function outOfDateNotice(item: CriterionResultRead): string | null {
   const later = item.out_of_date_notice;
   if (!later) return null;
   const day = shortDay(later.created_at);
-  const how =
-    later.shape === "prose_only"
-      ? "in prose only"
-      : "with a result that could not be read";
+  const how = LATER_SHAPE_WORDS[later.shape];
   return `A later report${day ? ` (${day})` : ""} exists ${how}; this verdict may be out of date — open the report`;
+}
+
+/**
+ * Phase 4: every verdict row comes from coord's checkpoint results read. When
+ * that read failed or came back cut short, the card says so above its
+ * checkpoints — never "no results", never "rows not yet recorded".
+ */
+export function checkpointResultsNotice(metric: MetricRead): string | null {
+  switch (metric.checkpoint_results_read) {
+    case "unavailable":
+      return "Results can't be read: the checkpoint results read failed, so every criterion below is unknown.";
+    case "truncated":
+      return "The checkpoint results were not fully read, so criteria without a result below are unknown.";
+    default:
+      return null;
+  }
 }
 
 /** The report a checkpoint's newest live head is, plus its history. */
@@ -333,6 +370,7 @@ const SOURCE_WHAT: Record<keyof ObjectivesRead["sources"], string> = {
   intent_documents: "the project's documents",
   findings: "the checkpoint reports",
   findings_by_id: "the recorded checkpoint reports",
+  checkpoint_results: "the checkpoint results",
 };
 
 function sourceText(what: string, source: SourceRead): string {
@@ -505,10 +543,17 @@ export function summaryStatusOf(metric: MetricRead): SummaryMetricStatus {
   }
   const unreadable =
     metric.findings_read === "unavailable" ||
-    metric.checkpoint_results.some((c) => c.status === "unreadable");
+    metric.checkpoint_results_read === "unavailable" ||
+    metric.checkpoint_results.some(
+      (c) =>
+        c.status === "unreadable" ||
+        c.status === "checkpoint_results_unreadable"
+    );
   const partial =
     metric.findings_read === "truncated" ||
     metric.findings_read === "not_read" ||
+    metric.checkpoint_results_read === "truncated" ||
+    metric.checkpoint_results_read === "not_read" ||
     metric.checkpoint_results.some((c) => c.status === "not_fully_read");
   const cp = latestReportedCheckpoint(metric);
   const day = shortDay(cp?.due);

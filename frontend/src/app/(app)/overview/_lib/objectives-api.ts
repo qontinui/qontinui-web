@@ -22,16 +22,29 @@ export type SourceQueryType =
   | "absent";
 export type SourceStatus = "ok" | "degraded" | "unavailable" | "truncated";
 export type Verdict = "met" | "missed" | "unknown";
-export type ReportShape = "structured" | "prose_only" | "unreadable_block";
-export type PlacedBy = "block" | "results" | "checkpoint_key";
+/**
+ * `structured`: coord's results table holds the report's rows.
+ * `rows_not_recorded`: a readable result whose rows the table does not hold
+ * yet (the results read SUCCEEDED). `rows_unread`: a readable result whose
+ * rows the results read could not vouch for (it failed, or came back full).
+ */
+export type ReportShape =
+  | "structured"
+  | "prose_only"
+  | "unreadable_block"
+  | "rows_not_recorded"
+  | "rows_unread";
+export type PlacedBy = "table" | "block" | "results" | "checkpoint_key";
 export type CheckpointStatus =
   | "reported"
   | "reported_prose_only"
   | "reported_unreadable"
+  | "reported_rows_not_recorded"
   | "awaiting"
   | "no_report_found"
   | "possible_report_unrecorded"
   | "unreadable"
+  | "checkpoint_results_unreadable"
   | "not_fully_read";
 export type FindingsReadState = "ok" | "truncated" | "unavailable" | "not_read";
 export type UnresolvedReason =
@@ -51,6 +64,8 @@ export interface ObjectivesSources {
   intent_documents: SourceRead;
   findings: SourceRead;
   findings_by_id: SourceRead;
+  /** The read of coord's checkpoint results table — every verdict row. */
+  checkpoint_results: SourceRead;
 }
 
 export interface ObjectiveRead {
@@ -137,6 +152,8 @@ export interface ReportRead {
   gate_id: string | null;
   rows: ResultRowRead[];
   recorded: boolean;
+  /** Why the report's own text is not served (its rows are). */
+  body_unavailable: string | null;
 }
 
 export interface TallyRead {
@@ -248,6 +265,8 @@ export interface MetricRead {
   results: ResultEntryRead[];
   extra_fields: ExtraFieldRead[];
   findings_read: FindingsReadState;
+  /** This metric's share of the checkpoint results read. */
+  checkpoint_results_read: FindingsReadState;
   checkpoint_results: CheckpointResultRead[];
   criteria_latest: CriterionResultRead[];
   tally_latest: TallyRead;

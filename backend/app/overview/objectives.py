@@ -12,10 +12,14 @@ One server-side join, so the browser parses no prose and no YAML:
 * the checkpoint reports, found in coord's findings by the metric document's
   resource keys (ONE read per metric, so one busy metric's notices cannot
   truncate another's) plus a by-id read of the ids the document records in its
-  ``results:`` list (a by-id read serves a row past its 14-day list expiry);
-* each report's ``artifact_refs.metric_checkpoint`` block, trusted only when
-  the strict ``metric-checkpoint/v1`` validator passes
-  (:mod:`app.overview.metric_checkpoint`).
+  ``results:`` list and of every result row's evidence finding (a by-id read
+  serves a row past its 14-day list expiry, and supplies each report's body);
+* every verdict ROW, read from coord's checkpoint results table through its
+  door (:mod:`app.overview.objectives_results`, Phase 4) — never rebuilt from
+  a finding's ``artifact_refs.metric_checkpoint`` block. The block is still
+  checked by the strict ``metric-checkpoint/v1`` validator
+  (:mod:`app.overview.metric_checkpoint`), so an invalid one says "the result
+  could not be read" with the reason rather than "rows not yet recorded".
 
 **Nothing unobserved reads as a result.** The denominator is the criteria the
 document DECLARES; a declared criterion no report covers is UNKNOWN with the
@@ -72,6 +76,12 @@ from app.overview.objectives_models import (
     ObjectivesSources,
     SourceRead,
     TallyRead,
+)
+from app.overview.objectives_results import (
+    CheckpointRows,
+    MetricRows,
+    checkpoint_results_source,
+    read_checkpoint_results,
 )
 from app.overview.permissions import OverviewAccess, get_overview_access
 from app.overview.resource import StoreContext
@@ -195,6 +205,13 @@ async def build_objectives(
                 ),
                 findings=unread,
                 findings_by_id=unread,
+                checkpoint_results=SourceRead(
+                    status="unavailable",
+                    reason=(
+                        "The checkpoint results were not read because the "
+                        "documents could not be."
+                    ),
+                ),
             ),
         )
     docs = [d for d in listing.items if isinstance(d, IntentDocumentRead)]
@@ -230,10 +247,14 @@ async def build_objectives(
 
     # Findings: one list read per readable metric, then by id the recorded
     # results the list reads did not already return.
+    # The checkpoint results (every verdict row) are one read beside them.
     gate = asyncio.Semaphore(LIST_CONCURRENCY)
     readable = [m for m in metrics if m.state != "unreadable"]
-    listed_reads = await asyncio.gather(
-        *(read_metric_findings(coord, tenant_id, m.name, gate) for m in readable)
+    listed_reads, table = await asyncio.gather(
+        asyncio.gather(
+            *(read_metric_findings(coord, tenant_id, m.name, gate) for m in readable)
+        ),
+        read_checkpoint_results(coord, tenant_id, [m.name for m in readable], gate),
     )
     listed = dict(zip((m.name for m in readable), listed_reads, strict=True))
     # A recorded id any metric's list read already returned needs no by-id
@@ -243,15 +264,17 @@ async def build_objectives(
     }
     by_id: dict[str, ByIdResult] = {}
     wanted: list[str] = []
-    for metric in readable:
-        for entry in metric.results:
-            fid = entry.finding_id
-            if not fid or not is_uuid(fid) or fid in by_id or fid in wanted:
-                continue
-            if fid in listed_anywhere:
-                by_id[fid] = ByIdResult(finding=listed_anywhere[fid])
-            else:
-                wanted.append(fid)
+    # Recorded ids first, then each result row's evidence finding (its body).
+    candidates = [e.finding_id for m in readable for e in m.results] + [
+        fid for m in readable for fid in table.by_metric.get(m.name, {})
+    ]
+    for fid in candidates:
+        if not fid or not is_uuid(fid) or fid in by_id or fid in wanted:
+            continue
+        if fid in listed_anywhere:
+            by_id[fid] = ByIdResult(finding=listed_anywhere[fid])
+        else:
+            wanted.append(fid)
     to_read, over = wanted[:MAX_RESULT_ID_READS], wanted[MAX_RESULT_ID_READS:]
     by_id_reads = await asyncio.gather(
         *(read_by_id(coord, tenant_id, fid, gate) for fid in to_read)
@@ -259,7 +282,7 @@ async def build_objectives(
     read_now = dict(zip(to_read, by_id_reads, strict=True))
     by_id.update(read_now)
     for metric in readable:
-        _join_one(metric, listed, by_id, now)
+        _join_one(metric, listed, by_id, now, table)
 
     return ObjectivesRead(
         tenant_id=tenant_id,
@@ -284,6 +307,7 @@ async def build_objectives(
             ),
             findings=_findings_source(listed),
             findings_by_id=_by_id_source(read_now, over),
+            checkpoint_results=checkpoint_results_source(table),
         ),
     )
 
@@ -293,12 +317,14 @@ def _join_one(
     listed: dict[str, MetricFindings],
     by_id: dict[str, ByIdResult],
     now: datetime,
+    table: CheckpointRows,
 ) -> None:
     """Join one metric's reports. An unexpected crash degrades THAT metric —
     its findings read as unavailable, its criteria UNKNOWN with the reason —
     and never fails the page."""
+    rows = table.for_metric(metric.name)
     try:
-        join_results(metric, listed[metric.name], by_id, now)
+        join_results(metric, listed[metric.name], by_id, now, rows)
         return
     except Exception as exc:
         logger.exception("overview_objectives_join_failed", metric=metric.name)
@@ -318,10 +344,17 @@ def _join_one(
         if entry.finding_id
     }
     try:
-        join_results(metric, failed, failed_by_id, now)
+        join_results(
+            metric,
+            failed,
+            failed_by_id,
+            now,
+            MetricRows(state=rows.state, reason=rows.reason),
+        )
     except Exception:
         logger.exception("overview_objectives_join_fallback_failed", metric=metric.name)
         metric.findings_read = "unavailable"
+        metric.checkpoint_results_read = rows.state
         metric.checkpoint_results = []
         metric.related_notes = []
         metric.unresolved_results = []
@@ -422,7 +455,7 @@ def _by_id_source(by_id: dict[str, ByIdResult], over: list[str]) -> SourceRead:
         return SourceRead(
             status="truncated",
             reason=(
-                f"{len(over)} recorded result(s) were not read: one request reads at "
+                f"{len(over)} report(s) were not read by id: one request reads at "
                 f"most {MAX_RESULT_ID_READS} by id."
             ),
             affected=[*failed, *missing, *over],
@@ -431,14 +464,14 @@ def _by_id_source(by_id: dict[str, ByIdResult], over: list[str]) -> SourceRead:
     if failed:
         return SourceRead(
             status="degraded",
-            reason=f"{len(failed)} recorded result(s) could not be read by id.",
+            reason=f"{len(failed)} report(s) could not be read by id.",
             affected=[*failed, *missing],
             details=details,
         )
     if missing:
         return SourceRead(
             status="ok",
-            reason=f"{len(missing)} recorded result(s) were superseded or are missing.",
+            reason=f"{len(missing)} recorded report(s) were superseded or are missing.",
             affected=list(missing),
             details=details,
         )

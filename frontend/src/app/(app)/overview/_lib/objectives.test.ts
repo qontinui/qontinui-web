@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   baselineLine,
+  checkpointResultsNotice,
   checkpointStatusCopy,
   currentValueText,
   definitionHref,
@@ -77,6 +78,7 @@ function metric(overrides: Partial<MetricRead> = {}): MetricRead {
     results: [],
     extra_fields: [],
     findings_read: "ok",
+    checkpoint_results_read: "ok",
     checkpoint_results: [],
     criteria_latest: [],
     tally_latest: { met: 0, missed: 0, unknown: 0 },
@@ -130,6 +132,7 @@ function report(overrides: Partial<ReportRead> = {}): ReportRead {
     gate_id: null,
     rows: [],
     recorded: true,
+    body_unavailable: null,
     ...overrides,
   };
 }
@@ -169,7 +172,12 @@ function read(overrides: Partial<ObjectivesRead> = {}): ObjectivesRead {
     other_metrics: [],
     skeletons_hidden: 0,
     void_hidden: 0,
-    sources: { intent_documents: OK, findings: OK, findings_by_id: OK },
+    sources: {
+      intent_documents: OK,
+      findings: OK,
+      findings_by_id: OK,
+      checkpoint_results: OK,
+    },
     ...overrides,
   };
 }
@@ -191,6 +199,7 @@ describe("an unreadable source is never 'no results'", () => {
             details: {},
           },
           findings_by_id: OK,
+          checkpoint_results: OK,
         },
       })
     );
@@ -208,6 +217,7 @@ describe("an unreadable source is never 'no results'", () => {
           intent_documents: { ...OK, status: "degraded", reason: "x" },
           findings: { ...OK, status: "truncated", reason: "page full" },
           findings_by_id: OK,
+          checkpoint_results: OK,
         },
       })
     );
@@ -257,6 +267,94 @@ describe("an unreadable source is never 'no results'", () => {
     expect(unreadable.detail).toBe("tally: states met 2");
   });
 
+  it("says results can't be read when the checkpoint results read failed", () => {
+    const copy = checkpointStatusCopy(
+      checkpoint({
+        status: "checkpoint_results_unreadable",
+        status_reason:
+          "coord's checkpoint-results reader is not answering (HTTP 404)",
+      })
+    );
+    expect(copy.text).toBe(
+      "Due 8 Oct — results can't be read (the checkpoint results read failed)"
+    );
+    expect(copy.detail).toMatch(/HTTP 404/);
+    expect(copy.unknown).toBe(true);
+    expect(unknownReasonText("checkpoint_results_unreadable")).toBe(
+      "Results can't be read (the checkpoint results read failed)"
+    );
+  });
+
+  it("names a failed checkpoint results read as its own source notice", () => {
+    const notices = sourceNotices(
+      read({
+        sources: {
+          intent_documents: OK,
+          findings: OK,
+          findings_by_id: OK,
+          checkpoint_results: {
+            status: "unavailable",
+            reason: "available: false",
+            affected: ["m"],
+            details: {},
+          },
+        },
+      })
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.key).toBe("checkpoint_results");
+    expect(notices[0]!.text).toBe(
+      "Couldn't read the checkpoint results, so results here are unknown, not empty."
+    );
+  });
+
+  it("says on the card when the checkpoint results were not (fully) read", () => {
+    expect(
+      checkpointResultsNotice(
+        metric({ checkpoint_results_read: "unavailable" })
+      )
+    ).toMatch(/^Results can't be read: the checkpoint results read failed/);
+    expect(
+      checkpointResultsNotice(metric({ checkpoint_results_read: "truncated" }))
+    ).toMatch(/not fully read/);
+    expect(checkpointResultsNotice(metric())).toBeNull();
+  });
+
+  it("says 'rows not yet recorded' for a report whose rows are missing", () => {
+    const copy = checkpointStatusCopy(
+      checkpoint({
+        status: "reported_rows_not_recorded",
+        report: report({ shape: "rows_not_recorded" }),
+      })
+    );
+    expect(copy.text).toBe("Reported; rows not yet recorded");
+    expect(copy.unknown).toBe(true);
+    expect(unknownReasonText("rows_not_recorded")).toBe(
+      "Reported; rows not yet recorded"
+    );
+  });
+
+  it("never says 'no checkpoint reported' when the results table can't be read", () => {
+    const m = metric({
+      checkpoint_results_read: "unavailable",
+      checkpoint_results: [
+        checkpoint({ status: "checkpoint_results_unreadable" }),
+      ],
+    });
+    expect(summaryStatusOf(m)).toEqual({
+      line: "Results can't be read",
+      unknown: true,
+    });
+    const partial = metric({
+      checkpoint_results_read: "truncated",
+      checkpoint_results: [checkpoint()],
+    });
+    expect(summaryStatusOf(partial)).toEqual({
+      line: "Results only partly read",
+      unknown: true,
+    });
+  });
+
   it("says so when no due date is declared", () => {
     expect(checkpointStatusCopy(checkpoint({ due: null })).text).toBe(
       "No due date declared — awaiting the checkpoint report"
@@ -284,6 +382,7 @@ describe("an unreadable source is never 'no results'", () => {
           },
           findings: OK,
           findings_by_id: OK,
+          checkpoint_results: OK,
         },
       })
     );
@@ -359,6 +458,20 @@ describe("D7 out-of-date notice", () => {
     expect(
       outOfDateNotice({ out_of_date_notice: null } as CriterionResultRead)
     ).toBe(null);
+  });
+
+  it("names a later report whose rows are not yet recorded", () => {
+    const item = {
+      out_of_date_notice: {
+        finding_id: "f2",
+        checkpoint: "checkpoint-2",
+        created_at: "2026-10-13T10:00:00Z",
+        shape: "rows_not_recorded",
+      },
+    } as CriterionResultRead;
+    expect(outOfDateNotice(item)).toBe(
+      "A later report (13 Oct) exists whose rows are not yet recorded; this verdict may be out of date — open the report"
+    );
   });
 });
 
