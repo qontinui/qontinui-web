@@ -66,6 +66,30 @@ on:
 permissions:
   contents: read
 
+# PR-SCOPED SUPERSESSION (shared hosted-job cap relief, 2026-10-05). A FIRST-
+# attempt `pull_request` run joins a per-workflow, per-PR group and cancels the
+# run it supersedes there: a `synchronize` cancels the older head's run, and a
+# `reopened` cancels the same-head run it re-does (coord's ci-abandoned
+# recovery is a close+reopen). Every OTHER run -- whichever of push (main,
+# develop, merge-candidate*/** -- coord's candidate CI), schedule,
+# workflow_dispatch and workflow_run this file has, and EVERY re-run (run_attempt > 1) -- gets a
+# group unique to its run id + attempt, so it is never cancelled, never reaped
+# while pending, and never queues behind anything.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here is
+# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
+# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
+# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# RESIDUAL: two pushes seconds apart can have
+# their runs CREATED out of order, so the older head's run cancels the newer
+# head's; the next push (or a close+reopen) heals it.
+# Pattern: qontinui-claude-config#1475.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
+
 jobs:
   workflow-lint:
     name: workflow-lint
@@ -141,12 +165,18 @@ jobs:
         # Exit codes (zizmor 1.30.1 docs/usage.md): 0 clean; 11-14 findings
         # (by max severity); 1/2/3 are tool errors, and anything else (101
         # panic, 137 SIGKILL, 143 SIGTERM, ...) is an error too, never FINDINGS.
+        # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
+        # runners are PERSISTENT services, so zizmor's default HTTP cache
+        # (~/.cache/zizmor of the runner user) is shared by every job on the
+        # host -- any PR job could seed it with forged API answers and blind the
+        # online audits (impostor-commit, known-vulnerable-actions) of later
+        # runs. A cold cache costs only the few action lookups this repo makes.
         run: |
           mapfile -t files < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
           mapfile -t -O "${#files[@]}" files < <(find .github/actions -type f \( -name 'action.yml' -o -name 'action.yaml' \) | sort)
           files+=(.github/dependabot.yml)
           set +e
-          out="$(zizmor --no-progress --format github --config .github/zizmor.yml "${files[@]}")"
+          out="$(zizmor --no-progress --cache-dir "${RUNNER_TEMP}/zizmor-cache" --format github --config .github/zizmor.yml "${files[@]}")"
           rc=$?
           set -e
           printf '%s\n' "$out"

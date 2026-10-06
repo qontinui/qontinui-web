@@ -1,73 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
-import { cookies } from "next/headers";
+import { proxyToBackend, type ProxyOptions } from "@/lib/server/proxyToBackend";
 
-async function proxyToBackend(
-  request: NextRequest,
-  params: Promise<{ projectId: string }>
-): Promise<NextResponse> {
-  const { projectId } = await params;
-  const cookieStore = await cookies();
-  const accessTokenCookie = cookieStore.get("access_token");
+/** /api/v1/projects/[projectId]/extractions — proxied via `proxyToBackend`. */
+const OPTIONS: ProxyOptions = {
+  tokenSources: ["cookie"],
+  onMissingToken: "forward",
+  forwardBody: "text",
+  query: "raw",
+  errorBody: "throw",
+};
 
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-  };
-
-  if (accessTokenCookie?.value) {
-    headers["Authorization"] = `Bearer ${accessTokenCookie.value}`;
-  }
-
-  const url = new URL(request.url);
-  const base = backendBaseOrResponse();
-  if (base instanceof NextResponse) return base;
-  const backendUrl = `${base}/api/v1/projects/${projectId}/extractions${url.search}`;
-
-  const fetchOptions: RequestInit = {
-    method: request.method,
-    headers,
-  };
-
-  // Include body for POST, PUT, PATCH
-  if (["POST", "PUT", "PATCH"].includes(request.method)) {
-    fetchOptions.body = await request.text();
-  }
-
-  const response = await fetch(backendUrl, fetchOptions);
-
-  // For 204 No Content, return empty response
-  if (response.status === 204) {
-    return new NextResponse(null, { status: 204 });
-  }
-
-  const data = await response.text();
-
-  return new NextResponse(data, {
-    status: response.status,
-    headers: {
-      "Content-Type":
-        response.headers.get("Content-Type") || "application/json",
-    },
-  });
-}
+type Context = { params: Promise<{ projectId: string }> };
 
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ projectId: string }> }
+  { params }: Context
 ): Promise<NextResponse> {
-  return proxyToBackend(request, context.params);
+  const { projectId } = await params;
+  return proxyToBackend(
+    request,
+    `/api/v1/projects/${projectId}/extractions`,
+    OPTIONS
+  );
 }
 
 export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ projectId: string }> }
+  { params }: Context
 ): Promise<NextResponse> {
-  return proxyToBackend(request, context.params);
+  const { projectId } = await params;
+  return proxyToBackend(
+    request,
+    `/api/v1/projects/${projectId}/extractions`,
+    OPTIONS
+  );
 }
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ projectId: string }> }
+  { params }: Context
 ): Promise<NextResponse> {
-  return proxyToBackend(request, context.params);
+  const { projectId } = await params;
+  return proxyToBackend(
+    request,
+    `/api/v1/projects/${projectId}/extractions`,
+    OPTIONS
+  );
 }

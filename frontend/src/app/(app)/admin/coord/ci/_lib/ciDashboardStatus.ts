@@ -34,9 +34,18 @@
  *    with zero failed steps (runner died, billing refusal) is not a code
  *    failure, and counting it as one sends authors to fix code that is not
  *    broken. The two are separate counts on every surface.
- * 4. **`hosted` is not measured.** The job sampler skips hosted-only
- *    workflows, so any hosted count would be a fabrication. It renders `–`
- *    with coord's note, never a number.
+ * 4. **`hosted` is a refusal FLOOR, never a measured zero** (Phase 5a).
+ *    Coord counts hosted jobs GitHub NEVER STARTED (conclusion failure, no
+ *    runner, no steps) in the 24 h window as `hosted_refused`. That is INFRA
+ *    — "hosted job refused — not a code failure" — and it is never summed
+ *    into `content_fail`, the content-red badge, or `infra_shaped` (which is
+ *    self-hosted only). Only `state: "observed"` renders a number, and it
+ *    renders as `≥N` because the count is a floor. `none_observed` is NOT a
+ *    measured zero (`–` with coord's note), `unknown` is `–` UNKNOWN, and an
+ *    older coord's `not_measured` is `–` with its note. An open
+ *    `ci_billing_refused` alert names the proven cause ("GitHub Actions
+ *    billing / spending limit") whatever the state; without it the cause is
+ *    "not stored", never guessed.
  *
  * ## Colour means who must act (R3)
  *
@@ -142,9 +151,33 @@ export interface CiOutcomesWire {
   unknown: number;
 }
 
+/**
+ * The repo's open `ci_billing_refused` alert — the PROVEN cause of hosted
+ * refusals (Actions billing / spending limit).
+ */
+export interface CiBillingRefusalWire {
+  alert_id: string;
+  opened_at: string;
+  last_seen_at: string | null;
+}
+
+/**
+ * Coord's hosted-unstarted block (Phase 5a). `state` is `observed` /
+ * `none_observed` / `unknown`; an older coord sends `not_measured` with a
+ * note and none of the other fields, so every field past `state` is optional
+ * and absent reads as `null`.
+ */
 export interface CiHostedWire {
   state: string;
-  note: string | null;
+  note?: string | null;
+  /**
+   * Hosted jobs GitHub never started in the window — INFRA, never content.
+   * A FLOOR. Non-null only when `state == "observed"` (and then never 0).
+   */
+  hosted_refused?: number | null;
+  /** RFC3339: the newest counted job's `completed_at`. */
+  last_refused_at?: string | null;
+  billing_refusal?: CiBillingRefusalWire | null;
 }
 
 export interface CiRepoOverviewWire {
@@ -220,6 +253,16 @@ export interface CellReading {
   known: boolean;
   /** Why it is not a number — rendered as the cell's title, always present when `known` is false. */
   reason: string | null;
+  /**
+   * A known figure's explanation, rendered as its title. Only the hosted
+   * refusal cell sets it (what the floor means, and its cause).
+   */
+  note?: string | null;
+  /**
+   * `infra` paints a KNOWN figure amber: an infrastructure signal (hosted
+   * job refused), never content red. Absent = the calm default.
+   */
+  tone?: "infra";
 }
 
 export const DASH = "–";
@@ -896,7 +939,10 @@ export interface OutcomeCells {
   infra_shaped: CellReading;
   neutral: CellReading;
   unknown: CellReading;
-  /** Always `–`: hosted jobs are not sampled (plan D3, Phase 5a). */
+  /**
+   * Hosted jobs GitHub never started (Phase 5a): `≥N` INFRA on `observed`,
+   * otherwise `–` with the reason. Never `0`, never part of `content_fail`.
+   */
   hosted: CellReading;
 }
 
@@ -932,15 +978,69 @@ const MAIN_VERDICT_TEXT: Record<string, string> = {
   vacuously_green: DASH,
 };
 
-export function outcomeCells(row: CiRepoOverviewWire | null): OutcomeCells {
-  const hostedNote =
-    row?.hosted?.note ??
-    "hosted-only workflows are not sampled, so no hosted count exists";
-  const hosted: CellReading = {
+/** The proven cause, in an operator's words. */
+export const BILLING_REFUSAL_TEXT =
+  "GitHub Actions billing refusing hosted jobs";
+
+/** A positive integer, or null — `hosted_refused` is never a 0 count. */
+function refusedCount(h: CiHostedWire | null | undefined): number | null {
+  if (!h || h.state !== "observed") return null;
+  const n = h.hosted_refused;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function billingSentence(b: CiBillingRefusalWire): string {
+  return `Cause: ${BILLING_REFUSAL_TEXT} (Actions billing / spending limit — open ci_billing_refused alert ${b.alert_id} since ${b.opened_at}${b.last_seen_at ? `, last seen ${b.last_seen_at}` : ""}).`;
+}
+
+/**
+ * The hosted cell (rule 4). A count only on `observed`, shown as the floor
+ * it is (`≥N refused`) on the amber INFRA tone; every other state is `–`
+ * with its reason. An open billing alert is surfaced in either case.
+ */
+export function hostedCell(h: CiHostedWire | null | undefined): CellReading {
+  const billing = h?.billing_refusal ?? null;
+  const note = h?.note?.trim() ? h.note.trim() : null;
+  const n = refusedCount(h);
+  if (n !== null) {
+    const cause = billing
+      ? billingSentence(billing)
+      : "Cause not stored — no open billing alert names one.";
+    return {
+      text: `≥${n} refused${billing ? " (billing)" : ""}`,
+      known: true,
+      reason: null,
+      tone: "infra",
+      note: [
+        `Hosted job refused — not a code failure. At least ${n} hosted job(s) GitHub never started in the window (a floor; not counted in content fail).`,
+        h?.last_refused_at ? `Newest refusal ${h.last_refused_at}.` : null,
+        cause,
+        note,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  }
+  const state = h?.state ?? null;
+  const base =
+    h === null || h === undefined
+      ? "coord sent no hosted block — UNKNOWN"
+      : state === "observed"
+        ? "coord reported hosted refusals without a positive count — UNKNOWN, not 0"
+        : state === "none_observed"
+          ? `no hosted refusal observed — not a measured zero${note ? ` (${note})` : ""}`
+          : state === "not_measured"
+            ? `not measured — ${note ?? "hosted-only workflows are not sampled, so no hosted count exists"}`
+            : `UNKNOWN — ${note ?? "coord could not read hosted job state"}`;
+  return {
     text: DASH,
     known: false,
-    reason: `not measured — ${hostedNote}`,
+    reason: billing ? `${base}. ${billingSentence(billing)}` : base,
   };
+}
+
+export function outcomeCells(row: CiRepoOverviewWire | null): OutcomeCells {
+  const hosted = hostedCell(row?.hosted);
   if (row === null) {
     const r =
       "coord's CI overview has no outcome row for this repo — not measured";
@@ -1213,7 +1313,128 @@ function sumOutcome(
   };
 }
 
+/** The strip's view of every repo's hosted block (rule 4). */
+export interface HostedSummary {
+  /** Sum of the observed floors; null when no repo is `observed`. A FLOOR. */
+  refusedFloor: number | null;
+  /** Repos with an `observed` positive count. */
+  refusedRepos: string[];
+  /** Repos with an open `ci_billing_refused` alert (any hosted state). */
+  billingRepos: string[];
+  /** Repos whose hosted block is `unknown` (or a state this build does not know). */
+  unknownRepos: string[];
+}
+
+export function hostedSummary(data: CiOverviewWire | null): HostedSummary {
+  let floor = 0;
+  const refusedRepos: string[] = [];
+  const billingRepos: string[] = [];
+  const unknownRepos: string[] = [];
+  for (const r of data?.repos ?? []) {
+    const n = refusedCount(r.hosted);
+    if (n !== null) {
+      floor += n;
+      refusedRepos.push(r.repo);
+    }
+    if (r.hosted?.billing_refusal) billingRepos.push(r.repo);
+    const st = r.hosted?.state;
+    if (n === null && st !== "none_observed" && st !== "not_measured")
+      unknownRepos.push(r.repo);
+  }
+  return {
+    refusedFloor: refusedRepos.length > 0 ? floor : null,
+    refusedRepos,
+    billingRepos,
+    unknownRepos,
+  };
+}
+
+function reposText(repos: string[]): string {
+  return repos.length === 1 && repos[0] ? repos[0] : `${repos.length} repos`;
+}
+
+/**
+ * The strip's hosted badge. Tone: `waiting` (amber) on the BADGE (and the
+ * row cell), never `attention` (red) — and never on the strip LEVEL.
+ *
+ * Why the badge is amber but the level does not move: hosted CI is
+ * deliberately OFF for this tenant (plan Why section), so every hosted job
+ * is refused and the 24 h refusal floor never empties by itself. Holding the
+ * strip amber would make it permanently amber, breaking R3's promise that
+ * amber clears itself; holding it red would claim someone must act now on a
+ * configured state. This is R3's "third case" — a real fact (and, with a
+ * billing alert, a real operator decision) that blocks nothing: the level
+ * stays whatever the other arms derive, and the ask is stated in WORDS — the
+ * strip detail names it ({@link deriveCiHealth}). The badge itself is a count
+ * that is a signal but not content red, which is what `waiting` is for.
+ * Above all it must never read as content red: it is never folded into the
+ * content-fail badge, the main-red count, or `infra_shaped` (self-hosted
+ * only).
+ */
+export function hostedBadge(h: HostedSummary): HealthBadge {
+  const billing = h.billingRepos.length > 0;
+  if (h.refusedFloor !== null || billing) {
+    const n = h.refusedFloor === null ? DASH : `≥${h.refusedFloor}`;
+    return {
+      key: "hosted",
+      label: billing ? `billing refusing hosted ${n}` : `hosted refused ${n}`,
+      tone: "waiting",
+      title: [
+        h.refusedFloor !== null
+          ? `Hosted job refused — not a code failure. At least ${h.refusedFloor} hosted job(s) GitHub never started in 24 h on ${reposText(h.refusedRepos)} (a floor; NOT counted in content fail).`
+          : "No hosted refusal count was observed — a dash, not a zero.",
+        billing
+          ? `${BILLING_REFUSAL_TEXT} on ${reposText(h.billingRepos)} (open ci_billing_refused alert — Actions billing / spending limit).`
+          : "Cause not stored — no open billing alert names one.",
+      ].join(" "),
+      "data-testid": "ci-health-badge-hosted",
+    };
+  }
+  return {
+    key: "hosted",
+    label: `hosted ${DASH}`,
+    tone: "muted",
+    title:
+      h.unknownRepos.length > 0
+        ? `Hosted refusals UNKNOWN for ${reposText(h.unknownRepos)} — a dash, not a zero.`
+        : "No hosted refusal observed — not a measured zero. Never a count of 0.",
+    "data-testid": "ci-health-badge-hosted",
+  };
+}
+
+/** The hosted infra sentence the strip adds to its detail, or null. */
+function hostedDetail(h: HostedSummary): string | null {
+  if (h.billingRepos.length > 0) {
+    return `${BILLING_REFUSAL_TEXT} on ${reposText(h.billingRepos)} — infra (Actions billing / spending limit), not a code failure${h.refusedFloor !== null ? `; ≥${h.refusedFloor} hosted job(s) refused in 24 h` : ""}.`;
+  }
+  if (h.refusedFloor !== null) {
+    return `≥${h.refusedFloor} hosted job(s) refused in 24 h on ${reposText(h.refusedRepos)} — infra, not a code failure; cause not stored.`;
+  }
+  return null;
+}
+
+/**
+ * The strip verdict. Hosted refusals (rule 4) never move the LEVEL and never
+ * touch the content counts: they add their sentence (naming the billing cause
+ * when an alert proves it) to the detail of whatever arm fired, green
+ * included — R3's third case, see {@link hostedBadge} for why.
+ */
 export function deriveCiHealth(
+  overview: OverviewRead,
+  ciStatus: CiStatusRead,
+  now: number
+): CiHealth {
+  const base = deriveCiHealthCore(overview, ciStatus, now);
+  const h = hostedSummary(overview.data);
+  const sentence = hostedDetail(h);
+  if (sentence === null) return base;
+  return {
+    ...base,
+    detail: [base.detail, sentence].filter(Boolean).join(" "),
+  };
+}
+
+function deriveCiHealthCore(
   overview: OverviewRead,
   ciStatus: CiStatusRead,
   // The page clock (ms). The row verdicts are coord's (`state` is computed
@@ -1307,14 +1528,7 @@ export function deriveCiHealth(
         ? `Not measured for ${infra.unmeasured} repo(s) — a dash, not a zero.`
         : "Jobs that failed with zero failed steps (runner died, refused, billing) — not a code failure."
     ),
-    {
-      key: "hosted",
-      label: `hosted ${DASH}`,
-      tone: "muted",
-      title:
-        "Hosted jobs are not measured: the sampler skips hosted-only workflows. Never a count.",
-      "data-testid": "ci-health-badge-hosted",
-    }
+    hostedBadge(hostedSummary(data))
   );
 
   // The read itself ages by the page clock: a failed refresh, an as_of older
