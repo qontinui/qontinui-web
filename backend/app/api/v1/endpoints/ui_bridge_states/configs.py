@@ -38,7 +38,9 @@ from ._presenters import (
     transition_to_response,
 )
 
-logger = structlog.get_logger(__name__)
+# Pinned to the pre-split module name so the `logger` field on every event
+# is unchanged by the package split (structlog add_logger_name is active).
+logger = structlog.get_logger("app.api.v1.endpoints.ui_bridge_states")
 
 router = APIRouter()
 export_router = APIRouter()
