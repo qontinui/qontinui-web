@@ -12,7 +12,7 @@
  */
 
 import type { Workflow } from "../lib/action-schema/action-types";
-import type { Viewport } from "../stores/canvas-store";
+import type { Viewport } from "./canvas";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("CanvasPersistence");
