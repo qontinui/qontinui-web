@@ -773,8 +773,12 @@ jobs:
   #   (b) no file under backend/alembic/versions/ is deleted, renamed,
   #       copied or type-changed (a deletion or rename means this job would
   #       test a different tree from the one that lands);
-  #   (c) after the overlay, the revision graph resolves to exactly ONE head
-  #       and that head's file IS the overlaid file;
+  #   (c) after the overlay, the revision graph resolves to exactly ONE head,
+  #       that head's file IS the overlaid file, alembic raised no duplicate
+  #       warning while building it ("present more than once" / "loaded
+  #       twice"), and the head's revision id is NOT one the base already
+  #       defines (read from the pure base tree BEFORE the overlay -- a byte
+  #       copy of a base revision is not a new migration);
   #   (d) that head is not a merge revision -- decided from alembic's own
   #       `Revision.down_revision` type (tuple/list => merge), never by text;
   #   (e) `upgrade head`, `downgrade -1` and `upgrade head` all exit 0,
@@ -858,12 +862,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Conditions (a) and (b), then the isolation itself: switch the whole
-      # tree to the BASE sha and overlay the one migration file from the PR
-      # head. Runs before any install, so a PR that cannot qualify fails in
+      # Conditions (a) and (b), then switch the whole tree to the BASE sha.
+      # Runs before any install, so a PR that cannot qualify fails in
       # seconds -- and so the install below resolves the BASE's
-      # pyproject.toml / poetry.lock, not the head's.
-      - name: Isolate the PR's migration onto the base tree
+      # pyproject.toml / poetry.lock, not the head's. The one migration file
+      # is overlaid from the PR head only AFTER the base's revision set has
+      # been read (see "Base revision set" below), so that read sees a pure
+      # base tree.
+      - name: Qualify the PR's migration and switch to the base tree
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -949,24 +955,22 @@ jobs:
               ;;
           esac
 
-          # The isolation. Detach onto the BASE, then take exactly one file
-          # from the PR head. Everything else -- env.py, alembic.ini, app/,
-          # pyproject.toml, poetry.lock -- is the base's.
+          # Detach onto the BASE. Everything -- env.py, alembic.ini, app/,
+          # pyproject.toml, poetry.lock, every existing migration -- is now
+          # the base's; the overlay step below adds exactly one file.
           git checkout --quiet --detach "$BASE_SHA"
-          git checkout "$HEAD_SHA" -- "$MRT_MIGRATION"
-          if [ ! -f "$MRT_MIGRATION" ] || [ -L "$MRT_MIGRATION" ]; then
-            echo "::error title=Migration Reversal Tested - condition (a) failed::after the overlay, $MRT_MIGRATION is not a regular file in the working tree (missing or a symlink)."
+          # A pure base tree: no tracked difference from the base, and nothing
+          # untracked under versions/ (an untracked .py there is loaded by
+          # alembic just like a tracked one). Each read is captured on its own
+          # line so a git failure aborts under `set -e` instead of reading as
+          # "empty, therefore clean".
+          untracked=$(git status --porcelain --untracked-files=all -- backend/alembic/versions)
+          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_SHA"; then
+            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_SHA after the switch:"
+            git status --short
             exit 1
           fi
-          echo "Tree is base $BASE_SHA plus $MRT_MIGRATION from head $HEAD_SHA:"
-          git status --short
-          # Prove the overlay is the ONLY difference from the base, rather
-          # than trusting the two commands above to have done exactly that.
-          others=$(git diff --name-only "$BASE_SHA" | grep -vxF "$MRT_MIGRATION" || true)
-          if [ -n "$others" ]; then
-            echo "::error title=Migration Reversal Tested - isolation failed::files other than $MRT_MIGRATION differ from the base: $others"
-            exit 1
-          fi
+          echo "Tree is the pure base $BASE_SHA."
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
@@ -998,6 +1002,85 @@ jobs:
           cd backend
           pip install poetry
           poetry install
+
+      # Condition (c), first half. The revision ids the BASE already defines,
+      # read from alembic's own ScriptDirectory over the PURE base tree --
+      # before the overlay, so no head file is imported here: this is the one
+      # process in the job that builds a revision graph from trusted code
+      # alone. The overlaid migration must define a revision id that is NOT in
+      # this set. A byte copy of an existing base revision, named so it sorts
+      # before the original (e.g. `0000_copy.py`), is otherwise a second
+      # definition of that id -- alembic warns and keeps whichever duplicate it
+      # maps last -- and the single head could then BE the overlaid file while
+      # up -> down -> up exercised the base's own migration: a false
+      # `success`. The base's OWN version of a modified (M) path is excluded
+      # from the set, because the overlay replaces that file rather than adding
+      # a second definition beside it.
+      # Written under $RUNNER_TEMP, never $GITHUB_ENV.
+      - name: Base revision set (pure base tree, before the overlay)
+        env:
+          DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          ENVIRONMENT: development
+          TESTING: 1
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          cd backend
+          set -euo pipefail
+          # A pure base tree: no tracked difference from the base, and nothing
+          # untracked under versions/ (an untracked .py there is loaded by
+          # alembic just like a tracked one). Each read is captured on its own
+          # line so a git failure aborts under `set -e` instead of reading as
+          # "empty, therefore clean".
+          untracked=$(git status --porcelain --untracked-files=all -- alembic/versions)
+          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_SHA"; then
+            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_SHA, so the base revision set cannot be read from trusted code alone:"
+            git status --short
+            exit 1
+          fi
+          poetry run python - "$RUNNER_TEMP/mrt-base-revs" <<'PY'
+          import os
+          import sys
+
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+
+          own = os.path.abspath(os.path.join("..", os.environ["MRT_MIGRATION"]))
+          script = ScriptDirectory.from_config(Config("alembic.ini"))
+          revs = sorted(
+              sc.revision
+              for sc in script.walk_revisions(base="base", head="heads")
+              if os.path.abspath(sc.path) != own
+          )
+          if not revs:
+              print("::error title=Migration Reversal Tested - condition (c) failed::the base defines no revisions; an empty base set would read as 'nothing to collide with', so refusing.")
+              sys.exit(1)
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              fh.write("".join(f"{r}\n" for r in revs))
+          print(f"Base defines {len(revs)} revision id(s), excluding {os.environ['MRT_MIGRATION']} itself where the base has it.")
+          PY
+
+      # The isolation: take exactly one file from the PR head onto the base.
+      - name: Overlay the PR's migration onto the base tree
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git checkout "$HEAD_SHA" -- "$MRT_MIGRATION"
+          if [ ! -f "$MRT_MIGRATION" ] || [ -L "$MRT_MIGRATION" ]; then
+            echo "::error title=Migration Reversal Tested - condition (a) failed::after the overlay, $MRT_MIGRATION is not a regular file in the working tree (missing or a symlink)."
+            exit 1
+          fi
+          echo "Tree is base $BASE_SHA plus $MRT_MIGRATION from head $HEAD_SHA:"
+          git status --short
+          # Prove the overlay is the ONLY difference from the base, rather
+          # than trusting the two commands above to have done exactly that.
+          others=$(git diff --name-only "$BASE_SHA" | grep -vxF "$MRT_MIGRATION" || true)
+          if [ -n "$others" ]; then
+            echo "::error title=Migration Reversal Tested - isolation failed::files other than $MRT_MIGRATION differ from the base: $others"
+            exit 1
+          fi
 
       - name: Install postgresql-client
         id: apt_psql
@@ -1048,6 +1131,7 @@ jobs:
           import os
           import re
           import sys
+          import warnings
 
           from alembic.config import Config
           from alembic.script import ScriptDirectory
@@ -1059,11 +1143,23 @@ jobs:
           # abspath, NOT realpath: realpath would let a symlink and its target
           # compare equal, which is exactly the shape condition (a) refuses.
           overlaid = os.path.abspath(os.path.join("..", os.environ["MRT_MIGRATION"]))
+          # Record every warning raised while the graph is built. alembic warns
+          # -- it does not fail -- on the two duplicate shapes, and silently
+          # keeps one copy: "Revision <id> is present more than once" (two files
+          # define one revision id) and "File <path> loaded twice! ignoring" (one
+          # file reached twice). Either means the graph this job verifies is not
+          # the one the files describe, so either is a failure of (c).
           try:
-              script = ScriptDirectory.from_config(Config("alembic.ini"))
-              heads = script.get_heads()
+              with warnings.catch_warnings(record=True) as caught:
+                  warnings.simplefilter("always")
+                  script = ScriptDirectory.from_config(Config("alembic.ini"))
+                  heads = script.get_heads()
           except BaseException as exc:  # incl. SystemExit/KeyboardInterrupt from an import-time exit
               fail("c", f"the revision graph does not resolve on the base plus {os.environ['MRT_MIGRATION']}: {type(exc).__name__}: {exc}")
+
+          dupes = [str(w.message) for w in caught if "more than once" in str(w.message) or "loaded twice" in str(w.message)]
+          if dupes:
+              fail("c", f"alembic loaded a duplicate while building the revision graph on the base plus {os.environ['MRT_MIGRATION']}: {' | '.join(dupes)}. It keeps one copy and ignores the other, so the revision this job would exercise is not decided by the PR's file.")
 
           if len(heads) != 1:
               fail("c", f"the base plus this migration has {len(heads)} heads ({', '.join(sorted(heads))}), not exactly one. The migration must chain off the base's single head; re-point its down_revision onto the current head.")
@@ -1098,11 +1194,29 @@ jobs:
             echo "::error title=Migration Reversal Tested - condition (c) failed::the head-identity check exited 0 without its final 'MRT_VERDICT ok head=<rev> down=<rev>' line (last line: '${last}'). An exit code of 0 is not a verdict: a migration that calls sys.exit(0) at import ends the check with nothing verified."
             exit 1
           fi
+          head_rev=${BASH_REMATCH[1]}
+          down_rev=${BASH_REMATCH[2]}
+          # Condition (c), second half, decided HERE in the trusted shell from
+          # the set the pure-base step wrote: the head's revision id must be
+          # new. A head whose id the base already defines is a copy of a base
+          # revision, and up -> down -> up would exercise that revision, not a
+          # migration this PR authored. (The untrusted process above could
+          # rewrite this file; per the job's TRUST BOUNDARY note this defeats
+          # an accidental copy, not a hostile migration.)
+          base_revs="$RUNNER_TEMP/mrt-base-revs"
+          if [ ! -s "$base_revs" ]; then
+            echo "::error title=Migration Reversal Tested - condition (c) failed::the base revision set ($base_revs) is missing or empty, so whether head $head_rev is a new revision is UNKNOWN -- not passed."
+            exit 1
+          fi
+          if grep -qxF -- "$head_rev" "$base_revs"; then
+            echo "::error title=Migration Reversal Tested - condition (c) failed::the head revision $head_rev from $MRT_MIGRATION is ALREADY defined by another file in the base. The PR's file is a copy of an existing revision, not a new migration, so upgrade -> downgrade -1 -> upgrade would exercise the base's own migration."
+            exit 1
+          fi
           {
-            echo "MRT_HEAD=${BASH_REMATCH[1]}"
-            echo "MRT_DOWN=${BASH_REMATCH[2]}"
+            echo "MRT_HEAD=$head_rev"
+            echo "MRT_DOWN=$down_rev"
           } >> "$GITHUB_ENV"
-          echo "Verdict parsed: head=${BASH_REMATCH[1]} down=${BASH_REMATCH[2]}."
+          echo "Verdict parsed: head=$head_rev (not in the base's revision set) down=$down_rev."
 
       # Condition (e). Run exactly as `reverse` runs it -- same env, same
       # working directory, same database -- but with NO skip path: any
