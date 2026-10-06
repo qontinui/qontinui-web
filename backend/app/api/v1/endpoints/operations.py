@@ -64,6 +64,7 @@ from websockets.asyncio.client import connect as websockets_connect  # noqa: E40
 
 from app.api.admin_deps import require_admin
 from app.api.deps import (
+    current_active_user_optional,
     get_async_db,
     get_audit_actor_user_optional,
     get_current_active_user_async,
@@ -6221,21 +6222,139 @@ async def get_agent_question(
     )
 
 
+#: ``effect_kind`` values that mean "an ordinary question". A row from a coord
+#: build that predates the column omits it entirely, which reads as ``None``.
+#: Matching is EXACT and case-sensitive: ``"NONE"`` or ``" none "`` is not in
+#: this set, so it is treated as an effect and requires tenant admin.
+_NO_EFFECT_KINDS: frozenset[str | None] = frozenset({None, "", "none"})
+
+
+def _question_effect_kind(row: Any, question_id: UUID) -> str | None:
+    """The row's ``effect_kind`` verbatim; ``None`` when absent or null.
+
+    The row must POSITIVELY identify itself as the requested question: a JSON
+    object whose ``question_id`` equals ``question_id`` (compared as lowercased
+    strings). A wrapper body (``{"question": {...}}``), an empty object or a
+    different id would otherwise read as "no ``effect_kind``" — i.e. an
+    ordinary row — and skip the admin gate.
+
+    Raises ``TypeError`` for a row that is not a JSON object or an
+    ``effect_kind`` that is not a string, and ``ValueError`` for a row whose
+    ``question_id`` is missing or does not match — the caller treats each as an
+    unreadable row and fails closed.
+    """
+    if not isinstance(row, dict):
+        raise TypeError("agent question row is not a JSON object")
+    row_id = row.get("question_id")
+    if not isinstance(row_id, str) or row_id.lower() != str(question_id).lower():
+        raise ValueError("agent question row does not identify the requested id")
+    kind = row.get("effect_kind")
+    if kind is None:
+        return None
+    if not isinstance(kind, str):
+        raise TypeError("effect_kind is not a string")
+    return kind
+
+
+_UNREADABLE_DETAIL = (
+    "agent_question_unreadable: could not read the question from coord to "
+    "decide whether answering it requires tenant admin; refusing to answer"
+)
+
+
 @router.post("/agent-questions/{question_id}/respond")
 async def post_agent_question_response(
-    question_id: str,
+    question_id: UUID,
     body: dict[str, Any],
+    request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel | None = Depends(current_active_user_optional),
 ) -> Any:
     """A tenant member (Developer or Administrator) answers an agent question.
 
-    Intentionally NOT admin-gated: a Developer must be able to answer their
-    own running agent's questions. Coord scopes the respond route to the
-    caller's tenant, so this stays within the shared account.
+    An ORDINARY question (``effect_kind`` absent, null or ``'none'``) is
+    intentionally NOT admin-gated: a Developer must be able to answer their own
+    running agent's questions. Coord scopes the respond route to the caller's
+    tenant, so this stays within the shared account. Its auth is exactly what
+    it always was — ``get_tenant_id`` alone; the web user is resolved
+    OPTIONALLY and is not required for it.
+
+    A DECISION-EFFECT row (plan
+    ``2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy``)
+    is different: coord routes its answer through the effect's own core —
+    ``operator_approval`` gate approve/reject, proposal ``decide_core`` — so
+    answering it IS clearing a gate or applying a policy edit. Those doors
+    (:func:`approve_gate`, :func:`approve_prompt_document_proposal`) require
+    :func:`require_coord_tenant_admin`, and this door must not be a way around
+    them. So the row is read from coord first and, for any effect other than
+    ``none`` (including a kind this build does not recognise), an active web
+    user is required (403 ``inactive_or_unknown_user`` when absent — not 401,
+    which the frontend reads as session expiry) and the same admin check runs
+    here. ``effect_kind`` matching is exact: only absent, null, ``''`` and
+    ``'none'`` are ordinary.
+
+    The optional current-user dependency runs on EVERY request, so this route
+    now touches the web DB (the user lookup) even for an ordinary row whose
+    answer does not need it. That is the price of deciding the gate from the
+    row rather than the path; it is deliberate, not an oversight.
+
+    Fail-closed: nothing is POSTed unless the row was read and positively
+    identified — a JSON object whose ``question_id`` equals the requested id
+    (lowercased). A coord 4xx on the read (401 expired session, 403
+    ``tenant_not_resolved``, 404) is re-raised unchanged (a malformed id never
+    reaches coord: the ``UUID`` path parameter answers FastAPI's 422 first),
+    since it is coord's own answer about the request. A coord 5xx, an
+    unreachable coord, a non-JSON or non-object body, any other transport
+    error, a row that does not carry the requested ``question_id`` (a wrapper
+    body, ``{}``, a different id), or a malformed ``effect_kind`` is a 503
+    ``agent_question_unreadable``: whether admin is required is exactly what
+    could not be decided.
+
+    Attribution: for an effect row the recorded ``responded_by_operator`` is
+    the AUTHENTICATED web user (:func:`_editor_identity`), never the
+    client-supplied value — the gate / proposal decision it drives is an audit
+    record, as it is on those doors (where coord stamps the decider from the
+    forwarded bearer). An ordinary row keeps the body's value, as before.
     """
+    path_id = str(question_id)
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/agent-questions/{path_id}", tenant_id=tenant_id
+        )
+        effect_kind = _question_effect_kind(row, question_id)
+    except CoordTransportUnavailable as exc:
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
+    except HTTPException as exc:
+        if 400 <= exc.status_code < 500:
+            raise
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
+    except (TypeError, ValueError, httpx.HTTPError) as exc:
+        # ValueError: a 2xx whose body is not JSON (``resp.json()``), or a
+        # row that does not carry the requested ``question_id``.
+        # httpx.HTTPError: a transport failure ``_proxy_coord_get`` does not
+        # translate (it maps only connect errors and timeouts).
+        # TypeError: a non-object row or a non-string ``effect_kind``.
+        raise HTTPException(
+            status_code=503,
+            detail=f"{_UNREADABLE_DETAIL} ({type(exc).__name__})",
+        ) from exc
+
+    forwarded = body
+    if effect_kind not in _NO_EFFECT_KINDS:
+        if current_user is None:
+            # 403, not 401: the frontend httpClient reads any 401 as session
+            # expiry and signs the operator out, and the request DID carry a
+            # tenant credential — it just resolved to no active web user.
+            raise HTTPException(status_code=403, detail="inactive_or_unknown_user")
+        # Same dependency semantics as the gate / proposal approve routes —
+        # admin in the EFFECTIVE tenant, superusers pass. Called directly
+        # because whether it applies depends on the row just read.
+        await require_coord_tenant_admin(request, current_user)
+        forwarded = {**body, "responded_by_operator": _editor_identity(current_user)}
+
     return await _proxy_coord_post(
-        f"/coord/agent-questions/{question_id}/respond",
-        body,
+        f"/coord/agent-questions/{path_id}/respond",
+        forwarded,
         tenant_id=tenant_id,
     )
 
@@ -6894,7 +7013,7 @@ async def get_release(
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 4.4. Drives the "currently editing" sub-line on each
 # `MachineCard`. The tree-sitter `symbol_watcher` daemon (Phase 4.1,
 # qontinui-supervisor) posts `ClaimKind::Symbol` claims as agents edit
@@ -6987,7 +7106,7 @@ async def get_symbol_claims(
 
 # ---- Device-status surface (Phase 1.3) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 1.3. Two endpoints back the live `currentActivity` sub-line on
 # each `MachineCard` in the operations dashboard:
 #
@@ -7614,7 +7733,7 @@ async def websocket_coord_events(
 
 # ---- CI Status Dashboard surface (Phase 3 + Phase 5) --------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-25-ci-status-dashboard-plan.md`
+# Plan: `2026-05-25-ci-status-dashboard-plan`
 # Phases 3 + 5. Three endpoints back the per-tenant CI status panel on
 # the operations dashboard:
 #
@@ -7851,6 +7970,14 @@ async def get_ci_overview(
           "pools": [{repo, pool, state, state_reason, observed_at, ...}],
           "repos": [{repo, window_hours, state, outcomes, hosted, ...}]
         }
+
+    ``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,
+    hosted_refused, last_refused_at, billing_refusal, note}`` —
+    ``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never
+    content_fail; a floor, null unless ``observed``), and ``billing_refusal``
+    is the repo's open ``ci_billing_refused`` alert. An older coord sends
+    ``{state: not_measured, note}``. Pass-through is what keeps these new
+    fields reaching the page without a web change.
 
     No graceful fallback: a coord predating the route answers 404 and the
     page renders that as an explicit UNKNOWN, never as an empty fleet.
@@ -8116,7 +8243,7 @@ async def websocket_ci_status(
 
 # ---- Coord-Native Session Coordination — Phase 5 ------------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-22-coord-native-session-coordination.md`
+# Plan: `2026-05-22-coord-native-session-coordination`
 # Phase 5. The dashboard `/sessions` panel reads from coord's
 # `/sessions` REST + SSE surface (Phase 1 SHIPPED, LIVE at
 # `coord.qontinui.io`).
@@ -12457,9 +12584,25 @@ async def get_coord_findings(
             "the unfiltered total by design."
         ),
     ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "Resume a keyset walk: pass the previous response's ``next_cursor`` "
+            "back verbatim, under the SAME filters. Forwarded verbatim — coord "
+            "owns the codec, and a malformed or foreign cursor is coord's typed "
+            "400 ``invalid_query_parameter`` naming ``cursor``."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Every answer is a PAGE of the corpus, never the corpus: coord's envelope
+    carries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's
+    ``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next
+    page (a malformed one is coord's 400, re-raised verbatim). Without that
+    pass-through a client following ``next_cursor`` would be served page 1
+    forever.
 
     Response envelope mirrors coord's:
     ``{"available", "count", "findings": [...], "finding_id_applied",
@@ -12500,6 +12643,8 @@ async def get_coord_findings(
         params["limit"] = limit
     if triaged is not None:
         params["triaged"] = triaged
+    if cursor is not None:
+        params["cursor"] = cursor
     try:
         body = await _proxy_coord_get(
             "/coord/findings", params=params or None, tenant_id=tenant_id
@@ -12510,6 +12655,21 @@ async def get_coord_findings(
                 "available": False,
                 "count": 0,
                 "findings": [],
+                # The bounded-read envelope coord serves on every answer,
+                # spelled as UNKNOWN: an absent key would read as falsy, and
+                # `truncated` missing reads as "complete" to a careless client.
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: `limit` means the cap coord
+                # APPLIED, and no page was read here, so no cap was applied.
+                # Echoing the request (or clamping it locally) would state a cap
+                # coord never used, and a local clamp would copy coord's range.
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
                 "unavailable": (
                     "coord's findings reader is not answering — its "
                     "`/coord/findings` route returned 404, so the deployed "

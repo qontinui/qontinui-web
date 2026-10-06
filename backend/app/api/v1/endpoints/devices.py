@@ -51,6 +51,7 @@ from app.api.deps import (
     get_paired_device,
 )
 from app.config.redis_config import get_redis
+from app.core.error_codes import ErrorCode
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.crud import device_machine_credential_crud as dmk_crud
@@ -697,8 +698,15 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     ``coord_body`` is truncated, and a multi-tenant refusal routinely runs
     past 500 chars, so a client cannot reliably parse it to tell "not a
     member" from a retryable coord-side failure or a burned pairing nonce.
+
+    ``error`` and ``message`` are what make those fields reach a client:
+    the app's ``http_exception_handler`` spreads a dict detail carrying
+    ``error`` into the TOP LEVEL of the response, but flattens one without
+    it to ``message: str(detail)`` — a Python repr, every ``coord_*`` field
+    lost.
     """
     detail: dict[str, Any] = {
+        "error": ErrorCode.BAD_GATEWAY.value,
         "coord_status": resp.status_code,
         "coord_body": resp.text[:500],
     }
@@ -727,6 +735,10 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
             )
             if reasons:
                 detail["coord_skip_reasons"] = reasons
+    code = detail.get("coord_code")
+    detail["message"] = (
+        f"Coord refused pairing (HTTP {resp.status_code}{f': {code}' if code else ''})."
+    )
     return detail
 
 

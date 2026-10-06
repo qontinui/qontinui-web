@@ -9,11 +9,6 @@ import {
 import { toast } from "sonner";
 import type { Runner } from "@qontinui/shared-types";
 import { listRunners, getRunner, deleteRunner } from "@/lib/api/runners";
-import {
-  createRunnerToken,
-  listRunnerTokens,
-  revokeRunnerToken,
-} from "@/lib/api/runner_tokens";
 import { dispatchWorkflow, DispatchError } from "@/lib/api/workflow_dispatch";
 import { listPhaseResults, getPhaseResult } from "@/lib/api/phase_results";
 import {
@@ -25,15 +20,14 @@ import {
   runScheduledRunNow,
 } from "@/lib/api/scheduled_runs";
 import type {
-  CreateRunnerTokenRequest,
   CreateScheduledRunRequest,
   DispatchRequest,
   UpdateScheduledRunRequest,
 } from "@/types/server-runner";
 
 /**
- * React Query hooks for the unified runner endpoint surface, runner
- * tokens, workflow dispatch, phase results and scheduled runs.
+ * React Query hooks for the unified runner endpoint surface, workflow
+ * dispatch, phase results and scheduled runs.
  */
 
 // =============================================================================
@@ -44,7 +38,6 @@ export const serverRunnerKeys = {
   all: ["server-runners"] as const,
   runners: () => [...serverRunnerKeys.all, "runners"] as const,
   runner: (id: string) => [...serverRunnerKeys.all, "runner", id] as const,
-  tokens: () => [...serverRunnerKeys.all, "tokens"] as const,
   phaseResults: (executionId: string) =>
     [...serverRunnerKeys.all, "phase-results", executionId] as const,
   phaseResult: (id: string) =>
@@ -90,45 +83,6 @@ export function useDeregisterRunner() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to deregister runner");
-    },
-  });
-}
-
-// =============================================================================
-// Runner tokens
-// =============================================================================
-
-export function useRunnerTokens() {
-  return useQuery({
-    queryKey: serverRunnerKeys.tokens(),
-    queryFn: listRunnerTokens,
-    retry: 1,
-  });
-}
-
-export function useCreateRunnerToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateRunnerTokenRequest) => createRunnerToken(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: serverRunnerKeys.tokens() });
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to create runner token");
-    },
-  });
-}
-
-export function useRevokeRunnerToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: revokeRunnerToken,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: serverRunnerKeys.tokens() });
-      toast.success("Token revoked");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to revoke token");
     },
   });
 }
