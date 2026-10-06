@@ -143,16 +143,31 @@ const ADDRESSING_CLASS: Record<ReturnType<typeof addressingFamily>, string> = {
   unknown: ADDRESSING_UNKNOWN,
 };
 
-function AddressingBadge({ status, testId }: { status: string; testId: string }) {
+function AddressingBadge({
+  status,
+  testId,
+  carried = false,
+}: {
+  status: string;
+  testId: string;
+  /** Coord's read failed this tick and it served the previous verdict. */
+  carried?: boolean;
+}) {
   const family = addressingFamily(status);
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide ${ADDRESSING_CLASS[family]}`}
-      title="What the plan this claim is addressed by says, joined by coord: landed or not, and whether the claim reads confirmed since."
+      title={
+        carried
+          ? "Carried forward: coord's work-unit read failed this tick, so this is the previous tick's verdict, not a fresh observation."
+          : "What the plan this claim is addressed by says, joined by coord: landed or not, and whether the claim reads confirmed since."
+      }
       data-testid={testId}
       data-family={family}
+      data-carried={carried ? "true" : undefined}
     >
       {status}
+      {carried ? " (carried)" : null}
     </span>
   );
 }
@@ -194,6 +209,7 @@ function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
             <AddressingBadge
               status={status}
               testId={`doc-claim-link-${claim.claim_id}-${link}`}
+              carried={entry?.stale_from_read_failure === true}
             />
           </span>
         );
