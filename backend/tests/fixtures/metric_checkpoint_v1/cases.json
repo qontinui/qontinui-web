@@ -1,0 +1,4088 @@
+{
+  "schema": "metric-checkpoint/v1",
+  "about": "Golden cases for the metric-checkpoint/v1 validator (plan 2026-10-06-overview-objectives-view, Appendix A). Phase 1 (qontinui-web, app/overview/metric_checkpoint.py) runs every case; Phase 3 (qontinui-coord) copies them and skips web_only cases, which need the metric document's declared checkpoints and criteria. error_field is one of the dotted paths the validator must name; warning_fields must be warned, not refused.",
+  "cases": [
+    {
+      "name": "appendix_a_example",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "gate_id_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": null,
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "gate_id_absent",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "value_null_without_unit",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": null,
+            "unit": null,
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "plus_zero_offset_timestamp",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00+00:00",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "fractional_seconds",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00.123Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "mixed_verdicts_with_cause_and_action",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.1",
+            "verdict": "missed",
+            "value_text": "main red: 3 of last 5 runs failed",
+            "method": "M3",
+            "door": "gh run list",
+            "window": null,
+            "unknown_reason": null,
+            "cause": "flaky lint job",
+            "action": {
+              "kind": "pr",
+              "ref": "qontinui/qontinui-claude-config#1200"
+            }
+          },
+          {
+            "id": "1.6",
+            "verdict": "unknown",
+            "unknown_reason": "probe_error",
+            "cause": "coord_pr_status timed out",
+            "action": {
+              "kind": "plan",
+              "ref": "2026-10-08-verdict-age-probe"
+            }
+          },
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value_text": "12 lands"
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 1,
+          "unknown": 1
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "missed_without_cause_is_a_warning_only",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "missed",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 0,
+          "missed": 1,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false,
+      "warning_fields": [
+        "rows[0].cause",
+        "rows[0].action"
+      ]
+    },
+    {
+      "name": "rereport_of_an_earlier_row",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-2",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "56898adc-4150-4257-ac83-ff6e09801782",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "2.6",
+            "verdict": "met",
+            "value": 0,
+            "unit": "USD",
+            "value_text": "$0 paid CI"
+          }
+        ],
+        "tally": {
+          "met": 2,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "checkpoint-2"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "valid",
+      "web_only": false
+    },
+    {
+      "name": "not_an_object",
+      "block": [
+        {
+          "schema": "metric-checkpoint/v1",
+          "document": {
+            "kind": "success_metric",
+            "name": "merge-train-throughput-2026-10",
+            "version": 2
+          },
+          "checkpoint": "checkpoint-1",
+          "measured_at": "2026-10-08T16:05:00Z",
+          "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+          "rows": [
+            {
+              "id": "1.2",
+              "verdict": "met",
+              "value": 14,
+              "unit": "lands/day",
+              "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+              "method": "M1",
+              "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+              "window": {
+                "from": "2026-10-07T16:00:00Z",
+                "to": "2026-10-08T16:00:00Z"
+              },
+              "unknown_reason": null,
+              "cause": null,
+              "action": null
+            }
+          ],
+          "tally": {
+            "met": 1,
+            "missed": 0,
+            "unknown": 0
+          }
+        }
+      ],
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "block"
+    },
+    {
+      "name": "wrong_schema",
+      "block": {
+        "schema": "metric-checkpoint/v2",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "schema"
+    },
+    {
+      "name": "missing_schema",
+      "block": {
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "schema"
+    },
+    {
+      "name": "document_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": null,
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document"
+    },
+    {
+      "name": "rows_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": null,
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows"
+    },
+    {
+      "name": "tally_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": null
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "tally"
+    },
+    {
+      "name": "checkpoint_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": null,
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "checkpoint"
+    },
+    {
+      "name": "measured_at_null",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": null,
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "measured_at"
+    },
+    {
+      "name": "unknown_top_level_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        },
+        "notes": "x"
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "notes"
+    },
+    {
+      "name": "unknown_row_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null,
+            "score": 3
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].score"
+    },
+    {
+      "name": "unknown_document_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2,
+          "title": "x"
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.title"
+    },
+    {
+      "name": "document_kind_not_success_metric",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "initiative",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.kind"
+    },
+    {
+      "name": "document_version_string",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": "2"
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.version"
+    },
+    {
+      "name": "document_version_bool",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": true
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.version"
+    },
+    {
+      "name": "document_name_not_in_resource_keys",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.name"
+    },
+    {
+      "name": "bare_spelling_key_is_not_enough",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "success_metric/merge-train-throughput-2026-10",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "document.name"
+    },
+    {
+      "name": "measured_at_not_utc",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T18:05:00+02:00",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "measured_at"
+    },
+    {
+      "name": "measured_at_without_seconds",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "measured_at"
+    },
+    {
+      "name": "measured_at_date_only",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "measured_at"
+    },
+    {
+      "name": "gate_id_not_uuid",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "gate_id"
+    },
+    {
+      "name": "rows_empty",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [],
+        "tally": {
+          "met": 0,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows"
+    },
+    {
+      "name": "rows_over_64",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "x0",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x1",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x2",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x3",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x4",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x5",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x6",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x7",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x8",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x9",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x10",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x11",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x12",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x13",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x14",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x15",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x16",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x17",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x18",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x19",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x20",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x21",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x22",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x23",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x24",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x25",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x26",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x27",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x28",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x29",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x30",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x31",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x32",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x33",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x34",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x35",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x36",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x37",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x38",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x39",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x40",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x41",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x42",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x43",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x44",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x45",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x46",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x47",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x48",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x49",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x50",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x51",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x52",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x53",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x54",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x55",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x56",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x57",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x58",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x59",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x60",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x61",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x62",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x63",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "x64",
+            "verdict": "unknown",
+            "unknown_reason": "no_data",
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 0,
+          "missed": 0,
+          "unknown": 65
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows",
+      "note": "also fails web-only id checks; the shape error is listed first"
+    },
+    {
+      "name": "duplicate_row_id",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          },
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 2,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[1].id"
+    },
+    {
+      "name": "bad_verdict",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "partial",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].verdict"
+    },
+    {
+      "name": "met_without_value_text",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": null,
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].value_text"
+    },
+    {
+      "name": "met_with_blank_value_text",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "  ",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].value_text"
+    },
+    {
+      "name": "unknown_without_reason",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "unknown",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": "x",
+            "action": {
+              "kind": "operator_ask",
+              "ref": "q-1"
+            }
+          }
+        ],
+        "tally": {
+          "met": 0,
+          "missed": 0,
+          "unknown": 1
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].unknown_reason"
+    },
+    {
+      "name": "unknown_reason_out_of_set",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "unknown",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": "flaky",
+            "cause": "x",
+            "action": {
+              "kind": "gate",
+              "ref": "g"
+            }
+          }
+        ],
+        "tally": {
+          "met": 0,
+          "missed": 0,
+          "unknown": 1
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].unknown_reason"
+    },
+    {
+      "name": "value_without_unit",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": null,
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].unit"
+    },
+    {
+      "name": "value_not_a_number",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": "14",
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].value"
+    },
+    {
+      "name": "window_extra_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z",
+              "tz": "UTC"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].window.tz"
+    },
+    {
+      "name": "window_bad_timestamp",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "yesterday",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].window.from"
+    },
+    {
+      "name": "action_bad_kind",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": {
+              "kind": "email",
+              "ref": "x"
+            }
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].action.kind"
+    },
+    {
+      "name": "action_extra_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": {
+              "kind": "pr",
+              "ref": "x",
+              "why": "y"
+            }
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].action.why"
+    },
+    {
+      "name": "tally_mismatch",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 2,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "tally"
+    },
+    {
+      "name": "tally_extra_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0,
+          "skipped": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "tally.skipped"
+    },
+    {
+      "name": "tally_missing_key",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "tally.unknown"
+    },
+    {
+      "name": "string_over_500_chars",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "rows[0].door"
+    },
+    {
+      "name": "object_over_32_kib",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "r0",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r1",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r2",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r3",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r4",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r5",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r6",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r7",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r8",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r9",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r10",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r11",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r12",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r13",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r14",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r15",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r16",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r17",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r18",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r19",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r20",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r21",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r22",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r23",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r24",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r25",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r26",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r27",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r28",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r29",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r30",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r31",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r32",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          },
+          {
+            "id": "r33",
+            "verdict": "met",
+            "value_text": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "method": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          }
+        ],
+        "tally": {
+          "met": 34,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": false,
+      "error_field": "block",
+      "note": "also fails web-only id checks"
+    },
+    {
+      "name": "checkpoint_not_declared",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-9",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "1.2",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": true,
+      "error_field": "checkpoint"
+    },
+    {
+      "name": "row_id_not_declared",
+      "block": {
+        "schema": "metric-checkpoint/v1",
+        "document": {
+          "kind": "success_metric",
+          "name": "merge-train-throughput-2026-10",
+          "version": 2
+        },
+        "checkpoint": "checkpoint-1",
+        "measured_at": "2026-10-08T16:05:00Z",
+        "gate_id": "672148a4-9acd-4c4b-ad81-172d04addfc0",
+        "rows": [
+          {
+            "id": "9.9",
+            "verdict": "met",
+            "value": 14,
+            "unit": "lands/day",
+            "value_text": "14 lands in the 24 h to 2026-10-08T16:00Z",
+            "method": "M1",
+            "door": "coord_query_train_health; cross-checked with gh pr list --state merged",
+            "window": {
+              "from": "2026-10-07T16:00:00Z",
+              "to": "2026-10-08T16:00:00Z"
+            },
+            "unknown_reason": null,
+            "cause": null,
+            "action": null
+          }
+        ],
+        "tally": {
+          "met": 1,
+          "missed": 0,
+          "unknown": 0
+        }
+      },
+      "resource_keys": [
+        "prompt_document:success_metric/merge-train-throughput-2026-10",
+        "merge-train-metrics",
+        "checkpoint-1"
+      ],
+      "declared_checkpoints": [
+        "checkpoint-1",
+        "checkpoint-2",
+        "checkpoint-3"
+      ],
+      "declared_criteria": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "expect": "invalid",
+      "web_only": true,
+      "error_field": "rows[0].id"
+    }
+  ]
+}
