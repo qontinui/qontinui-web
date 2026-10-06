@@ -31,6 +31,20 @@ def upgrade() -> None:
     op.execute(FUNC)
 
 
+# The downgrade may run in a connection whose search_path differs from the
+# upgrade's, so it drops each object in whatever schema the upgrade put it.
+DROP = """
+DO $drop$
+DECLARE s text;
+BEGIN
+  SELECT pronamespace::regnamespace::text INTO STRICT s FROM pg_proc WHERE proname = 'mrt7_case_a_fn';
+  EXECUTE format('DROP FUNCTION %s.mrt7_case_a_fn()', s);
+  SELECT relnamespace::regnamespace::text INTO STRICT s FROM pg_class WHERE relname = 'mrt7_case_a' AND relkind = 'r';
+  EXECUTE format('DROP TABLE %s.mrt7_case_a', s);
+END
+$drop$;
+"""
+
+
 def downgrade() -> None:
-    op.execute("DROP FUNCTION mrt7_case_a_fn()")
-    op.drop_table("mrt7_case_a")
+    op.execute(DROP)
