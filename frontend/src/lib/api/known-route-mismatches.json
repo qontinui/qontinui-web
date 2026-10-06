@@ -133,20 +133,6 @@
     "kind": "no-path"
   },
   {
-    "file": "lib/api/runner_tokens.ts",
-    "method": "DELETE",
-    "path": "/api/v1/devices/tokens/{param}",
-    "reason": "dead",
-    "kind": "no-path"
-  },
-  {
-    "file": "lib/api/runner_tokens.ts",
-    "method": "GET",
-    "path": "/api/v1/devices/tokens",
-    "reason": "dead",
-    "kind": "no-path"
-  },
-  {
     "file": "lib/api/runners.ts",
     "method": "GET",
     "path": "/api/v1/devices/sessions",
