@@ -13,8 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useCanvasStore } from "./canvas-store";
-import type { Workflow, Action } from "../lib/action-schema/action-types";
+import { useCanvasStore } from "./index";
+import type { Workflow, Action } from "../../lib/action-schema/action-types";
 
 // Mock workflow for testing
 const createMockWorkflow = (): Workflow => ({
