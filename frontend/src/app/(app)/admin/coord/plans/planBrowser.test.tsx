@@ -322,7 +322,7 @@ describe("custody across the background poll", () => {
     }
   });
 
-  it("a search change drops the old window's held custody", async () => {
+  it("a search change re-asks for custody on the next poll and shows no age line", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -364,6 +364,16 @@ describe("custody across the background poll", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("shows no age line when the custody read's rows carry no custody", async () => {
+    route({
+      "/plan-library/reconciliation": () => body({ items: [pollRow] }),
+    });
+    render(<CoordPlansListPage />);
+    await screen.findByTestId("coord-plan-reconciliation-row");
+    expect(reconciliationCalls()[0]).toContain("include_custody=true");
+    expect(screen.queryByTestId("coord-plans-custody-as-of")).toBeNull();
   });
 
   it("does not claim a held reading when the poll's rows took none of it", async () => {
