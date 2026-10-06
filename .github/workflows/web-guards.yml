@@ -382,7 +382,7 @@ jobs:
           # the member's paths filter dropped it now runs on every in-scope
           # event. A package-index hiccup must not read as a guard failure
           # once `web-guards` is a required context.
-          python -m pip install --retry 5 --timeout 30 "pytest>=9,<10"
+          python -m pip install --retries 5 --timeout 30 "pytest>=9,<10"
           python -m pytest .pre-commit-hooks -rA
 
       # ---- powershell-parse.yml --------------------------------------------
