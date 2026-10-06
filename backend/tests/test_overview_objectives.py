@@ -225,8 +225,12 @@ class FakeFindings:
         #: metric name → an exception to raise, or a page to answer with.
         self.list_override: dict[str, Any] = {}
         self.by_id_error: Exception | None = None
-        #: An exception to raise, or a page to answer, for the results door.
+        #: An exception to raise, or a page to answer, for every results-door
+        #: read (a page's rows are filtered to the metric asked for).
         self.results_override: Any = None
+        #: metric name → an exception to raise, or a page served VERBATIM
+        #: (unfiltered), for that read only.
+        self.results_override_by_name: dict[str, Any] = {}
         self.results_calls: list[tuple[list[str], int]] = []
         #: Finding ids whose rows coord's table does not hold.
         self.unrecorded: set[str] = set()
@@ -364,6 +368,8 @@ class FakeFindings:
                     "evidence_finding_id": fid, "recorded_at": created,
                 }
             )  # fmt: skip
+        # The door's order: name, criterion, measured_at DESC.
+        out.sort(key=lambda r: r["measured_at"], reverse=True)
         out.sort(key=lambda r: (r["name"], r["criterion"]))
         return out
 
@@ -371,10 +377,21 @@ class FakeFindings:
         self, tenant_id: UUID, names: list[str], limit: int
     ) -> dict[str, Any]:
         self.results_calls.append((list(names), limit))
-        if isinstance(self.results_override, Exception):
-            raise self.results_override
-        if self.results_override is not None:
-            return self.results_override
+        if len(names) == 1 and names[0] in self.results_override_by_name:
+            verbatim = self.results_override_by_name[names[0]]
+            if isinstance(verbatim, Exception):
+                raise verbatim
+            return verbatim
+        override = self.results_override
+        if isinstance(override, Exception):
+            raise override
+        if isinstance(override, dict) and isinstance(override.get("rows"), list):
+            return {
+                **override,
+                "rows": [r for r in override["rows"] if r.get("name") in names],
+            }
+        if override is not None:
+            return override
         rows = [r for r in self.table_rows() if r["name"] in names]
         return {"available": True, "rows": rows[:limit], "truncated": len(rows) > limit}
 
@@ -803,19 +820,20 @@ class TestCheckpointResultsDoorFailures:
             c.status for c in metric.checkpoint_results
         }
 
-    async def test_the_door_is_asked_once_for_every_readable_metric(
+    async def test_the_door_is_asked_once_per_readable_metric(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
         await _read(docs, findings)
-        assert len(findings.results_calls) == 1
-        names, limit = findings.results_calls[0]
-        assert set(names) == {
-            MERGE_TRAIN,
-            "development-speed",
-            "remote-session-interactivity",
-            "github-actions-monthly-spend",
-        }
-        assert limit == CHECKPOINT_RESULTS_LIMIT
+        # One read PER METRIC, each naming only that metric.
+        assert sorted(findings.results_calls) == sorted(
+            ([name], CHECKPOINT_RESULTS_LIMIT)
+            for name in (
+                MERGE_TRAIN,
+                "development-speed",
+                "remote-session-interactivity",
+                "github-actions-monthly-spend",
+            )
+        )
 
     async def test_the_proxied_read_names_the_door_kind_names_and_limit(
         self, monkeypatch: pytest.MonkeyPatch
@@ -861,7 +879,7 @@ class TestCheckpointResultsDoorFailures:
             assert item.unknown_reason == "results_not_fully_read"
         assert _checkpoint(read, "checkpoint-3").status == "not_fully_read"
 
-    async def test_a_full_page_cuts_only_the_last_name_and_names_absent_from_it(
+    async def test_one_metrics_full_page_truncates_only_that_metric(
         self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import app.overview.objectives_results as results
@@ -872,23 +890,83 @@ class TestCheckpointResultsDoorFailures:
             "rows": [
                 _table_row(_id(7), "a", name="development-speed"),
                 _table_row(_id(1), "1.1", name=MERGE_TRAIN),
+                _table_row(_id(1), "1.2", name=MERGE_TRAIN),
             ],
             "truncated": False,
         }
         read = await _read(docs, findings)
         source = read.sources.checkpoint_results
         assert source.status == "truncated"
-        # development-speed's run ended before the page's last name: complete.
-        assert "development-speed" not in source.affected
-        assert MERGE_TRAIN in source.affected
-        assert "remote-session-interactivity" in source.affected
-        assert _metric(read, "development-speed").checkpoint_results_read == "ok"
+        assert source.affected == [MERGE_TRAIN]
         assert _metric(read).checkpoint_results_read == "truncated"
+        for name in (
+            "development-speed",
+            "remote-session-interactivity",
+            "github-actions-monthly-spend",
+        ):
+            assert _metric(read, name).checkpoint_results_read == "ok"
+        assert _criterion(read, "2.1").unknown_reason == "results_not_fully_read"
+
+    async def test_one_metrics_door_failure_leaves_the_others_readable(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        findings.results_override_by_name["development-speed"] = HTTPException(
+            status_code=503, detail="busy"
+        )
+        read = await _read(docs, findings)
+        source = read.sources.checkpoint_results
+        assert source.status == "unavailable"
+        assert source.affected == ["development-speed"]
+        assert "HTTP 503" in source.details["development-speed"]
+        assert _metric(read, "development-speed").checkpoint_results_read == (
+            "unavailable"
+        )
+        # The merge-train metric's own read answered: its verdicts stand.
+        assert _metric(read).checkpoint_results_read == "ok"
+        assert _criterion(read, "1.2").verdict == "met"
+        assert _criterion(read, "1.1").unknown_reason == "not_reported"
+
+    async def test_one_metrics_door_failure_makes_its_own_criteria_unknown(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        findings.results_override_by_name[MERGE_TRAIN] = HTTPException(
+            status_code=404, detail=""
+        )
+        read = await _read(docs, findings)
+        assert read.sources.checkpoint_results.affected == [MERGE_TRAIN]
+        for item in _every_criterion(read):
+            assert item.unknown_reason == "checkpoint_results_unreadable"
+        assert _metric(read, "development-speed").checkpoint_results_read == "ok"
+
+    async def test_rows_and_a_marker_for_one_report_are_named_not_hidden(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        findings.markers[_id(1)] = (MERGE_TRAIN, "checkpoint-1", "prose_only", None)
+        read = await _read(docs, findings)
+        source = read.sources.checkpoint_results
+        assert source.status == "degraded"
+        assert source.affected == [MERGE_TRAIN]
+        assert "both verdict rows and a marker" in source.details[MERGE_TRAIN]
+        # The verdict rows are shown; criteria without one are not fully read.
+        assert _criterion(read, "1.2").verdict == "met"
+        assert _criterion(read, "1.1").unknown_reason == "results_not_fully_read"
+
+    async def test_the_fake_door_serves_the_contract_order(
+        self, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), block=_block(measured_at="2026-10-08T16:05:00Z"))
+        findings.add(_id(2), block=_block("checkpoint-2",
+                                          measured_at="2026-10-13T16:05:00Z"))  # fmt: skip
+        rows = findings.table_rows()
+        assert [r["evidence_finding_id"] for r in rows] == [_id(2), _id(1)]
 
     async def test_an_unreadable_row_is_named_not_dropped(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
-        findings.results_override = {
+        findings.results_override_by_name[MERGE_TRAIN] = {
             "available": True,
             "rows": [{**_table_row(_id(1), "1.1"), "verdict": "great"}],
             "truncated": False,
@@ -899,6 +977,38 @@ class TestCheckpointResultsDoorFailures:
         assert source.affected == [MERGE_TRAIN]
         assert _criterion(read, "1.1").unknown_reason == "results_not_fully_read"
         assert _metric(read, "development-speed").checkpoint_results_read == "ok"
+
+    async def test_a_row_naming_another_measure_is_counted_as_such(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.results_override_by_name[MERGE_TRAIN] = {
+            "available": True,
+            "rows": [
+                _table_row(_id(1), "1.2"),
+                _table_row(_id(2), "x", name="development-speed"),
+            ],
+            "truncated": False,
+        }
+        read = await _read(docs, findings)
+        source = read.sources.checkpoint_results
+        assert source.status == "degraded"
+        detail = source.details[MERGE_TRAIN]
+        assert "1 result row(s) coord served for this measure named another" in detail
+        assert "could not be read" not in detail
+        assert _criterion(read, "1.2").verdict == "met"
+
+    async def test_a_reports_time_is_its_rows_latest_measured_at(self) -> None:
+        from app.overview.objectives_results import FindingRows as FR
+        from app.overview.objectives_results import _merge
+
+        rows: dict[str, Any] = {}
+        _merge(rows, _id(1), FR(_id(1), "checkpoint-1",
+                                measured_at="2026-10-08T16:05:00Z"))  # fmt: skip
+        _merge(rows, _id(1), FR(_id(1), "checkpoint-1",
+                                measured_at="2026-10-09T09:00:00Z"))  # fmt: skip
+        _merge(rows, _id(1), FR(_id(1), "checkpoint-1",
+                                measured_at="2026-10-07T00:00:00Z"))  # fmt: skip
+        assert rows[_id(1)].measured_at == "2026-10-09T09:00:00Z"
 
 
 class TestCheckpointResultsRows:
@@ -1072,6 +1182,131 @@ class TestCheckpointResultsRows:
         assert "HTTP 503" in (cp.report.body_unavailable or "")
         assert _criterion(read, "1.2").verdict == "met"
         assert read.sources.findings_by_id.status == "degraded"
+
+    async def test_a_stub_report_is_timed_by_its_rows_never_as_the_oldest(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        # An older prose-only report at checkpoint 1 (listed, so not read by
+        # id) and a later report only the table finds, whose by-id read
+        # fails: the stub must be timed by its rows, so the older prose-only
+        # report is NOT "a later report" of the verdict the stub carries.
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"],
+                     created_at="2026-10-08T16:10:00Z")  # fmt: skip
+        findings.add(_id(2), keys=[DOC_KEY], created_at="2026-10-13T16:10:00Z",
+                     expired=True)  # fmt: skip
+        findings.by_id_error = HTTPException(status_code=503, detail="down")
+        findings.results_override = {
+            "available": True,
+            "rows": [
+                _table_row(_id(2), "1.2", "met", checkpoint="checkpoint-2",
+                           measured_at="2026-10-13T16:05:00Z"),
+            ],
+            "truncated": False,
+        }  # fmt: skip
+        read = await _read(docs, findings, now=datetime(2026, 10, 14, tzinfo=UTC))
+        cp2 = _checkpoint(read, "checkpoint-2")
+        assert cp2.report is not None and cp2.report.created_at is None
+        assert cp2.report.body_unavailable
+        assert _checkpoint(read, "checkpoint-1").status == "reported_prose_only"
+        item = _criterion(read, "1.2")
+        assert item.verdict == "met" and item.finding_id == _id(2)
+        assert item.out_of_date_notice is None
+
+    async def test_a_stub_head_outranks_an_older_report_at_its_checkpoint(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"],
+                     created_at="2026-10-08T16:10:00Z")  # fmt: skip
+        findings.add(_id(2), keys=[DOC_KEY], created_at="2026-10-09T09:00:00Z",
+                     expired=True)  # fmt: skip
+        findings.by_id_error = HTTPException(status_code=503, detail="down")
+        findings.results_override = {
+            "available": True,
+            "rows": [_table_row(_id(2), "1.2", measured_at="2026-10-09T08:55:00Z")],
+            "truncated": False,
+        }
+        read = await _read(docs, findings)
+        cp1 = _checkpoint(read, "checkpoint-1")
+        assert cp1.report.finding_id == _id(2)
+        assert [h.finding_id for h in cp1.history] == [_id(1)]
+
+    async def test_a_backfilled_stub_is_timed_by_measured_at_not_recorded_at(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        # Measured 8 Oct, recorded by the backfill on 20 Oct. A prose-only
+        # report at checkpoint 2 on 13 Oct is LATER than the measurement, so
+        # the verdict owes the D7 notice — recorded_at must not hide it.
+        findings.add(_id(1), keys=[DOC_KEY], created_at="2026-10-08T16:10:00Z",
+                     expired=True)  # fmt: skip
+        findings.add(_id(2), keys=[DOC_KEY, "checkpoint-2"],
+                     created_at="2026-10-13T16:10:00Z")  # fmt: skip
+        findings.by_id_error = HTTPException(status_code=503, detail="down")
+        row = _table_row(_id(1), "1.2", measured_at="2026-10-08T16:05:00Z")
+        row["recorded_at"] = "2026-10-20T00:00:00Z"
+        findings.results_override = {
+            "available": True,
+            "rows": [row],
+            "truncated": False,
+        }
+        read = await _read(docs, findings, now=datetime(2026, 10, 21, tzinfo=UTC))
+        item = _criterion(read, "1.2")
+        assert item.verdict == "met" and item.finding_id == _id(1)
+        assert item.out_of_date_notice is not None
+        assert item.out_of_date_notice.finding_id == _id(2)
+
+    async def test_a_backfilled_stub_does_not_outrank_a_later_real_report(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        findings.add(_id(1), keys=[DOC_KEY], created_at="2026-10-08T16:10:00Z",
+                     expired=True)  # fmt: skip
+        findings.add(_id(2), keys=[DOC_KEY, "checkpoint-1"],
+                     created_at="2026-10-13T16:10:00Z")  # fmt: skip
+        findings.by_id_error = HTTPException(status_code=503, detail="down")
+        row = _table_row(_id(1), "1.2", measured_at="2026-10-08T16:05:00Z")
+        row["recorded_at"] = "2026-10-20T00:00:00Z"
+        findings.results_override = {
+            "available": True,
+            "rows": [row],
+            "truncated": False,
+        }
+        read = await _read(docs, findings, now=datetime(2026, 10, 21, tzinfo=UTC))
+        cp1 = _checkpoint(read, "checkpoint-1")
+        assert cp1.report.finding_id == _id(2)
+        assert [h.finding_id for h in cp1.history] == [_id(1)]
+
+    async def test_a_stub_with_no_readable_measured_at_falls_back_to_recorded_at(
+        self,
+    ) -> None:
+        from app.overview.objectives_join import _report_time
+        from app.overview.objectives_models import ReportRead
+        from app.overview.objectives_results import FindingRows, MetricRows
+
+        def stub(measured: str | None, recorded: str | None) -> datetime:
+            report = ReportRead(
+                finding_id=_id(1), title=None, topic=None, body=None,
+                created_at=None, expires_at=None, checkpoint="checkpoint-1",
+                placed_by=["table"], shape="prose_only",
+            )  # fmt: skip
+            rows = MetricRows(
+                state="ok",
+                by_finding={
+                    _id(1): FindingRows(
+                        finding_id=_id(1),
+                        checkpoint="checkpoint-1",
+                        measured_at=measured,
+                        recorded_at=recorded,
+                    )
+                },
+            )
+            return _report_time(report, rows)
+
+        assert stub("2026-10-08T16:05:00Z", "2026-10-20T00:00:00Z") == datetime(
+            2026, 10, 8, 16, 5, tzinfo=UTC
+        )
+        assert stub("not a time", "2026-10-20T00:00:00Z") == datetime(
+            2026, 10, 20, tzinfo=UTC
+        )
+        assert stub(None, None) == datetime.min.replace(tzinfo=UTC)
 
     async def test_rows_under_an_undeclared_checkpoint_are_a_note_not_lost(
         self, docs: FakeDocs, findings: FakeFindings

@@ -309,15 +309,45 @@ describe("an unreadable source is never 'no results'", () => {
   });
 
   it("says on the card when the checkpoint results were not (fully) read", () => {
+    const withCheckpoint = (read: MetricRead["checkpoint_results_read"]) =>
+      metric({
+        checkpoint_results: [checkpoint()],
+        checkpoint_results_read: read,
+      });
+    expect(checkpointResultsNotice(withCheckpoint("unavailable"))).toMatch(
+      /^Results can't be read: the checkpoint results read failed/
+    );
+    expect(checkpointResultsNotice(withCheckpoint("truncated"))).toMatch(
+      /not fully read/
+    );
+    expect(checkpointResultsNotice(withCheckpoint("ok"))).toBeNull();
+  });
+
+  it("says so for a measure that declares criteria but has no checkpoint rows", () => {
     expect(
       checkpointResultsNotice(
-        metric({ checkpoint_results_read: "unavailable" })
+        metric({
+          checkpoints: [],
+          checkpoint_results: [],
+          criteria: [
+            { id: "1.1", checkpoint: null, target: "green", method: null },
+          ],
+          checkpoint_results_read: "unavailable",
+        })
       )
-    ).toMatch(/^Results can't be read: the checkpoint results read failed/);
+    ).toMatch(/^Results can't be read/);
+    // A measure with neither checkpoints nor criteria has no results to
+    // speak of: its current value says what is unknown (D8).
     expect(
-      checkpointResultsNotice(metric({ checkpoint_results_read: "truncated" }))
-    ).toMatch(/not fully read/);
-    expect(checkpointResultsNotice(metric())).toBeNull();
+      checkpointResultsNotice(
+        metric({
+          checkpoints: [],
+          checkpoint_results: [],
+          criteria: [],
+          checkpoint_results_read: "unavailable",
+        })
+      )
+    ).toBeNull();
   });
 
   it("says 'rows not yet recorded' for a report whose rows are missing", () => {

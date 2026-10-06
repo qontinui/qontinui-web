@@ -219,6 +219,11 @@ export function outOfDateNotice(item: CriterionResultRead): string | null {
  * checkpoints — never "no results", never "rows not yet recorded".
  */
 export function checkpointResultsNotice(metric: MetricRead): string | null {
+  // A measure with neither checkpoints nor criteria has no results to speak
+  // of; its current value carries what is unknown (D8).
+  if (metric.checkpoint_results.length === 0 && metric.criteria.length === 0) {
+    return null;
+  }
   switch (metric.checkpoint_results_read) {
     case "unavailable":
       return "Results can't be read: the checkpoint results read failed, so every criterion below is unknown.";

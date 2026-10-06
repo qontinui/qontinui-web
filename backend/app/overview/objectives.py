@@ -247,7 +247,8 @@ async def build_objectives(
 
     # Findings: one list read per readable metric, then by id the recorded
     # results the list reads did not already return.
-    # The checkpoint results (every verdict row) are one read beside them.
+    # The checkpoint results (every verdict row): one door read per metric,
+    # beside them and under the same bound.
     gate = asyncio.Semaphore(LIST_CONCURRENCY)
     readable = [m for m in metrics if m.state != "unreadable"]
     listed_reads, table = await asyncio.gather(
@@ -266,7 +267,7 @@ async def build_objectives(
     wanted: list[str] = []
     # Recorded ids first, then each result row's evidence finding (its body).
     candidates = [e.finding_id for m in readable for e in m.results] + [
-        fid for m in readable for fid in table.by_metric.get(m.name, {})
+        fid for m in readable for fid in table.for_metric(m.name).by_finding
     ]
     for fid in candidates:
         if not fid or not is_uuid(fid) or fid in by_id or fid in wanted:

@@ -246,6 +246,25 @@ def _ts(text: Any) -> datetime:
     return parsed or datetime.min.replace(tzinfo=UTC)
 
 
+def _report_time(report: ReportRead, rows: MetricRows) -> datetime:
+    """When a report was made, for ordering (head, D7 tie-break, the
+    out-of-date notice). Its finding's ``created_at``; for a stub whose
+    finding could not be read, its rows' latest ``measured_at``. A row's
+    ``recorded_at`` is when coord inserted it — a backfill can record a report
+    days after it was made — so it is used ONLY when no ``measured_at`` can be
+    read, and never the oldest possible time for a report that has rows."""
+    created = parse_time(report.created_at) if report.created_at else None
+    if created is not None:
+        return created
+    table = rows.by_finding.get(report.finding_id)
+    if table is not None:
+        for text in (table.measured_at, table.recorded_at):
+            parsed = parse_time(text) if text else None
+            if parsed is not None:
+                return parsed
+    return datetime.min.replace(tzinfo=UTC)
+
+
 def _addressed_block(finding: dict[str, Any], name: str) -> tuple[Any, bool]:
     """``(block, names_this)``: the finding's ``metric_checkpoint`` block
     unless it is absent or addressed to another metric (then ``None``), and
@@ -592,7 +611,7 @@ def join_results(
             continue
         if report is not None:
             by_checkpoint.setdefault(report.checkpoint, []).append(
-                _Placed(report, _ts(report.created_at))
+                _Placed(report, _report_time(report, rows))
             )
         elif fid in listed_ids or fid in recorded or fid in rows.by_finding:
             note = None
@@ -907,7 +926,7 @@ def _latest(
             key = (
                 _ts(report.measured_at),
                 index.get(report.checkpoint, len(order)),
-                _ts(report.created_at),
+                _report_time(report, rows),
             )
             candidates.setdefault(row.id, []).append((key, row, report))
     by_cp = {r.id: r for r in results}
@@ -940,12 +959,14 @@ def _latest(
             )
             for _, w, r in found[1:]
         ]
-        shown_at = _ts(report.created_at)
+        shown_at = _report_time(report, rows)
         later = [
-            h for h in heads if h.shape != "structured" and _ts(h.created_at) > shown_at
+            h
+            for h in heads
+            if h.shape != "structured" and _report_time(h, rows) > shown_at
         ]
         if later:
-            newest = max(later, key=lambda h: _ts(h.created_at))
+            newest = max(later, key=lambda h: _report_time(h, rows))
             item.out_of_date_notice = LaterReportNotice(
                 finding_id=newest.finding_id,
                 checkpoint=newest.checkpoint,

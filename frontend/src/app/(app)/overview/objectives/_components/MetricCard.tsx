@@ -247,20 +247,20 @@ export function MetricCard({
             </p>
           )}
 
+          {resultsNotice && (
+            <p
+              className={`mt-3 ${NOTICE} ${MUTED}`}
+              role="status"
+              data-ui-bridge-id={`${base}.checkpoint-results-read`}
+              data-read={metric.checkpoint_results_read}
+            >
+              <span aria-hidden>? </span>
+              {resultsNotice}
+            </p>
+          )}
           {hasCheckpoints ? (
             <div className="mt-4">
               <p className="text-sm font-medium text-foreground">Checkpoints</p>
-              {resultsNotice && (
-                <p
-                  className={`mt-1 ${NOTICE} ${MUTED}`}
-                  role="status"
-                  data-ui-bridge-id={`${base}.checkpoint-results-read`}
-                  data-read={metric.checkpoint_results_read}
-                >
-                  <span aria-hidden>? </span>
-                  {resultsNotice}
-                </p>
-              )}
               <CheckpointResults
                 metric={metric}
                 uiBridgeId={`${base}.checkpoints`}
