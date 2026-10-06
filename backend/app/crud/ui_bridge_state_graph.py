@@ -132,8 +132,13 @@ async def add_config(
     element_count: int = 0,
     include_html_ids: bool = False,
     discovery_result: dict[str, Any] | None = None,
+    flush: bool = True,
 ) -> UIBridgeStateConfig:
-    """Add a config and flush so its ``id`` is populated. Does not commit.
+    """Add a config and, by default, flush so its ``id`` is populated. Does not commit.
+
+    Pass ``flush=False`` when the caller commits straight away and needs no id
+    before then (``create_config``), so the flush/commit boundaries stay exactly
+    what the routes had before the crud extraction.
 
     The keyword defaults equal the model's column defaults, so omitting a
     field produces the same row as not setting it on the model.
@@ -148,7 +153,8 @@ async def add_config(
         discovery_result=discovery_result if discovery_result is not None else {},
     )
     db.add(config)
-    await db.flush()
+    if flush:
+        await db.flush()
     return config
 
 
@@ -167,6 +173,7 @@ async def create_config(
         name=name,
         description=description,
         include_html_ids=include_html_ids,
+        flush=False,
     )
     await db.commit()
     await db.refresh(config)

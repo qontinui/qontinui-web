@@ -40,7 +40,9 @@ from app.schemas.ui_bridge_state import (
 from app.services.runner import dispatch_or_http_error, resolve_runner_for_request
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
-logger = structlog.get_logger(__name__)
+# The discover/pathfind events were emitted by the endpoint module before
+# this extraction; keep its logger name so the `logger` field is unchanged.
+logger = structlog.get_logger("app.api.v1.endpoints.ui_bridge_states")
 
 _UI_BRIDGE_DISCOVER_ENDPOINT = "/api/v1/projects/{project_id}/ui-bridge-discover"
 _UI_BRIDGE_PATHFIND_ENDPOINT = (
