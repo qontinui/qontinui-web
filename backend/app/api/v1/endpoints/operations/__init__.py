@@ -64,6 +64,7 @@ from websockets.asyncio.client import connect as websockets_connect  # noqa: E40
 
 from app.api.admin_deps import require_admin
 from app.api.deps import (
+    current_active_user_optional,
     get_async_db,
     get_audit_actor_user_optional,
     get_current_active_user_async,
@@ -3984,6 +3985,25 @@ async def list_coord_plans(
         min_length=1,
         description="Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
     ),
+    include_live_sessions: bool | None = Query(
+        default=None,
+        description=(
+            "Attach each unit's non-expired ``live_sessions`` (coord's "
+            "agent-status join). Absent from a row = UNKNOWN; ``[]`` "
+            "is a real zero. A session drops out within STATUS_TTL of its last "
+            "heartbeat, not when it ends — compare ``expires_at``."
+        ),
+    ),
+    resolve_session_names: bool | None = Query(
+        default=None,
+        description=(
+            "With ``include_live_sessions``: attach coord's ``custody`` object "
+            "(``sole`` + ``session_name`` / ``ambiguous`` + "
+            "``live_session_count`` / ``unresolved``) to every live session. "
+            "coord echoes ``resolve_session_names: true`` only when it "
+            "resolved them; no echo means an older coord (UNKNOWN)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # OPTIONAL, and that is deliberate: this route is gated by
@@ -4037,6 +4057,14 @@ async def list_coord_plans(
     string here is the honest failure; coord normalizes it as well, so neither
     side depends on the other for this.
 
+    ``include_live_sessions`` / ``resolve_session_names`` are forwarded only
+    when given (plan
+    ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0c):
+    coord then attaches ``live_sessions`` per row and, under both, a
+    ``custody`` object per session plus a top-level
+    ``resolve_session_names: true`` echo. A coord that predates either ignores
+    it (its ``ListQuery`` is permissive), so a missing key is UNKNOWN.
+
     ``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk
     (plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``
     Phase 1). ``order=authored_desc`` makes coord answer in
@@ -4077,6 +4105,12 @@ async def list_coord_plans(
         params["after_authored_at"] = after_authored_at
     if after_slug is not None:
         params["after_slug"] = after_slug
+    # Spelled ``true``/``false`` — the value both of coord's flag grammars
+    # (the permissive ``truthy_query_flag`` and a strict ``bool``) accept.
+    if include_live_sessions is not None:
+        params["include_live_sessions"] = "true" if include_live_sessions else "false"
+    if resolve_session_names is not None:
+        params["resolve_session_names"] = "true" if resolve_session_names else "false"
     payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -4116,8 +4150,59 @@ async def get_coord_plans_overview(
     them only when the operator asks (``exclude_slug_prefix``); under that
     exclusion the console states the difference rather than comparing unlike
     totals.
+
+    The body is passed through UNMODELLED, so fields coord adds reach the
+    console without a change here — notably ``derive_mode``
+    (``"shadow"`` | ``"live"``, the deployment-wide decay-detection posture).
+    An overview without it is an older coord: render the mode UNKNOWN, never
+    as live.
     """
     return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
+
+
+# Declared BEFORE ``/plans/{slug}`` for the same reason ``/plans/overview`` is.
+@router.get("/plans/throughput")
+async def get_coord_plans_throughput(
+    since: str = Query(
+        ...,
+        min_length=1,
+        max_length=64,
+        description=(
+            "REQUIRED window start: an RFC 3339 timestamp "
+            "(``2026-09-01T00:00:00Z``) or a UTC date (``2026-09-01``), at most "
+            "366 days back. coord validates the grammar and bound and answers "
+            "``400 invalid_throughput_window`` naming the parameter."
+        ),
+    ),
+    until: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="Exclusive window end, same grammar; coord defaults it to now.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's day-bucketed work-unit throughput (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/throughput`` (plan
+    ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0b):
+    ``{"since", "until", "bucket": "day", "timezone": "UTC", "statuses":
+    ["in_progress", "shipped"], "count": N, "buckets": [{"day", "to_status",
+    "count"}]}``, passed through unchanged. A day with no transition into a
+    status is ABSENT from ``buckets`` by construction; do not backfill it as
+    zero client-side. Read the window from the ``since``/``until`` echo rather
+    than inferring it.
+
+    ``since`` is required here as well as in coord so an unbounded scan is a
+    422 at this door instead of a round trip. The value grammar and the
+    366-day bound are coord's to enforce; its 400 body is forwarded.
+    """
+    params: dict[str, Any] = {"since": since}
+    if until is not None:
+        params["until"] = until
+    return await _proxy_coord_get(
+        "/coord/work-units/throughput", params=params, tenant_id=tenant_id
+    )
 
 
 @router.get("/plans/{slug}")
@@ -6221,21 +6306,139 @@ async def get_agent_question(
     )
 
 
+#: ``effect_kind`` values that mean "an ordinary question". A row from a coord
+#: build that predates the column omits it entirely, which reads as ``None``.
+#: Matching is EXACT and case-sensitive: ``"NONE"`` or ``" none "`` is not in
+#: this set, so it is treated as an effect and requires tenant admin.
+_NO_EFFECT_KINDS: frozenset[str | None] = frozenset({None, "", "none"})
+
+
+def _question_effect_kind(row: Any, question_id: UUID) -> str | None:
+    """The row's ``effect_kind`` verbatim; ``None`` when absent or null.
+
+    The row must POSITIVELY identify itself as the requested question: a JSON
+    object whose ``question_id`` equals ``question_id`` (compared as lowercased
+    strings). A wrapper body (``{"question": {...}}``), an empty object or a
+    different id would otherwise read as "no ``effect_kind``" — i.e. an
+    ordinary row — and skip the admin gate.
+
+    Raises ``TypeError`` for a row that is not a JSON object or an
+    ``effect_kind`` that is not a string, and ``ValueError`` for a row whose
+    ``question_id`` is missing or does not match — the caller treats each as an
+    unreadable row and fails closed.
+    """
+    if not isinstance(row, dict):
+        raise TypeError("agent question row is not a JSON object")
+    row_id = row.get("question_id")
+    if not isinstance(row_id, str) or row_id.lower() != str(question_id).lower():
+        raise ValueError("agent question row does not identify the requested id")
+    kind = row.get("effect_kind")
+    if kind is None:
+        return None
+    if not isinstance(kind, str):
+        raise TypeError("effect_kind is not a string")
+    return kind
+
+
+_UNREADABLE_DETAIL = (
+    "agent_question_unreadable: could not read the question from coord to "
+    "decide whether answering it requires tenant admin; refusing to answer"
+)
+
+
 @router.post("/agent-questions/{question_id}/respond")
 async def post_agent_question_response(
-    question_id: str,
+    question_id: UUID,
     body: dict[str, Any],
+    request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel | None = Depends(current_active_user_optional),
 ) -> Any:
     """A tenant member (Developer or Administrator) answers an agent question.
 
-    Intentionally NOT admin-gated: a Developer must be able to answer their
-    own running agent's questions. Coord scopes the respond route to the
-    caller's tenant, so this stays within the shared account.
+    An ORDINARY question (``effect_kind`` absent, null or ``'none'``) is
+    intentionally NOT admin-gated: a Developer must be able to answer their own
+    running agent's questions. Coord scopes the respond route to the caller's
+    tenant, so this stays within the shared account. Its auth is exactly what
+    it always was — ``get_tenant_id`` alone; the web user is resolved
+    OPTIONALLY and is not required for it.
+
+    A DECISION-EFFECT row (plan
+    ``2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy``)
+    is different: coord routes its answer through the effect's own core —
+    ``operator_approval`` gate approve/reject, proposal ``decide_core`` — so
+    answering it IS clearing a gate or applying a policy edit. Those doors
+    (:func:`approve_gate`, :func:`approve_prompt_document_proposal`) require
+    :func:`require_coord_tenant_admin`, and this door must not be a way around
+    them. So the row is read from coord first and, for any effect other than
+    ``none`` (including a kind this build does not recognise), an active web
+    user is required (403 ``inactive_or_unknown_user`` when absent — not 401,
+    which the frontend reads as session expiry) and the same admin check runs
+    here. ``effect_kind`` matching is exact: only absent, null, ``''`` and
+    ``'none'`` are ordinary.
+
+    The optional current-user dependency runs on EVERY request, so this route
+    now touches the web DB (the user lookup) even for an ordinary row whose
+    answer does not need it. That is the price of deciding the gate from the
+    row rather than the path; it is deliberate, not an oversight.
+
+    Fail-closed: nothing is POSTed unless the row was read and positively
+    identified — a JSON object whose ``question_id`` equals the requested id
+    (lowercased). A coord 4xx on the read (401 expired session, 403
+    ``tenant_not_resolved``, 404) is re-raised unchanged (a malformed id never
+    reaches coord: the ``UUID`` path parameter answers FastAPI's 422 first),
+    since it is coord's own answer about the request. A coord 5xx, an
+    unreachable coord, a non-JSON or non-object body, any other transport
+    error, a row that does not carry the requested ``question_id`` (a wrapper
+    body, ``{}``, a different id), or a malformed ``effect_kind`` is a 503
+    ``agent_question_unreadable``: whether admin is required is exactly what
+    could not be decided.
+
+    Attribution: for an effect row the recorded ``responded_by_operator`` is
+    the AUTHENTICATED web user (:func:`_editor_identity`), never the
+    client-supplied value — the gate / proposal decision it drives is an audit
+    record, as it is on those doors (where coord stamps the decider from the
+    forwarded bearer). An ordinary row keeps the body's value, as before.
     """
+    path_id = str(question_id)
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/agent-questions/{path_id}", tenant_id=tenant_id
+        )
+        effect_kind = _question_effect_kind(row, question_id)
+    except CoordTransportUnavailable as exc:
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
+    except HTTPException as exc:
+        if 400 <= exc.status_code < 500:
+            raise
+        raise HTTPException(status_code=503, detail=_UNREADABLE_DETAIL) from exc
+    except (TypeError, ValueError, httpx.HTTPError) as exc:
+        # ValueError: a 2xx whose body is not JSON (``resp.json()``), or a
+        # row that does not carry the requested ``question_id``.
+        # httpx.HTTPError: a transport failure ``_proxy_coord_get`` does not
+        # translate (it maps only connect errors and timeouts).
+        # TypeError: a non-object row or a non-string ``effect_kind``.
+        raise HTTPException(
+            status_code=503,
+            detail=f"{_UNREADABLE_DETAIL} ({type(exc).__name__})",
+        ) from exc
+
+    forwarded = body
+    if effect_kind not in _NO_EFFECT_KINDS:
+        if current_user is None:
+            # 403, not 401: the frontend httpClient reads any 401 as session
+            # expiry and signs the operator out, and the request DID carry a
+            # tenant credential — it just resolved to no active web user.
+            raise HTTPException(status_code=403, detail="inactive_or_unknown_user")
+        # Same dependency semantics as the gate / proposal approve routes —
+        # admin in the EFFECTIVE tenant, superusers pass. Called directly
+        # because whether it applies depends on the row just read.
+        await require_coord_tenant_admin(request, current_user)
+        forwarded = {**body, "responded_by_operator": _editor_identity(current_user)}
+
     return await _proxy_coord_post(
-        f"/coord/agent-questions/{question_id}/respond",
-        body,
+        f"/coord/agent-questions/{path_id}/respond",
+        forwarded,
         tenant_id=tenant_id,
     )
 
@@ -6894,7 +7097,7 @@ async def get_release(
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 4.4. Drives the "currently editing" sub-line on each
 # `MachineCard`. The tree-sitter `symbol_watcher` daemon (Phase 4.1,
 # qontinui-supervisor) posts `ClaimKind::Symbol` claims as agents edit
@@ -6987,7 +7190,7 @@ async def get_symbol_claims(
 
 # ---- Device-status surface (Phase 1.3) ----------------------------------
 #
-# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Plan: `2026-05-21-coordination-improvements`
 # Phase 1.3. Two endpoints back the live `currentActivity` sub-line on
 # each `MachineCard` in the operations dashboard:
 #
@@ -7614,7 +7817,7 @@ async def websocket_coord_events(
 
 # ---- CI Status Dashboard surface (Phase 3 + Phase 5) --------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-25-ci-status-dashboard-plan.md`
+# Plan: `2026-05-25-ci-status-dashboard-plan`
 # Phases 3 + 5. Three endpoints back the per-tenant CI status panel on
 # the operations dashboard:
 #
@@ -8124,7 +8327,7 @@ async def websocket_ci_status(
 
 # ---- Coord-Native Session Coordination — Phase 5 ------------------------
 #
-# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-22-coord-native-session-coordination.md`
+# Plan: `2026-05-22-coord-native-session-coordination`
 # Phase 5. The dashboard `/sessions` panel reads from coord's
 # `/sessions` REST + SSE surface (Phase 1 SHIPPED, LIVE at
 # `coord.qontinui.io`).

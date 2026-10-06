@@ -50,6 +50,73 @@ describe("pairConfirmErrorMessage", () => {
   it("uses a string detail verbatim", () => {
     expect(pairConfirmErrorMessage({ detail: "nope" }, 400)).toBe("nope");
   });
+  it("reports a validation 422 as an invalid link, not a coord refusal", () => {
+    const message = pairConfirmErrorMessage(
+      {
+        detail: [
+          {
+            loc: ["body", "state"],
+            msg: "String should have at least 8 characters",
+          },
+        ],
+      },
+      422
+    );
+    expect(message).toBe(
+      "This pairing link is invalid (HTTP 422: String should have at least 8 characters). Start pairing again from your device."
+    );
+    expect(message).not.toContain("coord");
+  });
+  it("reports the app handler's VALIDATION_ERROR envelope as an invalid link", () => {
+    expect(
+      pairConfirmErrorMessage(
+        {
+          error: "VALIDATION_ERROR",
+          message: "Invalid request data",
+          details: [
+            {
+              field: "body.state",
+              message: "String should have at least 8 characters",
+              type: "string_too_short",
+            },
+          ],
+        },
+        422
+      )
+    ).toBe(
+      "This pairing link is invalid (HTTP 422: String should have at least 8 characters). Start pairing again from your device."
+    );
+  });
+  it("maps a refusal the app handler spread to the top level, ignoring its generic message", () => {
+    // What production sends: http_exception_handler lifts the detail's
+    // fields beside `error` / `message` instead of nesting them.
+    expect(
+      pairConfirmErrorMessage(
+        {
+          error: "BAD_GATEWAY",
+          message:
+            "Coord refused pairing (HTTP 403: device_owned_by_other_user).",
+          coord_status: 403,
+          coord_body: "{}",
+          coord_code: "device_owned_by_other_user",
+          timestamp: 1,
+          path: "/api/v1/devices/pair-confirm",
+        },
+        502
+      )
+    ).toBe("This device is already paired to a different account.");
+  });
+  it("relays a top-level coord outage message verbatim", () => {
+    expect(
+      pairConfirmErrorMessage(
+        {
+          error: "SERVICE_UNAVAILABLE",
+          message: "Coord is restarting; retry.",
+        },
+        503
+      )
+    ).toBe("Coord is restarting; retry.");
+  });
   it("explains a coord 403 for single- and multi-tenant flows alike", () => {
     expect(
       pairConfirmErrorMessage(

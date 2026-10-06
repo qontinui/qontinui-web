@@ -28,8 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.redis_config import get_redis
 from app.services.object_storage import object_storage
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
+    dispatch_or_http_error,
     pick_active_runner_for_user,
     runner_bridge_503_no_runner,
 )
@@ -113,36 +112,16 @@ class BaselineImageProcessing:
             image_size_bytes=len(image_bytes),
         )
 
-        try:
-            raw_response = await manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_HASH_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "perceptual_hash_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_PERCEPTUAL_HASH_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            from fastapi import HTTPException, status
-
-            logger.error(
-                "perceptual_hash_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _PERCEPTUAL_HASH_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            manager,
+            runner,
+            cmd,
+            request_id,
+            _PERCEPTUAL_HASH_ENDPOINT,
+            _HASH_TIMEOUT_S,
+            "perceptual_hash",
+            log=logger,
+        )
 
         # The runner may surface a structured soft-error envelope when
         # the optional ``imagehash`` package is missing. Treat that as

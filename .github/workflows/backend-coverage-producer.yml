@@ -88,10 +88,10 @@ on:
 #     but the LAST push of a burst gets skipped, so a burst's final state can stay
 #     unmapped indefinitely -- whereas queueing always leaves a pending run.
 #
-# Note `frontend-coverage-producer.yml` keeps `cancel-in-progress: true` on
-# purpose: at ~14 min it is far under the push interval and measured 18/20
-# `success`. The defect was never the flag -- it is the ratio of runtime to push
-# cadence. If this suite is ever sharded down near that ratio, revisit.
+# `frontend-coverage-producer.yml` used to keep `cancel-in-progress: true`, on
+# the reasoning that at ~14 min it ran far under the push interval. By
+# 2026-09-26 it measured median 16.3 min with 3 of the last 40 push-on-main runs
+# `cancelled`, so it now uses `false` too, for the reasons above.
 #
 # Plan: 2026-09-20-backend-coverage-producer-cancels-itself-into-producing-nothing
 concurrency:
