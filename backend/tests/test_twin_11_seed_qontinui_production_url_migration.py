@@ -51,7 +51,7 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "twin_11_seed_qontinui_production_url"
 _REVISION_FILENAME = "twin_11_seed_qontinui_production_url.py"
-_PARENT_REVISION_ID = "pindisp_01_gates_continuation_pin_disposition"
+_PARENT_REVISION_ID = "coord_maintenance_windows_01"
 
 _SEED_URL = "https://qontinui.io/"
 _SYSTEM_SLUGS = ("qontinui", "personal-jspinak")

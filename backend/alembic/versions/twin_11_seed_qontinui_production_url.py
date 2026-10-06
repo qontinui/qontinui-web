@@ -1,7 +1,7 @@
 """twin served-bundle — seed qontinui's own twin_targets.production_url
 
 Revision ID: twin_11_seed_qontinui_production_url
-Revises: pindisp_01_gates_continuation_pin_disposition
+Revises: coord_maintenance_windows_01
 Create Date: 2026-09-29
 
 Phase 2 of plan ``2026-09-17-twin-observer-genericity-non-release-consumers``,
@@ -68,7 +68,7 @@ from alembic import op
 revision: str = "twin_11_seed_qontinui_production_url"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "pindisp_01_gates_continuation_pin_disposition"
+down_revision = "coord_maintenance_windows_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
