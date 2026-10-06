@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
 import { useAutomation } from "@/contexts/automation-context";
 import type { Action as CanvasAction } from "@/lib/action-schema/action-types";

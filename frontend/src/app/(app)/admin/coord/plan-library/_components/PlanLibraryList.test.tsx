@@ -29,7 +29,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const get = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -53,7 +59,7 @@ import { PlanLibraryList } from "./PlanLibraryList";
 const ON_PAGE = "art-on-page";
 const OFF_PAGE = "art-somewhere-else";
 
-function artifact(id: string) {
+function artifact(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     kind: "plan",
@@ -65,6 +71,14 @@ function artifact(id: string) {
     current_version: 2,
     captured_by: "runner_scan",
     updated_at: "2026-08-19T12:00:00Z",
+    status_currency: {
+      state: "fed_in_step",
+      as_of: "2026-08-19T12:00:00Z",
+      ref_sha: "c0ffee",
+      ref_age_secs: 5,
+      detail: "1 fresh reading(s) of 'qontinui-web' read a fresh ref",
+    },
+    ...overrides,
   };
 }
 
@@ -149,5 +163,57 @@ describe("the artifact detail is anchored in one of two places, never neither", 
         screen.getByTestId("plan-library-pinned-detail")
       ).toBeInTheDocument()
     );
+  });
+});
+
+describe("every row states the currency of its own status", () => {
+  it("renders the served state, with its detail as the tooltip", async () => {
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "fed_in_step");
+    expect(badge).toHaveTextContent("Fed, in step");
+    expect(badge).toHaveAttribute(
+      "title",
+      "1 fresh reading(s) of 'qontinui-web' read a fresh ref"
+    );
+  });
+
+  it("renders an unserved currency as UNKNOWN, never as nothing", async () => {
+    get.mockResolvedValue({
+      items: [artifact(ON_PAGE, { status_currency: undefined })],
+      total: 1,
+    });
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveTextContent("Currency unknown");
+  });
+
+  it("renders a state this console does not know as UNKNOWN, not blank", async () => {
+    get.mockResolvedValue({
+      items: [
+        artifact(ON_PAGE, {
+          status_currency: {
+            state: "fed_from_the_future",
+            as_of: null,
+            ref_sha: null,
+            ref_age_secs: null,
+            detail: null,
+          },
+        }),
+      ],
+      total: 1,
+    });
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveTextContent("Currency unknown");
+    expect(badge.getAttribute("title")).toContain("fed_from_the_future");
   });
 });

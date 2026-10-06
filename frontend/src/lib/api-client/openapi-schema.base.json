@@ -8013,6 +8013,132 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CiHostingReading": {
+        "description": "One resolved ``github_hosted_ci`` reading. ``level is None`` \u21d2 UNKNOWN.",
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          }
+        },
+        "required": [
+          "level",
+          "resolved_scope"
+        ],
+        "title": "CiHostingReading",
+        "type": "object"
+      },
+      "CiHostingRepoReading": {
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "watched": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watched"
+          }
+        },
+        "required": [
+          "level",
+          "resolved_scope",
+          "repo"
+        ],
+        "title": "CiHostingRepoReading",
+        "type": "object"
+      },
+      "CiHostingView": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "domain": {
+            "default": "github_hosted_ci",
+            "title": "Domain",
+            "type": "string"
+          },
+          "repos": {
+            "items": {
+              "$ref": "#/components/schemas/CiHostingRepoReading"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "tenant_default": {
+            "$ref": "#/components/schemas/CiHostingReading"
+          }
+        },
+        "required": [
+          "tenant_default",
+          "can_edit"
+        ],
+        "title": "CiHostingView",
+        "type": "object"
+      },
       "CiNodeConfig": {
         "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
@@ -8167,8 +8293,20 @@
         "type": "object"
       },
       "CiStatusResponse": {
-        "description": "Response wrapper for ``GET /operations/ci-status``.",
+        "description": "Response wrapper for ``GET /operations/ci-status``.\n\n``as_of`` is coord's read time. It is optional rather than required so a\nweb deploy that lands before the coord half (Phase 2) keeps serving the\npage instead of failing response validation with a 500 \u2014 an absent\n``as_of`` renders as UNKNOWN freshness, never as current.",
         "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "when coord composed this response (RFC 3339)",
+            "title": "As Of"
+          },
           "repos": {
             "items": {
               "$ref": "#/components/schemas/RepoCiRow"
@@ -10997,6 +11135,117 @@
           }
         },
         "title": "ContextUpdate",
+        "type": "object"
+      },
+      "ContinuationDeliveryModePut": {
+        "additionalProperties": false,
+        "description": "Closed body for coord's ``PutContinuationDeliveryRequest``.",
+        "properties": {
+          "mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "mode"
+        ],
+        "title": "ContinuationDeliveryModePut",
+        "type": "object"
+      },
+      "ContinuationDeliveryModeView": {
+        "description": "What coord's resolver returns for one repo's continuation delivery.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "provenance_known": {
+            "default": false,
+            "title": "Provenance Known",
+            "type": "boolean"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "mode",
+          "can_edit"
+        ],
+        "title": "ContinuationDeliveryModeView",
+        "type": "object"
+      },
+      "ContinuationDeliveryModeWriteResult": {
+        "description": "The write, and a separate fresh read of what coord resolves.",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContinuationDeliveryModeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "written_mode": {
+            "enum": [
+              "in_session_with_spawn_fallback",
+              "spawn_always",
+              "notify_only"
+            ],
+            "title": "Written Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "repo",
+          "written_mode"
+        ],
+        "title": "ContinuationDeliveryModeWriteResult",
         "type": "object"
       },
       "CoordSignal": {
@@ -29790,6 +30039,129 @@
         "title": "MemoryQueryResponse",
         "type": "object"
       },
+      "MemoryRecordByIdResponse": {
+        "additionalProperties": false,
+        "description": "``GET /memory/records/{id}`` \u2014 one row, in WHATEVER state it is in.\n\nThe read-back half of a write receipt (plan\n``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``\nPhase 1). Unlike the list and query surfaces it does NOT filter to live\nrows: a receipt for a row a peer superseded a minute later must read as\n``superseded``, not as a lost write.\n\n``state`` is derived from the row's own columns, in precedence order:\n\n1. ``is_tombstone`` \u2192 ``tombstoned`` (deleted). ``title`` and\n   ``content`` are withheld as ``null``; id, state and ``valid_until``\n   are still returned.\n2. a non-null ``superseded_by`` \u2192 ``superseded``.\n3. ``valid_until`` at or before the effective now \u2192 ``expired`` \u2014 the\n   validity was ended without a tombstone or a successor (decay\n   invalidate, closed-session expiry, an anchor-gone sweep). \"Now\" is\n   the SAME clock-skew-safe effective now retrieval uses\n   (``memory_store._EFFECTIVE_NOW_ROW_SQL``).\n4. otherwise \u2192 ``live``: retrievable now on the validity axis. A\n   session-scoped row whose ``valid_until`` is still in the future is\n   ``live`` until that instant passes.\n\n``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a\nmulti-bound device can be read as \"the wrong tenant was minted\" rather\nthan \"the write was lost\".",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "state": {
+            "enum": [
+              "live",
+              "superseded",
+              "tombstoned",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "required": [
+          "memory_id",
+          "tenant_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "scope_ref",
+          "importance",
+          "created_at",
+          "state",
+          "superseded_by",
+          "valid_until"
+        ],
+        "title": "MemoryRecordByIdResponse",
+        "type": "object"
+      },
       "MemoryRecordIn": {
         "additionalProperties": false,
         "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.\n\n``anchors`` names the ground truth this record asserts something\nabout. A record with a non-empty array is decay-EXEMPT: its\nvisibility is governed by the watcher's ``anchor_state`` rather than\nby the Ebbinghaus curve. Re-writing an identical record with a new\nanchor MERGES the anchor onto the existing live row (see\n``memory_store.insert_record``'s ON CONFLICT clause), which is the\nonly supported way to anchor an existing record.\n\n**Unknown keys are REJECTED (422), not ignored** \u2014 the same rule\n:class:`MemoryQueryRequest` carries. The measured occurrence was a\n``supersedes`` key written INSIDE a record (the real door is\n``POST /records/{id}/supersede``): pydantic's default dropped it and\nthe write \"succeeded\" while dropping the field that was its whole point.",
@@ -35378,6 +35750,17 @@
             ],
             "title": "Authored At"
           },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
           "coord": {
             "$ref": "#/components/schemas/CandidateCoordLink"
           },
@@ -35533,6 +35916,16 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusCurrency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -35565,7 +35958,9 @@
           "created_at",
           "last_touched",
           "age_days",
-          "coord"
+          "coord",
+          "content_sha256",
+          "status_currency"
         ],
         "title": "PlanCandidate",
         "type": "object"
@@ -36287,6 +36682,189 @@
           "period"
         ],
         "title": "PopularPackageResponse",
+        "type": "object"
+      },
+      "PostMergeFollowupScopePut": {
+        "additionalProperties": false,
+        "description": "Closed body for the scope write \u2014 the shape coord's\n``PutPostMergeFollowupScopeRequest`` accepts, and nothing else.\n\n``code_paths`` semantics are coord's and are kept exactly:\n\n* omitted (``None``) on an ``all`` / ``none`` write KEEPS the stored globs;\n* ``[]`` clears them;\n* ``code_only`` must carry at least one non-blank glob \u2014 checked here so\n  the common mistake is a local 422; coord still re-validates and is the\n  authority on whether each glob compiles (its 400 passes through).",
+        "properties": {
+          "code_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Paths"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Repo",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "scope"
+        ],
+        "title": "PostMergeFollowupScopePut",
+        "type": "object"
+      },
+      "PostMergeFollowupScopeView": {
+        "description": "One repo's post-merge follow-up scope, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "code_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Code Paths",
+            "type": "array"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shadow",
+                  "enforce",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "repo",
+                  "default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Scope"
+          },
+          "scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "scope",
+          "can_edit"
+        ],
+        "title": "PostMergeFollowupScopeView",
+        "type": "object"
+      },
+      "PostMergeFollowupScopeWriteResult": {
+        "description": "What the write did, and \u2014 separately \u2014 what coord now resolves.\n\n``effective`` is a SECOND, fresh GET. When it fails, ``effective`` is\n``None`` and ``readback_error`` says why: that is UNKNOWN, never \"the\nwritten scope applies\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostMergeFollowupScopeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "stored_code_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Code Paths"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "written_scope": {
+            "enum": [
+              "all",
+              "code_only",
+              "none"
+            ],
+            "title": "Written Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "repo",
+          "written_scope"
+        ],
+        "title": "PostMergeFollowupScopeWriteResult",
         "type": "object"
       },
       "PresignedUrlResponse": {
@@ -40678,7 +41256,7 @@
         "type": "object"
       },
       "RepoCiRow": {
-        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering\n(``green`` / ``red`` / ``unknown``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.",
+        "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /\n``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.\n``vacuously_green`` is coord's zero-baseline arm \u2014 no required check has\never reported on main, so \"green\" is an absence of evidence, not a pass.\n\nThe two ``*_observed_at`` stamps are the freshness of the facts the row\ncarries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):\n``main_verdict_observed_at`` is ``max(updated_at)`` over the\n``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``\nis the newest ``pr_check_runs`` row counted. They MUST be declared here:\n``response_model`` filtering drops every undeclared key, so an undeclared\nstamp would leave the page an unbounded read of \"the latest observation\"\nwith no way to say how old it is. ``None`` is coord saying it has no\nobservation to date the value by (the vacuously-green / memo arms, or no\nchecks at all) \u2014 and also an older coord that sends no stamp; both read\nas UNKNOWN freshness on the page, never as \"just now\".\n\nThe stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339\ntext reaches the page byte-for-byte (no re-serialisation that rewrites\nthe offset or the precision), and a value this model cannot parse is\nstill delivered rather than 500-ing the whole read.",
         "properties": {
           "latest_details_url": {
             "anyOf": [
@@ -40703,9 +41281,21 @@
             "title": "Main Head Sha"
           },
           "main_verdict": {
-            "description": "\"green\" | \"red\" | \"unknown\"",
+            "description": "\"green\" | \"red\" | \"unknown\" | \"vacuously_green\"",
             "title": "Main Verdict",
             "type": "string"
+          },
+          "main_verdict_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max(updated_at) over the ci_baselines rows main_verdict was read from; null when no baseline backs the verdict",
+            "title": "Main Verdict Observed At"
           },
           "open_pr_checks": {
             "additionalProperties": {
@@ -40714,6 +41304,18 @@
             "description": "counts keyed by 'success' | 'failure' | 'pending'",
             "title": "Open Pr Checks",
             "type": "object"
+          },
+          "pr_checks_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "newest pr_check_runs row counted; null when none",
+            "title": "Pr Checks Observed At"
           },
           "repo": {
             "title": "Repo",
@@ -48710,6 +49312,75 @@
           "state_data"
         ],
         "title": "StateUpdateRequest",
+        "type": "object"
+      },
+      "StatusCurrency": {
+        "description": "How current a row's ``status`` can be taken to be \u2014 with its evidence.\n\n``as_of`` is the newest ``received_at`` among the readings that produced\nTHIS verdict \u2014 the in-step readings for ``fed_in_step`` (a floor reading\nbeside them does not move it), the floor readings for ``fed_stale_ref``;\nthe row's ``updated_at`` for ``asserted_once``; null for\n``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the\nfreshest-ref reading among the same set, null otherwise. ``behind`` is\ndeliberately NOT carried: it is not a property of the body.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "state": {
+            "enum": [
+              "fed_in_step",
+              "fed_stale_ref",
+              "unfed_key",
+              "asserted_once",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "as_of",
+          "ref_sha",
+          "ref_age_secs",
+          "detail"
+        ],
+        "title": "StatusCurrency",
         "type": "object"
       },
       "StepExecutionConfig": {
@@ -58518,6 +59189,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -58565,6 +59239,7 @@
           "current_version",
           "created_at",
           "updated_at",
+          "status_currency",
           "body",
           "versions",
           "edges"
@@ -59028,6 +59703,9 @@
             "title": "Status",
             "type": "string"
           },
+          "status_currency": {
+            "$ref": "#/components/schemas/StatusCurrency"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -59067,7 +59745,8 @@
           "captured_by",
           "current_version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "status_currency"
         ],
         "title": "WorkArtifactSummary",
         "type": "object"
@@ -85220,6 +85899,56 @@
         "tags": [
           "memory"
         ]
+      },
+      "get": {
+        "description": "One record by id, tenant-scoped, in WHATEVER state it is in.\n\nThe read-back half of a write receipt: a caller holding a ``memory_id``\nfrom ``POST /records`` (or coord's ``coord_memory_record``) resolves it\nhere deterministically, without FTS and without the list surface's\nlive-only, time-windowed filter. Superseded and tombstoned rows are\nreturned, with ``state`` derived from the row's own columns \u2014 see\n:class:`MemoryRecordByIdResponse` for the precedence. A tombstoned\nrow's ``title`` and ``content`` are withheld (``null``).\n\n404 when the id does not exist OR belongs to another tenant \u2014 the two\nare deliberately indistinguishable. Read-only: does not bump\n``access_count``.",
+        "operationId": "api_v1_memory_records_memory_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecordByIdResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Record By Id",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/v1/memory/records/{memory_id}/hold": {
@@ -86574,9 +87303,116 @@
         ]
       }
     },
+    "/api/v1/operations/alerts/fault-to-visibility": {
+      "get": {
+        "description": "Return coord's fault-to-visibility interval per alert kind.\n\nProxies coord ``GET /coord/alerts/fault-to-visibility`` (plan\n``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``\nPhase 4, G1). The interval is ``visible_at - onset_at`` over\n``coord.alerts`` episodes: how long a fault existed before anyone who can\nact on it could see it. p50/p90 are computed per kind **only over\nepisodes whose onset is known**, and coord ships ``onset_known_n`` beside\n``episodes_n`` so that share is read as the headline next to the\npercentile, never dropped. An episode whose ``onset_basis`` is ``none``\ncounts in ``episodes_n`` and not in the percentile \u2014 its onset is\nUNKNOWN, and ``first_seen_at`` is never substituted for it (that would\nreport a zero interval for exactly the faults this read exists to find).\nA ``null`` percentile is \"no known-onset episode\", not zero seconds.\n\n``window`` is forwarded verbatim when set; coord owns its grammar and its\ndefault, and a value it cannot parse comes back as coord's own 4xx rather\nthan being re-validated (and eventually mis-validated) here. The body is\npassed through untouched \u2014 no ``response_model`` \u2014 so a field coord adds\nreaches the console without a change in this module.",
+        "operationId": "api_v1_operations_alerts_fault_to_visibility_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Alerts Fault To Visibility Api V1 Operations Alerts Fault To Visibility Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Alerts Fault To Visibility",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/ci-hosting": {
+      "get": {
+        "description": "Read the tenant's resolved GitHub-hosted CI setting, per repo.\n\n``can_edit`` follows :func:`get_fleet_policy` exactly \u2014 the operator's\nroles in the EFFECTIVE tenant plus the superuser bypass \u2014 because the\nwrites this panel makes go through ``PUT /fleet-policy``, which is gated on\n``require_coord_tenant_admin``.",
+        "operationId": "api_v1_operations_ci_hosting_get",
+        "parameters": [
+          {
+            "description": "Resolve only this repo (owner/name).",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resolve only this repo (owner/name).",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiHostingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Ci Hosting",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/ci-status": {
       "get": {
-        "description": "Return per-repo CI status for the caller's tenant.\n\nProxies coord's ``GET /coord/ci/status`` with the\n``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from\n``coord.tenant_repos`` for the tenant, so an operator with no\nregistered repos gets ``{\"repos\": []}`` \u2014 never 4xx.\n\nWire shape (coord ``CiStatusResponse``)::\n\n    { \"repos\": [RepoCiRow, ...] }",
+        "description": "Return per-repo CI status for the caller's tenant.\n\nProxies coord's ``GET /coord/ci/status`` with the\n``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from\n``coord.tenant_repos`` for the tenant, so an operator with no\nregistered repos gets ``{\"repos\": []}`` \u2014 never 4xx.\n\nWire shape (coord ``CiStatusResponse``)::\n\n    { \"as_of\": \"<rfc3339>\", \"repos\": [RepoCiRow, ...] }",
         "operationId": "api_v1_operations_ci_status_get",
         "responses": {
           "200": {
@@ -86633,6 +87469,28 @@
           }
         },
         "summary": "Post Ci Status Notify When Green",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/ci/overview": {
+      "get": {
+        "description": "Per-pool CI capacity/queue state and per-repo job-outcome split.\n\nProxies coord's ``GET /coord/ci/overview`` (plan\n``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phases 2-3), the\ndurable read behind ``/admin/coord/ci``. Coord serves it from\n``coord.ci_pool_observations`` (written by the leader each queue-wait /\neligibility pass) plus tenant-scoped ``ci_job_observations`` counts, so\nevery replica answers the same rows.\n\nPassed through VERBATIM \u2014 deliberately no ``response_model``. Every\ncount on this wire is nullable and every row carries a ``state``\n(``measured`` / ``stale`` / ``never_observed`` / ``unknown``) plus its\n``observed_at`` / ``stale_after_secs``; a declared model that lagged the\ncoord shape would silently drop exactly the fields that let the page\nsay \"UNKNOWN\" instead of \"0\" (the ``/ci-status`` freshness bug this same\nplan had to fix in ``RepoCiRow``).\n\nWire shape (coord)::\n\n    {\n      \"as_of\": \"<rfc3339>\", \"coverage_note\": \"...\", \"note\": \"...|null\",\n      \"pools\": [{repo, pool, state, state_reason, observed_at, ...}],\n      \"repos\": [{repo, window_hours, state, outcomes, hosted, ...}]\n    }\n\n``hosted`` (Phase 5a) is ``{state: observed|none_observed|unknown,\nhosted_refused, last_refused_at, billing_refusal, note}`` \u2014\n``hosted_refused`` counts hosted jobs GitHub never started (INFRA, never\ncontent_fail; a floor, null unless ``observed``), and ``billing_refusal``\nis the repo's open ``ci_billing_refused`` alert. An older coord sends\n``{state: not_measured, note}``. Pass-through is what keeps these new\nfields reaching the page without a web change.\n\nNo graceful fallback: a coord predating the route answers 404 and the\npage renders that as an explicit UNKNOWN, never as an empty fleet.",
+        "operationId": "api_v1_operations_ci_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Ci Overview Api V1 Operations Ci Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ci Overview",
         "tags": [
           "operations"
         ]
@@ -87068,6 +87926,102 @@
           }
         ],
         "summary": "Get Computer",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/continuation-delivery-mode": {
+      "get": {
+        "description": "Read what coord resolves for one repo's continuation-delivery mode.\n\nSee :class:`ContinuationDeliveryModeView` ``provenance_known`` for why\nthis is a resolver answer and not a stored value.",
+        "operationId": "api_v1_operations_continuation_delivery_mode_get",
+        "parameters": [
+          {
+            "description": "GitHub full name, owner/name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "GitHub full name, owner/name",
+              "minLength": 3,
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuationDeliveryModeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Continuation Delivery Mode",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one repo's continuation-delivery mode, then read it back.",
+        "operationId": "api_v1_operations_continuation_delivery_mode_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinuationDeliveryModePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuationDeliveryModeWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Continuation Delivery Mode",
         "tags": [
           "operations"
         ]
@@ -87836,7 +88790,7 @@
     },
     "/api/v1/operations/coord/findings": {
       "get": {
-        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
+        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nEvery answer is a PAGE of the corpus, never the corpus: coord's envelope\ncarries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's\n``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next\npage (a malformed one is coord's 400, re-raised verbatim). Without that\npass-through a client following ``next_cursor`` would be served page 1\nforever.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
         "operationId": "api_v1_operations_coord_findings_get",
         "parameters": [
           {
@@ -87948,6 +88902,24 @@
               ],
               "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
               "title": "Triaged"
+            }
+          },
+          {
+            "description": "Resume a keyset walk: pass the previous response's ``next_cursor`` back verbatim, under the SAME filters. Forwarded verbatim \u2014 coord owns the codec, and a malformed or foreign cursor is coord's typed 400 ``invalid_query_parameter`` naming ``cursor``.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resume a keyset walk: pass the previous response's ``next_cursor`` back verbatim, under the SAME filters. Forwarded verbatim \u2014 coord owns the codec, and a malformed or foreign cursor is coord's typed 400 ``invalid_query_parameter`` naming ``cursor``.",
+              "title": "Cursor"
             }
           }
         ],
@@ -91543,6 +92515,56 @@
         ]
       }
     },
+    "/api/v1/operations/domain-cost": {
+      "get": {
+        "description": "Return coord's per-autonomy-domain cost ledger.\n\nProxies coord ``GET /coord/domain-cost`` (plan\n``2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first``\nPhase 2), the read the ``/overview`` Intent section's \"Domain cost\" card\nrenders. Per domain in the tenant's autonomy-domain roster (a\n``steering/autonomy-domains.toml`` coord reads from its repo mirror,\nnamed in the response's ``roster_source``) and for ``shared``, coord\nreports work units by\nstatus class, wall-clock, PRs, sessions, operator touches and tokens, each\nin the ``{value, coverage_n, population_n, basis}`` shape; the marginal\ncost ratio ``R`` per dimension with its coverage floor; and a ``verdict``\nby fixed comparison. Beside them: ``unmapped_areas``,\n``unattributed_units_n``, ``roster_source`` and ``computed_at``.\n\nUnknown is first-class on this wire and the proxy preserves it: a\ndimension with no producer arrives as ``value: null`` with a ``reason``\n(``tokens`` and the session-trailer arm ship ``\"no_producer\"``), a\ndimension below its coverage floor arrives with ``R: null``, and an\nunreadable roster arrives as HTTP 200 with ``roster: null`` plus\n``roster_error`` and every ratio ``null`` \u2014 never an empty domain list. A\ndatabase failure is coord's typed error, raised here, never zeros.\n\n``as_of`` is forwarded verbatim when set; coord owns its grammar. The body\nis passed through untouched \u2014 no ``response_model`` \u2014 so a field coord\nadds reaches the card without a change in this module.",
+        "operationId": "api_v1_operations_domain_cost_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Domain Cost Api V1 Operations Domain Cost Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Domain Cost",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/federation/reports": {
       "get": {
         "description": "List memory federation reports from coord (paginated, filterable).",
@@ -94830,6 +95852,102 @@
           }
         ],
         "summary": "Post Coord Plan Transition",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/post-merge-followup-scope": {
+      "get": {
+        "description": "Read one repo's post-merge follow-up scope for the effective tenant.\n\nA coord 503 (``preference_unreadable`` / ``column_not_present``) passes\nthrough as a 503 \u2014 it is never answered with the ``all`` default.",
+        "operationId": "api_v1_operations_post_merge_followup_scope_get",
+        "parameters": [
+          {
+            "description": "GitHub full name, owner/name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "GitHub full name, owner/name",
+              "minLength": 3,
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMergeFollowupScopeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Post Merge Followup Scope",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one repo's scope, then READ BACK what coord resolves.\n\nTenant-admin gated web-side; coord re-checks with ``rbac::is_tenant_admin``\nand its ``403 admin_required`` passes through verbatim.",
+        "operationId": "api_v1_operations_post_merge_followup_scope_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMergeFollowupScopePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMergeFollowupScopeWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Post Merge Followup Scope",
         "tags": [
           "operations"
         ]

@@ -1298,6 +1298,37 @@ describe("MergePipeline", () => {
     expect(healthCalls()).toBeGreaterThan(0);
   });
 
+  it("honours the ?tab=train&repo=… deep link from /admin/coord/ci", async () => {
+    // Plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` D2: the CI
+    // page's repo rows link here for train blockers rather than rebuild them.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    });
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+    const before = window.location.href;
+    window.history.pushState(
+      {},
+      "",
+      "/admin/coord/pipeline?tab=train&repo=qontinui%2Fqontinui-web"
+    );
+    try {
+      render(<MergePipeline />);
+      // The Train view replaces the PR list — its row is the active-tab proof.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("train-row-qontinui/qontinui-web")
+        ).toBeInTheDocument()
+      );
+      expect(screen.getByTestId("pipeline-search")).toHaveValue(
+        "qontinui/qontinui-web"
+      );
+    } finally {
+      window.history.pushState({}, "", before);
+    }
+  });
+
   it("still renders the train view when the health read is unavailable", async () => {
     // coord deploy predating /pr-merge/health, or a transient outage.
     fetchMock.mockResolvedValue({

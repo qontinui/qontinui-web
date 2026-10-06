@@ -70,11 +70,11 @@ import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
+import { normalizeMergeEconomics } from "./mergeEconomics";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
   MergeEconomics,
-  MergeEconomicsResponse,
   PrListResponse,
   PrRow,
   ProposalDetail,
@@ -473,27 +473,10 @@ export function useMergePipelineData(
         }
         throw new Error(`HTTP ${res.status}`);
       }
-      const body = (await res.json()) as
-        | MergeEconomicsResponse
-        | Record<string, MergeEconomics>
-        | Array<MergeEconomics & { repo?: string }>;
-      let map: Record<string, MergeEconomics> = {};
-      if (Array.isArray(body)) {
-        for (const e of body) {
-          if (e && typeof e.repo === "string") map[e.repo] = e;
-        }
-      } else if (
-        body &&
-        typeof body === "object" &&
-        "repos" in body &&
-        body.repos &&
-        typeof body.repos === "object"
-      ) {
-        map = body.repos as Record<string, MergeEconomics>;
-      } else if (body && typeof body === "object") {
-        // Already keyed by repo.
-        map = body as Record<string, MergeEconomics>;
-      }
+      // One shared normalizer (`mergeEconomics.ts`): coord's no-repo answer
+      // is `{as_of, repos: [ {repo, ...} ]}`, which the inline version here
+      // used to key by array INDEX.
+      const map = normalizeMergeEconomics(await res.json()).byRepo;
       if (!cleanedUpRef.current) setEconomicsByRepo(map);
     } catch (err) {
       log.warn("fetchEconomics failed", err);
