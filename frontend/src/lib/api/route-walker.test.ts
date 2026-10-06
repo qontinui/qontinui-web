@@ -605,8 +605,17 @@ function scanBackendPathParams(): {
   for (const rel of readdirSync(apiRoot, { recursive: true }) as string[]) {
     if (!rel.endsWith(".py")) continue;
     const src = readFileSync(path.join(apiRoot, rel), "utf8");
-    const mod = path.basename(rel, ".py");
-    const flat = path.dirname(rel) === path.join("v1", "endpoints");
+    // A package router (`endpoints/<pkg>/__init__.py`) is mounted in api.py
+    // under the PACKAGE name, exactly as a flat `endpoints/<pkg>.py` module
+    // is, so it resolves through the same `mounts` key.
+    const pkgInit =
+      path.basename(rel) === "__init__.py" &&
+      path.dirname(path.dirname(rel)) === path.join("v1", "endpoints");
+    const mod = pkgInit
+      ? path.basename(path.dirname(rel))
+      : path.basename(rel, ".py");
+    const flat =
+      pkgInit || path.dirname(rel) === path.join("v1", "endpoints");
     // Sub-routers mounted on a module router: `router.include_router(sub)`.
     const local = new Map<string, string[]>();
     const prefixesOf = (router: string): string[] | undefined => {
