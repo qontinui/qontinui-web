@@ -8,7 +8,7 @@
  * 30 s background poll only until one custody read has succeeded for the
  * current window/search.
  *
- * A poll answer therefore carries no custody (`live_sessions` and
+ * A poll answer after that carries no custody (`live_sessions` and
  * `custody_resolved` both null). Painting that as-is would flip every badge to
  * "not reported" every 30 s; painting the held reading with no age would make
  * a minutes-old reading look live. So the held reading is re-applied to the
@@ -83,6 +83,13 @@ export function applyHeldCustody(
     return { ...row, axis_a: { ...row.axis_a, ...held } };
   });
   return applied ? { body: { ...body, items }, applied } : { body, applied };
+}
+
+/** Does any stem in the hold actually carry a custody reading? */
+export function holdCarriesCustody(hold: CustodyHold): boolean {
+  return Object.values(hold.byStem).some(
+    (h) => h.live_sessions !== null || h.custody_resolved !== null
+  );
 }
 
 /** Past this age the custody line also states the date. */

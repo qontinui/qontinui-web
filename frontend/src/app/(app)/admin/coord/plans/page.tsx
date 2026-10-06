@@ -150,6 +150,7 @@ import {
   applyHeldCustody,
   captureCustody,
   describeCustodyAge,
+  holdCarriesCustody,
   type CustodyHold,
   type CustodySource,
 } from "./custodyHold";
@@ -283,7 +284,10 @@ export default function CoordPlansListPage() {
           custodyHoldRef.current = hold;
           custodyReadForQuestion.current = true;
           setCustodyHold(hold);
-          setCustodySource("fresh");
+          // A custody read whose rows carry no custody (all unreadable, an
+          // empty page, a backend that ignored include_custody) is not a
+          // reading anything on screen shows — so no age line dates it.
+          setCustodySource(holdCarriesCustody(hold) ? "fresh" : "none");
           setData(body);
         } else {
           const merged = applyHeldCustody(body, custodyHoldRef.current);
