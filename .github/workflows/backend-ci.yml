@@ -42,6 +42,15 @@ on:
       # the frontend entries above and the nightly note below describe; the
       # repo already applies this fix in web-boundary-lint.yml.
       - 'scripts/ci/**'
+      # The consolidated guard job (plan
+      # 2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work).
+      # The gate_lane_roster tests (tests/test_*_gate.py,
+      # tests/test_coord_column_drop_guard.py) and
+      # tests/test_ruff_version_parity_gate.py read its `run:` steps as a lane
+      # of every scripts/ci/ gate it invokes. Without this entry a PR that
+      # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
+      # the roster tests that exist to catch exactly that.
+      - '.github/workflows/web-guards.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -90,6 +99,8 @@ on:
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
       - 'scripts/ci/**'
+      # See the pull_request filter above (gate lane rosters).
+      - '.github/workflows/web-guards.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
