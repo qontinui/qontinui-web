@@ -10,7 +10,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   ReconciliationResponse,
@@ -189,15 +189,123 @@ beforeEach(() => {
 });
 
 describe("the reconciliation question", () => {
-  it("asks for custody on every read", async () => {
+  it("asks for custody on the first read", async () => {
     render(<CoordPlansListPage />);
     await screen.findByTestId("coord-plan-reconciliation-row");
     expect(reconciliationCalls()[0]).toContain("include_custody=true");
     expect(reconciliationCalls()[0]).not.toContain("q=");
   });
+
+  it("links to the all-kinds artifact list", async () => {
+    render(<CoordPlansListPage />);
+    expect(
+      await screen.findByTestId("coord-plans-all-kinds-link")
+    ).toHaveAttribute("href", "/admin/coord/plan-library/artifacts");
+  });
+});
+
+describe("custody across the background poll", () => {
+  const sole = row({
+    axis_a: {
+      readable: true,
+      present: true,
+      status: "in_progress",
+      status_class: "free_known",
+      custody_resolved: true,
+      live_sessions: [
+        {
+          device_id: "box",
+          custody: { state: "sole", session_name: "plan-foo" },
+        },
+      ],
+    },
+  });
+  const pollRow = row({
+    axis_a: {
+      readable: true,
+      present: true,
+      status: "in_progress",
+      status_class: "free_known",
+      live_sessions: null,
+      custody_resolved: null,
+    },
+  });
+
+  it("the poll omits include_custody and keeps the last reading with its age", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      route({
+        "/plan-library/reconciliation": (url: string) =>
+          url.includes("include_custody=true")
+            ? body({ items: [sole] })
+            : body({ items: [pollRow] }),
+      });
+      render(<CoordPlansListPage />);
+      expect(await screen.findByTestId("coord-plan-custody")).toHaveTextContent(
+        "claimed by plan-foo"
+      );
+      const fresh = screen.getByTestId("coord-plans-custody-as-of");
+      expect(fresh).toHaveAttribute("data-held", "false");
+      expect(fresh).toHaveTextContent(/custody as of \d\d:\d\d/);
+
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() => expect(reconciliationCalls().length).toBe(2));
+      expect(reconciliationCalls()[1]).not.toContain("include_custody");
+
+      // The poll answer carried no custody: the held reading stays, and the
+      // page says it is held and how old it is.
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-plans-custody-as-of")).toHaveAttribute(
+          "data-held",
+          "true"
+        )
+      );
+      expect(screen.getByTestId("coord-plans-custody-as-of")).toHaveTextContent(
+        /custody as of \d\d:\d\d — held from an earlier read/
+      );
+      expect(screen.getByTestId("coord-plan-custody")).toHaveTextContent(
+        "claimed by plan-foo"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a manual refresh asks for custody again", async () => {
+    const user = userEvent.setup();
+    render(<CoordPlansListPage />);
+    await screen.findByTestId("coord-plan-reconciliation-row");
+    await user.click(screen.getByTestId("coord-plans-refresh"));
+    await waitFor(() => expect(reconciliationCalls().length).toBe(2));
+    expect(reconciliationCalls()[1]).toContain("include_custody=true");
+  });
 });
 
 describe("Phase 2 — server-side search", () => {
+  it("says 'no plan stem matches' only when the route applied THIS search", async () => {
+    const user = userEvent.setup();
+    route({
+      "/plan-library/reconciliation": (url: string) =>
+        url.includes("q=")
+          ? body({ items: [], total: 0, q: "something-else" })
+          : body(),
+    });
+    render(<CoordPlansListPage />);
+    await screen.findByTestId("coord-plan-reconciliation-row");
+    await user.type(screen.getByTestId("coord-plans-search"), "merge");
+    expect(
+      await screen.findByTestId(
+        "coord-plans-search-mismatch",
+        {},
+        { timeout: 4000 }
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("coord-plans-search-empty")).toBeNull();
+    expect(screen.getByTestId("coord-plans-empty")).toBeInTheDocument();
+  });
+
   it("sends q (debounced), returns to offset 0, and shows the echo", async () => {
     const user = userEvent.setup();
     route({
@@ -416,7 +524,32 @@ describe("Phase 4 — throughput", () => {
     );
     expect(
       screen.getByTestId("coord-plans-throughput-summary")
-    ).toHaveTextContent("2 shipped · 1 started");
+    ).toHaveTextContent("2 shipped · 1 started (work-unit-days");
+  });
+
+  it("marks a held reading when a refresh fails", async () => {
+    const user = userEvent.setup();
+    route({
+      "/operations/plans/throughput": {
+        since: "2026-09-06T00:00:00Z",
+        until: "2026-10-06T00:00:00Z",
+        count: 1,
+        buckets: [{ day: "2026-09-10", to_status: "shipped", count: 2 }],
+      },
+    });
+    render(<CoordPlansListPage />);
+    await screen.findAllByTestId("coord-plans-throughput-day");
+    expect(
+      screen.queryByTestId("coord-plans-throughput-refresh-failed")
+    ).toBeNull();
+
+    route({ "/operations/plans/throughput": new Error("coord timed out") });
+    await user.click(screen.getByTestId("coord-plans-refresh"));
+    expect(
+      await screen.findByTestId("coord-plans-throughput-refresh-failed")
+    ).toHaveTextContent(/refresh failed — showing reading from \d\d:\d\d/);
+    // The held bars are still there.
+    expect(screen.getAllByTestId("coord-plans-throughput-day")).toHaveLength(1);
   });
 
   it("asks for the default 30 days, and re-asks when the range changes", async () => {
@@ -532,7 +665,7 @@ describe("Phase 6 — custody", () => {
     );
   });
 
-  it("says an older backend did not resolve custody", async () => {
+  it("says coord did not resolve custody", async () => {
     route({
       "/plan-library/reconciliation": body({
         items: [
@@ -541,6 +674,7 @@ describe("Phase 6 — custody", () => {
               readable: true,
               present: true,
               status: "in_progress",
+              custody_resolved: false,
               live_sessions: [{ device_id: "box" }],
             },
           }),
@@ -549,7 +683,7 @@ describe("Phase 6 — custody", () => {
     });
     render(<CoordPlansListPage />);
     expect(await screen.findByTestId("coord-plan-custody")).toHaveTextContent(
-      "custody not resolved (older coord)"
+      "custody not resolved (coord did not resolve names)"
     );
   });
 });

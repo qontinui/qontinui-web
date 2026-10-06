@@ -1,8 +1,12 @@
 "use client";
 
 /**
- * Plans started / shipped per day, over a chosen range — the corpus-health
- * strip's throughput chart.
+ * Work units started / shipped per day, over a chosen range — the
+ * corpus-health strip's throughput chart.
+ *
+ * **Work units, not plans.** coord's aggregate (`work_unit_throughput.rs`
+ * `THROUGHPUT_SQL`) counts every work unit in the tenant — plan-shaped or
+ * not — so every label here says "work units".
  *
  * Plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 4.
  * Every number is coord's server-side aggregate (`throughput.ts` has the
@@ -15,6 +19,10 @@
  *   range" in words.
  * - **Render a failed read as an empty one.** That is UNKNOWN, and a 404 says
  *   the backend does not serve the route.
+ *
+ * - **Present a held reading as live.** A failed refresh of the same range
+ *   keeps the last reading, and says "refresh failed — showing reading from
+ *   HH:MM".
  *
  * The bars are mirrored in a visually-hidden table so the readings are
  * reachable without the canvas (and assertable in jsdom, where Recharts'
@@ -46,6 +54,8 @@ import {
   echoDate,
   type ThroughputReading,
 } from "./throughput";
+import { clockTime } from "./custody";
+import type { ThroughputRefreshFailure } from "./useThroughput";
 
 function summaryText(reading: ThroughputReading, days: number): string {
   switch (reading.state) {
@@ -60,7 +70,7 @@ function summaryText(reading: ThroughputReading, days: number): string {
     case "empty":
       return `no data in the last ${days} days`;
     case "loaded":
-      return `${reading.shippedUnitDays} shipped · ${reading.startedUnitDays} started (unit-days, last ${days} days)`;
+      return `${reading.shippedUnitDays} shipped · ${reading.startedUnitDays} started (work-unit-days, last ${days} days)`;
   }
 }
 
@@ -156,7 +166,7 @@ function ThroughputBody({ reading }: { reading: ThroughputReading }) {
       </div>
       <table className="sr-only" data-testid="coord-plans-throughput-table">
         <caption>
-          Plans started and shipped per UTC day, as coord returned them
+          Work units started and shipped per UTC day, as coord returned them
         </caption>
         <thead>
           <tr>
@@ -178,10 +188,26 @@ function ThroughputBody({ reading }: { reading: ThroughputReading }) {
       <p className="text-[11px] text-muted-foreground">
         UTC days {echoDate(reading.since)} to {echoDate(reading.until)}. A day
         appears only when coord returned a bucket for it — a missing day is not
-        a measured zero. Each bar counts distinct plans that entered the status
-        that day, so a total is unit-days, not plans.
+        a measured zero. Each bar counts distinct work units — every unit in the
+        tenant, not only plans — that entered the status that day, so a total is
+        work-unit-days, not units.
       </p>
     </div>
+  );
+}
+
+/** The held-reading marker: a refresh failed and the last reading stands. */
+function RefreshFailedNote({ failure }: { failure: ThroughputRefreshFailure }) {
+  const at =
+    clockTime(new Date(failure.readingAt).toISOString()) ?? "an unknown time";
+  return (
+    <p
+      className="text-xs text-amber-200"
+      data-testid="coord-plans-throughput-refresh-failed"
+      title={failure.reason}
+    >
+      refresh failed — showing reading from {at}
+    </p>
   );
 }
 
@@ -189,12 +215,18 @@ export function ThroughputPanel({
   reading,
   days,
   onDaysChange,
+  refreshFailure = null,
 }: {
   reading: ThroughputReading;
   days: number;
   onDaysChange: (days: number) => void;
+  /** Set when the newest refresh failed and `reading` is the held one. */
+  refreshFailure?: ThroughputRefreshFailure | null;
 }) {
-  const unknown = reading.state === "failed" || reading.state === "unparseable";
+  const unknown =
+    reading.state === "failed" ||
+    reading.state === "unparseable" ||
+    refreshFailure !== null;
   return (
     <CollapsiblePanel
       title="Throughput"
@@ -206,6 +238,7 @@ export function ThroughputPanel({
           data-testid="coord-plans-throughput-summary"
         >
           {summaryText(reading, days)}
+          {refreshFailure !== null && " · refresh failed"}
         </span>
       }
       headerActions={
@@ -232,6 +265,9 @@ export function ThroughputPanel({
       storageKey="coord-plans-throughput-open"
       data-testid="coord-plans-throughput"
     >
+      {refreshFailure !== null && (
+        <RefreshFailedNote failure={refreshFailure} />
+      )}
       <ThroughputBody reading={reading} />
     </CollapsiblePanel>
   );

@@ -1,14 +1,205 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { httpClient } from "@/services/service-factory";
 import { useRetainedValue } from "@/components/console";
-import type { ScanRootListResponse } from "../types";
+import { useArtifactDocument } from "../../plans/useArtifactDocument";
+import type {
+  ScanRootListResponse,
+  WorkArtifactKind,
+  WorkArtifactListResponse,
+  WorkArtifactSummary,
+} from "../types";
 
 const API = "/api/v1/plan-library";
 
+export const PAGE_SIZE = 50;
+
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+export interface PlanLibraryFilters {
+  /** Closed vocabulary — the schema backs it with a Postgres CHECK. */
+  kind: WorkArtifactKind | "";
+  /** OPAQUE free text. Exact match; an unknown value is an empty page, never
+   *  an error. Deliberately not a dropdown — there is no status vocabulary. */
+  status: string;
+  /** Matches the `repos[]` array OR `source_repo`. */
+  repo: string;
+  /** Full-text over title + body. */
+  q: string;
+}
+
+export const EMPTY_FILTERS: PlanLibraryFilters = {
+  kind: "",
+  status: "",
+  repo: "",
+  q: "",
+};
+
+function toQuery(filters: PlanLibraryFilters, offset: number): string {
+  const qs = new URLSearchParams();
+  if (filters.kind) qs.set("kind", filters.kind);
+  if (filters.status.trim()) qs.set("status", filters.status.trim());
+  if (filters.repo.trim()) qs.set("repo", filters.repo.trim());
+  if (filters.q.trim()) qs.set("q", filters.q.trim());
+  qs.set("offset", String(offset));
+  qs.set("limit", String(PAGE_SIZE));
+  return qs.toString();
+}
+
+/**
+ * How long a typed filter sits still before it is sent.
+ *
+ * The three text filters (`q`, `status`, `repo`) are typed a character at a
+ * time and `q` runs a Postgres full-text query over title+body, so firing per
+ * keystroke would put ~20 tsquery scans behind one search. The dropdown and
+ * paging are NOT debounced — they are single discrete actions and delaying
+ * them would just feel broken.
+ */
+const TEXT_FILTER_DEBOUNCE_MS = 300;
+
+/**
+ * The ALL-KINDS artifact list (`/admin/coord/plan-library/artifacts`), plus
+ * the single-artifact read and the inline kind correction.
+ *
+ * `/admin/coord/plans` reads `kind = 'plan'` only, so this is the one surface
+ * where a prompt, findings report, handoff or any other captured kind is
+ * browsable. The document read and the kind correction are
+ * `useArtifactDocument`'s — one spelling for both pages — with this list's
+ * own reload as the post-correction refresh.
+ *
+ * A note on the facets. `kind` is a real closed vocabulary (a Postgres CHECK
+ * backs it), so it is a dropdown. `status` and `repo` are NOT — status mirrors
+ * whatever an operator typed in a plan's front-matter and repo is any string
+ * — so they are free-text inputs with the values *seen on the loaded page*
+ * offered as one-click chips. A dropdown built from the loaded page would
+ * quietly cap the operator at what page 1 happens to contain, which is the
+ * kind of invisible ceiling that makes a filter untrustworthy.
+ */
+export function usePlanLibrary() {
+  //: What the inputs show — updates on every keystroke.
+  const [filters, setFilters] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
+  //: What has actually been sent — trails `filters` by the debounce.
+  const [applied, setApplied] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
+  const [offset, setOffset] = useState(0);
+  const [items, setItems] = useState<WorkArtifactSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Settle the typed filters before they become a query. `kind` is a dropdown
+  // and is applied immediately — a 300ms lag on a single click reads as a bug.
+  useEffect(() => {
+    if (filters.kind !== applied.kind) {
+      setApplied(filters);
+      return;
+    }
+    if (
+      filters.q === applied.q &&
+      filters.status === applied.status &&
+      filters.repo === applied.repo
+    ) {
+      return;
+    }
+    const id = setTimeout(() => setApplied(filters), TEXT_FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [filters, applied]);
+
+  /**
+   * Monotonic id of the newest list request. EVERY write in [`load`] — the
+   * rows, the total, both branches of the error state and `loading` — is
+   * gated on still owning it.
+   *
+   * `load` is recreated on `[applied, offset]` and fired by the effect below,
+   * so overlapping filter or page changes are ordinary, not exotic. Ungated,
+   * a late page lands under the wrong pager, a late failure paints "may be out
+   * of date" over fresh rows, a late success clears a banner that was telling
+   * the truth, and `finally { setLoading(false) }` re-enables the pager while
+   * the live request is still out.
+   */
+  const requestIdRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
+    setLoading(true);
+    try {
+      const data = await httpClient.get<WorkArtifactListResponse>(
+        `${API}?${toQuery(applied, offset)}`
+      );
+      // Superseded: write NOTHING. Not the rows, not the error state, and not
+      // `loading` — the live request owns that and clears it when it lands.
+      if (reqId !== requestIdRef.current) return;
+      setItems(data.items ?? []);
+      setTotal(data.total ?? 0);
+      setError(null);
+    } catch (err) {
+      if (reqId !== requestIdRef.current) return;
+      setError(message(err, "Failed to load the plan library"));
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
+    }
+  }, [applied, offset]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  /** Change a filter and return to the first page — page 3 of a new query is
+   *  a different (and usually empty) result set. */
+  const updateFilter = useCallback(
+    <K extends keyof PlanLibraryFilters>(
+      key: K,
+      value: PlanLibraryFilters[K]
+    ) => {
+      setOffset(0);
+      setFilters((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
+
+  const resetFilters = useCallback(() => {
+    setOffset(0);
+    setFilters(EMPTY_FILTERS);
+    // Clearing is a discrete action, so it skips the debounce entirely.
+    setApplied(EMPTY_FILTERS);
+  }, []);
+
+  /** Distinct statuses/repos on the LOADED page — suggestions, not a ceiling. */
+  const seen = useMemo(() => {
+    const statuses = new Set<string>();
+    const repos = new Set<string>();
+    for (const item of items) {
+      if (item.status) statuses.add(item.status);
+      if (item.source_repo) repos.add(item.source_repo);
+      for (const r of item.repos ?? []) repos.add(r);
+    }
+    return {
+      statuses: [...statuses].sort(),
+      repos: [...repos].sort(),
+    };
+  }, [items]);
+
+  // A kind is part of the artifact's identity: a correction must re-read
+  // THIS list, or the row would show the correction as not having happened.
+  const { fetchDetail, correctKind } = useArtifactDocument(load);
+
+  return {
+    filters,
+    updateFilter,
+    resetFilters,
+    seen,
+    items,
+    total,
+    offset,
+    setOffset,
+    loading,
+    error,
+    reload: load,
+    fetchDetail,
+    correctKind,
+  };
 }
 
 /**
@@ -129,7 +320,7 @@ export function useScanRoots() {
  *
  * Reads the same route as [`useScanRoots`] and is deliberately a separate
  * hook rather than a second consumer of one shared read, so this is still TWO
- * HTTP round trips per mount of `/admin/coord/plan-library` — but only ONE of
+ * HTTP round trips per mount of the corpus-health strip — but only ONE of
  * them pays the server-side coverage computation. `GET /scan-roots` is the
  * one route that computes the set difference, and serving it means: the
  * census-LOADING observation read, which UNDEFERS the two stem JSONB columns

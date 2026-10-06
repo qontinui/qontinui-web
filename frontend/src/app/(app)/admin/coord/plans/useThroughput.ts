@@ -7,7 +7,9 @@
  * The range is the question: changing it discards the previous answer before
  * the new one lands, so a 30-day chart is never shown under a 90-day label.
  * A failed refresh of the SAME range keeps the last answer (it is still the
- * answer to the question on screen); a failed first read is UNKNOWN, and a
+ * answer to the question on screen) but is never silent: `refreshFailure`
+ * carries when that held reading was taken, so the panel says "refresh
+ * failed — showing reading from HH:MM". A failed first read is UNKNOWN, and a
  * 404 says the backend does not serve the route at all.
  */
 
@@ -23,13 +25,25 @@ import {
 
 export const THROUGHPUT_ENDPOINT = "/api/v1/operations/plans/throughput";
 
+/** The newest refresh failed while an earlier reading is still shown. */
+export interface ThroughputRefreshFailure {
+  /** When the reading still on screen was received (ms since epoch). */
+  readingAt: number;
+  reason: string;
+}
+
 export function useThroughput(days: number): {
   reading: ThroughputReading;
+  refreshFailure: ThroughputRefreshFailure | null;
   refresh: () => Promise<void>;
 } {
   const [reading, setReading] = useState<ThroughputReading>({
     state: "pending",
   });
+  const [refreshFailure, setRefreshFailure] =
+    useState<ThroughputRefreshFailure | null>(null);
+  /** When the reading on screen was received; null when none is held. */
+  const readingAt = useRef<number | null>(null);
   const reqId = useRef(0);
   const mounted = useRef(true);
 
@@ -42,28 +56,39 @@ export function useThroughput(days: number): {
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!mounted.current || id !== reqId.current) return;
-      setReading(deriveThroughput(body));
+      const next = deriveThroughput(body);
+      // Only an ANSWER is held across a later failure; an unreadable body is
+      // UNKNOWN itself and a failed refresh replaces it.
+      readingAt.current =
+        next.state === "loaded" || next.state === "empty" ? Date.now() : null;
+      setReading(next);
+      setRefreshFailure(null);
     } catch (e) {
       if (!mounted.current || id !== reqId.current) return;
       const reason = e instanceof Error ? e.message : String(e);
       const notServed = isNotFoundError(e);
-      setReading((prev) =>
-        prev.state === "loaded" || prev.state === "empty"
-          ? prev
-          : { state: "failed", reason, notServed }
-      );
+      const heldAt = readingAt.current;
+      if (heldAt !== null) {
+        // The last reading is still the answer to this range — kept, and
+        // marked, so it never reads as a live one.
+        setRefreshFailure({ readingAt: heldAt, reason });
+        return;
+      }
+      setReading({ state: "failed", reason, notServed });
     }
   }, [days]);
 
   useEffect(() => {
     mounted.current = true;
     // A new range is a new question: the old answer is not an answer to it.
+    readingAt.current = null;
     setReading({ state: "pending" });
+    setRefreshFailure(null);
     void refresh();
     return () => {
       mounted.current = false;
     };
   }, [refresh]);
 
-  return { reading, refresh };
+  return { reading, refreshFailure, refresh };
 }

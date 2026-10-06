@@ -49,6 +49,14 @@ export default function PlanLibrarySettingsPage() {
           >
             Plans
           </Link>
+          ; every other artifact kind is on the{" "}
+          <Link
+            href="/admin/coord/plan-library/artifacts"
+            className="underline"
+            data-testid="plan-library-settings-artifacts-link"
+          >
+            Artifact library
+          </Link>
           .
         </p>
       </div>

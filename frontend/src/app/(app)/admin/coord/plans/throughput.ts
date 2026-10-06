@@ -1,5 +1,5 @@
 /**
- * Plans started / shipped per day — coord's server-side aggregate, read and
+ * Work units started / shipped per day — coord's server-side aggregate, read and
  * laid out WITHOUT inventing a single bar.
  *
  * Plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 4

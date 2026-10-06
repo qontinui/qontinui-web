@@ -195,6 +195,17 @@ export interface CorpusHealth {
   scan_roots: ScanRootListResponse;
 }
 
+/** `GET /api/v1/plan-library` — the all-kinds artifact list. */
+export interface WorkArtifactListResponse {
+  items: WorkArtifactSummary[];
+  /** This page's length (`items.length`); `total` is the unpaged total. */
+  count: number;
+  total: number;
+  offset: number;
+  limit: number;
+  corpus_health: CorpusHealth;
+}
+
 // ─────────────────────────── capture health ───────────────────────────
 
 export interface CaptureDoorHealth {

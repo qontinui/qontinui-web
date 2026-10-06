@@ -1052,17 +1052,26 @@ class TestQFilter:
 
 @_ASYNC
 class TestAxisAAnnotations:
-    async def test_status_class_covers_all_five_classes(
+    async def test_status_class_is_coords_own_forwarded_verbatim(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
+        """Web never re-derives the class: whatever coord's row says (of the
+        five) is what the row carries — even where a web-side classifier
+        would have disagreed."""
         expected = {
             _stem("free"): ("in_progress", "free_known"),
             _stem("attested"): ("vetted", "attested"),
             _stem("derived"): ("shipped", "derived"),
             _stem("offvocab"): ("Shipped", "off_vocabulary"),
             _stem("unset"): ("  ", "unset"),
+            # coord's word wins over any local reading of the status.
+            _stem("coordsays"): ("draft", "attested"),
         }
-        units = [_unit(slug, status=st) for slug, (st, _) in expected.items()]
+        units = []
+        for slug, (st, cls) in expected.items():
+            unit = _unit(slug, status=st)
+            unit["status_class"] = cls
+            units.append(unit)
         doc_only = _stem("doc-only")
         await _plan_artifact(
             async_db_session, org_id=None, slug=doc_only, status="draft"
@@ -1076,6 +1085,29 @@ class TestAxisAAnnotations:
         # No unit → nothing to classify: None, never a guessed class.
         assert rows[doc_only]["axis_a"]["present"] is False
         assert rows[doc_only]["axis_a"]["status_class"] is None
+
+    async def test_status_class_absent_unknown_or_statusless_is_none(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """An older coord that omits the field, a word outside the five, and
+        a row with no ``status`` string at all are each UNKNOWN — never a
+        confident class (a missing status must not read ``unset``)."""
+        omitted = _stem("omitted")
+        unknown = _stem("unknownword")
+        statusless = _stem("statusless")
+        omitted_unit = _unit(omitted, status="shipped")  # no status_class key
+        unknown_unit = _unit(unknown, status="shipped")
+        unknown_unit["status_class"] = "something_new"
+        statusless_unit = _unit(statusless, status="draft")
+        del statusless_unit["status"]
+        statusless_unit["status_class"] = "unset"
+        with _patched(_coord([omitted_unit, unknown_unit, statusless_unit])):
+            rows = _by_slug(
+                (await client.get(RECONCILIATION, params={"limit": 100})).json()
+            )
+        for slug in (omitted, unknown, statusless):
+            assert rows[slug]["axis_a"]["present"] is True, slug
+            assert rows[slug]["axis_a"]["status_class"] is None, slug
 
     async def test_status_class_is_none_when_axis_a_is_unreadable(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -1233,3 +1265,50 @@ class TestCustody:
                 await client.get(RECONCILIATION, params={"include_custody": "true"})
             ).json()["items"][0]
         assert row["axis_a"]["live_sessions"] is None
+
+    async def test_one_page_without_the_echo_nulls_every_custody(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``custody_resolved: false`` must be true of EVERY row: a custody
+        object from a page that did echo may not survive beside it. The
+        session rows themselves are kept."""
+        echoed = _stem("echoedpage")
+        silent = _stem("silentpage")
+        echoed_unit = _unit(echoed, status="in_progress")
+        echoed_unit["live_sessions"] = [
+            _session({"state": "sole", "session_name": "plan-foo"})
+        ]
+        silent_unit = _unit(silent, status="in_progress")
+        silent_unit["live_sessions"] = [_session(None)]
+
+        async def _paged(path: str, **kwargs: Any) -> Any:
+            if path in ("/coord/work-units", "/coord/agent-work-units"):
+                offset = int((kwargs.get("params") or {}).get("offset", "0"))
+                if offset == 0:
+                    return {"work_units": [echoed_unit], "resolve_session_names": True}
+                if offset == 1:
+                    return {"work_units": [silent_unit]}
+                return {"work_units": [], "resolve_session_names": True}
+            slug = path.rsplit("/", 1)[-1]
+            unit = echoed_unit if slug == echoed else silent_unit
+            return {
+                "work_unit": unit,
+                "recent_history": [],
+                "citations": [],
+                "delivery": _delivery(shipped=False, evidence_complete=True),
+            }
+
+        with (
+            patch("app.api.v1.endpoints.plan_library._COORD_UNIT_PAGE_LIMIT", 1),
+            _patched(AsyncMock(side_effect=_paged)),
+        ):
+            rows = _by_slug(
+                (
+                    await client.get(RECONCILIATION, params={"include_custody": "true"})
+                ).json()
+            )
+        for slug in (echoed, silent):
+            axis = rows[slug]["axis_a"]
+            assert axis["custody_resolved"] is False, slug
+            assert len(axis["live_sessions"]) == 1, slug
+            assert axis["live_sessions"][0]["custody"] is None, slug

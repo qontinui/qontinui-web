@@ -142,8 +142,10 @@ export interface ReconciliationAxisA {
   /** Populated only under `include_custody=true`. `null`/absent is UNKNOWN;
    *  `[]` is a real zero. */
   live_sessions?: ReconciliationLiveSession[] | null;
-  /** Did coord echo `resolve_session_names: true`? `false` = older coord (or
-   *  a failed join); `null`/absent = not resolved by this backend. */
+  /** Did coord echo `resolve_session_names: true` on every page? `false` =
+   *  coord did not resolve names (older coord or a failed join), and every
+   *  `custody` is then null; `null`/absent = custody not asked for on this
+   *  read, or a backend that does not report it. */
   custody_resolved?: boolean | null;
   unreadable_reason?: string | null;
 }
