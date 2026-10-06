@@ -16,6 +16,7 @@ export type PromptDocumentClaimsEnvelope = Pick<
   | "claims"
   | "claims_probed"
   | "claims_malformed"
+  | "addressed_by_malformed"
   | "claims_observed_at"
   | "claims_state_source"
 >;
@@ -100,6 +101,126 @@ export function compactDetail(detail: Record<string, unknown>): string {
     ...keys.filter((k) => !DETAIL_FIRST.includes(k)).sort(),
   ];
   return ordered.map((k) => `${k}=${compactValue(detail[k])}`).join(" · ");
+}
+
+/**
+ * One style per `addressing_status` family (plan
+ * `2026-10-05-declared-intent-drives-autonomous-work-selection`, Phase 5/6),
+ * on the same R3 rule as {@link STATE_BADGE}:
+ *
+ * - `landed_unconfirmed` is RED — the plan that was meant to satisfy this
+ *   claim landed and the claim still does not read confirmed. The one status
+ *   coord alerts on.
+ * - `landed_confirmed` is CALM green.
+ * - `unlanded` and `landed_within_window` are NEUTRAL — a planned gap, or a
+ *   landed change the probe has not re-run against yet. Nobody has to act.
+ * - Every other status, and any spelling this build does not know, is the
+ *   AMBER ignorance floor: coord could not join the claim to its plan.
+ */
+const ADDRESSING_CALM =
+  "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400";
+const ADDRESSING_NEUTRAL = "border-border bg-muted text-muted-foreground";
+const ADDRESSING_ALERT =
+  "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400";
+const ADDRESSING_UNKNOWN =
+  "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+
+export function addressingFamily(
+  status: string
+): "alert" | "calm" | "neutral" | "unknown" {
+  if (status === "landed_unconfirmed") return "alert";
+  if (status === "landed_confirmed") return "calm";
+  if (status === "unlanded" || status === "landed_within_window") {
+    return "neutral";
+  }
+  return "unknown";
+}
+
+const ADDRESSING_CLASS: Record<ReturnType<typeof addressingFamily>, string> = {
+  alert: ADDRESSING_ALERT,
+  calm: ADDRESSING_CALM,
+  neutral: ADDRESSING_NEUTRAL,
+  unknown: ADDRESSING_UNKNOWN,
+};
+
+function AddressingBadge({
+  status,
+  testId,
+  carried = false,
+}: {
+  status: string;
+  testId: string;
+  /** Coord's read failed this tick and it served the previous verdict. */
+  carried?: boolean;
+}) {
+  const family = addressingFamily(status);
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide ${ADDRESSING_CLASS[family]}`}
+      title={
+        carried
+          ? "Carried forward: coord's work-unit read failed this tick, so this is the previous tick's verdict, not a fresh observation."
+          : "What the plan this claim is addressed by says, joined by coord: landed or not, and whether the claim reads confirmed since."
+      }
+      data-testid={testId}
+      data-family={family}
+      data-carried={carried ? "true" : undefined}
+    >
+      {status}
+      {carried ? " (carried)" : null}
+    </span>
+  );
+}
+
+/**
+ * The claim's `addressed_by` links and coord's per-link join. Renders nothing
+ * on a coord predating Phase 5 (field absent) and nothing for a claim that
+ * declares no link (`[]`) — neither is an addressing state worth a row.
+ */
+function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
+  const links = claim.addressed_by ?? [];
+  if (links.length === 0) return null;
+  const entries = claim.addressing ?? [];
+  const byLink = new Map(entries.map((entry) => [entry.addressed_by, entry]));
+  // The summary is coord's worst-first pick; it is only as fresh as the links
+  // that produced it. Carried when every link holding that status is carried.
+  const worst = entries.filter((e) => e.status === claim.addressing_status);
+  const summaryCarried =
+    worst.length > 0 && worst.every((e) => e.stale_from_read_failure === true);
+  return (
+    <div
+      className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+      data-testid={`doc-claim-addressing-${claim.claim_id}`}
+    >
+      <span>addressed by</span>
+      {claim.addressing_status ? (
+        <AddressingBadge
+          status={claim.addressing_status}
+          testId={`doc-claim-addressing-status-${claim.claim_id}`}
+          carried={summaryCarried}
+        />
+      ) : null}
+      {links.map((link) => {
+        const entry = byLink.get(link);
+        // A link coord served no observation for is UNKNOWN, never calm.
+        const status = entry?.status ?? "unknown";
+        return (
+          <span
+            key={link}
+            className="inline-flex items-center gap-1"
+            title={entry?.reason}
+          >
+            <code>{link}</code>
+            <AddressingBadge
+              status={status}
+              testId={`doc-claim-link-${claim.claim_id}-${link}`}
+              carried={entry?.stale_from_read_failure === true}
+            />
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 function ClaimStateBadge({ state }: { state: PromptDocumentClaim["state"] }) {
@@ -194,6 +315,7 @@ export function PromptDocumentClaims({
 
   const probed = document.claims_probed;
   const malformed = document.claims_malformed ?? 0;
+  const malformedLinks = document.addressed_by_malformed ?? 0;
   const source = document.claims_state_source;
   const claims = document.claims ?? [];
 
@@ -229,6 +351,16 @@ export function PromptDocumentClaims({
               {" "}
               · {malformed} malformed block{malformed === 1 ? "" : "s"}{" "}
               skipped
+            </>
+          ) : null}
+          {malformedLinks > 0 ? (
+            <>
+              {" "}
+              ·{" "}
+              <span data-testid="doc-claims-addressed-by-malformed">
+                {malformedLinks} malformed addressed_by link
+                {malformedLinks === 1 ? "" : "s"} dropped
+              </span>
             </>
           ) : null}
         </p>
@@ -306,7 +438,17 @@ export function PromptDocumentClaims({
                     no anchor
                   </span>
                 )}
+                {claim.evidence_class ? (
+                  <span
+                    className="inline-flex shrink-0 items-center rounded border border-border px-1.5 py-0.5 text-[10px] tracking-wide text-muted-foreground"
+                    title="The kind of evidence this anchor can produce: source (the code says so), state (a live value says so), behaviour (an observed run says so), declared (nothing machine-checks it)."
+                    data-testid={`doc-claim-evidence-${claim.claim_id}`}
+                  >
+                    evidence: {claim.evidence_class}
+                  </span>
+                ) : null}
               </div>
+              <ClaimAddressing claim={claim} />
               <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
                 <Stamp label="observed" iso={claim.observed_at} now={now} />
                 <Stamp label="verified" iso={claim.verified_at} now={now} />
