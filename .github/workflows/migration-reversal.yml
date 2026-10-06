@@ -1456,7 +1456,15 @@ jobs:
 
 
           out, block, tag, quote, quote_line = [], None, None, None, None
-          for lineno, line in enumerate(open(sys.argv[1], encoding="utf-8").read().splitlines(), 1):
+          # Read the dump byte-for-byte and split ONLY on "\n": text mode would turn
+          # CRLF/CR into LF and str.splitlines() also breaks on \x0b \x0c \x1c-\x1e
+          # \x85 U+2028 U+2029, so two literals differing only in such a
+          # separator would normalize equal. A trailing newline yields one empty
+          # final element, which is dropped.
+          raw = open(sys.argv[1], encoding="utf-8", newline="").read().split("\n")
+          if raw and raw[-1] == "":
+              raw.pop()
+          for lineno, line in enumerate(raw, 1):
               in_body = tag is not None
               in_quote = quote is not None
               # Outside a body and outside a literal, a blank or column-0 `--` line
@@ -1654,7 +1662,7 @@ jobs:
       - name: Name an unavailable postgresql client
         if: failure() && steps.apt_psql.outputs.unavailable == '1' && (steps.reversibility.outcome == 'failure' || steps.schemas.outcome == 'failure')
         run: |
-          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR, NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR - NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
