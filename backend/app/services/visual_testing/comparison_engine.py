@@ -33,8 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.redis_config import get_redis
 from app.services.object_storage import object_storage
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
+    dispatch_or_http_error,
     pick_active_runner_for_user,
     runner_bridge_503_no_runner,
 )
@@ -160,34 +159,16 @@ class ComparisonEngine:
             current_size_bytes=len(current_bytes),
         )
 
-        try:
-            raw_response = await manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_COMPARE_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "compare_screenshots_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_COMPARE_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            logger.error(
-                "compare_screenshots_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _COMPARE_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            manager,
+            runner,
+            cmd,
+            request_id,
+            _COMPARE_ENDPOINT,
+            _COMPARE_TIMEOUT_S,
+            "compare_screenshots",
+            log=logger,
+        )
 
         runner_error = raw_response.get("error")
         if runner_error:

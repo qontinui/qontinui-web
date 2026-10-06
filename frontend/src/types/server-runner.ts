@@ -1,35 +1,11 @@
 /**
- * Runner token, dispatch, phase result, and scheduled-run types.
+ * Dispatch, phase result, and scheduled-run types.
  *
  * The {@link Runner} entity itself lives in `@qontinui/shared-types` (see
  * `src/types/runner.ts`). This module carries the auxiliary concerns that
- * surround a runner: long-lived auth tokens, workflow-dispatch payloads,
+ * surround a runner: workflow-dispatch payloads,
  * iteration phase results, and cron-style scheduled dispatches.
  */
-
-// =============================================================================
-// Runner tokens
-// =============================================================================
-
-export interface RunnerToken {
-  id: string;
-  name: string;
-  created_at: string;
-  expires_at: string | null;
-  last_used_at: string | null;
-  is_revoked: boolean;
-  revoked_at: string | null;
-}
-
-export interface CreateRunnerTokenRequest {
-  name: string;
-  expires_in_days?: number | null;
-}
-
-export interface CreateRunnerTokenResponse {
-  token_record: RunnerToken;
-  plain_token: string;
-}
 
 // =============================================================================
 // Workflow dispatch

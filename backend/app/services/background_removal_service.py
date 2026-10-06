@@ -33,8 +33,8 @@ from qontinui_schemas.commands.discovery import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
+    dispatch_or_http_error,
+    get_owned_runner_or_404,
     pick_active_runner_for_user,
     runner_bridge_503_no_runner,
 )
@@ -168,35 +168,17 @@ class BackgroundRemovalService:
             debug=debug,
         )
 
-        try:
-            raw_response = await self._manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_BACKGROUND_REMOVAL_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "background_removal_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_BACKGROUND_REMOVAL_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            logger.error(
-                "background_removal_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-                timeout_s=_BACKGROUND_REMOVAL_TIMEOUT_S,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _BACKGROUND_REMOVAL_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            self._manager,
+            runner,
+            cmd,
+            request_id,
+            _BACKGROUND_REMOVAL_ENDPOINT,
+            _BACKGROUND_REMOVAL_TIMEOUT_S,
+            "background_removal",
+            log=logger,
+            timeout_log_fields={"timeout_s": _BACKGROUND_REMOVAL_TIMEOUT_S},
+        )
 
         if raw_response.get("error"):
             logger.error(
@@ -226,19 +208,11 @@ class BackgroundRemovalService:
         user's most-recently-heartbeat-active connected runner.
         """
         if self._runner_id is not None:
-            from app.crud import runner_crud
-
-            owned_runner = await runner_crud.get_runner(
-                self._db, runner_id=self._runner_id
+            owned_runner = await get_owned_runner_or_404(
+                self._db, self._user_id, self._runner_id
             )
-            if owned_runner is None or owned_runner.user_id != self._user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={
-                        "error": "runner_not_found",
-                        "runner_id": str(self._runner_id),
-                    },
-                )
+            # Unlike the request-path helper, a registered-but-disconnected
+            # explicit runner yields None here; the caller turns it into 503.
             if not self._manager.registry.is_runner_connected(str(owned_runner.id)):
                 return None
             return owned_runner
