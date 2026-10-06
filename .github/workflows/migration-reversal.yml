@@ -803,8 +803,8 @@ jobs:
   #       pg_dump writes `CREATE EXTENSION` without a version, so an
   #       `ALTER EXTENSION ... UPDATE` is otherwise invisible), the non-`pg_`
   #       role names (`ROLE`) and the database- and role-level settings
-  #       (`DBSET`, from pg_db_role_setting), none of which a schema-only
-  #       dump of one database contains.
+  #       with their scope (`DBSET`, from pg_db_role_setting), none of
+  #       which a schema-only dump of one database contains.
   #       DISCLOSED -- what (e) does NOT check: DATA reversibility. A
   #       data-only migration whose downgrade is `pass`, or a downgrade that
   #       re-adds a dropped column EMPTY, leaves the schema identical and
@@ -815,11 +815,20 @@ jobs:
   #       role names are listed). Outside dollar-quoted bodies the normalizer
   #       drops blank lines, column-0 `--` comment lines, and `SET ` /
   #       `set_config(` / `\restrict` lines -- so a `SET default_tablespace`
-  #       switch between tables is not compared. Inside a dollar-quoted body
-  #       (`$$ ... $$`, `$tag$ ... $tag$`) every line is kept verbatim.
-  #       `COMMENT ON` statements ARE compared. The dollar-quote tracking is
-  #       a lexical scan for `$tag$` tokens, so a `$tag$` spelled inside an
-  #       ordinary string literal could mis-track it.
+  #       switch between tables is not compared. Nor is a blank or column-0
+  #       `--` line that sits inside a multi-line string literal (a
+  #       multi-line DEFAULT or CHECK inside a `CREATE TABLE`, or a
+  #       multi-line `COMMENT ON`): it is dropped like any other, because
+  #       only dollar-quoted bodies are protected. A line that BEGINS inside
+  #       a dollar-quoted body (`$$ ... $$`, `$tag$ ... $tag$`) is kept
+  #       unchanged, except that inside a `CREATE TABLE` column list an
+  #       item's last line loses its trailing comma; the line that OPENS a
+  #       body goes through the outside rules. `COMMENT ON` statements ARE
+  #       compared. Body boundaries come from a lexer that skips quoted
+  #       literals, quoted identifiers and comments outside a body, and the
+  #       normalizer fails the snapshot -- it does not guess -- on a `$tag$`
+  #       token inside a literal that spans lines; see the reversibility
+  #       step's NORMALIZE note.
   # Every step that imports the migration must end with an explicit
   # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
@@ -964,12 +973,12 @@ jobs:
 
           # ONLY an addition qualifies. An edit (M) of an existing migration
           # keeps that file's revision id -- an id the base already defines --
-          # so it is not a new migration. D/R/C/T would test a different
+          # so it is not a new migration. D/R/T would test a different
           # revision graph from the one that lands.
           removed = [(s, p) for s, p in touched if s[:1] != "A"]
           if removed:
               shown = "; ".join(f"{s} {' -> '.join(p)}" for s, p in removed)
-              fail("b", f"a file under {VERSIONS} is modified, deleted, renamed, copied or type-changed against the base ({shown}). Only a newly ADDED migration file can be the tested migration: an edit keeps a revision id the base already defines, and a deletion or rename tests a different revision graph from the one that lands.")
+              fail("b", f"a file under {VERSIONS} is modified, deleted, renamed or type-changed against the base ({shown}). Only a newly ADDED migration file can be the tested migration: an edit keeps a revision id the base already defines, and a deletion or rename tests a different revision graph from the one that lands.")
 
           if len(touched) != 1:
               fail("a", f"exactly one file under {VERSIONS} must be added; this PR adds {len(touched)}. Split the PR so each migration is tested on its own.")
@@ -1157,8 +1166,11 @@ jobs:
         # EXITS 0 with an `::error::` naming the package, so the timeout
         # explainer -- which reads any `failure` of this step as an apt-mirror
         # stall -- does not misname it; the reversibility step then fails on
-        # the missing pg_dump. Best-effort: an install that fails for any
-        # other reason still fails this step.
+        # the missing pg_dump. It also sets the output `unavailable=1`, which
+        # "Name an unavailable postgresql client" reads to name that cause
+        # (the explainer body cannot: it must stay byte-identical across its
+        # eight carriers, and on this path it reports a real red). Best-effort:
+        # an install that fails for any other reason still fails this step.
         timeout-minutes: 10
         run: |
           set -euo pipefail
@@ -1171,6 +1183,7 @@ jobs:
           candidate=$(apt-cache policy "$pkg" | sed -n 's/^ *Candidate: *//p')
           if [ -z "$candidate" ] || [ "$candidate" = "(none)" ]; then
             echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update'. This is NOT an apt-mirror stall: the runner's apt sources do not carry the client for PG_MAJOR=$PG_MAJOR. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+            echo "unavailable=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           sudo apt-get install -y "$pkg"
@@ -1308,6 +1321,7 @@ jobs:
       # under test: any non-zero exit, unexpected alembic_version, or schema
       # difference fails the job.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)
+        id: reversibility
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -1358,10 +1372,26 @@ jobs:
           # CREATE TABLE (a downgrade that re-adds a dropped column appends
           # it; order is DISCLOSED as unchecked in the job header). An item
           # is a 4-space-indented line plus any following non-indented
-          # continuation lines, so a multi-line default stays whole. INSIDE a
-          # dollar-quoted body (a function or DO body) every line is kept
-          # verbatim: a body line that happens to start with `--` or `SET ` is
-          # part of the code and is compared.
+          # continuation lines, so a multi-line default stays whole. A line
+          # that BEGINS inside a dollar-quoted body (a function or DO body) is
+          # kept unchanged: a body line that happens to start with `--` or
+          # `SET ` is part of the code and is compared. (Two qualifications:
+          # the line that OPENS a body goes through the outside rules, and
+          # inside a CREATE TABLE column list the last line of each item
+          # loses its trailing comma before sorting.)
+          # Which lines are in a body is decided by a lexer, not by counting
+          # `$tag$` tokens on the raw line: a blank or column-0 `--` line
+          # outside a body is dropped BEFORE it is lexed (pg_dump's
+          # `-- Name:` headers spell object names unquoted, `$` included),
+          # and outside a body a single-quoted literal (`''` escaped), a
+          # double-quoted identifier (`""` escaped) and a `--` comment to the
+          # end of the line are skipped, so a `$$` inside `'amount in $$'`
+          # does not open a body. A literal or identifier that spans lines is
+          # tracked across them, but if a `$tag$` token lies anywhere in such
+          # a span the normalizer FAILS (and so does the snapshot) rather than
+          # guess. Not lexed: `E'...'` backslash escapes and `/* */` comments,
+          # neither of which pg_dump writes outside a body with
+          # standard_conforming_strings on (the PG16 default).
           # Held in a shell variable, not a file, so the migration code that
           # runs between snapshots cannot rewrite it.
           NORMALIZE=$(cat <<'PY'
@@ -1369,16 +1399,65 @@ jobs:
           import sys
 
           DOLLAR = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
-          out, block, tag = [], None, None
-          for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+
+
+          def scan(lineno, line, tag, quote, quote_line):
+              # Lexes one line from the state it starts in and returns the state it
+              # ends in: `tag` is the open dollar-quote tag, `quote` the open ' or "
+              # and `quote_line` the line number that quote opened on. Outside a body,
+              # a quoted literal or identifier closed on the line it opened on is
+              # skipped whole, and `--` outside quotes ends the line (a comment).
+              # Inside a body only the closing tag is significant, as in postgres.
+              i, n = 0, len(line)
+              while i < n:
+                  if tag is not None:
+                      j = line.find(tag, i)
+                      if j < 0:
+                          return tag, quote, quote_line
+                      i, tag = j + len(tag), None
+                      continue
+                  if quote is not None:
+                      j = i
+                      while True:
+                          k = line.find(quote, j)
+                          if k < 0 or not line.startswith(quote * 2, k):
+                              break
+                          j = k + 2
+                      span = line[i:] if k < 0 else line[i:k]
+                      # A literal that spans lines is not removed cleanly: a `$tag$`
+                      # spelled inside it would be read either way only by guessing,
+                      # so refuse rather than guess.
+                      if (k < 0 or quote_line != lineno) and DOLLAR.search(span):
+                          sys.exit(f"line {lineno}: a $tag$ token lies inside a {quote}-quoted span that spans lines (opened on line {quote_line}); refusing to guess whether it opens a dollar-quoted body")
+                      if k < 0:
+                          return tag, quote, quote_line
+                      i, quote, quote_line = k + 1, None, None
+                      continue
+                  c = line[i]
+                  if c in "'\"":
+                      i, quote, quote_line = i + 1, c, lineno
+                      continue
+                  if line.startswith("--", i):
+                      break
+                  m = DOLLAR.match(line, i)
+                  if m:
+                      i, tag = m.end(), m.group(0)
+                      continue
+                  i += 1
+              return tag, quote, quote_line
+
+
+          out, block, tag, quote, quote_line = [], None, None, None, None
+          for lineno, line in enumerate(open(sys.argv[1], encoding="utf-8").read().splitlines(), 1):
               in_body = tag is not None
-              for m in DOLLAR.finditer(line):
-                  if tag is None:
-                      tag = m.group(0)
-                  elif m.group(0) == tag:
-                      tag = None
+              # Outside a body and outside a literal, a blank or column-0 `--` line
+              # is dropped BEFORE it is lexed, so a `$` in a comment (pg_dump's
+              # `-- Name:` headers carry unquoted object names) never moves the state.
+              if not in_body and quote is None and (not line.strip() or line.startswith("--")):
+                  continue
+              tag, quote, quote_line = scan(lineno, line, tag, quote, quote_line)
               if in_body:
-                  # Started inside a dollar-quoted body: kept verbatim.
+                  # Began inside a dollar-quoted body: kept as is.
                   if block:
                       block[-1].append(line)
                   elif block is not None:
@@ -1405,12 +1484,14 @@ jobs:
                       block[-1].append(line)
                   continue
               out.append(line)
-              if tag is None and re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
+              if tag is None and quote is None and re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
                   block = []
           if block is not None:
               sys.exit("unterminated CREATE TABLE block in the dump")
           if tag is not None:
               sys.exit(f"unterminated dollar-quoted body ({tag}) in the dump")
+          if quote is not None:
+              sys.exit(f"unterminated {quote}-quoted span (opened on line {quote_line}) in the dump")
           if not out:
               sys.exit("the dump normalized to nothing")
           print("\n".join(out))
@@ -1421,10 +1502,13 @@ jobs:
           # VERSION (pg_dump writes `CREATE EXTENSION` with none), roles, and
           # database/role settings (`ALTER DATABASE ... SET`). Read by psql in
           # this trusted shell and appended to each normalized snapshot.
+          # A DBSET line is `DBSET <scope> <role> <settings>`: scope `*` is a
+          # setting for every database (`ALTER ROLE r SET`), `.` one for this
+          # database; role `-` (regrole's spelling of oid 0) is every role.
           SERVER_OBJECTS_SQL=(
             "SELECT 'EXT '||extname||' '||extversion||' '||extnamespace::regnamespace FROM pg_extension ORDER BY 1"
             "SELECT 'ROLE '||rolname FROM pg_roles WHERE rolname !~ '^pg_' ORDER BY 1"
-            "SELECT 'DBSET '||coalesce(setrole::regrole::text,'-')||' '||array_to_string(setconfig,',') FROM pg_db_role_setting WHERE setdatabase IN (0,(SELECT oid FROM pg_database WHERE datname=current_database())) ORDER BY 1"
+            "SELECT 'DBSET '||CASE WHEN setdatabase=0 THEN '*' ELSE '.' END||' '||setrole::regrole::text||' '||array_to_string(setconfig,',') FROM pg_db_role_setting WHERE setdatabase IN (0,(SELECT oid FROM pg_database WHERE datname=current_database())) ORDER BY 1"
           )
           snapshot() {
             local label="$1" raw="$RUNNER_TEMP/mrt-schema-$1.raw.sql" norm="$RUNNER_TEMP/mrt-schema-$1.sql"
@@ -1546,6 +1630,19 @@ jobs:
             echo "\`$tested\`"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade and re-produced by the re-applied upgrade. $tested"
+
+      # The one red the explainer below cannot name: `Install postgresql-client`
+      # found no install candidate for the PG_MAJOR client, exited 0 (so the
+      # explainer, which blames any `failure` of that step on the apt mirror,
+      # does not misname it), and the reversibility step then had no pg_dump.
+      # The explainer sees no failed apt step and reports "a real one"; this
+      # step says which real one. It is separate because the explainer body
+      # must stay byte-identical across its eight carriers
+      # (backend/tests/test_ci_timeout_marker.py).
+      - name: Name an unavailable postgresql client
+        if: failure() && steps.apt_psql.outputs.unavailable == '1' && steps.reversibility.outcome == 'failure'
+        run: |
+          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR, NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and the reversibility step, which needs that client's pg_dump, failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
