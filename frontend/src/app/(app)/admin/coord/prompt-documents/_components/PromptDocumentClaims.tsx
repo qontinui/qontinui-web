@@ -180,9 +180,13 @@ function AddressingBadge({
 function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
   const links = claim.addressed_by ?? [];
   if (links.length === 0) return null;
-  const byLink = new Map(
-    (claim.addressing ?? []).map((entry) => [entry.addressed_by, entry])
-  );
+  const entries = claim.addressing ?? [];
+  const byLink = new Map(entries.map((entry) => [entry.addressed_by, entry]));
+  // The summary is coord's worst-first pick; it is only as fresh as the links
+  // that produced it. Carried when every link holding that status is carried.
+  const worst = entries.filter((e) => e.status === claim.addressing_status);
+  const summaryCarried =
+    worst.length > 0 && worst.every((e) => e.stale_from_read_failure === true);
   return (
     <div
       className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
@@ -193,6 +197,7 @@ function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
         <AddressingBadge
           status={claim.addressing_status}
           testId={`doc-claim-addressing-status-${claim.claim_id}`}
+          carried={summaryCarried}
         />
       ) : null}
       {links.map((link) => {
