@@ -93,7 +93,6 @@ the default ``localhost:5432``.
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -105,6 +104,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
 )
@@ -157,15 +157,10 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
         encoding="utf-8"
     )
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        source,
-        re.MULTILINE,
-    )
-    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
-    assert match.group("parent") == _PARENT_REVISION_ID, (
+    declared = declared_parent_revision_id(source, _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID, (
         f"{_REVISION_FILENAME} declares down_revision="
-        f"{match.group('parent')!r} but this test pins "
+        f"{declared!r} but this test pins "
         f"_PARENT_REVISION_ID={_PARENT_REVISION_ID!r}. Re-point both together."
     )
 

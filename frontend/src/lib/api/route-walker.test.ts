@@ -164,7 +164,11 @@ const FWD_QUERY = "?Q";
 /**
  * For each exported `GET`/`POST`/… of a route module: every PATH the verb can
  * forward to — one per alternative — for each `fetch(url, …)` in the verb or
- * a same-file function it calls. A URL is normalised as:
+ * a same-file function it calls, and for each
+ * `proxyToBackend(request, backendPath, …)` (`@/lib/server/proxyToBackend`,
+ * which fetches `${backendBaseOrResponse()}${backendPath}` plus, per its
+ * `query` option, the request's own query string), whose `backendPath` is
+ * read as a URL with no base. A URL is normalised as:
  *   - a leading `${base}` is dropped ONLY when it is the backend origin: a
  *     `process.env.*` read (optionally `||`/`??` fallbacks), directly or
  *     through the never-reassigned const holding it (`BACKEND_URL`,
@@ -391,6 +395,13 @@ function forwardedPaths(sf: ts.SourceFile): Map<string, string[]> {
           n.arguments[0]
         )
           out.push(...paths(n.arguments[0], scope, true));
+        if (
+          ts.isCallExpression(n) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === "proxyToBackend" &&
+          n.arguments[1]
+        )
+          out.push(...paths(n.arguments[1], scope, false));
         ts.forEachChild(n, fetches);
       };
       fetches(scope);
@@ -1618,6 +1629,19 @@ describe("S2: the pass-through check itself", () => {
         return fetch(backendUrl, {});
       }`)
     ).toBe(true);
+  });
+
+  it("a `proxyToBackend` backendPath is the forwarded path", () => {
+    expect(
+      verbPaths(`export async function GET(r: Request, id: string) {
+        return proxyToBackend(r, \`/api/v1/own/\${id}\`, OPTIONS);
+      }`)
+    ).toEqual([`/api/v1/own/${"{p}"}`]);
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string) {
+        return proxyToBackend(r, \`/api/v1/other/\${id}\`, OPTIONS);
+      }`)
+    ).toBe(false);
   });
 });
 
