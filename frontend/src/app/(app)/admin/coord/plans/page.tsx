@@ -83,7 +83,8 @@
  *   "filters this page only" wherever they can empty the list.
  * - **Live custody** (`include_custody=true`) — `custody.ts`, never a guessed
  *   name. Asked for only on the reads an operator causes (first read of a
- *   window, refresh, paging, search) — never on the 30 s poll, because coord
+ *   window, refresh, paging, search), and on the 30 s poll only until one
+ *   custody read has succeeded for the current window/search, because coord
  *   resolves it for the whole tenant. A poll answer re-applies the last
  *   reading with its age stated (`custodyHold.ts`).
  * - **Other artifact kinds** — this page reads `kind='plan'` only; every kind
@@ -150,6 +151,7 @@ import {
   captureCustody,
   describeCustodyAge,
   type CustodyHold,
+  type CustodySource,
 } from "./custodyHold";
 import { describeDeriveMode } from "./deriveMode";
 import {
@@ -221,8 +223,12 @@ export default function CoordPlansListPage() {
    */
   const custodyHoldRef = useRef<CustodyHold | null>(null);
   const [custodyHold, setCustodyHold] = useState<CustodyHold | null>(null);
-  /** Is the custody on screen a held reading rather than this read's own? */
-  const [custodyHeld, setCustodyHeld] = useState(false);
+  /**
+   * Where the custody on screen came from: this read (`fresh`), a held
+   * earlier reading actually applied to a row (`held`), or nowhere (`none` —
+   * no age line is shown, so a reading no row carries is never dated).
+   */
+  const [custodySource, setCustodySource] = useState<CustodySource>("none");
   /**
    * Has a custody read succeeded for the CURRENT question (window + search)?
    * Until one has, a poll asks for custody too — otherwise one failed
@@ -260,8 +266,9 @@ export default function CoordPlansListPage() {
         qs.set("limit", String(limit));
         if (q !== "") qs.set("q", q);
         // Phase 6 — custody makes coord resolve live sessions for the whole
-        // tenant, so it is asked for only on reads an operator caused (a new
-        // window or search, a refresh) — never on the background poll. A poll
+        // tenant, so it is asked for on reads an operator caused (a new window
+        // or search, a refresh), and on a background poll ONLY until one
+        // custody read has succeeded for this window/search. After that a poll
         // answer re-applies the held reading, and the page says how old it is.
         const withCustody =
           guard.trigger !== "poll" || !custodyReadForQuestion.current;
@@ -276,12 +283,12 @@ export default function CoordPlansListPage() {
           custodyHoldRef.current = hold;
           custodyReadForQuestion.current = true;
           setCustodyHold(hold);
-          setCustodyHeld(false);
+          setCustodySource("fresh");
           setData(body);
         } else {
           const merged = applyHeldCustody(body, custodyHoldRef.current);
           // Only claim a held reading when one was actually applied to a row.
-          setCustodyHeld(merged.applied);
+          setCustodySource(merged.applied ? "held" : "none");
           setData(merged.body);
         }
         setError(null);
@@ -317,7 +324,7 @@ export default function CoordPlansListPage() {
     custodyReadForQuestion.current = false;
     custodyHoldRef.current = null;
     setCustodyHold(null);
-    setCustodyHeld(false);
+    setCustodySource("none");
   }, []);
 
   const { refresh: refreshReconciliation } = useGuardedPoll({
@@ -448,10 +455,10 @@ export default function CoordPlansListPage() {
   const documentAxisSuppressed =
     disclosure !== null && !disclosure.documentAxisAdmissible;
 
-  const custodyAge = useMemo(
-    () => describeCustodyAge(custodyHold, custodyHeld),
-    [custodyHold, custodyHeld]
-  );
+  // Computed every render, not memoised: every poll re-renders, so the age
+  // wording (which switches to a dated form past six hours) is evaluated
+  // against the current time rather than frozen at the first render.
+  const custodyAge = describeCustodyAge(custodyHold, custodySource, Date.now());
 
   const canPageBack = offset > 0;
   const canPageForward = window?.hasMore ?? false;
@@ -617,7 +624,7 @@ export default function CoordPlansListPage() {
         <p
           className="text-xs text-muted-foreground"
           data-testid="coord-plans-custody-as-of"
-          data-held={custodyHeld ? "true" : "false"}
+          data-held={custodySource === "held" ? "true" : "false"}
         >
           Live {custodyAge}.
         </p>

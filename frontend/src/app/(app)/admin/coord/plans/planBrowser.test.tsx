@@ -299,6 +299,73 @@ describe("custody across the background poll", () => {
     }
   });
 
+  it("stops asking for custody on the poll once a custody read succeeded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      route({
+        "/plan-library/reconciliation": (url: string) =>
+          url.includes("include_custody=true")
+            ? body({ items: [sole] })
+            : body({ items: [pollRow] }),
+      });
+      render(<CoordPlansListPage />);
+      await screen.findByTestId("coord-plans-custody-as-of");
+      for (const n of [2, 3]) {
+        await act(async () => {
+          vi.advanceTimersByTime(30_000);
+        });
+        await waitFor(() => expect(reconciliationCalls().length).toBe(n));
+        expect(reconciliationCalls()[n - 1]).not.toContain("include_custody");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a search change drops the old window's held custody", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      route({
+        "/plan-library/reconciliation": (url: string) => {
+          if (url.includes("q=") && url.includes("include_custody=true")) {
+            throw new Error("503 custody join timed out");
+          }
+          return url.includes("include_custody=true")
+            ? body({ items: [sole], q: null })
+            : body({
+                items: [pollRow],
+                q: url.includes("q=") ? "merge" : null,
+              });
+        },
+      });
+      render(<CoordPlansListPage />);
+      await screen.findByTestId("coord-plans-custody-as-of");
+      await user.type(screen.getByTestId("coord-plans-search"), "merge");
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      await waitFor(() =>
+        expect(reconciliationCalls().some((u) => u.includes("q=merge"))).toBe(
+          true
+        )
+      );
+      const before = reconciliationCalls().length;
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() =>
+        expect(reconciliationCalls().length).toBeGreaterThan(before)
+      );
+      // The new window has no custody read yet, so its poll asks again — and
+      // the old window's reading is never re-applied or dated against it.
+      expect(reconciliationCalls().at(-1)).toContain("include_custody=true");
+      expect(screen.queryByTestId("coord-plans-custody-as-of")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not claim a held reading when the poll's rows took none of it", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -325,11 +392,9 @@ describe("custody across the background poll", () => {
         vi.advanceTimersByTime(30_000);
       });
       await waitFor(() => expect(reconciliationCalls().length).toBe(2));
+      // No row on screen carries the held reading, so no age line dates it.
       await waitFor(() =>
-        expect(screen.getByTestId("coord-plans-custody-as-of")).toHaveAttribute(
-          "data-held",
-          "false"
-        )
+        expect(screen.queryByTestId("coord-plans-custody-as-of")).toBeNull()
       );
     } finally {
       vi.useRealTimers();

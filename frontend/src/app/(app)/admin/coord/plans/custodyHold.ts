@@ -4,8 +4,9 @@
  * Resolving custody makes coord join `coord.agent_status` and resolve session
  * names for EVERY unit in the tenant, so the plans page asks for it
  * (`include_custody=true`) only on the reads an operator caused — the first
- * read of a window, a manual refresh, a page or search change — and never on
- * the 30 s background poll.
+ * read of a window, a manual refresh, a page or search change — and on the
+ * 30 s background poll only until one custody read has succeeded for the
+ * current window/search.
  *
  * A poll answer therefore carries no custody (`live_sessions` and
  * `custody_resolved` both null). Painting that as-is would flip every badge to
@@ -84,22 +85,37 @@ export function applyHeldCustody(
   return applied ? { body: { ...body, items }, applied } : { body, applied };
 }
 
-/** The page-level age line for a custody reading. */
 /** Past this age the custody line also states the date. */
 const STALE_DATE_AFTER_MS = 6 * 60 * 60 * 1000;
 
+/** Where the custody on screen came from (see the plans page). */
+export type CustodySource = "fresh" | "held" | "none";
+
+/** `YYYY-MM-DD` in LOCAL time, matching `clockTime`'s local hours. */
+function localDate(ms: number): string {
+  const d = new Date(ms);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * The page-level age line for a custody reading, or `null` when no row on
+ * screen carries it (`source === "none"`).
+ */
 export function describeCustodyAge(
   hold: CustodyHold | null,
-  held: boolean
+  source: CustodySource,
+  now: number
 ): string | null {
-  if (hold === null) return null;
-  const iso = new Date(hold.at).toISOString();
+  if (hold === null || source === "none") return null;
+  const time = clockTime(new Date(hold.at).toISOString()) ?? "an unknown time";
   // A clock time alone is ambiguous once the reading may be from another day.
   const at =
-    Date.now() - hold.at > STALE_DATE_AFTER_MS
-      ? `${iso.slice(0, 10)} ${clockTime(iso) ?? "an unknown time"}`
-      : (clockTime(iso) ?? "an unknown time");
-  return held
+    now - hold.at > STALE_DATE_AFTER_MS
+      ? `${localDate(hold.at)} ${time}`
+      : time;
+  return source === "held"
     ? `custody as of ${at} — held from an earlier read; the 30 s background poll does not re-resolve custody (refresh to re-read it)`
     : `custody as of ${at}`;
 }

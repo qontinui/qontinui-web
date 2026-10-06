@@ -81,12 +81,28 @@ describe("custodyHold", () => {
   });
 
   it("states the reading's age, and that a held one is held", () => {
-    expect(describeCustodyAge(null, false)).toBeNull();
-    expect(describeCustodyAge(hold, false)).toMatch(
+    const now = hold.at + 60_000;
+    expect(describeCustodyAge(null, "fresh", now)).toBeNull();
+    expect(describeCustodyAge(hold, "fresh", now)).toMatch(
       /^custody as of \d\d:\d\d$/
     );
-    expect(describeCustodyAge(hold, true)).toMatch(
+    expect(describeCustodyAge(hold, "held", now)).toMatch(
       /^custody as of \d\d:\d\d — held from an earlier read/
+    );
+  });
+
+  it("says nothing about a reading no row carries", () => {
+    expect(describeCustodyAge(hold, "none", hold.at)).toBeNull();
+  });
+
+  it("dates a reading older than six hours, in local time", () => {
+    const at = new Date(2026, 9, 5, 23, 30).getTime(); // local 2026-10-05 23:30
+    const old = { ...hold, at };
+    expect(describeCustodyAge(old, "held", at + 7 * 3_600_000)).toMatch(
+      /^custody as of 2026-10-05 23:30 — held/
+    );
+    expect(describeCustodyAge(old, "held", at + 60_000)).toMatch(
+      /^custody as of 23:30 — held/
     );
   });
 });
