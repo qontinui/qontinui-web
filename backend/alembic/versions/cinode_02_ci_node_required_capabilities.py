@@ -1,7 +1,7 @@
 """runner-as-CI-node — coord.canonical_repos.ci_node_required_capabilities
 
 Revision ID: cinode_02_required_capabilities
-Revises: coordinput_01_operator_inputs
+Revises: coord_agent_questions_effect
 Create Date: 2026-09-27
 
 Phase 4b of plan
@@ -54,7 +54,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cinode_02_required_capabilities"
-down_revision: str | None = "coordinput_01_operator_inputs"
+down_revision: str | None = "coord_agent_questions_effect"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

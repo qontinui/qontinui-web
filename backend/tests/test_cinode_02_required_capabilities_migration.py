@@ -63,7 +63,7 @@ _REVISION_FILENAME = "cinode_02_ci_node_required_capabilities.py"
 
 # Pinned as a literal so a re-point of down_revision is a deliberate two-file
 # change: this line, the assignment, and the Revises header.
-_PARENT_REVISION_ID = "coordinput_01_operator_inputs"
+_PARENT_REVISION_ID = "coord_agent_questions_effect"
 
 _TABLE = "canonical_repos"
 _COLUMN = "ci_node_required_capabilities"
