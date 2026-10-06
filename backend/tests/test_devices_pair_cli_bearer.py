@@ -28,6 +28,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.services.coord_service_account import coord_service_account
 
@@ -43,6 +44,7 @@ def _build_test_app() -> FastAPI:
         get_current_active_user_async,
     )
     from app.api.v1.endpoints.devices import router as devices_router
+    from app.middleware.error_handler import http_exception_handler
 
     test_app = FastAPI()
     mock_user = MagicMock()
@@ -53,6 +55,9 @@ def _build_test_app() -> FastAPI:
     mock_user.is_superuser = False
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
     test_app.dependency_overrides[get_async_db] = lambda: None
+    # The production handler, so these tests pin the shape a client actually
+    # receives: it rewrites a dict detail rather than nesting it.
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     test_app.include_router(devices_router, prefix=API_PREFIX)
     return test_app
 
@@ -232,8 +237,9 @@ class TestPairCliTenantForwarding:
             )
 
         assert resp.status_code == 502, resp.text
-        assert resp.json()["detail"] == {
-            "coord_status": 403,
-            "coord_body": coord_text,
-        }
+        body = resp.json()
+        assert body["error"] == "BAD_GATEWAY"
+        assert body["coord_status"] == 403
+        assert body["coord_body"] == coord_text
+        assert body["message"] == "Coord refused pairing (HTTP 403)."
         assert "tenant_id" in instance.post.call_args.kwargs["json"]

@@ -615,6 +615,87 @@ export interface PromptDocumentClaim {
   anchor_type: string | null;
   /** The observer's finding: `reason`, `stale`, the resolved value. Shape is the observer's, not ours. */
   detail: Record<string, unknown>;
+  /**
+   * What KIND of evidence the anchor can produce, derived by coord from
+   * `anchor_type` (plan `2026-10-05-declared-intent-drives-autonomous-work-selection`
+   * Phase 5). Optional because a coord predating that phase serves none —
+   * absent is UNKNOWN, not `unknown`-the-class.
+   */
+  evidence_class?: string;
+  /**
+   * The block's `addressed_by:` links as coord rendered them
+   * (`<plan-stem>[#<phase>]`), merged from the BODY at read time. `[]` when the
+   * block declares none; absent on a coord predating Phase 5.
+   */
+  addressed_by?: string[];
+  /**
+   * Worst-first summary of `addressing` — served only on a claim that HAS
+   * `addressed_by`. A string, not a closed union: coord owns the vocabulary
+   * ({@link PROMPT_DOCUMENT_ADDRESSING_STATUSES} is this build's copy).
+   */
+  addressing_status?: string;
+  /** One entry per `addressed_by` link; served only beside `addressing_status`. */
+  addressing?: PromptDocumentClaimAddressing[];
+}
+
+/**
+ * The served evidence classes (`evidence_class_for` in coord's
+ * `prompt_document_claims.rs`). `source` = the code says so; `state` = a live
+ * system value says so; `behaviour` = an observed run says so; `declared` = a
+ * `none` anchor, i.e. nothing machine-checks it; `unknown` = no class.
+ */
+export const PROMPT_DOCUMENT_EVIDENCE_CLASSES = [
+  "source",
+  "state",
+  "behaviour",
+  "declared",
+  "unknown",
+] as const;
+
+/**
+ * Coord's `addressing_status` vocabulary, worst-first — the same order as its
+ * `addressing_status::PRECEDENCE`. Only `landed_unconfirmed` fires an alert:
+ * the addressing plan landed and the claim it was meant to satisfy still does
+ * not read confirmed past one probe-freshness window. Everything from
+ * `delivery_evidence_incomplete` to `unknown` is an UNKNOWN arm.
+ */
+export const PROMPT_DOCUMENT_ADDRESSING_STATUSES = [
+  "landed_unconfirmed",
+  "landed_within_window",
+  "landed_probe_unresolved",
+  "unlanded",
+  "delivery_evidence_incomplete",
+  "phase_unaddressable",
+  "unknown_stem",
+  "read_failed",
+  "unknown",
+  "landed_confirmed",
+] as const;
+
+/**
+ * One `addressed_by` link's observation. Every field but the link itself is
+ * optional: coord omits what the tick did not compute, and an unobserved link
+ * serves `status: "unknown"` rather than a carried verdict.
+ */
+export interface PromptDocumentClaimAddressing {
+  /** The link as written, `<plan-stem>[#<phase>]`. */
+  addressed_by: string;
+  status: string;
+  /** When the addressing work was first seen delivered, or `null`. */
+  landed_since?: string | null;
+  work_unit_status?: string | null;
+  /** `<repo>#<number>` of each PR coord counted as delivering the work. */
+  citing_prs?: string[];
+  /** Phase indices the delivery view reports delivered for the stem. */
+  phases_delivered?: number[];
+  reason?: string;
+  /**
+   * `true` when this tick's read failed and coord carried the PREVIOUS
+   * verdict forward — the status is then not this tick's observation.
+   */
+  stale_from_read_failure?: boolean;
+  /** When the carried verdict was first carried, beside `stale_from_read_failure`. */
+  carried_since?: string;
 }
 
 /**
@@ -655,6 +736,13 @@ export interface PromptDocument extends PromptDocumentSummary {
   claims_probed?: number;
   /** Probe blocks skipped outright because they carried no `claim:` id. */
   claims_malformed?: number;
+  /**
+   * `addressed_by:` entries that did not parse as `<stem>[#<phase>]`. Their
+   * claims are still served; only the bad links are dropped. Absent on a coord
+   * predating plan `2026-10-05-declared-intent-drives-autonomous-work-selection`
+   * Phase 5.
+   */
+  addressed_by_malformed?: number;
   /** The newest persisted `observed_at` across this document's claims, or `null`. */
   claims_observed_at?: string | null;
   claims_state_source?: PromptDocumentClaimStateSource;
