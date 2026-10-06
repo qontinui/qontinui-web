@@ -317,6 +317,16 @@ class Phase(_AuditMixin, Base):
             "actual_start IS NULL OR actual_end IS NULL OR actual_end >= actual_start",
             name="ck_overview_phases_actual_order",
         ),
+        # Both added NOT VALID by ``overview_04b_phase_progress_checks``;
+        # they mirror ``phase_progress_problem`` exactly.
+        CheckConstraint(
+            "actual_end IS NULL OR actual_start IS NOT NULL",
+            name="ck_overview_phases_actual_end_has_start",
+        ),
+        CheckConstraint(
+            "(gate_status = 'pending') = (gate_decided_at IS NULL)",
+            name="ck_overview_phases_gate_decision_dated",
+        ),
         UniqueConstraint("estimate_id", "code", name="uq_overview_phases_code"),
         Index("ix_overview_phases_tenant", "tenant_id"),
         Index("ix_overview_phases_estimate", "estimate_id", "sort_order"),

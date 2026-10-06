@@ -23,6 +23,15 @@
  *   discarded, and leaving with unsaved changes asks first.
  * - **Who may edit** is the served permission for the project on screen
  *   (`EditGate`), never `isCoordAdmin`.
+ * - **A Save that would drop a phase holding recorded work asks first.** A
+ *   saved phase nothing in the working copy continues (by its id, else its
+ *   code) is deleted by the write, with the progress recorded on the Timeline
+ *   and its milestones untied. Before such a Save the page reads, fresh, what
+ *   those phases hold, and names each one and its loss; a read that failed is
+ *   said too (`DroppedPhasesDialog`, `_lib/dropped.ts`). The Save carries
+ *   what was seen (`acknowledged_drops`), so work recorded on one of them
+ *   between the check and the Save refuses it (409 `unacknowledged_drop`)
+ *   and the writer is asked again, with what the phase now holds.
  */
 
 import Link from "next/link";
@@ -64,6 +73,7 @@ import { sumPersonDays } from "../../_lib/csv";
 import {
   ESTIMATES,
   pickBaseline,
+  type AcknowledgedDrop,
   type EstimatePurposeOption,
   type EstimateRecord,
 } from "../../_lib/estimate-api";
@@ -87,7 +97,14 @@ import {
   type DraftPart,
   type MergeNote,
 } from "./_lib/draft";
+import {
+  checkDroppedPhases,
+  dropCheckFromRefusal,
+  droppedPhases,
+  type DropCheck,
+} from "./_lib/dropped";
 import { useSourceDocument, type SourceDocument } from "./_lib/source";
+import { DroppedPhasesDialog } from "./_components/DroppedPhasesDialog";
 import { statusAfterEdit, type Status } from "./_lib/status";
 
 const TEAM_ROUTE = "/overview/team";
@@ -517,6 +534,19 @@ function EstimateEditor({
   const [restoredFrom, setRestoredFrom] = useState(initial.restoredFrom);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [conflict, setConflict] = useState<EstimateRecord | null>(null);
+  /** A Save held for the drop check: being checked, or waiting on the
+   *  writer's answer to what the check found. */
+  const [held, setHeld] = useState<
+    | { state: "checking" }
+    | {
+        state: "asking";
+        check: DropCheck;
+        version: number;
+        content: Draft;
+        withSource: boolean;
+      }
+    | null
+  >(null);
   /** Their version, shown beside the working copy after "combine". */
   const [theirs, setTheirs] = useState<EstimateRecord | null>(null);
   /** Tables with a row editor open: typed text not yet in the working copy. */
@@ -661,11 +691,19 @@ function EstimateEditor({
     {
       withSource = linkSource,
       content = draft,
-    }: { withSource?: boolean; content?: Draft } = {}
+      acknowledgements = [],
+    }: {
+      withSource?: boolean;
+      content?: Draft;
+      /** The dropped phases' state the writer saw (`acknowledged_drops`). */
+      acknowledgements?: readonly AcknowledgedDrop[];
+    } = {}
   ) => {
     setStatus({ kind: "saving" });
     const patch: Record<string, unknown> = { content: draftToContent(content) };
     if (withSource && source !== null) patch.source_page_id = source.id;
+    if (acknowledgements.length > 0)
+      patch.acknowledged_drops = [...acknowledgements];
     const result = await update(patch, version, {
       source: imported ? "import" : "ui",
     });
@@ -677,12 +715,54 @@ function EstimateEditor({
       setConflict(result.conflict);
     } else if (result.code === "source_page_not_found") {
       setStatus({ kind: "source_refused" });
+    } else if (result.code === "unacknowledged_drop") {
+      // Somebody recorded work on a phase this save drops after it was
+      // checked. Nothing was written: ask again, with what it holds now.
+      const check = dropCheckFromRefusal(result.details, acknowledgements);
+      if (check) {
+        setStatus({ kind: "idle" });
+        setHeld({ state: "asking", check, version, content, withSource });
+      } else {
+        setStatus({ kind: "failed", message: result.error });
+      }
     } else {
       setStatus({ kind: "failed", message: result.error });
     }
   };
 
-  const busy = status.kind === "saving";
+  /**
+   * Save — unless it would drop saved phases (those of `base`, the version it
+   * is written over) that hold recorded work, or whose holdings cannot be
+   * read: then the writer is asked first.
+   */
+  const guardedSave = async (
+    version: number,
+    {
+      content = draft,
+      base = baseDraft,
+      withSource = linkSource,
+    }: { content?: Draft; base?: Draft; withSource?: boolean } = {}
+  ) => {
+    const dropped = droppedPhases(base.phases, draftToContent(content).phases);
+    if (dropped.length === 0) {
+      await save(version, { content, withSource });
+      return;
+    }
+    setHeld({ state: "checking" });
+    const check = await checkDroppedPhases(record.id, dropped);
+    if (check.kind === "clear") {
+      setHeld(null);
+      await save(version, {
+        content,
+        withSource,
+        acknowledgements: check.acknowledgements,
+      });
+    } else {
+      setHeld({ state: "asking", check, version, content, withSource });
+    }
+  };
+
+  const busy = status.kind === "saving" || held !== null;
   const theirsDraft = useMemo(
     () => (theirs ? draftFromEstimate(theirs) : null),
     [theirs]
@@ -947,7 +1027,7 @@ function EstimateEditor({
       <section className="flex flex-wrap items-center gap-4 border-t border-border pt-6">
         <button
           type="button"
-          onClick={() => void save(baseVersion)}
+          onClick={() => void guardedSave(baseVersion)}
           disabled={
             busy ||
             blocking.length > 0 ||
@@ -958,7 +1038,11 @@ function EstimateEditor({
           className="inline-flex min-h-9 items-center rounded-md bg-primary px-4 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-ui-bridge-id="overview.estimate-editor.save"
         >
-          {busy ? "Saving…" : "Save the estimate"}
+          {held?.state === "checking"
+            ? "Checking…"
+            : status.kind === "saving"
+              ? "Saving…"
+              : "Save the estimate"}
         </button>
         <Link
           href={TEAM_ROUTE}
@@ -982,6 +1066,11 @@ function EstimateEditor({
               Settle what combining left above before saving.{" "}
             </span>
           )}
+          {held?.state === "checking" && (
+            <span className="text-muted-foreground">
+              Checking what the phases this save drops hold…{" "}
+            </span>
+          )}
           {status.kind === "saved" && (
             <span className="text-muted-foreground">
               Saved as version {status.version}. The Team page now shows this.
@@ -996,7 +1085,9 @@ function EstimateEditor({
                 type="button"
                 onClick={() => {
                   onSourceDropped();
-                  void save(baseVersion, { withSource: false });
+                  // Through the drop check like every Save: dropping the
+                  // source must not drop a phase's recorded work unasked.
+                  void guardedSave(baseVersion, { withSource: false });
                 }}
                 className="inline-flex min-h-9 items-center rounded-md text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 data-ui-bridge-id="overview.estimate-editor.save.without-source"
@@ -1036,7 +1127,10 @@ function EstimateEditor({
           setTheirs(null);
           setMergeNotes([]);
           keep(rebased.draft, imported, current.version, theirsOfConflict, []);
-          void save(current.version, { content: rebased.draft });
+          void guardedSave(current.version, {
+            content: rebased.draft,
+            base: theirsOfConflict,
+          });
         }}
         onTakeTheirs={() => {
           const current = conflict;
@@ -1068,6 +1162,26 @@ function EstimateEditor({
             theirsOfConflict,
             rebased.unresolved
           );
+        }}
+      />
+
+      <DroppedPhasesDialog
+        check={held?.state === "asking" ? held.check : null}
+        uiBridgeId="overview.estimate-editor.drop-warning"
+        onCancel={() => setHeld(null)}
+        onConfirm={() => {
+          if (held?.state !== "asking") return;
+          const { version, content, withSource, check } = held;
+          setHeld(null);
+          // What the writer was shown is what the save acknowledges; an
+          // unknown check acknowledges nothing, so the server says what is
+          // at stake if anything is.
+          void save(version, {
+            content,
+            withSource,
+            acknowledgements:
+              check.kind === "unknown" ? [] : check.acknowledgements,
+          });
         }}
       />
     </div>

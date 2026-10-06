@@ -477,7 +477,15 @@ class TestAMilestoneOutlivesItsPhase:
         a2 = _phase_id(estimate, "A2")
         made = await _milestone(admin, phase_id=a2)
         saved = await _patch(
-            admin, f"estimates/{estimate['id']}", {"content": _content("A0", "A1")}, 1
+            admin,
+            f"estimates/{estimate['id']}",
+            {
+                "content": _content("A0", "A1"),
+                "acknowledged_drops": [
+                    {"phase_id": a2, "progress_version": 1, "milestone_count": 1}
+                ],
+            },
+            1,
         )
         assert saved.status_code == 200, saved.text
         read = (await admin.get(f"{API}/milestones/{made['id']}")).json()["item"]
@@ -501,6 +509,179 @@ class TestAMilestoneOutlivesItsPhase:
         assert gone.status_code == 204
         read = (await admin.get(f"{API}/milestones/{made['id']}")).json()["item"]
         assert read["phase_id"] is None and read["version"] == 2
+
+
+def _with_ids(estimate: dict[str, Any], *codes: str) -> dict[str, Any]:
+    """``_content(*codes)`` with each phase naming the saved phase it
+    continues, by position against the estimate's phases as read — what the
+    estimate editor sends."""
+    content = _content(*codes)
+    for phase, saved in zip(
+        content["phases"], estimate["content"]["phases"], strict=False
+    ):
+        phase["id"] = saved["id"]
+    return content
+
+
+class TestARenamedPhaseKeepsItsIdentity:
+    async def test_renaming_a_code_by_id_keeps_progress_and_milestones(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        estimate = await _estimate(admin)
+        a1 = _phase_id(estimate, "A1")
+        recorded = await _patch(
+            admin,
+            f"phase-progress/{a1}",
+            {
+                "actual_start": "2026-02-02",
+                "gate_status": "passed",
+                "gate_decided_at": "2026-02-27",
+                "gate_notes": "Signed off",
+            },
+            1,
+        )
+        assert recorded.status_code == 200, recorded.text
+        made = await _milestone(admin, phase_id=a1)
+
+        renamed = _with_ids(estimate, "A0", "D1", "A2")
+        saved = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": renamed}, 1
+        )
+        assert saved.status_code == 200, saved.text
+        item = saved.json()["item"]
+        assert item["version"] == 2
+        assert [p["code"] for p in item["content"]["phases"]] == ["A0", "D1", "A2"]
+        phase = item["content"]["phases"][1]
+        assert phase["id"] == a1
+        assert phase["gate_status"] == "passed"
+        assert phase["gate_notes"] == "Signed off"
+        assert phase["actual_start"] == "2026-02-02"
+        progress = (await admin.get(f"{API}/phase-progress/{a1}")).json()["item"]
+        assert progress["code"] == "D1" and progress["version"] == 2
+
+        read = (await admin.get(f"{API}/milestones/{made['id']}")).json()["item"]
+        assert read["phase_id"] == a1 and read["phase_code"] == "D1"
+        # Nothing was detached, so the milestone was never written.
+        assert read["version"] == 1
+        rows = await _log(async_db_session, "milestones", made["id"])
+        assert [r.action for r in rows] == ["create"]
+        # The estimate's own log shows the same phase under its new code.
+        log = await _log(async_db_session, "estimates", estimate["id"])
+        assert [r.action for r in log] == ["create", "update"]
+        before = {p["id"]: p["code"] for p in log[1].before["content"]["phases"]}
+        after = {p["id"]: p["code"] for p in log[1].after["content"]["phases"]}
+        assert (before[a1], after[a1]) == ("A1", "D1")
+
+    async def test_two_codes_swapped_by_id_swap_their_rows(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        estimate = await _estimate(admin)
+        a0, a1 = _phase_id(estimate, "A0"), _phase_id(estimate, "A1")
+        swapped = _with_ids(estimate, "A1", "A0", "A2")
+        saved = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": swapped}, 1
+        )
+        assert saved.status_code == 200, saved.text
+        item = saved.json()["item"]
+        assert _phase_id(item, "A1") == a0
+        assert _phase_id(item, "A0") == a1
+
+    async def test_without_an_id_a_new_code_is_still_a_new_phase(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        """A client that sends no ids (a re-imported gantt) gets what it
+        always got: a phase is continued by its code, never guessed by name."""
+        estimate = await _estimate(admin)
+        a1 = _phase_id(estimate, "A1")
+        made = await _milestone(admin, phase_id=a1)
+        content = _content("A0", "D1", "A2")
+        content["phases"][1]["name"] = "Phase A1"  # the old name, a new code
+        refused = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": content}, 1
+        )
+        # A1 is dropped, and holds a milestone: that is said, not done.
+        assert refused.status_code == 409, refused.text
+        assert [p["code"] for p in refused.json()["phases"]] == ["A1"]
+        ack = {"phase_id": a1, "progress_version": 1, "milestone_count": 1}
+        saved = await _patch(
+            admin,
+            f"estimates/{estimate['id']}",
+            {"content": content, "acknowledged_drops": [ack]},
+            1,
+        )
+        assert saved.status_code == 200, saved.text
+        assert _phase_id(saved.json()["item"], "D1") != a1
+        read = (await admin.get(f"{API}/milestones/{made['id']}")).json()["item"]
+        assert read["phase_id"] is None
+
+    async def test_an_id_from_another_estimate_is_a_422_and_writes_nothing(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        other = await _estimate(admin, "B0", "B1", baseline=False)
+        estimate = await _estimate(admin)
+        foreign = _content("A0", "A1", "A2")
+        foreign["phases"][1]["id"] = _phase_id(other, "B1")
+        foreign["phases"][0]["name"] = "Would be renamed"
+        response = await _patch(
+            admin,
+            f"estimates/{estimate['id']}",
+            {"content": foreign, "name": "Would be renamed"},
+            1,
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"] == "phase_not_in_estimate"
+        head = (await admin.get(f"{API}/estimates/{estimate['id']}")).json()["item"]
+        assert head["version"] == 1 and head["name"] == "Plan"
+        assert head["content"]["phases"][0]["name"] == "Phase A0"
+        # The other estimate's phase is untouched too.
+        b1 = (await admin.get(f"{API}/phase-progress/{_phase_id(other, 'B1')}")).json()
+        assert b1["item"]["code"] == "B1"
+
+    async def test_an_unknown_or_repeated_id_is_a_422(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        estimate = await _estimate(admin)
+        unknown = _content("A0", "A1", "A2")
+        unknown["phases"][0]["id"] = str(uuid4())
+        response = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": unknown}, 1
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"] == "phase_not_in_estimate"
+        repeated = _with_ids(estimate, "A0", "A1", "A2")
+        repeated["phases"][1]["id"] = repeated["phases"][0]["id"]
+        response = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": repeated}, 1
+        )
+        assert response.status_code == 422, response.text
+        assert "same phase id" in response.text
+
+    async def test_resending_the_graph_with_its_ids_writes_nothing(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        estimate = await _estimate(admin)
+        for content in (
+            _with_ids(estimate, "A0", "A1", "A2"),
+            _content("A0", "A1", "A2"),
+        ):
+            again = await _patch(
+                admin, f"estimates/{estimate['id']}", {"content": content}, 1
+            )
+            assert again.status_code == 200, again.text
+            assert again.json()["item"]["version"] == 1
+        log = await _log(async_db_session, "estimates", estimate["id"])
+        assert [r.action for r in log] == ["create"]
+        # An id pointing at ANOTHER of its phases is a rename, so a write.
+        crossed = _with_ids(estimate, "A0", "A1", "A2")
+        crossed["phases"][0]["id"], crossed["phases"][1]["id"] = (
+            crossed["phases"][1]["id"],
+            crossed["phases"][0]["id"],
+        )
+        moved = await _patch(
+            admin, f"estimates/{estimate['id']}", {"content": crossed}, 1
+        )
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["item"]["version"] == 2
 
 
 # ===========================================================================
@@ -921,3 +1102,14 @@ class TestForecastRoute:
         response = await other_project.get(f"{API}/estimates/{estimate['id']}/forecast")
         assert response.status_code == 404
         assert (await admin.get(f"{API}/estimates/nope/forecast")).status_code == 404
+
+
+def test_an_update_carrying_only_acknowledgements_is_refused() -> None:
+    """``acknowledged_drops`` qualifies a content change; alone it changes nothing."""
+    from pydantic import ValidationError
+
+    from app.schemas.overview import EstimateUpdate
+
+    with pytest.raises(ValidationError, match="give at least one field"):
+        EstimateUpdate.model_validate({"acknowledged_drops": []})
+    assert EstimateUpdate.model_validate({"name": "x", "acknowledged_drops": []})

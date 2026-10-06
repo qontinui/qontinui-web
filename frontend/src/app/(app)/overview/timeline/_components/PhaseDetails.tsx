@@ -10,7 +10,7 @@
  * since moved is a conflict, shown side by side (`ConflictDialog`) — never a
  * silent overwrite. The form refuses, before sending, what the API would:
  * a finish before the start, a finish with no start, a decided gate with no
- * date, a pending one with a date.
+ * date, a pending one with a date, and any date after tomorrow (UTC).
  *
  * Controls are ABSENT for a reader who may not edit — `canEdit` is the served
  * permission for this project, never `isCoordAdmin`.
@@ -20,6 +20,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
+import { threeWayMerge } from "@/components/overview/editing/merge";
 import type { SaveResult } from "@/components/overview/editing/useResource";
 import type { GateStatus } from "../../_lib/estimate-api";
 import {
@@ -42,6 +43,49 @@ interface Form {
   gate_status: GateStatus;
   gate_decided_at: string;
   gate_notes: string;
+}
+
+const FORM_FIELDS = [
+  "actual_start",
+  "actual_end",
+  "gate_status",
+  "gate_decided_at",
+  "gate_notes",
+] as const satisfies readonly (keyof Form)[];
+
+const FIELD_LABEL: Record<keyof Form, string> = {
+  actual_start: "Started on",
+  actual_end: "Finished on",
+  gate_status: "Gate outcome",
+  gate_decided_at: "Decided on",
+  gate_notes: "Notes on the gate",
+};
+
+/** One field of a form, in words. */
+function shown(form: Form, field: keyof Form): string {
+  if (field === "gate_status") return GATE[form.gate_status].label;
+  if (field === "gate_notes") return form.gate_notes || "none";
+  return formatDay(form[field]) ?? "not recorded";
+}
+
+/**
+ * My form rebuilt on THEIR progress (`threeWayMerge`, against the version my
+ * form was opened on): a field I did not touch takes theirs, so neither
+ * "Combine them myself" nor "Save mine over theirs" can put back my stale
+ * copy of a field only they changed. `both` is what we each changed.
+ */
+export function rebaseProgress(
+  mine: Form,
+  base: PhaseProgress,
+  theirs: PhaseProgress
+): { form: Form; both: (keyof Form)[] } {
+  const { merged, both } = threeWayMerge(
+    formOf(base),
+    mine,
+    formOf(theirs),
+    FORM_FIELDS
+  );
+  return { form: merged, both };
 }
 
 const INPUT =
@@ -67,8 +111,43 @@ function wire(form: Form): Required<PhaseProgressPatch> {
   };
 }
 
-/** The server's rules for a phase's progress, so the form refuses first. */
-export function progressProblem(form: Form): string | null {
+const DATE_LABEL = {
+  actual_start: "The start date",
+  actual_end: "The finish date",
+  gate_decided_at: "The gate's decision date",
+} as const;
+
+/**
+ * The server's rules for a phase's progress (`phase_progress_problem`), so
+ * the form refuses first.
+ *
+ * Progress records what has HAPPENED, so no date may be later than tomorrow
+ * — the server's rule exactly: today in UTC, plus the one day it allows
+ * because "today" east of UTC is already UTC's tomorrow. The browser's own
+ * calendar would not do: east of UTC it runs a day ahead in the evening and
+ * the form would accept a date the server then refuses. A typo such as next
+ * year's date would otherwise mark the phase as running and push the whole
+ * forecast out.
+ */
+export function progressProblem(
+  form: Form,
+  now: Date = new Date()
+): string | null {
+  const latest = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  )
+    .toISOString()
+    .slice(0, 10);
+  for (const field of [
+    "actual_start",
+    "actual_end",
+    "gate_decided_at",
+  ] as const) {
+    const value = form[field];
+    // ISO days compare correctly as strings.
+    if (value && value > latest)
+      return `${DATE_LABEL[field]} is ${formatDay(value)}, which hasn’t happened yet — progress records what has happened, so it can be ${formatDay(latest)} at the latest.`;
+  }
   if (form.actual_end && !form.actual_start)
     return "A phase can’t finish without having started — give the day it started.";
   if (
@@ -132,19 +211,25 @@ export function PhaseDetails({
     base: PhaseProgress;
     error: string | null;
     theirs: PhaseProgress | null;
+    /** Fields we both changed, after a combine: Save waits for a choice. */
+    both: (keyof Form)[];
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<PhaseProgress | null>(null);
 
+  // Editing a field both of us changed is choosing its value.
   const set = (patch: Partial<Form>) =>
     editing &&
     setEditing({
       ...editing,
       form: { ...editing.form, ...patch },
       error: null,
+      both: editing.both.filter((f) => !(f in patch)),
     });
 
-  const save = async (base: PhaseProgress, form: Form, full: boolean) => {
+  // Sends only the fields that differ from `base` — the version the patch
+  // names — so a field nobody changed is never written back.
+  const save = async (base: PhaseProgress, form: Form) => {
     const problem = progressProblem(form);
     if (problem) {
       setEditing({
@@ -152,18 +237,15 @@ export function PhaseDetails({
         base,
         error: problem,
         theirs: editing?.theirs ?? null,
+        both: editing?.both ?? [],
       });
       return;
     }
     const next = wire(form);
     const was = wire(formOf(base));
-    const patch = full
-      ? next
-      : (Object.fromEntries(
-          Object.entries(next).filter(
-            ([k, v]) => was[k as keyof typeof was] !== v
-          )
-        ) as PhaseProgressPatch);
+    const patch = Object.fromEntries(
+      Object.entries(next).filter(([k, v]) => was[k as keyof typeof was] !== v)
+    ) as PhaseProgressPatch;
     if (Object.keys(patch).length === 0) {
       setEditing(null);
       return;
@@ -174,10 +256,10 @@ export function PhaseDetails({
     if (result.ok) {
       setEditing(null);
     } else if ("conflict" in result) {
-      setEditing({ form, base, error: null, theirs: null });
+      setEditing({ form, base, error: null, theirs: null, both: [] });
       setConflict(result.conflict);
     } else {
-      setEditing({ form, base, error: result.error, theirs: null });
+      setEditing({ form, base, error: result.error, theirs: null, both: [] });
     }
   };
 
@@ -241,7 +323,13 @@ export function PhaseDetails({
           variant="outline"
           size="sm"
           onClick={() =>
-            setEditing({ form: formOf(p), base: p, error: null, theirs: null })
+            setEditing({
+              form: formOf(p),
+              base: p,
+              error: null,
+              theirs: null,
+              both: [],
+            })
           }
           data-ui-bridge-id={`${uiBridgeId}.record`}
         >
@@ -254,7 +342,7 @@ export function PhaseDetails({
           className="space-y-3 rounded-md border border-border p-3"
           onSubmit={(e) => {
             e.preventDefault();
-            void save(editing.base, editing.form, false);
+            void save(editing.base, editing.form);
           }}
           data-ui-bridge-id={`${uiBridgeId}.form`}
         >
@@ -265,11 +353,66 @@ export function PhaseDetails({
               data-ui-bridge-id={`${uiBridgeId}.form.theirs`}
             >
               <p className="font-medium text-foreground">
-                Their version, for reference:
+                Their version, for reference — what only they changed is already
+                in the form:
               </p>
               <pre className="mt-1 whitespace-pre-wrap text-muted-foreground">
                 {describe(formOf(editing.theirs))}
               </pre>
+            </div>
+          )}
+          {editing.theirs && editing.both.length > 0 && (
+            <div
+              role="alert"
+              className="space-y-1 rounded-md border border-destructive/40 p-2 text-xs"
+              data-ui-bridge-id={`${uiBridgeId}.form.both`}
+            >
+              <p className="font-medium text-foreground">
+                You both changed these — choose which to keep:
+              </p>
+              <ul className="space-y-1">
+                {editing.both.map((field) => {
+                  const theirs = editing.theirs!;
+                  return (
+                    <li
+                      key={field}
+                      className="flex flex-wrap items-center gap-x-2"
+                      data-ui-bridge-id={`${uiBridgeId}.form.both.${field}`}
+                    >
+                      <span className="text-foreground">
+                        {FIELD_LABEL[field]}:
+                      </span>
+                      <span>yours {shown(editing.form, field)}</span>
+                      <span className="text-muted-foreground">
+                        · theirs {shown(formOf(theirs), field)}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setEditing({
+                            ...editing,
+                            both: editing.both.filter((f) => f !== field),
+                          })
+                        }
+                        data-ui-bridge-id={`${uiBridgeId}.form.both.${field}.mine`}
+                      >
+                        Keep mine
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => set({ [field]: formOf(theirs)[field] })}
+                        data-ui-bridge-id={`${uiBridgeId}.form.both.${field}.theirs`}
+                      >
+                        Use theirs
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -344,7 +487,7 @@ export function PhaseDetails({
             <Button
               type="submit"
               size="sm"
-              disabled={saving}
+              disabled={saving || editing.both.length > 0}
               data-ui-bridge-id={`${uiBridgeId}.form.save`}
             >
               {saving ? "Saving…" : "Save"}
@@ -379,16 +522,33 @@ export function PhaseDetails({
           theirsBy={conflict.updated_by}
           theirsAt={conflict.updated_at}
           onKeepMine={() => {
-            const form = editing.form;
+            // Mine over theirs — but only what I changed: a field only they
+            // changed keeps theirs (the patch is against their version).
+            const { form } = rebaseProgress(
+              editing.form,
+              editing.base,
+              conflict
+            );
             setConflict(null);
-            void save(conflict, form, true);
+            void save(conflict, form);
           }}
           onTakeTheirs={() => {
             setConflict(null);
             setEditing(null);
           }}
           onMerge={() => {
-            setEditing({ ...editing, base: conflict, theirs: conflict });
+            const { form, both } = rebaseProgress(
+              editing.form,
+              editing.base,
+              conflict
+            );
+            setEditing({
+              form,
+              base: conflict,
+              theirs: conflict,
+              error: null,
+              both,
+            });
             setConflict(null);
           }}
           uiBridgeId={`${uiBridgeId}.conflict`}

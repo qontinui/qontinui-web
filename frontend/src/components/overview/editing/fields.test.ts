@@ -200,6 +200,22 @@ describe("date and choice fields", () => {
     });
   });
 
+  it("reads a date as the overview pages write a day, and edits it as ISO", () => {
+    const when = table.fields[0]!;
+    expect(cellText(when, { when: "2026-10-16", pick: null })).toBe(
+      "16 Oct 2026"
+    );
+    expect(cellText(when, { when: null, pick: null })).toBe("—");
+    // Not a real day: shown as it is rather than guessed at.
+    expect(cellText(when, { when: "2026-02-30", pick: null })).toBe(
+      "2026-02-30"
+    );
+    // The editor's input still holds the wire form.
+    expect(rowToText(table, { when: "2026-10-16", pick: null }).when).toBe(
+      "2026-10-16"
+    );
+  });
+
   it("applies the served date bounds", () => {
     expect(read("1969-12-31", "")).toMatchObject({
       errors: { when: "Due must be on or after 1970-01-01." },

@@ -39,6 +39,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -72,6 +73,87 @@ def _parse_id(record_id: str) -> UUID:
         return UUID(record_id)
     except ValueError as exc:
         raise RecordNotFound(record_id) from exc
+
+
+# ---------------------------------------------------------------------------
+# The database's coherence CHECKs, as a refusal a user can act on
+# ---------------------------------------------------------------------------
+
+#: The CHECKs on ``overview.phases`` that a phase's recorded progress must
+#: satisfy, each with the fields it is about and what breaking it means.
+#: ``…_actual_end_has_start`` and ``…_gate_decision_dated`` were added
+#: ``NOT VALID`` (``overview_04b_phase_progress_checks``), so a row stored
+#: before them can still break one — and then ANY later UPDATE of that row,
+#: even one that only renames the phase, is refused by the database.
+PROGRESS_CHECKS: dict[str, tuple[tuple[str, ...], str]] = {
+    "ck_overview_phases_actual_order": (
+        ("actual_start", "actual_end"),
+        "its actual end is before its actual start",
+    ),
+    "ck_overview_phases_actual_end_has_start": (
+        ("actual_start", "actual_end"),
+        "it has an actual end but no actual start",
+    ),
+    "ck_overview_phases_gate_decision_dated": (
+        ("gate_status", "gate_decided_at"),
+        "its gate is decided with no decision date, or pending with one",
+    ),
+}
+
+
+def violated_progress_check(exc: IntegrityError) -> str | None:
+    """The name of the :data:`PROGRESS_CHECKS` constraint ``exc`` violated,
+    or ``None`` when it is another integrity error (which the caller must
+    then let through unchanged).
+
+    asyncpg carries the name structurally as ``constraint_name`` on the
+    original error, which SQLAlchemy's adapter chains as ``__cause__``; the
+    message text is the fallback for any other driver."""
+    orig = exc.orig
+    for err in (orig, getattr(orig, "__cause__", None)):
+        name = getattr(err, "constraint_name", None)
+        if isinstance(name, str) and name:
+            return name if name in PROGRESS_CHECKS else None
+    message = str(orig)
+    return next((name for name in PROGRESS_CHECKS if name in message), None)
+
+
+def stored_progress_breaks(phase: Phase) -> list[str]:
+    """Which :data:`PROGRESS_CHECKS` the phase's values, as they stand on the
+    loaded row, break — the same predicates as the CHECKs, in Python."""
+    broken: list[str] = []
+    if (
+        phase.actual_start is not None
+        and phase.actual_end is not None
+        and phase.actual_end < phase.actual_start
+    ):
+        broken.append("ck_overview_phases_actual_order")
+    if phase.actual_end is not None and phase.actual_start is None:
+        broken.append("ck_overview_phases_actual_end_has_start")
+    if (phase.gate_status == "pending") != (phase.gate_decided_at is None):
+        broken.append("ck_overview_phases_gate_decision_dated")
+    return broken
+
+
+def incoherent_recorded_progress(code: str | None, constraints: list[str]) -> str:
+    """The sentence a 422 ``incoherent_recorded_progress`` carries: which
+    phase (``None`` when the caller cannot tell), which fields, what is wrong
+    with them, and where to fix it."""
+    fields: list[str] = []
+    reasons: list[str] = []
+    for name in constraints:
+        names, reason = PROGRESS_CHECKS[name]
+        fields.extend(f for f in names if f not in fields)
+        reasons.append(reason)
+    detail = "; ".join(reasons) if reasons else "it does not add up"
+    named = ", ".join(fields) if fields else "its actual dates and gate"
+    subject = f"Phase {code}'s" if code else "A phase's"
+    target = f"phase {code}'s" if code else "that phase's"
+    return (
+        f"{subject} recorded progress is incoherent ({detail}), so it "
+        f"cannot be saved until that is corrected. Correct {target} "
+        f"recorded progress on the Timeline ({named}), then try again."
+    )
 
 
 def _to_read(row: Phase) -> PhaseProgressRead:
@@ -177,15 +259,32 @@ class PhaseProgressStore:
             actual_end=changes.get("actual_end", row.actual_end),
             gate_status=changes.get("gate_status", row.gate_status),
             gate_decided_at=changes.get("gate_decided_at", row.gate_decided_at),
+            today=_now().date(),
         )
         if problem:
             raise StoreRefused(422, "invalid_progress", f"{row.code}: {problem}")
-        for key, value in changes.items():
-            setattr(row, key, value)
-        row.progress_version = before.version + 1
-        row.progress_updated_at = _now()
-        row.progress_updated_by = ctx.access.actor
-        await ctx.db.flush()
+        code = row.code
+        try:
+            # A savepoint, so a refusal by the database's own CHECKs (a
+            # writer that went around ``phase_progress_problem``, or the two
+            # drifting apart) rolls back this write alone and answers a 422
+            # naming the fields, never a 500 on an aborted transaction.
+            async with ctx.db.begin_nested():
+                for key, value in changes.items():
+                    setattr(row, key, value)
+                row.progress_version = before.version + 1
+                row.progress_updated_at = _now()
+                row.progress_updated_by = ctx.access.actor
+                await ctx.db.flush()
+        except IntegrityError as exc:
+            constraint = violated_progress_check(exc)
+            if constraint is None:
+                raise
+            raise StoreRefused(
+                422,
+                "incoherent_recorded_progress",
+                incoherent_recorded_progress(code, [constraint]),
+            ) from exc
         return before, _to_read(row)
 
 

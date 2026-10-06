@@ -452,6 +452,243 @@ describe("recording progress", () => {
       "ui"
     );
   });
+  describe("after a conflict, mine is merged three ways onto theirs", () => {
+    // A records the gate's outcome; B, meanwhile, wrote only the notes.
+    const theirs = {
+      ...PROGRESS[1]!,
+      gate_notes: "Sponsor signed off by email",
+      version: 2,
+      updated_by: "peer@example.com",
+      updated_at: "2026-02-20T10:00:00Z",
+    };
+
+    async function recordTheOutcomeAndMeetTheirs() {
+      mocks.updateResource
+        .mockRejectedValueOnce(new VersionConflictError(theirs))
+        .mockResolvedValueOnce({ ...theirs, version: 3 });
+      const form = await openForm("A1");
+      fireEvent.change(byId(`${form}.gate-status`)!, {
+        target: { value: "passed" },
+      });
+      fireEvent.change(byId(`${form}.decided-at`)!, {
+        target: { value: "2026-02-20" },
+      });
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      await screen.findByText(
+        "Somebody else changed this while you were editing"
+      );
+      return form;
+    }
+
+    it("combining keeps their change to a field I never touched", async () => {
+      const form = await recordTheOutcomeAndMeetTheirs();
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Combine them myself" })
+        );
+      });
+      // The form holds theirs where I changed nothing, mine where I did.
+      expect((byId(`${form}.notes`) as HTMLTextAreaElement).value).toBe(
+        "Sponsor signed off by email"
+      );
+      expect((byId(`${form}.gate-status`) as HTMLSelectElement).value).toBe(
+        "passed"
+      );
+      expect(byId(`${form}.both`)).toBeNull();
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      // Only my fields, on their version: their notes are not reverted.
+      expect(mocks.updateResource).toHaveBeenLastCalledWith(
+        "phase-progress",
+        "ph1",
+        { gate_status: "passed", gate_decided_at: "2026-02-20" },
+        2,
+        "ui"
+      );
+    });
+
+    it("saving mine over theirs still writes only what I changed", async () => {
+      await recordTheOutcomeAndMeetTheirs();
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Save mine over theirs" })
+        );
+      });
+      expect(mocks.updateResource).toHaveBeenLastCalledWith(
+        "phase-progress",
+        "ph1",
+        { gate_status: "passed", gate_decided_at: "2026-02-20" },
+        2,
+        "ui"
+      );
+    });
+
+    it("asks which to keep where we both changed a field", async () => {
+      const both = {
+        ...theirs,
+        gate_notes: "Theirs",
+        actual_end: "2026-02-25",
+      };
+      mocks.updateResource
+        .mockRejectedValueOnce(new VersionConflictError(both))
+        .mockResolvedValueOnce({ ...both, version: 3 });
+      const form = await openForm("A1");
+      fireEvent.change(byId(`${form}.notes`)!, { target: { value: "Mine" } });
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      await screen.findByText(
+        "Somebody else changed this while you were editing"
+      );
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Combine them myself" })
+        );
+      });
+      // Their finish (which only they set) is in; the notes are a choice.
+      expect((byId(`${form}.actual-end`) as HTMLInputElement).value).toBe(
+        "2026-02-25"
+      );
+      const choice = byId(`${form}.both.gate_notes`);
+      expect(choice?.textContent).toContain("yours Mine");
+      expect(choice?.textContent).toContain("theirs Theirs");
+      expect((byId(`${form}.save`) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(byId(`${form}.both.gate_notes.mine`)!);
+      expect(byId(`${form}.both`)).toBeNull();
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      expect(mocks.updateResource).toHaveBeenLastCalledWith(
+        "phase-progress",
+        "ph1",
+        { gate_notes: "Mine" },
+        2,
+        "ui"
+      );
+    });
+
+    it("taking theirs for a field we both changed leaves nothing to send", async () => {
+      const both = { ...theirs, gate_notes: "Theirs" };
+      mocks.updateResource.mockRejectedValueOnce(
+        new VersionConflictError(both)
+      );
+      const form = await openForm("A1");
+      fireEvent.change(byId(`${form}.notes`)!, { target: { value: "Mine" } });
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      await screen.findByText(
+        "Somebody else changed this while you were editing"
+      );
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Combine them myself" })
+        );
+      });
+      fireEvent.click(byId(`${form}.both.gate_notes.theirs`)!);
+      expect((byId(`${form}.notes`) as HTMLTextAreaElement).value).toBe(
+        "Theirs"
+      );
+      await act(async () => {
+        fireEvent.click(byId(`${form}.save`)!);
+      });
+      expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+      expect(byId(form)).toBeNull();
+    });
+  });
+
+  it("re-reads the forecast after a conflict, whose newer copy the list took", async () => {
+    const theirs = {
+      ...PROGRESS[1]!,
+      actual_end: "2026-02-25",
+      version: 2,
+      updated_by: "peer@example.com",
+      updated_at: "2026-02-20T10:00:00Z",
+    };
+    mocks.updateResource.mockRejectedValueOnce(
+      new VersionConflictError(theirs)
+    );
+    mocks.fetchForecast
+      .mockResolvedValueOnce(forecast(10))
+      .mockResolvedValue(forecast(12));
+    const form = await openForm("A1");
+    fireEvent.change(byId(`${form}.notes`)!, { target: { value: "Mine" } });
+    await act(async () => {
+      fireEvent.click(byId(`${form}.save`)!);
+    });
+    await screen.findByText(
+      "Somebody else changed this while you were editing"
+    );
+    // The header is the forecast for the progress now on screen, not the one
+    // read before the peer's save.
+    await waitFor(() =>
+      expect(byId("overview.timeline.header.slip")?.textContent).toBe(
+        "12 days late"
+      )
+    );
+    expect(mocks.fetchForecast).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the forecast once per save, not twice", async () => {
+    mocks.updateResource.mockResolvedValue({
+      ...PROGRESS[1]!,
+      gate_notes: "Mine",
+      version: 2,
+    });
+    const form = await openForm("A1");
+    fireEvent.change(byId(`${form}.notes`)!, { target: { value: "Mine" } });
+    await act(async () => {
+      fireEvent.click(byId(`${form}.save`)!);
+    });
+    await waitFor(() => expect(mocks.fetchForecast).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(mocks.fetchForecast).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts afresh when another gate is chosen with a form open", async () => {
+    mocks.updateResource.mockImplementation(
+      async (_path: string, id: string, patch: object, version: number) => ({
+        ...PROGRESS.find((p) => p.id === id)!,
+        ...patch,
+        version: version + 1,
+      })
+    );
+    await shown();
+    const panel = "overview.timeline.gate-panel.details";
+    fireEvent.click(byId("overview.timeline.chart.phase.A1.gate")!);
+    fireEvent.click(byId(`${panel}.record`)!);
+    fireEvent.change(byId(`${panel}.form.notes`)!, {
+      target: { value: "Written for A1" },
+    });
+
+    fireEvent.click(byId("overview.timeline.chart.phase.A2.gate")!);
+    expect(byId("overview.timeline.gate-panel")?.textContent).toContain(
+      "Gate A2"
+    );
+    // A1's working copy does not follow the heading to A2.
+    expect(byId(`${panel}.form`)).toBeNull();
+    fireEvent.click(byId(`${panel}.record`)!);
+    expect((byId(`${panel}.form.notes`) as HTMLTextAreaElement).value).toBe("");
+    fireEvent.change(byId(`${panel}.form.notes`)!, {
+      target: { value: "Written for A2" },
+    });
+    await act(async () => {
+      fireEvent.click(byId(`${panel}.form.save`)!);
+    });
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    expect(mocks.updateResource).toHaveBeenCalledWith(
+      "phase-progress",
+      "ph2",
+      { gate_notes: "Written for A2" },
+      1,
+      "ui"
+    );
+  });
 });
 
 describe("milestones", () => {
@@ -488,6 +725,155 @@ describe("milestones", () => {
       expect.any(String),
       "ui"
     );
+  });
+
+  it("puts every conflict in a paste to the writer, one after another", async () => {
+    const SECOND: Milestone = {
+      ...MILESTONE,
+      id: "m2",
+      title: "First value",
+      kind: "first_value",
+      target_date: "2026-04-10",
+    };
+    mocks.listResource.mockImplementation(async (path: string) => {
+      if (path === "estimates") return list(mocks.estimates);
+      if (path === "phase-progress") return list(PROGRESS);
+      if (path === "milestones") return list([MILESTONE, SECOND]);
+      throw new Error(`unexpected list ${path}`);
+    });
+    mocks.updateResource
+      .mockRejectedValueOnce(
+        new VersionConflictError({
+          ...MILESTONE,
+          version: 2,
+          updated_by: "ana@example.com",
+        })
+      )
+      .mockRejectedValueOnce(
+        new VersionConflictError({
+          ...SECOND,
+          version: 2,
+          updated_by: "ben@example.com",
+        })
+      );
+    await shown();
+    const paste = "overview.timeline.milestones.table.paste";
+    fireEvent.click(byId(`${paste}.open`)!);
+    fireEvent.change(byId(`${paste}.input`)!, {
+      target: {
+        value: "title,due\nPilot live,2026-03-25\nFirst value,2026-04-15",
+      },
+    });
+    fireEvent.click(byId(`${paste}.read`)!);
+    await act(async () => {
+      fireEvent.click(byId(`${paste}.commit`)!);
+    });
+    await waitFor(() => expect(mocks.updateResource).toHaveBeenCalledTimes(2));
+
+    const conflict = "overview.timeline.milestones.conflict";
+    await waitFor(() =>
+      expect(byId(conflict)?.textContent).toContain("ana@example.com")
+    );
+    await act(async () => {
+      fireEvent.click(byId(`${conflict}.take-theirs`)!);
+    });
+    // The second is asked next — not lost behind the first.
+    await waitFor(() =>
+      expect(byId(conflict)?.textContent).toContain("ben@example.com")
+    );
+    expect(byId(conflict)?.textContent).toContain("First value");
+    await act(async () => {
+      fireEvent.click(byId(`${conflict}.take-theirs`)!);
+    });
+    await waitFor(() => expect(byId(conflict)).toBeNull());
+  });
+
+  describe("after a conflict, mine is merged three ways onto theirs", () => {
+    // I move the due date; they, meanwhile, wrote only the notes.
+    const theirs: Milestone = {
+      ...MILESTONE,
+      description: "Two sites, not one",
+      version: 2,
+      updated_by: "ana@example.com",
+    };
+    const editor = "overview.timeline.milestones.table.editor";
+
+    async function moveTheDateAndMeetTheirs(peer: Milestone = theirs) {
+      mocks.updateResource
+        .mockRejectedValueOnce(new VersionConflictError(peer))
+        .mockResolvedValueOnce({
+          ...peer,
+          target_date: "2026-03-27",
+          version: 3,
+        });
+      await shown();
+      fireEvent.click(byId("overview.timeline.milestones.table.row.0.edit")!);
+      fireEvent.change(byId(`${editor}.target_date`)!, {
+        target: { value: "2026-03-27" },
+      });
+      await act(async () => {
+        fireEvent.click(byId(`${editor}.done`)!);
+      });
+      await waitFor(() =>
+        expect(byId("overview.timeline.milestones.conflict")).not.toBeNull()
+      );
+    }
+
+    it("saving mine over theirs writes only what I changed", async () => {
+      await moveTheDateAndMeetTheirs();
+      await act(async () => {
+        fireEvent.click(
+          byId("overview.timeline.milestones.conflict.keep-mine")!
+        );
+      });
+      expect(mocks.updateResource).toHaveBeenLastCalledWith(
+        "milestones",
+        "m1",
+        { target_date: "2026-03-27" },
+        2,
+        "ui"
+      );
+    });
+
+    it("combining opens the row holding mine on top of theirs", async () => {
+      await moveTheDateAndMeetTheirs();
+      await act(async () => {
+        fireEvent.click(byId("overview.timeline.milestones.conflict.merge")!);
+      });
+      expect(byId("overview.timeline.milestones.combining")).not.toBeNull();
+      expect((byId(`${editor}.target_date`) as HTMLInputElement).value).toBe(
+        "2026-03-27"
+      );
+      expect((byId(`${editor}.description`) as HTMLInputElement).value).toBe(
+        "Two sites, not one"
+      );
+      await act(async () => {
+        fireEvent.click(byId(`${editor}.done`)!);
+      });
+      expect(mocks.updateResource).toHaveBeenLastCalledWith(
+        "milestones",
+        "m1",
+        { target_date: "2026-03-27" },
+        2,
+        "ui"
+      );
+      expect(byId("overview.timeline.milestones.combining")).toBeNull();
+    });
+
+    it("names a field we both changed, with both values", async () => {
+      await moveTheDateAndMeetTheirs({ ...theirs, target_date: "2026-04-03" });
+      await act(async () => {
+        fireEvent.click(byId("overview.timeline.milestones.conflict.merge")!);
+      });
+      const both = byId(
+        "overview.timeline.milestones.combining.both.target_date"
+      );
+      expect(both?.textContent).toContain("yours 27 Mar 2026");
+      expect(both?.textContent).toContain("theirs 3 Apr 2026");
+      expect((byId(`${editor}.target_date`) as HTMLInputElement).value).toBe(
+        "2026-03-27"
+      );
+    });
   });
 
   it("refuses a done milestone with no date without sending it", async () => {

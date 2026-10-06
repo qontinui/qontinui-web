@@ -9,6 +9,7 @@
  * cannot hold is caught on its line rather than by the save.
  */
 
+import { format, parseISO } from "date-fns";
 import {
   formatMicros,
   microsToAmountInput,
@@ -227,6 +228,14 @@ export function cellText<Row extends object>(
           ? (field.emptyLabel ?? "—")
           : String(value))
       );
+    case "date":
+      // Read as the rest of the overview pages write a day ("16 Oct 2026");
+      // the editor keeps the ISO text in its date input.
+      return typeof value === "string" && isIsoDay(value)
+        ? format(parseISO(value), "d MMM yyyy")
+        : value === null || value === undefined || value === ""
+          ? "—"
+          : String(value);
     case "money":
       return (
         formatMicros(
