@@ -72,7 +72,7 @@ describe("coordNavModel", () => {
     expect(labels("work")).toEqual([
       "Plans",
       "Work Units",
-      "Plan Library",
+      "Plan Library Settings",
       "Plan Candidates",
       "Plan Forks",
       "Plan Follow-ups",

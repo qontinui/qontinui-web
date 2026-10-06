@@ -66,6 +66,26 @@
  * arm and quotes `work_unit_population_reason` and
  * `facets.corpus_incomplete_reasons` verbatim instead.
  *
+ * ## The Plan Browser (plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`)
+ *
+ * Phases 1-6 made this the ONE plan page. `/admin/coord/plan-library`
+ * redirects here; its two policy dials live at
+ * `/admin/coord/plan-library/settings`; its scan-source and coverage panels
+ * are collapsed into the corpus-health strip (`CorpusHealthPanel`); its
+ * divergence panel is gone in favour of `/admin/coord/plan-forks`. Added on
+ * top of the reconciliation:
+ *
+ * - **Search** (`q`) — the only SERVER-side filter. The route filters the
+ *   population before paging, so `total` is the match count, and it echoes
+ *   `q`; a backend that does not echo it is said to have ignored it.
+ * - **Status class, "needs a /vet-imp", document-only, difficulty** —
+ *   CLIENT-side over this page, composed in `rowFilters.ts` and labelled
+ *   "filters this page only" wherever they can empty the list.
+ * - **Live custody** (`include_custody=true`) — `custody.ts`, never a guessed
+ *   name.
+ * - **Throughput** — coord's server-side day buckets, never a client reduce.
+ * - **The document** — `ArtifactDetailPanel`, opened in place in a row.
+ *
  * ## Console style
  *
  * R9 (no page-level card — the coord layout owns the `<h1>`), R1 (a
@@ -98,7 +118,6 @@ import {
   DEFAULT_PAGE_SIZE,
   PAGE_SIZES,
   STATUS_FILTERS,
-  matchesStatus,
 } from "@/components/admin/coord/planReconciliationFilters";
 import {
   describeWindow,
@@ -112,6 +131,28 @@ import {
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
+import { usePlanDifficulty } from "../work-units/usePlanDifficulty";
+import { CorpusHealthPanel } from "./CorpusHealthPanel";
+import { PlanPageFilters, PAGE_ONLY_NOTE } from "./PlanPageFilters";
+import { PlanRowBadges } from "./PlanRowBadges";
+import { PlanDocumentPanel, PlanTriageDetail } from "./PlanRowDetail";
+import { PlanSearchBox, SearchEcho } from "./PlanSearchBox";
+import { ThroughputPanel } from "./ThroughputPanel";
+import { pageForkCount } from "./corpusHealth";
+import { describeDeriveMode } from "./deriveMode";
+import {
+  NO_PAGE_FILTERS,
+  activeFilterNames,
+  axisAFilterActive,
+  matchesPageFilters,
+  pageChipCounts,
+  pageFiltersActive,
+  type PageFilters,
+} from "./rowFilters";
+import { DEFAULT_THROUGHPUT_DAYS } from "./throughput";
+import { useArtifactDocument } from "./useArtifactDocument";
+import { useDeriveMode } from "./useDeriveMode";
+import { useThroughput } from "./useThroughput";
 
 const ENDPOINT = "/api/v1/plan-library/reconciliation";
 /**
@@ -144,7 +185,10 @@ const RECONCILIATION_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
 };
 
 export default function CoordPlansListPage() {
-  const [status, setStatus] = useState("any");
+  const [filters, setFilters] = useState<PageFilters>(NO_PAGE_FILTERS);
+  /** The search in force — sent to the route, so it is part of the QUESTION. */
+  const [q, setQ] = useState("");
+  const [throughputDays, setThroughputDays] = useState(DEFAULT_THROUGHPUT_DAYS);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<ReconciliationResponse | null>(null);
@@ -186,6 +230,10 @@ export default function CoordPlansListPage() {
         const qs = new URLSearchParams();
         qs.set("offset", String(offset));
         qs.set("limit", String(limit));
+        if (q !== "") qs.set("q", q);
+        // Phase 6 — custody is resolved per page; without this the route
+        // leaves every `live_sessions` null (UNKNOWN), never "no live claim".
+        qs.set("include_custody", "true");
         const body = await httpClient.get<ReconciliationResponse>(
           `${ENDPOINT}?${qs.toString()}`,
           RECONCILIATION_REQUEST_OPTIONS
@@ -210,7 +258,7 @@ export default function CoordPlansListPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [offset, limit]
+    [offset, limit, q]
   );
 
   // The WINDOW is the question. Changing it makes the rows in `data` answers
@@ -247,19 +295,61 @@ export default function CoordPlansListPage() {
     void fetchCapture();
   }, [fetchCapture]);
 
-  // Both reads, because the control says "refresh" and a stale census beside
+  // The plan-browser reads (2026-09-19 plan): each is its own question, so
+  // none rides the reconciliation's 30 s poll — see each hook's docstring.
+  const { index: difficulty, refresh: refreshDifficulty } = usePlanDifficulty();
+  const { state: deriveModeState, refresh: refreshDeriveMode } =
+    useDeriveMode();
+  const deriveMode = useMemo(
+    () => describeDeriveMode(deriveModeState),
+    [deriveModeState]
+  );
+  const { reading: throughput, refresh: refreshThroughput } =
+    useThroughput(throughputDays);
+  const refreshAfterKindCorrection = useCallback(
+    () => refreshReconciliation(),
+    [refreshReconciliation]
+  );
+  const documentActions = useArtifactDocument(refreshAfterKindCorrection);
+
+  // Every read, because the control says "refresh" and a stale census beside
   // a fresh reconciliation is the misreading this page exists to stop.
   const refresh = useCallback(
-    () => refreshReconciliation(fetchCapture),
-    [refreshReconciliation, fetchCapture]
+    () =>
+      refreshReconciliation(() =>
+        Promise.all([
+          fetchCapture(),
+          refreshDifficulty(),
+          refreshDeriveMode(),
+          refreshThroughput(),
+        ])
+      ),
+    [
+      refreshReconciliation,
+      fetchCapture,
+      refreshDifficulty,
+      refreshDeriveMode,
+      refreshThroughput,
+    ]
   );
+
+  // A new search is a new population: page 1 of it, not page N of the old.
+  const onSearch = useCallback((next: string) => {
+    setOffset(0);
+    setQ(next);
+  }, []);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const shown = useMemo(
-    () => rows.filter((row) => matchesStatus(row, status)),
-    [rows, status]
+    () => rows.filter((row) => matchesPageFilters(row, filters, difficulty)),
+    [rows, filters, difficulty]
   );
-  const statusFiltered = status !== "any";
+  const statusFiltered = pageFiltersActive(filters, difficulty);
+  const filterNames = useMemo(
+    () => activeFilterNames(filters, difficulty),
+    [filters, difficulty]
+  );
+  const chipCounts = useMemo(() => pageChipCounts(rows), [rows]);
   /**
    * Nothing on this page has a READABLE coord status.
    *
@@ -269,8 +359,11 @@ export default function CoordPlansListPage() {
    * empty slot says that instead of "none of them has status X".
    */
   const statusAxisAllUnreadable = useMemo(
-    () => rows.length > 0 && rows.every((row) => !row.axis_a.readable),
-    [rows]
+    () =>
+      axisAFilterActive(filters) &&
+      rows.length > 0 &&
+      rows.every((row) => !row.axis_a.readable),
+    [rows, filters]
   );
   const window = useMemo(() => (data ? describeWindow(data) : null), [data]);
   const disclosure = useMemo(
@@ -315,16 +408,34 @@ export default function CoordPlansListPage() {
         data-testid="coord-plans-health"
       />
 
+      {/* Design decision 4b — the trust signals about whether this list can
+          be believed, collapsed to one line each, at the top. */}
+      <CorpusHealthPanel
+        pageForks={data ? pageForkCount(rows) : null}
+        pageRowCount={data ? rows.length : null}
+      />
+      <ThroughputPanel
+        reading={throughput}
+        days={throughputDays}
+        onDaysChange={setThroughputDays}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
+        <PlanSearchBox applied={q} onSearch={onSearch} />
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={filters.status}
+          onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+        >
           <SelectTrigger
             className="w-[200px]"
             data-testid="coord-plans-status-select"
             title={
               "Filters the rows ON THIS PAGE by coord's stored status " +
-              "(axis A). The reconciliation route takes no status parameter, " +
-              "so this is a client-side filter over the current window — not " +
+              "(axis A) — " +
+              PAGE_ONLY_NOTE +
+              ". The reconciliation route takes no status parameter, so " +
+              "this is a client-side filter over the current window — not " +
               "a corpus-wide question."
             }
           >
@@ -362,13 +473,23 @@ export default function CoordPlansListPage() {
           </SelectContent>
         </Select>
         <RefreshButton
-          key={`${offset}:${limit}`}
+          key={`${offset}:${limit}:${q}`}
           onRefresh={refresh}
           label="Refresh reconciliation"
           title={`Re-reads the reconciliation now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
         />
       </div>
+
+      {data && <SearchEcho sent={q} echoed={data.q} />}
+
+      <PlanPageFilters
+        filters={filters}
+        onChange={setFilters}
+        counts={chipCounts}
+        difficulty={difficulty}
+        deriveMode={deriveMode}
+      />
 
       {/* The population state, and every flag derived from it — in that order,
           and never collapsed behind a click.
@@ -441,9 +562,10 @@ export default function CoordPlansListPage() {
           className="text-xs text-muted-foreground"
           data-testid="coord-plans-status-filter-scope"
         >
-          The status filter narrows the {rows.length} rows on this page only —
-          the route takes no status parameter, so a plan with this status on
-          another page is not shown and is not absent.
+          {filterNames.join(", ")} — {PAGE_ONLY_NOTE}: these narrow the{" "}
+          {rows.length} rows on this page, showing {shown.length}. The route
+          takes none of these parameters, so a matching plan on another page is
+          not shown and is not absent.
         </p>
       )}
 
@@ -520,16 +642,17 @@ export default function CoordPlansListPage() {
               data-testid="coord-plans-status-unreadable-empty"
             >
               coord&rsquo;s stored status is unreadable for every stem on this
-              page, so whether any has status {status} is unknown — not none.
+              page, so whether any matches {filterNames.join(", ")} is unknown —
+              not none.
             </p>
           ) : statusFiltered && rows.length > 0 ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-status-filtered-empty"
             >
-              None of the {rows.length} stems on this page has coord status{" "}
-              {status}. The filter is page-scoped, so the corpus may hold
-              plenty.
+              None of the {rows.length} stems on this page matches{" "}
+              {filterNames.join(", ")}. The filters are page-scoped, so the
+              corpus may hold plenty.
             </p>
           ) : plansUnknown ? (
             <p
@@ -547,6 +670,13 @@ export default function CoordPlansListPage() {
               This window held no plan stem at the last good read — it has not
               refreshed since.
             </p>
+          ) : q !== "" && data?.q !== undefined ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-search-empty"
+            >
+              No plan stem matches &ldquo;{q}&rdquo; in this window.
+            </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
@@ -561,6 +691,9 @@ export default function CoordPlansListPage() {
             row={row}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
+            badges={<PlanRowBadges row={row} difficulty={difficulty} />}
+            detailExtra={<PlanTriageDetail row={row} />}
+            actions={<PlanDocumentPanel row={row} actions={documentActions} />}
           />
         )}
       />

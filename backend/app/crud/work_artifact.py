@@ -2430,3 +2430,34 @@ async def load_artifact_bodies(
         WorkArtifact.id.in_(list(ids))
     )
     return {row.id: row.body for row in (await db.execute(stmt)).all()}
+
+
+def stem_matches_q(q: str, stem: str) -> bool:
+    """Does ``q``'s SLUG arm match this plan stem?
+
+    The in-memory twin of :func:`_search_predicate`'s ``slug ILIKE`` arm, for a
+    population that is not one table — reconciliation's stems are coord units
+    ∪ artifacts, and a coord-only stem has no row for the SQL arm to read. It
+    uses the SAME :func:`_slug_needle` gate (so a short or punctuation-only
+    ``q`` matches nothing here, exactly as there) and the same semantics: a
+    case-insensitive, LITERAL substring — ``%`` and ``_`` are ordinary
+    characters, never wildcards.
+    """
+    needle = _slug_needle(q)
+    return bool(needle) and needle.lower() in stem.lower()
+
+
+async def plan_artifact_ids_matching_q(
+    db: AsyncSession, *, org_id: UUID | None, q: str
+) -> set[UUID]:
+    """The ids of every ``kind='plan'`` artifact in scope that ``q`` matches.
+
+    Through :func:`_search_predicate` — the list route's own ``q`` — so the
+    reconciliation filter inherits its hyphen normalization and its slug arm
+    rather than growing a second, drifting definition of "matches". Ids only:
+    the caller already holds the projected rows.
+    """
+    stmt = select(WorkArtifact.id).where(
+        _org_scope(org_id), WorkArtifact.kind == "plan", _search_predicate(q)
+    )
+    return set((await db.execute(stmt)).scalars().all())
