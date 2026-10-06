@@ -30,7 +30,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -38,6 +38,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.schemas.dev_dashboard import RunnerUiThread
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 
@@ -126,8 +127,8 @@ def _owned_device(*, hostname: str, port: int) -> Any:
 
 
 def _fleet_rows(client: TestClient, device: Any) -> list[dict[str, Any]]:
-    with patch(
-        "app.api.v1.endpoints.operations.runner_crud.list_runners",
+    with patch_ops(
+        "runner_crud.list_runners",
         new=AsyncMock(return_value=[device]),
     ):
         resp = client.get(f"{API_PREFIX}/fleet")

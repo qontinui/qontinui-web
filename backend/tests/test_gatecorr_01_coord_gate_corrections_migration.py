@@ -32,7 +32,6 @@ a live instance with ``QONTINUI_TEST_PG=localhost:<port>``.
 
 from __future__ import annotations
 
-import re
 import uuid
 
 import pytest
@@ -44,6 +43,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -90,11 +90,7 @@ def _parent_revision_id() -> str:
     is no longer this one's parent, so the "clean database" it then asserts
     against is the wrong one.
     """
-    match = re.search(
-        r'^down_revision:.*=\s*"([^"]+)"', _revision_source(), re.MULTILINE
-    )
-    assert match, f"{_REVISION_FILENAME} must declare a single-string down_revision"
-    return match.group(1)
+    return declared_parent_revision_id(_revision_source(), _REVISION_FILENAME)
 
 
 _PARENT_REVISION_ID = _parent_revision_id()
