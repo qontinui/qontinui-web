@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { useCanvasStore } from "../stores/canvas-store";
+import { useCanvasStore } from "../stores/canvas";
 
 // ============================================================================
 // Main Canvas Hook

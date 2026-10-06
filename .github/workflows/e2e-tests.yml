@@ -64,11 +64,26 @@ on:
 # partition and is never consulted for the new head. Superseding a ~1h sharded
 # Playwright run is exactly the waste the original guard was aimed at.
 #
-# `false` on the other lanes does not pile runs up: GitHub keeps at most one
-# PENDING run per group, so the ceiling is one running plus one queued.
+# The other lanes are no longer serialised per ref (2026-10-05): each push,
+# schedule and dispatch run is alone in its group (the suffix below), so a
+# burst of main or candidate pushes runs side by side instead of GitHub reaping
+# the PENDING one -- and a reaped candidate run is exactly the dropped verdict
+# described above.
+#
+# PR-SCOPED SUPERSESSION, re-run- and push-safe (shared hosted-job cap relief,
+# 2026-10-05; pattern: qontinui-claude-config#1475). Only a FIRST-attempt
+# `pull_request` run uses the bare per-PR group below and cancels within it.
+# Every other run -- push (incl. merge-candidate*/**, coord's candidate CI),
+# schedule, workflow_dispatch, and EVERY re-run (run_attempt > 1) -- appends
+# `-run-<id>-<attempt>`, so it is the sole member of its group: never
+# cancelled, never reaped while pending, and a re-run of an older head can no
+# longer cancel the current head's run. The existing literal prefix is kept
+# because coord models a template by interpolating only `github.event_name` /
+# `github.ref` and collapsing every other expression (the suffix included) to
+# "" -- so coord's modelled group is byte-identical to before the suffix.
 concurrency:
-  group: e2e-tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: e2e-tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ !(github.event_name == 'pull_request' && github.run_attempt == 1) && format('-run-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
 # repo; `actions: read` is for the job-timeout explainer's
@@ -201,7 +216,7 @@ jobs:
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 20-minute cap expired (it normally runs 1m54s-2m26s, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (pull_request events only), so on a PR run a newer push to the same ref supersedes it and on a push or schedule run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 20-minute cap expired (it normally runs 1m54s-2m26s, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
   # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
   # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*
@@ -447,4 +462,4 @@ jobs:
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::Test Summary was cancelled. It only downloads artifacts and tallies results (3-9s observed), so its 10-minute cap expiring would mean a wedged download, not a test failure; the other possibility is an external cancel, since this workflow's 'concurrency: cancel-in-progress' supersedes a running job on pull_request events. Either way this job produced no tally at all, and 'gh pr checks' renders a cancelled job as 'fail' with zero failing steps - that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::Test Summary was cancelled. It only downloads artifacts and tallies results (3-9s observed), so its 10-minute cap expiring would mean a wedged download, not a test failure; the other possibility is an external cancel, since this workflow's 'concurrency: cancel-in-progress' supersedes a running job on first-attempt pull_request runs. Either way this job produced no tally at all, and 'gh pr checks' renders a cancelled job as 'fail' with zero failing steps - that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."

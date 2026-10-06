@@ -847,7 +847,7 @@ logger.info("user_login",
 - `/frontend/src/lib/api-client.ts` - Main API client
 - `/frontend/src/services/http-client.ts` - HTTP wrapper with retries
 - `/frontend/src/services/auth/auth-service.ts` - Authentication
-- `/frontend/src/stores/canvas-store.ts` - Canvas state management
+- `/frontend/src/stores/canvas/` - Canvas state management
 - `/frontend/src/stores/execution-store.ts` - Execution state
 
 #### Backend
