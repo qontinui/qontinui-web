@@ -795,6 +795,57 @@ class TestMalformedBlocks:
         assert "TypeError" in read.sources.findings.details[MERGE_TRAIN]
         assert _metric(read, "development-speed").findings_read == "ok"
 
+    async def test_a_join_crash_reports_recorded_results_as_read_failed(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The fallback names the crash, never an over-the-limit skip."""
+        import app.overview.objectives as objectives
+
+        real = objectives.join_results
+        calls: list[str] = []
+
+        def flaky(metric: Any, *a: Any) -> None:
+            calls.append(metric.name)
+            if metric.name == MERGE_TRAIN and calls.count(MERGE_TRAIN) == 1:
+                raise TypeError("unhashable")
+            real(metric, *a)
+
+        monkeypatch.setattr(objectives, "join_results", flaky)
+        docs.seed("success_metric", MERGE_TRAIN,
+                  _with_results(MERGE_TRAIN_BODY, [("checkpoint-1", _id(1))]))  # fmt: skip
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        read = await _read(docs, findings)
+        cp = _checkpoint(read, "checkpoint-1")
+        assert [u.reason for u in cp.unresolved_results] == ["read_failed"]
+        assert "TypeError" in cp.unresolved_results[0].detail
+        assert "at most" not in cp.unresolved_results[0].detail
+
+    async def test_a_crashing_fallback_still_shows_every_criterion_unknown(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import app.overview.objectives as objectives
+
+        real = objectives.join_results
+
+        def broken(metric: Any, *a: Any) -> None:
+            if metric.name == MERGE_TRAIN:
+                raise TypeError("unhashable")
+            real(metric, *a)
+
+        monkeypatch.setattr(objectives, "join_results", broken)
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        read = await _read(docs, findings)
+        merge = _metric(read)
+        assert merge.findings_read == "unavailable"
+        assert len(merge.criteria_latest) == 17
+        assert {c.verdict for c in merge.criteria_latest} == {"unknown"}
+        assert {c.unknown_reason for c in merge.criteria_latest} == {
+            "results_unreadable"
+        }
+        assert merge.tally_latest.unknown == 17
+        assert merge.tally_latest.met == 0
+        assert _metric(read, "development-speed").findings_read == "ok"
+
     async def test_an_undeclared_checkpoint_still_refuses_the_block(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:

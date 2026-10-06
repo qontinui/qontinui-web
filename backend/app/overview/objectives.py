@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,14 +65,18 @@ from app.overview.objectives_join import (
     read_metric_findings,
 )
 from app.overview.objectives_models import (
+    CriterionResultRead,
     InitiativeRead,
     MetricRead,
     ObjectivesRead,
     ObjectivesSources,
     SourceRead,
+    TallyRead,
 )
 from app.overview.permissions import OverviewAccess, get_overview_access
 from app.overview.resource import StoreContext
+
+logger = structlog.get_logger(__name__)
 
 # ===========================================================================
 # Assembly
@@ -158,6 +163,8 @@ async def build_objectives(
     try:
         listing = await store.list(ctx, {"kind": ["initiative", "success_metric"]})
     except Exception as exc:  # a gap is reported, never a 500
+        if not isinstance(exc, HTTPException):
+            logger.exception("overview_objectives_documents_read_failed")
         status = exc.status_code if isinstance(exc, HTTPException) else None
         unread = SourceRead(
             status="unavailable",
@@ -294,6 +301,7 @@ def _join_one(
         join_results(metric, listed[metric.name], by_id, now)
         return
     except Exception as exc:
+        logger.exception("overview_objectives_join_failed", metric=metric.name)
         failed = MetricFindings(
             state="unavailable",
             reason=(
@@ -302,14 +310,33 @@ def _join_one(
             ),
         )
     listed[metric.name] = failed
+    # Every recorded result reads as not read BECAUSE the join failed —
+    # never as an over-the-limit skip, which an empty ``by_id`` would say.
+    failed_by_id = {
+        entry.finding_id: ByIdResult(reason="read_failed", detail=failed.reason or "")
+        for entry in metric.results
+        if entry.finding_id
+    }
     try:
-        join_results(metric, failed, {}, now)
+        join_results(metric, failed, failed_by_id, now)
     except Exception:
+        logger.exception("overview_objectives_join_fallback_failed", metric=metric.name)
         metric.findings_read = "unavailable"
         metric.checkpoint_results = []
-        metric.criteria_latest = []
         metric.related_notes = []
         metric.unresolved_results = []
+        metric.tally_latest = TallyRead(unknown=len(metric.criteria))
+        metric.criteria_latest = [
+            CriterionResultRead(
+                id=c.id,
+                checkpoint=c.checkpoint,
+                target=c.target,
+                method=c.method,
+                verdict="unknown",
+                unknown_reason="results_unreadable",
+            )
+            for c in metric.criteria
+        ]
 
 
 def _documents_source(

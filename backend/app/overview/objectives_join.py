@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException
 
 from app.api.v1.endpoints.operations import _proxy_coord_get
@@ -50,6 +51,8 @@ from app.overview.objectives_models import (
     UnresolvedResultRead,
     WindowRead,
 )
+
+logger = structlog.get_logger(__name__)
 
 #: Coord's findings page cap. A page holding exactly this many rows is read as
 #: possibly truncated: coord ``main`` serves no truncation flag yet.
@@ -167,6 +170,7 @@ async def read_metric_findings(
     except HTTPException as exc:
         return MetricFindings(state="unavailable", reason=_unavailable_reason(exc))
     except Exception as exc:  # a gap is reported, never a 500
+        logger.exception("overview_objectives_findings_read_failed", metric=name)
         return MetricFindings(state="unavailable", reason=_unreadable_reason(exc))
     rows, reason = _page_findings(page)
     if rows is None:
@@ -201,6 +205,7 @@ async def read_by_id(
     except HTTPException as exc:
         return ByIdResult(reason="read_failed", detail=_unavailable_reason(exc))
     except Exception as exc:  # a gap is reported, never a 500
+        logger.exception("overview_objectives_by_id_read_failed", finding_id=finding_id)
         return ByIdResult(reason="read_failed", detail=_unreadable_reason(exc))
     rows, reason = _page_findings(page)
     if rows is None:
@@ -358,6 +363,9 @@ def _place(
     try:
         rows = [_row(r, declared_criteria) for r in block["rows"]]
     except Exception as exc:  # one finding degrades, never the page
+        logger.exception(
+            "overview_objectives_rows_unreadable", finding_id=report.finding_id
+        )
         report.shape = "unreadable_block"
         report.block_error = _crash_reason("its rows could not be read", exc)
         return report
@@ -389,6 +397,10 @@ def _validate(
             declared_criteria=declared_criteria,
         )
     except Exception as exc:
+        logger.exception(
+            "overview_objectives_block_validation_crashed",
+            finding_id=finding.get("finding_id"),
+        )
         result = ValidationResult()
         result.errors.append(
             Problem("block", f"could not be checked ({type(exc).__name__})")
@@ -491,6 +503,11 @@ def join_results(
         try:
             report = _place(finding, metric, declared_cps, declared_criteria, recorded)
         except Exception as exc:  # one finding degrades, never the page
+            logger.exception(
+                "overview_objectives_placement_crashed",
+                metric=metric.name,
+                finding_id=fid,
+            )
             notes.append(_unplaceable_note(fid, finding, exc))
             keyed.add(fid)  # never a late-path candidate either
             continue
