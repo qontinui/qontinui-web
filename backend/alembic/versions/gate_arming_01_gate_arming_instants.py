@@ -1,7 +1,7 @@
 """coord.gate_arming_instants — persisted arming instants for forward-only gates
 
 Revision ID: gate_arming_01
-Revises: coordtouch_02_operator_touch_closes
+Revises: cihost_01
 Create Date: 2026-10-06
 
 Phase 1 of plan
@@ -53,7 +53,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "gate_arming_01"
-down_revision: str | Sequence[str] | None = "coordtouch_02_operator_touch_closes"
+down_revision: str | Sequence[str] | None = "cihost_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
