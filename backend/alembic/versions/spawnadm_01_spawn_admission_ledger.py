@@ -1,7 +1,7 @@
 """coord.spawn_admission_ledger — per-machine spawn admission grants, refusals and reports
 
 Revision ID: spawnadm_01_spawn_admission_ledger
-Revises: cmtland_01
+Revises: coord_agent_questions_effect
 Create Date: 2026-10-01
 
 Prerequisite of plan
@@ -106,7 +106,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "spawnadm_01_spawn_admission_ledger"
-down_revision: str | Sequence[str] | None = "cmtland_01"
+down_revision: str | Sequence[str] | None = "coord_agent_questions_effect"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
