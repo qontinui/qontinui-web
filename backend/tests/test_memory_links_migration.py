@@ -25,7 +25,6 @@ Postgres or the extension is unavailable, same as the sibling test.
 from __future__ import annotations
 
 import os
-import re
 import uuid
 from pathlib import Path
 
@@ -33,7 +32,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from tests._alembic_harness import run_alembic
+from tests._alembic_harness import declared_parent_revision_id, run_alembic
 
 # The revision under test.
 _REVISION_ID = "coord_memory_links"
@@ -57,9 +56,7 @@ def _parent_revision_id() -> str:
     source = (
         _backend_root() / "alembic" / "versions" / "coord_memory_links.py"
     ).read_text(encoding="utf-8")
-    match = re.search(r'^down_revision:.*=\s*"([^"]+)"', source, re.MULTILINE)
-    assert match, "coord_memory_links.py must declare a down_revision"
-    return match.group(1)
+    return declared_parent_revision_id(source, "coord_memory_links.py")
 
 
 def _admin_database_url() -> str | None:
