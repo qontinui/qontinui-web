@@ -39,7 +39,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_agent_questions_recommendation"
-_PARENT_REVISION_ID = "coordinput_01_operator_inputs"
+_PARENT_REVISION_ID = "coordtouch_02_operator_touch_closes"
 _REVISION_FILENAME = "coord_agent_questions_recommendation.py"
 
 _TABLE = "agent_questions"
