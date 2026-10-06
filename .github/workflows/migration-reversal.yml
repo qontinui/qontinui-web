@@ -771,9 +771,11 @@ jobs:
   #   (a) exactly one file under backend/alembic/versions/ is ADDED, and it
   #       is a regular, top-level `.py` migration file;
   #   (b) no file under backend/alembic/versions/ is modified, deleted,
-  #       renamed, copied or type-changed (an edit keeps a revision id the
-  #       base already has; a deletion or rename means this job would test a
-  #       different tree from the one that lands), and the added path does
+  #       renamed or type-changed (an edit keeps a revision id the base
+  #       already has; a deletion or rename means this job would test a
+  #       different tree from the one that lands; copy detection is off --
+  #       `-M` without `-C` -- so a copy of a base file appears as `A` and is
+  #       caught by (c)'s new-revision-id check), and the added path does
   #       not already exist at the base TIP (a stale-base PR whose file the
   #       base has since added would otherwise replace the base's copy);
   #   (c) after the overlay, the revision graph resolves to exactly ONE head,
@@ -796,14 +798,28 @@ jobs:
   #       a schema-changing upgrade -- `CREATE TABLE IF NOT EXISTS` with
   #       `def downgrade(): pass` passes up -> down -> up, but leaves the
   #       table behind.
+  #       Each snapshot also carries, read by psql in the trusted shell, the
+  #       installed extensions with their VERSION and schema (`EXT` lines --
+  #       pg_dump writes `CREATE EXTENSION` without a version, so an
+  #       `ALTER EXTENSION ... UPDATE` is otherwise invisible), the non-`pg_`
+  #       role names (`ROLE`) and the database- and role-level settings
+  #       (`DBSET`, from pg_db_role_setting), none of which a schema-only
+  #       dump of one database contains.
   #       DISCLOSED -- what (e) does NOT check: DATA reversibility. A
   #       data-only migration whose downgrade is `pass`, or a downgrade that
   #       re-adds a dropped column EMPTY, leaves the schema identical and
   #       passes. Column ORDER inside a table is also ignored (a downgrade
   #       that re-adds a dropped column appends it), so a reordering is not
   #       reported. Nor are privileges (the dump is --no-privileges),
-  #       ownership (--no-owner), `SET` lines such as a default_tablespace
-  #       switch, or comment-only changes, which the normalizer drops.
+  #       ownership (--no-owner), or role ATTRIBUTES and memberships (only
+  #       role names are listed). Outside dollar-quoted bodies the normalizer
+  #       drops blank lines, column-0 `--` comment lines, and `SET ` /
+  #       `set_config(` / `\restrict` lines -- so a `SET default_tablespace`
+  #       switch between tables is not compared. Inside a dollar-quoted body
+  #       (`$$ ... $$`, `$tag$ ... $tag$`) every line is kept verbatim.
+  #       `COMMENT ON` statements ARE compared. The dollar-quote tracking is
+  #       a lexical scan for `$tag$` tokens, so a `$tag$` spelled inside an
+  #       ordinary string literal could mis-track it.
   # Every step that imports the migration must end with an explicit
   # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
@@ -850,10 +866,19 @@ jobs:
     # install), whose measured max green run is 7.7 min. See `reverse`'s
     # note: the runtime grows with the migration count, so re-measure.
     timeout-minutes: 25
+    # The ONE place this job names the postgres major: the client install
+    # and the pg_dump path both read it. It MUST match the service image tag
+    # below -- `services.*.image` cannot read the `env` context, so the tag
+    # is spelled literally there -- and the reversibility step refuses to
+    # compare when the running server's major is not this value, so a drift
+    # between the two is a red run, never a silent cross-major dump.
+    env:
+      PG_MAJOR: '16'
 
     services:
       postgres:
         # Same service as `reverse`: models with a Vector column need pgvector.
+        # Keep the `pg<N>` tag equal to the job's PG_MAJOR above.
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: qontinui_user
@@ -1112,6 +1137,7 @@ jobs:
           # than trusting the two commands above to have done exactly that.
           others=$(git diff --name-only "$BASE_SHA" | grep -vxF "$MRT_MIGRATION" || true)
           if [ -n "$others" ]; then
+            others=${others//$'\n'/, }
             echo "::error title=Migration Reversal Tested - isolation failed::files other than $MRT_MIGRATION differ from the base: $others"
             exit 1
           fi
@@ -1120,17 +1146,34 @@ jobs:
         id: apt_psql
         # Same guarded, apt-only, bounded step as `reverse` -- see the long
         # note there for why only apt lives here and why it is bounded.
-        # This job ALSO needs the major-16 pg_dump (the service image is
-        # pgvector/pgvector:pg16; keep the two in step): the reversibility
-        # step compares schema dumps and refuses a pg_dump whose major is not
-        # the server's. The runner image normally ships it, so apt is skipped.
+        # This job ALSO needs the pg_dump of the job's PG_MAJOR (which must
+        # match the service image tag): the reversibility step compares schema
+        # dumps and refuses a pg_dump whose major is not the server's. The
+        # runner image normally ships it, so apt is skipped.
+        #
+        # One failure here is NOT the mirror: `apt-get update` succeeded but
+        # the index has no install candidate for postgresql-client-$PG_MAJOR
+        # (a major the runner's apt sources do not carry). That step then
+        # EXITS 0 with an `::error::` naming the package, so the timeout
+        # explainer -- which reads any `failure` of this step as an apt-mirror
+        # stall -- does not misname it; the reversibility step then fails on
+        # the missing pg_dump. Best-effort: an install that fails for any
+        # other reason still fails this step.
         timeout-minutes: 10
         run: |
-          if command -v psql >/dev/null && [ -x /usr/lib/postgresql/16/bin/pg_dump ]; then
-            echo "psql and the major-16 pg_dump are present; no apt needed."
-          else
-            sudo apt-get update && sudo apt-get install -y postgresql-client-16
+          set -euo pipefail
+          pkg="postgresql-client-$PG_MAJOR"
+          if command -v psql >/dev/null && [ -x "/usr/lib/postgresql/$PG_MAJOR/bin/pg_dump" ]; then
+            echo "psql and the major-$PG_MAJOR pg_dump are present; no apt needed."
+            exit 0
           fi
+          sudo apt-get update
+          candidate=$(apt-cache policy "$pkg" | sed -n 's/^ *Candidate: *//p')
+          if [ -z "$candidate" ] || [ "$candidate" = "(none)" ]; then
+            echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update'. This is NOT an apt-mirror stall: the runner's apt sources do not carry the client for PG_MAJOR=$PG_MAJOR. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+            exit 0
+          fi
+          sudo apt-get install -y "$pkg"
 
       - name: Create named schemas + extension
         # Unbounded and without an `id:`, as in `reverse`: a failure here is a
@@ -1271,6 +1314,8 @@ jobs:
           ENVIRONMENT: development
           TESTING: 1
           PGPASSWORD: test_password
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           cd backend
           set -euo pipefail
@@ -1282,56 +1327,104 @@ jobs:
           # the migration.
           PSQL=(psql -X -h localhost -U qontinui_user -d qontinui_test -v ON_ERROR_STOP=1 -tA)
 
-          # pg_dump of the SERVER's major version, by explicit path: the
-          # pg_wrapper `pg_dump` on PATH picks the newest installed client,
-          # which need not be the server's. An unreadable server version or a
-          # missing binary is an error, never a skipped comparison.
+          # pg_dump of the job's PG_MAJOR, by explicit path: the pg_wrapper
+          # `pg_dump` on PATH picks the newest installed client, which need not
+          # be the server's. The running server's major must EQUAL PG_MAJOR
+          # (the service image tag is spelled literally, so this is the check
+          # that the two were kept in step). An unreadable server version, a
+          # mismatch, or a missing binary is an error, never a skipped
+          # comparison.
+          : "${PG_MAJOR:?}"
           if ! server_num=$("${PSQL[@]}" -c "SHOW server_version_num") || ! [[ "$server_num" =~ ^[0-9]{5,6}$ ]]; then
             echo "::error title=Migration Reversal Tested - condition (e) failed::could not read the server version as a plain version number, so the schema comparison cannot be made -- not passed."
             exit 1
           fi
           server_major=$(( 10#$server_num / 10000 ))
-          PG_DUMP="/usr/lib/postgresql/$server_major/bin/pg_dump"
+          if [ "$server_major" != "$PG_MAJOR" ]; then
+            echo "::error title=Migration Reversal Tested - condition (e) failed::the postgres service runs major $server_major but the job's PG_MAJOR is $PG_MAJOR. Keep the service image tag and PG_MAJOR in step -- not passed."
+            exit 1
+          fi
+          PG_DUMP="/usr/lib/postgresql/$PG_MAJOR/bin/pg_dump"
           if [ ! -x "$PG_DUMP" ]; then
-            echo "::error title=Migration Reversal Tested - condition (e) failed::no pg_dump for the server's major version $server_major at $PG_DUMP, so the schema comparison cannot be made -- not passed. Keep 'Install postgresql-client' in step with the service image."
+            echo "::error title=Migration Reversal Tested - condition (e) failed::no pg_dump for major $PG_MAJOR at $PG_DUMP, so the schema comparison cannot be made -- not passed. 'Install postgresql-client' did not provide postgresql-client-$PG_MAJOR (see that step's log)."
             exit 1
           fi
           echo "Server major $server_major; schema snapshots by $("$PG_DUMP" --version)."
 
-          # Normalizes a schema-only dump into a stable form for comparison:
-          # drops comments, blank lines, SET / set_config preamble and the
-          # per-dump random `\restrict` key lines, and sorts the column lines
-          # inside each CREATE TABLE (a downgrade that re-adds a dropped column
-          # appends it; order is DISCLOSED as unchecked in the job header).
+          # Normalizes a schema-only dump into a stable form for comparison.
+          # OUTSIDE a dollar-quoted body it drops blank lines, column-0 `--`
+          # comments, the SET / set_config preamble and the per-dump random
+          # `\restrict` key lines, and sorts the column items inside each
+          # CREATE TABLE (a downgrade that re-adds a dropped column appends
+          # it; order is DISCLOSED as unchecked in the job header). An item
+          # is a 4-space-indented line plus any following non-indented
+          # continuation lines, so a multi-line default stays whole. INSIDE a
+          # dollar-quoted body (a function or DO body) every line is kept
+          # verbatim: a body line that happens to start with `--` or `SET ` is
+          # part of the code and is compared.
           # Held in a shell variable, not a file, so the migration code that
           # runs between snapshots cannot rewrite it.
           NORMALIZE=$(cat <<'PY'
           import re
           import sys
 
-          out, block = [], None
+          DOLLAR = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+          out, block, tag = [], None, None
           for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+              in_body = tag is not None
+              for m in DOLLAR.finditer(line):
+                  if tag is None:
+                      tag = m.group(0)
+                  elif m.group(0) == tag:
+                      tag = None
+              if in_body:
+                  # Started inside a dollar-quoted body: kept verbatim.
+                  if block:
+                      block[-1].append(line)
+                  elif block is not None:
+                      block.append([line])
+                  else:
+                      out.append(line)
+                  continue
               if not line.strip() or line.startswith("--"):
                   continue
               if line.startswith(("SET ", "SELECT pg_catalog.set_config(", "\\restrict", "\\unrestrict")):
                   continue
               if block is not None:
                   if line.startswith(")"):
-                      out.extend(sorted(x.rstrip().rstrip(",") for x in block))
+                      items = []
+                      for item in block:
+                          item[-1] = item[-1].rstrip().rstrip(",")
+                          items.append("\n".join(item))
+                      out.extend(sorted(items))
                       out.append(line)
                       block = None
+                  elif line.startswith("    ") or not block:
+                      block.append([line])
                   else:
-                      block.append(line)
+                      block[-1].append(line)
                   continue
               out.append(line)
-              if re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
+              if tag is None and re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
                   block = []
           if block is not None:
               sys.exit("unterminated CREATE TABLE block in the dump")
+          if tag is not None:
+              sys.exit(f"unterminated dollar-quoted body ({tag}) in the dump")
           if not out:
               sys.exit("the dump normalized to nothing")
           print("\n".join(out))
           PY
+          )
+          # Server-level objects a schema-only dump of ONE database does not
+          # carry, or carries without the detail that changes: an extension's
+          # VERSION (pg_dump writes `CREATE EXTENSION` with none), roles, and
+          # database/role settings (`ALTER DATABASE ... SET`). Read by psql in
+          # this trusted shell and appended to each normalized snapshot.
+          SERVER_OBJECTS_SQL=(
+            "SELECT 'EXT '||extname||' '||extversion||' '||extnamespace::regnamespace FROM pg_extension ORDER BY 1"
+            "SELECT 'ROLE '||rolname FROM pg_roles WHERE rolname !~ '^pg_' ORDER BY 1"
+            "SELECT 'DBSET '||coalesce(setrole::regrole::text,'-')||' '||array_to_string(setconfig,',') FROM pg_db_role_setting WHERE setdatabase IN (0,(SELECT oid FROM pg_database WHERE datname=current_database())) ORDER BY 1"
           )
           snapshot() {
             local label="$1" raw="$RUNNER_TEMP/mrt-schema-$1.raw.sql" norm="$RUNNER_TEMP/mrt-schema-$1.sql"
@@ -1353,6 +1446,13 @@ jobs:
               echo "::error title=Migration Reversal Tested - condition (e) failed::could not normalize the '$label' schema snapshot for $MRT_MIGRATION -- not passed."
               exit 1
             fi
+            local q
+            for q in "${SERVER_OBJECTS_SQL[@]}"; do
+              if ! "${PSQL[@]}" -c "$q" >> "$norm"; then
+                echo "::error title=Migration Reversal Tested - condition (e) failed::psql failed reading extensions / roles / database settings for the '$label' schema snapshot of $MRT_MIGRATION -- not passed."
+                exit 1
+              fi
+            done
             echo "schema snapshot '$label': $(wc -l < "$norm") normalized lines."
           }
           expect_version() {
@@ -1361,6 +1461,9 @@ jobs:
               echo "::error title=Migration Reversal Tested - condition (e) failed::could not read alembic_version after '$label' for $MRT_MIGRATION."
               exit 1
             fi
+            # "None" (a root revision) is DEFENSIVE: (c) requires the base to
+            # define at least one revision, so an added root would leave the
+            # base's head beside it -- two heads -- and fail before this step.
             if [ "$want" = "None" ]; then want=""; fi
             if [ "$got" != "$want" ]; then
               echo "::error title=Migration Reversal Tested - condition (e) failed::after '$label', alembic_version is '${got//$'\n'/,}' but must be '${want:-<empty: root downgraded>}' for $MRT_MIGRATION."
@@ -1381,7 +1484,12 @@ jobs:
           }
 
           # 1. The base, up to the migration's parent. For a root revision
-          #    the pre-state is the database as created above.
+          #    the pre-state is the database as created above. That branch is
+          #    DEFENSIVE and unreachable today: the base revision set is
+          #    refused when empty, and a root added beside a non-empty base is
+          #    a second head, which the head-identity step refuses. It is kept
+          #    so a later relaxation of either check cannot turn a root into
+          #    an 'upgrade None'.
           if [ "$MRT_DOWN" = "None" ]; then
             echo "== root revision: the pre-migration state is the freshly created database =="
           else
@@ -1428,7 +1536,16 @@ jobs:
             echo "::error title=Migration Reversal Tested - condition (e) failed::the schema after re-applying 'upgrade head' is NOT the schema the first 'upgrade head' produced for $MRT_MIGRATION. Diff head:%0A${head_lines}"
             exit 1
           fi
-          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade and re-produced by the re-applied upgrade."
+          # Record exactly which inputs were tested, from this trusted shell.
+          tested="MRT_TESTED base=$BASE_SHA head=$HEAD_SHA rev=$MRT_HEAD"
+          {
+            echo "### Migration Reversal Tested"
+            echo
+            echo "\`$MRT_MIGRATION\` passed upgrade -> downgrade -1 -> upgrade with the schema restored and re-produced."
+            echo
+            echo "\`$tested\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade and re-produced by the re-applied upgrade. $tested"
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
