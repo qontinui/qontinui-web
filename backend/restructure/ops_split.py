@@ -19,21 +19,38 @@ What one run does, for the statement NAMES listed in :data:`DOMAINS`:
    and writes them, in their original order, into ``<domain>.py``. That module
    owns ``router = APIRouter()`` with no prefix, so the moved ``@router.``
    decorators register on it.
-2. Computes the new module's imports from the moved code's free names. Imports
-   are copied from ``__init__``'s own import statements; names defined in an
-   already-split sibling module are imported from that sibling; names defined in
-   ``app.api.coord_proxy`` are imported from there.
+2. Computes the new module's imports from the moved code's free names (a name
+   declared ``global`` counts as referenced). Imports are copied from
+   ``__init__``'s own import statements; names defined in an already-split
+   sibling module are imported from that sibling; names defined in
+   ``app.api.coord_proxy`` are imported from there — but only once
+   ``coord_proxy`` no longer imports from the package (the D4 cycle note).
 3. **Refuses** (D4) when moved code references a name that is still *defined* in
-   ``__init__``: a submodule must never import from the package ``__init__``. It
-   also refuses when a name resolves nowhere, or when a listed statement is
-   missing. A refusal writes nothing, so the tree stays byte-identical.
+   ``__init__`` — even when a sibling also defines it: a submodule must never
+   import from the package ``__init__``. It also refuses when a name resolves
+   nowhere, when a listed statement is missing, when moved code ``global``-
+   rebinds a name ``__init__`` still reads or re-exports (two modules would then
+   hold two copies of one piece of state), when a ``copy`` row is anything but a
+   logger factory call, when a scanned file does not parse, and when a test
+   still names a moved statement in a string patch target. A refusal writes
+   nothing, so the tree stays byte-identical.
 4. Adds ``from .<domain> import router as _<domain>_router`` plus a compat
    re-export (D5) for every moved name that remaining ``__init__`` code, a
-   production module or a test still reaches through the package, and appends
-   ``router.include_router(_<domain>_router)`` to the include list (D2), ordered
-   by the domain's first route line.
-5. Rewrites string patch targets ``"<package>.<moved>"`` under ``backend/tests``
-   to ``"<package>.<domain>.<moved>"``.
+   production module, a package sibling or a test still reaches through the
+   package, and appends ``router.include_router(_<domain>_router)`` to the
+   include list (D2), ordered by :attr:`DomainSpec.order` — the domain's first
+   route line in the ORIGINAL file at :data:`ORDER_BASE_SHA`, pinned per row.
+5. Rewrites NO test. D7 step 4 (rewriting ``"<package>.<moved>"`` string patch
+   targets to ``"<package>.<domain>.<moved>"``) is superseded: the Phase 0
+   guard ``test_operations_patch_targets`` rejects every such string target
+   except ``httpx.AsyncClient``, and ``tests/_ops_patch.patch_ops`` already
+   patches every module of the package that binds a name, so a test needs no
+   edit when its name moves. A test that still carries a string target on a
+   moved name is a refusal naming ``file:line``; convert it to ``patch_ops``.
+
+Writes are atomic as a set: :func:`apply` stages every file beside its target,
+then ``os.replace``-es each, and restores the original bytes of every file
+already replaced if any step fails.
 
 Idempotent: a domain whose names already live in ``<domain>.py`` and no longer
 in ``__init__`` is a no-op.
@@ -48,7 +65,9 @@ from __future__ import annotations
 import argparse
 import ast
 import builtins
+import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,6 +78,16 @@ PACKAGE_DIR = BACKEND_DIR / "app" / "api" / "v1" / "endpoints" / "operations"
 COORD_PROXY_MODULE = "app.api.coord_proxy"
 COORD_PROXY_PATH = BACKEND_DIR / "app" / "api" / "coord_proxy.py"
 FIRST_PARTY = frozenset({"app"})
+
+#: The base the include-list ``order`` of every :data:`DOMAINS` row is measured
+#: at: the last commit holding ``operations.py`` as one file (plan, Problem).
+ORDER_BASE_SHA = "eb9429e1f"
+ORDER_BASE_PATH = "backend/app/api/v1/endpoints/operations.py"
+
+#: The only call targets a ``DomainSpec.copy`` statement may be built from. A
+#: copy duplicates a binding, so anything with state (a cache, a client, a
+#: ContextVar) would split into two objects; a per-module logger does not.
+COPY_FACTORIES = frozenset({"logging.getLogger", "structlog.get_logger"})
 
 #: The paths this transform reads or writes — the restructure's declared input
 #: paths for the replay job (hub-files plan, Phase 3 contract).
@@ -74,10 +103,14 @@ class DomainSpec:
     """One domain's move.
 
     ``names`` are the top-level statements moved (any order; file order is
-    kept). ``order`` is the domain's first route line at the measured base and
-    sorts the include list (D2). ``copy`` names statements duplicated into the
-    new module rather than moved (e.g. ``logger``), because ``__init__`` still
-    needs them.
+    kept). ``order`` sorts the include list (D2). It is a PINNED integer: the
+    1-based line of the domain's first ``@router.<verb>`` decorator in the
+    ORIGINAL single-file ``operations.py`` at :data:`ORDER_BASE_SHA`, as
+    :func:`measure_order` computes it. It is never re-measured against the
+    current tree, whose line numbers shift with every domain that moves out.
+    ``copy`` names statements duplicated into the new module rather than moved,
+    because ``__init__`` still needs them; only ``<name> = <factory>(...)`` with
+    a factory in :data:`COPY_FACTORIES` (the module ``logger``) may be copied.
     """
 
     names: tuple[str, ...]
@@ -177,17 +210,39 @@ def _args_names(args: ast.arguments) -> set[str]:
     return {a.arg for a in every}
 
 
+@dataclass(frozen=True)
+class _Scope:
+    """One lexical scope on the lookup chain."""
+
+    names: frozenset[str]
+    is_class: bool = False
+
+
+def _enclosing(scopes: list[_Scope]) -> list[_Scope]:
+    """The chain a NESTED scope sees: class scopes are never visible to it.
+
+    A function, lambda, comprehension or nested class body defined inside a
+    class body resolves free names in the enclosing *function* scopes and then
+    the module, skipping every class namespace on the way.
+    """
+    return [s for s in scopes if not s.is_class]
+
+
 class _FreeNames:
-    """Collect names loaded at module scope or reaching it from a nested scope."""
+    """Collect names loaded at module scope or reaching it from a nested scope.
+
+    A name declared ``global`` anywhere counts as free: the code reads or
+    rebinds the MODULE binding, so the move must account for it.
+    """
 
     def __init__(self) -> None:
         self.free: set[str] = set()
 
-    def _lookup(self, name: str, scopes: list[set[str]]) -> None:
-        if not any(name in s for s in scopes):
+    def _lookup(self, name: str, scopes: list[_Scope]) -> None:
+        if not any(name in s.names for s in scopes):
             self.free.add(name)
 
-    def _annotation(self, node: ast.expr | None, scopes: list[set[str]]) -> None:
+    def _annotation(self, node: ast.expr | None, scopes: list[_Scope]) -> None:
         if node is None:
             return
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -202,27 +257,30 @@ class _FreeNames:
     def _function(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda,
-        scopes: list[set[str]],
+        scopes: list[_Scope],
     ) -> None:
+        # Defaults, decorators and annotations evaluate in the DEFINING scope
+        # (a class body included); only the body is a nested scope.
         args = node.args
         for default in [*args.defaults, *(d for d in args.kw_defaults if d)]:
             self.visit(default, scopes)
-        if not isinstance(node, ast.Lambda):
-            for dec in node.decorator_list:
-                self.visit(dec, scopes)
-            for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
-                self._annotation(a.annotation, scopes)
-            for star in (args.vararg, args.kwarg):
-                if star is not None:
-                    self._annotation(star.annotation, scopes)
-            self._annotation(node.returns, scopes)
-            local = _args_names(args) | _bound_in_body(node.body)
-            for stmt in node.body:
-                self.visit(stmt, [*scopes, local])
-        else:
-            self.visit(node.body, [*scopes, _args_names(args)])
+        inner = _enclosing(scopes)
+        if isinstance(node, ast.Lambda):
+            self.visit(node.body, [*inner, _Scope(frozenset(_args_names(args)))])
+            return
+        for dec in node.decorator_list:
+            self.visit(dec, scopes)
+        for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
+            self._annotation(a.annotation, scopes)
+        for star in (args.vararg, args.kwarg):
+            if star is not None:
+                self._annotation(star.annotation, scopes)
+        self._annotation(node.returns, scopes)
+        local = _Scope(frozenset(_args_names(args) | _bound_in_body(node.body)))
+        for stmt in node.body:
+            self.visit(stmt, [*inner, local])
 
-    def visit(self, node: ast.AST, scopes: list[set[str]]) -> None:
+    def visit(self, node: ast.AST, scopes: list[_Scope]) -> None:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
             self._function(node, scopes)
             return
@@ -231,19 +289,15 @@ class _FreeNames:
                 self.visit(sub, scopes)
             for kw in node.keywords:
                 self.visit(kw.value, scopes)
-            # Class-body names are visible to the class body, never to methods.
-            class_scope = _bound_in_body(node.body)
+            # The class namespace is visible to the DIRECT class-body
+            # statements only (and, through them, to method decorators,
+            # defaults and annotations and a comprehension's first iterable).
+            body = [
+                *_enclosing(scopes),
+                _Scope(frozenset(_bound_in_body(node.body)), is_class=True),
+            ]
             for stmt in node.body:
-                if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
-                    for dec in stmt.decorator_list:
-                        self.visit(dec, [*scopes, class_scope])
-                    self._function(_strip_decorators(stmt), scopes)
-                elif isinstance(stmt, ast.AnnAssign):
-                    self._annotation(stmt.annotation, [*scopes, class_scope])
-                    if stmt.value is not None:
-                        self.visit(stmt.value, [*scopes, class_scope])
-                else:
-                    self.visit(stmt, [*scopes, class_scope])
+                self.visit(stmt, body)
             return
         if isinstance(
             node, ast.ListComp | ast.SetComp | ast.GeneratorExp | ast.DictComp
@@ -253,9 +307,10 @@ class _FreeNames:
                 for n in ast.walk(gen.target):
                     if isinstance(n, ast.Name):
                         targets.add(n.id)
-            inner = [*scopes, targets]
-            for gen in node.generators:
-                self.visit(gen.iter, inner)
+            inner = [*_enclosing(scopes), _Scope(frozenset(targets))]
+            for i, gen in enumerate(node.generators):
+                # Only the FIRST iterable evaluates in the enclosing scope.
+                self.visit(gen.iter, scopes if i == 0 else inner)
                 for cond in gen.ifs:
                     self.visit(cond, inner)
             if isinstance(node, ast.DictComp):
@@ -263,6 +318,9 @@ class _FreeNames:
                 self.visit(node.value, inner)
             else:
                 self.visit(node.elt, inner)
+            return
+        if isinstance(node, ast.Global):
+            self.free.update(node.names)
             return
         if isinstance(node, ast.AnnAssign):
             self._annotation(node.annotation, scopes)
@@ -281,20 +339,79 @@ class _FreeNames:
             self.visit(child, scopes)
 
 
-def _strip_decorators(
-    fn: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    clone = type(fn)(**{f: getattr(fn, f) for f in fn._fields})
-    clone.decorator_list = []
-    return clone
-
-
 def free_names(stmts: list[ast.stmt]) -> set[str]:
     """Names the statements read from module scope (builtins excluded)."""
     collector = _FreeNames()
     for stmt in stmts:
         collector.visit(stmt, [])
     return collector.free - _BUILTINS
+
+
+def global_rebinds(stmts: list[ast.stmt]) -> set[str]:
+    """Names some function in ``stmts`` declares ``global`` (to rebind them)."""
+    return {
+        name
+        for stmt in stmts
+        for node in ast.walk(stmt)
+        if isinstance(node, ast.Global)
+        for name in node.names
+    }
+
+
+def _dotted(node: ast.expr) -> str | None:
+    """``a.b.c`` for an ``Attribute``/``Name`` chain, else ``None``."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+_ROUTE_VERBS = frozenset(
+    {"get", "post", "put", "patch", "delete", "head", "options", "websocket"}
+)
+
+
+def first_route_line(source: str, names: tuple[str, ...]) -> int:
+    """1-based line of the first ``@router.<verb>(...)`` decorating a named def.
+
+    This is how a :class:`DomainSpec` ``order`` is measured: against the
+    ORIGINAL file at :data:`ORDER_BASE_SHA` (:func:`measure_order`), never the
+    current tree.
+    """
+    found: list[int] = []
+    for stmt in ast.parse(source).body:
+        if not isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if stmt.name not in names:
+            continue
+        for dec in stmt.decorator_list:
+            if (
+                isinstance(dec, ast.Call)
+                and isinstance(dec.func, ast.Attribute)
+                and dec.func.attr in _ROUTE_VERBS
+                and _dotted(dec.func.value) == "router"
+            ):
+                found.append(dec.lineno)
+    if not found:
+        raise SplitRefused(f"none of {sorted(names)} is a @router route")
+    return min(found)
+
+
+def measure_order(names: tuple[str, ...]) -> int:
+    """:func:`first_route_line` of ``names`` in ``operations.py`` at the base."""
+    src = subprocess.run(
+        ["git", "show", f"{ORDER_BASE_SHA}:{ORDER_BASE_PATH}"],
+        cwd=BACKEND_DIR,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    return first_route_line(src, names)
 
 
 # --------------------------------------------------------------------------
@@ -484,21 +601,72 @@ def _imps_of(stmt: ast.Import | ast.ImportFrom) -> list[_Imp]:
 # --------------------------------------------------------------------------
 
 
-def _names_reached_through_package(files: list[Path], package_module: str) -> set[str]:
-    """Names other modules take from the package by import or attribute."""
+def _parse_scanned(path: Path) -> tuple[str, ast.Module]:
+    """Read and parse a scanned file, or refuse naming it.
+
+    Skipping an unparseable file would silently drop the re-exports (D5) and
+    patch-target refusals it should have produced.
+    """
+    try:
+        text = _read(path).replace("\r\n", "\n")
+        return text, ast.parse(text, filename=str(path))
+    except (SyntaxError, UnicodeDecodeError, ValueError) as exc:
+        raise SplitRefused(
+            f"{path}: cannot be scanned for references to the package ({exc}); "
+            "fix the file before splitting"
+        ) from exc
+
+
+def _module_of(path: Path, root: Path) -> tuple[list[str], bool] | None:
+    """``(dotted parts, is_package)`` of a file under the import ``root``."""
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return None
+    parts = list(rel.with_suffix("").parts)
+    if parts[-1] == "__init__":
+        return parts[:-1], True
+    return parts, False
+
+
+def _import_source(node: ast.ImportFrom, module: tuple[list[str], bool] | None) -> str:
+    """The absolute module an ``ImportFrom`` reads (relative ones resolved)."""
+    if not node.level:
+        return node.module or ""
+    if module is None:
+        return ""
+    parts, is_package = module
+    base = parts if is_package else parts[:-1]
+    drop = node.level - 1
+    if drop > len(base):
+        return ""
+    base = base[: len(base) - drop]
+    return ".".join([*base, *([node.module] if node.module else [])])
+
+
+def _names_reached_through_package(
+    files: list[Path], package_module: str, root: Path
+) -> set[str]:
+    """Names other modules take from the package by import or attribute.
+
+    Covers ``from <package> import x`` (relative forms resolved against the
+    file's own module under ``root``), ``from <parent> import <leaf> [as a]``
+    then ``a.x``, ``import <package> as a`` then ``a.x``, a bare
+    ``import <package>`` then the dotted ``<package>.x``, and
+    ``patch.object(a, "x")`` / ``monkeypatch.setattr(<package>, "x", ...)``.
+    """
     parent, _, leaf = package_module.rpartition(".")
     reached: set[str] = set()
     for path in files:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
+        _, tree = _parse_scanned(path)
+        module = _module_of(path, root)
         aliases: set[str] = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 0:
-                if node.module == package_module:
-                    reached.update(a.name for a in node.names)
-                elif node.module == parent:
+            if isinstance(node, ast.ImportFrom):
+                src = _import_source(node, module)
+                if src == package_module:
+                    reached.update(a.name for a in node.names if a.name != "*")
+                elif src == parent:
                     aliases.update(
                         a.asname or a.name for a in node.names if a.name == leaf
                     )
@@ -506,20 +674,19 @@ def _names_reached_through_package(files: list[Path], package_module: str) -> se
                 for a in node.names:
                     if a.name == package_module and a.asname:
                         aliases.add(a.asname)
-        if not aliases:
-            continue
+
+        def is_package(expr: ast.expr, aliases: set[str] = aliases) -> bool:
+            if isinstance(expr, ast.Name) and expr.id in aliases:
+                return True
+            return _dotted(expr) == package_module
+
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Attribute)
-                and isinstance(node.value, ast.Name)
-                and node.value.id in aliases
-            ):
+            if isinstance(node, ast.Attribute) and is_package(node.value):
                 reached.add(node.attr)
             elif (
                 isinstance(node, ast.Call)
                 and len(node.args) >= 2
-                and isinstance(node.args[0], ast.Name)
-                and node.args[0].id in aliases
+                and is_package(node.args[0])
                 and isinstance(node.args[1], ast.Constant)
                 and isinstance(node.args[1].value, str)
             ):
@@ -533,11 +700,25 @@ def _string_targets(files: list[Path], package_module: str) -> set[str]:
     pattern = re.compile(r"[\"']" + re.escape(package_module) + r"\.(\w+)")
     found: set[str] = set()
     for path in files:
-        try:
-            found.update(pattern.findall(path.read_text(encoding="utf-8")))
-        except UnicodeDecodeError:
-            continue
+        text, _ = _parse_scanned(path)
+        found.update(pattern.findall(text))
     return found
+
+
+def _string_patch_targets(
+    files: list[Path], package_module: str, names: set[str]
+) -> list[str]:
+    """``file:line`` of every string constant ``"<package>.<name>[.…]"``."""
+    pattern = re.compile(re.escape(package_module) + r"\.(\w+)(?:\..*)?", re.DOTALL)
+    hits: list[str] = []
+    for path in files:
+        _, tree = _parse_scanned(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                m = pattern.fullmatch(node.value)
+                if m and m.group(1) in names:
+                    hits.append(f"{path.as_posix()}:{node.lineno}")
+    return sorted(set(hits))
 
 
 # --------------------------------------------------------------------------
@@ -568,6 +749,61 @@ def _module_docstring(domain: str) -> str:
 
 def _join_blocks(chunks: list[str]) -> str:
     return "\n\n\n".join(c.rstrip("\n") for c in chunks) + "\n"
+
+
+def _check_copyable(stmt: ast.stmt, init: _Module) -> None:
+    """Refuse a ``copy`` statement that is not ``<name> = <logger factory>(...)``.
+
+    The factory is resolved through ``__init__``'s own imports, so
+    ``structlog.get_logger`` and ``from structlog import get_logger`` both
+    qualify, and a local function merely named ``get_logger`` does not.
+    """
+    what = ast.get_source_segment(init.text, stmt) or type(stmt).__name__
+    if not (
+        isinstance(stmt, ast.Assign)
+        and len(stmt.targets) == 1
+        and isinstance(stmt.targets[0], ast.Name)
+        and isinstance(stmt.value, ast.Call)
+    ):
+        raise SplitRefused(
+            f"copy statement {what!r} is not '<name> = <factory>(...)'; only a "
+            f"logger built by one of {sorted(COPY_FACTORIES)} may be copied"
+        )
+    dotted = _dotted(stmt.value.func) or ""
+    head, _, rest = dotted.partition(".")
+    qualified: str | None = None
+    for imp_stmt in init.import_stmts():
+        for imp in _imps_of(imp_stmt):
+            if imp.binds != head or imp.level:
+                continue
+            if imp.name is not None:
+                base = f"{imp.module}.{imp.name}"
+            elif imp.asname:
+                base = imp.module
+            else:
+                base = head  # ``import a.b`` binds ``a``
+            qualified = f"{base}.{rest}" if rest else base
+    if qualified not in COPY_FACTORIES:
+        raise SplitRefused(
+            f"copy statement {what!r} calls {qualified or dotted!r}, not one of "
+            f"{sorted(COPY_FACTORIES)}; a copy duplicates state, so only a "
+            "logger may be copied"
+        )
+
+
+def _imports_package(tree: ast.Module, package_module: str) -> bool:
+    """Whether a module imports from ``package_module`` (or a submodule of it)."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            mods = [node.module, *(f"{node.module}.{a.name}" for a in node.names)]
+        elif isinstance(node, ast.Import):
+            mods = [a.name for a in node.names]
+        else:
+            continue
+        prefix = package_module + "."
+        if any(m == package_module or m.startswith(prefix) for m in mods):
+            return True
+    return False
 
 
 def plan_split(
@@ -640,6 +876,8 @@ def plan_split(
         )
     moved = select(spec.names, "listed")
     copied = select(spec.copy, "copy")
+    for stmt in copied:
+        _check_copyable(stmt, init)
     moved_names = set(spec.names)
     local_names = moved_names | set(spec.copy) | {"router"}
 
@@ -658,14 +896,18 @@ def plan_split(
                 siblings.setdefault(name, sib.stem)
 
     proxy_defs: set[str] = set()
+    proxy_cycle = False
     if coord_proxy_path is not None and coord_proxy_path.is_file():
-        proxy_defs = set(_Module.load(coord_proxy_path).definitions())
+        proxy = _Module.load(coord_proxy_path)
+        proxy_defs = set(proxy.definitions())
+        proxy_cycle = _imports_package(proxy.tree, package_module)
 
     needed: set[_Imp] = {_Imp("fastapi", 0, "APIRouter")}
     for imp in init_imports.get("APIRouter", []):
         needed = {imp}
     d4: list[str] = []
     nowhere: list[str] = []
+    cycle: list[str] = []
     for name in sorted(free_names(moved + copied)):
         if name in local_names:
             continue
@@ -678,12 +920,18 @@ def plan_split(
                         f"{name!r} is bound by 'from . import'; cannot relocate"
                     )
                 needed.add(imp)
+        elif name in init_defs:
+            # Checked BEFORE the siblings: a name __init__ still defines is the
+            # binding remaining code uses, so a same-named sibling definition is
+            # a different object and never the one to import.
+            d4.append(name)
         elif name in siblings:
             needed.add(_Imp(siblings[name], 1, name))
         elif name in proxy_defs:
-            needed.add(_Imp(coord_proxy_module, 0, name))
-        elif name in init_defs:
-            d4.append(name)
+            if proxy_cycle:
+                cycle.append(name)
+            else:
+                needed.add(_Imp(coord_proxy_module, 0, name))
         else:
             nowhere.append(name)
     if d4:
@@ -691,6 +939,12 @@ def plan_split(
             "moved code references names still defined in __init__.py (D4: a domain "
             f"module never imports from the package __init__): {d4}. Move them with "
             "this domain, into a sibling module, or into app.api.coord_proxy first."
+        )
+    if cycle:
+        raise SplitRefused(
+            f"moved code would import {cycle} from {coord_proxy_module}, which "
+            f"itself imports from {package_module}: an import cycle (D4). Finish "
+            f"moving the implementations into {coord_proxy_module} first."
         )
     if nowhere:
         raise SplitRefused(
@@ -718,14 +972,46 @@ def plan_split(
     remaining_stmts = [s for s in init.tree.body if s not in moved]
     remaining_free = free_names(remaining_stmts)
     reexport = moved_names & remaining_free
-    scan_files = [
+    # Every scanned file outside the package, plus the package's own sibling
+    # modules (a relative ``from . import x`` there reaches x through __init__).
+    package_files = [
         p
-        for d in scan_dirs
-        for p in sorted(d.rglob("*.py"))
-        if package_dir not in p.parents
+        for p in sorted(package_dir.glob("*.py"))
+        if p.name != "__init__.py" and p != target_path
     ]
-    reached = _names_reached_through_package(scan_files, package_module)
+    scan_files = sorted(
+        {p for d in scan_dirs for p in d.rglob("*.py") if package_dir not in p.parents}
+    )
+    import_root = package_dir.parents[len(package_module.split(".")) - 1]
+    reached = _names_reached_through_package(
+        [*scan_files, *package_files], package_module, import_root
+    )
     reexport |= moved_names & reached
+
+    # Two modules would each hold a binding of one piece of state: the moved
+    # code rebinds its own copy, the re-export in __init__ keeps the old one.
+    split_state = sorted(global_rebinds(moved) & reexport)
+    if split_state:
+        raise SplitRefused(
+            f"moved code rebinds {split_state} via 'global', but __init__ still "
+            "reads or re-exports them; the rebinding would not reach __init__'s "
+            "copy. Move every reader with this domain first."
+        )
+
+    # D7 step 4 is superseded: a string patch target on a moved name would stop
+    # reaching the moved code, so it is a refusal, never a rewrite.
+    if tests_dir is not None and tests_dir.is_dir():
+        stale = _string_patch_targets(
+            sorted(tests_dir.rglob("*.py")),
+            package_module,
+            moved_names | set(spec.copy),
+        )
+        if stale:
+            raise SplitRefused(
+                "tests still patch moved/copied names through a string target "
+                f"on {package_module} (convert them to tests/_ops_patch.patch_ops): "
+                + ", ".join(stale)
+            )
 
     # Prune an import only when it is PROVABLY dead after the move: the moved
     # code used it, nothing left in __init__ reads it, and nothing outside the
@@ -789,37 +1075,6 @@ def plan_split(
     plan.writes[target_path] = new_module
     plan.writes[init_path] = new_init
 
-    # --- test patch targets --------------------------------------------------
-    if tests_dir is not None and tests_dir.is_dir():
-        pattern = re.compile(
-            r"(?<=[\"'])"
-            + re.escape(package_module)
-            + r"\.("
-            + "|".join(re.escape(n) for n in sorted(moved_names))
-            + r")(?=[\"'.])"
-        )
-        copied_pattern = (
-            re.compile(
-                r"[\"']"
-                + re.escape(package_module)
-                + r"\.("
-                + "|".join(map(re.escape, spec.copy))
-                + r")[\"'.]"
-            )
-            if spec.copy
-            else None
-        )
-        for path in sorted(tests_dir.rglob("*.py")):
-            with path.open(encoding="utf-8", newline="") as fh:
-                src = fh.read()
-            new = pattern.sub(lambda m: f"{package_module}.{domain}.{m.group(1)}", src)
-            if new != src:
-                plan.writes[path] = new
-            if copied_pattern and copied_pattern.search(src):
-                plan.notes.append(
-                    f"{path.name} patches a copied name on the package; it no longer "
-                    f"reaches {domain}.py's copy (use tests/_ops_patch.patch_ops)"
-                )
     return plan
 
 
@@ -883,9 +1138,38 @@ def _rewrite_include_list(text: str, router_alias: str, order: int) -> str:
 
 
 def apply(plan: SplitPlan) -> None:
-    for path, text in plan.writes.items():
-        with path.open("w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
+    """Write every file of ``plan`` or none of them.
+
+    Each file is staged to a temp file beside its target, then the stages are
+    ``os.replace``-d in turn. If any step fails, every target already replaced
+    gets its original bytes back (a target that did not exist is removed), the
+    stages are deleted, and the error propagates.
+    """
+    originals: dict[Path, bytes | None] = {
+        path: path.read_bytes() if path.exists() else None for path in plan.writes
+    }
+    staged: dict[Path, Path] = {}
+    replaced: list[Path] = []
+    try:
+        for path, text in plan.writes.items():
+            tmp = path.with_name(f".{path.name}.ops_split.tmp")
+            staged[path] = tmp
+            with tmp.open("w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+        for path, tmp in staged.items():
+            os.replace(tmp, path)
+            replaced.append(path)
+    except BaseException:
+        for path in replaced:
+            original = originals[path]
+            if original is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(original)
+        raise
+    finally:
+        for tmp in staged.values():
+            tmp.unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:
