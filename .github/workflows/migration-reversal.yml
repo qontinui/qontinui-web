@@ -1456,7 +1456,7 @@ jobs:
 
 
           out, block, tag, quote, quote_line = [], None, None, None, None
-          # Read the dump byte-for-byte and split ONLY on "\n": text mode would turn
+          # Read the dump with no newline translation (newline="") and split ONLY on "\n": text mode would turn
           # CRLF/CR into LF and str.splitlines() also breaks on \x0b \x0c \x1c-\x1e
           # \x85 U+2028 U+2029, so two literals differing only in such a
           # separator would normalize equal. A trailing newline yields one empty
@@ -1503,7 +1503,7 @@ jobs:
                       block[-1].append(line)
                   continue
               out.append(line)
-              if tag is None and quote is None and re.match(r"CREATE (UNLOGGED )?TABLE .* \($", line):
+              if tag is None and quote is None and re.match(r"CREATE (UNLOGGED )?TABLE .* \(\r?$", line):
                   block = []
           if block is not None:
               sys.exit("unterminated CREATE TABLE block in the dump")
