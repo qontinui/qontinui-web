@@ -1171,11 +1171,16 @@ def test_a_human_quoting_the_notice_is_not_counted_as_a_marker() -> None:
 # invocation of the sibling ruff gate was added while three separate places in
 # the tree went on saying there were three, and nothing failed for 90 commits.
 #
-# `count_alembic_heads.py` genuinely has four lanes, and each exists for its own
+# `count_alembic_heads.py` genuinely has five lanes, and each exists for its own
 # reason:
 #
 #   * .github/workflows/alembic-graph-pr.yml, step "Count alembic heads" — the
 #     PR gate; a forked chain FAILS the check.
+#   * .github/workflows/web-guards.yml, step "alembic-graph-pr: Count alembic heads" — the
+#     consolidated one-job guard lane (plan
+#     2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work),
+#     running the same command beside the per-guard workflow until a
+#     later phase of that plan deletes the per-guard file.
 #   * .qontinui/ci.toml, step `alembic-single-head` — the runner-as-CI-node
 #     lane, invoking this same script rather than mirroring a command string,
 #     so the two cannot drift.
@@ -1187,7 +1192,7 @@ def test_a_human_quoting_the_notice_is_not_counted_as_a_marker() -> None:
 #   * .github/workflows/alembic-graph-check.yml, step "Count heads" — the
 #     post-merge companion, informational by construction. It passes
 #     `--report-only` so a forked chain does not abort the step before the
-#     comment is posted, which is why the roster below has four entries and the
+#     comment is posted, which is why the roster below has five entries and the
 #     script's exit codes have a downgrade arm.
 #
 # The roster is asserted BY POSITION (a YAML `run:`/`entry:` value, a TOML
@@ -1208,6 +1213,7 @@ _DECLARED_LANES = frozenset(
     {
         ".github/workflows/alembic-graph-check.yml",
         ".github/workflows/alembic-graph-pr.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -1233,7 +1239,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its four lanes and what each one is for — the
+    The gate opens by naming its five lanes and what each one is for — the
     `--report-only` distinction above all. That prose is what a reader trusts
     instead of grepping, so a lane added without touching it leaves the script
     describing a shape the repo no longer has.

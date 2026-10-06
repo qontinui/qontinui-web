@@ -1,0 +1,519 @@
+# web guards: every single-check guard workflow, as STEPS of ONE job.
+#
+# Plan 2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work.
+# GitHub schedules per JOB, so thirteen sub-minute guards in thirteen workflows
+# cost thirteen runner acquisitions, checkouts and teardowns per push for about
+# three minutes of real work. One job with one checkout and N steps collapses
+# that to one acquisition. Thirteen jobs in one FILE would save nothing.
+#
+# PHASE 1 IS ADDITIVE. Every member workflow below still exists and still
+# reports its own context; this file runs the same commands a second time. A
+# later phase switches the `web-protect-main` ruleset to this job's context and
+# only then deletes the old files (a required context nothing produces wedges
+# every PR, so the order is: add, prove it reports, switch, soak, delete).
+#
+# Members (workflow file -> job id; each step below is named after its member):
+#   alembic-graph-pr.yml          alembic-heads-pr            (required today)
+#   coord-column-drop-guard.yml   coord-column-drop-guard     (required today)
+#   forbid-public-schema.yml      forbid-public-schema        (required today)
+#   forbid-fixed-sleeps-in-e2e.yml  forbid-fixed-sleeps-in-e2e
+#   global-state-assertions.yml   global-state-assertions
+#   gitignore-tracked-files.yml   gitignore-tracked-files
+#   path-case-collisions.yml      path-case-collisions
+#   ruff-version-parity.yml       ruff-version-parity
+#   web-boundary-lint.yml         web-boundary-lint
+#   dev-credentials-drift.yml     drift-check
+#   sql-through-alembic.yml       sql-through-alembic
+#   pre-commit-hook-tests.yml     pre-commit-hook-tests
+#   powershell-parse.yml          powershell-parse
+# `secret-scan.yml` is deliberately NOT a member: qontinui-coord's merge engine
+# keys the `secrets` escalate override on its exact context name.
+#
+# The gate LOGIC still lives in each member's script, never here; every step is
+# the member's own invocation, unchanged. The `gate_lane_roster` tests count
+# this file as a lane of each `scripts/ci/*.py` gate it invokes.
+#
+# TRIGGERS — the union of the members' triggers, with PER-STEP event scoping.
+# A blanket union would widen every gate onto every event, and some break
+# there (coord-column-drop-guard exits 2 on workflow_dispatch; alembic-graph-pr
+# leaves `push: main` to alembic-graph-check.yml). So each gate step carries an
+# `if:` reproducing exactly the events and branches its member fires on today.
+# A step outside its scope renders SKIP in the summary, never PASS.
+#
+# NO `paths:` FILTER, at the workflow level or as a step condition. A required
+# check skipped by a paths filter leaves every non-matching PR on "Expected —
+# waiting for status". The members that carried path filters (web-boundary-lint,
+# dev-credentials-drift, sql-through-alembic, pre-commit-hook-tests) now run on
+# every event in their scope: running a gate MORE often widens it, never
+# narrows it, and each is a sub-second scan once the runner is already held.
+# One visible consequence: sql-through-alembic diffs origin/main...HEAD
+# whatever the PR's base, so on a STACKED PR it also sees the parent's .sql
+# files (the parent PR fails the same way -- a duplicated red, not a wrong
+# one). Checkout is pinned to the v5.1.0 SHA 12 members use;
+# sql-through-alembic alone pinned v4.4.0.
+#
+# FAILURE REPORTING. Every gate step runs with `continue-on-error: true` so a
+# red gate does not hide the ones after it; the final step reads every gate's
+# `outcome` (NOT `conclusion`, which continue-on-error forces to success),
+# writes one PASS/FAIL/SKIP row per gate to the step summary, and fails the job
+# when checkout or Python setup failed or any gate's outcome is not success or
+# skipped. Gates run only after a successful checkout (`steps.checkout.outcome`),
+# so a failed checkout never prints a misleading per-gate verdict.
+#
+# NO CI timeout marker step: the job budget is minutes, not the 45-130 the
+# marker exists to explain (backend/tests/test_ci_timeout_marker.py
+# MARKER_WORKFLOWS deliberately does not list this file).
+
+name: web guards
+
+on:
+  # No `branches:` filter: sql-through-alembic.yml has none. Every other
+  # member's `[main, develop]` / `[main]` base filter is re-applied per step.
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+      # merge-candidate/** refs are pushed by coord's autonomous merge
+      # scheduler (plan 2026-06-06-coord-ci-runner-autonomous-green-merge,
+      # Phase 4); a required gate must run on them or the candidate hangs in
+      # awaiting-ci. Validation-only; no deploy.
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+  workflow_dispatch:
+
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). Every member
+# declares exactly this; nothing here writes.
+permissions:
+  contents: read
+
+# PR-SCOPED SUPERSESSION — copied verbatim from the 11 members that share it
+# (qontinui-web bad5a3eaa; pattern qontinui-claude-config#1475);
+# alembic-graph-pr.yml and sql-through-alembic.yml still use an older
+# literal-slug form. A FIRST-attempt
+# `pull_request` run joins a per-workflow, per-PR group and cancels the run it
+# supersedes there. Every OTHER run -- push (main, develop, merge-candidate*/**),
+# workflow_dispatch, and EVERY re-run (run_attempt > 1) -- gets a group unique
+# to its run id + attempt, so a land never cancels a land.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here
+# (push: main included) is modelled as reapable by a land. Do NOT "simplify"
+# this into a literal or a `github.ref`-keyed group: that would make the
+# `push: main` runs reaper-at-risk and hard-block the merge train.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
+
+jobs:
+  web-guards:
+    # The job name IS the check-run context a later phase makes required.
+    # Do not rename it, and do not add a `strategy:` matrix (which suffixes it).
+    name: web-guards
+    # The members' caps are 5-10 min against p90s of ~0.15-0.22 min each; the
+    # sum of thirteen sub-minute steps plus one checkout fits well inside 15.
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # coord-column-drop-guard and sql-through-alembic diff against a base
+          # (`<base>...HEAD` / origin/main), which needs the base ref and enough
+          # history to find the merge base. Full history is the simplest
+          # correct answer for both (and is what both members already use).
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        id: setup-python
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          # Every member that sets Python up pins 3.12; the rest ran the
+          # runner image's default python, which these stdlib scripts accept.
+          python-version: '3.12'
+
+      # ---- coord-column-drop-guard.yml -------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, merge-candidate*/**.
+      # NOT workflow_dispatch and NOT push: develop (the member's base-selection
+      # `case` has no arm for either; dispatch would exit 2).
+      # Runs BEFORE the alembic baseline fetch below so its `origin/...` base is
+      # the ref the checkout recorded, exactly as in the member's own job.
+      - name: "coord-column-drop-guard: Check coord.* drops against coord's read contract"
+        id: coord-column-drop-guard
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        # The member's two steps ("Choose the base to diff against" + the gate)
+        # folded into one so the gate has ONE outcome: a base-selection failure
+        # is a gate failure, not a silently skipped gate. The base logic is the
+        # member's, byte for byte:
+        #   pull_request  -> origin/<the PR's base branch>
+        #   push to main  -> the push's `before` sha (every commit the push
+        #                    carried), falling back to HEAD~1 when it is all
+        #                    zeros or unresolvable
+        #   candidate ref -> origin/main
+        # Context values reach the script through env, never inline (zizmor
+        # template-injection).
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              base="origin/${GITHUB_BASE_REF}" ;;
+            push)
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                before="${EVENT_BEFORE}"
+                if [ -n "$before" ] \
+                   && [ "$before" != "0000000000000000000000000000000000000000" ] \
+                   && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+                  base="$before"
+                else
+                  base="HEAD~1"
+                fi
+              else
+                base="origin/main"
+              fi ;;
+            *)
+              echo "::error::unexpected event ${GITHUB_EVENT_NAME}"; exit 2 ;;
+          esac
+          echo "diffing ${base}...HEAD"
+          python scripts/ci/check_coord_column_drops.py --base-ref "${base}"
+
+      # ---- sql-through-alembic.yml -----------------------------------------
+      # Scope: pull_request, ANY base branch (the member has no `branches:`).
+      # Its `paths: ['**/*.sql']` filter is dropped: on a PR touching no .sql
+      # file the lint finds nothing to check and passes.
+      - name: "sql-through-alembic: Run sql-through-alembic lint"
+        id: sql-through-alembic
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        run: |
+          python .github/scripts/sql_through_alembic_lint.py \
+            --base-ref origin/main \
+            --head-ref HEAD
+
+      # ---- alembic-graph-pr.yml --------------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> merge-candidate*/** ONLY.
+      # `push: main` is deliberately left to alembic-graph-check.yml.
+      - name: "alembic-graph-pr: Fetch the baseline for the remediation message"
+        id: alembic-baseline
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        # Not a gate: it only names WHICH head already landed in the remediation
+        # text, and cannot change the verdict. `continue-on-error`, not
+        # `|| true`, so a failed fetch stays visible. No `--depth=1` here (the
+        # member's checkout was shallow; this one is full, and a depth-limited
+        # fetch into a full clone would graft it shallow under the steps above).
+        continue-on-error: true
+        run: git fetch origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: "alembic-graph-pr: Count alembic heads"
+        id: alembic-heads-pr
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/count_alembic_heads.py --baseline-ref origin/main
+
+      # ---- forbid-public-schema.yml ----------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop,
+      # merge-candidate*/**. No workflow_dispatch.
+      - name: "forbid-public-schema: Scan for forbidden public.* references"
+        id: forbid-public-schema
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_forbidden_public_schema.py
+
+      # ---- forbid-fixed-sleeps-in-e2e.yml ----------------------------------
+      # Scope: workflow_dispatch; pull_request -> [main, develop]; push -> main,
+      # develop, merge-candidate*/**.
+      - name: "forbid-fixed-sleeps-in-e2e: Count fixed sleeps in frontend/tests/e2e against the allowlist"
+        id: forbid-fixed-sleeps-in-e2e
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_fixed_sleeps_in_e2e.py
+
+      # ---- global-state-assertions.yml -------------------------------------
+      # Scope: workflow_dispatch; pull_request -> [main, develop]; push -> main,
+      # develop, merge-candidate*/**.
+      - name: "global-state-assertions: Count global-state assertions in backend/tests against the allowlist"
+        id: global-state-assertions
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_global_state_assertions.py
+
+      # ---- gitignore-tracked-files.yml -------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop,
+      # merge-candidate*/**. No workflow_dispatch.
+      - name: "gitignore-tracked-files: Scan for tracked-but-ignored files"
+        id: gitignore-tracked-files
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_tracked_ignored.py
+
+      # ---- path-case-collisions.yml ----------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop,
+      # merge-candidate*/**. No workflow_dispatch.
+      - name: "path-case-collisions: Scan the index for case-colliding paths"
+        id: path-case-collisions
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_path_case_collisions.py
+
+      # ---- ruff-version-parity.yml -----------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop,
+      # merge-candidate*/**. No workflow_dispatch.
+      - name: "ruff-version-parity: Compare the pre-commit ruff pin against the lockfiles"
+        id: ruff-version-parity
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' ||
+              startsWith(github.ref, 'refs/heads/merge-candidate/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-spec/') ||
+              startsWith(github.ref, 'refs/heads/merge-candidate-batch/')))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_ruff_version_parity.py
+
+      # ---- web-boundary-lint.yml -------------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop;
+      # workflow_dispatch. NOT merge-candidate*/**. Its `paths:` filter is dropped.
+      - name: "web-boundary-lint: Scan backend/app for qontinui.* boundary violations"
+        id: web-boundary-lint
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
+          ) }}
+        continue-on-error: true
+        run: python scripts/ci/check_web_boundary.py
+
+      # ---- dev-credentials-drift.yml ---------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main, develop;
+      # workflow_dispatch. NOT merge-candidate*/**. Its `paths:` filter is dropped.
+      - name: "dev-credentials-drift: Run drift check"
+        id: drift-check
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
+          ) }}
+        continue-on-error: true
+        run: python scripts/check_dev_credentials_drift.py
+
+      # ---- pre-commit-hook-tests.yml ---------------------------------------
+      # Scope: pull_request -> [main, develop]; push -> main ONLY. Its `paths:`
+      # filter is dropped. The member's "Install pytest" step is folded in so a
+      # failed install is this gate's failure rather than a separate verdict.
+      - name: "pre-commit-hook-tests: Run hook tests"
+        id: pre-commit-hook-tests
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          ) }}
+        continue-on-error: true
+        run: |
+          # --retry/--timeout: this is the ONE network step in the job, and with
+          # the member's paths filter dropped it now runs on every in-scope
+          # event. A package-index hiccup must not read as a guard failure
+          # once `web-guards` is a required context.
+          python -m pip install --retry 5 --timeout 30 "pytest>=9,<10"
+          python -m pytest .pre-commit-hooks -rA
+
+      # ---- powershell-parse.yml --------------------------------------------
+      # Scope: workflow_dispatch; pull_request -> [main] ONLY. No push lane.
+      # The member's body, unchanged (zero-files-found is a failure, the
+      # per-extension coverage line, the node_modules|.git exclusion).
+      - name: "powershell-parse: Parse every .ps1 and .psm1 with the real PowerShell parser"
+        id: powershell-parse
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && github.base_ref == 'main')
+          ) }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -Path . -Recurse -File -Force |
+                   Where-Object { $_.Extension -in '.ps1', '.psm1' } |
+                   Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git)[\\/]' }
+          if ($files.Count -eq 0) {
+            Write-Host '::error::powershell-parse found no .ps1/.psm1 files — the glob is wrong, not the tree.'
+            exit 1
+          }
+          $byExt = $files | Group-Object Extension | ForEach-Object { "$($_.Name)=$($_.Count)" }
+          Write-Host "powershell-parse scope: $($byExt -join ' ')"
+          $bad = 0
+          foreach ($f in $files) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $f.FullName, [ref]$null, [ref]$errors)
+            if ($errors -and $errors.Count -gt 0) {
+              $bad++
+              $rel = Resolve-Path -Relative $f.FullName
+              foreach ($e in $errors) {
+                $line = $e.Extent.StartLineNumber
+                Write-Host "::error file=$rel,line=$line::$($e.Message)"
+              }
+            }
+          }
+          Write-Host "powershell-parse: $($files.Count) file(s) parsed, $bad with errors."
+          if ($bad -gt 0) { exit 1 }
+
+      # ---- aggregator ------------------------------------------------------
+      # The one verdict. Reads every gate's `outcome` (continue-on-error makes
+      # `conclusion` success even on a red gate). success -> PASS; skipped ->
+      # SKIP (outside that member's event scope); anything else -> FAIL. Fails
+      # the job when checkout or Python setup did not succeed, or any gate
+      # FAILed. `if: !cancelled()` -- it still reports after a failed checkout
+      # (a failed step does not cancel the run), but a run superseded by a
+      # newer push does not print "every in-scope guard passed" over 13 SKIPs.
+      - name: Aggregate guard verdicts
+        if: ${{ !cancelled() }}
+        env:
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SETUP_PYTHON_OUTCOME: ${{ steps.setup-python.outcome }}
+          ALEMBIC_BASELINE_OUTCOME: ${{ steps.alembic-baseline.outcome }}
+          OUT_COORD_COLUMN_DROP_GUARD: ${{ steps.coord-column-drop-guard.outcome }}
+          OUT_SQL_THROUGH_ALEMBIC: ${{ steps.sql-through-alembic.outcome }}
+          OUT_ALEMBIC_HEADS_PR: ${{ steps.alembic-heads-pr.outcome }}
+          OUT_FORBID_PUBLIC_SCHEMA: ${{ steps.forbid-public-schema.outcome }}
+          OUT_FORBID_FIXED_SLEEPS_IN_E2E: ${{ steps.forbid-fixed-sleeps-in-e2e.outcome }}
+          OUT_GLOBAL_STATE_ASSERTIONS: ${{ steps.global-state-assertions.outcome }}
+          OUT_GITIGNORE_TRACKED_FILES: ${{ steps.gitignore-tracked-files.outcome }}
+          OUT_PATH_CASE_COLLISIONS: ${{ steps.path-case-collisions.outcome }}
+          OUT_RUFF_VERSION_PARITY: ${{ steps.ruff-version-parity.outcome }}
+          OUT_WEB_BOUNDARY_LINT: ${{ steps.web-boundary-lint.outcome }}
+          OUT_DRIFT_CHECK: ${{ steps.drift-check.outcome }}
+          OUT_PRE_COMMIT_HOOK_TESTS: ${{ steps.pre-commit-hook-tests.outcome }}
+          OUT_POWERSHELL_PARSE: ${{ steps.powershell-parse.outcome }}
+        run: |
+          set -uo pipefail
+          # member workflow | env var holding its step outcome
+          gates=(
+            "coord-column-drop-guard|OUT_COORD_COLUMN_DROP_GUARD"
+            "sql-through-alembic|OUT_SQL_THROUGH_ALEMBIC"
+            "alembic-graph-pr (alembic-heads-pr)|OUT_ALEMBIC_HEADS_PR"
+            "forbid-public-schema|OUT_FORBID_PUBLIC_SCHEMA"
+            "forbid-fixed-sleeps-in-e2e|OUT_FORBID_FIXED_SLEEPS_IN_E2E"
+            "global-state-assertions|OUT_GLOBAL_STATE_ASSERTIONS"
+            "gitignore-tracked-files|OUT_GITIGNORE_TRACKED_FILES"
+            "path-case-collisions|OUT_PATH_CASE_COLLISIONS"
+            "ruff-version-parity|OUT_RUFF_VERSION_PARITY"
+            "web-boundary-lint|OUT_WEB_BOUNDARY_LINT"
+            "dev-credentials-drift (drift-check)|OUT_DRIFT_CHECK"
+            "pre-commit-hook-tests|OUT_PRE_COMMIT_HOOK_TESTS"
+            "powershell-parse|OUT_POWERSHELL_PARSE"
+          )
+          failed=0
+          {
+            echo "### web guards — event \`${GITHUB_EVENT_NAME}\` on \`${GITHUB_REF}\`"
+            echo
+            if [[ "${CHECKOUT_OUTCOME}" != "success" ]]; then
+              echo "**FAIL — checkout ${CHECKOUT_OUTCOME:-did not run}; no gate ran, so no gate has a verdict.**"
+              echo
+            fi
+            if [[ "${CHECKOUT_OUTCOME}" == "success" && "${SETUP_PYTHON_OUTCOME}" != "success" ]]; then
+              echo "**FAIL — Python setup ${SETUP_PYTHON_OUTCOME:-did not run}.**"
+              echo
+            fi
+            echo "| guard | result | step outcome |"
+            echo "|---|---|---|"
+            for entry in "${gates[@]}"; do
+              label="${entry%%|*}"
+              var="${entry##*|}"
+              outcome="${!var:-}"
+              if [[ "${CHECKOUT_OUTCOME}" != "success" ]]; then
+                result="NOT RUN (checkout failed)"
+              else
+                case "${outcome}" in
+                  success) result="PASS" ;;
+                  skipped) result="SKIP (outside this member's event scope)" ;;
+                  *) result="FAIL"; failed=$((failed + 1)) ;;
+                esac
+              fi
+              echo "| ${label} | ${result} | ${outcome:-none} |"
+            done
+            echo
+            echo "alembic baseline fetch (advisory, never a verdict): ${ALEMBIC_BASELINE_OUTCOME:-none}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ "${CHECKOUT_OUTCOME}" != "success" ]]; then
+            echo "::error::checkout ${CHECKOUT_OUTCOME:-did not run}; no guard ran"
+            exit 1
+          fi
+          if [[ "${SETUP_PYTHON_OUTCOME}" != "success" ]]; then
+            echo "::error::Python setup ${SETUP_PYTHON_OUTCOME:-did not run}"
+            exit 1
+          fi
+          if (( failed > 0 )); then
+            echo "::error::${failed} guard(s) failed — see the step summary table"
+            exit 1
+          fi
+          echo "every in-scope guard passed"
