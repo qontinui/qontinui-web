@@ -1190,8 +1190,12 @@ jobs:
           sudo apt-get install -y "$pkg"
 
       - name: Create named schemas + extension
-        # Unbounded and without an `id:`, as in `reverse`: a failure here is a
-        # verdict on the change, never the infrastructure marker's business.
+        id: schemas
+        # Unbounded, as in `reverse`: a failure here is a verdict on the
+        # change, never the infrastructure marker's business, so this step's
+        # id is deliberately absent from APT_STEP_OUTCOMES. The id exists only
+        # so "Name an unavailable postgresql client" can tell that a missing
+        # psql failed HERE, before the reversibility step ever ran.
         env:
           PGPASSWORD: test_password
         run: |
@@ -1641,15 +1645,16 @@ jobs:
       # The one red the explainer below cannot name: `Install postgresql-client`
       # found no install candidate for the PG_MAJOR client, exited 0 (so the
       # explainer, which blames any `failure` of that step on the apt mirror,
-      # does not misname it), and the reversibility step then had no pg_dump.
-      # The explainer sees no failed apt step and reports "a real one"; this
-      # step says which real one. It is separate because the explainer body
-      # must stay byte-identical across its eight carriers
+      # does not misname it), and then either "Create named schemas" had no
+      # psql or the reversibility step had no pg_dump -- whichever the image
+      # lacked first. The explainer sees no failed apt step and reports "a
+      # real one"; this step says which real one. It is separate because the
+      # explainer body must stay byte-identical across its eight carriers
       # (backend/tests/test_ci_timeout_marker.py).
       - name: Name an unavailable postgresql client
-        if: failure() && steps.apt_psql.outputs.unavailable == '1' && steps.reversibility.outcome == 'failure'
+        if: failure() && steps.apt_psql.outputs.unavailable == '1' && (steps.reversibility.outcome == 'failure' || steps.schemas.outcome == 'failure')
         run: |
-          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR, NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and the reversibility step, which needs that client's pg_dump, failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR, NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
