@@ -1098,7 +1098,7 @@ jobs:
           # declared at this job's `timeout-minutes`.
           JOB_TIMEOUT_MINUTES: '25'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request'`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a pull_request run a newer push to the same ref supersedes it; on any other lane a RUNNING job is never auto-superseded, though a run still PENDING in the group is reaped when a newer one enters it, and a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
+            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request' && github.run_attempt == 1`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a first-attempt pull_request run a newer push to the same PR supersedes it (and a reopen supersedes the same-head run it re-does); every other run (push, schedule, dispatch, any re-run) is alone in a per-run group and is never auto-superseded or reaped while pending, so a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
