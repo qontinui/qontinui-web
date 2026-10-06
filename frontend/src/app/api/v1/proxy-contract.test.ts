@@ -261,9 +261,12 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
     expect(exported).toHaveLength(CONTRACT.length);
   });
 
-  describe.each(CONTRACT)(
-    "%#: %s /api/v1/%s",
-    (mod, verb, path, auth, query, body, errorShape) => {
+  // A plain loop rather than describe.each: each row is titled
+  // "<VERB> /api/v1/<path>" verbatim (describe.each's `$name` interpolation
+  // quotes strings, and `%s` would print the module object), so a failing row
+  // names the route it is about.
+  for (const [mod, verb, path, auth, query, body, errorShape] of CONTRACT) {
+    describe(`${verb} /api/v1/${path}`, () => {
       const handler = mod[verb] as Handler;
 
       it(`with no token: ${auth === "forward" ? "forwards without auth" : `401 {${auth}}`}`, async () => {
@@ -331,6 +334,59 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
               : errorShape
         );
       });
+    });
+  }
+
+  // Two handlers pick the backend path from the request URL rather than the
+  // route alone — both carried over verbatim from the pre-migration handlers
+  // (`execution/runs/[runId]` PUT, `users/me/automation-streaming` POST).
+  describe("request-URL-dependent backend paths", () => {
+    async function forwardedUrl(
+      verb: Verb,
+      path: string,
+      handler: Handler,
+      query = ""
+    ) {
+      cookieToken = "t";
+      const f = stubFetch(ok);
+      await call(verb, path, handler, query);
+      expect(f).toHaveBeenCalledOnce();
+      return f.mock.calls[0]![0] as unknown as string;
     }
-  );
+
+    it("runs/[runId] PUT on a /complete URL forwards to .../complete", async () => {
+      expect(
+        await forwardedUrl(
+          "PUT",
+          "execution/runs/3/complete",
+          run.PUT as Handler
+        )
+      ).toBe("http://backend.test/api/v1/execution/runs/3/complete");
+    });
+
+    it("runs/[runId] PUT on the bare URL forwards to the run itself", async () => {
+      expect(
+        await forwardedUrl("PUT", "execution/runs/3", run.PUT as Handler)
+      ).toBe("http://backend.test/api/v1/execution/runs/3");
+    });
+
+    it.each([
+      ["/toggle", "/toggle"],
+      ["/reset-limit", "/reset-limit"],
+      ["", ""],
+    ])(
+      "automation-streaming POST with %j in the URL forwards to ...%s",
+      async (marker, suffix) => {
+        const url = await forwardedUrl(
+          "POST",
+          "users/me/automation-streaming",
+          streaming.POST as Handler,
+          marker ? `?op=${marker}` : ""
+        );
+        expect(url).toBe(
+          `http://backend.test/api/v1/users/me/automation-streaming${suffix}`
+        );
+      }
+    );
+  });
 });
