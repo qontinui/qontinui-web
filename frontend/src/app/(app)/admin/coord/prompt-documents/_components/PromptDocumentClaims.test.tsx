@@ -423,6 +423,7 @@ describe("PromptDocumentClaims — addressed_by join (declared-intent plan Phase
     );
     expect(summary).toHaveTextContent("landed_unconfirmed");
     expect(summary).toHaveAttribute("data-family", "alert");
+    expect(summary).not.toHaveAttribute("data-carried");
 
     const observed = screen.getByTestId(`doc-claim-link-behaviour-claim-${STEM}#5`);
     expect(observed).toHaveAttribute("data-family", "alert");
@@ -463,6 +464,9 @@ describe("PromptDocumentClaims — addressed_by join (declared-intent plan Phase
     const link = screen.getByTestId(`doc-claim-link-carried-claim-${STEM}#5`);
     expect(link).toHaveTextContent("landed_unconfirmed (carried)");
     expect(link).toHaveAttribute("data-carried", "true");
+    expect(
+      screen.getByTestId("doc-claim-addressing-status-carried-claim")
+    ).toHaveAttribute("data-carried", "true");
   });
 
   it("maps every served status to a family, and an unknown spelling to the amber floor", () => {
