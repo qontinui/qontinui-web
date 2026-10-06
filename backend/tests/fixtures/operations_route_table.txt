@@ -109,6 +109,7 @@ GET /api/v1/operations/migrations/queue get_migrations_queue Any None True tags=
 GET /api/v1/operations/notifications get_coord_notifications Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/plans list_coord_plans Any None True tags=operations [get_tenant_id, get_async_db, get_audit_actor_user_optional, Authenticator.current_user.<locals>.current_user_dependency, get_user_manager, get_user_db, get_async_db, CookieOrBearerScheme(), get_jwt_strategy, HTTPBearer()]
 GET /api/v1/operations/plans/overview get_coord_plans_overview Any None True tags=operations [get_tenant_id]
+GET /api/v1/operations/plans/throughput get_coord_plans_throughput Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/plans/{slug} get_coord_plan Any None True tags=operations [get_tenant_id, get_async_db, get_audit_actor_user_optional, Authenticator.current_user.<locals>.current_user_dependency, get_user_manager, get_user_db, get_async_db, CookieOrBearerScheme(), get_jwt_strategy, HTTPBearer()]
 GET /api/v1/operations/plans/{slug}/history get_coord_plan_history Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/post-merge-followup-scope get_post_merge_followup_scope PostMergeFollowupScopeView None True tags=operations [get_tenant_id, Authenticator.current_user.<locals>.current_user_dependency, get_user_manager, get_user_db, get_async_db, CookieOrBearerScheme(), get_jwt_strategy]
