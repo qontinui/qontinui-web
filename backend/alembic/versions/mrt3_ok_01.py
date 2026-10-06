@@ -10,8 +10,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table("mrt3_ok_probe", sa.Column("id", sa.Integer(), primary_key=True))
+    op.create_table("mrt3_ok_probe", sa.Column("id", sa.Integer(), primary_key=True), schema="coord")
 
 
 def downgrade() -> None:
-    op.drop_table("mrt3_ok_probe")
+    op.drop_table("mrt3_ok_probe", schema="coord")
