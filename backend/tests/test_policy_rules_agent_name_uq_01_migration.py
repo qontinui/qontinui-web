@@ -52,7 +52,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "policy_rules_agent_name_uq_01"
-_PARENT_REVISION_ID = "findings_keyset_01"
+_PARENT_REVISION_ID = "coord_smckpt_01_success_metric_checkpoint_results"
 _INDEX_NAME = "uq_policy_rules_agent_domain_name"
 
 _TENANT = uuid.UUID("00000000-0000-4000-8000-0000000a9e01")

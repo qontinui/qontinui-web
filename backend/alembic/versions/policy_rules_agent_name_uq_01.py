@@ -1,7 +1,7 @@
 """coord.policy_rules — one AGENT-authored decision row per (tenant, domain, name)
 
 Revision ID: policy_rules_agent_name_uq_01
-Revises: findings_keyset_01
+Revises: coord_smckpt_01_success_metric_checkpoint_results
 Create Date: 2026-10-05
 
 Plan ``2026-09-06-decision-policy-rows-are-operator-only-to-create``, follow-up 1
@@ -78,7 +78,8 @@ now fails on this index (a 500 through the operator door's update core until
 coord maps 23505 there too) — the one way it touches operator authoring.
 
 ``down_revision`` chains off the single live alembic head at authoring time
-(``findings_keyset_01``, computed with ``ScriptDirectory.get_heads()``).
+(``coord_smckpt_01_success_metric_checkpoint_results``, computed with
+``scripts/ci/count_alembic_heads.py``).
 """
 
 from collections.abc import Sequence
@@ -87,7 +88,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "policy_rules_agent_name_uq_01"
-down_revision: str | Sequence[str] | None = "findings_keyset_01"
+down_revision: str | Sequence[str] | None = "coord_smckpt_01_success_metric_checkpoint_results"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
