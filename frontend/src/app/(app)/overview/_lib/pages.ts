@@ -24,8 +24,8 @@ export interface PageRecord {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
-  /** The repository a published document mirrors (e.g.
-   *  `qontinui-dev-notes`); null for a document written here. Plan
+  /** The GitHub `owner/name` a published document mirrors (e.g.
+   *  `qontinui/qontinui-dev-notes`); null for a document written here. Plan
    *  `2026-10-07-agents-publish-documents-to-the-project-overview` D3. */
   source_repo: string | null;
   /** The file's path inside `source_repo`. */
@@ -108,9 +108,6 @@ export function documentMeta(
 // `2026-10-07-agents-publish-documents-to-the-project-overview` D3, D6).
 // ---------------------------------------------------------------------------
 
-/** The GitHub owner of a `source_repo` given without one. */
-export const SOURCE_REPO_OWNER = "qontinui";
-
 /** Whether a document mirrors a repository file. */
 export function mirrorsRepo(page: Pick<PageRecord, "source_repo">): boolean {
   return typeof page.source_repo === "string" && page.source_repo !== "";
@@ -128,15 +125,17 @@ export function shortId(id: string): string {
 }
 
 /** The mirrored file at the sha it was taken from, on GitHub; null when the
- *  document does not name a repo, a path and a sha. A `source_repo` that
- *  already says `owner/repo` keeps its owner. */
+ *  document does not name a repo, a path and a sha — or when its
+ *  `source_repo` is a bare name with no owner, which no URL can be built
+ *  from without guessing one. `source_repo` is the GitHub `owner/name`. */
 export function sourceFileUrl(
   page: Pick<PageRecord, "source_repo" | "source_path" | "source_sha">
 ): string | null {
   const { source_repo: repo, source_path: path, source_sha: sha } = page;
   if (!repo || !path || !sha) return null;
-  const fullRepo = repo.includes("/") ? repo : `${SOURCE_REPO_OWNER}/${repo}`;
-  const encodedRepo = fullRepo.split("/").map(encodeURIComponent).join("/");
+  const parts = repo.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const encodedRepo = parts.map(encodeURIComponent).join("/");
   const encodedPath = path
     .replace(/^\/+/, "")
     .split("/")

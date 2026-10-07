@@ -13,7 +13,7 @@ const written = {
   via_session: null,
 };
 const mirrored = {
-  source_repo: "qontinui-dev-notes",
+  source_repo: "qontinui/qontinui-dev-notes",
   source_path: "runbooks/ci.md",
   source_sha: sha,
   via_device: device,
@@ -26,7 +26,7 @@ describe("MirrorsRepoChip", () => {
     const chip = screen.getByText("Mirrors repo");
     expect(chip.className).toContain("badge-info");
     expect(chip.getAttribute("title")).toBe(
-      "Mirrors qontinui-dev-notes/runbooks/ci.md"
+      "Mirrors qontinui/qontinui-dev-notes/runbooks/ci.md"
     );
     expect(chip.getAttribute("data-ui-bridge-id")).toBe("t.chip");
   });
@@ -47,7 +47,7 @@ describe("DocumentProvenanceLine", () => {
       `https://github.com/qontinui/qontinui-dev-notes/blob/${sha}/runbooks/ci.md`
     );
     expect(link.textContent).toBe(
-      "qontinui-dev-notes/runbooks/ci.md @ 0123456"
+      "qontinui/qontinui-dev-notes/runbooks/ci.md @ 0123456"
     );
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
@@ -92,10 +92,23 @@ describe("DocumentProvenanceLine", () => {
     expect(screen.queryByRole("link")).toBeNull();
     expect(
       document.querySelector('[data-ui-bridge-id="t.prov.source"]')?.textContent
-    ).toBe("Mirrors qontinui-dev-notes/runbooks/ci.md");
+    ).toBe("Mirrors qontinui/qontinui-dev-notes/runbooks/ci.md");
     expect(
       document.querySelector('[data-ui-bridge-id="t.prov.publisher"]')
     ).toBeNull();
+  });
+
+  it("shows a bare repo name with no owner unlinked", () => {
+    render(
+      <DocumentProvenanceLine
+        page={{ ...mirrored, source_repo: "qontinui-dev-notes" }}
+        uiBridgeId="t.prov"
+      />
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      document.querySelector('[data-ui-bridge-id="t.prov.source"]')?.textContent
+    ).toBe("Mirrors qontinui-dev-notes/runbooks/ci.md @ 0123456");
   });
 
   it("renders nothing for a document written here", () => {
