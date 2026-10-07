@@ -54116,6 +54116,80 @@
         "title": "TenantRenameIn",
         "type": "object"
       },
+      "TenantResumeUnfinishedPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "resume_unfinished_enabled": {
+            "title": "Resume Unfinished Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resume_unfinished_enabled"
+        ],
+        "title": "TenantResumeUnfinishedPatch",
+        "type": "object"
+      },
+      "TenantResumeUnfinishedView": {
+        "description": "The tenant's automatic-resume consent, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "resume_unfinished_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Unfinished Enabled"
+          }
+        },
+        "required": [
+          "resume_unfinished_enabled",
+          "can_edit"
+        ],
+        "title": "TenantResumeUnfinishedView",
+        "type": "object"
+      },
+      "TenantResumeUnfinishedWriteResult": {
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantResumeUnfinishedView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "written"
+        ],
+        "title": "TenantResumeUnfinishedWriteResult",
+        "type": "object"
+      },
       "TenantTranscriptSyncPatch": {
         "additionalProperties": false,
         "description": "Closed body for the transcript-sync write \u2014 see wire fact 2 above.",
@@ -58168,6 +58242,94 @@
           "reason"
         ],
         "title": "UndrainRequestBody",
+        "type": "object"
+      },
+      "UnfinishedResumeBody": {
+        "additionalProperties": false,
+        "description": "Where to resume. The row's own device and account label by default.",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_device_id"
+        ],
+        "title": "UnfinishedResumeBody",
+        "type": "object"
+      },
+      "UnfinishedSessionsView": {
+        "description": "Coord's unfinished-sessions census, normalised to a closed state set.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sessions": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessions"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UnfinishedSessionsView",
         "type": "object"
       },
       "UnifiedWorkflowListResponse": {
@@ -101224,6 +101386,73 @@
         ]
       }
     },
+    "/api/v1/operations/tenant-policy/resume-unfinished": {
+      "get": {
+        "description": "Read the tenant's automatic-resume flag (effective tenant, as for\n``transcript-sync`` -- see wire fact 1 above).",
+        "operationId": "api_v1_operations_tenant_policy_resume_unfinished_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResumeUnfinishedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Tenant Resume Unfinished",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Turn automatic resume on or off for the caller's effective tenant.",
+        "operationId": "api_v1_operations_tenant_policy_resume_unfinished_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantResumeUnfinishedPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResumeUnfinishedWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Tenant Resume Unfinished",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/tenant-policy/transcript-sync": {
       "get": {
         "description": "Read whether coord accepts session output for the caller's tenant.\n\n``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see\n``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike\nthat route it carries NO superuser bypass: coord's ``patch_tenant_policy``\nauthorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who\nis not an admin of this tenant is refused ``admin_required`` \u2014 an enabled\nbutton would promise a write coord will not take.",
@@ -101484,6 +101713,183 @@
           }
         },
         "summary": "Get Trees Contention",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions": {
+      "get": {
+        "description": "Closed sessions whose work was never declared finished, fleet-wide.",
+        "operationId": "api_v1_operations_unfinished_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnfinishedSessionsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Unfinished Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions/{claude_session_id}/dismiss": {
+      "post": {
+        "description": "Dismiss an unfinished session: coord's finish door with reason\n``dismissed``. Coord's typed refusals (404 no such session, 400) pass\nthrough verbatim.",
+        "operationId": "api_v1_operations_unfinished_sessions_claude_session_id_dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claude_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Claude Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Dismiss Unfinished Session Api V1 Operations Unfinished Sessions  Claude Session Id  Dismiss Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Dismiss Unfinished Session",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions/{coord_session_id}/resume": {
+      "post": {
+        "description": "Resume a closed session: coord's respawn door. Coord answers 202 with the\nrecorded request, echoed verbatim; refusals (404, drained-device 409, 400\nbad account pin) pass through typed.",
+        "operationId": "api_v1_operations_unfinished_sessions_coord_session_id_resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coord_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Coord Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnfinishedResumeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Resume Unfinished Session Api V1 Operations Unfinished Sessions  Coord Session Id  Resume Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Resume Unfinished Session",
         "tags": [
           "operations"
         ]
