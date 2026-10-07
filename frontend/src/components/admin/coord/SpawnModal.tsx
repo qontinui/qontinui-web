@@ -133,7 +133,6 @@ import {
 } from "@/components/admin/coord/spawnPlacement";
 import {
   ACCOUNT_AUTO,
-  API,
   KNOWN_REPOS,
   UUID_RE,
   buildSpawnRequestBody,
@@ -141,6 +140,7 @@ import {
   formatUtilization,
 } from "@/components/admin/coord/spawnModel";
 import { useSpawnRoster } from "@/components/admin/coord/useSpawnRoster";
+import { spawnAgent } from "@/lib/api/operations/agents";
 
 export interface SpawnModalProps {
   /** Whether the modal is open. */
@@ -370,11 +370,8 @@ export function SpawnModal({
         };
         let res: Response;
         try {
-          res = await fetch(`${API}/agents/spawn`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
+          // One request, never retried — see `spawnAgent`.
+          res = await spawnAgent(body);
         } catch (e) {
           outcomeUnknown(e instanceof Error ? e.message : String(e));
           return;

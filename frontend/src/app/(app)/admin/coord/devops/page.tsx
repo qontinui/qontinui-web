@@ -147,7 +147,7 @@ import {
   buildResolvabilityBadge,
   faultToVisibilityBadge,
 } from "@/components/operations/fleetReadout";
-import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
 // defeats every downstream useMemo keyed on it.
