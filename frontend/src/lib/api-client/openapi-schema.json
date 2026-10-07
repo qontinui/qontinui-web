@@ -100398,7 +100398,7 @@
     },
     "/api/v1/operations/pr-merge/graph": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 5 D5.2 \u2014 cross-repo dependency\ngraph for a PR's connected component, tenant-scoped.\n\nCoord returns ``{nodes, edges, topo_order, cycle_detected,\ncycle_members}`` \u2014 the frontend renders this as a DAG via dagre\n+ the `@xyflow/react` workspace dep already present in\n``frontend/package.json``.\n\nCross-tenant edges are never traversed coord-side; the\n``X-Qontinui-Tenant-Id`` header injected here is what enforces\nscoping. Two tenants viewing the same repo see disjoint graphs\nin the v1 one-repo-one-tenant model.",
+        "description": "PR Merge Orchestrator Phase 5 D5.2 \u2014 cross-repo dependency\ngraph for a PR's connected component, tenant-scoped.\n\nCoord returns ``{nodes, edges, topo_order, cycle_detected,\ncycle_members}`` \u2014 the frontend renders this as a DAG via dagre\n+ the `@xyflow/react` workspace dep already present in\n``frontend/package.json``.\n\nTenant scoping is coord's: it resolves the tenant from the caller's\nforwarded credential (``tenant_id`` here only triggers bearer\nforwarding \u2014 the legacy ``X-Qontinui-Tenant-Id`` header is retired), never\ntraverses a cross-tenant edge, and answers ``404 {\"error\":\n\"repo_not_in_caller_tenant\", \"caller_tenant_id\": \u2026, \"repo\": \u2026}`` for a\nrepo that tenant does not own. ``structured_errors=True`` keeps that\nrefusal a JSON object end to end so the graph can render a readable\nsentence instead of an escaped string.",
         "operationId": "api_v1_operations_pr_merge_graph_get",
         "parameters": [
           {
