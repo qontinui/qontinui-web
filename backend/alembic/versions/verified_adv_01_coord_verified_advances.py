@@ -25,7 +25,8 @@ and says so (D9).
 Columns (the contract coord's Rust code is written against — do not rename)
 ===========================================================================
 * ``id BIGSERIAL PRIMARY KEY``.
-* ``tenant_id UUID NOT NULL`` — no FK, like every sibling ``coord.*`` table.
+* ``tenant_id UUID NOT NULL`` — no FK, like most sibling ``coord.*`` tables
+  (e.g. ``success_metric_checkpoint_results``).
 * ``repo TEXT NOT NULL`` — ``owner/name``, e.g. ``qontinui/qontinui-coord``.
 * ``sha TEXT NOT NULL`` — the newly verified ``main`` sha (40-hex).
 * ``prev_sha TEXT NULL`` — the previous verified sha for the repo; NULL on the
@@ -42,7 +43,11 @@ Constraints and index
 * ``ck_verified_advances_basis`` — the five-value ``basis`` vocabulary.
 * ``uq_verified_advances_repo_sha`` — ``UNIQUE (repo, sha)``: a sha is verified
   at most once per repo, which makes coord's insert idempotent
-  (``ON CONFLICT (repo, sha) DO NOTHING``).
+  (``ON CONFLICT (repo, sha) DO NOTHING``). Deliberately not tenant-scoped:
+  ``repo`` is a GitHub ``owner/name`` and a sha in it is one commit whoever
+  reads it, and coord lands each repo for exactly one tenant. Readers still
+  filter by ``tenant_id`` and order by ``advanced_at DESC, id DESC`` (two
+  advances in one transaction share ``now()``).
 * ``verified_advances_repo_advanced_at_idx`` on ``(repo, advanced_at DESC)`` —
   the "current verified sha per repo" read and one repo's advance history.
   Built ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside

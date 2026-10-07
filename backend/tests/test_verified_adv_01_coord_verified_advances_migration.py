@@ -218,6 +218,7 @@ def test_verified_adv_01_creates_the_table_and_enforces_its_contract() -> None:
         assert columns == _EXPECTED_COLUMNS
         assert constraints == _CONSTRAINTS
         assert comment and "refs/heads/verified" in comment
+        assert indexdef.startswith("CREATE INDEX "), indexdef
         assert "(repo, advanced_at DESC)" in indexdef
         assert valid is True, "the CONCURRENTLY build left an INVALID index"
 
@@ -229,7 +230,7 @@ def test_verified_adv_01_creates_the_table_and_enforces_its_contract() -> None:
                 text(
                     """
                     SELECT id IS NOT NULL, evidence = '{}'::jsonb,
-                           advanced_at IS NOT NULL
+                           advanced_at > now() - interval '5 minutes'
                       FROM coord.verified_advances
                      WHERE repo = :repo AND sha = :sha
                     """
@@ -254,6 +255,15 @@ def test_verified_adv_01_creates_the_table_and_enforces_its_contract() -> None:
                 ),
                 {"tid": _TENANT, "repo": _REPO, "sha": sha},
             )
+        with engine.connect() as conn:
+            kept = conn.execute(
+                text(
+                    "SELECT count(*), max(basis) FROM coord.verified_advances"
+                    " WHERE repo = :repo AND sha = :sha"
+                ),
+                {"repo": _REPO, "sha": sha},
+            ).one()
+        assert tuple(kept) == (1, "candidate"), "ON CONFLICT altered the row"
         _accepted(engine, _row(sha=sha, repo="qontinui/qontinui-runner"))
 
         # 5. basis vocabulary.
