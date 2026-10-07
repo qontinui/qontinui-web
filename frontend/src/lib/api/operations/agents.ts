@@ -94,10 +94,12 @@ export function fetchClaudeAccounts(): Promise<ClaudeAccountsPayload> {
  * but the body is unreadable" apart from a refusal — a 2xx IS the spawn
  * landing, so it must never be folded into a thrown error.
  *
- * Exactly one request, ever: `idempotent: false` keeps a 5xx from being
- * re-issued (a `504` from the proxy can arrive after coord already minted the
- * agent), and `maxRetries: 0` suppresses the 429 arm too. A blind retry could
- * make two sessions.
+ * At most one request reaches the spawn handler: `idempotent: false` keeps a
+ * 5xx from being re-issued (a `504` from the proxy can arrive after coord
+ * already minted the agent), and `maxRetries: 0` suppresses the 429 arm too. A
+ * blind retry could make two sessions. The one replay `httpClient` still makes
+ * is a stale-token `401`: it refreshes the token and resends once. That is
+ * safe, because a request refused at authentication never reached the handler.
  */
 export function spawnAgent(body: Record<string, unknown>): Promise<Response> {
   return httpClient.fetch(`${OPERATIONS_BASE}/agents/spawn`, {
