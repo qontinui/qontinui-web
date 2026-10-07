@@ -23,7 +23,8 @@ What is asserted
    ``credibility_scorer.rs``'s read; the sweep's guard is a GROUP BY aggregate
    that does not require this index)
    is an ordered index scan on the new composite with no Sort node.
-5. The ``indisvalid`` guard refuses a leftover INVALID index that
+5. The ``indisvalid`` guard refuses a leftover INVALID index, for each of
+   the two index names, that
    ``IF NOT EXISTS`` would otherwise skip (driven by marking a pre-built index
    invalid in the catalog; skipped when the test role is not a superuser).
 6. ``coord_test_results_autovac_01`` sets exactly the two ``reloptions`` and its

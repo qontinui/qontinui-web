@@ -34,7 +34,7 @@ What each index serves
    top-N sorts it — predicted, not measured, to approach coord's 60 s
    ``statement_timeout``, and in any case repeated up to 200 times per sweep.
    With it the batch is an ordered index scan that stops after ``$n``. Coord's
-   sweep additionally refuses to run when no such index is present (its
+   companion sweep (same plan, Phase 2) additionally refuses to run when no such index is present (its
    deploy-order guard), so this revision must be applied before that sweep can
    do anything.
 
@@ -64,7 +64,8 @@ What each index serves
    ``(repo, head_sha, ...)`` with ``head_sha`` unbound, so neither it nor
    ``idx_test_coverage_map_repo_head`` can deliver the ordered per-test probe:
    the best they offer is a scan of every index entry for the repo with
-   ``test_id`` as an index qual, then a sort of the matching rows.
+   ``test_id`` as an index qual (the unique constraint) or a heap filter
+   (``idx_test_coverage_map_repo_head``), then a sort of the matching rows.
    With ``repo`` and ``test_id`` bound by equality in the leading positions and
    ``observed_at DESC`` trailing, that read is one index descent.
    The batch's own ``ORDER BY observed_at LIMIT`` rides the pre-existing
