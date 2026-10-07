@@ -12,7 +12,10 @@ import {
   questionsHrefFor,
   summarizeFleetConditions,
 } from "./fleetConditions";
-import type { FleetHealthConditions, FleetHealthPayload } from "./useFleetHealth";
+import type {
+  FleetHealthConditions,
+  FleetHealthPayload,
+} from "@/lib/api/operations/coordFleet";
 
 const NOW = Date.parse("2026-09-18T12:00:00Z");
 

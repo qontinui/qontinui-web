@@ -2,6 +2,32 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+/**
+ * The modal reaches the network only through `httpClient` (the typed
+ * `/operations` client: `fetchFleetHealth`, `fetchClaudeAccounts`,
+ * `spawnAgent`), so that is what is mocked — by specifier, the way every
+ * other `httpClient` consumer's suite does it.
+ *
+ * `get` mirrors `HttpClient.get`'s contract exactly where the modal depends
+ * on it: a 2xx resolves to the parsed body, anything else REJECTS with
+ * `GET <url> failed: <status> - <body>` — the shape `httpStatusOf` reads the
+ * status back out of. `fetch` (the spawn POST) hands back the response as is.
+ * Both route to `fetchMock` / `accountsResponse` below, so each case still
+ * says what the server answered and nothing about the transport.
+ */
+const net = vi.hoisted(() => ({
+  get: (_url: string, _init?: unknown): Promise<unknown> =>
+    Promise.reject(new Error("net.get not wired")),
+  fetch: (_url: string, _init?: unknown): Promise<unknown> =>
+    Promise.reject(new Error("net.fetch not wired")),
+}));
+vi.mock("@/services/service-factory", () => ({
+  httpClient: {
+    get: (url: string, init?: unknown) => net.get(url, init),
+    fetch: (url: string, init?: unknown) => net.fetch(url, init),
+  },
+}));
+
 import { SpawnModal } from "./SpawnModal";
 
 /**
@@ -105,6 +131,21 @@ function accountsOf(
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
+/** `HttpClient.get` over a response-shaped answer: the body on a 2xx, the
+ *  client's own rejection otherwise. */
+async function asGet(url: string, answer: unknown): Promise<unknown> {
+  const res = (await answer) as {
+    ok: boolean;
+    status: number;
+    json: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  };
+  if (!res.ok) {
+    const text = res.text ? await res.text() : "";
+    throw new Error(`GET ${url} failed: ${res.status} - ${text}`);
+  }
+  return res.json();
+}
 /** What the (independent) `/claude-accounts` fetch answers.
  *
  *  The modal now makes TWO unrelated reads on open. Routing them by URL is
@@ -117,15 +158,14 @@ let accountsResponse: unknown;
 beforeEach(() => {
   fetchMock = vi.fn();
   accountsResponse = accountsOf([]);
-  vi.stubGlobal("fetch", (url: unknown, init?: unknown) =>
-    String(url).includes("/claude-accounts")
-      ? Promise.resolve(accountsResponse)
-      : fetchMock(url, init)
-  );
+  net.get = (url, init) =>
+    url.includes("/claude-accounts")
+      ? asGet(url, accountsResponse)
+      : asGet(url, fetchMock(url, init));
+  net.fetch = (url, init) => fetchMock(url, init);
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -195,6 +235,25 @@ describe("SpawnModal device roster", () => {
     // A fault is an error, not information, and is styled as one.
     expect(notice.className).toContain("text-destructive");
     expect(screen.getByTestId("coord-spawn-device-input")).toBeTruthy();
+  });
+
+  it("names the backend's reason beside the status on a non-200 device read", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+      text: async () => JSON.stringify({ detail: "Not authenticated" }),
+    });
+
+    renderModal();
+
+    const notice = await screen.findByTestId("coord-spawn-device-notice");
+    // The status alone says "auth"; the backend's own sentence says which
+    // auth fault, read through the shared guarded error reader.
+    expect(notice.textContent).toMatch(
+      /fleet\/health returned HTTP 401: Not authenticated/
+    );
+    expect(notice.className).toContain("text-destructive");
   });
 
   it("surfaces a transport failure and still offers manual entry", async () => {
@@ -525,6 +584,24 @@ describe("SpawnModal Claude account roster", () => {
     expect(notice.textContent).toMatch(/UNKNOWN/);
     // A fault is an error and is styled as one; the empty case is not.
     expect(notice.className).toContain("text-destructive");
+  });
+
+  it("names the backend's reason beside the status on a non-2xx account read", async () => {
+    accountsResponse = {
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+      text: async () => JSON.stringify({ detail: "Not authenticated" }),
+    };
+    const user = userEvent.setup();
+
+    await renderWithDevice(user);
+
+    const notice = await screen.findByTestId("coord-spawn-account-notice");
+    expect(notice.textContent).toMatch(
+      /claude-accounts returned HTTP 401: Not authenticated/
+    );
+    expect(notice.textContent).toMatch(/UNKNOWN/);
   });
 
   it("surfaces a transport failure the same way", async () => {
