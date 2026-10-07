@@ -28,7 +28,6 @@ from app.services.runner.command_relay import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.models.user import User
     from app.services.runner.connection_registry import (
         WebSocketConnectionRegistry,
     )
@@ -119,7 +118,7 @@ async def get_owned_runner_or_404(
 
 async def resolve_runner_for_request(
     runner_id: UUID | None,
-    user: User,
+    user_id: UUID,
     db: AsyncSession,
     manager: Any,
     endpoint: str,
@@ -137,13 +136,16 @@ async def resolve_runner_for_request(
     The explicit arm deliberately keeps the weaker registration predicate;
     ``dispatch_and_wait``'s own gate refuses a stale socket, so both arms
     end in the same 503 for a dead runner.
+
+    Service-level callers with no explicit selection pass ``runner_id=None``
+    to get the auto-pick arm with its 503.
     """
     if runner_id is not None:
-        owned_runner = await get_owned_runner_or_404(db, user.id, runner_id)
+        owned_runner = await get_owned_runner_or_404(db, user_id, runner_id)
         if not manager.registry.is_runner_connected(str(owned_runner.id)):
             raise device_bridge_503_no_device(endpoint)
         return owned_runner
-    picked = await pick_active_device_for_user(user.id, db, manager.registry)
+    picked = await pick_active_device_for_user(user_id, db, manager.registry)
     if picked is None:
         raise device_bridge_503_no_device(endpoint)
     return picked
@@ -213,21 +215,10 @@ async def dispatch_or_http_error(
     return raw_response
 
 
-# Legacy aliases — preserved for in-process compat while the broader
-# fleet of WS-bridge HTTP handlers still imports the runner_* names.
-# These will be removed in a follow-up cleanup once every consumer has
-# been migrated to the device_* names.
-pick_active_runner_for_user = pick_active_device_for_user
-runner_bridge_503_no_runner = device_bridge_503_no_device
-
-
 __all__ = [
     "pick_active_device_for_user",
     "device_bridge_503_no_device",
     "get_owned_runner_or_404",
     "resolve_runner_for_request",
     "dispatch_or_http_error",
-    # Legacy
-    "pick_active_runner_for_user",
-    "runner_bridge_503_no_runner",
 ]
