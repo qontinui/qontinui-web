@@ -15,6 +15,7 @@ import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useResourceList } from "@/components/overview/editing/useResource";
 import { formatRelativeTime } from "@/lib/time-utils";
+import { MirrorsRepoChip } from "../_components/DocumentProvenance";
 import { FilesPanel } from "../_components/FilesPanel";
 import { NewPageForm } from "../_components/NewPageForm";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
@@ -188,13 +189,19 @@ export default function DocumentsPage() {
                     const meta = documentMeta(page);
                     return (
                       <li key={page.id} className="px-4 py-3">
-                        <Link
-                          href={pageHref(page)}
-                          className="text-[15px] font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-                          data-ui-bridge-id={`overview.documents.written.open-${page.id}`}
-                        >
-                          {page.title}
-                        </Link>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <Link
+                            href={pageHref(page)}
+                            className="text-[15px] font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                            data-ui-bridge-id={`overview.documents.written.open-${page.id}`}
+                          >
+                            {page.title}
+                          </Link>
+                          <MirrorsRepoChip
+                            page={page}
+                            uiBridgeId={`overview.documents.written.mirrors-${page.id}`}
+                          />
+                        </div>
                         {meta && (
                           <p className="mt-0.5 text-sm text-foreground">
                             {meta}
