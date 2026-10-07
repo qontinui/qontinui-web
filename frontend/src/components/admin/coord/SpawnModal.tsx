@@ -370,7 +370,7 @@ export function SpawnModal({
         };
         let res: Response;
         try {
-          // One request, never retried — see `spawnAgent`.
+          // Never retried past the handler — see `spawnAgent`.
           res = await spawnAgent(body);
         } catch (e) {
           outcomeUnknown(e instanceof Error ? e.message : String(e));
