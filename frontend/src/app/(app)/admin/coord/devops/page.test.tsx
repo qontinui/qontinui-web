@@ -151,6 +151,11 @@ import {
   deviceStateBadgeVariant,
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
+import { FAULT_TO_VISIBILITY_API } from "@/components/operations/useFaultToVisibility";
+import knownFleetHealth from "../../../../../../test-fixtures/devops-readout/known-fleet-health.json";
+import knownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/known-fault-to-visibility.json";
+import unknownFleetHealth from "../../../../../../test-fixtures/devops-readout/unknown-fleet-health.json";
+import unknownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/unknown-fault-to-visibility.json";
 
 /**
  * Coord wire shape — mirrors `DeviceHealthSnapshot` (fleet_health.rs).
@@ -285,6 +290,12 @@ interface Fixture {
    * overrides it per case.
    */
   worktreeSlots?: unknown;
+  /**
+   * What `GET /operations/alerts/fault-to-visibility` answers with (plan
+   * `2026-09-20-the-second-ratchet-…` Phase 8). `undefined` = the route is not
+   * served, which the strip must render as UNKNOWN.
+   */
+  faultToVisibility?: unknown;
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -304,6 +315,11 @@ function mockRoutes(fixture: Fixture) {
           devices: [],
         }
       );
+    }
+    if (u.includes("fault-to-visibility")) {
+      return fixture.faultToVisibility === undefined
+        ? Promise.reject(new Error("fault-to-visibility not served"))
+        : Promise.resolve(fixture.faultToVisibility);
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
@@ -1608,12 +1624,19 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     expect(
       httpGet.mock.calls.filter((c) => String(c[0]).includes("fleet/health"))
     ).toHaveLength(1);
-    expect(
-      httpGet.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
-    ).toHaveLength(0);
-    expect(
-      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
-    ).toHaveLength(0);
+    // The strip's fault-to-visibility badge (plan
+    // `2026-09-20-the-second-ratchet-…` Phase 8) reads its own
+    // `/alerts/fault-to-visibility` route — a percentile, not the alert rows —
+    // so it is the one `/alerts` path this page may touch. Any OTHER is the
+    // retired severity read coming back.
+    const alertReads = (calls: unknown[][]) =>
+      calls.filter(
+        (c) =>
+          String(c[0]).includes("/alerts") &&
+          String(c[0]) !== FAULT_TO_VISIBILITY_API
+      );
+    expect(alertReads(httpGet.mock.calls)).toHaveLength(0);
+    expect(alertReads(httpFetch.mock.calls)).toHaveLength(0);
   });
 });
 
@@ -2756,5 +2779,134 @@ describe("/admin/coord/devops — GitHub-hosted CI", () => {
     expect(
       within(panel).getByTestId("github-hosted-ci-tenant-effective").textContent
     ).toBe("–");
+  });
+});
+
+/**
+ * The operations-ratchet readout — plan
+ * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+ * Phase 8. The strip gains fault-to-visibility (p90 WITH its known-onset
+ * share) and build resolvability; each machine row gains the runner's own
+ * wedge incidents (open ones prominently) and capability verdicts (grouped,
+ * INOPERATIVE first). Every `null` renders "unknown — <reason>".
+ *
+ * The fixtures are the same files the `coord-devops-readout-*` UI Bridge specs
+ * stub the routes with; the last test pins that.
+ */
+describe("/admin/coord/devops — the operations-ratchet readout", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  function mockReadout(
+    health: { devices: unknown[] } & Record<string, unknown>,
+    faultToVisibility: unknown
+  ) {
+    const { devices, ...healthExtras } = health;
+    mockRoutes({
+      devices: devices as ReturnType<typeof coordDevice>[],
+      runners: [],
+      samples: [],
+      healthExtras,
+      faultToVisibility,
+    });
+  }
+
+  it("shows fault-to-visibility p90 AND the known-onset share, and build resolvability", async () => {
+    mockReadout(knownFleetHealth, knownFaultToVisibility);
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-f2v-badge")).toHaveTextContent(
+        "fault→visible p90 1h 13m · onset known 12/40"
+      )
+    );
+    expect(
+      screen.getByTestId("coord-devops-build-resolvability-badge")
+    ).toHaveTextContent("builds nameable 88% (7/8)");
+  });
+
+  it("renders an OPEN wedge incident prominently, and capabilities INOPERATIVE first", async () => {
+    mockReadout(knownFleetHealth, knownFaultToVisibility);
+    render(<CoordDevOpsPage />);
+
+    const open = await screen.findByTestId("devops-runner-wedge-open");
+    expect(open).toHaveTextContent("wedged: backend_wedged");
+    expect(open.className).toContain("border-l-red-500");
+    expect(screen.getByTestId("devops-runner-wedges-summary")).toHaveTextContent(
+      "1 open · 1 ended recently"
+    );
+    const groups = [
+      ...screen
+        .getByTestId("devops-runner-capability")
+        .querySelectorAll<HTMLElement>("[data-testid^='devops-runner-capability-group-']"),
+    ].map((g) => g.dataset.testid);
+    expect(groups).toEqual([
+      "devops-runner-capability-group-inoperative",
+      "devops-runner-capability-group-degraded",
+      "devops-runner-capability-group-operative",
+    ]);
+    expect(
+      screen.getByTestId("devops-runner-capability-group-inoperative")
+    ).toHaveTextContent("dev-start.ps1");
+  });
+
+  it("renders every absent readout as unknown — <reason>, never none or 0", async () => {
+    mockReadout(unknownFleetHealth, unknownFaultToVisibility);
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-f2v-badge")).toHaveTextContent(
+        "fault→visible p90 unknown — no episode with a known onset · onset known 0/9"
+      )
+    );
+    expect(
+      screen.getByTestId("coord-devops-build-resolvability-badge")
+    ).toHaveTextContent("builds nameable unknown — no devices on the roster");
+    expect(
+      await screen.findByTestId("devops-runner-wedges-unknown")
+    ).toHaveTextContent("unknown — build_nameable_key_absent");
+    expect(
+      screen.getByTestId("devops-runner-capability-unknown")
+    ).toHaveTextContent("unknown — no_publisher");
+    expect(screen.queryByTestId("devops-runner-wedges-summary")).toBeNull();
+  });
+
+  it("a fault-to-visibility route that is not served is unknown with the failure", async () => {
+    mockReadout(knownFleetHealth, undefined);
+    render(<CoordDevOpsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-f2v-badge")).toHaveTextContent(
+        "fault→visible unknown — fault-to-visibility not served"
+      )
+    );
+  });
+
+  it("the UI Bridge specs stub exactly these fixtures", () => {
+    const specsDir = join(__dirname, "../../../../../../specs/pages");
+    for (const [specId, health, f2v] of [
+      ["coord-devops-readout-known", knownFleetHealth, knownFaultToVisibility],
+      [
+        "coord-devops-readout-unknown",
+        unknownFleetHealth,
+        unknownFaultToVisibility,
+      ],
+    ] as const) {
+      const spec = JSON.parse(
+        readFileSync(join(specsDir, specId, "state-machine.derived.json"), "utf8")
+      ) as {
+        id: string;
+        metadata: { routeStubs: Array<{ urlPattern: string; body: unknown }> };
+      };
+      expect(spec.id).toBe(specId);
+      const body = (needle: string) =>
+        spec.metadata.routeStubs.find((r) => r.urlPattern.includes(needle))
+          ?.body;
+      expect(body("/fleet/health")).toEqual(health);
+      expect(body("/alerts/fault-to-visibility")).toEqual(f2v);
+    }
   });
 });

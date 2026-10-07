@@ -3,10 +3,16 @@ name: pre-commit ruff pin == the ruff CI runs
 # THE GATE LOGIC LIVES IN `scripts/ci/check_ruff_version_parity.py`, not here —
 # the shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
 # Phase 5 established for forbid-public-schema, web-boundary-lint,
-# alembic-single-head and gitignore-tracked-files. Three lanes invoke the one
+# alembic-single-head and gitignore-tracked-files. Four lanes invoke the one
 # script:
 #
 #   * this workflow, step "Compare the pre-commit ruff pin against the lockfiles"
+#   * .github/workflows/web-guards.yml, step "ruff-version-parity: Compare the
+#     pre-commit ruff pin against the lockfiles" -- the consolidated one-job
+#     guard lane, running the same command beside this workflow until a later
+#     phase of plan
+#     2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work
+#     deletes this file
 #   * .qontinui/ci.toml, step `ruff-version-parity`
 #   * .pre-commit-config.yaml, hook `ruff-version-parity`
 #
@@ -45,8 +51,9 @@ name: pre-commit ruff pin == the ruff CI runs
 # path-filtered and its filter lists neither `.pre-commit-config.yaml` nor the
 # repo-root `poetry.lock`, so the step could not run on the drift it existed to
 # catch. backend/tests/test_ruff_version_parity_gate.py now pins the roster at
-# these three lanes, so a fourth fails a test instead of falsifying this
-# paragraph in silence.
+# the four lanes above (web-guards.yml is the deliberate fourth: an unfiltered
+# guard job, not a backend-ci.yml step), so a fifth fails a test instead of
+# falsifying this paragraph in silence.
 
 on:
   pull_request:
