@@ -6,7 +6,6 @@ const OPTIONS: ProxyOptions = {
   tokenSources: ["cookie", "header"],
   onMissingToken: "401",
   unauthorizedBodyKey: "detail",
-  forwardBody: "json",
   errorBody: "detail",
 };
 
