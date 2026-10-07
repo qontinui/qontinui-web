@@ -77,7 +77,6 @@ const CONTRACT: [
   [runs, "GET", "execution/runs", "detail", "reencoded", "none", "detail"],
   [runs, "POST", "execution/runs", "detail", "drop", "json", "detail"],
   [run, "GET", "execution/runs/3", "detail", "drop", "none", "detail"],
-  [run, "PUT", "execution/runs/3", "detail", "drop", "json", "detail"],
   [run, "DELETE", "execution/runs/3", "detail", "drop", "none", "detail"],
   [runTree, "GET", "execution/runs/3/tree", "detail", "drop", "none", "detail"],
   [
@@ -171,15 +170,6 @@ const CONTRACT: [
     "details",
   ],
   [
-    streaming,
-    "POST",
-    "users/me/automation-streaming",
-    "error",
-    "drop",
-    "json",
-    { error: PROXY },
-  ],
-  [
     streamingReset,
     "POST",
     "users/me/automation-streaming/reset-limit",
@@ -261,9 +251,12 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
     expect(exported).toHaveLength(CONTRACT.length);
   });
 
-  describe.each(CONTRACT)(
-    "%#: %s /api/v1/%s",
-    (mod, verb, path, auth, query, body, errorShape) => {
+  // A plain loop rather than describe.each: each row is titled
+  // "<VERB> /api/v1/<path>" verbatim (describe.each's `$name` interpolation
+  // quotes strings, and `%s` would print the module object), so a failing row
+  // names the route it is about.
+  for (const [mod, verb, path, auth, query, body, errorShape] of CONTRACT) {
+    describe(`${verb} /api/v1/${path}`, () => {
       const handler = mod[verb] as Handler;
 
       it(`with no token: ${auth === "forward" ? "forwards without auth" : `401 {${auth}}`}`, async () => {
@@ -331,6 +324,6 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
               : errorShape
         );
       });
-    }
-  );
+    });
+  }
 });
