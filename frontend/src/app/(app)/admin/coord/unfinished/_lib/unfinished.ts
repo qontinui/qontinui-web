@@ -11,6 +11,33 @@ export function resumeBlockedReason(row: UnfinishedSession): string | null {
   if (!row.device_id) {
     return "Coord did not record which device ran this session, so there is nowhere to resume it.";
   }
+  // A resume spends quota and re-runs work; only a process SHOWN gone is safe.
+  // "unknown" is not "gone" — resuming a live session would fork it.
+  if (row.liveness !== "process_gone") {
+    return "The process was not shown gone (liveness unknown), so resuming could duplicate a live session.";
+  }
+  if (resumeAccount(row) === null) {
+    return "Coord recorded no account config directory for this session, so it cannot be resumed under its original account.";
+  }
+  return null;
+}
+
+const CONFIG_DIR_BASENAME = /^\.claude(-[A-Za-z0-9_.-]+)?$/;
+
+/**
+ * The wire `account` for a respawn: the config-dir BASENAME (e.g.
+ * `.claude-gmail`), the form coord's respawn contract takes. Uses
+ * `account_label` when it is already in that form, else the basename of
+ * `config_dir`; null when neither is — never a display label like "gmail".
+ */
+export function resumeAccount(row: UnfinishedSession): string | null {
+  const label = row.account_label?.trim();
+  if (label && CONFIG_DIR_BASENAME.test(label)) return label;
+  const dir = row.config_dir?.trim().replace(/[\\/]+$/, "");
+  if (dir) {
+    const base = dir.split(/[\\/]/).pop() ?? "";
+    if (CONFIG_DIR_BASENAME.test(base)) return base;
+  }
   return null;
 }
 

@@ -119,7 +119,7 @@ describe("UnfinishedSessionsPage", () => {
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith(
         `${UNFINISHED_API}/${ROW.coord_session_id}/resume`,
-        { target_device_id: ROW.device_id, account: ROW.account_label }
+        { target_device_id: ROW.device_id, account: ".claude-x" }
       )
     );
     fireEvent.click(screen.getByTestId("unfinished-dismiss"));

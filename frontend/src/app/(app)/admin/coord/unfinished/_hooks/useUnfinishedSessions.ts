@@ -8,6 +8,7 @@ import {
   type UnfinishedSession,
   type UnfinishedSessionsView,
 } from "../types";
+import { resumeAccount, resumeBlockedReason } from "../_lib/unfinished";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -75,14 +76,15 @@ export function useUnfinishedSessions() {
 
   const resume = useCallback(
     async (row: UnfinishedSession): Promise<boolean> => {
-      if (!row.device_id) return false;
+      const account = resumeAccount(row);
+      if (resumeBlockedReason(row) !== null || account === null) return false;
       setBusyId(row.claude_session_id);
       try {
         await httpClient.post(
           `${UNFINISHED_API}/${row.coord_session_id}/resume`,
           {
             target_device_id: row.device_id,
-            account: row.account_label,
+            account,
           }
         );
         toast.success(

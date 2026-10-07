@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  resumeAccount,
   resumeBlockedReason,
   transcriptText,
   unknownReasonText,
@@ -31,6 +32,25 @@ describe("unfinished helpers", () => {
   it("blocks resume only when the device is unrecorded", () => {
     expect(resumeBlockedReason(row())).toBeNull();
     expect(resumeBlockedReason(row({ device_id: null }))).toMatch(/device/);
+  });
+  it("blocks resume unless the process is shown gone", () => {
+    expect(resumeBlockedReason(row({ liveness: "unknown" }))).toMatch(
+      /not shown gone/
+    );
+  });
+  it("sends the config-dir basename as the account, never a display label", () => {
+    expect(resumeAccount(row())).toBe(".claude-x");
+    expect(
+      resumeAccount(
+        row({ account_label: "gmail", config_dir: "/home/u/.claude-gmail/" })
+      )
+    ).toBe(".claude-gmail");
+    expect(
+      resumeAccount(row({ account_label: "unknown", config_dir: null }))
+    ).toBeNull();
+    expect(
+      resumeBlockedReason(row({ account_label: "gmail", config_dir: null }))
+    ).toMatch(/account/);
   });
   it("a null verdict reads as never swept, not as a verdict", () => {
     expect(verdictLabel(null)).toBe("not swept yet");
