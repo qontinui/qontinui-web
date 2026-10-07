@@ -17,10 +17,3 @@ export async function GET(request: NextRequest) {
     OPTIONS
   );
 }
-
-export async function POST(request: NextRequest) {
-  return proxyToBackend(request, "/api/v1/users/me/automation-streaming", {
-    ...OPTIONS,
-    errorBody: { error: "Failed to proxy request to backend" },
-  });
-}
