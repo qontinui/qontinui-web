@@ -29,8 +29,10 @@ What one run does, for the statement NAMES listed in :data:`DOMAINS`:
    ``__init__`` — even when a sibling also defines it: a submodule must never
    import from the package ``__init__``. It also refuses when a name resolves
    nowhere, when a listed statement is missing, when moved code ``global``-
-   rebinds a name ``__init__`` still reads or re-exports (two modules would then
-   hold two copies of one piece of state), when a ``copy`` row is anything but a
+   rebinds a name ``__init__`` still reads or re-exports, or an imported name
+   whose ``__init__`` copy something left behind still reads (either way two
+   modules would then hold two copies of one piece of state), when a source
+   holds a bare carriage return, when a ``copy`` row is anything but a
    logger factory call, when a scanned file does not parse, and when a test
    still names a moved statement in a string patch target. A refusal writes
    nothing, so the tree stays byte-identical.
@@ -464,6 +466,10 @@ class _Module:
         raw = _read(path)
         newline = "\r\n" if "\r\n" in raw.split("\n", 1)[0] + "\n" else "\n"
         text = raw.replace("\r\n", "\n")
+        if "\r" in text:
+            # ``ast`` counts a bare CR as a line break and ``_lines`` does not,
+            # so every span after one would be off by a line.
+            raise SplitRefused(f"{path}: contains a bare carriage return")
         try:
             tree = ast.parse(text, filename=str(path))
         except SyntaxError as exc:
@@ -908,9 +914,12 @@ def plan_split(
     d4: list[str] = []
     nowhere: list[str] = []
     cycle: list[str] = []
+    imported: set[str] = set()  # resolved to a binding another module owns
     for name in sorted(free_names(moved + copied)):
         if name in local_names:
             continue
+        if name in init_imports or name in siblings or name in proxy_defs:
+            imported.add(name)
         if name in init_imports:
             for imp in init_imports[name]:
                 if imp.level and imp.asname == imp.name:
@@ -996,6 +1005,20 @@ def plan_split(
             f"moved code rebinds {split_state} via 'global', but __init__ still "
             "reads or re-exports them; the rebinding would not reach __init__'s "
             "copy. Move every reader with this domain first."
+        )
+    # The same split for ``global X`` where X reaches the moved code by IMPORT:
+    # before the move it rebinds __init__'s imported copy, after it the new
+    # module's own copy. That matters only while something left behind still
+    # reads __init__'s copy: remaining __init__ code, or a reader that reaches
+    # it through the package.
+    still_read = remaining_free | reached | _string_targets(scan_files, package_module)
+    foreign_state = sorted(global_rebinds(moved + copied) & imported & still_read)
+    if foreign_state:
+        raise SplitRefused(
+            f"moved code rebinds {foreign_state} via 'global', but they are "
+            "imported rather than defined in __init__, and __init__'s copy is "
+            "still read; after the move the rebinding would reach only the new "
+            "module's copy. Move every reader with this domain first."
         )
 
     # D7 step 4 is superseded: a string patch target on a moved name would stop
@@ -1083,7 +1106,7 @@ def _rewrite_local_imports(
 ) -> str:
     """Merge ``add`` into the relative-import tail of the leading import block."""
     tree = ast.parse(text)
-    lines = text.splitlines(keepends=True)
+    lines = _lines(text)
     body = list(tree.body)
     idx = 0
     if (
@@ -1123,7 +1146,7 @@ def _rewrite_include_list(text: str, router_alias: str, order: int) -> str:
     """Rebuild the include list at end of file with ``router_alias`` added."""
     entries: dict[str, int] = {router_alias: order}
     kept: list[str] = []
-    for line in text.splitlines(keepends=True):
+    for line in _lines(text):
         m = _INCLUDE_RE.match(line)
         if m:
             entries[m.group(1)] = int(m.group(2))
@@ -1157,10 +1180,14 @@ def apply(plan: SplitPlan) -> None:
             with tmp.open("w", encoding="utf-8", newline="") as fh:
                 fh.write(text)
         for path, tmp in staged.items():
-            os.replace(tmp, path)
+            # Recorded BEFORE the replace: an interrupt landing between the two
+            # steps must still roll this target back.
             replaced.append(path)
+            os.replace(tmp, path)
     except BaseException:
         for path in replaced:
+            if staged[path].exists():
+                continue  # the replace consumes the stage, so it never ran
             original = originals[path]
             if original is None:
                 path.unlink(missing_ok=True)
