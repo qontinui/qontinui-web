@@ -311,8 +311,12 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
 // The deferral reason grammar
 // ---------------------------------------------------------------------------
 
-/** Bytes as GiB with two decimals — the precision the runner's floors are quoted in. */
-function gib(bytes: string): string {
+/**
+ * Bytes as GiB with two decimals — the precision the runner's floors are quoted
+ * in. An absent capture renders `?`, never `0.00 GiB` — absence is not zero.
+ */
+function gib(bytes: string | undefined): string {
+  if (bytes === undefined) return "? GiB";
   return `${(Number(bytes) / 1024 ** 3).toFixed(2)} GiB`;
 }
 
