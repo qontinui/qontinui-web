@@ -19,6 +19,19 @@ What this module adds to the generic contract (``app.overview.router``):
 * **Search.** ``?q=`` is Postgres full-text over title and body (the stored
   ``search_tsv`` column and its ``ix_overview_pages_search`` GIN index), with a
   title substring match beside it so a half-typed word still finds its page.
+* **Published from a repository** (plan
+  ``2026-10-07-agents-publish-documents-to-the-project-overview`` D3). A page
+  may name the file it mirrors (``source_repo`` + ``source_path``) and the blob
+  (``source_sha``). That pair is unique per project and kind, so a re-publish
+  finds the page (``?source_repo=&source_path=``) and PATCHes it, and a create
+  that collides on it converges on the existing page (:meth:`PageStore.adopt_existing`).
+  A PATCH naming a source refuses (409 ``source_mismatch``) a page whose
+  source is absent or different, so a publish never overwrites a hand-written
+  page. ``source_sha`` is content: a new sha is a new version even when the
+  body is unchanged.
+* **Who wrote each version.** A version records the coord device the write
+  came through and the session the client reported; a page read serves both
+  for its CURRENT version (``via_device``, ``via_session``).
 
 Rendering is the frontend's; this module stores markdown verbatim and never
 renders HTML. The page renderer (``MarkdownView``) has no ``rehype-raw``, so a
@@ -62,6 +75,9 @@ MAX_BODY_CHARS = 500_000
 MAX_META = 200
 MAX_RELATED = 50
 EXCERPT_CHARS = 240
+MAX_SOURCE_REPO = 200
+MAX_SOURCE_PATH = 1000
+MAX_SOURCE_SHA = 100
 
 # ---------------------------------------------------------------------------
 # Slugs and links
@@ -134,6 +150,17 @@ class PageRead(BaseModel):
     updated_at: datetime
     created_by: str | None
     updated_by: str | None
+    #: The repository file this page mirrors, when it was published from one.
+    source_repo: str | None
+    source_path: str | None
+    #: The blob the current version mirrors.
+    source_sha: str | None
+    #: The coord device the CURRENT version was written through (from its
+    #: verified token); ``None`` for a person's own session.
+    via_device: UUID | None
+    #: The session the client reported for the CURRENT version
+    #: (``X-Overview-Session``) — a label, never proof.
+    via_session: str | None
 
 
 def _meta(value: str | None) -> str | None:
@@ -143,7 +170,39 @@ def _meta(value: str | None) -> str | None:
     return value or None
 
 
-class PageCreate(BaseModel):
+def _source_value(v: str | None) -> str | None:
+    if v is None:
+        return None
+    v = v.strip()
+    return v or None
+
+
+class _SourceFields(BaseModel):
+    """The source a published page mirrors. ``source_repo`` and
+    ``source_path`` are given together or not at all; ``source_sha`` only
+    with them."""
+
+    source_repo: str | None = Field(default=None, max_length=MAX_SOURCE_REPO)
+    source_path: str | None = Field(default=None, max_length=MAX_SOURCE_PATH)
+    source_sha: str | None = Field(default=None, max_length=MAX_SOURCE_SHA)
+
+    @field_validator("source_repo", "source_path", "source_sha")
+    @classmethod
+    def _strip_source(cls, v: str | None) -> str | None:
+        return _source_value(v)
+
+    def _check_source(self) -> None:
+        if (self.source_repo is None) != (self.source_path is None):
+            raise ValueError("source_repo and source_path are given together")
+        if self.source_sha is not None and self.source_repo is None:
+            raise ValueError("source_sha needs source_repo and source_path")
+
+    @property
+    def has_source(self) -> bool:
+        return self.source_repo is not None
+
+
+class PageCreate(_SourceFields):
     kind: PageKind
     title: str = Field(min_length=1, max_length=MAX_TITLE)
     #: Derived from the title when omitted.
@@ -178,13 +237,19 @@ class PageCreate(BaseModel):
         if self.kind != "document" and self.related:
             raise ValueError("only documents list related documents")
         self.related = _clean_related(self.related, own=slug)
+        self._check_source()
         return self
 
 
-class PageUpdate(BaseModel):
+class PageUpdate(_SourceFields):
     """Absent fields are left alone; ``null`` clears the metadata fields.
     ``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:
-    links name it, and renaming would orphan every one of them."""
+    links name it, and renaming would orphan every one of them.
+
+    ``source_repo`` + ``source_path`` do not CHANGE a page's source: they name
+    the source the writer believes the page mirrors, and a page whose source
+    is absent or different refuses the write (409 ``source_mismatch``).
+    ``source_sha`` is the blob the new content mirrors."""
 
     title: str | None = Field(default=None, min_length=1, max_length=MAX_TITLE)
     body_md: str | None = Field(default=None, max_length=MAX_BODY_CHARS)
@@ -208,6 +273,7 @@ class PageUpdate(BaseModel):
                 raise ValueError(f"{name} cannot be cleared, only changed")
         if "title" in fields and self.title is not None and not self.title.strip():
             raise ValueError("title cannot be blank")
+        self._check_source()
         return self
 
 
@@ -226,6 +292,12 @@ class PageVersionSummary(BaseModel):
     title: str
     created_at: datetime
     created_by: str | None
+    #: The blob this version mirrored, for a published page.
+    source_sha: str | None
+    #: The coord device this version was written through.
+    via_device: UUID | None
+    #: The session the client reported for this version — a label.
+    via_session: str | None
 
 
 class PageVersionRead(PageVersionSummary):
@@ -263,7 +335,34 @@ async def _related_of(db: AsyncSession, page_id: UUID) -> list[str]:
     return [r for (r,) in rows.all()]
 
 
-def _to_read(page: Page, related: list[str], *, with_body: bool) -> PageRead:
+#: ``(via_device, via_session)`` of a page's current version.
+Provenance = tuple[UUID | None, str | None]
+_NO_PROVENANCE: Provenance = (None, None)
+
+
+async def _provenance_of(db: AsyncSession, pages: list[Page]) -> dict[UUID, Provenance]:
+    """Who wrote each page's CURRENT version, in one query."""
+    if not pages:
+        return {}
+    rows = await db.execute(
+        select(PageVersion.page_id, PageVersion.via_device, PageVersion.via_session)
+        .join(
+            Page,
+            (Page.id == PageVersion.page_id)
+            & (Page.current_version == PageVersion.version),
+        )
+        .where(PageVersion.page_id.in_([p.id for p in pages]))
+    )
+    return {page_id: (device, session) for page_id, device, session in rows.all()}
+
+
+def _to_read(
+    page: Page,
+    related: list[str],
+    *,
+    with_body: bool,
+    provenance: Provenance = _NO_PROVENANCE,
+) -> PageRead:
     return PageRead(
         id=str(page.id),
         kind=page.kind,  # type: ignore[arg-type]
@@ -280,6 +379,11 @@ def _to_read(page: Page, related: list[str], *, with_body: bool) -> PageRead:
         updated_at=page.updated_at,
         created_by=page.created_by,
         updated_by=page.updated_by,
+        source_repo=page.source_repo,
+        source_path=page.source_path,
+        source_sha=page.source_sha,
+        via_device=provenance[0],
+        via_session=provenance[1],
     )
 
 
@@ -316,7 +420,12 @@ class PageStore:
                 )
             )
 
-    def _snapshot(self, ctx: StoreContext, page: Page) -> None:
+    def _snapshot(self, ctx: StoreContext, page: Page) -> Provenance:
+        """Append the page as it now stands as a version; returns who wrote it."""
+        provenance: Provenance = (
+            ctx.access.via_device,
+            change_log.reported_session(ctx.request),
+        )
         ctx.db.add(
             PageVersion(
                 tenant_id=page.tenant_id,
@@ -327,9 +436,24 @@ class PageStore:
                 doc_number=page.doc_number,
                 doc_status=page.doc_status,
                 owner=page.owner,
+                source_sha=page.source_sha,
+                via_device=provenance[0],
+                via_session=provenance[1],
                 created_by=ctx.access.actor,
             )
         )
+        return provenance
+
+    async def _by_source(
+        self, ctx: StoreContext, kind: str, source_repo: str, source_path: str
+    ) -> Page | None:
+        stmt = select(Page).where(
+            Page.tenant_id == ctx.access.tenant_id,
+            Page.kind == kind,
+            Page.source_repo == source_repo,
+            Page.source_path == source_path,
+        )
+        return (await ctx.db.execute(stmt)).scalars().first()
 
     async def list(
         self, ctx: StoreContext, filters: dict[str, list[str]]
@@ -343,6 +467,14 @@ class PageStore:
         slugs = [s for s in (slugify(x) for x in filters.get("slug", [])) if s]
         if slugs:
             stmt = stmt.where(Page.slug.in_(slugs))
+        # Exact matches: a source is an identity, not a search term.
+        for name, column in (
+            ("source_repo", Page.source_repo),
+            ("source_path", Page.source_path),
+        ):
+            values = [v for v in filters.get(name, []) if v]
+            if values:
+                stmt = stmt.where(column.in_(values))
         query = " ".join(q.strip() for q in filters.get("q", []) if q.strip())[:200]
         if query:
             tsquery = func.websearch_to_tsquery(
@@ -376,13 +508,31 @@ class PageStore:
             )
             for page_id, slug in rows.all():
                 related[page_id].append(slug)
+        provenance = await _provenance_of(ctx.db, pages)
         return ListResult(
-            items=[_to_read(p, related[p.id], with_body=False) for p in pages]
+            items=[
+                _to_read(
+                    p,
+                    related[p.id],
+                    with_body=False,
+                    provenance=provenance.get(p.id, _NO_PROVENANCE),
+                )
+                for p in pages
+            ]
         )
 
     async def get(self, ctx: StoreContext, record_id: str) -> PageRead:
         page = await self._load(ctx, record_id)
-        return _to_read(page, await _related_of(ctx.db, page.id), with_body=True)
+        return await self._read(ctx, page)
+
+    async def _read(self, ctx: StoreContext, page: Page) -> PageRead:
+        provenance = await _provenance_of(ctx.db, [page])
+        return _to_read(
+            page,
+            await _related_of(ctx.db, page.id),
+            with_body=True,
+            provenance=provenance.get(page.id, _NO_PROVENANCE),
+        )
 
     async def create(self, ctx: StoreContext, payload: PageCreate) -> PageRead:
         assert payload.slug is not None  # set by the model validator
@@ -395,6 +545,9 @@ class PageStore:
             doc_number=payload.doc_number,
             doc_status=payload.doc_status,
             owner=payload.owner,
+            source_repo=payload.source_repo,
+            source_path=payload.source_path,
+            source_sha=payload.source_sha,
             current_version=1,
             created_by=ctx.access.actor,
             updated_by=ctx.access.actor,
@@ -404,17 +557,61 @@ class PageStore:
                 ctx.db.add(page)
                 await ctx.db.flush()
         except IntegrityError as exc:
+            # Either unique rule — the slug, or the source — is a duplicate
+            # name; both are ``name_taken``, which is what lets the router
+            # offer a keyed create to :meth:`adopt_existing`.
+            if payload.source_repo is not None and payload.source_path is not None:
+                if await self._by_source(
+                    ctx, payload.kind, payload.source_repo, payload.source_path
+                ):
+                    raise StoreRefused(
+                        409,
+                        "name_taken",
+                        f"There is already a {payload.kind} mirroring "
+                        f"{payload.source_repo}/{payload.source_path}; "
+                        "update it instead.",
+                    ) from exc
             raise StoreRefused(
                 409,
                 "name_taken",
                 f"There is already a {payload.kind} called that "
                 f"(its address would be “{payload.slug}”).",
             ) from exc
-        self._snapshot(ctx, page)
+        provenance = self._snapshot(ctx, page)
         await self._write_links(ctx, page, payload.related)
         await ctx.db.flush()
         await ctx.db.refresh(page)
-        return _to_read(page, payload.related, with_body=True)
+        return _to_read(page, payload.related, with_body=True, provenance=provenance)
+
+    async def adopt_existing(
+        self,
+        ctx: StoreContext,
+        payload: PageCreate,
+        created_through_overview: Any,
+    ) -> PageRead | None:
+        """The page a keyed create refused as ``name_taken`` was really
+        creating — the one with the SAME SOURCE, if the payload names one.
+
+        A published file's identity is its source, so a create that collides
+        on ``uq_overview_pages_source`` is the same publish arriving again (a
+        retry whose first answer was lost, or a second publisher racing the
+        first): it converges on the page already there. A slug collision with
+        a page that has no source, or another source, is NOT that page —
+        ``None``, and the router answers the original ``name_taken``.
+
+        ``created_through_overview`` is unused: unlike a coord-stored resource,
+        a page and its change-log row commit together, so there is no landed
+        write without a log row to tell apart.
+        """
+        del created_through_overview
+        if payload.source_repo is None or payload.source_path is None:
+            return None
+        page = await self._by_source(
+            ctx, payload.kind, payload.source_repo, payload.source_path
+        )
+        if page is None:
+            return None
+        return await self._read(ctx, page)
 
     async def update(
         self,
@@ -425,11 +622,37 @@ class PageStore:
     ) -> tuple[PageRead, PageRead]:
         page = await self._load(ctx, record_id, lock=True)
         related = await _related_of(ctx.db, page.id)
-        before = _to_read(page, related, with_body=True)
+        before_provenance = await _provenance_of(ctx.db, [page])
+        before = _to_read(
+            page,
+            related,
+            with_body=True,
+            provenance=before_provenance.get(page.id, _NO_PROVENANCE),
+        )
+        if payload.has_source and (
+            page.source_repo is None
+            or (page.source_repo, page.source_path)
+            != (payload.source_repo, payload.source_path)
+        ):
+            mirrored = (
+                f"mirrors {page.source_repo}/{page.source_path}"
+                if page.source_repo is not None
+                else "was not published from a repository"
+            )
+            raise StoreRefused(
+                409,
+                "source_mismatch",
+                f"This {page.kind} {mirrored}; a publish of "
+                f"{payload.source_repo}/{payload.source_path} may not overwrite it.",
+            )
         if page.current_version != expected_version:
             raise StaleVersion(before)
 
         changes = payload.model_dump(exclude_unset=True)
+        # The source identity was checked above and is never changed here;
+        # ``source_sha`` stays in ``changes`` because it IS content.
+        changes.pop("source_repo", None)
+        changes.pop("source_path", None)
         new_related = related
         if "related" in changes:
             if page.kind != "document":
@@ -448,17 +671,19 @@ class PageStore:
         page.current_version += 1
         page.updated_by = ctx.access.actor
         page.updated_at = func.now()  # type: ignore[assignment]
-        self._snapshot(ctx, page)
+        provenance = self._snapshot(ctx, page)
         await self._write_links(ctx, page, new_related)
         await ctx.db.flush()
         await ctx.db.refresh(page)
-        return before, _to_read(page, new_related, with_body=True)
+        return before, _to_read(
+            page, new_related, with_body=True, provenance=provenance
+        )
 
     async def delete(
         self, ctx: StoreContext, record_id: str, expected_version: int
     ) -> PageRead:
         page = await self._load(ctx, record_id, lock=True)
-        before = _to_read(page, await _related_of(ctx.db, page.id), with_body=True)
+        before = await self._read(ctx, page)
         if page.current_version != expected_version:
             raise StaleVersion(before)
         await ctx.db.delete(page)
@@ -520,6 +745,9 @@ async def list_page_versions(
                 title=v.title,
                 created_at=v.created_at,
                 created_by=v.created_by,
+                source_sha=v.source_sha,
+                via_device=v.via_device,
+                via_session=v.via_session,
             )
             for v in rows.scalars().all()
         ],
@@ -566,6 +794,9 @@ async def read_page_version(
         title=v.title,
         created_at=v.created_at,
         created_by=v.created_by,
+        source_sha=v.source_sha,
+        via_device=v.via_device,
+        via_session=v.via_session,
         body_md=v.body_md,
         doc_number=v.doc_number,
         doc_status=v.doc_status,
@@ -603,12 +834,25 @@ async def revert_page(
     except RecordNotFound as exc:
         raise HTTPException(status_code=404, detail="not_found") from exc
     target = await _version_or_404(db, access.tenant_id, page, version)
+    # A published page's version mirrored a blob; restoring its content
+    # restores the sha that content came from, so the page never claims to
+    # mirror a blob its body is not.
+    source: dict[str, Any] = (
+        {
+            "source_repo": page.source_repo,
+            "source_path": page.source_path,
+            "source_sha": target.source_sha,
+        }
+        if page.source_repo is not None
+        else {}
+    )
     payload = PageUpdate(
         title=target.title,
         body_md=target.body_md,
         doc_number=target.doc_number,
         doc_status=target.doc_status,
         owner=target.owner,
+        **source,
     )
     try:
         before, after = await store.update(ctx, page_id, payload, expected)
@@ -622,8 +866,7 @@ async def revert_page(
             record_id=after.id,
             action="update",
             source=change_log.change_source(request),
-            actor=access.actor,
-            actor_user_id=access.user_id,
+            **change_log.attribution(access, request),
             before=_audit_view(before),
             after={**_audit_view(after), "reverted_to_version": version},
             version_before=before.version,

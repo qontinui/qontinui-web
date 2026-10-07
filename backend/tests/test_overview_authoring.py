@@ -212,14 +212,22 @@ def coord() -> FakeCoord:
 
 
 def _app(db: AsyncSession, user, coord: FakeCoord, roles: tuple[str, ...]) -> FastAPI:
-    from app.api.deps import current_active_user, get_async_db
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.overview import router as overview_router
     from app.overview.intent_documents import IntentDocumentStore, intent_document_store
     from app.overview.permissions import OverviewCaller, get_overview_caller
     from app.overview.router import router as authoring_router
 
     app = FastAPI()
-    app.dependency_overrides[current_active_user] = lambda: user
+    # The overview principal resolves a Cognito user through the OPTIONAL
+    # dependency (a device JWT is its other arm), so both are stood in for.
+    app.dependency_overrides[current_active_user] = app.dependency_overrides[
+        current_active_user_optional
+    ] = lambda: user
 
     async def _db():
         yield db
@@ -1021,7 +1029,10 @@ class TestReviewRegressions:
             cookies: dict[str, str] = {}
 
         monkeypatch.setattr(permissions, "get_coord_identity", _identity)
-        caller = await permissions.get_overview_caller(_Req())  # type: ignore[arg-type]
+        caller = await permissions.get_overview_caller(
+            _Req(),  # type: ignore[arg-type]
+            permissions.OverviewPrincipal(kind="user", user=object()),  # type: ignore[arg-type]
+        )
         assert caller.tenant_id == TENANT_A
         assert caller.roles == ()
 
