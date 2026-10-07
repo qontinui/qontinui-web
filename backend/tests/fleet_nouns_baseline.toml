@@ -68,12 +68,6 @@
 ["app/api/v1/endpoints/memory.py".repo_layout]
 "qontinui-root" = 1
 
-["app/api/v1/endpoints/operations.py".machine_path]
-"D:/qontinui-root" = 4
-
-["app/api/v1/endpoints/operations.py".repo_layout]
-"qontinui-root" = 4
-
 ["app/api/v1/endpoints/pair_codes.py".machine_path]
 "D:/qontinui-root" = 1
 
@@ -300,7 +294,7 @@
 ["app/services/runner/device_selector.py".repo_layout]
 "qontinui-root" = 1
 
-["app/services/runner/remote_terminal_relay.py".fleet_host_name]
+["app/services/runner/remote_relay/protocol.py".fleet_host_name]
 "merytshost" = 1
 
 ["app/worker/tasks.py".repo_layout]

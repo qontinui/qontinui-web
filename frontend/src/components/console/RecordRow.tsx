@@ -103,7 +103,8 @@ export interface RecordRowProps {
    * for, `/releases` and `/agents` in one leg of their `??` chains each.
    *
    * So the list wins where there is a list, and this prop is the source only
-   * where there is not — `PlanLibraryList`'s hand-rolled `.map` (its expansion
+   * where there is not — `PlanLibraryList`'s hand-rolled `.map` on
+   * `/admin/coord/plan-library/artifacts` (its expansion
    * has two anchors, so it deliberately owns no list) and the agent-detail log
    * feed. Keep supplying it: it is what those surfaces, and a standalone
    * render in a unit test, have.
@@ -154,7 +155,11 @@ export function RecordRow({
   const listKey = useContext(RecordRowKeyContext);
   const resolvedRowKey = listKey ?? rowKey;
   return (
-    <div data-testid={testId} data-row-key={resolvedRowKey} className={className}>
+    <div
+      data-testid={testId}
+      data-row-key={resolvedRowKey}
+      className={className}
+    >
       <button
         type="button"
         onClick={onToggle}

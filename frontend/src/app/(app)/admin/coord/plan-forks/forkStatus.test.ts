@@ -13,6 +13,8 @@ import { paletteDisagreements } from "@/components/console";
 import {
   FORK_ATTENTION_BY_KIND,
   FORK_PALETTE,
+  ORPHAN_MARKER,
+  ORPHAN_MARKER_DETAIL,
   VARIANT_ORDER_CAVEAT,
   type DivergentResponse,
   type DivergentVariant,
@@ -21,6 +23,7 @@ import {
   describeContentFork,
   describeKindFork,
   orderVariants,
+  orphanVariantIds,
   shortDigest,
   variantOrigin,
 } from "./forkStatus";
@@ -317,5 +320,79 @@ describe("variant presentation makes no ranking claim", () => {
   it("shortens a digest without losing an absent one", () => {
     expect(shortDigest("abcdef0123456789")).toBe("abcdef012345");
     expect(shortDigest(null)).toBe("no digest");
+  });
+});
+
+describe("orphanVariantIds — a provenance fact, never a winner", () => {
+  const SCANNED = variant({
+    id: "aaaaaaaa-0000-0000-0000-000000000001",
+    captured_by: "runner_scan",
+    source_repo: "qontinui-dev-notes/plans",
+  });
+  const AGENT_ORPHAN = variant({
+    id: "aaaaaaaa-0000-0000-0000-000000000002",
+    captured_by: "agent",
+    source_repo: null,
+    source_path: null,
+    kind_locked: true,
+  });
+
+  it("marks the null-source agent copy beside a runner_scan copy (the triggering pair)", () => {
+    const ids = orphanVariantIds([SCANNED, AGENT_ORPHAN]);
+    expect([...ids]).toEqual([AGENT_ORPHAN.id]);
+  });
+
+  it("never marks the scanner's own copy — the marker promotes nobody", () => {
+    expect(orphanVariantIds([SCANNED, AGENT_ORPHAN]).has(SCANNED.id)).toBe(
+      false
+    );
+  });
+
+  it("marks an operator-captured null-source copy the same way", () => {
+    const op = { ...AGENT_ORPHAN, captured_by: "operator" };
+    expect(orphanVariantIds([SCANNED, op]).has(op.id)).toBe(true);
+  });
+
+  it("marks nothing when no sibling STATES runner_scan", () => {
+    expect(orphanVariantIds([AGENT_ORPHAN]).size).toBe(0);
+    const agentSibling = { ...SCANNED, captured_by: "agent" };
+    expect(orphanVariantIds([agentSibling, AGENT_ORPHAN]).size).toBe(0);
+  });
+
+  it("never infers runner_scan from an absent captured_by on the sibling", () => {
+    const { captured_by: _drop, ...unstated } = SCANNED;
+    void _drop;
+    expect(orphanVariantIds([unstated, AGENT_ORPHAN]).size).toBe(0);
+    expect(
+      orphanVariantIds([{ ...SCANNED, captured_by: null }, AGENT_ORPHAN]).size
+    ).toBe(0);
+  });
+
+  it("marks nothing when the null-source copy's own captured_by is absent — UNKNOWN", () => {
+    const { captured_by: _drop, ...unstated } = AGENT_ORPHAN;
+    void _drop;
+    expect(orphanVariantIds([SCANNED, unstated]).size).toBe(0);
+  });
+
+  it("does not mark a scanner-written copy with no repo — the scanner still addresses it", () => {
+    const scannedNoRepo = {
+      ...AGENT_ORPHAN,
+      captured_by: "runner_scan",
+    };
+    expect(orphanVariantIds([SCANNED, scannedNoRepo]).size).toBe(0);
+  });
+
+  it("reads an OMITTED source_repo as unstated, never as null", () => {
+    const { source_repo: _drop, ...omitted } = AGENT_ORPHAN;
+    void _drop;
+    expect(orphanVariantIds([SCANNED, omitted]).size).toBe(0);
+  });
+
+  it("says what the marker is not, in words", () => {
+    expect(ORPHAN_MARKER).toBe(
+      "orphan — no scan source; the scanner will never update this copy"
+    );
+    expect(ORPHAN_MARKER_DETAIL).toMatch(/not a verdict/);
+    expect(ORPHAN_MARKER_DETAIL).not.toMatch(/keep this/i);
   });
 });

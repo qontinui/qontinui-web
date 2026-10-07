@@ -31,6 +31,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 REPO = "qontinui/qontinui-dev-notes"
 
@@ -533,8 +535,8 @@ def _real_auth_app() -> FastAPI:
 @contextmanager
 def _real_identity(identity):
     with (
-        patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=identity),
         ),
         patch(
