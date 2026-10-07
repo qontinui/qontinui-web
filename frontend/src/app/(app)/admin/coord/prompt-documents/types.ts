@@ -652,6 +652,19 @@ export const PROMPT_DOCUMENT_EVIDENCE_CLASSES = [
   "unknown",
 ] as const;
 
+export type PromptDocumentEvidenceClass =
+  (typeof PROMPT_DOCUMENT_EVIDENCE_CLASSES)[number];
+
+/** Whether a served `evidence_class` is one this build knows. */
+export function isPromptDocumentEvidenceClass(
+  value: unknown
+): value is PromptDocumentEvidenceClass {
+  return (
+    typeof value === "string" &&
+    (PROMPT_DOCUMENT_EVIDENCE_CLASSES as readonly string[]).includes(value)
+  );
+}
+
 /**
  * Coord's `addressing_status` vocabulary, worst-first — the same order as its
  * `addressing_status::PRECEDENCE`. Only `landed_unconfirmed` fires an alert:

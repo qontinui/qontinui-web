@@ -75,7 +75,7 @@ describe("/api/v1 proxy handlers pass the upstream answer through", () => {
   });
 
   it("covers every verb of the 17 handlers", () => {
-    expect(CASES).toHaveLength(26);
+    expect(CASES).toHaveLength(24);
   });
 
   it.each(CASES)(

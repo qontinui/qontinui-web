@@ -17,7 +17,9 @@ import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
+import { DomainCostSection } from "./_components/DomainCostSection";
 import { IntentSection } from "./_components/IntentSection";
+import { useDomainCost } from "./_hooks/useDomainCost";
 import { ProgressPanel } from "./_components/ProgressPanel";
 import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
@@ -47,6 +49,15 @@ export default function OverviewSummaryPage() {
   const { intent, progress, saveBody, move, createDocument } = useSummaryData(
     activeTenantId,
     tenantsLoading || tenantsError !== null
+  );
+  // The domain cost ledger — the measurement of the direction the Intent
+  // sections state (plan
+  // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+  // Phase 8). Its own read, held on the same project gate as the intent read.
+  const domainCost = useDomainCost(
+    activeTenantId,
+    tenantsLoading || tenantsError !== null,
+    tenantsError
   );
   const actions = {
     canEdit,
@@ -141,6 +152,9 @@ export default function OverviewSummaryPage() {
             )}
           </>
         )}
+        {/* Outside the intent read's states on purpose: the ledger is its
+            own read, and neither may hide the other. */}
+        <DomainCostSection read={domainCost} />
       </div>
 
       <aside

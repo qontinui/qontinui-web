@@ -420,40 +420,6 @@ function ownPathPattern(template: string): RegExp {
   return new RegExp(`^${body}(${FWD_QUERY.replace("?", "\\?")})?$`);
 }
 
-/**
- * Proxy verbs that can forward to a path other than their own, why that
- * branch never fires for the URL the handler serves, and EXACTLY the paths
- * each may forward to — a new branch must be justified here, not absorbed.
- */
-const BRANCHING_FORWARDERS: ReadonlyMap<
-  string,
-  { reason: string; paths: readonly string[] }
-> = new Map([
-  [
-    "app/api/v1/execution/runs/[runId]/route.ts PUT",
-    {
-      reason:
-        "appends `/complete` only when the request pathname ends in `/complete`; this route's pathname is `/runs/{runId}`",
-      paths: [
-        `/api/v1/execution/runs/${FWD_PARAM}`,
-        `/api/v1/execution/runs/${FWD_PARAM}/complete`,
-      ],
-    },
-  ],
-  [
-    "app/api/v1/users/me/automation-streaming/route.ts POST",
-    {
-      reason:
-        "appends `/toggle` / `/reset-limit` only when request.url contains them; those URLs are their own route files",
-      paths: [
-        "/api/v1/users/me/automation-streaming",
-        "/api/v1/users/me/automation-streaming/toggle",
-        "/api/v1/users/me/automation-streaming/reset-limit",
-      ],
-    },
-  ],
-]);
-
 describe("route walker: the real tree against the OpenAPI snapshot", () => {
   const { sites } = tree;
   const actual = mismatchEntries(sites, index);
@@ -527,14 +493,10 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     // Parsed, per verb: every path its `fetch(...)` calls can forward to
     // (`forwardedPaths`) must END at the handler's own path, a query-string
     // suffix aside. Comments are not expressions, so a doc comment cannot
-    // satisfy it; `${ownUrl}/other` forwards to `/other`.
-    //
-    // Two verbs branch, and are classified by what they forward for the URL
-    // they SERVE — see `BRANCHING_FORWARDERS`: there the own path must be
-    // one of the alternatives, and the entry must really be needed.
+    // satisfy it; `${ownUrl}/other` forwards to `/other`. No verb may branch
+    // to a second path: a sub-path is served by its own route file.
     const proxies = tree.nextRoutes.filter((r) => r.backendProxy);
     expect(proxies.length).toBeGreaterThan(0);
-    const branching = new Set<string>();
     for (const r of proxies) {
       const own = ownPathPattern(r.template);
       const source = readFileSync(path.join(SRC_ROOT, r.file), "utf8");
@@ -544,28 +506,16 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
       for (const verb of r.methods) {
         const alts = byVerb.get(verb) ?? [];
         const label = `${r.file} ${verb}`;
-        const others = alts.filter((a) => !own.test(a));
         expect(
           alts.some((a) => own.test(a)),
           `${label}: ${alts.join(" | ")}`
         ).toBe(true);
-        const pinned = BRANCHING_FORWARDERS.get(label);
-        if (pinned) {
-          branching.add(label);
-          expect([...alts].sort(), `${label} forwards to`).toEqual(
-            [...pinned.paths].sort()
-          );
-          expect(others.length, `${label} no longer branches`).toBeGreaterThan(
-            0
-          );
-        } else {
-          expect(others, `${label} forwards elsewhere`).toEqual([]);
-        }
+        expect(
+          alts.filter((a) => !own.test(a)),
+          `${label} forwards elsewhere`
+        ).toEqual([]);
       }
     }
-    expect([...branching].sort()).toEqual(
-      [...BRANCHING_FORWARDERS.keys()].sort()
-    );
     for (const file of NEXT_API_V1_SERVERS)
       expect(tree.nextRoutes.map((r) => r.file)).toContain(file);
   });

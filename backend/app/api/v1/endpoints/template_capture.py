@@ -715,7 +715,7 @@ async def tune_profile(
     manager = await get_runner_websocket_manager(redis)
 
     runner = await resolve_runner_for_request(
-        runner_id, current_user, db, manager, _TUNE_PROFILE_ENDPOINT
+        runner_id, current_user.id, db, manager, _TUNE_PROFILE_ENDPOINT
     )
 
     known_elements_payload = [

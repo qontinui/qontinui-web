@@ -285,9 +285,9 @@ name = "alembic-single-head"
 # and needs no database, which is exactly why this gate CAN live here while the
 # rest of backend-ci.yml's `test` job (gap 1 above) cannot.
 #
-# FOUR lanes now share this script: the required PR check, this manifest, the
-# post-land companion (alembic-graph-check.yml), and .pre-commit-config.yaml's
-# `alembic-single-head` hook. The workflow passes `--baseline-ref origin/main`
+# FIVE lanes now share this script: the required PR check, this manifest, the
+# post-land companion (alembic-graph-check.yml), .pre-commit-config.yaml's
+# `alembic-single-head` hook, and the consolidated web-guards.yml job. The workflow passes `--baseline-ref origin/main`
 # explicitly because its depth-1 checkout has no such ref until it fetches one;
 # here the default already IS `origin/main` and a runner checkout has it, so
 # the argv stays bare. `--baseline-ref` only selects the remediation text — it
@@ -304,9 +304,10 @@ name = "coord-column-drop-guard"
 # common case — no coord.* drop — costs no network call at all, which is why
 # this gate CAN live here beside alembic-single-head.
 #
-# THREE lanes share this script: the PR check (REQUIRED from Phase 3 of plan
-# 2026-09-03-coord-column-drop-guard-on-web-migrations), this manifest, and
-# .pre-commit-config.yaml's `coord-column-drop-guard` hook. The workflow passes
+# FOUR lanes share this script: the PR check (REQUIRED from Phase 3 of plan
+# 2026-09-03-coord-column-drop-guard-on-web-migrations), this manifest,
+# .pre-commit-config.yaml's `coord-column-drop-guard` hook, and the
+# consolidated web-guards.yml job. The workflow passes
 # `--base-ref origin/main` explicitly; here the default already IS
 # `origin/main` and a runner checkout has it, so the argv stays bare. An
 # unreachable manifest is exit 2 (UNKNOWN), never a pass.

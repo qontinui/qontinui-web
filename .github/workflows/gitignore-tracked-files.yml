@@ -3,9 +3,10 @@ name: no tracked file is gitignored
 # THE GATE LOGIC LIVES IN `scripts/ci/check_tracked_ignored.py`, not here — the
 # shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
 # Phase 5 established for forbid-public-schema, web-boundary-lint and
-# alembic-single-head. Three lanes invoke the one script:
+# alembic-single-head. Four lanes invoke the one script:
 #
 #   * this workflow, step "Scan for tracked-but-ignored files"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `gitignore-tracked-files`
 #   * .pre-commit-config.yaml, hook `gitignore-tracked-files`
 #
