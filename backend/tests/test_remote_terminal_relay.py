@@ -5101,16 +5101,24 @@ async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() ->
     re-check, re-introducing exactly the collision round 2 closed.
 
     Two halves, checked against their two real sources: the constants are swept
-    out of the module namespace, and every ``"code": "<literal>"`` in the
-    module's own source must appear in the set.
+    out of ``remote_relay.protocol``'s namespace, and every
+    ``"code": "<literal>"`` in the relay's own source must appear in the set.
     """
     import ast
+    import importlib
     import inspect
+    import pkgutil
 
-    # Half one: the sweep agrees with the module's actual CODE_* constants.
+    from app.services.runner import remote_relay
+    from app.services.runner.remote_relay import protocol as relay_protocol
+
+    # Half one: the sweep agrees with the actual CODE_* constants. They are
+    # read from ``protocol``, the module that defines them and that
+    # ``RELAY_ERROR_CODES`` sweeps — not from the facade, which re-exports only
+    # the codes something reads through it.
     constants = {
         value
-        for name, value in vars(rtr).items()
+        for name, value in vars(relay_protocol).items()
         if name.startswith("CODE_") and isinstance(value, str)
     }
     assert constants, "no CODE_* constants found — the sweep is broken, not the set"
@@ -5122,11 +5130,6 @@ async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() ->
     # escape it, and so would a reference to it in a payload (half two sees only
     # literals). Pin the invariant the sweep relies on: ``protocol`` is the one
     # module that defines ``CODE_*`` constants.
-    import importlib
-    import pkgutil
-
-    from app.services.runner import remote_relay
-
     for mod_info in pkgutil.iter_modules(remote_relay.__path__):
         if mod_info.name == "protocol":
             continue

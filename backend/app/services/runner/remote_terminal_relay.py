@@ -131,11 +131,10 @@ from redis import asyncio as aioredis
 
 from app.config.redis_config import get_redis
 from app.services.coord_jwks import coord_jwks_client
-from app.services.runner.remote_relay.end import PENDING_END_TTL_SECONDS, EndCoordinator
+from app.services.runner.remote_relay.end import EndCoordinator
 from app.services.runner.remote_relay.grants import GrantAuthorizer
 from app.services.runner.remote_relay.listeners import ListenerPool
 from app.services.runner.remote_relay.protocol import (
-    _HIGH_VOLUME_TARGET_FRAMES,
     _INLINE_RELAY_ERROR_CODES,
     ATTACH_GRANT_SUB_TYPE,
     CODE_BUFFER_BACKLOG,
@@ -144,40 +143,25 @@ from app.services.runner.remote_relay.protocol import (
     CODE_CREATE_GRANT_INVALID,
     CODE_CREATE_GRANT_WRONG_SOURCE,
     CODE_END_PENDING,
-    CODE_END_TIMEOUT,
     CODE_GRANT_CONSUMED,
     CODE_GRANT_EXPIRED,
     CODE_GRANT_INVALID,
-    CODE_GRANT_WRONG_KIND,
     CODE_GRANT_WRONG_SOURCE,
     CODE_LISTENER_LOST,
-    CODE_NOT_REGISTERED,
     CODE_REGISTRY_UNAVAILABLE,
     CODE_TARGET_NOT_CONNECTED,
-    CODE_TERMINAL_BUSY,
-    CODE_VERIFIER_UNAVAILABLE,
     CREATE_GRANT_SUB_TYPE,
-    END_OUTCOME_FALLBACK,
-    END_OUTCOMES,
-    INPUT_ACK_RELAY_OWNED_KEYS,
     INPUT_FORWARD_RELAY_OWNED_KEYS,
     KIND_ATTACH,
     KIND_CREATE,
     RELAY_ERROR_CODES,
-    SOURCE_END_REPLY_FRAME_TYPE,
     SOURCE_FRAME_TYPES,
-    SOURCE_INPUT_ACK_FRAME_TYPE,
     TARGET_CODE_ATTACH_GRANT_UNKNOWN,
     TARGET_CODE_FALLBACK,
-    TARGET_CODE_MAX,
     TARGET_CODE_PREFIX,
-    TARGET_END_REPLY_FRAME_TYPE,
     TARGET_ERROR_CODES,
-    TARGET_INPUT_ACK_FRAME_TYPE,
     TARGET_MESSAGE_MAX,
     TARGET_REFUSAL_FRAME_TYPES,
-    _is_remote_marked,
-    _is_uuid,
     _prefix_is_disjoint_from_relay_codes,
     create_target_device_id,
     is_remote_only_target_frame,
@@ -188,20 +172,14 @@ from app.services.runner.remote_relay.registry import (
     BIND_TERMINAL_SCRIPT,
     RELEASE_TERMINAL_SCRIPT,
     RelayRegistry,
-    _eval,
-    _hset,
-    _maybe_await,
     claim_key,
     grant_key,
-    remote_response_channel,
-    response_channel,
     terminal_key,
 )
 from app.services.runner.remote_relay.state import (
     PENDING_BUFFER_MAX,
     PENDING_BUFFER_TTL_SECONDS,
     _Attachment,
-    _Pending,
     _PendingEnd,
     _SourceSession,
 )
@@ -214,71 +192,39 @@ from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 logger = structlog.get_logger(__name__)
 
 # The relay is the module facade: ``devices_ws`` and the tests read the wire
-# vocabulary, the socket state and the registry primitives through it, so the
-# names imported above from ``remote_relay`` are re-exported here (``__all__``).
+# vocabulary, the socket state and the registry primitives through it. ``__all__``
+# is the facade functions this module defines plus the imported names something
+# reads here; a name imported above only for the relay's own use is not
+# re-exported, so new code reads it from the ``remote_relay`` module that
+# defines it.
 # Re-exported for READING only. To PATCH one, patch the module that defines it
 # (``remote_relay.protocol`` / ``.state`` / ``.registry`` / ``.end`` /
 # ``.target_frames``): code reads a name from its own module's globals at call
-# time, so a patch on this facade does not reach code that lives there. (``coord_jwks_client`` is an OBJECT whose
-# method tests patch, which reaches ``remote_relay.grants`` from here too.)
+# time, so a patch on this facade does not reach code that lives there.
+# (``coord_jwks_client`` is an OBJECT whose method tests patch, which reaches
+# ``remote_relay.grants`` from here too.)
 __all__ = [
-    "ATTACH_GRANT_SUB_TYPE",
     "ATTACH_REPRESENT_DELAY_SECONDS",
     "BIND_TERMINAL_SCRIPT",
     "CODE_BUFFER_BACKLOG",
-    "CODE_CREATE_GRANT_CONSUMED",
-    "CODE_CREATE_GRANT_EXPIRED",
-    "CODE_CREATE_GRANT_INVALID",
-    "CODE_CREATE_GRANT_WRONG_SOURCE",
     "CODE_END_PENDING",
-    "CODE_END_TIMEOUT",
-    "CODE_GRANT_CONSUMED",
     "CODE_GRANT_EXPIRED",
-    "CODE_GRANT_INVALID",
-    "CODE_GRANT_WRONG_KIND",
-    "CODE_GRANT_WRONG_SOURCE",
     "CODE_LISTENER_LOST",
-    "CODE_NOT_REGISTERED",
-    "CODE_REGISTRY_UNAVAILABLE",
     "CODE_TARGET_NOT_CONNECTED",
-    "CODE_TERMINAL_BUSY",
-    "CODE_VERIFIER_UNAVAILABLE",
-    "CREATE_GRANT_SUB_TYPE",
-    "END_OUTCOMES",
-    "END_OUTCOME_FALLBACK",
-    "INPUT_ACK_RELAY_OWNED_KEYS",
-    "INPUT_FORWARD_RELAY_OWNED_KEYS",
-    "KIND_ATTACH",
-    "KIND_CREATE",
     "PENDING_BUFFER_MAX",
     "PENDING_BUFFER_TTL_SECONDS",
-    "PENDING_END_TTL_SECONDS",
     "RELAY_ERROR_CODES",
     "RELEASE_TERMINAL_SCRIPT",
     "RemoteTerminalRelay",
-    "SOURCE_END_REPLY_FRAME_TYPE",
     "SOURCE_FRAME_TYPES",
-    "SOURCE_INPUT_ACK_FRAME_TYPE",
     "TARGET_CODE_ATTACH_GRANT_UNKNOWN",
     "TARGET_CODE_FALLBACK",
-    "TARGET_CODE_MAX",
     "TARGET_CODE_PREFIX",
-    "TARGET_END_REPLY_FRAME_TYPE",
     "TARGET_ERROR_CODES",
-    "TARGET_INPUT_ACK_FRAME_TYPE",
     "TARGET_MESSAGE_MAX",
     "TARGET_REFUSAL_FRAME_TYPES",
-    "_Attachment",
-    "_HIGH_VOLUME_TARGET_FRAMES",
     "_INLINE_RELAY_ERROR_CODES",
-    "_Pending",
     "_PendingEnd",
-    "_SourceSession",
-    "_eval",
-    "_hset",
-    "_is_remote_marked",
-    "_is_uuid",
-    "_maybe_await",
     "_prefix_is_disjoint_from_relay_codes",
     "claim_key",
     "coord_jwks_client",
@@ -291,8 +237,6 @@ __all__ = [
     "namespace_target_code",
     "publish_target_frame",
     "release_source",
-    "remote_response_channel",
-    "response_channel",
     "terminal_key",
 ]
 
