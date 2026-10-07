@@ -30,8 +30,13 @@ What each index serves
    ``idx_git_write_ledger_repo_created`` ``(repo, created_at DESC)``
    (``twin_git_02_coord_git_write_ledger``) — cannot serve it: its leading
    column is unbound. Without a bare ``created_at`` btree each batch seq-scans
-   and sorts 9.9 GB, which is coord's 60 s ``statement_timeout``, not merely
-   slower. With it the batch is an ordered index scan that stops after ``$n``.
+   the ~1.2M-row heap (a 9.9 GB relation including TOAST and indexes) and
+   top-N sorts it — predicted, not measured, to approach coord's 60 s
+   ``statement_timeout``, and in any case repeated up to 200 times per sweep.
+   With it the batch is an ordered index scan that stops after ``$n``. Coord's
+   sweep additionally refuses to run when no such index is present (its
+   deploy-order guard), so this revision must be applied before that sweep can
+   do anything.
 
 2. ``test_coverage_map (repo, test_id, observed_at DESC)``. The table is keyed
    ``(repo, head_sha, test_id)`` and its sweep keeps the LATEST row per
@@ -41,8 +46,13 @@ What each index serves
    one ``GROUP BY (repo, test_id)`` ``max(observed_at)`` aggregate per batch,
    and its own doc says it needs no index beyond the age column. This index
    only lets the planner compute that aggregate index-only (a
-   ``GroupAggregate`` over it) when it judges that cheaper; the sweep does not
-   depend on it for correctness or for its timeout. What it DOES serve exactly
+   ``GroupAggregate`` over it) when it judges that cheaper. Measured
+   2026-09-30 on a 7.2M-row synthetic copy (local pg16, not production): ~2 s
+   per guarded 5000-row batch with or without this index at default planner
+   costs; the planner chose the index-only aggregate (~1 s) only at a lowered
+   ``random_page_cost``. Whether production needs it to stay under the 60 s
+   timeout is NOT measured, so do not retire it on a low ``idx_scan`` reading
+   on the strength of that synthetic number. What it DOES serve exactly
    is the pre-existing per-test read at qontinui-coord
    ``credibility_scorer.rs:516``::
 
@@ -52,8 +62,9 @@ What each index serves
    which has had no serving index since the table was created: the unique
    constraint ``uq_test_coverage_map_repo_head_test`` leads
    ``(repo, head_sha, ...)`` with ``head_sha`` unbound, so neither it nor
-   ``idx_test_coverage_map_repo_head`` can deliver the ordered per-test probe
-   without fetching and sorting every row of the repo.
+   ``idx_test_coverage_map_repo_head`` can deliver the ordered per-test probe:
+   the best they offer is a scan of every index entry for the repo with
+   ``test_id`` as an index qual, then a sort of the matching rows.
    With ``repo`` and ``test_id`` bound by equality in the leading positions and
    ``observed_at DESC`` trailing, that read is one index descent.
    The batch's own ``ORDER BY observed_at LIMIT`` rides the pre-existing
@@ -81,9 +92,14 @@ the planner will never use. So each CREATE is followed by an explicit
 first task may still be running: the second would skip the still-building
 (invalid) index and trip that check — harmless, but a red for nothing.
 
-Coord asserts the property the sweep depends on (a valid, full btree index
-LEADING on the age column), not the index name, in copies of
-``table_retention::db_tests::test_results_age_index_is_present`` — so retiring
+Coord's companion PR (plan
+``2026-09-25-coord-git-write-ledger-and-test-coverage-map-have-no-retention``
+Phase 2) adds ``git_write_ledger_age_index_is_present`` and
+``test_coverage_map_age_index_is_present`` — copies of
+``table_retention::db_tests::test_results_age_index_is_present`` that assert the
+property the sweep depends on (a valid, full btree index LEADING on the age
+column), waived until coord's migrator pin passes this revision. Once they are
+binding, retiring
 ``idx_git_write_ledger_created_at`` is allowed only by replacing it with an
 index of that shape; a low ``idx_scan`` on it (the sweep is leader-only, a few
 scans a day) is not evidence of idleness. Coord finding

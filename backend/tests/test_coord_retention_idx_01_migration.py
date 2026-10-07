@@ -65,8 +65,8 @@ _LEDGER_BATCH_SQL = (
     "ORDER BY created_at LIMIT 5000"
 )
 
-# qontinui-coord ``credibility_scorer.rs`` ``cov`` CTE; the sweep's guard asks
-# the same per-(repo, test_id) newest-row question.
+# qontinui-coord ``credibility_scorer.rs`` ``cov`` CTE (the per-test newest-row
+# read this index exists for; the sweep's guard is a GROUP BY aggregate).
 _COVERAGE_PROBE_SQL = (
     "SELECT files_touched FROM coord.test_coverage_map "
     "WHERE repo = 'qontinui/qontinui-runner' AND test_id = 'bin::mod::t1' "
@@ -156,34 +156,45 @@ def test_coord_retention_idx_01_and_test_results_autovac_01() -> None:
             "the premise moved"
         )
 
-        # Claim 5 — a leftover INVALID index is refused, not skipped.
+        # Claim 5 — a leftover INVALID index is refused, not skipped — for BOTH
+        # index names (each has its own ``_require_valid`` call).
         if _is_superuser(engine):
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"CREATE INDEX {_IDX_LEDGER_CREATED} "
-                        "ON coord.git_write_ledger (created_at)"
+            for name, ddl in (
+                (
+                    _IDX_LEDGER_CREATED,
+                    f"CREATE INDEX {_IDX_LEDGER_CREATED} "
+                    "ON coord.git_write_ledger (created_at)",
+                ),
+                (
+                    _IDX_COVERAGE,
+                    f"CREATE INDEX {_IDX_COVERAGE} "
+                    "ON coord.test_coverage_map (repo, test_id, observed_at DESC)",
+                ),
+            ):
+                with engine.begin() as conn:
+                    conn.execute(text(ddl))
+                    conn.execute(
+                        text(
+                            "UPDATE pg_index SET indisvalid = false "
+                            f"WHERE indexrelid = 'coord.{name}'::regclass"
+                        )
                     )
+                refused = run_alembic(
+                    root, url, "upgrade", _IDX_REVISION_ID, expect_success=False
                 )
-                conn.execute(
-                    text(
-                        "UPDATE pg_index SET indisvalid = false "
-                        f"WHERE indexrelid = 'coord.{_IDX_LEDGER_CREATED}'::regclass"
+                output = refused.stdout + refused.stderr
+                assert (
+                    f"{name} is INVALID" in output
+                    and f"DROP INDEX CONCURRENTLY coord.{name}" in output
+                ), (
+                    f"the revision must refuse an INVALID leftover {name} and name "
+                    f"the recovery; got:\n{output}"
+                )
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(f"DROP INDEX IF EXISTS coord.{_IDX_LEDGER_CREATED}")
                     )
-                )
-            refused = run_alembic(
-                root, url, "upgrade", _IDX_REVISION_ID, expect_success=False
-            )
-            output = refused.stdout + refused.stderr
-            assert (
-                "is INVALID" in output
-                and f"DROP INDEX CONCURRENTLY coord.{_IDX_LEDGER_CREATED}" in output
-            ), (
-                "the revision must refuse an INVALID leftover and name the recovery; "
-                f"got:\n{output}"
-            )
-            with engine.begin() as conn:
-                conn.execute(text(f"DROP INDEX coord.{_IDX_LEDGER_CREATED}"))
+                    conn.execute(text(f"DROP INDEX IF EXISTS coord.{_IDX_COVERAGE}"))
 
         # Claim 2 — upgrade: both exist, valid, as defined.
         run_alembic(root, url, "upgrade", _IDX_REVISION_ID)
