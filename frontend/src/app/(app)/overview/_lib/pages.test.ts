@@ -89,11 +89,11 @@ describe("formatBytes and documentMeta", () => {
 describe("provenance", () => {
   const sha = "0123456789abcdef0123456789abcdef01234567";
 
-  it("links the mirrored file at its sha under the qontinui owner", () => {
+  it("links the mirrored file at its sha under the owner the repo names", () => {
     expect(
       sourceFileUrl({
-        source_repo: "qontinui-dev-notes",
-        source_path: "runbooks/2026-10-06-ci server.md",
+        source_repo: "qontinui/qontinui-dev-notes",
+        source_path: "/runbooks/2026-10-06-ci server.md",
         source_sha: sha,
       })
     ).toBe(
@@ -101,19 +101,18 @@ describe("provenance", () => {
     );
   });
 
-  it("keeps an owner the repo already names, and drops a leading slash", () => {
+  it("guesses no owner: a bare or malformed repo name gets no link", () => {
+    const full = { source_path: "a.md", source_sha: sha };
     expect(
-      sourceFileUrl({
-        source_repo: "acme/notes",
-        source_path: "/a/b.md",
-        source_sha: sha,
-      })
-    ).toBe(`https://github.com/acme/notes/blob/${sha}/a/b.md`);
+      sourceFileUrl({ ...full, source_repo: "qontinui-dev-notes" })
+    ).toBeNull();
+    expect(sourceFileUrl({ ...full, source_repo: "a/b/c" })).toBeNull();
+    expect(sourceFileUrl({ ...full, source_repo: "/notes" })).toBeNull();
   });
 
   it("has no link without all of repo, path and sha", () => {
     const full = {
-      source_repo: "qontinui-dev-notes",
+      source_repo: "qontinui/qontinui-dev-notes",
       source_path: "a.md",
       source_sha: sha,
     };

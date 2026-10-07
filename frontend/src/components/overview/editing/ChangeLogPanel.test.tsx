@@ -87,13 +87,40 @@ describe("ChangeLogPanel", () => {
         .getByRole("button", { name: "Show all changes" })
         .getAttribute("aria-pressed")
     ).toBe("true");
+    expect(
+      screen.getByText(/Only the latest 2 changes were checked for API writes/)
+    ).toBeTruthy();
   });
 
-  it("says when no write came through the API", async () => {
+  it("does not claim no API write when the server did not filter", async () => {
     api.fetchChangeLog.mockResolvedValue({
-      entries: [entry({})],
-      truncated: false,
+      entries: [entry({}), entry({ id: "e3" })],
+      truncated: true,
     });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findAllByText(/on the overview/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Only changes through the API" })
+    );
+    expect(
+      await screen.findByText(
+        "None of the latest 2 changes was made through the API."
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("No change has been made through the API yet.")
+    ).toBeNull();
+    // The unfiltered history's truncation is not the filtered view's.
+    expect(
+      screen.queryByText("Showing the most recent changes only.")
+    ).toBeNull();
+  });
+
+  it("trusts a server that filtered and found no API write", async () => {
+    api.fetchChangeLog
+      .mockResolvedValueOnce({ entries: [entry({})], truncated: false })
+      .mockResolvedValueOnce({ entries: [], truncated: false });
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText(/on the overview/);
@@ -103,5 +130,21 @@ describe("ChangeLogPanel", () => {
     expect(
       await screen.findByText("No change has been made through the API yet.")
     ).toBeTruthy();
+  });
+
+  it("passes on a filtering server's truncation", async () => {
+    api.fetchChangeLog
+      .mockResolvedValueOnce({ entries: [entry({})], truncated: false })
+      .mockResolvedValueOnce({ entries: [viaApi], truncated: true });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText(/on the overview/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Only changes through the API" })
+    );
+    expect(
+      await screen.findByText("Showing the most recent changes only.")
+    ).toBeTruthy();
+    expect(screen.queryByText(/were checked for API writes/)).toBeNull();
   });
 });
