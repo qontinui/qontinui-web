@@ -31,14 +31,47 @@ collect_ignore = ["integration"]
 os.environ["TESTING"] = "1"
 os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 
+
 # Set required configuration for tests - use PostgreSQL test database.
 #
-# The host:port is overridable via QONTINUI_TEST_PG so a dev box whose Postgres
-# listens somewhere other than 5432 (e.g. the canonical dev stack publishes it
-# on 5433) can run the DB-backed suite without editing this file. The default is
-# the CI topology, so CI behaviour is unchanged when the var is unset.
-_TEST_PG_HOSTPORT = os.environ.get("QONTINUI_TEST_PG", "localhost:5432")
-_TEST_PG_DSN = f"qontinui_user:qontinui_dev_password@{_TEST_PG_HOSTPORT}/qontinui_test"
+# Two overrides, so a dev box can run the DB-backed suite without editing this
+# file. The defaults are the CI topology, so CI behaviour is unchanged when
+# both vars are unset.
+#
+# - QONTINUI_TEST_PG_DSN: a full DSN (`postgresql://user:pw@host:port/db`; a
+#   `postgres://` or `postgresql+<driver>://` scheme is accepted too). It WINS
+#   when set, and is the shape to use with a throwaway database whose
+#   credentials and db name are not the CI ones. The sanctioned way to get one
+#   is `bash qontinui-claude-config/scripts/ephemeral-db.sh start pgvector`,
+#   which labels the container so `ephemeral-db.sh list`/`stop` can find it.
+#   A query string (`?sslmode=...`) is refused: the same tail feeds asyncpg,
+#   which rejects libpq-only keywords.
+# - QONTINUI_TEST_PG: host:port only, with the CI credentials and db name
+#   (e.g. the canonical dev stack publishes Postgres on 5433).
+def _test_pg_dsn_tail() -> str:
+    """The DSN with its scheme stripped: `user:pw@host:port/db`."""
+    dsn = os.environ.get("QONTINUI_TEST_PG_DSN", "").strip()
+    if dsn:
+        scheme, sep, tail = dsn.partition("://")
+        dialect = scheme.split("+", 1)[0]
+        if not sep or not tail or dialect not in ("postgresql", "postgres"):
+            raise RuntimeError(
+                "QONTINUI_TEST_PG_DSN must be a postgresql:// DSN, got a value "
+                "with scheme " + repr(scheme if sep else "<none>")
+            )
+        if "?" in tail:
+            raise RuntimeError(
+                "QONTINUI_TEST_PG_DSN must not carry a query string: the same "
+                "DSN feeds the asyncpg engine, which rejects libpq keywords"
+            )
+        return tail
+    # Blank means unset here too, as for the DSN above: a set-but-empty value
+    # would otherwise yield a host-less `user:pw@/qontinui_test`.
+    hostport = os.environ.get("QONTINUI_TEST_PG", "").strip() or "localhost:5432"
+    return f"qontinui_user:qontinui_dev_password@{hostport}/qontinui_test"
+
+
+_TEST_PG_DSN = _test_pg_dsn_tail()
 
 os.environ["DATABASE_URL"] = f"postgresql://{_TEST_PG_DSN}"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-minimum-32-chars-required"
@@ -215,7 +248,8 @@ def pytest_collection_modifyitems(config, items):
 
 # ===== ASYNC DATABASE FIXTURES =====
 
-# PostgreSQL test database URL (host:port overridable via QONTINUI_TEST_PG).
+# PostgreSQL test database URL (overridable via QONTINUI_TEST_PG_DSN or
+# QONTINUI_TEST_PG; see the top of this file).
 TEST_DATABASE_URL = f"postgresql+asyncpg://{_TEST_PG_DSN}"
 
 # Session-scoped engine for reuse across tests

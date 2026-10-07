@@ -22,9 +22,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 
-import { PromptDocumentClaims, compactDetail } from "./PromptDocumentClaims";
+import {
+  PromptDocumentClaims,
+  addressingFamily,
+  addressingLinkDetail,
+  compactDetail,
+} from "./PromptDocumentClaims";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import type { PromptDocument, PromptDocumentClaim } from "../types";
+import {
+  PROMPT_DOCUMENT_ADDRESSING_STATUSES,
+  PROMPT_DOCUMENT_EVIDENCE_CLASSES,
+} from "../types";
 
 /** A fixed clock so relative times are deterministic. */
 const NOW = Date.parse("2026-09-06T08:00:00Z");
@@ -342,5 +351,283 @@ describe("PromptDocumentEditorDialog — claims panel is wired", () => {
     );
     expect(screen.getByTestId("doc-claim-lever-armed")).toBeInTheDocument();
     expect(screen.getByLabelText("claim state: contradicted")).toBeInTheDocument();
+  });
+});
+
+describe("PromptDocumentClaims — addressed_by join (declared-intent plan Phase 5)", () => {
+  const STEM = "2026-10-05-declared-intent-drives-autonomous-work-selection";
+
+  it("renders nothing extra when coord serves no Phase 5 fields", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [claim({ claim_id: "pre-phase-5" })],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    expect(screen.queryByTestId("doc-claim-addressing-pre-phase-5")).toBeNull();
+    expect(screen.queryByTestId("doc-claim-evidence-pre-phase-5")).toBeNull();
+    expect(screen.queryByTestId("doc-claims-addressed-by-malformed")).toBeNull();
+  });
+
+  it("renders no addressing row for an empty addressed_by", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({ claim_id: "no-link", evidence_class: "state", addressed_by: [] }),
+          ],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    expect(screen.queryByTestId("doc-claim-addressing-no-link")).toBeNull();
+    expect(screen.getByTestId("doc-claim-evidence-no-link")).toHaveTextContent(
+      "evidence: state"
+    );
+  });
+
+  it("renders the summary, every link, and an unobserved link as unknown", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({
+              claim_id: "behaviour-claim",
+              state: "unknown",
+              anchor_type: "none",
+              evidence_class: "declared",
+              addressed_by: [`${STEM}#5`, `${STEM}#6`],
+              addressing_status: "landed_unconfirmed",
+              addressing: [
+                {
+                  addressed_by: `${STEM}#5`,
+                  status: "landed_unconfirmed",
+                  landed_since: "2026-10-01T00:00:00Z",
+                  reason: "delivered; claim not confirmed past the window",
+                },
+              ],
+            }),
+          ],
+          claims_probed: 1,
+          addressed_by_malformed: 2,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+
+    const summary = screen.getByTestId(
+      "doc-claim-addressing-status-behaviour-claim"
+    );
+    expect(summary).toHaveTextContent("landed_unconfirmed");
+    expect(summary).toHaveAttribute("data-family", "alert");
+    expect(summary).not.toHaveAttribute("data-carried");
+
+    const observed = screen.getByTestId(`doc-claim-link-behaviour-claim-${STEM}#5`);
+    expect(observed).toHaveAttribute("data-family", "alert");
+    const unobserved = screen.getByTestId(`doc-claim-link-behaviour-claim-${STEM}#6`);
+    expect(unobserved).toHaveTextContent("unknown");
+    expect(unobserved).toHaveAttribute("data-family", "unknown");
+
+    expect(screen.getByTestId("doc-claims-addressed-by-malformed")).toHaveTextContent(
+      "2 malformed addressed_by links dropped"
+    );
+  });
+
+  it("marks a carried-forward verdict as carried, not as this tick's", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({
+              claim_id: "carried-claim",
+              addressed_by: [`${STEM}#5`],
+              addressing_status: "landed_unconfirmed",
+              addressing: [
+                {
+                  addressed_by: `${STEM}#5`,
+                  status: "landed_unconfirmed",
+                  stale_from_read_failure: true,
+                  carried_since: "2026-10-06T00:00:00Z",
+                },
+              ],
+            }),
+          ],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    const link = screen.getByTestId(`doc-claim-link-carried-claim-${STEM}#5`);
+    expect(link).toHaveTextContent("landed_unconfirmed (carried)");
+    expect(link).toHaveAttribute("data-carried", "true");
+    expect(
+      screen.getByTestId("doc-claim-addressing-status-carried-claim")
+    ).toHaveAttribute("data-carried", "true");
+  });
+
+  it("maps every served status to a family, and an unknown spelling to the amber floor", () => {
+    const families = Object.fromEntries(
+      PROMPT_DOCUMENT_ADDRESSING_STATUSES.map((s) => [s, addressingFamily(s)])
+    );
+    expect(families).toEqual({
+      landed_unconfirmed: "alert",
+      landed_within_window: "neutral",
+      landed_probe_unresolved: "unknown",
+      unlanded: "neutral",
+      delivery_evidence_incomplete: "unknown",
+      phase_unaddressable: "unknown",
+      unknown_stem: "unknown",
+      read_failed: "unknown",
+      unknown: "unknown",
+      landed_confirmed: "calm",
+    });
+    expect(addressingFamily("some_future_status")).toBe("unknown");
+  });
+  it("renders each link's served join detail, and nothing for a bare link", () => {
+    const later = Date.parse("2026-10-06T12:00:00Z");
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({
+              claim_id: "detail-claim",
+              addressed_by: [`${STEM}#5`, `${STEM}#6`, `${STEM}#7`],
+              addressing_status: "landed_unconfirmed",
+              addressing: [
+                {
+                  addressed_by: `${STEM}#5`,
+                  status: "landed_unconfirmed",
+                  work_unit_status: "shipped",
+                  landed_since: "2026-10-03T12:00:00Z",
+                  phases_delivered: [5, 6],
+                  citing_prs: ["qontinui-coord#2938", "qontinui-web#1703"],
+                  stale_from_read_failure: true,
+                  carried_since: "2026-10-06T10:00:00Z",
+                },
+                { addressed_by: `${STEM}#6`, status: "unlanded" },
+              ],
+            }),
+          ],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={later}
+      />
+    );
+    expect(
+      screen.getByTestId(`doc-claim-link-detail-detail-claim-${STEM}#5`)
+    ).toHaveTextContent(
+      `${STEM}#5: unit shipped · landed 3d ago · phases delivered 5, 6 · PRs qontinui-coord#2938, qontinui-web#1703 · carried since 2h ago`
+    );
+    // A served link with no detail fields, and a link coord sent nothing
+    // for, get no detail line — never an invented "0 PRs".
+    expect(
+      screen.queryByTestId(`doc-claim-link-detail-detail-claim-${STEM}#6`)
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`doc-claim-link-detail-detail-claim-${STEM}#7`)
+    ).toBeNull();
+  });
+
+  it("renders a repeated addressed_by link once", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            claim({
+              claim_id: "dup",
+              addressed_by: [`${STEM}#5`, `${STEM}#5`],
+              addressing_status: "unlanded",
+              addressing: [
+                { addressed_by: `${STEM}#5`, status: "unlanded", reason: "r" },
+              ],
+            }),
+          ],
+          claims_probed: 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    expect(screen.getAllByTestId(`doc-claim-link-dup-${STEM}#5`)).toHaveLength(1);
+    expect(
+      screen.getAllByTestId(`doc-claim-link-detail-dup-${STEM}#5`)
+    ).toHaveLength(1);
+  });
+
+  it("omits empty lists and a carried_since that rides no carried verdict", () => {
+    expect(
+      addressingLinkDetail({
+        addressed_by: `${STEM}#5`,
+        status: "landed_confirmed",
+        citing_prs: [],
+        phases_delivered: [],
+        carried_since: "2026-10-06T00:00:00Z",
+        reason: "confirmed since land",
+      })
+    ).toBe("confirmed since land");
+    // Present-but-unparseable stamps are unknown, never "never"; nulls and a
+    // carried verdict with no stamp add nothing.
+    expect(
+      addressingLinkDetail({
+        addressed_by: `${STEM}#5`,
+        status: "landed_unconfirmed",
+        landed_since: "not-a-date",
+        work_unit_status: null,
+        stale_from_read_failure: true,
+        carried_since: "garbage",
+      })
+    ).toBe(
+      "landed at an unreadable time (not-a-date) · carried since at an unreadable time (garbage)"
+    );
+    expect(
+      addressingLinkDetail({
+        addressed_by: `${STEM}#5`,
+        status: "landed_unconfirmed",
+        landed_since: null,
+        work_unit_status: null,
+        stale_from_read_failure: true,
+      })
+    ).toBeNull();
+    expect(
+      addressingLinkDetail({ addressed_by: `${STEM}#5`, status: "unknown" })
+    ).toBeNull();
+  });
+
+  it("shows a known evidence class plainly and an unknown spelling on the amber floor", () => {
+    render(
+      <PromptDocumentClaims
+        document={doc({
+          claims: [
+            ...PROMPT_DOCUMENT_EVIDENCE_CLASSES.map((c) =>
+              claim({ claim_id: `ev-${c}`, evidence_class: c })
+            ),
+            claim({ claim_id: "ev-future", evidence_class: "simulation" }),
+          ],
+          claims_probed: PROMPT_DOCUMENT_EVIDENCE_CLASSES.length + 1,
+          claims_state_source: "table",
+        })}
+        now={NOW}
+      />
+    );
+    for (const c of PROMPT_DOCUMENT_EVIDENCE_CLASSES) {
+      const badge = screen.getByTestId(`doc-claim-evidence-ev-${c}`);
+      expect(badge).toHaveTextContent(`evidence: ${c}`);
+      expect(badge).toHaveAttribute("data-known", "true");
+      if (c === "unknown") expect(badge.className).toContain("amber");
+      else expect(badge.className).not.toContain("amber");
+    }
+    const future = screen.getByTestId("doc-claim-evidence-ev-future");
+    expect(future).toHaveTextContent("evidence: unknown (served as simulation)");
+    expect(future).toHaveAttribute("data-known", "false");
+    expect(future.className).toContain("amber");
   });
 });
