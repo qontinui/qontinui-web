@@ -77,7 +77,6 @@ const CONTRACT: [
   [runs, "GET", "execution/runs", "detail", "reencoded", "none", "detail"],
   [runs, "POST", "execution/runs", "detail", "drop", "json", "detail"],
   [run, "GET", "execution/runs/3", "detail", "drop", "none", "detail"],
-  [run, "PUT", "execution/runs/3", "detail", "drop", "json", "detail"],
   [run, "DELETE", "execution/runs/3", "detail", "drop", "none", "detail"],
   [runTree, "GET", "execution/runs/3/tree", "detail", "drop", "none", "detail"],
   [
@@ -169,15 +168,6 @@ const CONTRACT: [
     "drop",
     "none",
     "details",
-  ],
-  [
-    streaming,
-    "POST",
-    "users/me/automation-streaming",
-    "error",
-    "drop",
-    "json",
-    { error: PROXY },
   ],
   [
     streamingReset,

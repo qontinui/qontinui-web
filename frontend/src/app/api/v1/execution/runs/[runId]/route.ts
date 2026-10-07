@@ -17,11 +17,6 @@ export async function GET(request: NextRequest, { params }: Context) {
   return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
 }
 
-export async function PUT(request: NextRequest, { params }: Context) {
-  const { runId } = await params;
-  return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
-}
-
 export async function DELETE(request: NextRequest, { params }: Context) {
   const { runId } = await params;
   return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
