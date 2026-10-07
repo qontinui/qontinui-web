@@ -700,7 +700,7 @@ describe("humanizeDeferralReason", () => {
     expect(humanizeDeferralReason("at_cap:4")).toContain(
       "continuation cap of 4"
     );
-    expect(humanizeDeferralReason("at_cap:4")).toContain("since retired");
+    expect(humanizeDeferralReason("at_cap:4")).toContain("newer runner builds no longer have");
     expect(humanizeDeferralReason("duplicate_anchor:term-9f")).toContain(
       "terminal term-9f"
     );

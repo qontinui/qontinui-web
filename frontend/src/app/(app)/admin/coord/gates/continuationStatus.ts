@@ -332,12 +332,15 @@ function gib(bytes: string | undefined): string {
  * | `duplicate_anchor:<terminal_id>` | a live session already owns the anchor |
  * | `device_drain:<class>` | coord holds the device drained |
  * | `spawn_authorization_<label>` | the agent registry refused the spawn |
- * | `at_cap:<cap>` | RETIRED — the runner's former fixed continuation cap |
+ * | `at_cap:<cap>` | the runner's fixed continuation cap (retired in newer builds) |
  *
- * `at_cap:` is no longer written by a current runner (the fixed cap was
- * retired 2026-10-03: admission is decided by the memory and thread lanes),
- * but older runner builds keep writing it until rebuilt and historical rows
- * carry it, so it stays readable. `commit_pressure` is accepted with `_over_`
+ * `at_cap:` is written only by runner builds that predate the fixed cap's
+ * retirement (plan
+ * `2026-10-03-retire-the-continuation-session-cap-and-let-the-queue-pre-check-read-both-resource-lanes`,
+ * whose builds decide load admission by the memory and thread lanes alone).
+ * Which builds those are is a per-machine fact this page cannot see, and
+ * historical rows carry it either way, so it stays readable and is worded so
+ * it is true for either. `commit_pressure` is accepted with `_over_`
  * as well as `_under_`: an unlanded runner branch spelled it `_over_`.
  *
  * All but `spawn_authorization_` follow `<class>:<detail>`; that one is
@@ -368,7 +371,7 @@ export function humanizeDeferralReason(raw: string | null | undefined): string |
 
   const cap = /^at_cap:(.+)$/.exec(reason);
   if (cap) {
-    return `the runner was already at its continuation cap of ${cap[1]} (a fixed cap since retired; this stamp came from an older runner build)`;
+    return `the runner was already at its continuation cap of ${cap[1]} (a fixed cap that newer runner builds no longer have)`;
   }
 
   const anchor = /^duplicate_anchor:(.+)$/.exec(reason);
