@@ -676,6 +676,8 @@ class TestUpsertBySource:
             ("source_path", "runbooks//ci.md"),
             ("source_path", "runbooks/../secrets.md"),
             ("source_path", ".."),
+            ("source_path", "plans/"),
+            ("source_path", "plans/./x.md"),
         ],
     )
     async def test_a_malformed_source_is_a_422(

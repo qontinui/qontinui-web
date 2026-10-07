@@ -892,7 +892,7 @@ class Page(Base):
     write must name. Every such write also appends :class:`PageVersion`.
 
     ``source_repo`` / ``source_path`` / ``source_sha`` (``overview_05_page_sources``)
-    say which repository file a published page mirrors, and at which blob.
+    say which repository file a published page mirrors, and at which commit.
     ``(tenant_id, kind, source_repo, source_path)`` is unique among pages that
     have a source (``uq_overview_pages_source``), so re-publishing a file finds
     and updates the same page rather than making another.
@@ -991,7 +991,7 @@ class PageVersion(Base):
     doc_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     doc_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: The source blob this version mirrored (``overview_05_page_sources``).
+    #: The source commit this version mirrored (``overview_05_page_sources``).
     source_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Who wrote this version, beyond ``created_by``: the coord device it came
     #: through and the session the client reported — the same two values the

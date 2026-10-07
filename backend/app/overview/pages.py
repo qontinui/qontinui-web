@@ -206,12 +206,11 @@ def _clean_source_path(v: str | None) -> str | None:
         v.startswith("/")
         or v.startswith("./")
         or "\\" in v
-        or "//" in v
-        or ".." in segments
+        or any(segment in ("", ".", "..") for segment in segments)
     ):
         raise ValueError(
             "source_path is the file's path relative to the repository root "
-            "(no leading / or ./, no backslash, no empty or .. segment)"
+            "(no leading / or ./, no backslash, no empty, . or .. segment)"
         )
     return v
 
