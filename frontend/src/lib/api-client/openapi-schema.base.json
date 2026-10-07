@@ -986,6 +986,24 @@
         "title": "ActionExecutionResponse",
         "type": "object"
       },
+      "ActionRead": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "ActionRead",
+        "type": "object"
+      },
       "ActionReliabilityStats": {
         "description": "Reliability statistics for an action type.",
         "properties": {
@@ -8013,6 +8031,158 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CheckpointDeclRead": {
+        "properties": {
+          "due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "required": [
+          "id",
+          "due",
+          "label"
+        ],
+        "title": "CheckpointDeclRead",
+        "type": "object"
+      },
+      "CheckpointResultRead": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionResultRead"
+            },
+            "title": "Criteria",
+            "type": "array"
+          },
+          "declared": {
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRead"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "reported",
+              "reported_prose_only",
+              "reported_unreadable",
+              "awaiting",
+              "no_report_found",
+              "possible_report_unrecorded",
+              "unreadable",
+              "not_fully_read"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "tally": {
+            "$ref": "#/components/schemas/TallyRead"
+          },
+          "unresolved_results": {
+            "items": {
+              "$ref": "#/components/schemas/UnresolvedResultRead"
+            },
+            "title": "Unresolved Results",
+            "type": "array"
+          },
+          "window_closes_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Closes At"
+          }
+        },
+        "required": [
+          "id",
+          "due",
+          "label",
+          "declared",
+          "window_closes_at",
+          "status"
+        ],
+        "title": "CheckpointResultRead",
+        "type": "object"
+      },
       "CiHostingReading": {
         "description": "One resolved ``github_hosted_ci`` reading. ``level is None`` \u21d2 UNKNOWN.",
         "properties": {
@@ -11986,6 +12156,218 @@
           }
         },
         "title": "CreateChatBody",
+        "type": "object"
+      },
+      "CriterionDeclRead": {
+        "properties": {
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "id",
+          "checkpoint",
+          "target",
+          "method"
+        ],
+        "title": "CriterionDeclRead",
+        "type": "object"
+      },
+      "CriterionResultRead": {
+        "description": "One declared criterion and the verdict shown for it.",
+        "properties": {
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "earlier": {
+            "items": {
+              "$ref": "#/components/schemas/EarlierVerdictRead"
+            },
+            "title": "Earlier",
+            "type": "array"
+          },
+          "finding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "out_of_date_notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LaterReportNotice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reported_checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Checkpoint"
+          },
+          "row": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultRowRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "verdict": {
+            "enum": [
+              "met",
+              "missed",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "checkpoint",
+          "target",
+          "method",
+          "verdict"
+        ],
+        "title": "CriterionResultRead",
+        "type": "object"
+      },
+      "CurrentValueRead": {
+        "description": "D8. Until coord runs metrics, always ``not_measured`` with a reason.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_query_type": {
+            "enum": [
+              "named",
+              "http",
+              "manual",
+              "untyped",
+              "absent"
+            ],
+            "title": "Source Query Type",
+            "type": "string"
+          },
+          "status": {
+            "const": "not_measured",
+            "default": "not_measured",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_query_type",
+          "reason"
+        ],
+        "title": "CurrentValueRead",
         "type": "object"
       },
       "CustomFunctionListResponse": {
@@ -17368,6 +17750,46 @@
         "title": "DrainUnreadableOutcome",
         "type": "object"
       },
+      "EarlierVerdictRead": {
+        "properties": {
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "string"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "verdict": {
+            "enum": [
+              "met",
+              "missed",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint",
+          "verdict",
+          "measured_at",
+          "finding_id"
+        ],
+        "title": "EarlierVerdictRead",
+        "type": "object"
+      },
       "EditCommandHistoryResponse": {
         "description": "Schema for command history list",
         "properties": {
@@ -22324,6 +22746,24 @@
         "title": "ExportResponse",
         "type": "object"
       },
+      "ExtraFieldRead": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "text"
+        ],
+        "title": "ExtraFieldRead",
+        "type": "object"
+      },
       "ExtraFile": {
         "description": "Additional file to export alongside the main data.",
         "properties": {
@@ -25522,6 +25962,160 @@
         "title": "InferenceConfigSchema",
         "type": "object"
       },
+      "InitiativeRead": {
+        "properties": {
+          "ends": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "field_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Field Errors",
+            "type": "object"
+          },
+          "frontmatter_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontmatter Error"
+          },
+          "frontmatter_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Frontmatter Warnings",
+            "type": "array"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "missing_metric_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Metric Names",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectiveRead"
+            },
+            "title": "Objectives",
+            "type": "array"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          },
+          "state": {
+            "enum": [
+              "authored",
+              "skeleton",
+              "unknown",
+              "unreadable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "success_metrics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Success Metrics",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "state",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "InitiativeRead",
+        "type": "object"
+      },
       "InstallEventAck": {
         "description": "Lightweight ack returned to the runner after a successful install ping.",
         "properties": {
@@ -27755,6 +28349,47 @@
           }
         },
         "title": "LLMMetrics",
+        "type": "object"
+      },
+      "LaterReportNotice": {
+        "description": "D7: a later report exists without readable rows, so this verdict may be\nout of date.",
+        "properties": {
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "shape": {
+            "enum": [
+              "structured",
+              "prose_only",
+              "unreadable_block"
+            ],
+            "title": "Shape",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "checkpoint",
+          "created_at",
+          "shape"
+        ],
+        "title": "LaterReportNotice",
         "type": "object"
       },
       "LearnedWorkflowResponse": {
@@ -30629,6 +31264,398 @@
         "title": "MergeRecordingRequest",
         "type": "object"
       },
+      "MetricRead": {
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "baseline_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline As Of"
+          },
+          "baseline_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Text"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "ceiling": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceiling"
+          },
+          "ceiling_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceiling Text"
+          },
+          "checkpoint_results": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointResultRead"
+            },
+            "title": "Checkpoint Results",
+            "type": "array"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointDeclRead"
+            },
+            "title": "Checkpoints",
+            "type": "array"
+          },
+          "checkpoints_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoints Text"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDeclRead"
+            },
+            "title": "Criteria",
+            "type": "array"
+          },
+          "criteria_latest": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionResultRead"
+            },
+            "title": "Criteria Latest",
+            "type": "array"
+          },
+          "current_value": {
+            "$ref": "#/components/schemas/CurrentValueRead"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "increase",
+                  "decrease"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "direction_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction Text"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "extra_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ExtraFieldRead"
+            },
+            "title": "Extra Fields",
+            "type": "array"
+          },
+          "field_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Field Errors",
+            "type": "object"
+          },
+          "findings_read": {
+            "default": "not_read",
+            "enum": [
+              "ok",
+              "truncated",
+              "unavailable",
+              "not_read"
+            ],
+            "title": "Findings Read",
+            "type": "string"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor"
+          },
+          "floor_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Text"
+          },
+          "frontmatter_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontmatter Error"
+          },
+          "frontmatter_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Frontmatter Warnings",
+            "type": "array"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          },
+          "related_notes": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedNoteRead"
+            },
+            "title": "Related Notes",
+            "type": "array"
+          },
+          "report_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Topic"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ResultEntryRead"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "serves": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Serves",
+            "type": "array"
+          },
+          "serves_unknown": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Serves Unknown",
+            "type": "array"
+          },
+          "source_query_type": {
+            "default": "absent",
+            "enum": [
+              "named",
+              "http",
+              "manual",
+              "untyped",
+              "absent"
+            ],
+            "title": "Source Query Type",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "authored",
+              "skeleton",
+              "unknown",
+              "unreadable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "structured_reporting_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured Reporting Since"
+          },
+          "tally_latest": {
+            "$ref": "#/components/schemas/TallyRead"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Text"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unresolved_results": {
+            "items": {
+              "$ref": "#/components/schemas/UnresolvedResultRead"
+            },
+            "title": "Unresolved Results",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "state",
+          "version",
+          "updated_at",
+          "updated_by",
+          "overview_order",
+          "body",
+          "current_value"
+        ],
+        "title": "MetricRead",
+        "type": "object"
+      },
       "MigrationAnchor": {
         "additionalProperties": false,
         "description": "An alembic revision, resolved against ``coord.migration_revisions``.",
@@ -32062,6 +33089,129 @@
           "gate_id"
         ],
         "title": "NotifyWhenGreenResponse",
+        "type": "object"
+      },
+      "ObjectiveRead": {
+        "description": "One ``in_scope`` item of an initiative.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metric_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Metric Names",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "metric_names"
+        ],
+        "title": "ObjectiveRead",
+        "type": "object"
+      },
+      "ObjectivesRead": {
+        "properties": {
+          "earlier_initiatives_count": {
+            "title": "Earlier Initiatives Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "initiative_named_metrics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Initiative Named Metrics",
+            "type": "array"
+          },
+          "initiatives": {
+            "items": {
+              "$ref": "#/components/schemas/InitiativeRead"
+            },
+            "title": "Initiatives",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricRead"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "objectives_readable": {
+            "title": "Objectives Readable",
+            "type": "boolean"
+          },
+          "other_metrics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Other Metrics",
+            "type": "array"
+          },
+          "skeletons_hidden": {
+            "title": "Skeletons Hidden",
+            "type": "integer"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/ObjectivesSources"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "void_hidden": {
+            "title": "Void Hidden",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "generated_at",
+          "initiatives",
+          "earlier_initiatives_count",
+          "objectives_readable",
+          "metrics",
+          "initiative_named_metrics",
+          "other_metrics",
+          "skeletons_hidden",
+          "void_hidden",
+          "sources"
+        ],
+        "title": "ObjectivesRead",
+        "type": "object"
+      },
+      "ObjectivesSources": {
+        "properties": {
+          "findings": {
+            "$ref": "#/components/schemas/SourceRead"
+          },
+          "findings_by_id": {
+            "$ref": "#/components/schemas/SourceRead"
+          },
+          "intent_documents": {
+            "$ref": "#/components/schemas/SourceRead"
+          }
+        },
+        "required": [
+          "intent_documents",
+          "findings",
+          "findings_by_id"
+        ],
+        "title": "ObjectivesSources",
         "type": "object"
       },
       "OnboardingClaimRequest": {
@@ -40541,6 +41691,78 @@
         "title": "RegisteredRunner",
         "type": "object"
       },
+      "RelatedNoteRead": {
+        "description": "A finding at the metric's key that is not a report.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "possible_report_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possible Report For"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "finding_id",
+          "title",
+          "topic",
+          "created_at"
+        ],
+        "title": "RelatedNoteRead",
+        "type": "object"
+      },
       "ReliabilityResponse": {
         "description": "Response schema for transition reliability statistics.",
         "properties": {
@@ -41672,6 +42894,182 @@
         "title": "RepoRefRequest",
         "type": "object"
       },
+      "ReportRead": {
+        "description": "A finding placed as a checkpoint report (D6 point 2).",
+        "properties": {
+          "block_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Error"
+          },
+          "block_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Block Warnings",
+            "type": "array"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "string"
+          },
+          "checkpoint_mismatch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Mismatch"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "document_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Version"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "gate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Id"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "placed_by": {
+            "items": {
+              "enum": [
+                "block",
+                "results",
+                "checkpoint_key"
+              ],
+              "type": "string"
+            },
+            "title": "Placed By",
+            "type": "array"
+          },
+          "recorded": {
+            "default": false,
+            "title": "Recorded",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ResultRowRead"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "shape": {
+            "enum": [
+              "structured",
+              "prose_only",
+              "unreadable_block"
+            ],
+            "title": "Shape",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "finding_id",
+          "title",
+          "topic",
+          "body",
+          "created_at",
+          "expires_at",
+          "checkpoint",
+          "placed_by",
+          "shape"
+        ],
+        "title": "ReportRead",
+        "type": "object"
+      },
       "ReposApplyDispatchRequest": {
         "description": "Ask a machine's runner to reconcile its cloned repositories.\n\nThe server **requests**; the box decides and acts. Nothing here runs a clone\non a developer's machine \u2014 the target's own runner receives the directive,\napplies its LOCAL policy (workspace-root resolution, the incomparable-scope\nrefusal, the disk floor, per-repo auth), and reports. That separation is the\nsame one that retired the agent-dispatch model on 2026-07-13: a clone is\narbitrary code arriving on disk, so the authority to perform one stays with\nthe box that owns the box.",
         "properties": {
@@ -41909,6 +43307,177 @@
           }
         },
         "title": "ResponsibleUsersResponse",
+        "type": "object"
+      },
+      "ResultEntryRead": {
+        "description": "One entry of the document's ``results:`` list.",
+        "properties": {
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "finding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Id"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          }
+        },
+        "required": [
+          "checkpoint",
+          "finding_id",
+          "posted_at"
+        ],
+        "title": "ResultEntryRead",
+        "type": "object"
+      },
+      "ResultRowRead": {
+        "description": "One row of a valid ``metric-checkpoint/v1`` block, as stated.",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "declared": {
+            "default": true,
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "door": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Door"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Text"
+          },
+          "verdict": {
+            "enum": [
+              "met",
+              "missed",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WindowRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "verdict"
+        ],
+        "title": "ResultRowRead",
         "type": "object"
       },
       "RevertRequest": {
@@ -48223,6 +49792,51 @@
         "title": "SnapshotRunUpdate",
         "type": "object"
       },
+      "SourceRead": {
+        "description": "One upstream read and whether it was complete.",
+        "properties": {
+          "affected": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected",
+            "type": "array"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "unavailable",
+              "truncated"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SourceRead",
+        "type": "object"
+      },
       "StateAnnotation": {
         "description": "A state discovered during extraction.\n\nStates represent distinct UI regions or views identified by their\nvisual and semantic properties.",
         "properties": {
@@ -50445,6 +52059,27 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
+        "type": "object"
+      },
+      "TallyRead": {
+        "properties": {
+          "met": {
+            "default": 0,
+            "title": "Met",
+            "type": "integer"
+          },
+          "missed": {
+            "default": 0,
+            "title": "Missed",
+            "type": "integer"
+          },
+          "unknown": {
+            "default": 0,
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "title": "TallyRead",
         "type": "object"
       },
       "TaskEffortRead": {
@@ -57045,6 +58680,55 @@
         "title": "UnreadCountResponse",
         "type": "object"
       },
+      "UnresolvedResultRead": {
+        "description": "A ``results:`` entry whose finding could not be shown.",
+        "properties": {
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "finding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Id"
+          },
+          "reason": {
+            "enum": [
+              "superseded_or_missing",
+              "read_failed",
+              "not_read_over_limit",
+              "invalid_id"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint",
+          "finding_id",
+          "reason",
+          "detail"
+        ],
+        "title": "UnresolvedResultRead",
+        "type": "object"
+      },
       "UpdateStrategyEnum": {
         "description": "How the runner keeps a designated host's build of an app current.",
         "enum": [
@@ -59173,6 +60857,24 @@
           "expires_at"
         ],
         "title": "WakeRequiredResponse",
+        "type": "object"
+      },
+      "WindowRead": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "WindowRead",
         "type": "object"
       },
       "WorkArtifactDetail": {
@@ -101225,6 +102927,33 @@
         "tags": [
           "overview",
           "overview:milestones"
+        ]
+      }
+    },
+    "/api/v1/overview/objectives": {
+      "get": {
+        "description": "What the project is aiming for, and how each measure is doing.\n\nReadable by any member of the active project (the same membership the\nSummary requires); coord authorizes the forwarded bearer on both upstream\nreads, so this route widens nothing. A gap upstream is a ``sources`` entry\nand an UNKNOWN on what it touches, never an error page and never a blank.",
+        "operationId": "api_v1_overview_objectives_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectivesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Objectives",
+        "tags": [
+          "overview"
         ]
       }
     },
