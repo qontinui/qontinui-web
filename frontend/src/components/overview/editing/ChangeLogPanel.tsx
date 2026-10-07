@@ -51,7 +51,15 @@ type HistoryState =
   | { state: "closed" }
   | { state: "loading" }
   | { state: "error"; message: string }
-  | { state: "ready"; entries: ChangeLogEntry[]; truncated: boolean };
+  | {
+      state: "ready";
+      entries: ChangeLogEntry[];
+      truncated: boolean;
+      /** Set when the API-only view was asked for and the server answered
+       *  with other writes too, i.e. did not filter: how many of the latest
+       *  changes were filtered here. Nothing is known beyond them. */
+      scannedLocally: number | null;
+    };
 
 export function ChangeLogPanel({
   resource,
@@ -82,17 +90,22 @@ export function ChangeLogPanel({
       recordId,
       onlyApi ? { source: "api" } : undefined
     ).then(
-      (page) =>
-        ticket === reading.current &&
+      (page) => {
+        if (ticket !== reading.current) return;
+        // A server that answers the API-only read with other writes did not
+        // filter: filter here, and say the view covers only the changes it
+        // sent — its `truncated` is about the unfiltered history.
+        const unfiltered =
+          onlyApi && page.entries.some((e) => e.source !== "api");
         setHistory({
           state: "ready",
-          // Filtered here too: a server that does not filter by source
-          // must not have its other writes shown as API writes.
           entries: onlyApi
             ? page.entries.filter((e) => e.source === "api")
             : page.entries,
-          truncated: page.truncated,
-        }),
+          truncated: unfiltered ? false : page.truncated,
+          scannedLocally: unfiltered ? page.entries.length : null,
+        });
+      },
       (err: unknown) =>
         ticket === reading.current &&
         setHistory({
@@ -159,9 +172,11 @@ export function ChangeLogPanel({
         <div className="mt-1" data-ui-bridge-id={`${uiBridgeId}.entries`}>
           {history.entries.length === 0 ? (
             <p>
-              {apiOnly
-                ? "No change has been made through the API yet."
-                : "No changes have been made through the overview yet."}
+              {history.scannedLocally !== null
+                ? `None of the latest ${history.scannedLocally} changes was made through the API.`
+                : apiOnly
+                  ? "No change has been made through the API yet."
+                  : "No changes have been made through the overview yet."}
             </p>
           ) : (
             <ol className="space-y-0.5">
@@ -180,6 +195,12 @@ export function ChangeLogPanel({
           )}
           {history.truncated && (
             <p className="mt-1">Showing the most recent changes only.</p>
+          )}
+          {history.scannedLocally !== null && history.entries.length > 0 && (
+            <p className="mt-1">
+              Only the latest {history.scannedLocally} changes were checked for
+              API writes; older ones may include more.
+            </p>
           )}
         </div>
       )}
