@@ -51,7 +51,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "coordinput_01_operator_inputs"
+_PARENT_REVISION_ID = "coord_smckpt_01_success_metric_checkpoint_results"
 _IDX_REVISION_ID = "coord_retention_idx_01"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 

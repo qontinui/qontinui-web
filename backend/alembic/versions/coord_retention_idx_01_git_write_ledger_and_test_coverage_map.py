@@ -90,7 +90,7 @@ scans a day) is not evidence of idleness. Coord finding
 ``50ca1e91-4454-492c-b4a5-2f5002e0ac5f``.
 
 Revision ID: coord_retention_idx_01
-Revises: coordinput_01_operator_inputs
+Revises: coord_smckpt_01_success_metric_checkpoint_results
 Create Date: 2026-09-30
 
 """
@@ -103,7 +103,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_retention_idx_01"
-down_revision: str | None = "coordinput_01_operator_inputs"
+down_revision: str | None = "coord_smckpt_01_success_metric_checkpoint_results"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
