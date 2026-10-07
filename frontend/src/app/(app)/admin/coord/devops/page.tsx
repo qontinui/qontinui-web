@@ -76,7 +76,7 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens SIX POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/machines` here at
  * 15 s, `/fleet/drain` here at 30 s (the raw drain beside the windows),
