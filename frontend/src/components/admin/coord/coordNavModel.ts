@@ -68,6 +68,7 @@ import {
   Package,
   Plug,
   Puzzle,
+  RotateCcw,
   Rocket,
   Scale,
   ScrollText,
@@ -294,6 +295,15 @@ export const GROUPS: NavGroup[] = [
         label: "Agents",
         icon: ScrollText,
         testId: "coord-nav-agents",
+      },
+      {
+        // Closed sessions whose work was never declared finished, fleet-wide,
+        // with Resume / Dismiss and the tenant's automatic-resume switch. Plan
+        // `2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed`.
+        href: "/admin/coord/unfinished",
+        label: "Unfinished Sessions",
+        icon: RotateCcw,
+        testId: "coord-nav-unfinished",
       },
       {
         // Sits beside Agents deliberately: Agents is the per-agent registry,
