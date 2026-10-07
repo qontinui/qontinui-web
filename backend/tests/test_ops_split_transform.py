@@ -784,7 +784,7 @@ def test_bare_carriage_return_is_refused_byte_identical(toy):
     # Still parses (the CR ends a comment line for ``ast``), so this is the
     # silent span-shift case, not an unparseable file.
     _write_init(root, pkg, TOY_INIT.replace("# ---- beta", "# ---- beta\r# x"))
-    ast.parse((root / pkg / "__init__.py").read_text(encoding="utf-8", newline=""))
+    ast.parse((root / pkg / "__init__.py").read_bytes())
     before = _snapshot(root)
     with pytest.raises(SplitRefused, match="carriage return"):
         _split(root, pkg, ALPHA)
