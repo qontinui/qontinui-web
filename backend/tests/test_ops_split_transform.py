@@ -706,3 +706,125 @@ def test_order_is_measured_at_the_original_single_file():
     assert measure_order(("report_claude_sessions", "runner_heartbeat")) == 458
     for name, spec in DOMAINS.items():
         assert spec.order == measure_order(spec.names), name
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 review follow-ups (post-merge of qontinui-web#1734). Each test fails
+# without its fix, except the CRLF test, which pins existing behaviour.
+# ---------------------------------------------------------------------------
+
+
+# 9. an interrupt between os.replace and its bookkeeping still rolls back -------
+
+
+def test_apply_interrupt_right_after_a_replace_rolls_that_file_back(toy, monkeypatch):
+    root, pkg = toy
+    before = _snapshot(root)
+    plan = plan_split(
+        "alpha",
+        ALPHA,
+        package_dir=root / pkg,
+        package_module=pkg,
+        tests_dir=root / "tests",
+        scan_dirs=(root / "app", root / "tests"),
+    )
+    real_replace = os.replace
+
+    def replace_then_interrupt(src, dst):
+        real_replace(src, dst)  # the replace lands ...
+        raise KeyboardInterrupt  # ... and Ctrl-C arrives before it is recorded
+
+    monkeypatch.setattr(os, "replace", replace_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        apply(plan)
+    assert _snapshot(root) == before
+
+
+# 10. ``global`` on an IMPORTED name is refused ----------------------------------
+
+
+_RESET_ROUTE = (
+    '@router.post("/alpha/reset")\nasync def reset_alpha() -> None:\n'
+    "    global json\n    json = None\n\n\n# ---- beta"
+)
+_GAMMA_JSON_READER = (
+    '\n\n@router.get("/gamma/dump")\nasync def gamma_dump() -> str:\n'
+    "    return json.dumps(_LIMIT)\n"
+)
+
+
+def test_global_rebind_of_an_imported_name_init_still_reads_is_refused(toy):
+    root, pkg = toy
+    # ``json`` is imported into __init__, not defined there. gamma, which stays
+    # behind, still reads __init__'s copy; after the move the rebinding would
+    # reach alpha.py's copy only.
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace("# ---- beta", _RESET_ROUTE) + _GAMMA_JSON_READER,
+    )
+    before = _snapshot(root)
+    spec = DomainSpec(names=(*ALPHA.names, "reset_alpha"), order=20)
+    with pytest.raises(SplitRefused, match=r"json.*global.*imported"):
+        _split(root, pkg, spec)
+    assert _snapshot(root) == before
+
+
+def test_global_rebind_of_an_imported_name_nothing_else_reads_is_allowed(toy):
+    root, pkg = toy
+    # Every reader of ``json`` moves with alpha, so alpha.py's own import is the
+    # only binding left that anything reads: behaviour is unchanged.
+    _write_init(root, pkg, TOY_INIT.replace("# ---- beta", _RESET_ROUTE))
+    _split(root, pkg, DomainSpec(names=(*ALPHA.names, "reset_alpha"), order=20))
+    assert "global json" in (root / pkg / "alpha.py").read_text(encoding="utf-8")
+
+
+def test_bare_carriage_return_is_refused_byte_identical(toy):
+    root, pkg = toy
+    # Still parses (the CR ends a comment line for ``ast``), so this is the
+    # silent span-shift case, not an unparseable file.
+    _write_init(root, pkg, TOY_INIT.replace("# ---- beta", "# ---- beta\r# x"))
+    ast.parse((root / pkg / "__init__.py").read_bytes())
+    before = _snapshot(root)
+    with pytest.raises(SplitRefused, match="carriage return"):
+        _split(root, pkg, ALPHA)
+    assert _snapshot(root) == before
+
+
+# 11. line handling: CRLF sources, and ``\f`` / U+2028 inside a source line -----
+
+
+def test_crlf_source_splits_to_crlf_output_with_the_route_table_kept(toy):
+    root, pkg = toy
+    before = _route_table(_import_fresh(root, pkg))
+    (root / pkg / "__init__.py").write_bytes(TOY_INIT.replace("\n", "\r\n").encode())
+    _split(root, pkg, ALPHA)
+    for name in ("__init__.py", "alpha.py"):
+        raw = (root / pkg / name).read_bytes()
+        assert b"\n" in raw and raw.count(b"\r\n") == raw.count(b"\n"), name
+    assert sorted(_route_table(_import_fresh(root, pkg))) == sorted(before)
+
+
+def test_form_feed_and_line_separator_do_not_shift_the_rewritten_imports(toy):
+    root, pkg = toy
+    # ``str.splitlines`` breaks on both; ``ast`` line numbers do not. A line
+    # count mismatch before the import block misplaces the relative imports
+    # and the include list.
+    _write_init(
+        root,
+        pkg,
+        TOY_INIT.replace(
+            '"""Toy operations package: three domains on one shared router."""',
+            '"""Toy operations package.\x0c\n\nThree domains\u2028on one router."""',
+        ),
+    )
+    before = _route_table(_import_fresh(root, pkg))
+    _split(root, pkg, ALPHA)
+    init_src = (root / pkg / "__init__.py").read_text(encoding="utf-8")
+    ast.parse(init_src)
+    assert "\x0c" in init_src and "\u2028" in init_src
+    # The relative imports are the TAIL of the import block, not spliced into it.
+    assert init_src.index("from fastapi import APIRouter, Depends\n") < init_src.index(
+        "from .alpha import"
+    )
+    assert sorted(_route_table(_import_fresh(root, pkg))) == sorted(before)
