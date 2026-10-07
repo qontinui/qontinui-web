@@ -121,6 +121,7 @@ from tests._alembic_harness import (
     column_comment,
     column_info,
     comment_body_from_source,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     load_revision_module,
@@ -256,11 +257,12 @@ def test_the_pinned_parent_matches_the_revisions_own_down_revision() -> None:
     assert re.search(rf'^revision: str = "{_REVISION_ID}"$', source, re.M), (
         f"{_REVISION_FILENAME} no longer declares revision {_REVISION_ID!r}"
     )
-    match = re.search(
-        r'^down_revision: str \| Sequence\[str\] \| None = "([^"]+)"$', source, re.M
+    assert re.search(
+        r'^down_revision: str \| Sequence\[str\] \| None = "[^"]+"$', source, re.M
+    ), "down_revision is no longer a plain string literal"
+    assert (
+        declared_parent_revision_id(source, _REVISION_FILENAME) == _PARENT_REVISION_ID
     )
-    assert match, "down_revision is no longer a plain string literal"
-    assert match.group(1) == _PARENT_REVISION_ID
 
 
 def test_the_upgrade_path_drops_no_coord_surface() -> None:

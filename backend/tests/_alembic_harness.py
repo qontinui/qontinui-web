@@ -20,7 +20,10 @@ catch a malformed ``down_revision`` or a downgrade that leaves residue.
 CI provisions a Postgres service container at localhost:5432 (see
 ``.github/workflows/backend-ci.yml`` and ``tests/conftest.py``); locally these
 tests skip unless one is reachable. Point them at a different instance with
-``QONTINUI_TEST_PG=host:port`` — the same override ``conftest.py`` honours.
+``QONTINUI_TEST_PG=host:port``, or at a throwaway database with a full
+``QONTINUI_TEST_PG_DSN`` (e.g. from ``ephemeral-db.sh start pgvector``). Both
+are ``conftest.py``'s overrides: it derives ``DATABASE_URL`` from them at
+import time, and [`admin_database_url`] reads that.
 """
 
 from __future__ import annotations
@@ -459,6 +462,60 @@ def load_revision_module(path: Path, module_name: str) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _alembic_graph() -> ModuleType:
+    """The head gate's own module, ``scripts/ci/_alembic_graph.py``.
+
+    Imported lazily and by path-on-``sys.path`` because ``scripts/ci`` is not a
+    package of this backend; importing it here rather than in each test keeps
+    the ``sys.path`` edit in one place.
+    """
+    scripts_ci = str(backend_root().parent / "scripts" / "ci")
+    if scripts_ci not in sys.path:
+        sys.path.insert(0, scripts_ci)
+    import _alembic_graph
+
+    return _alembic_graph
+
+
+def declared_parent_revision_ids(source: str) -> list[str] | None:
+    """Every parent a revision file's ``down_revision`` declares, in order.
+
+    Read through THE GATE'S OWN PARSER (``parse_source`` + ``parent_refs``), not
+    a private regex, so a migration test cannot disagree with the lane that
+    actually blocks about what a parent is: the text is masked (a docstring that
+    discusses ``down_revision`` cannot supply one), a trailing ``# ...`` comment
+    is skipped (a paren inside it cannot truncate a wrapped assignment), both
+    quote styles and the formatter-wrapped ``= (\\n"x"\\n)`` form are read, and a
+    merge tuple yields ALL its parents rather than its first. ``None`` when the
+    source declares no ``revision = ...`` at all.
+    """
+    graph = _alembic_graph()
+    parsed = graph.parse_source(source)
+    if parsed is None:
+        return None
+    return graph.parent_refs(parsed[1])
+
+
+def declared_parent_revision_id(source: str, label: str) -> str:
+    """The ONE parent a revision file declares — refusing a merge or a root.
+
+    ``label`` names the file in the failure message. A migration test walks
+    back to this parent and asserts against the "clean" database it finds
+    there, so it needs exactly one place to stop: a merge revision (a tuple)
+    needs its own downgrade target chosen deliberately, never the tuple's first
+    element, and a root revision has no parent to rewind to.
+    """
+    parents = declared_parent_revision_ids(source)
+    assert parents is not None, f"{label} declares no parseable revision id"
+    assert len(parents) == 1, (
+        f"{label} must declare exactly ONE parent so the downgrade walk has one "
+        f"place to stop; the head gate's parser read {parents!r} from its "
+        f"down_revision. A merge revision (a tuple) needs its own downgrade "
+        f"target chosen deliberately, not the tuple's first element."
+    )
+    return parents[0]
 
 
 # A SQL string literal, with `''` as the escaped apostrophe.
