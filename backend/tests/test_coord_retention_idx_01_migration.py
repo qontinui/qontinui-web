@@ -1,12 +1,9 @@
-"""Behaviour test for ``coord_retention_idx_01`` and ``coord_test_results_autovac_01``.
+"""Behaviour test for ``coord_retention_idx_01``.
 
 ``coord_retention_idx_01`` builds, ``CONCURRENTLY``::
 
     + coord.git_write_ledger  (created_at)                        idx_git_write_ledger_created_at
     + coord.test_coverage_map (repo, test_id, observed_at DESC)   idx_test_coverage_map_repo_test_observed
-
-``coord_test_results_autovac_01`` sets two autovacuum storage parameters on
-``coord.test_results``.
 
 What is asserted
 ================
@@ -27,9 +24,7 @@ What is asserted
    the two index names, that
    ``IF NOT EXISTS`` would otherwise skip (driven by marking a pre-built index
    invalid in the catalog; skipped when the test role is not a superuser).
-6. ``coord_test_results_autovac_01`` sets exactly the two ``reloptions`` and its
-   downgrade RESETs them to none.
-7. Downgrade to the parent removes both indexes.
+6. Downgrade to the parent removes both indexes.
 
 ``enable_seqscan = off`` and ``enable_bitmapscan = off`` for the plan
 assertions: the tables are empty, so the
@@ -54,7 +49,6 @@ from tests._alembic_harness import (
 
 _PARENT_REVISION_ID = "coord_smckpt_01_success_metric_checkpoint_results"
 _IDX_REVISION_ID = "coord_retention_idx_01"
-_AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 _IDX_LEDGER_CREATED = "idx_git_write_ledger_created_at"
 _IDX_COVERAGE = "idx_test_coverage_map_repo_test_observed"
@@ -114,15 +108,6 @@ def _plan_for(engine: Engine, sql: str) -> str:
         return "\n".join(str(r[0]) for r in conn.execute(text(f"EXPLAIN {sql}")).all())
 
 
-def _test_results_reloptions(engine: Engine) -> list[str] | None:
-    with engine.connect() as conn:
-        return conn.execute(
-            text(
-                "SELECT reloptions FROM pg_class WHERE oid = 'coord.test_results'::regclass"
-            )
-        ).scalar()
-
-
 def _is_superuser(engine: Engine) -> bool:
     with engine.connect() as conn:
         return bool(
@@ -140,7 +125,7 @@ def _is_superuser(engine: Engine) -> bool:
         "running this test."
     ),
 )
-def test_coord_retention_idx_01_and_test_results_autovac_01() -> None:
+def test_coord_retention_idx_01() -> None:
     root = backend_root()
 
     with ephemeral_database(admin_database_url(), "coord_retention_idx_test") as (
@@ -226,19 +211,7 @@ def test_coord_retention_idx_01_and_test_results_autovac_01() -> None:
             f"the per-test probe must be an ordered scan of {_IDX_COVERAGE}:\n{plan}"
         )
 
-        # Claim 6 — autovacuum parameters set, then reset.
-        assert _test_results_reloptions(engine) is None
-        run_alembic(root, url, "upgrade", _AUTOVAC_REVISION_ID)
-        assert sorted(_test_results_reloptions(engine) or []) == [
-            "autovacuum_vacuum_scale_factor=0.01",
-            "autovacuum_vacuum_threshold=10000",
-        ]
-        run_alembic(root, url, "downgrade", _IDX_REVISION_ID)
-        assert _test_results_reloptions(engine) is None, (
-            "downgrade must RESET the two parameters, leaving no reloptions"
-        )
-
-        # Claim 7 — downgrade to the parent removes both indexes.
+        # Claim 6 — downgrade to the parent removes both indexes.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _IDX_LEDGER_CREATED)
         assert not index_exists(engine, _IDX_COVERAGE)

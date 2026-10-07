@@ -85,14 +85,7 @@ newest row, that binding ``repo`` first stops being a tie; the test therefore
 asserts that index #2 CAN serve the probe (on a clone carrying nothing else)
 rather than that the planner picks it. Re-read ``pg_stat_user_indexes.idx_scan``
 for BOTH indexes on production AFTER this lands and the coord read is
-deployed, then retire whichever is idle in its own follow-up — EXCEPT that
-``idx_test_results_observed_at`` has a load-bearing consumer that idx_scan
-under-counts: qontinui-coord ``table_retention.rs`` ``prune_test_results``
-needs a full btree index LEADING on ``observed_at`` (guarded by coord test
-``test_results_age_index_is_present``), so a low ``idx_scan`` on
-``idx_test_results_observed_at`` is NOT evidence of idleness (coord finding
-``50ca1e91``; see the AMENDED section below). Read the consumer, not the
-counter.
+deployed, then retire whichever is idle in its own follow-up.
 
 AMENDED 2026-09-20 — idx_scan no longer decides this index's retirement
 ------------------------------------------------------------------------------
