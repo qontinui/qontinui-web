@@ -33844,7 +33844,7 @@
         "type": "object"
       },
       "PageUpdate": {
-        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the blob the new content mirrors.",
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the commit the new content mirrors.",
         "properties": {
           "body_md": {
             "anyOf": [

@@ -244,6 +244,19 @@ async def _device_caller(
         )
     assert principal.token is not None  # a device principal always has one
     memberships = await get_device_memberships(request, principal.token)
+    # Coord answers for the bearer it was sent. An answer naming another
+    # device or user is about somebody else, so it grants nothing.
+    for named, verified in (
+        (memberships.device_id, principal.device_id),
+        (memberships.user_id, getattr(principal.user, "id", None)),
+    ):
+        if named is not None and named != verified:
+            raise _refusal(
+                502,
+                "coord_memberships_malformed",
+                "coord's device-membership answer named a different device or "
+                "user than the verified token.",
+            )
     membership = memberships.membership(tenant_id)
     if membership is None:
         raise _refusal(

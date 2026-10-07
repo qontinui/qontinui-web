@@ -21,7 +21,7 @@ What this module adds to the generic contract (``app.overview.router``):
   title substring match beside it so a half-typed word still finds its page.
 * **Published from a repository** (plan
   ``2026-10-07-agents-publish-documents-to-the-project-overview`` D3). A page
-  may name the file it mirrors (``source_repo`` + ``source_path``) and the blob
+  may name the file it mirrors (``source_repo`` + ``source_path``) and the commit
   (``source_sha``). That pair is unique per project and kind, so a re-publish
   finds the page (``?source_repo=&source_path=``) and PATCHes it, and a create
   that collides on it converges on the existing page (:meth:`PageStore.adopt_existing`).
@@ -153,7 +153,7 @@ class PageRead(BaseModel):
     #: The repository file this page mirrors, when it was published from one.
     source_repo: str | None
     source_path: str | None
-    #: The blob the current version mirrors.
+    #: The commit the current version mirrors.
     source_sha: str | None
     #: The coord device the CURRENT version was written through (from its
     #: verified token); ``None`` for a person's own session.
@@ -170,11 +170,61 @@ def _meta(value: str | None) -> str | None:
     return value or None
 
 
-def _source_value(v: str | None) -> str | None:
+#: ``owner/name`` — the full GitHub slug, stored lowercased (GitHub's own
+#: slugs are case-insensitive, so one repository has one spelling here).
+_SOURCE_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+#: A git COMMIT sha — the newest commit on the published ref touching the
+#: path — in SHA-1 (40) or SHA-256 (64) form, lowercase.
+_SOURCE_SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+
+
+def normalize_source_repo(v: str) -> str:
+    """The one stored spelling of a ``source_repo``, shared by writes and the
+    list filter so a lookup matches what a write stored."""
+    return v.strip().lower()
+
+
+def _clean_source_repo(v: str | None) -> str | None:
+    if v is None:
+        return None
+    v = normalize_source_repo(v)
+    if not v:
+        return None
+    if not _SOURCE_REPO.fullmatch(v):
+        raise ValueError("source_repo is the repository's full owner/name slug")
+    return v
+
+
+def _clean_source_path(v: str | None) -> str | None:
     if v is None:
         return None
     v = v.strip()
-    return v or None
+    if not v:
+        return None
+    segments = v.split("/")
+    if (
+        v.startswith("/")
+        or v.startswith("./")
+        or "\\" in v
+        or "//" in v
+        or ".." in segments
+    ):
+        raise ValueError(
+            "source_path is the file's path relative to the repository root "
+            "(no leading / or ./, no backslash, no empty or .. segment)"
+        )
+    return v
+
+
+def _clean_source_sha(v: str | None) -> str | None:
+    if v is None:
+        return None
+    v = v.strip().lower()
+    if not v:
+        return None
+    if not _SOURCE_SHA.fullmatch(v):
+        raise ValueError("source_sha is a full 40- or 64-hex git commit sha")
+    return v
 
 
 class _SourceFields(BaseModel):
@@ -186,10 +236,20 @@ class _SourceFields(BaseModel):
     source_path: str | None = Field(default=None, max_length=MAX_SOURCE_PATH)
     source_sha: str | None = Field(default=None, max_length=MAX_SOURCE_SHA)
 
-    @field_validator("source_repo", "source_path", "source_sha")
+    @field_validator("source_repo")
     @classmethod
-    def _strip_source(cls, v: str | None) -> str | None:
-        return _source_value(v)
+    def _repo(cls, v: str | None) -> str | None:
+        return _clean_source_repo(v)
+
+    @field_validator("source_path")
+    @classmethod
+    def _path(cls, v: str | None) -> str | None:
+        return _clean_source_path(v)
+
+    @field_validator("source_sha")
+    @classmethod
+    def _sha(cls, v: str | None) -> str | None:
+        return _clean_source_sha(v)
 
     def _check_source(self) -> None:
         if (self.source_repo is None) != (self.source_path is None):
@@ -249,7 +309,7 @@ class PageUpdate(_SourceFields):
     ``source_repo`` + ``source_path`` do not CHANGE a page's source: they name
     the source the writer believes the page mirrors, and a page whose source
     is absent or different refuses the write (409 ``source_mismatch``).
-    ``source_sha`` is the blob the new content mirrors."""
+    ``source_sha`` is the commit the new content mirrors."""
 
     title: str | None = Field(default=None, min_length=1, max_length=MAX_TITLE)
     body_md: str | None = Field(default=None, max_length=MAX_BODY_CHARS)
@@ -292,7 +352,7 @@ class PageVersionSummary(BaseModel):
     title: str
     created_at: datetime
     created_by: str | None
-    #: The blob this version mirrored, for a published page.
+    #: The commit this version mirrored, for a published page.
     source_sha: str | None
     #: The coord device this version was written through.
     via_device: UUID | None
@@ -468,13 +528,12 @@ class PageStore:
         if slugs:
             stmt = stmt.where(Page.slug.in_(slugs))
         # Exact matches: a source is an identity, not a search term.
-        for name, column in (
-            ("source_repo", Page.source_repo),
-            ("source_path", Page.source_path),
-        ):
-            values = [v for v in filters.get(name, []) if v]
-            if values:
-                stmt = stmt.where(column.in_(values))
+        repos = [normalize_source_repo(v) for v in filters.get("source_repo", [])]
+        if any(repos):
+            stmt = stmt.where(Page.source_repo.in_([r for r in repos if r]))
+        paths = [v.strip() for v in filters.get("source_path", []) if v.strip()]
+        if paths:
+            stmt = stmt.where(Page.source_path.in_(paths))
         query = " ".join(q.strip() for q in filters.get("q", []) if q.strip())[:200]
         if query:
             tsquery = func.websearch_to_tsquery(
@@ -834,9 +893,9 @@ async def revert_page(
     except RecordNotFound as exc:
         raise HTTPException(status_code=404, detail="not_found") from exc
     target = await _version_or_404(db, access.tenant_id, page, version)
-    # A published page's version mirrored a blob; restoring its content
+    # A published page's version mirrored a commit; restoring its content
     # restores the sha that content came from, so the page never claims to
-    # mirror a blob its body is not.
+    # mirror a commit its body is not.
     source: dict[str, Any] = (
         {
             "source_repo": page.source_repo,

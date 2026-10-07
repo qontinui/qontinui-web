@@ -51,6 +51,7 @@ from app.overview.pages import router as pages_routes
 from app.overview.permissions import (
     OverviewAccess,
     get_overview_access,
+    refuse_device_on_coord_backed,
     require_edit,
     require_read,
 )
@@ -184,6 +185,9 @@ async def read_change_log(
     """Newest first. Readable by any member, like the records it describes."""
     if resource not in REGISTRY:
         raise HTTPException(status_code=404, detail="unknown_resource")
+    # The same refusal the resource's own routes make: a device reads nothing
+    # of a coord-backed resource, its history included.
+    refuse_device_on_coord_backed(access, REGISTRY[resource].permission)
     rows = await change_log.history(
         db,
         tenant_id=access.tenant_id,
@@ -370,20 +374,30 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 if existing is None:
                     return _refused(exc)
                 created, adopted = existing, True
+            # An adopted record whose create the change log already holds is
+            # not created again: a second ``create`` row would claim a write
+            # that never happened. (A coord-stored record adopted because its
+            # log row was lost has none, and gets the row it is owed.) The
+            # action vocabulary is create / update / delete, so an adopt is
+            # recorded by writing nothing.
+            already_logged = adopted and await change_log.has_create(
+                db, tenant_id=access.tenant_id, resource=spec.name, record_id=created.id
+            )
             try:
-                await change_log.record(
-                    db,
-                    tenant_id=access.tenant_id,
-                    resource=spec.name,
-                    record_id=created.id,
-                    action="create",
-                    source=change_log.change_source(request),
-                    **change_log.attribution(access, request),
-                    before=None,
-                    after=_audit(spec, created),
-                    version_after=created.version,
-                    idempotency_key=key,
-                )
+                if not already_logged:
+                    await change_log.record(
+                        db,
+                        tenant_id=access.tenant_id,
+                        resource=spec.name,
+                        record_id=created.id,
+                        action="create",
+                        source=change_log.change_source(request),
+                        **change_log.attribution(access, request),
+                        before=None,
+                        after=_audit(spec, created),
+                        version_after=created.version,
+                        idempotency_key=key,
+                    )
                 await db.commit()
                 await _run_after_commit(context)
             except IntegrityError:

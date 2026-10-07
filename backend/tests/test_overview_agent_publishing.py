@@ -46,7 +46,7 @@ ADMIN_TOKEN = "device-token-admin"
 VIEWER_TOKEN = "device-token-viewer"
 UNLINKED_TOKEN = "device-token-unlinked"
 
-REPO = "qontinui-dev-notes"
+REPO = "qontinui/qontinui-dev-notes"
 PATH = "runbooks/2026-10-06-first-purpose-bought-ci-server-and-the-scale-out-path.md"
 
 
@@ -67,6 +67,10 @@ class FakeCoord:
     def __init__(self) -> None:
         self.memberships: dict[str, Any] = {}
         self.requests: list[httpx.Request] = []
+        #: Who the door says it answered for; the verified token's own
+        #: device and user unless a test says otherwise.
+        self.device_id: str = str(DEVICE)
+        self.user_id: str | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -81,8 +85,8 @@ class FakeCoord:
             return httpx.Response(
                 200,
                 json={
-                    "device_id": str(DEVICE),
-                    "user_id": str(uuid4()),
+                    "device_id": self.device_id,
+                    "user_id": self.user_id,
                     "memberships": [
                         {"tenant_id": str(t), "slug": f"t-{str(t)[:4]}", "roles": r}
                         for t, r in answer
@@ -127,10 +131,11 @@ def _patch_httpx(
 
 
 @pytest.fixture()
-def coord(monkeypatch: pytest.MonkeyPatch) -> FakeCoord:
+def coord(monkeypatch: pytest.MonkeyPatch, owner) -> FakeCoord:
     from app.services import coord_device_memberships, coord_identity
 
     fake = FakeCoord()
+    fake.user_id = str(owner.id)
     fake.memberships[ADMIN_TOKEN] = [(TENANT_T, ["admin"])]
     fake.memberships[VIEWER_TOKEN] = [(TENANT_T, ["viewer"])]
     fake.memberships[UNLINKED_TOKEN] = (403, "no_linked_operator")
@@ -369,6 +374,16 @@ class TestDevicePrincipal:
         assert response.status_code == 503, response.text
         assert _code(response) == "bindings_unavailable"
 
+    @pytest.mark.parametrize("field", ["device_id", "user_id"])
+    async def test_an_answer_about_another_device_or_user_is_a_502(
+        self, async_db_session, coord: FakeCoord, verified_devices, field: str
+    ) -> None:
+        setattr(coord, field, str(uuid4()))
+        async with _client(_app(async_db_session)) as client:
+            response = await _create(client, _publish())
+        assert response.status_code == 502, response.text
+        assert _code(response) == "coord_memberships_malformed"
+
     async def test_a_coord_without_the_door_is_a_502_never_an_empty_grant(
         self, async_db_session, coord: FakeCoord, verified_devices
     ) -> None:
@@ -464,6 +479,7 @@ class TestCoordBackedResources:
                 {"kind": "initiative", "name": "launch", "body": "# Launch\n"},
             ),
             ("PATCH", "/intent-documents/initiative:launch", {"body": "# Again\n"}),
+            ("GET", "/change-log?resource=intent_documents", None),
         ],
     )
     async def test_every_request_is_refused_before_the_store_runs(
@@ -645,6 +661,58 @@ class TestUpsertBySource:
         assert response.status_code == 200, response.text
         assert response.json()["item"]["source_repo"] == REPO
 
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("source_repo", "qontinui-dev-notes"),
+            ("source_repo", "qontinui/dev notes"),
+            ("source_repo", "a/b/c"),
+            ("source_sha", "abc123"),
+            ("source_sha", "g" * 40),
+            ("source_sha", "a" * 41),
+            ("source_path", "/runbooks/ci.md"),
+            ("source_path", "./runbooks/ci.md"),
+            ("source_path", "runbooks\\ci.md"),
+            ("source_path", "runbooks//ci.md"),
+            ("source_path", "runbooks/../secrets.md"),
+            ("source_path", ".."),
+        ],
+    )
+    async def test_a_malformed_source_is_a_422(
+        self, agent: httpx.AsyncClient, field: str, value: str
+    ) -> None:
+        payload = _publish()
+        payload[field] = value
+        response = await _create(agent, payload)
+        assert response.status_code == 422, response.text
+
+    async def test_the_repo_and_sha_are_stored_lowercased_and_the_filter_matches(
+        self, agent: httpx.AsyncClient
+    ) -> None:
+        payload = _publish(sha="A" * 64)
+        payload["source_repo"] = "Qontinui/Qontinui-Dev-Notes"
+        made = await _create(agent, payload)
+        assert made.status_code == 201, made.text
+        item = made.json()["item"]
+        assert (item["source_repo"], item["source_sha"]) == (REPO, "a" * 64)
+        listing = await agent.get(
+            f"{API}/pages",
+            params={"source_repo": "QONTINUI/qontinui-dev-notes", "source_path": PATH},
+        )
+        assert [p["id"] for p in listing.json()["items"]] == [item["id"]]
+        # A PATCH spelling the repo in another case is the same source.
+        patched = await agent.patch(
+            f"{API}/pages/{item['id']}",
+            json={
+                "source_repo": "QONTINUI/QONTINUI-DEV-NOTES",
+                "source_path": PATH,
+                "source_sha": "b" * 40,
+                "body_md": "moved on",
+            },
+            headers={"If-Match": '"1"'},
+        )
+        assert patched.status_code == 200, patched.text
+
     async def test_half_a_source_is_rejected(self, agent: httpx.AsyncClient) -> None:
         payload = _publish()
         del payload["source_path"]
@@ -680,6 +748,11 @@ class TestUpsertBySource:
         assert replay.status_code == 200, replay.text
         assert replay.json()["item"]["id"] == first.json()["item"]["id"]
         assert len(await self._find(agent)) == 1
+        # The adopt wrote nothing: the one create row is the real create.
+        rows = await _log(async_db_session)
+        assert [(r.action, r.idempotency_key) for r in rows] == [
+            ("create", "first-invocation")
+        ]
 
     async def test_delete_then_republish_the_same_sha_makes_a_new_record(
         self, agent: httpx.AsyncClient
