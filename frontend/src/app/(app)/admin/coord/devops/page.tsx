@@ -148,7 +148,6 @@ import {
   faultToVisibilityBadge,
 } from "@/components/operations/fleetReadout";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
-import { GithubHostedCiPanel } from "./_components/GithubHostedCiPanel";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
 // defeats every downstream useMemo keyed on it.
@@ -458,14 +457,26 @@ export default function CoordDevOpsPage() {
         onNavigate={navigate}
       />
 
-      {/* GitHub-hosted CI — a per-tenant setting with per-repo overrides
-          (plan `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting`
-          Phase 3). Right under the conditions it can cause: an `off` tenant
-          whose workflows still target hosted runners is what coord flags as
-          mis-targeted. Writes are offered to an admin of the ACTIVE tenant
-          only — the same predicate as the computers link below, and the one
-          `require_coord_tenant_admin` applies to the write. */}
-      <GithubHostedCiPanel isAdmin={canReadComputers} />
+      {/* GitHub-hosted CI moved to Dev Ops ▸ CI (plan
+          `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 6): a control
+          belongs with what it governs, and that page owns the pool axis the
+          setting changes. This page is the machine axis, so it keeps a link. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="coord-devops-hosted-ci-link-line"
+      >
+        The GitHub-hosted CI setting, per tenant with per-repo overrides, lives
+        on{" "}
+        <Link
+          href="/admin/coord/ci"
+          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          data-testid="coord-devops-hosted-ci-link"
+        >
+          Dev Ops → CI
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+        .
+      </p>
 
       {/* The join this page is keyed on, stated once, before the list it
           shapes. Rows here come from coord's device registry, and the bridge

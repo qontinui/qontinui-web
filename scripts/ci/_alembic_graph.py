@@ -125,6 +125,24 @@ def split_comment(down_rhs: str) -> tuple[str, str, str]:
     return down_rhs, "", ""
 
 
+_ROOT_NONE_RE = re.compile(r"\bNone\b")
+
+
+def root_none(down_rhs: str) -> re.Match[str] | None:
+    """The ``None`` token of a chain root's right-hand side, else ``None``.
+
+    Read on the ``_RHS_TOKEN_RE`` stream: literals and comments are blanked
+    first (offsets preserved, so the match indexes ``down_rhs``), and what is
+    left must be ``None`` alone, optionally wrapped in parentheses. So
+    ``None  # root`` and a formatter-wrapped ``(  # note\\n    None\\n)`` are
+    roots, while ``PARENT  # was None`` is not.
+    """
+    blanked = _RHS_TOKEN_RE.sub(lambda m: " " * len(m.group(0)), down_rhs)
+    if blanked.strip(" \t\r\n()") != "None":
+        return None
+    return _ROOT_NONE_RE.search(blanked)
+
+
 #: Revision ids are interpolated into PR comments, so anything outside this
 #: set is stripped before rendering. ``REV_RE`` captures ``(.+?)`` between
 #: quotes, which would otherwise let a revision id in someone's own PR close
@@ -992,8 +1010,11 @@ def repoint_sites(
     # `old_parent is None` has two causes that must not share wording: a true
     # chain root (the right-hand side IS `None`) and a right-hand side holding
     # no string literal at all (`down_revision = PARENT`).
-    declared_rhs = split_comment(scan.revisions.get(revision, "None"))[0].strip()
-    parent_unparsed = old_parent is None and declared_rhs != "None"
+    # A wrapped root (`= (  # note\n    None\n)`) is a root too, so the test
+    # reads the token stream rather than comparing the comment-split text.
+    parent_unparsed = (
+        old_parent is None and root_none(scan.revisions.get(revision, "None")) is None
+    )
     down_before: str | None = None
     down_after = f'down_revision: str | Sequence[str] | None = "{new_parent}"'
     revises: tuple[str | None, str] | None = (None, f"Revises: {new_parent}")
@@ -1027,9 +1048,16 @@ def repoint_sites(
                     + f"{quote}{new_parent}{quote}"
                     + rhs[literal.end() :]
                 )
+            elif (root := root_none(rhs)) is not None:
+                # A chain root: replace the `None` token itself, found on the
+                # same token stream, so a wrapped `= (  # note\n    None\n)`
+                # keeps its parens and comment and the advice still parses.
+                down_after = (
+                    lhs + rhs[: root.start()] + f'"{new_parent}"' + rhs[root.end() :]
+                )
             else:
-                # `None` (a chain root) or no readable literal: write the
-                # target, keeping whatever spacing preceded a comment.
+                # No readable literal and no `None`: write the target, keeping
+                # whatever spacing preceded a comment.
                 value, hash_sign, comment = split_comment(rhs)
                 trailing = value[len(value.rstrip()) :]
                 down_after = lhs + f'"{new_parent}"' + trailing + hash_sign + comment
