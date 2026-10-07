@@ -43,7 +43,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "ciorch_01"
-_PARENT_REVISION_ID = "coord_ci_pool_observations_01"
+_PARENT_REVISION_ID = "coord_smckpt_01_success_metric_checkpoint_results"
 _REVISION_FILENAME = "ciorch_01_seed_ci_orchestrator_github_actions.py"
 _TRIPLE_QUOTE = (
     chr(34) * 3
