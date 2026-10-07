@@ -63,7 +63,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import uuid
 
 import pytest
@@ -74,6 +73,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
     table_exists,
@@ -135,14 +135,9 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     lands first, so this pin goes stale by ordinary process rather than by
     mistake. Re-point both together.
     """
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        _revision_source(),
-        re.MULTILINE,
-    )
-    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
-    assert match.group("parent") == _PARENT_REVISION_ID, (
-        f"{_REVISION_FILENAME} declares down_revision={match.group('parent')!r} "
+    parent = declared_parent_revision_id(_revision_source(), _REVISION_FILENAME)
+    assert parent == _PARENT_REVISION_ID, (
+        f"{_REVISION_FILENAME} declares down_revision={parent!r} "
         f"but this test pins {_PARENT_REVISION_ID!r}. Re-point both together."
     )
 
