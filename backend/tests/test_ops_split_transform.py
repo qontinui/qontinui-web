@@ -781,7 +781,10 @@ def test_global_rebind_of_an_imported_name_nothing_else_reads_is_allowed(toy):
 
 def test_bare_carriage_return_is_refused_byte_identical(toy):
     root, pkg = toy
-    _write_init(root, pkg, TOY_INIT.replace("# ---- beta", "# ---- \rbeta"))
+    # Still parses (the CR ends a comment line for ``ast``), so this is the
+    # silent span-shift case, not an unparseable file.
+    _write_init(root, pkg, TOY_INIT.replace("# ---- beta", "# ---- beta\r# x"))
+    ast.parse((root / pkg / "__init__.py").read_text(encoding="utf-8", newline=""))
     before = _snapshot(root)
     with pytest.raises(SplitRefused, match="carriage return"):
         _split(root, pkg, ALPHA)
