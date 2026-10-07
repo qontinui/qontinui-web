@@ -120,7 +120,7 @@ def test_upgrade_shape_the_partial_unique_index_and_a_clean_round_trip(
     _admin_url: str,
 ) -> None:
     tenant, other = uuid4(), uuid4()
-    source = ("qontinui-dev-notes", "runbooks/ci.md")
+    source = ("qontinui/qontinui-dev-notes", "runbooks/ci.md")
     with ephemeral_database(_admin_url, "overview_05_rtp") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
         with engine.begin() as conn:
@@ -161,3 +161,26 @@ def test_upgrade_shape_the_partial_unique_index_and_a_clean_round_trip(
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert index_exists(engine, "uq_overview_pages_source", schema="overview")
+
+
+def test_upgrade_fails_loudly_on_an_invalid_leftover_index(_admin_url: str) -> None:
+    """A killed CONCURRENTLY build leaves the index INVALID, and ``IF NOT
+    EXISTS`` would skip it by name — so the revision must refuse rather than
+    report success over an index that serves no lookup."""
+    with ephemeral_database(_admin_url, "overview_05_inv") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE pg_index SET indisvalid = false WHERE indexrelid = "
+                        "'overview.uq_overview_pages_source'::regclass"
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001 — needs a superuser
+            pytest.skip(f"cannot mark an index invalid here: {exc}")
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
+        failed = run_alembic(
+            backend_root(), db_url, "upgrade", _REVISION_ID, expect_success=False
+        )
+        assert "INVALID" in failed.stderr, failed.stderr
