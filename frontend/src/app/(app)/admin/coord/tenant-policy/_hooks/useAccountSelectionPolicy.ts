@@ -40,7 +40,8 @@ export function useAccountSelectionPolicy() {
   );
   const { policy } = dial;
 
-  const isDefaulted = policy?.resolved_scope === "none";
+  // Trimmed, as the runner trims `resolved_scope` before comparing.
+  const isDefaulted = policy?.resolved_scope?.trim() === "none";
   const parsed = policy
     ? parseAccountSelectionLevel(policy.effective_level)
     : null;

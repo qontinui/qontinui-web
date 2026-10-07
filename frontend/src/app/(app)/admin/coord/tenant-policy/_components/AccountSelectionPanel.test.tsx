@@ -72,6 +72,16 @@ describe("AccountSelectionPanel", () => {
     );
   });
 
+  it("warns that manual can leave a machine with no account", () => {
+    usePolicyMock.mockReturnValue(leastTenant({ displayLevel: "manual" }));
+    render(<AccountSelectionPanel />);
+    const text =
+      screen.getByTestId("account-selection-blurb").textContent ?? "";
+    expect(text).toMatch(
+      /A machine with no account configured cannot start sessions until one is set there or the machine is pinned/
+    );
+  });
+
   it("offers all four levels and writes the one clicked", () => {
     const state = leastTenant();
     usePolicyMock.mockReturnValue(state);

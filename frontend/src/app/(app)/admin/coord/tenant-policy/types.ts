@@ -95,7 +95,9 @@ export const ACCOUNT_SELECTION_DEFAULT_LEVEL: AccountSelectionLevel = "off";
 
 /**
  * Normalise a served level the way the runner does — trimmed, ASCII
- * case-insensitive — and return it only when it is one of the four known
+ * case-insensitive (it matches the runner for every realistic input; JS
+ * `trim()` also strips U+FEFF, which Rust's `str::trim` does not) — and
+ * return it only when it is one of the four known
  * levels. Anything else is `null`: UNKNOWN, never a guessed level (a guessed
  * mode is exactly what a runner would force-apply over every unpinned
  * machine).

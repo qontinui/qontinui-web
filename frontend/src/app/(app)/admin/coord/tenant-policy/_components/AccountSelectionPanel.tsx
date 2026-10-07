@@ -21,7 +21,7 @@ const LEVEL_COPY: Record<
   manual: {
     label: "Manual",
     blurb:
-      "Every unpinned runner uses the one Claude account configured on that machine, with no automatic switching between accounts.",
+      "Every unpinned runner uses the one Claude account configured on that machine, with no automatic switching between accounts. A machine with no account configured cannot start sessions until one is set there or the machine is pinned.",
   },
   least_usage: {
     label: "Least usage",
@@ -168,14 +168,19 @@ export function AccountSelectionPanel() {
             </p>
           )}
 
+          {/* The backend fills a band coord did not report with `none`, and
+              that is indistinguishable here from a real no-row answer — so
+              this copy says what the read returned rather than asserting what
+              runners do. */}
           {isDefaulted && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="account-selection-no-row"
             >
-              No policy row answered for this tenant, so nobody chose this:
-              there is no fleet opinion and each runner uses its local setting.
-              Pick a mode to write an explicit row.
+              No policy row answered for this tenant, so nobody chose this. This
+              console reads that as no fleet opinion (each runner uses its local
+              setting), which is also what it shows when coord reports no band
+              at all. Pick a mode to write an explicit row.
             </p>
           )}
 
