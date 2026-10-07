@@ -201,4 +201,27 @@ describe("UnfinishedSessionsPage", () => {
       ).toBe("on")
     );
   });
+
+  it("non-admins see the actions disabled", async () => {
+    route(
+      {
+        state: "ok",
+        reason: null,
+        detail: null,
+        sessions: [ROW],
+        truncated: false,
+      },
+      { resume_unfinished_enabled: true, can_edit: false }
+    );
+    render(<UnfinishedSessionsPage />);
+    const row = await screen.findByTestId("unfinished-row");
+    fireEvent.click(row.querySelector("button") ?? row);
+    await screen.findByTestId("resume-unfinished-readonly");
+    expect(
+      (screen.getByTestId("unfinished-resume") as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(
+      (screen.getByTestId("unfinished-dismiss") as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
 });

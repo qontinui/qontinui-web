@@ -63,6 +63,8 @@ export function useUnfinishedSessions() {
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to dismiss the session"));
+        // A lost/ambiguous answer may still have applied: re-read.
+        await load();
         return false;
       } finally {
         setBusyId(null);
@@ -90,6 +92,7 @@ export function useUnfinishedSessions() {
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to request the resume"));
+        await load();
         return false;
       } finally {
         setBusyId(null);

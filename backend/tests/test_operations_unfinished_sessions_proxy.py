@@ -265,3 +265,42 @@ class TestToggle:
         assert body["written"] is True
         assert body["effective"] is None
         assert body["readback_error"]
+
+
+class TestAdminGate:
+    """The tests above override the admin gate; pin that the routes carry it."""
+
+    @pytest.mark.parametrize(
+        ("method", "suffix"),
+        [("POST", "/dismiss"), ("POST", "/resume")],
+    )
+    def test_writes_depend_on_tenant_admin(self, method, suffix):
+        from app.api.v1.endpoints.operations import (
+            require_coord_tenant_admin,
+            router,
+        )
+
+        route = next(
+            r
+            for r in router.routes
+            if getattr(r, "path", "").startswith("/unfinished-sessions/")
+            and getattr(r, "path", "").endswith(suffix)
+            and method in getattr(r, "methods", set())
+        )
+        calls = {d.call for d in route.dependant.dependencies}
+        assert require_coord_tenant_admin in calls
+
+    def test_toggle_patch_depends_on_tenant_admin_target(self):
+        from app.api.v1.endpoints.operations import (
+            require_coord_tenant_admin_target,
+            router,
+        )
+
+        route = next(
+            r
+            for r in router.routes
+            if getattr(r, "path", "") == "/tenant-policy/resume-unfinished"
+            and "PATCH" in getattr(r, "methods", set())
+        )
+        calls = {d.call for d in route.dependant.dependencies}
+        assert require_coord_tenant_admin_target in calls
