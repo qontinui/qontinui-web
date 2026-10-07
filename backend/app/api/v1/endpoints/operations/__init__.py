@@ -10496,6 +10496,216 @@ async def patch_tenant_transcript_sync(
     return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
 
 
+# ---- Unfinished sessions + auto-resume toggle proxy ---------------------
+#
+# Plan ``2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed``
+# Phase 7. The console's door onto coord's fleet-wide "closed but never
+# finished" census (``GET /coord/sessions/unfinished``), its dismiss door
+# (``POST /coord/sessions/unfinished/:claude_session_id/finish``), the existing
+# respawn door (``POST /sessions/:id/respawn``) and the tenant's
+# ``resume_unfinished_enabled`` flag.
+#
+# Paths are ``/unfinished-sessions...`` rather than ``/sessions/unfinished`` so
+# they cannot be shadowed by ``GET /sessions/{session_id}`` (declared earlier,
+# UUID-typed: ``unfinished`` would 422 there).
+#
+# Honesty rules this encodes once:
+#
+# 1. Coord answers ``{"state": "unknown", "sessions": null}`` when it cannot
+#    read the census. That is passed through as UNKNOWN. A malformed answer is
+#    ALSO unknown -- never coerced to an empty list ("nothing unfinished").
+# 2. ``resume_unfinished_enabled`` is ``None`` unless coord reported a JSON
+#    boolean. A coord that predates the flag therefore reads UNKNOWN, never ON.
+
+
+class UnfinishedSessionsView(BaseModel):
+    """Coord's unfinished-sessions census, normalised to a closed state set."""
+
+    #: ``ok`` | ``unknown``. Anything else coord might say is ``unknown``.
+    state: Literal["ok", "unknown"]
+    #: Set when ``state == "unknown"`` (coord's own reason, or ours).
+    reason: str | None = None
+    detail: str | None = None
+    #: ``None`` iff ``state == "unknown"`` -- never an empty list standing in
+    #: for "could not read".
+    sessions: list[dict[str, Any]] | None = None
+    truncated: bool = False
+
+
+def _unfinished_view(payload: Any) -> UnfinishedSessionsView:
+    body = payload if isinstance(payload, dict) else None
+    if body is None:
+        return UnfinishedSessionsView(
+            state="unknown", reason="malformed_response", sessions=None
+        )
+    sessions = body.get("sessions")
+    if body.get("state") == "ok" and isinstance(sessions, list):
+        return UnfinishedSessionsView(
+            state="ok",
+            sessions=[r for r in sessions if isinstance(r, dict)],
+            truncated=body.get("truncated") is True,
+        )
+    reason = body.get("reason")
+    detail = body.get("detail")
+    return UnfinishedSessionsView(
+        state="unknown",
+        reason=reason if isinstance(reason, str) else "malformed_response",
+        detail=detail if isinstance(detail, str) else None,
+        sessions=None,
+    )
+
+
+@router.get("/unfinished-sessions", response_model=UnfinishedSessionsView)
+async def get_unfinished_sessions(
+    device_id: UUID | None = None,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> UnfinishedSessionsView:
+    """Closed sessions whose work was never declared finished, fleet-wide."""
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if limit is not None:
+        params["limit"] = limit
+    payload = await _proxy_coord_get(
+        "/coord/sessions/unfinished", params=params or None, tenant_id=tenant_id
+    )
+    return _unfinished_view(payload)
+
+
+@router.post("/unfinished-sessions/{claude_session_id}/dismiss")
+async def post_dismiss_unfinished_session(
+    claude_session_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Dismiss an unfinished session: coord's finish door with reason
+    ``dismissed``. Coord's typed refusals (404 no such session, 400) pass
+    through verbatim."""
+    return await _proxy_coord_post(
+        f"/coord/sessions/unfinished/{claude_session_id}/finish",
+        {"reason": "dismissed"},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+class UnfinishedResumeBody(BaseModel):
+    """Where to resume. The row's own device and account label by default."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_device_id: UUID
+    account: str | None = Field(default=None, max_length=200)
+
+    @field_validator("account")
+    @classmethod
+    def _blank_account_is_absent(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
+
+@router.post("/unfinished-sessions/{coord_session_id}/resume")
+async def post_resume_unfinished_session(
+    coord_session_id: UUID,
+    body: UnfinishedResumeBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Resume a closed session: coord's respawn door. Coord answers 202 with the
+    recorded request, echoed verbatim; refusals (404, drained-device 409, 400
+    bad account pin) pass through typed."""
+    wire: dict[str, Any] = {"target_device_id": str(body.target_device_id)}
+    if body.account is not None:
+        wire["account"] = body.account
+    coord_body, status_code = await _proxy_coord_post(
+        f"/sessions/{coord_session_id}/respawn",
+        wire,
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+        non_json_success_as_empty=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
+class TenantResumeUnfinishedView(BaseModel):
+    """The tenant's automatic-resume consent, as coord resolves it."""
+
+    #: ``None`` unless coord reported a boolean: UNKNOWN, never ON.
+    resume_unfinished_enabled: bool | None
+    can_edit: bool
+
+
+class TenantResumeUnfinishedPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resume_unfinished_enabled: bool
+
+
+class TenantResumeUnfinishedWriteResult(BaseModel):
+    written: bool
+    effective: TenantResumeUnfinishedView | None = None
+    readback_error: str | None = None
+
+
+def _resume_unfinished_view(
+    payload: Any, *, can_edit: bool
+) -> TenantResumeUnfinishedView:
+    body = payload if isinstance(payload, dict) else {}
+    enabled = body.get("resume_unfinished_enabled")
+    return TenantResumeUnfinishedView(
+        resume_unfinished_enabled=enabled if isinstance(enabled, bool) else None,
+        can_edit=can_edit,
+    )
+
+
+@router.get(
+    "/tenant-policy/resume-unfinished", response_model=TenantResumeUnfinishedView
+)
+async def get_tenant_resume_unfinished(
+    request: Request,
+    home_tenant_id: UUID = Depends(get_tenant_id),
+) -> TenantResumeUnfinishedView:
+    """Read the tenant's automatic-resume flag (effective tenant, as for
+    ``transcript-sync`` -- see wire fact 1 above)."""
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    effective = _effective_tenant_id(identity, active) or home_tenant_id
+    payload = await _proxy_coord_get(
+        "/tenant-policy",
+        params={"tenant_id": str(effective)},
+        tenant_id=effective,
+    )
+    can_edit = "admin" in _effective_tenant_roles(identity, active)
+    return _resume_unfinished_view(payload, can_edit=can_edit)
+
+
+@router.patch(
+    "/tenant-policy/resume-unfinished",
+    response_model=TenantResumeUnfinishedWriteResult,
+)
+async def patch_tenant_resume_unfinished(
+    body: TenantResumeUnfinishedPatch,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> TenantResumeUnfinishedWriteResult:
+    """Turn automatic resume on or off for the caller's effective tenant."""
+    answer = await _proxy_coord_patch(
+        "/tenant-policy", body.model_dump(), tenant_id=tenant_id
+    )
+    if isinstance(answer, dict) and isinstance(
+        answer.get("resume_unfinished_enabled"), bool
+    ):
+        return TenantResumeUnfinishedWriteResult(
+            written=True, effective=_resume_unfinished_view(answer, can_edit=True)
+        )
+    readback_error = "coord accepted the write but did not return the policy it re-read"
+    logger.warning("tenant_policy.resume_readback_failed", detail=readback_error)
+    return TenantResumeUnfinishedWriteResult(
+        written=True, readback_error=readback_error
+    )
+
+
 # ---- Priority-sets + composition-rules CRUD proxy -----------------------
 #
 # Plan ``2026-05-15-priority-sets-write-path-and-implementation-set.md``
