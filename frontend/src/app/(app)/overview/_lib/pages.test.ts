@@ -3,6 +3,10 @@ import {
   alphabeticalIndex,
   documentMeta,
   formatBytes,
+  mirrorsRepo,
+  shortId,
+  shortSha,
+  sourceFileUrl,
   uploadProblem,
 } from "./pages";
 
@@ -79,5 +83,53 @@ describe("formatBytes and documentMeta", () => {
     expect(
       documentMeta({ doc_number: null, doc_status: "Draft", owner: null })
     ).toBe("Draft");
+  });
+});
+
+describe("provenance", () => {
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+
+  it("links the mirrored file at its sha under the qontinui owner", () => {
+    expect(
+      sourceFileUrl({
+        source_repo: "qontinui-dev-notes",
+        source_path: "runbooks/2026-10-06-ci server.md",
+        source_sha: sha,
+      })
+    ).toBe(
+      `https://github.com/qontinui/qontinui-dev-notes/blob/${sha}/runbooks/2026-10-06-ci%20server.md`
+    );
+  });
+
+  it("keeps an owner the repo already names, and drops a leading slash", () => {
+    expect(
+      sourceFileUrl({
+        source_repo: "acme/notes",
+        source_path: "/a/b.md",
+        source_sha: sha,
+      })
+    ).toBe(`https://github.com/acme/notes/blob/${sha}/a/b.md`);
+  });
+
+  it("has no link without all of repo, path and sha", () => {
+    const full = {
+      source_repo: "qontinui-dev-notes",
+      source_path: "a.md",
+      source_sha: sha,
+    };
+    expect(sourceFileUrl({ ...full, source_repo: null })).toBeNull();
+    expect(sourceFileUrl({ ...full, source_path: null })).toBeNull();
+    expect(sourceFileUrl({ ...full, source_sha: null })).toBeNull();
+  });
+
+  it("says a document mirrors a repo only when it names one", () => {
+    expect(mirrorsRepo({ source_repo: "qontinui-dev-notes" })).toBe(true);
+    expect(mirrorsRepo({ source_repo: null })).toBe(false);
+    expect(mirrorsRepo({ source_repo: "" })).toBe(false);
+  });
+
+  it("shortens a sha to seven characters and an id to its first group", () => {
+    expect(shortSha(sha)).toBe("0123456");
+    expect(shortId("1d390724-33f3-42f8-98d4-a17ff7621116")).toBe("1d390724");
   });
 });

@@ -68,6 +68,12 @@ export interface ChangeLogEntry {
   version_after: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  /** The device whose credential made the write, when a device did. Plan
+   *  `2026-10-07-agents-publish-documents-to-the-project-overview` D2. */
+  via_device?: string | null;
+  /** The session the writer REPORTED (`X-Overview-Session`) — a label,
+   *  never proof. */
+  via_session?: string | null;
 }
 
 export interface ChangeLogPage {
@@ -416,17 +422,20 @@ export async function createResource<T>(
 }
 
 /** A record's write history, newest first — or, with `recordId` null, the
- *  whole resource's (every milestone, say). */
+ *  whole resource's (every milestone, say). `source` keeps only the writes
+ *  made one way (`api`: agents and scripts). */
 export async function fetchChangeLog(
   resource: string,
   recordId: string | null,
-  limit = 20
+  options: { limit?: number; source?: ChangeLogEntry["source"] } = {}
 ): Promise<ChangeLogPage> {
+  const { limit = 20, source } = options;
   const response = await send(
     "GET",
     `${OVERVIEW_API}/change-log${query({
       resource,
       ...(recordId === null ? {} : { record_id: recordId }),
+      ...(source ? { source } : {}),
       limit: String(limit),
     })}`
   );
