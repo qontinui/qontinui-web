@@ -20,7 +20,10 @@ catch a malformed ``down_revision`` or a downgrade that leaves residue.
 CI provisions a Postgres service container at localhost:5432 (see
 ``.github/workflows/backend-ci.yml`` and ``tests/conftest.py``); locally these
 tests skip unless one is reachable. Point them at a different instance with
-``QONTINUI_TEST_PG=host:port`` — the same override ``conftest.py`` honours.
+``QONTINUI_TEST_PG=host:port``, or at a throwaway database with a full
+``QONTINUI_TEST_PG_DSN`` (e.g. from ``ephemeral-db.sh start pgvector``). Both
+are ``conftest.py``'s overrides: it derives ``DATABASE_URL`` from them at
+import time, and [`admin_database_url`] reads that.
 """
 
 from __future__ import annotations
