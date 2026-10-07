@@ -162,6 +162,18 @@ export type PauseReasonCode =
   /** Every global merge slot is occupied; nothing can be dispatched. */
   | "slots-saturated"
   | "conflict-strand"
+  /** coord's `terminal-proposal-held` merge_status: green + CLEAN + open, but
+   *  the train's only proposal at this head is TERMINAL and HELD, so coord
+   *  will not re-cut it. A diagnosed BLOCK, not an orchestrator stall — it was
+   *  split out of `ready-but-unlanded` precisely so it stops raising
+   *  `orchestrator-stalled` ("the train should have taken it"). The move is
+   *  mixed (the author's: linearize / close / push a new head; the
+   *  operator's: re-enable merging / cancel-unblock) and coord names it in
+   *  `blocking_summary`, so the copy points there rather than guessing.
+   *  `blocking`, like `conflict-strand`: nothing clears it on a timer, so the
+   *  `waiting` grade would promise an end that is not coming. Plan
+   *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
+  | "terminal-proposal-held"
   | "ci-failed"
   | "ci-pending"
   | "conflicts"
@@ -232,29 +244,33 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // leave these proposals behind the repo's own cap.
   "queued-behind-repo-cap": 7,
   "conflict-strand": 8,
-  "ci-failed": 9,
+  // Beside its strand sibling: both are coord-diagnosed holds a human must
+  // move, and both outrank the plain per-PR CI/review states because the PR
+  // is otherwise READY — nothing but this hold stands between it and a land.
+  "terminal-proposal-held": 9,
+  "ci-failed": 10,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 10,
-  conflicts: 11,
-  "blast-radius-block": 12,
-  "review-required": 13,
-  "behind-base": 14,
-  "ci-pending": 15,
-  draft: 16,
+  "required-checks-missing": 11,
+  conflicts: 12,
+  "blast-radius-block": 13,
+  "review-required": 14,
+  "behind-base": 15,
+  "ci-pending": 16,
+  draft: 17,
   // Beside `draft`, and for the same reason: neither is a cause of the pause,
   // so neither may outrank a reason that is. Nothing below it is reachable
   // alongside it — `no-candidates` is emitted only when `reasons` is otherwise
   // EMPTY — so this rank is read against the reasons ABOVE it and nothing else.
-  "landed-open": 17,
+  "landed-open": 18,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 18,
-  "no-candidates": 19,
+  "unrecognized-status": 19,
+  "no-candidates": 20,
 };
 
 const REASON_META: Record<
@@ -278,6 +294,14 @@ const REASON_META: Record<
   { label: string; severity: PauseSeverity }
 > = {
   "conflict-strand": { label: "Stranded in conflict", severity: "blocking" },
+  // `blocking`, not `waiting` — no timer clears a held terminal proposal —
+  // and deliberately NOT the `orchestrator-stalled` row: coord is not failing
+  // to act here, it has diagnosed a hold and says whose move it is in the
+  // PR's `blocking_summary`.
+  "terminal-proposal-held": {
+    label: "Terminal proposal held",
+    severity: "blocking",
+  },
   "ci-failed": { label: "CI red", severity: "blocking" },
   // `blocking`, not `waiting`. coord reconciles `required_checks_satisfied`
   // against GitHub's own aggregate at hydration, so a surviving `false` is a
@@ -315,6 +339,10 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   "blast-radius-block": "blast-radius-block",
   draft: "draft",
   "ready-but-unlanded": "orchestrator-stalled",
+  // The HELD half of what used to be `ready-but-unlanded`. Mapped to its own
+  // reason — never `orchestrator-stalled` (that is the alarm the split exists
+  // to stop raising) and never the unknown-token fallback.
+  "terminal-proposal-held": "terminal-proposal-held",
   // coord landed it at this head; GitHub has not closed it yet. Mapped rather
   // than left to the unknown-token fallback, which grades `blocking`.
   "landed-open": "landed-open",
@@ -331,6 +359,17 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
  * reason for PRs the train is actively carrying.
  */
 const PROGRESS_STATUSES = new Set<string>(["ready", "queued"]);
+
+/**
+ * Tokens that EXONERATE a PR from coord's health `ready_unmerged` list, which
+ * is built from frozen readiness signals and carries no verdict of its own.
+ * `landed-open`: the work is already on the base branch. `terminal-proposal-held`:
+ * coord diagnosed a held terminal proposal — a block, not a stall.
+ */
+const NOT_STALLED_STATUSES = new Set<string>([
+  "landed-open",
+  "terminal-proposal-held",
+]);
 
 // ----------------------------------------------------------------------------
 // Rows
@@ -1221,13 +1260,20 @@ export function buildRepoTrainRows(
     // entry, which carries no verdict): absent a row, or absent the token,
     // nothing is filtered — the alarm keeps firing, which is the right
     // direction for an alarm.
-    const landedOpenPrNumbers = new Set(
+    //
+    // `terminal-proposal-held` is exonerated the same way and for the same
+    // reason: its frozen signals are CLEAN and green too, but coord has
+    // diagnosed a HELD terminal proposal it will not re-cut. Leaving it in
+    // `ready` would re-raise exactly the `orchestrator-stalled` alarm the
+    // token was split out of `ready-but-unlanded` to stop raising, and would
+    // duplicate the PR under its own `terminal-proposal-held` reason.
+    const notStalledPrNumbers = new Set(
       repoPrs
-        .filter((p) => effectiveMergeStatus(p, null) === "landed-open")
+        .filter((p) => NOT_STALLED_STATUSES.has(effectiveMergeStatus(p, null)))
         .map((p) => p.pr_number)
     );
     const ready = (readyByRepo.get(repo) ?? [])
-      .filter((r) => !landedOpenPrNumbers.has(r.pr_number))
+      .filter((r) => !notStalledPrNumbers.has(r.pr_number))
       .sort((a, b) => (b.age_seconds ?? 0) - (a.age_seconds ?? 0));
 
     const repoSlots = slotsByRepo.get(repo) ?? null;
@@ -1896,6 +1942,14 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
         } current head, still shown open by GitHub. Not backlog and not the ` +
         `author's move: coord's own sweep closes ${n === 1 ? "it" : "them"} — ` +
         `read the pr_merge_phantom_open_stuck alert when it does not.`
+      );
+    case "terminal-proposal-held":
+      return (
+        `${n} PR${plural} green and CLEAN whose only merge proposal at ` +
+        `${n === 1 ? "its" : "their"} current head is terminal and held — ` +
+        `coord will not re-cut it. Not an orchestrator stall: the move is ` +
+        `the author's or the operator's, and coord names it in each PR's ` +
+        `blocking summary (PRs tab).`
       );
     // Reached only when coord's health read is unavailable, so there is no
     // readiness-onset clock and no proposal error to quote — but this is the

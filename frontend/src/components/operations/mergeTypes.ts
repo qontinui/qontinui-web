@@ -244,6 +244,17 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** Green + CLEAN + open, and the train's only proposal at this head is
+   *  TERMINAL and HELD — coord will not re-cut it (already-landed,
+   *  merge-resolution-discarded, reap-hardcap, a conflict held behind the
+   *  valve window, merged, shadow-landed, cancelled). Split out of
+   *  `ready-but-unlanded`, which keeps the no-proposal half (a genuine
+   *  orchestrator stall) and the infra / transient terminals coord re-cuts
+   *  itself. NOT a stall: coord diagnosed it, and the move — sometimes the
+   *  author's, sometimes the operator's — is named in `blocking_summary`.
+   *  Plan
+   *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
+  | "terminal-proposal-held"
   /** coord LANDED this PR at its CURRENT head and GitHub still shows it open —
    *  the phantom-open ff-land window, keyed on coord's `land_stamp ==
    *  current_head`. NOT a pause: the work is on the base branch already.

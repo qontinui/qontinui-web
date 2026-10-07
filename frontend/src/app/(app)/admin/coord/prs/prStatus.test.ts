@@ -56,7 +56,9 @@ describe("alignment with prPipeline — same condition, same reading", () => {
   // `/fleet` and `/prs` name the same domain in two vocabularies. A row that
   // disagrees is a row where an operator gets two different answers about
   // whose move it is, depending which tab they opened.
-  const COUNTERPART: ReadonlyArray<[PrMergeStatus, keyof typeof ATTENTION_BY_KIND]> = [
+  const COUNTERPART: ReadonlyArray<
+    [PrMergeStatus, keyof typeof ATTENTION_BY_KIND]
+  > = [
     ["ready", "ready"],
     ["queued", "queued"],
     ["ci-pending", "checks-pending"],
@@ -114,6 +116,7 @@ describe("the readings the palette audit cannot make", () => {
         "awaiting-specialist-review",
         "behind-base",
         "predicate-blocked",
+        "terminal-proposal-held",
         "unknown",
       ].sort()
     );
@@ -140,6 +143,33 @@ describe("the readings the palette audit cannot make", () => {
     });
   });
 
+  it("floors `terminal-proposal-held` with predicate-blocked, never author red", () => {
+    // The HELD half split out of `ready-but-unlanded`. That token is `author`
+    // red; this one must not be, because its members' moves are mixed —
+    // linearize / close / push are the author's, re-enable merging /
+    // cancel-unblock are the operator's. coord names the move in
+    // `blocking_summary`, which surfaces as the row reason.
+    expect(PR_ATTENTION_BY_MERGE_STATUS["ready-but-unlanded"]).toBe("author");
+    expect(PR_ATTENTION_BY_MERGE_STATUS["terminal-proposal-held"]).toBe(
+      "waiting"
+    );
+    expect(PR_MERGE_STATUS_CLASS["terminal-proposal-held"]).toBe(UNKNOWN_AMBER);
+    expect(PR_AUTHOR_GLYPH_STATUSES.has("terminal-proposal-held")).toBe(false);
+    expect(mergeStatusLabel("terminal-proposal-held")).toBe(
+      "terminal proposal held"
+    );
+    expect(
+      derivePrStatus({
+        merge_status: "terminal-proposal-held",
+        blocking_summary: "already landed — close the PR",
+      })
+    ).toMatchObject({
+      kind: "terminal-proposal-held",
+      attention: "waiting",
+      reason: "already landed — close the PR",
+    });
+  });
+
   it("grades required-checks-missing with ci-failed, not with behind-base", () => {
     // It reached `PrMergeStatus` after this module was written, so nothing but
     // this test pins WHICH sibling it copied. coord maps the code to the `ci`
@@ -157,9 +187,9 @@ describe("the readings the palette audit cannot make", () => {
     expect(PR_MERGE_STATUS_CLASS["required-checks-missing"]).toBe(
       PR_MERGE_STATUS_CLASS["ci-failed"]
     );
-    expect(/bg-amber-/.test(PR_MERGE_STATUS_CLASS["required-checks-missing"])).toBe(
-      false
-    );
+    expect(
+      /bg-amber-/.test(PR_MERGE_STATUS_CLASS["required-checks-missing"])
+    ).toBe(false);
     expect(PR_AUTHOR_GLYPH_STATUSES.has("required-checks-missing")).toBe(true);
     // And the badge text stays human, not the raw enum.
     expect(mergeStatusLabel("required-checks-missing")).toBe(
@@ -207,5 +237,8 @@ describe("derivePrStatus", () => {
 
   it("mergeStatusLabel never leaks a raw kebab enum", () => {
     expect(mergeStatusLabel("ready-but-unlanded")).toBe("ready but unlanded");
+    expect(mergeStatusLabel("terminal-proposal-held")).toBe(
+      "terminal proposal held"
+    );
   });
 });
