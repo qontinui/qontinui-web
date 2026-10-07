@@ -1,7 +1,7 @@
 """Seed ``ci_orchestrator = github_actions`` for every tenant existing now
 
 Revision ID: ciorch_01
-Revises: coord_ci_pool_observations_01
+Revises: coord_smckpt_01_success_metric_checkpoint_results
 Create Date: 2026-10-04
 
 Phase 1 (design decision D1) of plan
@@ -85,7 +85,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "ciorch_01"
-down_revision: str | Sequence[str] | None = "coord_ci_pool_observations_01"
+down_revision: str | Sequence[str] | None = "coord_smckpt_01_success_metric_checkpoint_results"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
