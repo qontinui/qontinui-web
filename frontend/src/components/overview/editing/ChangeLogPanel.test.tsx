@@ -87,12 +87,51 @@ describe("ChangeLogPanel", () => {
         .getByRole("button", { name: "Show all changes" })
         .getAttribute("aria-pressed")
     ).toBe("true");
-    expect(
-      screen.getByText(/Only the latest 2 changes were checked for API writes/)
-    ).toBeTruthy();
+    // The unfiltered reply was the whole history: the local filter is
+    // complete, so nothing is said about older changes.
+    expect(screen.queryByText(/were checked for API writes/)).toBeNull();
   });
 
-  it("does not claim no API write when the server did not filter", async () => {
+  it("says the API-only view is partial when an unfiltered reply was cut short", async () => {
+    api.fetchChangeLog.mockResolvedValue({
+      entries: [viaApi, entry({})],
+      truncated: true,
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText(/on the overview/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Only changes through the API" })
+    );
+    expect(
+      await screen.findByText(
+        /Only the latest 2 changes were checked for API writes/
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Showing the most recent changes only.")
+    ).toBeNull();
+  });
+
+  it("says plainly there is no API write when an unfiltered reply was the whole history", async () => {
+    api.fetchChangeLog.mockResolvedValue({
+      entries: [entry({}), entry({ id: "e3" })],
+      truncated: false,
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findAllByText(/on the overview/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Only changes through the API" })
+    );
+    expect(
+      await screen.findByText("No change has been made through the API yet.")
+    ).toBeTruthy();
+    expect(screen.queryByText(/None of the latest/)).toBeNull();
+    expect(screen.queryByText(/were checked for API writes/)).toBeNull();
+  });
+
+  it("does not claim no API write when an unfiltered reply was cut short", async () => {
     api.fetchChangeLog.mockResolvedValue({
       entries: [entry({}), entry({ id: "e3" })],
       truncated: true,

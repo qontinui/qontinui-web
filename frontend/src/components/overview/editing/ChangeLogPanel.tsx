@@ -56,8 +56,9 @@ type HistoryState =
       entries: ChangeLogEntry[];
       truncated: boolean;
       /** Set when the API-only view was asked for and the server answered
-       *  with other writes too, i.e. did not filter: how many of the latest
-       *  changes were filtered here. Nothing is known beyond them. */
+       *  with other writes too (it did not filter) AND said its reply was cut
+       *  short: how many of the latest changes were filtered here. Nothing
+       *  is known beyond them. */
       scannedLocally: number | null;
     };
 
@@ -93,17 +94,20 @@ export function ChangeLogPanel({
       (page) => {
         if (ticket !== reading.current) return;
         // A server that answers the API-only read with other writes did not
-        // filter: filter here, and say the view covers only the changes it
-        // sent — its `truncated` is about the unfiltered history.
+        // filter, so filter here. When that reply was the whole history the
+        // local filter is complete; when it was cut short, say the view
+        // covers only the changes it sent — its `truncated` is about the
+        // unfiltered history, not the filtered one.
         const unfiltered =
           onlyApi && page.entries.some((e) => e.source !== "api");
+        const partial = unfiltered && page.truncated;
         setHistory({
           state: "ready",
           entries: onlyApi
             ? page.entries.filter((e) => e.source === "api")
             : page.entries,
           truncated: unfiltered ? false : page.truncated,
-          scannedLocally: unfiltered ? page.entries.length : null,
+          scannedLocally: partial ? page.entries.length : null,
         });
       },
       (err: unknown) =>
