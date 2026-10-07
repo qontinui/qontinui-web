@@ -28,7 +28,7 @@ import {
 } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
-/** Same-origin literal, like `FLEET_HEALTH_API`. */
+/** Same-origin literal, like `OPERATIONS_BASE` (`@/lib/api/operations/base`). */
 export const FAULT_TO_VISIBILITY_API =
   "/api/v1/operations/alerts/fault-to-visibility";
 
