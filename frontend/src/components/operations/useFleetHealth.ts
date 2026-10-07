@@ -149,6 +149,117 @@ export interface FleetHealthDevice {
    * (`app/(app)/conditions/_hooks/runnerAvailability.ts`).
    */
   within_dispatch_window?: boolean;
+  /**
+   * **Is this runner wedged right now, and has it been?** — the runner's own
+   * in-process wedge detector, reported outward on its device-status bag and
+   * served by coord (plan
+   * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+   * Phase 5, perceive gap G2). Newest first, bounded by coord.
+   *
+   * `[]` is a MEASUREMENT (the runner looked and found none). `null` is not:
+   * `runner_reports.wedge_incidents.absent_reason` says why nothing was
+   * served, and `runnerReportStatus.ts` is the one place that turns either
+   * into operator words. Absent entirely = a coord predating Phase 5, which
+   * is UNKNOWN too.
+   */
+  wedge_incidents?: RunnerWedgeIncident[] | null;
+  /**
+   * **Which fleet mechanisms work on this machine?** — the capability
+   * doctor's per-mechanism verdicts, reported by the runner (Phase 5, G4).
+   * Same presence rules as {@link wedge_incidents}.
+   */
+  capability?: RunnerCapabilityRecord[] | null;
+  /**
+   * Provenance of the two runner reports above — why a value is `null`, when
+   * coord last received each, and whether that is still recent enough to be
+   * evidence. `null` when coord's runner-report read failed (body-level
+   * `runner_reports_scrape_up: false`) or the snapshot came from a path that
+   * does not join it.
+   */
+  runner_reports?: RunnerReportsMeta | null;
+}
+
+/**
+ * One wedge incident — coord's `runner_reports::WedgeIncident`.
+ *
+ * `ended_at: null` is an OPEN incident: the runner's detector has not read
+ * clear again, and coord never guesses an end.
+ */
+export interface RunnerWedgeIncident {
+  /** The runner's reason token, e.g. `backend_wedged`, `ui_thread_wedged`. */
+  kind: string;
+  began_at: string;
+  ended_at: string | null;
+  /** How the runner decided it ended (`cleared`, `process_exited`, …). */
+  ended_by?: string | null;
+  /** The runner build that observed it, when published. */
+  build_id?: string | null;
+}
+
+/**
+ * One mechanism's verdict — coord's `runner_reports::CapabilityEntry`.
+ *
+ * `state` is typed `string`, not the four-member union, so a state newer than
+ * this build still renders (as unknown) instead of failing to parse.
+ */
+export interface RunnerCapabilityRecord {
+  mechanism: string;
+  /** OPERATIVE | DEGRADED | INOPERATIVE-ON-THIS-MACHINE | UNKNOWN. */
+  state: string;
+  reason?: string | null;
+  written_at?: string | null;
+  /**
+   * Present ONLY when coord overrode the runner's state to `UNKNOWN` (the
+   * record or the whole report aged out) — the runner's last verdict, kept so
+   * it is never lost, only no longer asserted.
+   */
+  reported_state?: string;
+}
+
+/** Why coord served a runner report as `null` — `runner_reports::ReportAbsence`. */
+export type RunnerReportAbsence =
+  | "build_nameable_key_absent"
+  | "no_publisher"
+  | "malformed"
+  | "publisher_error";
+
+/** One runner report's provenance — coord's `runner_reports::ReportMeta`. */
+export interface RunnerReportMeta {
+  /**
+   * Set exactly when the served value is `null` — one of
+   * {@link RunnerReportAbsence}. Typed `string` so a reason newer than this
+   * build is shown verbatim rather than failing to parse.
+   */
+  absent_reason: string | null;
+  /** When coord last received the key; `null` when absent or unstamped. */
+  received_at: string | null;
+  /** `true` = not re-received within `stale_after_secs`, or age unknown. */
+  stale: boolean | null;
+  dropped_entries: number;
+  omitted_by_runner?: number;
+  /** The runner's own `*_error` message, with `publisher_error`. */
+  error?: string | null;
+}
+
+/** `devices[].runner_reports` — coord's `runner_reports::RunnerReportsMeta`. */
+export interface RunnerReportsMeta {
+  wedge_incidents: RunnerReportMeta;
+  capability: RunnerReportMeta;
+  stale_after_secs: number;
+}
+
+/**
+ * `build_resolvability` on the fleet-health body: the share of the roster's
+ * devices whose running build coord can NAME (Phase 5, the fleet-services
+ * "build resolvability" metric). `value` is `null` over an empty roster —
+ * 0/0 is not a share — and the whole block is `null` when coord's
+ * runner-report read failed.
+ */
+export interface FleetBuildResolvability {
+  value: number | null;
+  coverage_n: number;
+  population_n: number;
+  basis: string;
 }
 
 /**
@@ -256,6 +367,15 @@ export interface FleetHealthPayload {
    * would report an outage nobody claimed.
    */
   credential_dark_scrape_up?: boolean;
+  /**
+   * Did coord's per-device runner-report read (`wedge_incidents`,
+   * `capability`, `runner_reports`, and `build_resolvability`) RUN this tick?
+   * `false` = every one of those is `null` because the read failed, not
+   * because any runner said so. `undefined` = a coord predating Phase 5.
+   */
+  runner_reports_scrape_up?: boolean;
+  /** See {@link FleetBuildResolvability}. Absent on a coord predating it. */
+  build_resolvability?: FleetBuildResolvability | null;
 }
 
 export interface UseFleetHealthResult {

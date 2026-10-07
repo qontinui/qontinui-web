@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,7 +92,13 @@ function ArtifactRow({
 }
 
 /**
- * The corpus list, with the kind / status / repo facets and full-text search.
+ * The ALL-KINDS corpus list (`/admin/coord/plan-library/artifacts`), with the
+ * kind / status / repo facets and full-text search.
+ *
+ * `/admin/coord/plans` reads `kind = 'plan'` only (plan
+ * `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 1), so
+ * this list is where every OTHER captured kind — prompts, findings reports,
+ * handoffs and the rest — stays browsable.
  *
  * `kind` is a dropdown because a Postgres CHECK backs the vocabulary. `status`
  * and `repo` are free-text: status mirrors whatever an operator typed into a
@@ -101,48 +107,24 @@ function ArtifactRow({
  * are offered as chips, clearly labelled as coming from this page — a
  * dropdown built from them would cap the operator at what page 1 happens to
  * hold, without saying so.
- */
-export interface OpenArtifactRequest {
-  id: string;
-  /** Bumped on every request so re-opening the SAME artifact still fires. */
-  nonce: number;
-}
-
-/**
- * The detail panel lives here (it needs this hook's `fetchDetail` /
- * `correctKind`, and a kind correction must refresh THIS list). The divergence
- * panel is a sibling, so it asks for an artifact through `openRequest` rather
- * than owning a second copy — two copies over the same row would drift the
- * moment one of them wrote.
  *
- * ## Console style (Phase 3 Wave 5) — and the one thing that nearly broke
+ * ## Two anchors for one detail panel
  *
- * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` files this
- * route as "closest to conformant of the five: convert the modal detail to
- * expand-in-place" (R5). The rows became `<RecordRow>`s and
- * `ArtifactDetailDialog` became `ArtifactDetailPanel`, a `<RecordDetail>`.
- *
- * **The trap: `openArtifact(id)` is NOT limited to rows on this page.** Two
- * callers pass an id that may be anywhere in the corpus — `DivergencePanel`'s
- * per-variant "Open", and every `edge-peer-*` click inside the panel itself,
- * which follows a provenance edge. A modal did not care. Expand-in-place does:
- * the naive conversion — hand `detailId` to `<RecordList expandedKey>` and let
- * it find the row — makes both of those silently do NOTHING whenever the
- * artifact is not in `items`, and there is no fallback path today.
+ * The rows are `<RecordRow>`s and the document opens in place as
+ * `ArtifactDetailPanel` (R5). **The trap: `openArtifact(id)` is NOT limited to
+ * rows on this page.** Every `edge-peer-*` click inside the panel follows a
+ * provenance edge to an artifact that may be anywhere in the corpus. The naive
+ * expand-in-place — hand `detailId` to `<RecordList expandedKey>` and let it
+ * find the row — makes that click silently do NOTHING whenever the peer is
+ * not in `items`.
  *
  * So the panel has TWO anchors and one implementation. When the open artifact
- * is a row on this page it expands beneath that row (R5 proper). When it is
- * not, the same `<RecordDetail>` renders PINNED above the list, saying which
- * artifact it is and why it is not in the list below. That is one presentation
- * — never a modal — with two positions, which is a far smaller fork than
- * "inline sometimes, dialog otherwise" and keeps every existing navigation
- * working. Presentation-only (D5): no fetch, no route, no permission changed.
+ * is a row on this page it expands beneath that row. When it is not, the same
+ * panel renders PINNED above the list, saying which artifact it is and why it
+ * is not in the list below — one presentation, never a modal, with two
+ * positions.
  */
-export function PlanLibraryList({
-  openRequest,
-}: {
-  openRequest?: OpenArtifactRequest | null;
-}) {
+export function PlanLibraryList() {
   const {
     filters,
     updateFilter,
@@ -165,18 +147,9 @@ export function PlanLibraryList({
   const openArtifact = (id: string) => setDetailId(id);
   const closeArtifact = () => setDetailId(null);
 
-  // A sibling panel asked for an artifact. Keyed on `nonce` so asking twice
-  // for the same id re-opens it instead of doing nothing.
-  const requestedId = openRequest?.id ?? null;
-  const requestedNonce = openRequest?.nonce ?? null;
-  useEffect(() => {
-    if (requestedId == null) return;
-    setDetailId(requestedId);
-  }, [requestedId, requestedNonce]);
-
   /**
    * Is the open artifact one of the rows we are showing? When it is not — a
-   * divergent variant from another page, or a provenance peer — there is no
+   * provenance peer from elsewhere in the corpus — there is no
    * row to expand beneath, so the panel is pinned above the list instead. See
    * the module doc.
    */
@@ -272,9 +245,9 @@ export function PlanLibraryList({
       </div>
 
       {/* The pinned anchor: an artifact opened from somewhere other than this
-          page's rows (a divergent variant, a provenance peer). Same panel,
-          same testid, no modal — it just has no row to sit under. Without this
-          branch, both of those affordances would silently do nothing. */}
+          page's rows (a provenance peer). Same panel, same testid, no modal —
+          it just has no row to sit under. Without this branch, following a
+          provenance edge off this page would silently do nothing. */}
       {detailId !== null && !openIsOnPage && (
         <div data-testid="plan-library-pinned-detail" className="space-y-1">
           <p className="text-[11px] text-muted-foreground">

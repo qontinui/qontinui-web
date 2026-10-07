@@ -28,10 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.redis_config import get_redis
 from app.services.object_storage import object_storage
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    dispatch_or_http_error,
+    resolve_runner_for_request,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -41,7 +39,7 @@ logger = structlog.get_logger(__name__)
 BASELINE_STORAGE_PREFIX = "visual-baselines"
 THUMBNAIL_SIZE = (200, 200)
 
-# Endpoint identifier surfaced inside ``runner_bridge_503_no_runner`` when
+# Endpoint identifier surfaced inside ``device_bridge_503_no_device`` when
 # this code path falls back to the no-runner envelope. The actual HTTP
 # route varies (baselines/from-upload, baselines/from-screenshot, ...);
 # this identifier is the SERVICE-LEVEL key so frontends know which
@@ -76,7 +74,7 @@ class BaselineImageProcessing:
         """Compute perceptual hash for an image via the runner WS bridge.
 
         Picks the user's most-recently-heartbeat-active connected runner
-        (via :func:`pick_active_runner_for_user`) and dispatches the
+        (via :func:`resolve_runner_for_request`) and dispatches the
         ``vision.compute_perceptual_hash`` command with the image
         base64-encoded. Returns the hex perceptual-hash string on
         success or ``None`` when the runner reports
@@ -85,7 +83,7 @@ class BaselineImageProcessing:
 
         Raises:
             HTTPException(503): no connected runner for the user
-                (via :func:`runner_bridge_503_no_runner`).
+                (via :func:`device_bridge_503_no_device`).
             HTTPException(504): runner accepted the command but did
                 not respond within ``_HASH_TIMEOUT_S``.
             HTTPException(500): runner replied with a
@@ -95,9 +93,9 @@ class BaselineImageProcessing:
         redis = await get_redis()
         manager = await get_runner_websocket_manager(redis)
 
-        runner = await pick_active_runner_for_user(user_id, db, manager.registry)
-        if runner is None:
-            raise runner_bridge_503_no_runner(_PERCEPTUAL_HASH_ENDPOINT)
+        runner = await resolve_runner_for_request(
+            None, user_id, db, manager, _PERCEPTUAL_HASH_ENDPOINT
+        )
 
         request_id = uuid4()
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
@@ -113,36 +111,16 @@ class BaselineImageProcessing:
             image_size_bytes=len(image_bytes),
         )
 
-        try:
-            raw_response = await manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_HASH_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "perceptual_hash_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_PERCEPTUAL_HASH_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            from fastapi import HTTPException, status
-
-            logger.error(
-                "perceptual_hash_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _PERCEPTUAL_HASH_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            manager,
+            runner,
+            cmd,
+            request_id,
+            _PERCEPTUAL_HASH_ENDPOINT,
+            _HASH_TIMEOUT_S,
+            "perceptual_hash",
+            log=logger,
+        )
 
         # The runner may surface a structured soft-error envelope when
         # the optional ``imagehash`` package is missing. Treat that as

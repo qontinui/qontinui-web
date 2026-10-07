@@ -3,10 +3,11 @@ name: no tracked paths collide case-insensitively
 # THE GATE LOGIC LIVES IN `scripts/ci/check_path_case_collisions.py`, not here —
 # the shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
 # Phase 5 established for forbid-public-schema, web-boundary-lint and
-# alembic-single-head, and gitignore-tracked-files followed. Three lanes invoke
+# alembic-single-head, and gitignore-tracked-files followed. Four lanes invoke
 # the one script:
 #
 #   * this workflow, step "Scan the index for case-colliding paths"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `path-case-collisions`
 #   * .pre-commit-config.yaml, hook `path-case-collisions`
 #

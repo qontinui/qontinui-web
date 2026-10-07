@@ -13,10 +13,11 @@
 # revision whose drop is still named there.
 #
 # THE GATE LOGIC LIVES IN `scripts/ci/check_coord_column_drops.py`, not here.
-# Three lanes invoke that one script (the shape .qontinui/ci.toml's header
+# Four lanes invoke that one script (the shape .qontinui/ci.toml's header
 # calls preferred — one copy of the logic, so the lanes cannot drift):
 #
 #   * this workflow, job `coord-column-drop-guard`
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `coord-column-drop-guard`
 #   * .pre-commit-config.yaml, hook `coord-column-drop-guard` (shift-left)
 #

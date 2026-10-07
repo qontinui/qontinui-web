@@ -184,13 +184,45 @@ _EXCLUSIONS: dict[str, str] = {
     ),
 }
 
+# ``operations`` is being split into a package of per-domain modules (plan
+# 2026-10-04-web-operations-py-is-one-router-for-every-coord-domain). Every
+# module-keyed table below names the PACKAGE, and :func:`_module_key` folds
+# any module under it onto that key, so a route moved to
+# ``operations.<domain>`` stays covered by the entries it had — rather than
+# reding, or, worse, silently dropping out of the check.
+_OPERATIONS_PACKAGE = "app.api.v1.endpoints.operations"
+
+
+def _module_key(module_name: str) -> str:
+    """The table key for ``module_name``: the operations package for the
+    package and any module under it, the module itself otherwise."""
+    if module_name == _OPERATIONS_PACKAGE or module_name.startswith(
+        _OPERATIONS_PACKAGE + "."
+    ):
+        return _OPERATIONS_PACKAGE
+    return module_name
+
+
+def _package_of(func: Any) -> str:
+    """The package a function's relative imports resolve against.
+
+    ``__package__`` from its globals is exact for a module and for a package
+    ``__init__`` alike; ``__module__.rpartition`` is wrong for the latter (it
+    drops the package's own name), which is what ``operations`` becomes.
+    """
+    package = getattr(func, "__globals__", {}).get("__package__")
+    if isinstance(package, str):
+        return package
+    return str(func.__module__ or "").rpartition(".")[0]
+
+
 # Modules whose raw header read is legitimate on a COVERED route: each
 # captures the header and forwards it verbatim to coord, whose
 # ``auth::apply_active_tenant_override`` membership-checks it (a non-member
 # selection keeps the home tenant). A raw read in any module outside this list
 # and _VALIDATED_LOCALLY fails ``test_covered_raw_header_reads_are_validated``.
 _FORWARDED_TO_COORD: dict[str, str] = {
-    "app.api.v1.endpoints.operations": "_tenant_headers forwards it to coord",
+    _OPERATIONS_PACKAGE: "_tenant_headers forwards it to coord",
     "app.api.v1.endpoints.agent_registry": (
         "captured into operations' ContextVar; _tenant_headers forwards it"
     ),
@@ -269,7 +301,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         "tenant was burned at mint time",
         frozenset({"/api/v1/devices/pair-codes/{code}/redeem"}),
     ),
-    "app.api.v1.endpoints.operations": (
+    _OPERATIONS_PACKAGE: (
         "the in-process fleet beacon (device-owner scoped), local runner "
         "control, and superuser Cognito pool admin — none reaches coord",
         frozenset(
@@ -653,7 +685,7 @@ class _Classifier:
             return
         names: set[str] = set()
         values: list[Any] = []
-        package = str(func.__module__ or "").rpartition(".")[0]
+        package = _package_of(func)
         for co in _code_objects(code):
             names.update(co.co_names)
             for const in co.co_consts:
@@ -686,7 +718,7 @@ def _provided_classes(provider: Any, classifier: _Classifier) -> list[type]:
     code = getattr(func, "__code__", None)
     if code is None:
         return []
-    package = str(func.__module__ or "").rpartition(".")[0]
+    package = _package_of(func)
     values: list[Any] = []
     for co in _code_objects(code):
         values.extend(func.__globals__.get(n) for n in co.co_names)
@@ -759,6 +791,17 @@ def _live_routes() -> list[Any]:
 # --------------------------------------------------------------------------
 # Tests
 # --------------------------------------------------------------------------
+
+
+def test_operations_domain_modules_key_to_the_package():
+    """A route moved to ``operations.<domain>`` is judged under the package's
+    entries; a sibling module that merely shares the name prefix is not."""
+    assert _module_key(_OPERATIONS_PACKAGE) == _OPERATIONS_PACKAGE
+    assert _module_key(_OPERATIONS_PACKAGE + ".fleet") == _OPERATIONS_PACKAGE
+    assert _module_key(_OPERATIONS_PACKAGE + "_x") == _OPERATIONS_PACKAGE + "_x"
+    assert _module_key(plan_library.__name__) == plan_library.__name__
+    assert operations in _key_modules(_OPERATIONS_PACKAGE)
+    assert _package_of(_module_key) == __package__
 
 
 def test_prefix_parse_reads_the_whole_array():
@@ -965,9 +1008,10 @@ def _unvalidated_header_reads(
     found: dict[str, list[str]] = {}
     for path, ev in covered.items():
         bad = sorted(
-            e.removeprefix("header@")
+            _module_key(e.removeprefix("header@"))
             for e in ev
-            if e.startswith("header@") and e.removeprefix("header@") not in trusted
+            if e.startswith("header@")
+            and _module_key(e.removeprefix("header@")) not in trusted
         )
         if bad:
             found[path] = bad
@@ -998,7 +1042,7 @@ def test_covered_raw_header_reads_are_validated():
         "_VALIDATED_LOCALLY with why."
     )
     used = {
-        e.removeprefix("header@")
+        _module_key(e.removeprefix("header@"))
         for ev in covered.values()
         for e in ev
         if e.startswith("header@")
@@ -1101,13 +1145,27 @@ def test_ws_check_flags_a_socket_ignoring_the_selection():
 _RESOLVER_TOKENS = tuple(sorted(set(_RESOLVERS.values())))
 
 
+def _key_modules(key: str) -> list[types.ModuleType]:
+    """Every loaded module :func:`_module_key` folds onto ``key``."""
+    return [
+        module
+        for name, module in sorted(sys.modules.items())
+        if module is not None and _module_key(name) == key
+    ]
+
+
 def _names_a_resolver(module_name: str, cache: dict[str, bool]) -> bool:
+    """Whether the source of ``module_name``'s KEY names a resolver or the
+    header — for the operations package, the source of every module under it,
+    so a domain module is judged as it was while it shared one file."""
     if module_name not in cache:
-        module = sys.modules.get(module_name)
-        try:
-            source = inspect.getsource(module) if module is not None else ""
-        except (OSError, TypeError):
-            source = ""
+        sources = []
+        for module in _key_modules(module_name):
+            try:
+                sources.append(inspect.getsource(module))
+            except (OSError, TypeError):
+                continue
+        source = "\n".join(sources)
         cache[module_name] = _HEADER in source.casefold() or any(
             token in source for token in _RESOLVER_TOKENS
         )
@@ -1128,7 +1186,7 @@ def test_module_source_cross_check():
     for route in _live_routes():
         if not isinstance(route, APIRoute | APIWebSocketRoute):
             continue
-        module = route.endpoint.__module__
+        module = _module_key(route.endpoint.__module__)
         if route.path in resolving or not _names_a_resolver(module, cache):
             continue
         seen.setdefault(module, set()).add(route.path)
