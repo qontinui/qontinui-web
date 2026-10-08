@@ -356,6 +356,37 @@ describe("describeRoleWriteError", () => {
       "dell-2020 → CI node: still no sessions; CI stays open."
     );
   });
+  it("only the proxy's own connect failure says nothing changed on a 502", () => {
+    expect(
+      describeRoleWriteError(
+        502,
+        JSON.stringify({
+          error: "BAD_GATEWAY",
+          message: "coord is not reachable",
+        })
+      ).message
+    ).toContain("Nothing was changed");
+    expect(
+      describeRoleWriteError(502, "<html>bad gateway</html>").message
+    ).toContain("MAY");
+  });
+  it("tenant_not_resolved is not reported as not-an-operator", () => {
+    expect(
+      describeRoleWriteError(
+        403,
+        JSON.stringify({ error: "FORBIDDEN", message: "tenant_not_resolved" })
+      ).message
+    ).toContain("No coord tenant is selected");
+  });
+  it("the effect sentence's 'before' follows coord's served role layer", () => {
+    // A co-tenant's Bench already closes sessions here.
+    expect(
+      describeRoleEffect("msi", null, "ci_node", false, {
+        agent: "closed",
+        ci: "open",
+      })
+    ).toBe("msi → CI node: still no sessions; CI stays open.");
+  });
   it("a 504 says the change may have applied", () => {
     expect(describeRoleWriteError(504, "").message).toContain("MAY");
   });

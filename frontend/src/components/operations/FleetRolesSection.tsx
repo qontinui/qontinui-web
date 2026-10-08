@@ -71,6 +71,7 @@ import {
   formatGiB,
   validateRoleForm,
   type DispatchRole,
+  type Lane,
   type LaneView,
   type RoleMachine,
   type RoleWriteRefusal,
@@ -88,6 +89,8 @@ interface PendingChange {
   from: DispatchRole | null;
   to: DispatchRole;
   hostOnly: boolean;
+  /** Coord's role layer per lane, for the "before" half of the sentence. */
+  servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>;
 }
 
 function laneSummary(m: RoleMachine): string {
@@ -237,6 +240,9 @@ export function FleetRolesSection() {
       from: m.role,
       to,
       hostOnly: m.hostOnly,
+      servedRoleLayer: m.lanes
+        ? { agent: m.lanes.agent.role, ci: m.lanes.ci.role }
+        : undefined,
     });
 
   const submit = useCallback(
@@ -559,7 +565,8 @@ export function FleetRolesSection() {
                       pending.name,
                       pending.from,
                       pending.to,
-                      pending.hostOnly
+                      pending.hostOnly,
+                      pending.servedRoleLayer
                     )}
                   </p>
                 )}
