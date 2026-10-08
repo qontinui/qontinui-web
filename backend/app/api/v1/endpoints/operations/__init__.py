@@ -7915,7 +7915,7 @@ async def websocket_coord_events(
 
         async def send_keepalive() -> None:
             # Runs for the life of the bridge, independent of upstream
-            # traffic — an idle `strategy`/`claims` subscription can go
+            # traffic — an idle `claims` subscription can go
             # minutes between real frames, and that idle gap is exactly when
             # a proxy on the browser<->backend leg times the socket out
             # (finding 67329129). Ends only via cancellation (the other pump
