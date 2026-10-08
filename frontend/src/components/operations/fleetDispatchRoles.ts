@@ -147,6 +147,12 @@ export type DispatchRolesRead =
       omitted: number | null;
       /** CI runner registrations coord could not name. */
       unidentifiable: number | null;
+      /**
+       * Coord's read-level note (e.g. a failed drain/role read: dispatch is
+       * failing CLOSED), or that the roles table is absent so no write can
+       * land yet. `null` when coord said nothing.
+       */
+      notice: string | null;
     };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -307,6 +313,16 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
     // must we (`silent-empty-is-unknown`).
     omitted: num(body.older_machines_omitted),
     unidentifiable: num(body.unidentifiable_ci_runner_rows),
+    notice:
+      [
+        str(body.detail),
+        body.roles_table === "absent"
+          ? "Coord's roles table is not provisioned on this database yet: " +
+            "every machine is unassigned and a role write will be refused."
+          : null,
+      ]
+        .filter((x): x is string => x !== null)
+        .join(" ") || null,
   };
 }
 
@@ -314,7 +330,20 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
 export function describeRole(m: RoleMachine): string {
   if (m.unrecognisedRole !== null)
     return `Unrecognised role "${m.unrecognisedRole}"`;
-  if (m.role === null) return "Unassigned — behaves as Workhorse";
+  if (m.role === null) {
+    // Coord's role layer is fleet-effective: a co-tenant's role may close a
+    // lane this tenant's (absent) row would open.
+    const closedElsewhere = m.lanes
+      ? LANES.filter(
+          (l) => !(l === "agent" && m.hostOnly) && m.lanes![l].role === "closed"
+        )
+      : [];
+    return closedElsewhere.length === 0
+      ? "Unassigned — behaves as Workhorse"
+      : `Unassigned here — another tenant's role closes ${closedElsewhere
+          .map((l) => (l === "agent" ? "sessions" : "CI"))
+          .join(" and ")}`;
+  }
   const base = ROLE_LABEL[m.role];
   return m.registered ? base : `${base} — assigned, not yet registered`;
 }
@@ -331,32 +360,44 @@ export function describeRoleEffect(
   /** A CI host has no workstation runner: it never took sessions. */
   hostOnly = false,
   /**
-   * Coord's role layer per lane, when known — the FLEET-effective role
-   * (a co-tenant's Bench, or an unparseable stored role read as Bench), which
-   * is what "before" really was. Falls back to this tenant's `from`.
+   * Coord's role layer per lane, when known — the FLEET-effective role, i.e.
+   * the most restrictive across every tenant bound to the machine. Used for
+   * "before", and to see that another tenant's role keeps a lane closed
+   * "after". Omit it when this tenant's own row is unreadable (that row may be
+   * the closure being replaced).
    */
   servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>
 ): string {
-  const was = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
-  const layered = (lane: Lane): boolean => {
-    const r = servedRoleLayer?.[lane];
-    return r === "open" ? true : r === "closed" ? false : was[lane];
-  };
-  const before = {
-    agent: hostOnly ? false : layered("agent"),
-    ci: layered("ci"),
-  };
+  const own = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
   const after = ROLE_OPENS[to];
   const clause = (lane: Lane): string => {
     const what = lane === "agent" ? "sessions" : "CI";
-    if (after[lane] && before[lane])
-      return lane === "agent" ? "sessions stay open" : "CI stays open";
-    if (after[lane]) return `coord may send ${what} here again`;
-    if (before[lane])
-      return lane === "agent"
-        ? "coord will send no sessions here"
-        : "coord will send no CI here";
-    return lane === "agent" ? "still no sessions" : "still no CI";
+    if (lane === "agent" && hostOnly)
+      return "still no sessions (no workstation runner)";
+    const served = servedRoleLayer?.[lane];
+    // Closed by the fleet while this tenant's own role opens it: another
+    // tenant's role closes the lane, and it stays closed whatever we pick.
+    if (after[lane] && served === "closed" && own[lane])
+      return `${what} stay closed by another tenant's role`;
+    const before: boolean | null =
+      served === "open"
+        ? true
+        : served === "closed"
+          ? false
+          : served === "unknown"
+            ? null
+            : own[lane];
+    if (after[lane]) {
+      if (before === true)
+        return lane === "agent" ? "sessions stay open" : "CI stays open";
+      if (before === false) return `coord may send ${what} here again`;
+      return `${what} open (current state unknown)`;
+    }
+    if (before === false)
+      return lane === "agent" ? "still no sessions" : "still no CI";
+    return lane === "agent"
+      ? "coord will send no sessions here"
+      : "coord will send no CI here";
   };
   return `${name} → ${ROLE_LABEL[to]}: ${clause("agent")}; ${clause("ci")}.`;
 }

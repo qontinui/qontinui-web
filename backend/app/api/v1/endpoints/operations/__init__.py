@@ -5145,6 +5145,14 @@ class DispatchRoleRequestBody(BaseModel):
                 "ci_host_name must be printable ASCII with no whitespace "
                 "(the GitHub runner host name, e.g. dell-2020)"
             )
+        # Coord names a CI host by the BARE runner name — its registrar strips
+        # `gh-runner-` (`host_of_hostname`) — so a row keyed on the prefixed
+        # spelling would never attach to a registration.
+        if v.lower().startswith("gh-runner-"):
+            raise ValueError(
+                "ci_host_name is the runner name without the gh-runner- prefix "
+                f"(e.g. {v[len('gh-runner-') :]})"
+            )
         return v
 
     @model_validator(mode="after")

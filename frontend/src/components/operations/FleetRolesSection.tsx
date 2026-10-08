@@ -269,9 +269,11 @@ export function FleetRolesSection() {
       from: m.role,
       to,
       hostOnly: m.hostOnly,
-      servedRoleLayer: m.lanes
-        ? { agent: m.lanes.agent.role, ci: m.lanes.ci.role }
-        : undefined,
+      // An unreadable own row may itself be the closure being replaced.
+      servedRoleLayer:
+        m.lanes && m.unrecognisedRole === null
+          ? { agent: m.lanes.agent.role, ci: m.lanes.ci.role }
+          : undefined,
     });
 
   const submit = useCallback(
@@ -319,14 +321,23 @@ export function FleetRolesSection() {
             ? `${pending.name} is ${ROLE_LABEL[pending.to]} — the earlier attempt may have applied it.`
             : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
       );
+      // A definite answer settles the earlier ambiguity for this machine.
+      const settled = machineWriteKey(pending);
+      setAmbiguousKeys((prev) => {
+        if (!prev.has(settled)) return prev;
+        const next = new Set(prev);
+        next.delete(settled);
+        return next;
+      });
       close();
       void refresh();
     },
     [ambiguousKeys, close, pending, reason, refresh]
   );
 
-  // A name coord already lists is set on its own row: writing it again by
-  // host name would put a second role row on one machine (§D4).
+  // A CI host coord already lists is set on its own row. Writing it again by
+  // host name would update that same row (coord upserts on the machine key),
+  // but the confirm sentence would then be built as if it had no role.
   const listedMatch =
     read.state === "known"
       ? (read.machines.find(
@@ -533,6 +544,14 @@ export function FleetRolesSection() {
         />
       )}
 
+      {read.state === "known" && read.notice !== null && (
+        <p
+          className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
+          data-testid="fleet-roles-notice"
+        >
+          {read.notice}
+        </p>
+      )}
       {read.state === "known" &&
         ((read.omitted ?? 0) > 0 || (read.unidentifiable ?? 0) > 0) && (
           <p
