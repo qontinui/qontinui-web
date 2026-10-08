@@ -16,9 +16,10 @@
 # `tee`/`grep`/`sed` into $GITHUB_OUTPUT across two steps, which the
 # runner-as-CI-node lane (.qontinui/ci.toml, argv-only, deliberately
 # shell-free) could not mirror — so the manifest header recorded it as
-# inexpressible. Two lanes now invoke the one script:
+# inexpressible. Four lanes now invoke the one script:
 #
 #   * this workflow, step "Count alembic heads"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `alembic-single-head`
 #   * .pre-commit-config.yaml, hook `alembic-single-head` (shift-left only —
 #     it would have caught 0 of the 3 forks on record, all post-authoring

@@ -1249,6 +1249,37 @@ class TestHttpSurface:
         assert len(groups) == 1
         assert groups[0]["variant_count"] == 2
 
+    async def test_divergent_variants_carry_their_capture_source(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Each copy says HOW it got into the store — the fork view's
+        "scanner copy vs. hand-posted copy" cue reads it off the wire."""
+        slug = _slug("captured-by-drift")
+        await client.post(
+            API_PREFIX,
+            json=_payload(
+                slug=slug,
+                body="scanned copy",
+                source_repo="qontinui-web",
+                captured_by="runner_scan",
+            ),
+        )
+        await client.post(
+            API_PREFIX,
+            json=_payload(
+                slug=slug,
+                body="operator copy",
+                source_repo="qontinui-runner",
+                captured_by="operator",
+            ),
+        )
+
+        resp = await client.get(f"{API_PREFIX}/divergent")
+        assert resp.status_code == 200, resp.text
+        (group,) = [g for g in resp.json()["groups"] if g["slug"] == slug]
+        by_repo = {v["source_repo"]: v["captured_by"] for v in group["variants"]}
+        assert by_repo == {"qontinui-web": "runner_scan", "qontinui-runner": "operator"}
+
     async def test_get_missing_artifact_is_404(self, client: httpx.AsyncClient) -> None:
         resp = await client.get(f"{API_PREFIX}/{uuid4()}")
         assert resp.status_code == 404
@@ -2013,6 +2044,8 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                 "offset": "0",
                 "limit": "5",
                 "include_coord": "false",
+                "q": "strict",
+                "include_custody": "true",
             },
             f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
             f"{API_PREFIX}/difficulty": {},

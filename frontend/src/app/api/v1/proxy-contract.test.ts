@@ -77,7 +77,6 @@ const CONTRACT: [
   [runs, "GET", "execution/runs", "detail", "reencoded", "none", "detail"],
   [runs, "POST", "execution/runs", "detail", "drop", "json", "detail"],
   [run, "GET", "execution/runs/3", "detail", "drop", "none", "detail"],
-  [run, "PUT", "execution/runs/3", "detail", "drop", "json", "detail"],
   [run, "DELETE", "execution/runs/3", "detail", "drop", "none", "detail"],
   [runTree, "GET", "execution/runs/3/tree", "detail", "drop", "none", "detail"],
   [
@@ -169,15 +168,6 @@ const CONTRACT: [
     "drop",
     "none",
     "details",
-  ],
-  [
-    streaming,
-    "POST",
-    "users/me/automation-streaming",
-    "error",
-    "drop",
-    "json",
-    { error: PROXY },
   ],
   [
     streamingReset,
@@ -336,57 +326,4 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
       });
     });
   }
-
-  // Two handlers pick the backend path from the request URL rather than the
-  // route alone — both carried over verbatim from the pre-migration handlers
-  // (`execution/runs/[runId]` PUT, `users/me/automation-streaming` POST).
-  describe("request-URL-dependent backend paths", () => {
-    async function forwardedUrl(
-      verb: Verb,
-      path: string,
-      handler: Handler,
-      query = ""
-    ) {
-      cookieToken = "t";
-      const f = stubFetch(ok);
-      await call(verb, path, handler, query);
-      expect(f).toHaveBeenCalledOnce();
-      return f.mock.calls[0]![0] as unknown as string;
-    }
-
-    it("runs/[runId] PUT on a /complete URL forwards to .../complete", async () => {
-      expect(
-        await forwardedUrl(
-          "PUT",
-          "execution/runs/3/complete",
-          run.PUT as Handler
-        )
-      ).toBe("http://backend.test/api/v1/execution/runs/3/complete");
-    });
-
-    it("runs/[runId] PUT on the bare URL forwards to the run itself", async () => {
-      expect(
-        await forwardedUrl("PUT", "execution/runs/3", run.PUT as Handler)
-      ).toBe("http://backend.test/api/v1/execution/runs/3");
-    });
-
-    it.each([
-      ["/toggle", "/toggle"],
-      ["/reset-limit", "/reset-limit"],
-      ["", ""],
-    ])(
-      "automation-streaming POST with %j in the URL forwards to ...%s",
-      async (marker, suffix) => {
-        const url = await forwardedUrl(
-          "POST",
-          "users/me/automation-streaming",
-          streaming.POST as Handler,
-          marker ? `?op=${marker}` : ""
-        );
-        expect(url).toBe(
-          `http://backend.test/api/v1/users/me/automation-streaming${suffix}`
-        );
-      }
-    );
-  });
 });

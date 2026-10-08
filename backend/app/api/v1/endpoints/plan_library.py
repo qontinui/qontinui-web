@@ -140,7 +140,7 @@ import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import get_args
+from typing import cast, get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -205,9 +205,12 @@ from app.schemas.plan_library import (
     ReconciliationAxisA,
     ReconciliationAxisB,
     ReconciliationAxisC,
+    ReconciliationCustody,
     ReconciliationFacets,
+    ReconciliationLiveSession,
     ReconciliationResponse,
     ReconciliationRow,
+    ReconciliationStatusClass,
     ReconciliationVerdict,
     StatusCurrency,
     WorkArtifactDetail,
@@ -1550,6 +1553,154 @@ def _reconcile_work_unit(raw: object) -> crud.CandidateWorkUnit | None:
 
 
 @dataclass(frozen=True, slots=True)
+class _ReconcileUnitExtras:
+    """Axis-A annotations read off ONE coord list row, beside its projection.
+
+    Kept out of :class:`~app.crud.work_artifact.CandidateWorkUnit` because only
+    reconciliation reads them, and that type is the CRUD layer's shape for
+    both candidate arms. Every field is coord's, forwarded; ``None`` is
+    UNKNOWN throughout (see :class:`ReconciliationAxisA`).
+    """
+
+    status_class: ReconciliationStatusClass | None = None
+    vet_state: str | None = None
+    vet_checked_at: datetime | None = None
+    live_sessions: list[ReconciliationLiveSession] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ReconcileUnits:
+    """Axis A's population plus the per-slug annotations and the custody echo."""
+
+    units: list[crud.CandidateWorkUnit]
+    extras: dict[str, _ReconcileUnitExtras]
+    #: ``None`` when custody was not requested; otherwise whether coord echoed
+    #: ``resolve_session_names: true`` on every page read.
+    custody_resolved: bool | None
+
+
+def _coord_custody(raw: object) -> ReconciliationCustody | None:
+    """coord's ``custody`` object for one live session, or ``None`` (UNKNOWN).
+
+    Faithful to ``work_unit_custody.rs`` ``Custody::to_value``: ``sole``
+    carries ``session_name`` (a ``null`` there is an UNNAMED session, kept as
+    ``None``), ``ambiguous`` carries ``live_session_count``, ``unresolved``
+    carries nothing. A missing object, a state outside those three, or an
+    ``ambiguous`` with no integer count is NOT coerced into one of them — it is
+    ``None``, and the console renders it UNKNOWN.
+    """
+    if not isinstance(raw, dict):
+        return None
+    state = raw.get("state")
+    if state == "sole":
+        name = raw.get("session_name")
+        return ReconciliationCustody(
+            state="sole", session_name=name if isinstance(name, str) else None
+        )
+    if state == "ambiguous":
+        count = raw.get("live_session_count")
+        if isinstance(count, bool) or not isinstance(count, int):
+            return None
+        return ReconciliationCustody(state="ambiguous", live_session_count=count)
+    if state == "unresolved":
+        return ReconciliationCustody(state="unresolved")
+    return None
+
+
+def _coord_live_sessions(
+    raw: object, *, custody_resolved: bool = True
+) -> list[ReconciliationLiveSession] | None:
+    """A unit row's ``live_sessions`` list, or ``None`` when it is UNKNOWN.
+
+    coord attaches the key ONLY when the join was asked for and succeeded
+    (``WorkUnitRow::live_sessions`` is ``skip_serializing_if = is_none``), so
+    an absent key is UNKNOWN and ``[]`` is a real zero. A list holding any
+    entry this read cannot parse (no string ``device_id``) is also ``None``
+    rather than the parseable remainder: a partial list would undercount the
+    sessions and read as a smaller, confident answer.
+
+    ``custody_resolved=False`` keeps every session row but drops its
+    ``custody`` to ``None``: when coord did not echo name resolution on EVERY
+    page, no custody object in the response may read as resolved — the
+    response-level ``custody_resolved: false`` is then true of every row.
+    """
+    if not isinstance(raw, list):
+        return None
+    sessions: list[ReconciliationLiveSession] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        device_id = entry.get("device_id")
+        if not isinstance(device_id, str) or not device_id:
+            return None
+        topic = entry.get("correlation_topic")
+        sessions.append(
+            ReconciliationLiveSession(
+                device_id=device_id,
+                correlation_topic=topic if isinstance(topic, str) else None,
+                updated_at=_coord_datetime(entry.get("updated_at")),
+                expires_at=_coord_datetime(entry.get("expires_at")),
+                custody=(
+                    _coord_custody(entry.get("custody")) if custody_resolved else None
+                ),
+            )
+        )
+    return sessions
+
+
+#: coord's five ``status_class`` words, read off the schema's own ``Literal``.
+_STATUS_CLASSES: frozenset[str] = frozenset(get_args(ReconciliationStatusClass))
+
+
+def _coord_status_class(raw: dict[str, object]) -> ReconciliationStatusClass | None:
+    """coord's ``status_class`` for one list row, or ``None`` (UNKNOWN).
+
+    Forwarded, never computed: coord's ``WorkUnitRow`` carries the class on
+    every list row, derived by its own ``work_unit_status_class::classify``.
+    A row with no ``status`` string, a missing ``status_class``, or a word
+    outside the five is ``None`` — a coord that predates the field or a value
+    this build does not know is UNKNOWN, never coerced into a confident class.
+    """
+    if not isinstance(raw.get("status"), str):
+        return None
+    status_class = raw.get("status_class")
+    if isinstance(status_class, str) and status_class in _STATUS_CLASSES:
+        return cast(ReconciliationStatusClass, status_class)
+    return None
+
+
+def _reconcile_unit_extras(
+    raw: object, *, include_custody: bool, custody_resolved: bool = True
+) -> _ReconcileUnitExtras:
+    """The axis-A annotations on one raw coord list row.
+
+    ``status_class`` is coord's own (:func:`_coord_status_class`).
+    ``vet_state`` / ``vet_checked_at`` are on every list row coord serves
+    (``WorkUnitRow``, filled by ``attach_vet_state``); a coord predating them,
+    or a page whose freshness surface was unreadable, yields ``None``.
+    ``live_sessions`` is read only when this request asked for custody — a key
+    coord sent unasked would be another caller's concern, not this one's —
+    and ``custody_resolved=False`` (coord did not echo name resolution on
+    every page) nulls each session's ``custody`` while keeping the rows.
+    """
+    if not isinstance(raw, dict):
+        return _ReconcileUnitExtras()
+    vet_state = raw.get("vet_state")
+    return _ReconcileUnitExtras(
+        status_class=_coord_status_class(raw),
+        vet_state=vet_state if isinstance(vet_state, str) else None,
+        vet_checked_at=_coord_datetime(raw.get("vet_checked_at")),
+        live_sessions=(
+            _coord_live_sessions(
+                raw.get("live_sessions"), custody_resolved=custody_resolved
+            )
+            if include_custody
+            else None
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class _ReconcileDelivery:
     """Coord's answer about ONE stem, projected onto axis C.
 
@@ -1814,7 +1965,7 @@ class _CoordProbe:
         A short page ends the paging: coord clamps ``limit`` itself and
         returns what it has, so fewer rows than asked for is the last page.
         """
-        rows, reason = await self._unit_rows()
+        rows, reason, _ = await self._unit_rows()
         if rows is None:
             return None, reason
         units = [
@@ -1822,7 +1973,9 @@ class _CoordProbe:
         ]
         return units, None
 
-    async def _unit_rows(self) -> tuple[list[object] | None, str | None]:
+    async def _unit_rows(
+        self, *, include_custody: bool = False
+    ) -> tuple[list[object] | None, str | None, bool]:
         """Coord's whole work-unit list, paged to exhaustion and UNPROJECTED.
 
         The paging half of :meth:`candidate_units`, lifted out because
@@ -1840,29 +1993,57 @@ class _CoordProbe:
         what it has, so fewer rows than asked for is the last page. Reaching
         :data:`_COORD_UNIT_MAX_PAGES` is a TRUNCATED population, which is why
         it is logged rather than absorbed.
+
+        ``include_custody`` forwards ``include_live_sessions=true`` and
+        ``resolve_session_names=true`` so each row carries its
+        ``live_sessions`` annotated with coord's ``custody`` object. The third
+        return value is whether coord ECHOED ``resolve_session_names: true`` on
+        EVERY page read — coord sets that echo only when it actually resolved
+        names, so an older coord (or a page whose live-session join failed)
+        reads ``False`` and its custody is UNKNOWN, never "no holder". It is
+        ``False`` whenever ``include_custody`` was not asked for.
         """
         rows_all: list[object] = []
+        custody_echoed = include_custody
         offset = 0
         for _ in range(_COORD_UNIT_MAX_PAGES):
+            params = {
+                "limit": str(_COORD_UNIT_PAGE_LIMIT),
+                "offset": str(offset),
+                "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
+            }
+            if include_custody:
+                # ``true``, never ``1`` — see ``_presence_params`` for why the
+                # value is the one coord's two flag grammars both accept.
+                params["include_live_sessions"] = "true"
+                params["resolve_session_names"] = "true"
             payload, http_status, error = await self._get(
-                self._coord_base,
-                params={
-                    "limit": str(_COORD_UNIT_PAGE_LIMIT),
-                    "offset": str(offset),
-                    "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
-                },
+                self._coord_base, params=params
             )
             if payload is None:
-                return None, error or f"coord returned {http_status} for work units"
+                return (
+                    None,
+                    error or f"coord returned {http_status} for work units",
+                    False,
+                )
             rows = _coord_unit_rows(payload)
             if rows is None:
-                return None, (
-                    "coord's work-unit list carried no `work_units` array; "
-                    "the candidate population could not be read"
+                return (
+                    None,
+                    (
+                        "coord's work-unit list carried no `work_units` array; "
+                        "the candidate population could not be read"
+                    ),
+                    False,
                 )
+            if include_custody and not (
+                isinstance(payload, dict)
+                and payload.get("resolve_session_names") is True
+            ):
+                custody_echoed = False
             rows_all.extend(rows)
             if len(rows) < _COORD_UNIT_PAGE_LIMIT:
-                return rows_all, None
+                return rows_all, None, custody_echoed
             offset += len(rows)
 
         logger.warning(
@@ -1873,11 +2054,11 @@ class _CoordProbe:
             detail="coord's work-unit list did not terminate within the page cap; "
             "`total` counts only what was read",
         )
-        return rows_all, None
+        return rows_all, None, custody_echoed
 
     async def reconciliation_units(
-        self,
-    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+        self, *, include_custody: bool = False
+    ) -> tuple[_ReconcileUnits | None, str | None]:
         """Axis A's population: coord's plan-shaped work units, ALL statuses.
 
         The same list read :meth:`candidate_units` makes, projected through
@@ -1890,14 +2071,42 @@ class _CoordProbe:
 
         ``None`` means coord could not be read, and axis A is then UNKNOWN for
         every row — never "coord holds no work units".
+
+        Beside the projected units it carries, per slug, the axis-A
+        annotations coord's list row already holds — ``vet_state`` /
+        ``vet_checked_at`` and, under ``include_custody``, the
+        ``live_sessions`` with their ``custody`` objects — read off the SAME
+        raw row, so no second coord read is made for them.
         """
-        rows, reason = await self._unit_rows()
+        rows, reason, custody_echoed = await self._unit_rows(
+            include_custody=include_custody
+        )
         if rows is None:
             return None, reason
-        units = [
-            unit for raw in rows if (unit := _reconcile_work_unit(raw)) is not None
-        ]
-        return units, None
+        units: list[crud.CandidateWorkUnit] = []
+        extras: dict[str, _ReconcileUnitExtras] = {}
+        for raw in rows:
+            unit = _reconcile_work_unit(raw)
+            if unit is None:
+                continue
+            units.append(unit)
+            extras[unit.slug] = _reconcile_unit_extras(
+                raw,
+                include_custody=include_custody,
+                # One page without coord's echo makes the whole read
+                # unresolved: no custody object may survive from the pages
+                # that did echo, or ``custody_resolved: false`` would be
+                # contradicted row by row.
+                custody_resolved=custody_echoed,
+            )
+        return (
+            _ReconcileUnits(
+                units=units,
+                extras=extras,
+                custody_resolved=custody_echoed if include_custody else None,
+            ),
+            None,
+        )
 
     async def delivery_for(self, slug: str) -> _ReconcileDelivery:
         """Axis C for ONE stem: coord's DERIVED delivery verdict, forwarded.
@@ -2685,6 +2894,8 @@ def _reconcile_row(
     artifact: crud.ReconcileArtifact | None,
     variant_count: int,
     unit: crud.CandidateWorkUnit | None,
+    unit_extras: _ReconcileUnitExtras | None,
+    custody_resolved: bool | None,
     units_readable: bool,
     population_reason: str | None,
     delivery: _ReconcileDelivery | None,
@@ -2726,10 +2937,17 @@ def _reconcile_row(
             present=unit is not None,
             status=unit.status if unit is not None else None,
         )
+        extras = unit_extras or _ReconcileUnitExtras()
         axis_a_model = ReconciliationAxisA(
             readable=True,
             present=unit is not None,
             status=unit.status if unit is not None else None,
+            # coord's own class, forwarded — never re-derived here.
+            status_class=extras.status_class if unit is not None else None,
+            vet_state=extras.vet_state if unit is not None else None,
+            vet_checked_at=extras.vet_checked_at if unit is not None else None,
+            live_sessions=extras.live_sessions if unit is not None else None,
+            custody_resolved=custody_resolved,
         )
     else:
         reason = population_reason or "coord's work-unit list could not be read"
@@ -2961,6 +3179,22 @@ async def reconcile_plan_status(
         "delivery verdict (axis C). Set false for a document-layer-only read, "
         "in which BOTH coord axes report UNKNOWN — never agreement.",
     ),
+    q: str | None = Query(
+        None,
+        max_length=200,
+        description="Narrow the stem population BEFORE paging. A stem matches "
+        "when its slug contains `q` (case-insensitive, literal — `%` and `_` "
+        "are not wildcards) OR one of its plan artifacts matches the list "
+        "route's full-text arm over title and body (`-`, `_`, `/` read as word "
+        "breaks). `total` and the facets then describe the FILTERED "
+        "population, and the response echoes `q`.",
+    ),
+    include_custody: bool = Query(
+        False,
+        description="Ask coord for each unit's live sessions with their "
+        "resolved custody (`include_live_sessions` + `resolve_session_names`), "
+        "carried on axis A as `live_sessions` and `custody_resolved`.",
+    ),
     db: AsyncSession = Depends(get_async_db),
     principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> ReconciliationResponse:
@@ -3013,6 +3247,24 @@ async def reconcile_plan_status(
     a ``422 status_is_derived`` on coord's side. Where the reconciler finds
     drift, the correction path is the existing ``plan-steward`` (D5).
 
+    **``q`` narrows the population, not the page.** The stem population is
+    coord units ∪ artifacts, so the list route's ``q`` cannot be applied as a
+    single SQL predicate. It is applied with the SAME semantics in two halves
+    before paging: the slug arm (:func:`~app.crud.work_artifact.stem_matches_q`,
+    a literal case-insensitive substring of the stem) and the full-text arm
+    over the stem's artifacts
+    (:func:`~app.crud.work_artifact.plan_artifact_ids_matching_q`). A stem
+    coord knows about but the artifact store does not is therefore matchable
+    by slug only — there is no body for the full-text arm to read. Under
+    ``q``, ``total``, every facet and every completeness count describe the
+    FILTERED population; the response echoes ``q`` so a consumer can tell.
+
+    **Axis A carries coord's per-unit annotations.** ``status_class``,
+    ``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under
+    ``include_custody`` the unit's ``live_sessions`` arrive with coord's
+    ``custody`` resolution, and ``custody_resolved`` says whether coord
+    actually resolved them. Each absent value is UNKNOWN, never a default.
+
     Coord is reached over its HTTP API only; nothing here touches coord's
     Postgres (module invariant 4, enforced by
     ``tests/test_coord_schema_boundary_guard.py``).
@@ -3028,11 +3280,19 @@ async def reconcile_plan_status(
     # ── coord's work-unit list (axis A's population), whole ──
     probe: _CoordProbe | None = None
     units: list[crud.CandidateWorkUnit] | None = None
+    unit_extras: dict[str, _ReconcileUnitExtras] = {}
+    custody_resolved: bool | None = None
     population_reason: str | None = "not fetched (include_coord=false)"
     if include_coord:
         tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
         probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
-        units, population_reason = await probe.reconciliation_units()
+        population, population_reason = await probe.reconciliation_units(
+            include_custody=include_custody
+        )
+        if population is not None:
+            units = population.units
+            unit_extras = population.extras
+            custody_resolved = population.custody_resolved
     population_state: WorkUnitPopulationState = (
         "included" if units is not None else "unavailable"
     )
@@ -3052,6 +3312,16 @@ async def reconcile_plan_status(
     unit_by_stem = {unit.slug: unit for unit in (units or ())}
 
     stems = sorted(set(by_stem) | set(unit_by_stem))
+    if q:
+        # The list route's own ``q``, applied to the STEM population before
+        # paging (see the docstring): slug arm in memory, full-text arm in SQL.
+        matching_ids = await crud.plan_artifact_ids_matching_q(db, org_id=org_id, q=q)
+        stems = [
+            stem
+            for stem in stems
+            if crud.stem_matches_q(q, stem)
+            or any(artifact.id in matching_ids for artifact in by_stem.get(stem, ()))
+        ]
     total = len(stems)
     page = stems[offset : offset + limit]
     page_set = set(page)
@@ -3095,6 +3365,8 @@ async def reconcile_plan_status(
             artifact=chosen.get(stem),
             variant_count=len(by_stem.get(stem, ())),
             unit=unit_by_stem.get(stem),
+            unit_extras=unit_extras.get(stem),
+            custody_resolved=custody_resolved,
             units_readable=units is not None,
             population_reason=population_reason,
             delivery=deliveries.get(stem),
@@ -3175,6 +3447,7 @@ async def reconcile_plan_status(
         total=total,
         offset=offset,
         limit=limit,
+        q=q,
         document_axis_complete=document_missing == 0,
         document_present_count=document_present,
         document_missing_count=document_missing,
