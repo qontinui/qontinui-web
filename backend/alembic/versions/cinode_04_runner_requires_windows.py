@@ -13,8 +13,7 @@ defaulting every row to ``[]`` — "no requirement", which Phase 4c's
 ``d.capabilities @> <column>`` filter matches against every device. This
 revision sets ``qontinui/qontinui-runner`` to ``["os:windows"]``. Its
 ``ci_node`` lane is the Windows leg (plan
-``2026-09-27-arm-ci-node-dispatch-for-runner-windows-leg``; every one of the
-1984 historic dispatches ran on the Windows device ``spaceship``), so without
+``2026-09-27-arm-ci-node-dispatch-for-runner-windows-leg``), so without
 this row the OS filter ships inert for the only repo that has a ``ci_node``
 lane. The token is the runner's ``capabilities`` vocabulary (qontinui-runner
 ``fleet.rs`` ``build_device_capabilities``).
