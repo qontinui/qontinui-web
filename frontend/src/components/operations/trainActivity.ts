@@ -168,7 +168,7 @@ export type PauseReasonCode =
    *  split out of `ready-but-unlanded` precisely so it stops raising
    *  `orchestrator-stalled` ("the train should have taken it"). The move is
    *  mixed (the author's: linearize / close / push a new head; the
-   *  operator's: re-enable merging / cancel-unblock) and coord names it in
+   *  operator's: a hardcap cancel-unblock) and coord names it in
    *  `blocking_summary`, so the copy points there rather than guessing.
    *  `blocking`, like `conflict-strand`: nothing clears it on a timer, so the
    *  `waiting` grade would promise an end that is not coming. Plan

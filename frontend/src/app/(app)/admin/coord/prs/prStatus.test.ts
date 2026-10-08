@@ -146,8 +146,8 @@ describe("the readings the palette audit cannot make", () => {
   it("floors `terminal-proposal-held` with predicate-blocked, never author red", () => {
     // The HELD half split out of `ready-but-unlanded`. That token is `author`
     // red; this one must not be, because its members' moves are mixed —
-    // linearize / close / push are the author's, re-enable merging /
-    // cancel-unblock are the operator's. coord names the move in
+    // linearize / close / push are the author's, a hardcap
+    // cancel-unblock is the operator's. coord names the move in
     // `blocking_summary`, which surfaces as the row reason.
     expect(PR_ATTENTION_BY_MERGE_STATUS["ready-but-unlanded"]).toBe("author");
     expect(PR_ATTENTION_BY_MERGE_STATUS["terminal-proposal-held"]).toBe(
