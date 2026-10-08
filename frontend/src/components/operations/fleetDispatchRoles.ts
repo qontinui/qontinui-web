@@ -23,16 +23,15 @@
  *    unknown-must-not-render-as-a-default]`).
  * 2. **Role and drain are rendered SEPARATELY (§D2).** A lane coord reports
  *    `closed_by_role` may ALSO be drained; coord reports the role there
- *    because it is the standing fact. So the drain column says "not reported"
- *    in that case rather than "clear".
+ *    because it is the standing fact, and serves the role layer and the drain
+ *    layer separately beside it — both are rendered.
  * 3. **A role assigned to a host with no coord device is "assigned, not yet
  *    registered"** (plan §0a) — it applies the moment a runner registers under
  *    that name, so rendering it as unassigned would be false.
  *
- * The parse is deliberately lenient about field NAMES (`dispatch_role` or
- * `role`, `name` or `hostname`) because coord's Phase 3 read route and this
- * console are built in parallel; it is strict about VALUES — an unrecognised
- * role or lane state is surfaced as such, never coerced to a default.
+ * The wire shape is coord's `DispatchRolesResponse` / `MachineView`
+ * (`qontinui-coord` `dispatch_role_routes.rs`, plan Phase 3). An unrecognised
+ * role or lane value is surfaced as such, never coerced to a default.
  */
 
 export const DISPATCH_ROLES = ["workhorse", "bench", "ci_node"] as const;
@@ -65,26 +64,31 @@ export function isDispatchRole(v: unknown): v is DispatchRole {
   );
 }
 
-/** Coord's effective state for one lane, as served. */
+/** The DRAIN layer of one lane, as coord serves it — separate from the role. */
 export type LaneDrain =
-  | { state: "clear" }
-  | { state: "held"; until: string | null; reason: string | null }
-  /** Coord did not say — e.g. the lane is closed by the role, which coord
-   * reports in preference to a drain (§D2). */
-  | { state: "not_reported" }
+  | { state: "none" }
+  | {
+      state: "drained";
+      until: string | null;
+      reason: string | null;
+      drainedBy: string | null;
+    }
+  /** Some, not all, of a CI host's runner registrations are drained. */
+  | {
+      state: "partial";
+      drainedDevices: number | null;
+      totalDevices: number | null;
+    }
   | { state: "unknown" };
 
+/** One lane of one machine: coord's role layer and drain layer (§D2). */
 export interface LaneView {
-  /** The served lane state string, verbatim, or `null` when absent. */
-  served: string | null;
+  /** Coord's composed verdict, verbatim (`open` / `closed_by_role` /
+   * `closed_by_drain` / `unknown`), or `null` when absent. */
+  effective: string | null;
+  /** The ROLE layer alone. */
+  role: "open" | "closed" | "unknown";
   drain: LaneDrain;
-}
-
-export interface RoleHistoryEntry {
-  role: DispatchRole | null;
-  at: string | null;
-  by: string | null;
-  reason: string | null;
 }
 
 export interface RoleSuggestion {
@@ -94,7 +98,7 @@ export interface RoleSuggestion {
 }
 
 export interface RoleMachine {
-  /** Stable row key: `device:<uuid>` or `host:<lower name>`. */
+  /** Coord's `machine_key` — the row's stable identity. */
   key: string;
   deviceId: string | null;
   ciHostName: string | null;
@@ -103,25 +107,27 @@ export interface RoleMachine {
   role: DispatchRole | null;
   /** A role value this build does not know, verbatim — never coerced. */
   unrecognisedRole: string | null;
-  /** `false` for a host-name row coord has no device for yet. */
+  /** `false` for `registration: assigned_not_registered`. */
   registered: boolean;
   /**
-   * The machine has no workstation runner, so coord refuses `workhorse` for it
-   * (`no_agent_host`, §D4). Offered as a disabled option with the reason.
+   * `kind: ci_host` — no workstation runner, so coord refuses `workhorse` for
+   * it (`no_agent_host`, §D4). Offered as a disabled option with the reason.
    */
   hostOnly: boolean;
+  heartbeatFresh: boolean | null;
   suggestion: RoleSuggestion | null;
   /** `null` when coord served no lane state for this machine. */
   lanes: Record<Lane, LaneView> | null;
-  trustTier: string | null;
-  linkedHosts: string[];
-  /** Sessions coord placed before the current role took effect (§D9). */
+  /**
+   * Live sessions that started before the role's last change (§D9) — coord's
+   * upper bound. `null` unless coord reports `pre_change_sessions.state:
+   * known`.
+   */
   sessionsBeforeChange: number | null;
   updatedAt: string | null;
   updatedBy: string | null;
   reason: string | null;
-  /** `null` when coord serves no history. */
-  history: RoleHistoryEntry[] | null;
+  version: number | null;
 }
 
 export type DispatchRolesRead =
@@ -141,144 +147,106 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-function parseDrainObject(v: unknown): LaneDrain | null {
-  if (v === null) return { state: "clear" };
-  if (!isRecord(v)) return null;
-  return {
-    state: "held",
-    until: str(v.until),
-    reason: str(v.reason),
-  };
-}
-
-/**
- * One lane. Accepts a bare state string or `{state, drain?}`. `drain` (when
- * served) wins over what the state string implies, because it is the
- * separately-reported fact §D2 asks for.
- */
-export function parseLane(v: unknown): LaneView {
-  const served = typeof v === "string" ? v : isRecord(v) ? str(v.state) : null;
-  const explicit =
-    isRecord(v) && "drain" in v ? parseDrainObject(v.drain) : null;
-  if (explicit) return { served, drain: explicit };
-  switch (served) {
-    case "open":
-      return { served, drain: { state: "clear" } };
-    case "closed_by_drain":
+function parseDrainLayer(v: unknown): LaneDrain {
+  if (!isRecord(v)) return { state: "unknown" };
+  switch (v.state) {
+    case "none":
+      return { state: "none" };
+    case "drained":
       return {
-        served,
-        drain: {
-          state: "held",
-          until: isRecord(v) ? str(v.until) : null,
-          reason: isRecord(v) ? str(v.reason) : null,
-        },
+        state: "drained",
+        until: str(v.until),
+        reason: str(v.reason),
+        drainedBy: str(v.drained_by),
       };
-    case "closed_by_role":
-      return { served, drain: { state: "not_reported" } };
+    case "partial":
+      return {
+        state: "partial",
+        drainedDevices: num(v.drained_devices),
+        totalDevices: num(v.total_devices),
+      };
     default:
-      return { served, drain: { state: "unknown" } };
+      return { state: "unknown" };
   }
 }
 
-function parseHistory(v: unknown): RoleHistoryEntry[] | null {
-  if (!Array.isArray(v)) return null;
-  return v.filter(isRecord).map((h) => {
-    const r = h.dispatch_role ?? h.role;
-    return {
-      role: isDispatchRole(r) ? r : null,
-      at: str(h.updated_at) ?? str(h.at) ?? str(h.changed_at),
-      by: str(h.updated_by) ?? str(h.by) ?? str(h.changed_by),
-      reason: str(h.reason),
-    };
-  });
+/** One lane: `{effective, role, drain}`. Anything unrecognised is unknown. */
+export function parseLane(v: unknown): LaneView {
+  if (!isRecord(v)) {
+    return { effective: null, role: "unknown", drain: { state: "unknown" } };
+  }
+  const role = v.role === "open" || v.role === "closed" ? v.role : "unknown";
+  return { effective: str(v.effective), role, drain: parseDrainLayer(v.drain) };
 }
 
 /** One machine row, or `null` when it names no machine at all. */
 export function parseRoleMachine(v: unknown): RoleMachine | null {
   if (!isRecord(v)) return null;
-  const deviceId = str(v.device_id) ?? str(v.machine_device_id) ?? null;
+  const deviceId = str(v.device_id);
   const ciHostName = str(v.ci_host_name);
   if (deviceId === null && ciHostName === null) return null;
 
-  const rawRole = v.dispatch_role ?? v.role;
+  // `role` is this tenant's row (`RoleView`) or null when unassigned.
+  const roleRow = isRecord(v.role) ? v.role : null;
+  const rawRole = roleRow ? roleRow.dispatch_role : null;
   let role: DispatchRole | null = null;
   let unrecognisedRole: string | null = null;
   if (isDispatchRole(rawRole)) role = rawRole;
-  else if (
-    rawRole !== null &&
-    rawRole !== undefined &&
-    rawRole !== "unassigned"
-  )
+  else if (rawRole !== null && rawRole !== undefined)
     unrecognisedRole = String(rawRole);
+  // A role field that is neither null nor an object is a shape we do not know.
+  if (v.role !== null && v.role !== undefined && roleRow === null)
+    unrecognisedRole = String(v.role);
 
-  const sug = v.suggestion ?? v.suggested_role;
-  let suggestion: RoleSuggestion | null = null;
-  if (isDispatchRole(sug)) {
-    suggestion = { role: sug, memTotalBytes: null, sampleAgeSecs: null };
-  } else if (isRecord(sug) && isDispatchRole(sug.role ?? sug.dispatch_role)) {
-    suggestion = {
-      role: (sug.role ?? sug.dispatch_role) as DispatchRole,
-      memTotalBytes: num(sug.mem_total_bytes),
-      sampleAgeSecs: num(sug.sample_age_secs) ?? num(sug.age_secs),
-    };
-  }
+  const sug = v.suggestion;
+  const suggestion: RoleSuggestion | null =
+    isRecord(sug) && isDispatchRole(sug.dispatch_role)
+      ? {
+          role: sug.dispatch_role,
+          memTotalBytes: num(sug.mem_total_bytes),
+          sampleAgeSecs: num(sug.sample_age_secs),
+        }
+      : null;
 
-  const lanesRaw = v.lanes ?? v.lane_state;
-  const lanes = isRecord(lanesRaw)
-    ? { agent: parseLane(lanesRaw.agent), ci: parseLane(lanesRaw.ci) }
-    : null;
+  // A machine with no device rows (assigned, not registered) has no lane
+  // state: coord serves `lanes: {}`, which is "none", not two unknown lanes.
+  const lanes =
+    isRecord(v.lanes) && ("agent" in v.lanes || "ci" in v.lanes)
+      ? { agent: parseLane(v.lanes.agent), ci: parseLane(v.lanes.ci) }
+      : null;
 
-  const registered =
-    typeof v.registered === "boolean" ? v.registered : deviceId !== null;
-  const hostOnly =
-    typeof v.agent_host === "boolean"
-      ? !v.agent_host
-      : typeof v.has_agent_host === "boolean"
-        ? !v.has_agent_host
-        : deviceId === null;
+  const pre = isRecord(v.pre_change_sessions) ? v.pre_change_sessions : null;
 
-  const name =
-    str(v.name) ?? str(v.hostname) ?? ciHostName ?? (deviceId as string);
+  const key =
+    str(v.machine_key) ??
+    (deviceId !== null
+      ? `device:${deviceId.toLowerCase()}`
+      : `host:${(ciHostName as string).toLowerCase()}`);
 
   return {
-    key:
-      deviceId !== null
-        ? `device:${deviceId.toLowerCase()}`
-        : `host:${(ciHostName as string).toLowerCase()}`,
+    key,
     deviceId,
     ciHostName,
-    name,
+    name: str(v.name) ?? ciHostName ?? (deviceId as string),
     role,
     unrecognisedRole,
-    registered,
-    hostOnly,
+    registered: v.registration !== "assigned_not_registered",
+    hostOnly: v.kind === "ci_host",
+    heartbeatFresh:
+      typeof v.heartbeat_fresh === "boolean" ? v.heartbeat_fresh : null,
     suggestion,
     lanes,
-    trustTier: str(v.trust_tier),
-    linkedHosts: Array.isArray(v.linked_hosts)
-      ? v.linked_hosts
-          .map((h) =>
-            isRecord(h) ? (str(h.ci_host_name) ?? str(h.name)) : str(h)
-          )
-          .filter((h): h is string => h !== null)
-      : [],
-    sessionsBeforeChange:
-      num(v.sessions_before_change) ?? num(v.pre_change_sessions),
-    updatedAt: str(v.updated_at),
-    updatedBy: str(v.updated_by),
-    reason: str(v.reason),
-    history: parseHistory(v.history ?? v.versions),
+    sessionsBeforeChange: pre && pre.state === "known" ? num(pre.count) : null,
+    updatedAt: roleRow ? str(roleRow.updated_at) : null,
+    updatedBy: roleRow ? str(roleRow.updated_by) : null,
+    reason: roleRow ? str(roleRow.reason) : null,
+    version: roleRow ? num(roleRow.version) : null,
   };
 }
 
 /** Parse `GET /coord/fleet/dispatch-roles` (through the web proxy). */
 export function parseDispatchRoles(body: unknown): DispatchRolesRead {
-  const list = Array.isArray(body)
-    ? body
-    : isRecord(body)
-      ? (body.machines ?? body.roles)
-      : undefined;
-  if (!Array.isArray(list)) {
+  if (!isRecord(body)) {
     return {
       state: "unknown",
       reason:
@@ -286,7 +254,24 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
         "not recognise, so no machine's role could be read from it.",
     };
   }
-  const machines = list
+  // Coord's own UNKNOWN: `machines` is null, never [] — so is ours.
+  if (body.state === "unknown") {
+    return {
+      state: "unknown",
+      reason: `Coord could not read the roles: ${
+        str(body.detail) ?? "no detail given"
+      }.`,
+    };
+  }
+  if (body.state !== "known" || !Array.isArray(body.machines)) {
+    return {
+      state: "unknown",
+      reason:
+        "Coord's dispatch-role read came back in a shape this console does " +
+        "not recognise, so no machine's role could be read from it.",
+    };
+  }
+  const machines = body.machines
     .map(parseRoleMachine)
     .filter((m): m is RoleMachine => m !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -330,7 +315,7 @@ export function describeRoleEffect(
 
 /** A refusal coord returned for a role write, as the dialog renders it. */
 export type RoleWriteRefusal =
-  | { kind: "last_open_lane"; lane: Lane | null; message: string }
+  | { kind: "last_open_lane"; lanes: Lane[]; message: string }
   | { kind: "no_agent_host"; message: string }
   | { kind: "not_admin"; message: string }
   | { kind: "other"; message: string };
@@ -366,24 +351,32 @@ export function describeRoleWriteError(
     (isRecord(parsed) && typeof parsed.detail === "string"
       ? parsed.detail
       : null);
-  const coordMsg = inner ? (str(inner.message) ?? str(inner.hint)) : null;
+  // Coord puts its prose in `detail` (a string inside the refusal object).
+  const coordMsg = inner ? (str(inner.message) ?? str(inner.detail)) : null;
 
   if (code === "last_open_lane") {
-    const laneRaw = inner ? str(inner.lane) : null;
-    const lane = laneRaw === "agent" || laneRaw === "ci" ? laneRaw : null;
+    // Coord serves `lanes: [{lane, remaining, offline_only}, …]`.
+    const lanes: Lane[] = [];
+    if (inner && Array.isArray(inner.lanes)) {
+      for (const l of inner.lanes) {
+        const name = isRecord(l) ? l.lane : null;
+        if ((name === "agent" || name === "ci") && !lanes.includes(name))
+          lanes.push(name);
+      }
+    }
     const what =
-      lane === "agent"
-        ? "agent sessions"
-        : lane === "ci"
-          ? "CI"
-          : "one of its lanes";
+      lanes.length === 0
+        ? "one of its lanes"
+        : lanes
+            .map((l) => (l === "agent" ? "agent sessions" : "CI"))
+            .join(" or ");
     return {
       kind: "last_open_lane",
-      lane,
+      lanes,
       message:
         `Coord refused: after this change no heartbeat-fresh machine would ` +
         `take ${what}. Force applies it anyway (the forced change is ` +
-        `audited).${coordMsg ? ` Coord: ${coordMsg}` : ""}`,
+        `audited).`,
     };
   }
   if (code === "no_agent_host") {

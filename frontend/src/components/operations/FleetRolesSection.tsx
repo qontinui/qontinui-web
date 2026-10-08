@@ -56,7 +56,6 @@ import {
   LANES,
   LANE_LABEL,
   ROLE_LABEL,
-  ROLE_OPENS,
   describeRole,
   describeRoleEffect,
   describeRoleWriteError,
@@ -84,9 +83,12 @@ interface PendingChange {
 }
 
 function laneSummary(m: RoleMachine): string {
-  if (m.lanes === null) return "lane state not served";
+  if (m.lanes === null)
+    return m.registered
+      ? "lane state not served"
+      : "no lanes until a runner registers";
   return LANES.map(
-    (l) => `${LANE_LABEL[l]}: ${m.lanes![l].served ?? "unknown"}`
+    (l) => `${LANE_LABEL[l]}: ${m.lanes![l].effective ?? "unknown"}`
   )
     .join(" · ")
     .replaceAll("_", " ");
@@ -94,26 +96,35 @@ function laneSummary(m: RoleMachine): string {
 
 function DrainText({ lane }: { lane: LaneView }) {
   switch (lane.drain.state) {
-    case "clear":
+    case "none":
       return <>not drained</>;
-    case "held":
+    case "drained":
       return (
         <>
           drained
           {lane.drain.until ? ` until ${absoluteTime(lane.drain.until)}` : ""}
+          {lane.drain.drainedBy ? ` by ${lane.drain.drainedBy}` : ""}
           {lane.drain.reason ? ` (${lane.drain.reason})` : ""}
         </>
       );
-    case "not_reported":
-      return <>not reported (coord reports the role when both close it)</>;
+    case "partial":
+      return (
+        <>
+          partly drained ({lane.drain.drainedDevices ?? "?"} of{" "}
+          {lane.drain.totalDevices ?? "?"} registrations)
+        </>
+      );
     default:
       return <>unknown</>;
   }
 }
 
-/** Per lane: the role's verdict and the drain's, side by side (§D2). */
+/**
+ * Per lane: coord's role layer and drain layer, side by side (§D2). The role
+ * layer is coord's FLEET-effective role, so a co-tenant's Bench shows here as
+ * closed even when this tenant assigned Workhorse.
+ */
 function LanesTable({ m }: { m: RoleMachine }) {
-  const effective: DispatchRole = m.role ?? "workhorse";
   return (
     <table className="text-xs" data-testid="fleet-roles-lanes">
       <thead>
@@ -128,17 +139,13 @@ function LanesTable({ m }: { m: RoleMachine }) {
         {LANES.map((l) => (
           <tr key={l} data-lane={l}>
             <td className="pr-4">{LANE_LABEL[l]}</td>
-            <td className="pr-4">
-              {m.unrecognisedRole !== null
-                ? "unknown"
-                : ROLE_OPENS[effective][l]
-                  ? "opens"
-                  : "closes"}
-            </td>
+            <td className="pr-4">{m.lanes ? m.lanes[l].role : "not served"}</td>
             <td className="pr-4 break-words">
               {m.lanes ? <DrainText lane={m.lanes[l]} /> : "not served"}
             </td>
-            <td className="font-mono">{m.lanes?.[l].served ?? "not served"}</td>
+            <td className="font-mono">
+              {m.lanes?.[l].effective ?? "not served"}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -388,29 +395,12 @@ export function FleetRolesSection() {
                     </div>
                   </CoordAdminOnly>
                 }
-                history={
-                  m.history && m.history.length > 0 ? (
-                    <ul className="space-y-0.5 text-[11px] text-muted-foreground">
-                      {m.history.map((h, i) => (
-                        <li key={i} className="break-words">
-                          {h.at ? absoluteTime(h.at) : "time not recorded"} —{" "}
-                          {h.role ? ROLE_LABEL[h.role] : "unassigned"}
-                          {h.by ? ` by ${h.by}` : ""}
-                          {h.reason ? `: ${h.reason}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : undefined
-                }
                 raw={
                   <span className="font-mono text-[11px] text-muted-foreground break-all">
                     {m.deviceId
                       ? `device ${m.deviceId}`
                       : `host ${m.ciHostName}`}
-                    {m.trustTier ? ` · trust ${m.trustTier}` : ""}
-                    {m.linkedHosts.length > 0
-                      ? ` · linked ${m.linkedHosts.join(", ")}`
-                      : ""}
+                    {m.version !== null ? ` · role v${m.version}` : ""}
                   </span>
                 }
               />
