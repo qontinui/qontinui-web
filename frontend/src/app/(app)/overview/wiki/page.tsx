@@ -127,7 +127,7 @@ export default function WikiPage() {
                   </Link>{" "}
                   <MirrorsRepoChip
                     page={page}
-                    uiBridgeId={`overview.wiki.result-mirrors-${page.slug}`}
+                    uiBridgeId={`overview.wiki.result-${page.slug}.mirrors`}
                   />
                   {page.excerpt && (
                     <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
@@ -196,7 +196,7 @@ export default function WikiPage() {
                           </Link>{" "}
                           <MirrorsRepoChip
                             page={page}
-                            uiBridgeId={`overview.wiki.page-mirrors-${page.slug}`}
+                            uiBridgeId={`overview.wiki.page-${page.slug}.mirrors`}
                           />
                           {page.excerpt && (
                             <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
