@@ -16,7 +16,7 @@ import { ResumeUnfinishedPanel } from "./_components/ResumeUnfinishedPanel";
 import { UnfinishedRow } from "./_components/UnfinishedRow";
 import { useUnfinishedSessions } from "./_hooks/useUnfinishedSessions";
 import { useResumeUnfinishedPolicy } from "./_hooks/useResumeUnfinishedPolicy";
-import { unknownReasonText } from "./_lib/unfinished";
+import { unknownDetailText, unknownReasonText } from "./_lib/unfinished";
 
 export default function UnfinishedSessionsPage() {
   const { view, loading, error, busyId, reload, dismiss, resume } =
@@ -30,6 +30,7 @@ export default function UnfinishedSessionsPage() {
   const unknown = view?.state === "unknown";
   const rows = view?.state === "ok" ? (view.sessions ?? []) : [];
   const readFailed = error !== null;
+  const unknownDetail = unknown && view ? unknownDetailText(view) : null;
 
   let level: "green" | "amber" | "red" = "green";
   let headline = "Reading unfinished sessions…";
@@ -87,6 +88,14 @@ export default function UnfinishedSessionsPage() {
         >
           UNKNOWN — {unknownReasonText(view)}. Whether any session is unfinished
           is not known.
+          {unknownDetail && (
+            <span
+              className="mt-1 block break-all font-mono text-[11px] not-italic"
+              data-testid="unfinished-unknown-detail"
+            >
+              coord: {unknownDetail}
+            </span>
+          )}
         </p>
       ) : (
         <RecordList
