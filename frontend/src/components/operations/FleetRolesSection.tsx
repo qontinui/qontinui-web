@@ -93,13 +93,28 @@ interface PendingChange {
   servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>;
 }
 
+/** The key a role write names: the device, or the canonical host name. */
+function machineWriteKey(c: {
+  deviceId: string | null;
+  ciHostName: string | null;
+}): string {
+  return c.deviceId
+    ? `device:${c.deviceId.toLowerCase()}`
+    : `host:${(c.ciHostName ?? "").trim().toLowerCase()}`;
+}
+
 function laneSummary(m: RoleMachine): string {
   if (m.lanes === null)
     return m.registered
       ? "lane state not served"
       : "no lanes until a runner registers";
   return LANES.map(
-    (l) => `${LANE_LABEL[l]}: ${m.lanes![l].effective ?? "unknown"}`
+    (l) =>
+      `${LANE_LABEL[l]}: ${
+        l === "agent" && m.hostOnly
+          ? "n/a"
+          : (m.lanes![l].effective ?? "unknown")
+      }`
   )
     .join(" · ")
     .replaceAll("_", " ");
@@ -161,7 +176,9 @@ function LanesTable({ m }: { m: RoleMachine }) {
               {m.lanes ? <DrainText lane={m.lanes[l]} /> : "not served"}
             </TableCell>
             <TableCell className="font-mono">
-              {m.lanes?.[l].effective ?? "not served"}
+              {l === "agent" && m.hostOnly
+                ? "n/a"
+                : (m.lanes?.[l].effective ?? "not served")}
             </TableCell>
           </TableRow>
         ))}
@@ -225,7 +242,10 @@ export function FleetRolesSection() {
   const [refusal, setRefusal] = useState<RoleWriteRefusal | null>(null);
   // Set after a write whose outcome is unknown (5xx / transport failure): a
   // later `changed: false` may then be the earlier attempt's own change.
-  const [ambiguousAttempt, setAmbiguousAttempt] = useState(false);
+  // Per machine, so closing and reopening the dialog does not forget it.
+  const [ambiguousKeys, setAmbiguousKeys] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [hostName, setHostName] = useState("");
   const [hostRole, setHostRole] = useState<DispatchRole>("ci_node");
 
@@ -233,14 +253,12 @@ export function FleetRolesSection() {
     setPending(change);
     setReason("");
     setRefusal(null);
-    setAmbiguousAttempt(false);
   }, []);
 
   const close = useCallback(() => {
     setPending(null);
     setReason("");
     setRefusal(null);
-    setAmbiguousAttempt(false);
   }, []);
 
   const pickFor = (m: RoleMachine) => (to: DispatchRole) =>
@@ -278,7 +296,8 @@ export function FleetRolesSection() {
         setRefusal(r);
         // A lost answer may have applied; re-read so the list shows coord's truth.
         if (r.kind === "other" && r.mayHaveApplied) {
-          setAmbiguousAttempt(true);
+          const k = machineWriteKey(pending);
+          setAmbiguousKeys((prev) => new Set(prev).add(k));
           void refresh();
         }
         return;
@@ -296,14 +315,14 @@ export function FleetRolesSection() {
                   } on it now)`
                 : ""
             }.`
-          : ambiguousAttempt
+          : ambiguousKeys.has(machineWriteKey(pending))
             ? `${pending.name} is ${ROLE_LABEL[pending.to]} — the earlier attempt may have applied it.`
             : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
       );
       close();
       void refresh();
     },
-    [ambiguousAttempt, close, pending, reason, refresh]
+    [ambiguousKeys, close, pending, reason, refresh]
   );
 
   // A name coord already lists is set on its own row: writing it again by
@@ -491,9 +510,6 @@ export function FleetRolesSection() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={
-                            m.suggestion.role === "workhorse" && m.hostOnly
-                          }
                           onClick={() => pickFor(m)(m.suggestion!.role)}
                           data-testid="fleet-roles-accept-suggestion"
                         >
@@ -646,9 +662,10 @@ export function FleetRolesSection() {
                       data-testid="fleet-roles-linked-hosts-note"
                     >
                       This sets the workstation only. Its GitHub runner hosts
-                      (rows named gh-runner-…) are listed here as separate
-                      machines and keep their own role — set them too if this
-                      machine should take no CI.
+                      are listed here as separate machines under the runner name
+                      (e.g. msi-wsl — the device list shows it as
+                      gh-runner-msi-wsl) and keep their own role — set them too
+                      if this machine should take no CI.
                     </p>
                   )}
                 <p
