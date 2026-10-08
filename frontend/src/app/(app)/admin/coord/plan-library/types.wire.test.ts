@@ -33,6 +33,8 @@ import {
   type SnapshotFile,
 } from "@/lib/api/route-walker";
 import {
+  MODEL_FAMILIES,
+  MODEL_ROUTING_LEVELS,
   PLAN_CENSUS_SIDE_NULLABLE,
   PLAN_CENSUS_SOURCES,
   PLAN_COVERAGE_NULLABLE,
@@ -244,3 +246,26 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     });
   });
 });
+
+describe.each(SNAPSHOTS)(
+  "the model-routing wire contract, against %s",
+  (file) => {
+    const update = component(file, "ModelRoutingUpdate");
+
+    it("the PUT requires exactly MODEL_ROUTING_LEVELS", () => {
+      expect(sorted(update.required ?? [])).toEqual(
+        sorted(MODEL_ROUTING_LEVELS)
+      );
+      expect(sorted(Object.keys(update.properties))).toEqual(
+        sorted(MODEL_ROUTING_LEVELS)
+      );
+    });
+
+    it.each(MODEL_ROUTING_LEVELS)(
+      "%s admits exactly MODEL_FAMILIES",
+      (level) => {
+        expect(enumOf(update, level)).toEqual(sorted(MODEL_FAMILIES));
+      }
+    );
+  }
+);
