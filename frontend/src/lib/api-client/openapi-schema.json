@@ -17301,6 +17301,63 @@
         "title": "DispatchEnrollResponse",
         "type": "object"
       },
+      "DispatchRoleRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``PUT /operations/fleet/dispatch-role``.\n\n``extra=\"forbid\"`` keeps a client-asserted author (``set_by``,\n``updated_by``) off the wire, and keeps the body exactly the shape coord\ndeclares.",
+        "properties": {
+          "ci_host_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Host Name"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "dispatch_role": {
+            "enum": [
+              "workhorse",
+              "bench",
+              "ci_node"
+            ],
+            "title": "Dispatch Role",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dispatch_role",
+          "reason"
+        ],
+        "title": "DispatchRoleRequestBody",
+        "type": "object"
+      },
       "DispatchStatusResponse": {
         "description": "Dispatch diagnostics for an app (dashboard / debugging).",
         "properties": {
@@ -95402,6 +95459,75 @@
           }
         ],
         "summary": "Get Fleet Ci Runners",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/dispatch-role": {
+      "put": {
+        "description": "Set one machine's dispatch role (operator-only).\n\nAffects NEW dispatch only: sessions and CI jobs already placed on the\nmachine run to their end (\u00a7D9). The GitHub-label (Phase 4) and CI-node\nswitch (Phase 5) effects are coord's and web's later phases \u2014 nothing on\nthis path claims them.",
+        "operationId": "api_v1_operations_fleet_dispatch_role_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchRoleRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Fleet Dispatch Role Api V1 Operations Fleet Dispatch Role Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Fleet Dispatch Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/dispatch-roles": {
+      "get": {
+        "description": "Every machine of the caller's tenant with its dispatch role.\n\nProxies coord's ``GET /coord/fleet/dispatch-roles`` with the body passed\nthrough untouched (no ``response_model``): role or ``unassigned``, the RAM\nsuggestion for an unassigned machine, and each lane's state with role and\ndrain kept apart.\n\nA 404 (coord predates the route), a 502/504, or an unrecognised body is\nUNKNOWN to the browser \u2014 never \"every machine is unassigned\", which would\nread as \"every machine is a workhorse\" (``[policy:\nunknown-must-not-render-as-a-default]``). The status is what lets it tell.",
+        "operationId": "api_v1_operations_fleet_dispatch_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Dispatch Roles Api V1 Operations Fleet Dispatch Roles Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Dispatch Roles",
         "tags": [
           "operations"
         ]

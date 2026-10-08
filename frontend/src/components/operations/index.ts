@@ -137,6 +137,7 @@ export {
   buildWorktreeSlotRows,
   FleetWorktreeSlotsSection,
 } from "./FleetWorktreeSlotsSection";
+export { FleetRolesSection } from "./FleetRolesSection";
 export {
   FLEET_WORKTREE_SLOTS_API,
   useFleetWorktreeSlots,

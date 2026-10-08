@@ -39,7 +39,7 @@
 #    "Run tests with coverage" needs the job's `services:` block: a
 #    pgvector/pgvector:pg16 container and a redis:7-alpine container, plus the
 #    "Create test schemas and extensions" psql step that creates the project /
-#    auth / cloud / coord / strategy / web schemas and `CREATE EXTENSION vector`.
+#    auth / cloud / coord / web schemas and `CREATE EXTENSION vector`.
 #    The ci_node executor provisions sibling repos and registry tools; it
 #    provisions no DATABASE. Nothing in this manifest can stand a server up, and
 #    a step that assumed a local Postgres would fail on exactly the clean user
