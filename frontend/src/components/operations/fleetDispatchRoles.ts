@@ -553,6 +553,14 @@ export function validateRoleForm(input: {
     if (h === "") return "Enter the machine's host name (e.g. dell-2020).";
     if (!/^[\x21-\x7e]+$/.test(h))
       return "A host name is printable ASCII with no spaces.";
+    // Coord names a CI host by the bare GitHub runner name: the
+    // `gh-runner-` prefix the device list shows is NOT part of it, and a row
+    // keyed on it would never attach to a registration.
+    if (/^gh-runner-/i.test(h))
+      return (
+        `Use the runner name without the gh-runner- prefix ` +
+        `(e.g. ${h.replace(/^gh-runner-/i, "")}).`
+      );
   }
   if (input.reason.trim() === "")
     return "A reason is required — coord records it on the role's version row.";

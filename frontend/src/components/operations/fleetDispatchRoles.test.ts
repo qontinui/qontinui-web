@@ -429,5 +429,8 @@ describe("validateRoleForm", () => {
     expect(
       validateRoleForm({ reason: "ok", ciHostName: "dell-2020" })
     ).toBeNull();
+    expect(
+      validateRoleForm({ reason: "ok", ciHostName: "gh-runner-msi-wsl" })
+    ).toContain("msi-wsl");
   });
 });

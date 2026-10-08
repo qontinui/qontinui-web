@@ -289,9 +289,10 @@ describe("FleetRolesSection", () => {
           benchHost,
           {
             ...benchHost,
-            machine_key: "host:gh-runner-msi-wsl",
-            ci_host_name: "gh-runner-msi-wsl",
-            name: "gh-runner-msi-wsl",
+            // Coord names a CI host by the bare runner name (no gh-runner-).
+            machine_key: "/msi-wsl",
+            ci_host_name: "msi-wsl",
+            name: "msi-wsl",
             registration: "registered",
           },
         ],
@@ -307,7 +308,7 @@ describe("FleetRolesSection", () => {
     expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
       "not served"
     );
-    fireEvent.click(screen.getByText("gh-runner-msi-wsl"));
+    fireEvent.click(screen.getByText("msi-wsl"));
     expect(
       screen.getByTestId("fleet-roles-github-runner-warning").textContent
     ).toContain("GitHub runner");
