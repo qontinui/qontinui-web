@@ -209,9 +209,13 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
       : null;
 
   // A machine with no device rows (assigned, not registered) has no lane
-  // state: coord serves `lanes: {}`, which is "none", not two unknown lanes.
+  // state. Coord still serves both lane keys for it, with a role layer of
+  // `open` computed over an EMPTY device list — rendering that would
+  // contradict the assigned role, so registration decides, not key presence.
   const lanes =
-    isRecord(v.lanes) && ("agent" in v.lanes || "ci" in v.lanes)
+    v.registration !== "assigned_not_registered" &&
+    isRecord(v.lanes) &&
+    ("agent" in v.lanes || "ci" in v.lanes)
       ? { agent: parseLane(v.lanes.agent), ci: parseLane(v.lanes.ci) }
       : null;
 
@@ -313,6 +317,13 @@ export function describeRoleEffect(
   return `${name} → ${ROLE_LABEL[to]}: ${clause("agent")}; ${clause("ci")}.`;
 }
 
+/** Refusal codes that mean "you are not an operator here". */
+const ADMIN_REFUSAL_CODES = [
+  "not_coord_tenant_admin",
+  "admin_required",
+  "operator_principal_required",
+];
+
 /** A refusal coord returned for a role write, as the dialog renders it. */
 export type RoleWriteRefusal =
   | { kind: "last_open_lane"; lanes: Lane[]; message: string }
@@ -397,10 +408,12 @@ export function describeRoleWriteError(
     };
   }
   if (
-    status === 403 ||
-    code === "not_coord_tenant_admin" ||
-    code === "operator_required" ||
-    code === "admin_required"
+    // Coord also answers 403 `device_not_in_tenant`, which is not an
+    // authorization failure of the operator — it falls through to the generic
+    // arm with its own code. Any other 403 (including the web gate's, whose
+    // code the deployed envelope rewrites to a generic one) is the gate.
+    (code !== null && ADMIN_REFUSAL_CODES.includes(code)) ||
+    (status === 403 && code !== "device_not_in_tenant")
   ) {
     return {
       kind: "not_admin",

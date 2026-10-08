@@ -93,7 +93,13 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
 }
 
 export type RoleWriteResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /** Coord's `changed`: `false` when the machine already had this role. */
+      changed: boolean;
+      /** Coord's `live_sessions_on_machine`, when served. */
+      liveSessions: number | null;
+    }
   | { ok: false; status: number | null; body: string };
 
 /**
@@ -122,7 +128,22 @@ export async function putDispatchRole(input: {
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
     }
-    return { ok: true };
+    // A success with an unreadable body still succeeded; `changed` stays
+    // true, the reading that does not claim a no-op happened.
+    let changed = true;
+    let liveSessions: number | null = null;
+    try {
+      const payload: unknown = await res.json();
+      if (typeof payload === "object" && payload !== null) {
+        const p = payload as Record<string, unknown>;
+        if (typeof p.changed === "boolean") changed = p.changed;
+        if (typeof p.live_sessions_on_machine === "number")
+          liveSessions = p.live_sessions_on_machine;
+      }
+    } catch {
+      // see above
+    }
+    return { ok: true, changed, liveSessions };
   } catch (err) {
     return {
       ok: false,
