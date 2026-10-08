@@ -297,7 +297,10 @@ const REASON_META: Record<
   // `blocking`, not `waiting` — no timer clears a held terminal proposal —
   // and deliberately NOT the `orchestrator-stalled` row: coord is not failing
   // to act here, it has diagnosed a hold and says whose move it is in the
-  // PR's `blocking_summary`.
+  // PR's `blocking_summary`. The grade differs from /prs on purpose: there
+  // `prStatus.ts` floors it at `waiting`/amber because WHOSE move it is cannot
+  // be read off the token alone; here the axis is "why is the train paused",
+  // and a hold that no timer clears is a block.
   "terminal-proposal-held": {
     label: "Terminal proposal held",
     severity: "blocking",
@@ -797,6 +800,53 @@ export function effectiveMergeStatus(
 // Fleet summary
 // ----------------------------------------------------------------------------
 
+/**
+ * coord's `ready_unmerged` totals, minus the entries the per-repo rows
+ * EXONERATED.
+ *
+ * `buildRepoTrainRows` drops a health entry whose PR's own row carries a
+ * {@link NOT_STALLED_STATUSES} token (`landed-open`, `terminal-proposal-held`):
+ * coord builds the list from frozen CLEAN/green signals with no verdict term,
+ * so those PRs are listed but are not stalls. Reading the raw `count` here
+ * would put them back one level up — in the headline KPI and in the
+ * `suppressed-train` blocking banner.
+ *
+ * Why subtract rather than sum `rows[].readyUnmerged`: coord's `count` may
+ * exceed the `prs` it lists, and a caller may pass health without rows. Only
+ * an entry the rows POSITIVELY dropped is subtracted — an entry for a repo
+ * with no row stays counted, which is the right direction for an alarm.
+ */
+function deriveReadyUnmergedTotals(
+  health: TrainHealth | null,
+  rows: RepoTrainRow[]
+): { readyUnmergedCount: number; readyUnmergedMaxAgeSecs: number | null } {
+  const rawCount = health?.ready_unmerged?.count ?? 0;
+  const rawMaxAge = health?.ready_unmerged?.max_age_seconds ?? null;
+  const listed = health?.ready_unmerged?.prs ?? [];
+  const rowByRepo = new Map(rows.map((r) => [r.repo, r]));
+  const exonerated = listed.filter((entry) => {
+    const row = rowByRepo.get(entry.repo);
+    if (!row) return false;
+    return !row.readyUnmerged.some((r) => r.pr_number === entry.pr_number);
+  });
+  if (exonerated.length === 0) {
+    return { readyUnmergedCount: rawCount, readyUnmergedMaxAgeSecs: rawMaxAge };
+  }
+  const dropped = new Set(exonerated);
+  const remainingAges = listed
+    .filter((entry) => !dropped.has(entry))
+    .map((entry) => entry.age_seconds ?? null)
+    .filter((a): a is number => a != null);
+  return {
+    readyUnmergedCount: Math.max(0, rawCount - exonerated.length),
+    // The raw max may belong to an exonerated PR, so it is recomputed from
+    // what is left; nothing left with an age means the age is unknown.
+    readyUnmergedMaxAgeSecs: remainingAges.length
+      ? Math.max(...remainingAges)
+      : null,
+  };
+}
+
 export function buildTrainSummary(
   health: TrainHealth | null,
   rows: RepoTrainRow[],
@@ -827,9 +877,8 @@ export function buildTrainSummary(
   // these names.
   const mergeBlockedRepos = health?.dry_run?.repos ?? [];
   const mergeBlockedPrs = health?.dry_run?.would_merge_blocked_by_dry_run ?? 0;
-  const readyUnmergedCount = health?.ready_unmerged?.count ?? 0;
-  const readyUnmergedMaxAgeSecs =
-    health?.ready_unmerged?.max_age_seconds ?? null;
+  const { readyUnmergedCount, readyUnmergedMaxAgeSecs } =
+    deriveReadyUnmergedTotals(health, rows);
 
   const activeRepoCount = rows.filter((r) => r.activity.kind !== "idle").length;
   const inFlightCount = rows.reduce((n, r) => n + r.inFlightCount, 0);

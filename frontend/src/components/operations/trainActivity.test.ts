@@ -1921,6 +1921,61 @@ describe("buildTrainSummary", () => {
     expect(s.banners.map((b) => b.code)).toContain("suppressed-train");
   });
 
+  it("does not count a terminal-proposal-held PR as ready in the summary", () => {
+    // coord's `ready_unmerged` reads frozen CLEAN/green signals, so a held PR
+    // is still listed. The rows already exonerate it; the summary KPI and the
+    // `suppressed-train` banner must not put it back one level up.
+    const health: TrainHealth = {
+      last_merged_at: ago(4 * 3600),
+      last_predicate_eval_at: ago(60),
+      ready_unmerged: {
+        count: 1,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 9000 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(0);
+    expect(s.readyUnmergedMaxAgeSecs).toBeNull();
+    expect(s.banners.map((b) => b.code)).not.toContain("suppressed-train");
+  });
+
+  it("still raises suppressed-train for a genuine ready-but-unlanded PR beside a held one", () => {
+    // Anti-vacuity: the exoneration subtracts only the held entry.
+    const health: TrainHealth = {
+      last_merged_at: ago(4 * 3600),
+      last_predicate_eval_at: ago(60),
+      ready_unmerged: {
+        count: 2,
+        max_age_seconds: 9000,
+        prs: [
+          { repo: "qontinui/web", pr_number: 21, age_seconds: 9000 },
+          { repo: "qontinui/web", pr_number: 12, age_seconds: 4000 },
+        ],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 21, merge_status: "terminal-proposal-held" }),
+        pr({ pr_number: 12, merge_status: "ready-but-unlanded" }),
+      ],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(1);
+    // The raw max belonged to the held PR; the remaining one's age wins.
+    expect(s.readyUnmergedMaxAgeSecs).toBe(4000);
+    expect(s.banners.map((b) => b.code)).toContain("suppressed-train");
+  });
+
   it("does NOT call a long gap suppressed when nothing is ready", () => {
     // A quiet fleet with no landable work is idle, not broken.
     const s = buildTrainSummary(
