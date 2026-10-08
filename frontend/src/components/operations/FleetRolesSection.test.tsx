@@ -83,6 +83,38 @@ const MACHINES = {
       lanes: {},
       pre_change_sessions: { state: "not_applicable" },
     },
+    {
+      kind: "workstation",
+      machine_key: "device:95a536af-6fa3-496b-97c7-1bce45b3217a",
+      device_id: "95a536af-6fa3-496b-97c7-1bce45b3217a",
+      ci_host_name: null,
+      name: "nomad",
+      registration: "registered",
+      assignment: "assigned",
+      role: {
+        dispatch_role: "bench",
+        reason: "local box",
+        version: 1,
+        updated_by: "op@example.com",
+        updated_at: "2026-10-08T10:00:00Z",
+      },
+      behaves_as: "bench",
+      suggestion: null,
+      lanes: {
+        agent: {
+          effective: "closed_by_role",
+          role: "closed",
+          drain: {
+            state: "drained",
+            until: "2026-10-09T00:00:00Z",
+            reason: "rebuild",
+            total_devices: 1,
+          },
+        },
+        ci: lane("closed_by_role", "closed"),
+      },
+      pre_change_sessions: { state: "known", count: 0 },
+    },
   ],
 };
 
@@ -137,7 +169,7 @@ describe("FleetRolesSection", () => {
     );
     expect(
       screen.getByTestId("fleet-roles-not-yet-applied").textContent
-    ).toContain("Phase 4");
+    ).toContain("GitHub runner routing labels");
     const submit = screen.getByTestId(
       "fleet-roles-submit"
     ) as HTMLButtonElement;
@@ -194,6 +226,37 @@ describe("FleetRolesSection", () => {
     const refusal = await screen.findByTestId("fleet-roles-refusal");
     expect(refusal.getAttribute("data-refusal")).toBe("no_agent_host");
     expect(screen.queryByTestId("fleet-roles-force")).toBeNull();
+  });
+
+  it("refuses to assign by host name a machine already listed", async () => {
+    render(<FleetRolesSection />);
+    await screen.findByText("Unassigned — behaves as Workhorse");
+    fireEvent.change(screen.getByTestId("fleet-roles-host-input"), {
+      target: { value: "MONSTER" },
+    });
+    expect(
+      (screen.getByTestId("fleet-roles-host-open") as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    expect(screen.getByTestId("fleet-roles-host-error").textContent).toContain(
+      "already listed"
+    );
+  });
+
+  it("warns on a CI-closing role that GitHub runners still get jobs", async () => {
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("dell-2024"));
+    expect(
+      screen.queryByTestId("fleet-roles-github-runner-warning")
+    ).toBeNull();
+    fireEvent.click(screen.getByText("nomad"));
+    expect(
+      screen.getByTestId("fleet-roles-github-runner-warning").textContent
+    ).toContain("GitHub runner services");
+    // Role and drain shown separately: Bench closes the lane AND it is drained.
+    expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
+      "drained until"
+    );
   });
 
   it("hides the write controls from a non-admin", async () => {

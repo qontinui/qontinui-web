@@ -252,6 +252,33 @@ describe("describeRoleWriteError", () => {
     expect(r.message).toContain("agent sessions or CI");
     expect(r.message).toContain("Force");
   });
+  it("the deployed envelope (dict spliced to top level, repr in message) never shows the repr", () => {
+    // `middleware/error_handler.py`: `message = detail.get("message", str(detail))`.
+    const r = describeRoleWriteError(
+      409,
+      JSON.stringify({
+        error: "last_open_lane",
+        message: "{'error': 'last_open_lane', 'detail': 'x', 'lanes': [...]}",
+        detail: "this change would leave your tenant with no machine",
+        lanes: [{ lane: "ci", remaining: [], offline_only: false }],
+        timestamp: 1,
+        path: "/api/v1/operations/fleet/dispatch-role",
+      })
+    );
+    expect(r.kind).toBe("last_open_lane");
+    expect(r.message).not.toContain("{'error'");
+    const other = describeRoleWriteError(
+      400,
+      JSON.stringify({
+        error: "reason_required",
+        message: "{'error': 'reason_required', 'detail': 'a reason is needed'}",
+        detail: "a reason is needed",
+      })
+    );
+    expect(other.message).toBe(
+      "HTTP 400 — reason_required — a reason is needed"
+    );
+  });
   it("no_agent_host at the top level is typed", () => {
     const r = describeRoleWriteError(
       422,
