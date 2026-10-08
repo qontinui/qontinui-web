@@ -606,9 +606,10 @@ export function ArtifactDetailPanel({
          * this on `detail && !failed && !loading` left the operator with
          * exactly one control — `artifact-detail-retry` — and no way out.
          *
-         * That state is reachable by precisely the two paths the pinned anchor
-         * exists for: `DivergencePanel`'s "Open", and any `edge-peer-*` click
-         * resolving to an artifact the backend cannot return. There is an
+         * That state is reachable by precisely the path the pinned anchor
+         * exists for: an `edge-peer-*` click in `PlanLibraryList` (the
+         * all-kinds artifact list) resolving to an artifact the backend
+         * cannot return. There is an
          * indirect escape (clicking any row flips `openIsOnPage`), but it is
          * non-obvious and unavailable when the list is empty or errored.
          *

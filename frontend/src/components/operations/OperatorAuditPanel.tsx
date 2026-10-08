@@ -69,7 +69,7 @@ import {
   type AuditRow,
 } from "./operatorAudit";
 
-/** Same same-origin convention as `FLEET_HEALTH_API`. */
+/** The relative form, like `OPERATIONS_BASE` (`@/lib/api/operations/base`). */
 export const OPERATOR_AUDIT_API = "/api/v1/operations/coord/audit/recent";
 
 /** Enough to reach back through an incident without scanning the table. */

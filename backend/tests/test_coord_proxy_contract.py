@@ -34,6 +34,7 @@ names the module that owns the helper only for readability.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable, Iterator
@@ -55,6 +56,7 @@ from app.api.v1.endpoints import (
 )
 from app.core.config import settings
 from app.services import coord_proxy as services_coord_proxy
+from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 TENANT = UUID("00000000-0000-4000-8000-000000000001")
 PATH = "/coord/contract-probe"
@@ -283,6 +285,12 @@ _POST_TO_COORD_503 = Cell(
 
 EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_get": _get_family(operations.CoordTransportUnavailable),
+    # Transport arms stay CoordTransportUnavailable; only a JSON OBJECT error
+    # body becomes a dict detail — empty/HTML fall back to ``resp.text``.
+    "ops_get_structured_errors": {
+        **_get_family(operations.CoordTransportUnavailable),
+        "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
+    },
     "ops_post": _get_family(HTTPException),
     "ops_post_structured_errors": {
         **_get_family(HTTPException),
@@ -419,6 +427,16 @@ DELETE_BODY = {"role": "admin"}
 HELPERS: dict[str, Helper] = {
     "ops_get": Helper(
         _OPS_TARGET, "get", _fwd(operations._proxy_coord_get, PATH, tenant_id=TENANT)
+    ),
+    "ops_get_structured_errors": Helper(
+        _OPS_TARGET,
+        "get",
+        _fwd(
+            operations._proxy_coord_get,
+            PATH,
+            tenant_id=TENANT,
+            structured_errors=True,
+        ),
     ),
     "ops_post": Helper(
         _OPS_TARGET,
@@ -578,12 +596,10 @@ def _stub_coord(
 
     For a retrying helper (``helper.sleeps``) ``asyncio.sleep`` is replaced by
     ``sleep`` (a fresh ``AsyncMock`` when not given) so the backoff costs no
-    wall time and can be read back from its ``await_args_list``. NOTE: the
-    target ``app.services.coord_proxy.asyncio.sleep`` is the ``sleep``
-    attribute of the ONE ``asyncio`` module object, so while the block is
-    active the patch is PROCESS-WIDE — every ``asyncio.sleep`` anywhere
-    (the event loop's own helpers included) returns immediately. Keep the
-    block around the helper call only."""
+    wall time and can be read back from its ``await_args_list``. The
+    replacement is scoped to coord_proxy alone (see
+    :mod:`tests._coord_proxy_sleep` for why patching ``asyncio.sleep`` by its
+    dotted path is process-wide and made the backoff assert flaky)."""
     instance = AsyncMock()
 
     async def _answer(*_args: Any, **_kwargs: Any) -> Any:
@@ -600,12 +616,7 @@ def _stub_coord(
             patch(helper.patch_target, return_value=instance)
         )
         if helper.sleeps:
-            stack.enter_context(
-                patch(
-                    "app.services.coord_proxy.asyncio.sleep",
-                    new=sleep if sleep is not None else AsyncMock(),
-                )
-            )
+            stack.enter_context(patch_coord_proxy_sleep(sleep))
         yield client_cls
 
 
@@ -1123,6 +1134,27 @@ async def test_post_to_coord_backoff_sequence(
     assert all(c.kwargs == {} for c in sleep.await_args_list)
 
 
+@pytest.mark.asyncio
+async def test_backoff_sleep_mock_sees_only_coord_proxy_sleeps() -> None:
+    """A sleep awaited OUTSIDE coord_proxy while the stub is active must reach
+    the real ``asyncio.sleep``, not the backoff mock. Patched on the
+    process-wide module, ANY such sleep (here a task's; in the 2026-10-06
+    flake, a leftover background poll) was recorded by the mock and broke the
+    exact backoff assert above."""
+    helper = HELPERS["post_to_coord"]
+    queue = [SCENARIOS["connect_error"]] * 3
+
+    def _next() -> Any:
+        return queue.pop(0)()
+
+    sleep = AsyncMock()
+    with _captured(helper.vars_module), _stub_coord(helper, _next, sleep=sleep):
+        await asyncio.create_task(asyncio.sleep(0.01))
+        with pytest.raises(HTTPException):
+            await helper.invoke()
+    assert [c.args for c in sleep.await_args_list] == [(0.5,), (1.5,)]
+
+
 # ---------------------------------------------------------------------------
 # invoke must forward kwargs, never swallow them.
 # ---------------------------------------------------------------------------
@@ -1217,8 +1249,9 @@ async def test_client_timeout(
 
 def test_timeout_rows_cover_every_helper() -> None:
     covered = {row[1] for row in _TIMEOUT_ROWS}
-    # The three flag variants of post share ops_post's constructor call.
+    # The flag variants share their base helper's constructor call.
     assert covered | {
+        "ops_get_structured_errors",
         "ops_post_structured_errors",
         "ops_post_return_status",
         "ops_post_non_json_success_as_empty",

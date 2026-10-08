@@ -408,7 +408,7 @@ describe("buildRepoTrainRows — why it is paused", () => {
     // land-stamp term — so a phantom-open whose signals froze CLEAN and green
     // is still in that list. Left unfiltered, `orchestrator-stalled` fires at
     // `blocking`, rank 3, "The train should have taken it" — the loudest wrong
-    // answer, outranking and out-shouting the new `info` chip at rank 17.
+    // answer, outranking and out-shouting the new `info` chip at rank 18.
     const health: TrainHealth = {
       ready_unmerged: {
         count: 1,
@@ -458,6 +458,63 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(stall).toBeDefined();
     expect(stall!.prNumbers).toEqual([12]);
     expect(row.severity).toBe("blocking");
+  });
+
+  it("gives terminal-proposal-held its own blocked reason, never the stall alarm or the unknown-token row", () => {
+    // The HELD half split out of `ready-but-unlanded`: coord diagnosed a
+    // terminal proposal it will not re-cut. It must not read as an
+    // orchestrator stall, and it must not fall into `unrecognized-status`.
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 21, merge_status: "terminal-proposal-held" }),
+        pr({ pr_number: 22, merge_status: "terminal-proposal-held" }),
+      ],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    const codes = row.reasons.map((r) => r.code);
+    expect(codes).not.toContain("orchestrator-stalled");
+    expect(codes).not.toContain("unrecognized-status");
+    const held = row.reasons.find((r) => r.code === "terminal-proposal-held");
+    expect(held).toBeDefined();
+    expect(held!.label).toBe("Terminal proposal held");
+    expect(held!.severity).toBe("blocking");
+    expect(held!.prNumbers).toEqual([21, 22]);
+    expect(held!.detail).toContain("blocking summary");
+  });
+
+  it("exonerates a terminal-proposal-held PR from coord's ready_unmerged stall list", () => {
+    // coord's health `ready_unmerged` reads frozen CLEAN/green signals and
+    // carries no verdict, so a held PR may still be listed there. It must not
+    // re-raise `orchestrator-stalled` — while a genuine stall beside it does.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 2,
+        max_age_seconds: 7200,
+        prs: [
+          { repo: "qontinui/web", pr_number: 21, age_seconds: 7200 },
+          { repo: "qontinui/web", pr_number: 12, age_seconds: 3600 },
+        ],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 21, merge_status: "terminal-proposal-held" }),
+        pr({ pr_number: 12 }),
+      ],
+      health,
+      NOW
+    );
+    const row = rows[0]!;
+    const stall = row.reasons.find((r) => r.code === "orchestrator-stalled");
+    expect(stall).toBeDefined();
+    expect(stall!.prNumbers).toEqual([12]);
+    const held = row.reasons.find((r) => r.code === "terminal-proposal-held");
+    expect(held!.prNumbers).toEqual([21]);
+    expect(row.readyUnmerged.map((r) => r.pr_number)).toEqual([12]);
   });
 
   it("promotes a day-old conflict to a strand", () => {
@@ -1862,6 +1919,101 @@ describe("buildTrainSummary", () => {
       NOW
     );
     expect(s.banners.map((b) => b.code)).toContain("suppressed-train");
+  });
+
+  it("does not count a terminal-proposal-held PR as ready in the summary", () => {
+    // coord's `ready_unmerged` reads frozen CLEAN/green signals, so a held PR
+    // is still listed. The rows already exonerate it; the summary KPI and the
+    // `suppressed-train` banner must not put it back one level up.
+    const health: TrainHealth = {
+      last_merged_at: ago(4 * 3600),
+      last_predicate_eval_at: ago(60),
+      ready_unmerged: {
+        count: 1,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 9000 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(0);
+    expect(s.readyUnmergedMaxAgeSecs).toBeNull();
+    expect(s.banners.map((b) => b.code)).not.toContain("suppressed-train");
+  });
+
+  it("still raises suppressed-train for a genuine ready-but-unlanded PR beside a held one", () => {
+    // Anti-vacuity: the exoneration subtracts only the held entry.
+    const health: TrainHealth = {
+      last_merged_at: ago(4 * 3600),
+      last_predicate_eval_at: ago(60),
+      ready_unmerged: {
+        count: 2,
+        max_age_seconds: 9000,
+        prs: [
+          { repo: "qontinui/web", pr_number: 21, age_seconds: 9000 },
+          { repo: "qontinui/web", pr_number: 12, age_seconds: 4000 },
+        ],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 21, merge_status: "terminal-proposal-held" }),
+        pr({ pr_number: 12, merge_status: "ready-but-unlanded" }),
+      ],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(1);
+    // The raw max belonged to the held PR; the remaining one's age wins.
+    expect(s.readyUnmergedMaxAgeSecs).toBe(4000);
+    expect(s.banners.map((b) => b.code)).toContain("suppressed-train");
+  });
+
+  it("keeps coord's oldest-ready age when the held PR was younger and coord counts unlisted PRs", () => {
+    // count > listed prs: the unlisted PRs may own the max, so the raw max
+    // stands unless a dropped PR provably owned it.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 3,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 1200 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(2);
+    expect(s.readyUnmergedMaxAgeSecs).toBe(9000);
+  });
+
+  it("reports the oldest-ready age as unknown when the held PR owned the max and nothing listed remains", () => {
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 3,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 9000 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(2);
+    expect(s.readyUnmergedMaxAgeSecs).toBeNull();
   });
 
   it("does NOT call a long gap suppressed when nothing is ready", () => {

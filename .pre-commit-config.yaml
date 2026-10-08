@@ -61,11 +61,12 @@ repos:
     hooks:
       - id: ruff-version-parity
         name: pre-commit ruff pin == the ruff CI runs
-        # SAME SCRIPT as .github/workflows/ruff-version-parity.yml and
+        # SAME SCRIPT as .github/workflows/ruff-version-parity.yml,
+        # .github/workflows/web-guards.yml (the consolidated guard job) and
         # .qontinui/ci.toml's `ruff-version-parity` step — the shape plan
         # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity Phase 5
         # established, and the one .qontinui/ci.toml's header calls preferred:
-        # three lanes, one copy of the logic, so the lanes cannot drift.
+        # four lanes, one copy of the logic, so the lanes cannot drift.
         #
         # Guards the `rev:` in the block above against `poetry.lock`. Stdlib
         # only (no PyYAML): the ci_node lane runs it on a checkout with nothing
@@ -142,8 +143,8 @@ repos:
         files: ^backend/alembic/versions/.*\.py$
         # SAME SCRIPT as .github/workflows/alembic-graph-pr.yml's required
         # `alembic-heads-pr` check, .qontinui/ci.toml's `alembic-single-head`
-        # step, and alembic-graph-check.yml's post-land companion. A fourth
-        # lane on one script, the pattern Phase 5 of
+        # step, alembic-graph-check.yml's post-land companion, and the
+        # consolidated web-guards.yml job. A fifth lane on one script, the pattern Phase 5 of
         # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
         # established.
         #

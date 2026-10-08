@@ -65,7 +65,9 @@ def _test_pg_dsn_tail() -> str:
                 "DSN feeds the asyncpg engine, which rejects libpq keywords"
             )
         return tail
-    hostport = os.environ.get("QONTINUI_TEST_PG", "localhost:5432")
+    # Blank means unset here too, as for the DSN above: a set-but-empty value
+    # would otherwise yield a host-less `user:pw@/qontinui_test`.
+    hostport = os.environ.get("QONTINUI_TEST_PG", "").strip() or "localhost:5432"
     return f"qontinui_user:qontinui_dev_password@{hostport}/qontinui_test"
 
 
