@@ -26,6 +26,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.middleware.error_handler import http_exception_handler
 from app.services.coord_proxy import post_to_coord
+from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 
 def _mock_response(status_code: int = 201, json_data=None) -> MagicMock:
@@ -48,7 +49,7 @@ def _patch_client(post_side_effects) -> tuple:
 
 
 def _patch_sleep():
-    return patch("app.services.coord_proxy.asyncio.sleep", new=AsyncMock())
+    return patch_coord_proxy_sleep()
 
 
 @pytest.mark.asyncio

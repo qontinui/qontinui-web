@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """No fixed sleep may be ADDED to the Playwright E2E suite — a per-file ratchet.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/forbid-fixed-sleeps-in-e2e.yml``, step
     "Count fixed sleeps in frontend/tests/e2e against the allowlist"
+  * ``.github/workflows/web-guards.yml``, step
+    "forbid-fixed-sleeps-in-e2e: Count fixed sleeps in frontend/tests/e2e against the allowlist"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``forbid-fixed-sleeps-in-e2e``
   * ``.pre-commit-config.yaml``, hook ``forbid-fixed-sleeps-in-e2e``
 
