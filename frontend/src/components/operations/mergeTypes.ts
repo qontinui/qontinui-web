@@ -246,11 +246,11 @@ export type MergeStatusToken =
   | "ready-but-unlanded"
   /** Green + CLEAN + open, and the train's only proposal at this head is
    *  TERMINAL and HELD — coord will not re-cut it (already-landed,
-   *  merge-resolution-discarded, reap-hardcap, merged, shadow-landed, plain
-   *  cancelled). Split out of `ready-but-unlanded`, which keeps the
-   *  no-proposal half (a genuine orchestrator stall) and every terminal coord
-   *  re-cuts or re-probes itself (infra / transient errors, content and
-   *  textual conflicts). NOT a stall: coord diagnosed it, and the move —
+   *  merge-resolution-discarded, reap-hardcap, superseded-empty candidate,
+   *  merged, plain cancelled). Split out of `ready-but-unlanded`, which keeps
+   *  the no-proposal half (a genuine orchestrator stall) and every terminal
+   *  coord re-cuts or re-probes itself (infra / transient errors, content and
+   *  textual conflicts, shadow-landed). NOT a stall: coord diagnosed it, and the move —
    *  sometimes the author's, sometimes the operator's — is named in
    *  `blocking_summary`.
    *  Plan
