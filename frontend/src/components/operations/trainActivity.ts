@@ -837,13 +837,25 @@ function deriveReadyUnmergedTotals(
     .filter((entry) => !dropped.has(entry))
     .map((entry) => entry.age_seconds ?? null)
     .filter((a): a is number => a != null);
+  // Keep coord's own max unless an exonerated entry provably OWNED it: coord
+  // may count PRs it does not list, so the listed remainder can understate the
+  // true oldest. Only when a dropped PR is at least that old is the raw max
+  // known to be wrong — then recompute from the listed remainder, and with
+  // nothing left carrying an age, the oldest age is unknown (null).
+  const exonAges = exonerated
+    .map((entry) => entry.age_seconds ?? null)
+    .filter((a): a is number => a != null);
+  const heldOwnedMax =
+    rawMaxAge != null && exonAges.some((a) => a >= rawMaxAge);
+  let maxAge: number | null;
+  if (rawMaxAge != null && !heldOwnedMax) {
+    maxAge = rawMaxAge;
+  } else {
+    maxAge = remainingAges.length ? Math.max(...remainingAges) : null;
+  }
   return {
     readyUnmergedCount: Math.max(0, rawCount - exonerated.length),
-    // The raw max may belong to an exonerated PR, so it is recomputed from
-    // what is left; nothing left with an age means the age is unknown.
-    readyUnmergedMaxAgeSecs: remainingAges.length
-      ? Math.max(...remainingAges)
-      : null,
+    readyUnmergedMaxAgeSecs: maxAge,
   };
 }
 

@@ -250,8 +250,9 @@ export type MergeStatusToken =
    *  cancelled). Split out of `ready-but-unlanded`, which keeps the
    *  no-proposal half (a genuine orchestrator stall) and every terminal coord
    *  re-cuts or re-probes itself (infra / transient errors, content and
-   *  textual conflicts). NOT a stall: coord diagnosed it, and the move — sometimes the
-   *  author's, sometimes the operator's — is named in `blocking_summary`.
+   *  textual conflicts). NOT a stall: coord diagnosed it, and the move —
+   *  sometimes the author's, sometimes the operator's — is named in
+   *  `blocking_summary`.
    *  Plan
    *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
   | "terminal-proposal-held"

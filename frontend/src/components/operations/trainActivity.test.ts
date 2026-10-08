@@ -1976,6 +1976,46 @@ describe("buildTrainSummary", () => {
     expect(s.banners.map((b) => b.code)).toContain("suppressed-train");
   });
 
+  it("keeps coord's oldest-ready age when the held PR was younger and coord counts unlisted PRs", () => {
+    // count > listed prs: the unlisted PRs may own the max, so the raw max
+    // stands unless a dropped PR provably owned it.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 3,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 1200 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(2);
+    expect(s.readyUnmergedMaxAgeSecs).toBe(9000);
+  });
+
+  it("reports the oldest-ready age as unknown when the held PR owned the max and nothing listed remains", () => {
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 3,
+        max_age_seconds: 9000,
+        prs: [{ repo: "qontinui/web", pr_number: 21, age_seconds: 9000 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 21, merge_status: "terminal-proposal-held" })],
+      health,
+      NOW
+    );
+    const s = buildTrainSummary(health, rows, NOW);
+    expect(s.readyUnmergedCount).toBe(2);
+    expect(s.readyUnmergedMaxAgeSecs).toBeNull();
+  });
+
   it("does NOT call a long gap suppressed when nothing is ready", () => {
     // A quiet fleet with no landable work is idle, not broken.
     const s = buildTrainSummary(
