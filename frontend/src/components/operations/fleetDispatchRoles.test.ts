@@ -68,7 +68,21 @@ describe("parseDispatchRoles", () => {
     expect(parseDispatchRoles({ state: "known", machines: [] })).toEqual({
       state: "known",
       machines: [],
+      omitted: null,
+      unidentifiable: null,
     });
+  });
+
+  it("carries coord's left-out counts rather than dropping them", () => {
+    const read = parseDispatchRoles({
+      state: "known",
+      machines: [],
+      older_machines_omitted: 2,
+      unidentifiable_ci_runner_rows: 1,
+    });
+    if (read.state !== "known") throw new Error("expected known");
+    expect(read.omitted).toBe(2);
+    expect(read.unidentifiable).toBe(1);
   });
 
   it("reads workstation and ci_host rows, sorted by name", () => {
@@ -289,6 +303,7 @@ describe("describeRoleWriteError", () => {
     if (r.kind !== "last_open_lane") throw new Error("unreachable");
     expect(r.lanes).toEqual(["agent", "ci"]);
     expect(r.message).toContain("agent sessions or CI");
+    expect(r.message).toContain("only offline msi");
     expect(r.message).toContain("Force");
   });
   it("the deployed envelope (dict spliced to top level, repr in message) never shows the repr", () => {

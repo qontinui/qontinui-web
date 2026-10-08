@@ -140,7 +140,14 @@ export interface RoleMachine {
 export type DispatchRolesRead =
   | { state: "loading" }
   | { state: "unknown"; reason: string }
-  | { state: "known"; machines: RoleMachine[] };
+  | {
+      state: "known";
+      machines: RoleMachine[];
+      /** Machines coord left out of the read (not seen in its window). */
+      omitted: number | null;
+      /** CI runner registrations coord could not name. */
+      unidentifiable: number | null;
+    };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -293,7 +300,14 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
     .map(parseRoleMachine)
     .filter((m): m is RoleMachine => m !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { state: "known", machines };
+  return {
+    state: "known",
+    machines,
+    // Coord counts what it leaves out rather than dropping it silently; so
+    // must we (`silent-empty-is-unknown`).
+    omitted: num(body.older_machines_omitted),
+    unidentifiable: num(body.unidentifiable_ci_runner_rows),
+  };
 }
 
 /** The role column's words. Unassigned names what it BEHAVES as (§D5). */
@@ -411,11 +425,23 @@ export function describeRoleWriteError(
   if (code === "last_open_lane") {
     // Coord serves `lanes: [{lane, remaining, offline_only}, …]`.
     const lanes: Lane[] = [];
+    const offlineOnly: string[] = [];
     if (inner && Array.isArray(inner.lanes)) {
       for (const l of inner.lanes) {
         const name = isRecord(l) ? l.lane : null;
-        if ((name === "agent" || name === "ci") && !lanes.includes(name))
+        if ((name === "agent" || name === "ci") && !lanes.includes(name)) {
           lanes.push(name);
+          if (
+            isRecord(l) &&
+            l.offline_only === true &&
+            Array.isArray(l.remaining)
+          )
+            offlineOnly.push(
+              `${name === "agent" ? "sessions" : "CI"}: only offline ${l.remaining
+                .filter((x): x is string => typeof x === "string")
+                .join(", ")}`
+            );
+        }
       }
     }
     const what =
@@ -429,8 +455,11 @@ export function describeRoleWriteError(
       lanes,
       message:
         `Coord refused: after this change no heartbeat-fresh machine would ` +
-        `take ${what}. Force applies it anyway (the forced change is ` +
-        `audited).`,
+        `take ${what}.` +
+        (offlineOnly.length > 0
+          ? ` Other machines that would keep it open are offline (${offlineOnly.join("; ")}).`
+          : "") +
+        ` Force applies it anyway (the forced change is audited).`,
     };
   }
   if (code === "no_agent_host") {
