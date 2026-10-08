@@ -109,6 +109,7 @@ from app.models.overview import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
@@ -537,6 +538,9 @@ __all__ = [
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)
     "PlanScanRootRefusal",
+    # Operator-chosen model family per plan difficulty
+    # (agent.plan_difficulty_model_routes)
+    "PlanDifficultyModelRoute",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

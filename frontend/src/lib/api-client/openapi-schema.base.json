@@ -31269,6 +31269,154 @@
         "title": "ModelCostBreakdown",
         "type": "object"
       },
+      "ModelFamilyOption": {
+        "description": "One family the console offers, with the copy ``model_tiers`` serves for it.",
+        "properties": {
+          "display": {
+            "title": "Display",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "display"
+        ],
+        "title": "ModelFamilyOption",
+        "type": "object"
+      },
+      "ModelRoutingResponse": {
+        "description": "The caller's organization's routing map, as STORED and as SERVED.\n\n``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are\nexactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``\nserve this caller. ``sources`` says, per level, whether a stored row or the\nshipped default answered (``default_selectors``). ``can_edit`` is false for\na principal with no personal organization: that scope is the shared NULL\nbucket, which reads the defaults and refuses a write (409).",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "default_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Default Selectors",
+            "type": "object"
+          },
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/ModelFamilyOption"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
+          "sources": {
+            "additionalProperties": {
+              "enum": [
+                "stored",
+                "default"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          }
+        },
+        "required": [
+          "model_selectors",
+          "model_tiers",
+          "model_selector_vocabulary",
+          "sources",
+          "default_selectors",
+          "families",
+          "can_edit"
+        ],
+        "title": "ModelRoutingResponse",
+        "type": "object"
+      },
+      "ModelRoutingUpdate": {
+        "additionalProperties": false,
+        "description": "``PUT /plan-library/model-routing`` \u2014 the FULL map, one family per level.\n\nEvery level is required and an unknown key is refused, so a save is always\na whole, explicit map: there is no partial write whose omitted levels mean\neither \"keep\" or \"reset\" depending on who reads the code.",
+        "properties": {
+          "high": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "High",
+            "type": "string"
+          },
+          "low": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "Low",
+            "type": "string"
+          },
+          "medium": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "Medium",
+            "type": "string"
+          }
+        },
+        "required": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "ModelRoutingUpdate",
+        "type": "object"
+      },
       "MonitorSettingsSchema": {
         "description": "Monitor configuration settings schema.",
         "properties": {
@@ -36559,7 +36707,7 @@
         "type": "object"
       },
       "PlanDifficultyResponse": {
-        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it \u2014\nderived from ``model_selectors``, so the two always agree. Both are the\ncaller's organization's map as the operator set it on\n``PUT /plan-library/model-routing``, each level defaulting to the shipped\nmap when no row names it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
         "properties": {
           "count": {
             "title": "Count",
@@ -103023,7 +103171,7 @@
     },
     "/api/v1/plan-library/difficulty": {
       "get": {
-        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level, with a plan's\nown ``Difficulty:`` stamp overriding the computed level. Which model family\neach level routes to is the caller's organization's map\n(``GET/PUT /plan-library/model-routing``).\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
         "operationId": "api_v1_plan_library_difficulty_get",
         "responses": {
           "200": {
@@ -103400,6 +103548,106 @@
           }
         ],
         "summary": "Follow-ups a plan identified but nobody owns yet",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/model-routing": {
+      "delete": {
+        "description": "Delete every stored level, so each serves the shipped default again.\n\nNot the same as ``PUT``-ing a map equal to today's defaults: that stores a\ncopy, which stays pinned if the defaults move. After this every level's\n``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.",
+        "operationId": "api_v1_plan_library_model_routing_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Clear this organization's model routing back to the defaults (Cognito session only)",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "get": {
+        "description": "The routing map ``GET /plan-library``, ``/candidates`` and\n``/difficulty`` serve this caller, with each level's provenance.\n\nPlan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.\nSame admission as those three reads (a Cognito user OR a coord device JWT):\nthe map is already on their envelopes, this adds only where each level came\nfrom. ``can_edit`` says whether ``PUT`` would be accepted for this scope \u2014\nthe NULL organization bucket can never be written \u2014 not whether the\ncaller's CREDENTIAL can write (a device JWT cannot; see the PUT).",
+        "operationId": "api_v1_plan_library_model_routing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Which model family each difficulty level routes to (this organization)",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "put": {
+        "description": "Record the FULL ``{high, medium, low}`` \u2192 model-family map.\n\nPlan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.\nFamilies are the ``claude_code_agent_tool_v1`` selector vocabulary\n(``fable | opus | sonnet | haiku``); the harness resolves each to that\nfamily's latest model, so no version is ever stored. Every level is\nrequired and every level's row is written, so a save is a whole map. Two\nlevels may share a family.\n\nScoped to the caller's personal organization \u2014 the scope the three serving\nroutes read. 409 for a principal with none: that is the shared NULL bucket.\n\nAnswers with the map as RE-READ after the commit, so what the console shows\nafter a save is what the serving routes now return.",
+        "operationId": "api_v1_plan_library_model_routing_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRoutingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set the model family each difficulty level routes to (Cognito session only)",
         "tags": [
           "plan-library"
         ]

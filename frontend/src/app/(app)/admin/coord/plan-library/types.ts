@@ -380,6 +380,43 @@ export type {
   FleetPolicyWriteResult,
 } from "../_shared/fleetPolicy";
 
+// ──────────────────── model routing (per difficulty) ────────────────────
+
+/**
+ * The model families a difficulty level may route to — the
+ * `claude_code_agent_tool_v1` selector vocabulary (the Claude Code Agent
+ * tool's `model` enum). A family resolves to that family's LATEST model, so no
+ * version is ever chosen here. Pinned against `ModelRoutingUpdate` in both
+ * OpenAPI snapshots by `types.wire.test.ts`. Plan
+ * `2026-10-08-operator-editable-model-family-per-plan-difficulty`.
+ */
+export const MODEL_FAMILIES = ["fable", "opus", "sonnet", "haiku"] as const;
+export type ModelFamily = (typeof MODEL_FAMILIES)[number];
+
+/** The levels the map covers, strongest first (the order the panel shows). */
+export const MODEL_ROUTING_LEVELS = ["high", "medium", "low"] as const;
+export type ModelRoutingLevel = (typeof MODEL_ROUTING_LEVELS)[number];
+
+/** `PUT /api/v1/plan-library/model-routing` — the FULL map, every level. */
+export type ModelRoutingUpdate = Record<ModelRoutingLevel, ModelFamily>;
+
+/** `GET`/`PUT /api/v1/plan-library/model-routing` (`ModelRoutingResponse`). */
+export interface ModelRoutingResponse {
+  /** What `GET /plan-library`, `/candidates` and `/difficulty` serve. */
+  model_selectors: Record<string, string>;
+  /** Display copy derived from `model_selectors`, e.g. `Opus (latest)`. */
+  model_tiers: Record<string, string>;
+  model_selector_vocabulary: string;
+  /** Per level: a stored row answered, or the shipped default did. */
+  sources: Record<string, "stored" | "default">;
+  default_selectors: Record<string, string>;
+  families: { family: string; display: string }[];
+  updated_at?: string | null;
+  updated_by_user_id?: string | null;
+  /** False for a principal with no personal organization (the NULL bucket). */
+  can_edit: boolean;
+}
+
 // ──────────────────── scan sources (per-device readings) ────────────────────
 
 /**

@@ -631,3 +631,86 @@ class TestDeviceCallerSkipsTheOperatorIdentityResolution:
         resp = await cognito_client.get(f"{API_PREFIX}/candidates")
         assert resp.status_code == 200, resp.text
         assert identity_calls == ["me"]
+
+
+# ===========================================================================
+# Model routing: the read is shared, the write is the operator's
+# ===========================================================================
+
+
+class TestModelRoutingWriteIsOperatorOnly:
+    """Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+
+    Which model a sweep spends is an operator cost decision. The runner's
+    device JWT reads the map (it is on every envelope a sweep reads) but may
+    not set it — a sweep that could re-route its own spawns would make the
+    operator's choice advisory. Same shape as the kind PATCH above.
+    """
+
+    async def test_a_device_bearer_reads_but_cannot_write(
+        self, device_client: httpx.AsyncClient
+    ) -> None:
+        read = await device_client.get(f"{API_PREFIX}/model-routing")
+        assert read.status_code == 200, read.text
+        before = read.json()["model_selectors"]
+
+        put = await device_client.put(
+            f"{API_PREFIX}/model-routing",
+            json={"high": "haiku", "medium": "haiku", "low": "haiku"},
+        )
+        assert put.status_code == 401, put.text
+        reset = await device_client.delete(f"{API_PREFIX}/model-routing")
+        assert reset.status_code == 401, reset.text
+        after = await device_client.get(f"{API_PREFIX}/model-routing")
+        assert after.json()["model_selectors"] == before
+
+    async def test_an_operator_can_write(
+        self, cognito_client: httpx.AsyncClient
+    ) -> None:
+        put = await cognito_client.put(
+            f"{API_PREFIX}/model-routing",
+            json={"high": "opus", "medium": "opus", "low": "sonnet"},
+        )
+        assert put.status_code == 200, put.text
+        assert put.json()["updated_by_user_id"] == str(
+            cognito_client.qontinui_user.id  # type: ignore[attr-defined]
+        )
+
+    async def test_an_anonymous_caller_can_do_neither(
+        self, anon_client: httpx.AsyncClient
+    ) -> None:
+        assert (await anon_client.get(f"{API_PREFIX}/model-routing")).status_code == 401
+        put = await anon_client.put(
+            f"{API_PREFIX}/model-routing",
+            json={"high": "opus", "medium": "opus", "low": "sonnet"},
+        )
+        assert put.status_code == 401, put.text
+
+
+class TestTheRunnerReadsTheOperatorsMap:
+    """The operator writes with a Cognito session and a sweep reads with the
+    runner's device JWT. The feature works only if both resolve the SAME
+    personal organization — so pin it end to end."""
+
+    async def test_a_device_bearer_reads_what_its_operator_saved(
+        self,
+        async_db_session: AsyncSession,
+        device_owner,
+        device_client: httpx.AsyncClient,
+    ) -> None:
+        user, _org = device_owner
+        app = _build_app(db_session=async_db_session, cognito_user=user)
+        wanted = {"high": "opus", "medium": "opus", "low": "haiku"}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as operator:
+            put = await operator.put(f"{API_PREFIX}/model-routing", json=wanted)
+            assert put.status_code == 200, put.text
+
+        candidates = await device_client.get(
+            f"{API_PREFIX}/candidates",
+            params={"include_coord": "false", "limit": 1},
+        )
+        assert candidates.status_code == 200, candidates.text
+        assert candidates.json()["model_selectors"] == wanted
+        assert candidates.json()["model_tiers"]["high"] == "Opus (latest)"
