@@ -9,9 +9,7 @@
  * `SpawnModal.test.ts` pins it directly.
  */
 
-import { ApiConfig } from "@/services/api-config";
-
-export const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+import type { ClaudeAccountRow } from "@/lib/api/operations/agents";
 
 /**
  * Canonical repo slug list. Mirrors the set coord uses for
@@ -28,54 +26,6 @@ export const KNOWN_REPOS = [
   "qontinui-ui-bridge",
   "qontinui-dev-notes",
 ] as const;
-
-/** One row of coord's per-device Claude account feed, as served by the
- *  qontinui-web proxy `GET /operations/claude-accounts` (plan
- *  `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
- *  Phase 2).
- *
- *  Identity on the wire is `account_label` — the config-dir BASENAME
- *  (`.claude-gmail`), never a local path. That is a deliberate contract of
- *  the runner's ingest side, so nothing here may render or send a path.
- *  Note the read side spells it `account_label`, not `label`.
- *
- *  Every observation-shaped field is `| null` on purpose: coord serves
- *  `is_active` / `account_selection_mode` as null on a deployment whose
- *  `coord.claude_account_usage` predates alembic `coord_claude_acct_usage_02`,
- *  and null there means UNKNOWN — never `false`, and never the
- *  `least_usage` default. */
-export interface ClaudeAccountRow {
-  device_id: string;
-  account_label: string;
-  weekly_utilization?: number | null;
-  weekly_resets_at?: string | null;
-  session_utilization?: number | null;
-  session_resets_at?: string | null;
-  model_limits?: unknown[];
-  exhausted?: boolean | null;
-  source?: string | null;
-  error?: boolean | null;
-  /** Coord's computed freshness verdict (30 min since the device's last
-   *  report). `true` means the feed STOPPED — the numbers beside it are a
-   *  last-known snapshot, not a current one. */
-  stale?: boolean | null;
-  /** Which account the machine's rotation actually picked. `null`/absent =
-   *  unknown (the reporting runner predates the field). */
-  is_active?: boolean | null;
-  /** `manual` | `least_usage` | null. Null = unknown, NOT `least_usage`. */
-  account_selection_mode?: string | null;
-}
-
-export interface ClaudeAccountsPayload {
-  accounts?: unknown;
-  /** `false` = coord has no `coord.claude_account_usage` table yet;
-   *  `null`/absent = coord did not say. Both are UNKNOWN, not "no accounts". */
-  table_provisioned?: boolean | null;
-  /** `false` = the table predates the `is_active` / `account_selection_mode`
-   *  columns, so the SELECTION half of every row is unknown while the usage
-   *  half is real. */
-  columns_provisioned?: boolean | null;
-}
 
 /** The sentinel the account `Select` carries for "no pin".
  *

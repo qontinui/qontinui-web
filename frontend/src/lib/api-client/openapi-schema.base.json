@@ -17092,6 +17092,17 @@
       "DivergentVariant": {
         "description": "One of the conflicting copies in a divergence group.",
         "properties": {
+          "captured_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By"
+          },
           "content_sha256": {
             "title": "Content Sha256",
             "type": "string"
@@ -39402,8 +39413,33 @@
         "type": "object"
       },
       "ReconciliationAxisA": {
-        "description": "Axis A \u2014 coord's STORED ``work_units.status``.\n\n``present`` is \"a coord work unit exists for this stem\". ``status`` is as\nOPAQUE here as everywhere else in this module: coord accepts an\noff-vocabulary status deliberately (its Free transition tier), so a word in\nno vocabulary reads as OPEN rather than as an error.",
+        "description": "Axis A \u2014 coord's STORED ``work_units.status``.\n\n``present`` is \"a coord work unit exists for this stem\". ``status`` is as\nOPAQUE here as everywhere else in this module: coord accepts an\noff-vocabulary status deliberately (its Free transition tier), so a word in\nno vocabulary reads as OPEN rather than as an error.\n\n``status_class`` is that status's derived class (coord's five-member\nvocabulary), forwarded verbatim from coord's list row. It is ``None``\n(UNKNOWN) when axis A is unreadable, no unit exists for the stem, coord's\nrow omitted the field or carried a word outside the five, or the row\ncarried no ``status`` string at all \u2014 a missing status is never given a\nconfident class.\n\n``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness\nverdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),\nforwarded from coord's list row. ``None`` is UNKNOWN \u2014 never checked, a\ncoord that predates the field, or an unreadable freshness surface \u2014 and\nnever \"fresh\".\n\n``live_sessions`` / ``custody_resolved`` are populated only when the\nrequest asked for ``include_custody``. ``live_sessions`` is ``None`` when\nnot requested or when coord did not answer the field for this unit\n(UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord\nechoed ``resolve_session_names: true`` on every page it read \u2014 ``False``\nmeans an older coord (or a failed live-session join) on at least one page,\nand EVERY ``custody`` in the response is then ``None``, including those\nfrom pages that did echo, so no row reads as resolved when the read as a\nwhole was not; the ``live_sessions`` rows themselves are kept. ``None``\nmeans custody was not requested.",
         "properties": {
+          "custody_resolved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custody Resolved"
+          },
+          "live_sessions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ReconciliationLiveSession"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Sessions"
+          },
           "present": {
             "title": "Present",
             "type": "boolean"
@@ -39423,6 +39459,24 @@
             ],
             "title": "Status"
           },
+          "status_class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "free_known",
+                  "attested",
+                  "derived",
+                  "off_vocabulary",
+                  "unset"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Class"
+          },
           "unreadable_reason": {
             "anyOf": [
               {
@@ -39433,6 +39487,28 @@
               }
             ],
             "title": "Unreadable Reason"
+          },
+          "vet_checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vet Checked At"
+          },
+          "vet_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vet State"
           }
         },
         "required": [
@@ -39606,6 +39682,47 @@
         "title": "ReconciliationAxisC",
         "type": "object"
       },
+      "ReconciliationCustody": {
+        "description": "Who holds a live session's device, as coord resolved it.\n\nForwarded from coord's ``custody`` object (``work_unit_custody.rs``); never\nderived here.\n\n* ``sole`` \u2014 exactly one live session on the device in this tenant.\n  ``session_name`` is its display name, and ``None`` there means the\n  session has NO name \u2014 not that the name is unknown.\n* ``ambiguous`` \u2014 ``live_session_count`` (\u2265 2) sessions share the device,\n  so naming any one would be a guess. Render \"N sessions\".\n* ``unresolved`` \u2014 coord could not establish custody (a failed count, a\n  race, or a session in another tenant). UNKNOWN, never \"nobody\".\n\nA custody object coord sent in a state this model does not recognise is\ndropped to ``None`` on the session row (UNKNOWN) rather than coerced.",
+        "properties": {
+          "live_session_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Session Count"
+          },
+          "session_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Name"
+          },
+          "state": {
+            "enum": [
+              "sole",
+              "ambiguous",
+              "unresolved"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ReconciliationCustody",
+        "type": "object"
+      },
       "ReconciliationFacets": {
         "description": "The D3 honesty block: exhaustive facets, a denominator, a blind-spot flag.\n\nModelled on coord's ``coord_memory_overview`` contract:\n\n* ``by_class`` carries **every** member of the cascade INCLUDING the zeros,\n  so \"no rows of class X\" is a stated fact rather than an absence;\n* ``by_verdict`` likewise carries all three groups including zeros;\n* ``denominator`` is explicit and ``sum(by_class) == sum(by_verdict) ==\n  denominator``;\n* ``corpus_complete`` is ``False`` for a partial read, as an explicit blind\n  spot, and ``corpus_incomplete_reasons`` names each one.\n\nThe denominator is the WHOLE population, not the page: an off-page row is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` and counted, never omitted.",
         "properties": {
@@ -39646,6 +39763,63 @@
           "corpus_complete"
         ],
         "title": "ReconciliationFacets",
+        "type": "object"
+      },
+      "ReconciliationLiveSession": {
+        "description": "One non-expired ``coord.agent_status`` row naming this unit's slug.\n\nA session drops out within ``STATUS_TTL`` of its last heartbeat, not when\nit ends \u2014 compare ``expires_at``, never read membership as proof of life.",
+        "properties": {
+          "correlation_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Topic"
+          },
+          "custody": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReconciliationCustody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "ReconciliationLiveSession",
         "type": "object"
       },
       "ReconciliationResponse": {
@@ -39707,6 +39881,17 @@
             "default": "slug_asc",
             "title": "Ordering",
             "type": "string"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
           },
           "total": {
             "title": "Total",
@@ -52846,6 +53031,80 @@
         "title": "TenantRenameIn",
         "type": "object"
       },
+      "TenantResumeUnfinishedPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "resume_unfinished_enabled": {
+            "title": "Resume Unfinished Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resume_unfinished_enabled"
+        ],
+        "title": "TenantResumeUnfinishedPatch",
+        "type": "object"
+      },
+      "TenantResumeUnfinishedView": {
+        "description": "The tenant's automatic-resume consent, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "resume_unfinished_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Unfinished Enabled"
+          }
+        },
+        "required": [
+          "resume_unfinished_enabled",
+          "can_edit"
+        ],
+        "title": "TenantResumeUnfinishedView",
+        "type": "object"
+      },
+      "TenantResumeUnfinishedWriteResult": {
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantResumeUnfinishedView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "written"
+        ],
+        "title": "TenantResumeUnfinishedWriteResult",
+        "type": "object"
+      },
       "TenantTranscriptSyncPatch": {
         "additionalProperties": false,
         "description": "Closed body for the transcript-sync write \u2014 see wire fact 2 above.",
@@ -56791,6 +57050,94 @@
           "reason"
         ],
         "title": "UndrainRequestBody",
+        "type": "object"
+      },
+      "UnfinishedResumeBody": {
+        "additionalProperties": false,
+        "description": "Where to resume. The row's own device and account label by default.",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_device_id"
+        ],
+        "title": "UnfinishedResumeBody",
+        "type": "object"
+      },
+      "UnfinishedSessionsView": {
+        "description": "Coord's unfinished-sessions census, normalised to a closed state set.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sessions": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessions"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UnfinishedSessionsView",
         "type": "object"
       },
       "UnifiedWorkflowListResponse": {
@@ -95496,7 +95843,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord, annotated with the two body signals.\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}`` \u2014 plus, when the page\nholds rows, a ``body_signal`` block, and per row ``body_provenance``,\n``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`\nand :mod:`app.services.plan_body_signal`.\n\nThis used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:\ncoord's list already carries ``metadata`` per row, but a verbatim\npass-through has no derivation hook, and the alternative \u2014 deriving in the\nReact components \u2014 is one rule implemented three times (list, detail,\nspawn guard) that would disagree with itself the first time a value was\nadded to it.\n\nThe signals are computed only when there are rows to annotate. An empty\npage has nothing to explain, and paying a coord round trip plus two\nqueries to say so about no rows is waste, not honesty.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.\n\n``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk\n(plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``\nPhase 1). ``order=authored_desc`` makes coord answer in\n``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the\nconsole follows until it is null, so no work unit can fall past a 500-row\ncap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older\ncoord ignores all three and returns its ``updated_at``-ordered page with no\n``order`` echo and no ``next_cursor``, which is how the console tells the\ntwo apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather\nthan a silently-ignored parameter upstream; the cursor halves take\n``min_length=1`` so an empty box never reaches coord as a cursor.\n\nThe body signals and the walk compose per PAGE, and deliberately so: every\npage of a walk is a full request, so each one carries its own rows\nannotated and its own ``body_signal`` block. That block describes the reads\nTHIS request made \u2014 the capture dial and the artifact surface are read once\nper page, not once per walk \u2014 so two pages of one walk can legitimately\ndisagree when a dial read fails mid-walk. Folding them is the console's\njob (``planBodySignal.ts`` ``foldBodySignalBlocks``), because only the\ncaller knows which pages belong to one answer; a proxy that cached the\ndial across requests to make them agree would be inventing an agreement it\ndid not measure.",
+        "description": "List work-units from coord, annotated with the two body signals.\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}`` \u2014 plus, when the page\nholds rows, a ``body_signal`` block, and per row ``body_provenance``,\n``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`\nand :mod:`app.services.plan_body_signal`.\n\nThis used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:\ncoord's list already carries ``metadata`` per row, but a verbatim\npass-through has no derivation hook, and the alternative \u2014 deriving in the\nReact components \u2014 is one rule implemented three times (list, detail,\nspawn guard) that would disagree with itself the first time a value was\nadded to it.\n\nThe signals are computed only when there are rows to annotate. An empty\npage has nothing to explain, and paying a coord round trip plus two\nqueries to say so about no rows is waste, not honesty.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.\n\n``include_live_sessions`` / ``resolve_session_names`` are forwarded only\nwhen given (plan\n``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0c):\ncoord then attaches ``live_sessions`` per row and, under both, a\n``custody`` object per session plus a top-level\n``resolve_session_names: true`` echo. A coord that predates either ignores\nit (its ``ListQuery`` is permissive), so a missing key is UNKNOWN.\n\n``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk\n(plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``\nPhase 1). ``order=authored_desc`` makes coord answer in\n``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the\nconsole follows until it is null, so no work unit can fall past a 500-row\ncap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older\ncoord ignores all three and returns its ``updated_at``-ordered page with no\n``order`` echo and no ``next_cursor``, which is how the console tells the\ntwo apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather\nthan a silently-ignored parameter upstream; the cursor halves take\n``min_length=1`` so an empty box never reaches coord as a cursor.\n\nThe body signals and the walk compose per PAGE, and deliberately so: every\npage of a walk is a full request, so each one carries its own rows\nannotated and its own ``body_signal`` block. That block describes the reads\nTHIS request made \u2014 the capture dial and the artifact surface are read once\nper page, not once per walk \u2014 so two pages of one walk can legitimately\ndisagree when a dial read fails mid-walk. Folding them is the console's\njob (``planBodySignal.ts`` ``foldBodySignalBlocks``), because only the\ncaller knows which pages belong to one answer; a proxy that cached the\ndial across requests to make them agree would be inventing an agreement it\ndid not measure.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -95649,6 +95996,42 @@
               "description": "Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
               "title": "After Slug"
             }
+          },
+          {
+            "description": "Attach each unit's non-expired ``live_sessions`` (coord's agent-status join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
+            "in": "query",
+            "name": "include_live_sessions",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Attach each unit's non-expired ``live_sessions`` (coord's agent-status join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends \u2014 compare ``expires_at``.",
+              "title": "Include Live Sessions"
+            }
+          },
+          {
+            "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+            "in": "query",
+            "name": "resolve_session_names",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+              "title": "Resolve Session Names"
+            }
           }
         ],
         "responses": {
@@ -95689,7 +96072,7 @@
     },
     "/api/v1/operations/plans/overview": {
       "get": {
-        "description": "Return coord's CORPUS-wide work-unit status tally (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/overview``: ``{\"row_count\": N,\n\"distinct_status_count\": N, \"facets\": {\"by_status_class\": {...},\n\"by_status\": {...}, \"by_status_truncated\": bool, \"by_status_omitted\": N},\n\"corpus_complete\": bool}``. It takes no filters by coord's design (a\nfiltered overview would move its denominator), so ``row_count`` counts\nEVERY unit \u2014 including the ``shepherd-*`` rows. The work-units list\n(``/admin/coord/work-units``) includes those rows by default and excludes\nthem only when the operator asks (``exclude_slug_prefix``); under that\nexclusion the console states the difference rather than comparing unlike\ntotals.",
+        "description": "Return coord's CORPUS-wide work-unit status tally (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/overview``: ``{\"row_count\": N,\n\"distinct_status_count\": N, \"facets\": {\"by_status_class\": {...},\n\"by_status\": {...}, \"by_status_truncated\": bool, \"by_status_omitted\": N},\n\"corpus_complete\": bool}``. It takes no filters by coord's design (a\nfiltered overview would move its denominator), so ``row_count`` counts\nEVERY unit \u2014 including the ``shepherd-*`` rows. The work-units list\n(``/admin/coord/work-units``) includes those rows by default and excludes\nthem only when the operator asks (``exclude_slug_prefix``); under that\nexclusion the console states the difference rather than comparing unlike\ntotals.\n\nThe body is passed through UNMODELLED, so fields coord adds reach the\nconsole without a change here \u2014 notably ``derive_mode``\n(``\"shadow\"`` | ``\"live\"``, the deployment-wide decay-detection posture).\nAn overview without it is an older coord: render the mode UNKNOWN, never\nas live.",
         "operationId": "api_v1_operations_plans_overview_get",
         "responses": {
           "200": {
@@ -95704,6 +96087,73 @@
           }
         },
         "summary": "Get Coord Plans Overview",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/plans/throughput": {
+      "get": {
+        "description": "Return coord's day-bucketed work-unit throughput (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/throughput`` (plan\n``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0b):\n``{\"since\", \"until\", \"bucket\": \"day\", \"timezone\": \"UTC\", \"statuses\":\n[\"in_progress\", \"shipped\"], \"count\": N, \"buckets\": [{\"day\", \"to_status\",\n\"count\"}]}``, passed through unchanged. A day with no transition into a\nstatus is ABSENT from ``buckets`` by construction; do not backfill it as\nzero client-side. Read the window from the ``since``/``until`` echo rather\nthan inferring it.\n\n``since`` is required here as well as in coord so an unbounded scan is a\n422 at this door instead of a round trip. The value grammar and the\n366-day bound are coord's to enforce; its 400 body is forwarded.",
+        "operationId": "api_v1_operations_plans_throughput_get",
+        "parameters": [
+          {
+            "description": "REQUIRED window start: an RFC 3339 timestamp (``2026-09-01T00:00:00Z``) or a UTC date (``2026-09-01``), at most 366 days back. coord validates the grammar and bound and answers ``400 invalid_throughput_window`` naming the parameter.",
+            "in": "query",
+            "name": "since",
+            "required": true,
+            "schema": {
+              "description": "REQUIRED window start: an RFC 3339 timestamp (``2026-09-01T00:00:00Z``) or a UTC date (``2026-09-01``), at most 366 days back. coord validates the grammar and bound and answers ``400 invalid_throughput_window`` naming the parameter.",
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive window end, same grammar; coord defaults it to now.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive window end, same grammar; coord defaults it to now.",
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Plans Throughput Api V1 Operations Plans Throughput Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Plans Throughput",
         "tags": [
           "operations"
         ]
@@ -96082,7 +96532,7 @@
     },
     "/api/v1/operations/pr-merge/graph": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 5 D5.2 \u2014 cross-repo dependency\ngraph for a PR's connected component, tenant-scoped.\n\nCoord returns ``{nodes, edges, topo_order, cycle_detected,\ncycle_members}`` \u2014 the frontend renders this as a DAG via dagre\n+ the `@xyflow/react` workspace dep already present in\n``frontend/package.json``.\n\nCross-tenant edges are never traversed coord-side; the\n``X-Qontinui-Tenant-Id`` header injected here is what enforces\nscoping. Two tenants viewing the same repo see disjoint graphs\nin the v1 one-repo-one-tenant model.",
+        "description": "PR Merge Orchestrator Phase 5 D5.2 \u2014 cross-repo dependency\ngraph for a PR's connected component, tenant-scoped.\n\nCoord returns ``{nodes, edges, topo_order, cycle_detected,\ncycle_members}`` \u2014 the frontend renders this as a DAG via dagre\n+ the `@xyflow/react` workspace dep already present in\n``frontend/package.json``.\n\nTenant scoping is coord's: it resolves the tenant from the caller's\nforwarded credential (``tenant_id`` here only triggers bearer\nforwarding \u2014 the legacy ``X-Qontinui-Tenant-Id`` header is retired), never\ntraverses a cross-tenant edge, and answers ``404 {\"error\":\n\"repo_not_in_caller_tenant\", \"caller_tenant_id\": \u2026, \"repo\": \u2026}`` for a\nrepo that tenant does not own. ``structured_errors=True`` keeps that\nrefusal a JSON object end to end so the graph can render a readable\nsentence instead of an escaped string.",
         "operationId": "api_v1_operations_pr_merge_graph_get",
         "parameters": [
           {
@@ -98772,6 +99222,73 @@
         ]
       }
     },
+    "/api/v1/operations/tenant-policy/resume-unfinished": {
+      "get": {
+        "description": "Read the tenant's automatic-resume flag (effective tenant, as for\n``transcript-sync`` -- see wire fact 1 above).",
+        "operationId": "api_v1_operations_tenant_policy_resume_unfinished_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResumeUnfinishedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Tenant Resume Unfinished",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Turn automatic resume on or off for the caller's effective tenant.",
+        "operationId": "api_v1_operations_tenant_policy_resume_unfinished_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantResumeUnfinishedPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResumeUnfinishedWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Tenant Resume Unfinished",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/tenant-policy/transcript-sync": {
       "get": {
         "description": "Read whether coord accepts session output for the caller's tenant.\n\n``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see\n``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike\nthat route it carries NO superuser bypass: coord's ``patch_tenant_policy``\nauthorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who\nis not an admin of this tenant is refused ``admin_required`` \u2014 an enabled\nbutton would promise a write coord will not take.",
@@ -99032,6 +99549,183 @@
           }
         },
         "summary": "Get Trees Contention",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions": {
+      "get": {
+        "description": "Closed sessions whose work was never declared finished, fleet-wide.",
+        "operationId": "api_v1_operations_unfinished_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnfinishedSessionsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Unfinished Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions/{claude_session_id}/dismiss": {
+      "post": {
+        "description": "Dismiss an unfinished session: coord's finish door with reason\n``dismissed``. Coord's typed refusals (404 no such session, 400) pass\nthrough verbatim.",
+        "operationId": "api_v1_operations_unfinished_sessions_claude_session_id_dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claude_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Claude Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Dismiss Unfinished Session Api V1 Operations Unfinished Sessions  Claude Session Id  Dismiss Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Dismiss Unfinished Session",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/unfinished-sessions/{coord_session_id}/resume": {
+      "post": {
+        "description": "Resume a closed session: coord's respawn door. Coord answers 202 with the\nrecorded request, echoed verbatim; refusals (404, drained-device 409, 400\nbad account pin) pass through typed.",
+        "operationId": "api_v1_operations_unfinished_sessions_coord_session_id_resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "coord_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Coord Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnfinishedResumeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Resume Unfinished Session Api V1 Operations Unfinished Sessions  Coord Session Id  Resume Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Resume Unfinished Session",
         "tags": [
           "operations"
         ]
@@ -102587,7 +103281,7 @@
     },
     "/api/v1/plan-library/reconciliation": {
       "get": {
-        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).",
+        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\n**``q`` narrows the population, not the page.** The stem population is\ncoord units \u222a artifacts, so the list route's ``q`` cannot be applied as a\nsingle SQL predicate. It is applied with the SAME semantics in two halves\nbefore paging: the slug arm (:func:`~app.crud.work_artifact.stem_matches_q`,\na literal case-insensitive substring of the stem) and the full-text arm\nover the stem's artifacts\n(:func:`~app.crud.work_artifact.plan_artifact_ids_matching_q`). A stem\ncoord knows about but the artifact store does not is therefore matchable\nby slug only \u2014 there is no body for the full-text arm to read. Under\n``q``, ``total``, every facet and every completeness count describe the\nFILTERED population; the response echoes ``q`` so a consumer can tell.\n\n**Axis A carries coord's per-unit annotations.** ``status_class``,\n``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under\n``include_custody`` the unit's ``live_sessions`` arrive with coord's\n``custody`` resolution, and ``custody_resolved`` says whether coord\nactually resolved them. Each absent value is UNKNOWN, never a default.\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).",
         "operationId": "api_v1_plan_library_reconciliation_get",
         "parameters": [
           {
@@ -102622,6 +103316,37 @@
               "default": true,
               "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
               "title": "Include Coord",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Narrow the stem population BEFORE paging. A stem matches when its slug contains `q` (case-insensitive, literal \u2014 `%` and `_` are not wildcards) OR one of its plan artifacts matches the list route's full-text arm over title and body (`-`, `_`, `/` read as word breaks). `total` and the facets then describe the FILTERED population, and the response echoes `q`.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow the stem population BEFORE paging. A stem matches when its slug contains `q` (case-insensitive, literal \u2014 `%` and `_` are not wildcards) OR one of its plan artifacts matches the list route's full-text arm over title and body (`-`, `_`, `/` read as word breaks). `total` and the facets then describe the FILTERED population, and the response echoes `q`.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Ask coord for each unit's live sessions with their resolved custody (`include_live_sessions` + `resolve_session_names`), carried on axis A as `live_sessions` and `custody_resolved`.",
+            "in": "query",
+            "name": "include_custody",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask coord for each unit's live sessions with their resolved custody (`include_live_sessions` + `resolve_session_names`), carried on axis A as `live_sessions` and `custody_resolved`.",
+              "title": "Include Custody",
               "type": "boolean"
             }
           }

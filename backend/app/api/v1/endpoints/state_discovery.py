@@ -26,10 +26,8 @@ from app.schemas.state_discovery import (
     StateDiscoveryTriggerRequest,
 )
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    dispatch_or_http_error,
+    resolve_runner_for_request,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.state_discovery_service import state_discovery_service
@@ -374,25 +372,9 @@ async def discover_ui_bridge_states(
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
 
-    if runner_id is not None:
-        from app.crud import runner_crud
-
-        owned_runner = await runner_crud.get_runner(db, runner_id=runner_id)
-        if owned_runner is None or owned_runner.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "runner_not_found", "runner_id": str(runner_id)},
-            )
-        if not manager.registry.is_runner_connected(str(owned_runner.id)):
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-        runner = owned_runner
-    else:
-        picked = await pick_active_runner_for_user(
-            current_user.id, db, manager.registry
-        )
-        if picked is None:
-            raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-        runner = picked
+    runner = await resolve_runner_for_request(
+        runner_id, current_user.id, db, manager, _UI_BRIDGE_DISCOVER_ENDPOINT
+    )
 
     request_id = uuid4()
     cmd = DiscoverUIBridgeRequest(
@@ -413,34 +395,16 @@ async def discover_ui_bridge_states(
         has_cooccurrence_export=request.cooccurrence_export is not None,
     )
 
-    try:
-        raw_response = await manager.relay.dispatch_and_wait(
-            str(runner.id),
-            cmd,
-            request_id=str(request_id),
-            timeout_s=30.0,
-        )
-    except RunnerNotConnectedError:
-        logger.warning(
-            "ui_bridge_discover_runner_disconnected_mid_dispatch",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise runner_bridge_503_no_runner(_UI_BRIDGE_DISCOVER_ENDPOINT)
-    except RunnerCommandTimeoutError:
-        logger.error(
-            "ui_bridge_discover_timeout",
-            runner_id=str(runner.id),
-            request_id=str(request_id),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "error": "runner_timeout",
-                "endpoint": _UI_BRIDGE_DISCOVER_ENDPOINT,
-                "request_id": str(request_id),
-            },
-        )
+    raw_response = await dispatch_or_http_error(
+        manager,
+        runner,
+        cmd,
+        request_id,
+        _UI_BRIDGE_DISCOVER_ENDPOINT,
+        30.0,
+        "ui_bridge_discover",
+        log=logger,
+    )
 
     if raw_response.get("error"):
         logger.error(
