@@ -93,7 +93,7 @@ async def discover_and_persist(
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
     runner = await resolve_runner_for_request(
-        runner_id, user, db, manager, _UI_BRIDGE_DISCOVER_ENDPOINT
+        runner_id, user.id, db, manager, _UI_BRIDGE_DISCOVER_ENDPOINT
     )
 
     request_id = uuid4()
@@ -238,7 +238,7 @@ async def pathfind(
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
     runner = await resolve_runner_for_request(
-        runner_id, user, db, manager, _UI_BRIDGE_PATHFIND_ENDPOINT
+        runner_id, user.id, db, manager, _UI_BRIDGE_PATHFIND_ENDPOINT
     )
 
     request_id = uuid4()

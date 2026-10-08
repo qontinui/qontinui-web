@@ -5,9 +5,13 @@ import { absoluteTime, relativeTime } from "@/components/console";
 import type {
   PromptDocument,
   PromptDocumentClaim,
+  PromptDocumentClaimAddressing,
   PromptDocumentClaimState,
 } from "../types";
-import { isPromptDocumentClaimState } from "../types";
+import {
+  isPromptDocumentClaimState,
+  isPromptDocumentEvidenceClass,
+} from "../types";
 
 /** The slice of the get-one envelope this panel reads. `Pick`ed so a caller
  *  cannot hand it a value it derived itself — every field here is SERVED. */
@@ -173,12 +177,52 @@ function AddressingBadge({
 }
 
 /**
+ * One link's served join detail as a compact line — the unit status, when the
+ * work landed, which phases and PRs coord counted as delivering it, and when a
+ * carried verdict was first carried. Only SERVED fields appear: an omitted one
+ * is left out rather than rendered as a zero, and `null` when coord sent none.
+ */
+export function addressingLinkDetail(
+  entry: PromptDocumentClaimAddressing,
+  now?: number
+): string | null {
+  // A present-but-unparseable stamp is UNKNOWN, never `relativeTime`'s
+  // default "never" — that would say the work did not land.
+  const ago = (iso: string) =>
+    relativeTime(iso, { now, absent: `at an unreadable time (${iso})` });
+  const parts: string[] = [];
+  if (entry.work_unit_status) parts.push(`unit ${entry.work_unit_status}`);
+  if (entry.landed_since) {
+    parts.push(`landed ${ago(entry.landed_since)}`);
+  }
+  if (entry.phases_delivered && entry.phases_delivered.length > 0) {
+    parts.push(`phases delivered ${entry.phases_delivered.join(", ")}`);
+  }
+  if (entry.citing_prs && entry.citing_prs.length > 0) {
+    parts.push(`PRs ${entry.citing_prs.join(", ")}`);
+  }
+  if (entry.stale_from_read_failure && entry.carried_since) {
+    parts.push(`carried since ${ago(entry.carried_since)}`);
+  }
+  if (entry.reason) parts.push(entry.reason);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
  * The claim's `addressed_by` links and coord's per-link join. Renders nothing
  * on a coord predating Phase 5 (field absent) and nothing for a claim that
  * declares no link (`[]`) — neither is an addressing state worth a row.
  */
-function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
-  const links = claim.addressed_by ?? [];
+function ClaimAddressing({
+  claim,
+  now,
+}: {
+  claim: PromptDocumentClaim;
+  now?: number;
+}) {
+  // Deduped: a repeated link would collide on keys and test ids, and `byLink`
+  // already collapses its entries to one.
+  const links = [...new Set(claim.addressed_by ?? [])];
   if (links.length === 0) return null;
   const entries = claim.addressing ?? [];
   const byLink = new Map(entries.map((entry) => [entry.addressed_by, entry]));
@@ -187,39 +231,91 @@ function ClaimAddressing({ claim }: { claim: PromptDocumentClaim }) {
   const worst = entries.filter((e) => e.status === claim.addressing_status);
   const summaryCarried =
     worst.length > 0 && worst.every((e) => e.stale_from_read_failure === true);
+  const details = links.flatMap((link) => {
+    const entry = byLink.get(link);
+    const detail = entry ? addressingLinkDetail(entry, now) : null;
+    return detail ? [{ link, detail }] : [];
+  });
   return (
-    <div
-      className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
-      data-testid={`doc-claim-addressing-${claim.claim_id}`}
-    >
-      <span>addressed by</span>
-      {claim.addressing_status ? (
-        <AddressingBadge
-          status={claim.addressing_status}
-          testId={`doc-claim-addressing-status-${claim.claim_id}`}
-          carried={summaryCarried}
-        />
+    <div data-testid={`doc-claim-addressing-${claim.claim_id}`}>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+        <span>addressed by</span>
+        {claim.addressing_status ? (
+          <AddressingBadge
+            status={claim.addressing_status}
+            testId={`doc-claim-addressing-status-${claim.claim_id}`}
+            carried={summaryCarried}
+          />
+        ) : null}
+        {links.map((link) => {
+          const entry = byLink.get(link);
+          // A link coord served no observation for is UNKNOWN, never calm.
+          const status = entry?.status ?? "unknown";
+          return (
+            <span
+              key={link}
+              className="inline-flex items-center gap-1"
+            >
+              <code>{link}</code>
+              <AddressingBadge
+                status={status}
+                testId={`doc-claim-link-${claim.claim_id}-${link}`}
+                carried={entry?.stale_from_read_failure === true}
+              />
+            </span>
+          );
+        })}
+      </div>
+      {details.length > 0 ? (
+        <ul className="mt-0.5 space-y-0.5 text-[11px] text-muted-foreground">
+          {details.map(({ link, detail }) => (
+            <li
+              key={link}
+              className="break-all"
+              data-testid={`doc-claim-link-detail-${claim.claim_id}-${link}`}
+            >
+              <code>{link}</code>: {detail}
+            </li>
+          ))}
+        </ul>
       ) : null}
-      {links.map((link) => {
-        const entry = byLink.get(link);
-        // A link coord served no observation for is UNKNOWN, never calm.
-        const status = entry?.status ?? "unknown";
-        return (
-          <span
-            key={link}
-            className="inline-flex items-center gap-1"
-            title={entry?.reason}
-          >
-            <code>{link}</code>
-            <AddressingBadge
-              status={status}
-              testId={`doc-claim-link-${claim.claim_id}-${link}`}
-              carried={entry?.stale_from_read_failure === true}
-            />
-          </span>
-        );
-      })}
     </div>
+  );
+}
+
+/**
+ * The claim's served `evidence_class`. A spelling this build does not know,
+ * and coord's own `unknown` class, take the amber UNKNOWN floor; an
+ * unrecognised spelling keeps the served text visible, the same rule
+ * {@link ClaimStateBadge} applies to a state.
+ */
+function EvidenceClassBadge({
+  claimId,
+  evidenceClass,
+}: {
+  claimId: string;
+  evidenceClass: string;
+}) {
+  const known = isPromptDocumentEvidenceClass(evidenceClass);
+  // Coord's own `unknown` class is as uncertain as a spelling we do not know.
+  const amber = !known || evidenceClass === "unknown";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] tracking-wide ${
+        amber ? ADDRESSING_UNKNOWN : "border-border text-muted-foreground"
+      }`}
+      title={
+        !amber
+          ? "The kind of evidence this anchor can produce: source (the code says so), state (a live value says so), behaviour (an observed run says so), declared (nothing machine-checks it)."
+          : known
+            ? "Coord could not classify the evidence this anchor produces."
+            : `Unrecognised evidence class "${evidenceClass}" — treated as unknown.`
+      }
+      data-testid={`doc-claim-evidence-${claimId}`}
+      data-known={known ? "true" : "false"}
+    >
+      evidence: {known ? evidenceClass : `unknown (served as ${evidenceClass})`}
+    </span>
   );
 }
 
@@ -439,16 +535,13 @@ export function PromptDocumentClaims({
                   </span>
                 )}
                 {claim.evidence_class ? (
-                  <span
-                    className="inline-flex shrink-0 items-center rounded border border-border px-1.5 py-0.5 text-[10px] tracking-wide text-muted-foreground"
-                    title="The kind of evidence this anchor can produce: source (the code says so), state (a live value says so), behaviour (an observed run says so), declared (nothing machine-checks it)."
-                    data-testid={`doc-claim-evidence-${claim.claim_id}`}
-                  >
-                    evidence: {claim.evidence_class}
-                  </span>
+                  <EvidenceClassBadge
+                    claimId={claim.claim_id}
+                    evidenceClass={claim.evidence_class}
+                  />
                 ) : null}
               </div>
-              <ClaimAddressing claim={claim} />
+              <ClaimAddressing claim={claim} now={now} />
               <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
                 <Stamp label="observed" iso={claim.observed_at} now={now} />
                 <Stamp label="verified" iso={claim.verified_at} now={now} />

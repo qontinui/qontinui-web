@@ -312,19 +312,39 @@ export const CONTINUATION_STATUS_PALETTE: StatusPalette<ContinuationKind> = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Bytes as GiB with two decimals — the precision the runner's floors are quoted
+ * in. An absent capture renders `?`, never `0.00 GiB` — absence is not zero.
+ */
+function gib(bytes: string | undefined): string {
+  if (bytes === undefined) return "? GiB";
+  return `${(Number(bytes) / 1024 ** 3).toFixed(2)} GiB`;
+}
+
+/**
  * The COMPLETE `continuation_deferred_reason` vocabulary, transcribed from its
  * producer's own table (`post_continuation_deferred`, qontinui-runner
- * `agent_runtime.rs`) — every stamp comes from one of four constructors:
+ * `agent_runtime.rs`):
  *
  * | reason | meaning |
  * |---|---|
  * | `thread_pressure:<severity>:<observed>_over_<limit>` | the machine is out of OS threads |
+ * | `commit_pressure:<severity>:<observed>_under_<limit>` | the machine is short of free memory (bytes) |
  * | `duplicate_anchor:<terminal_id>` | a live session already owns the anchor |
- * | `at_cap:<cap>` | the runner's continuation concurrency cap |
+ * | `device_drain:<class>` | coord holds the device drained |
  * | `spawn_authorization_<label>` | the agent registry refused the spawn |
+ * | `at_cap:<cap>` | the runner's fixed continuation cap (retired in newer builds) |
  *
- * The first three follow `<class>:<detail>`; the fourth is `_`-delimited and
- * predates the grammar, which the producer documents as the exception rather
+ * `at_cap:` is written only by runner builds that predate the fixed cap's
+ * retirement (plan
+ * `2026-10-03-retire-the-continuation-session-cap-and-let-the-queue-pre-check-read-both-resource-lanes`,
+ * whose builds decide load admission by the memory and thread lanes alone).
+ * Which builds those are is a per-machine fact this page cannot see, and
+ * historical rows carry it either way, so it stays readable and is worded so
+ * it is true for either. `commit_pressure` is accepted with `_over_`
+ * as well as `_under_`: an unlanded runner branch spelled it `_over_`.
+ *
+ * All but `spawn_authorization_` follow `<class>:<detail>`; that one is
+ * `_`-delimited and predates the grammar, which the producer documents as the exception rather
  * than quietly fixing. coord itself also writes one non-runner reason directly
  * (`"no runner online"`, `gate_routes.rs`), which matches no constructor and
  * falls through to the verbatim arm below — correctly, since it is already
@@ -343,9 +363,15 @@ export function humanizeDeferralReason(raw: string | null | undefined): string |
     return `the machine was out of OS threads (${severity}) — ${observed} observed against a limit of ${limit}`;
   }
 
+  const commit = /^commit_pressure:([^:]+):(\d+)_(?:under|over)_(\d+)$/.exec(reason);
+  if (commit) {
+    const [, severity, observed, limit] = commit;
+    return `the machine was low on memory (${severity}) — ${gib(observed)} free against a floor of ${gib(limit)}`;
+  }
+
   const cap = /^at_cap:(.+)$/.exec(reason);
   if (cap) {
-    return `the runner was already at its continuation cap of ${cap[1]}`;
+    return `the runner was already at its continuation cap of ${cap[1]} (a fixed cap that newer runner builds no longer have)`;
   }
 
   const anchor = /^duplicate_anchor:(.+)$/.exec(reason);
