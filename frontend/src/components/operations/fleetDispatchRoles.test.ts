@@ -402,6 +402,15 @@ describe("describeRoleWriteError", () => {
       })
     ).toBe("msi → CI node: still no sessions; CI stays open.");
   });
+  it("a 500 may have applied; a 503 schema_pending did not", () => {
+    const r500 = describeRoleWriteError(500, JSON.stringify({ error: "x" }));
+    expect(r500.kind === "other" && r500.mayHaveApplied).toBe(true);
+    const r503 = describeRoleWriteError(
+      503,
+      JSON.stringify({ error: "schema_pending", detail: "nothing was written" })
+    );
+    expect(r503.kind === "other" && r503.mayHaveApplied).toBeFalsy();
+  });
   it("a 504 says the change may have applied", () => {
     expect(describeRoleWriteError(504, "").message).toContain("MAY");
   });
