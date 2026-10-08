@@ -2,7 +2,11 @@
 
 /**
  * `GET /api/v1/operations/fleet/drain` — which machines coord is currently
- * holding out of the fleet, and the two writes that change that.
+ * holding out of the fleet, and `postUndrain` to release a RAW drain. The
+ * console pauses a machine through a maintenance window
+ * (`useMaintenanceWindow.ts`), which coord composes from a drain; a drain set
+ * outside any window is still real, and the Machine Maintenance page shows it
+ * and can release it.
  *
  * Plan `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
  * 4b. The parse and every rule about what a body means live in
@@ -21,9 +25,9 @@
  * stale one about a list.
  *
  * The cadence is slower than fleet health's 10 s because the fact is coarser:
- * a drain lasts hours, and the page's own writes force an immediate refresh
- * (`refresh()` is handed to the control), so the poll only has to catch
- * another operator's action and the expiry itself.
+ * a drain lasts hours, and a maintenance-window write forces an immediate
+ * refresh, so the poll only has to catch another operator's action and the
+ * expiry itself.
  *
  * ## Every failure lands on UNKNOWN, and the 404 is the interesting one
  *
@@ -42,10 +46,13 @@ import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { OPERATIONS_API } from "./utils";
-import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
+import {
+  parseFleetDrain,
+  type DrainLane,
+  type FleetDrainRead,
+} from "./fleetDrain";
 
 export const FLEET_DRAIN_API = `${OPERATIONS_API}/fleet/drain`;
-export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
 
 /**
  * Poll cadence. Slow on purpose — see the module doc. A drain is measured in
@@ -57,7 +64,7 @@ const LOADING: FleetDrainRead = { state: "loading" };
 
 export interface UseFleetDrainResult {
   read: FleetDrainRead;
-  /** Force a re-read. Wired to the control so a write is visible at once. */
+  /** Force a re-read, so a maintenance-window write is visible at once. */
   refresh: () => Promise<void>;
 }
 
@@ -66,7 +73,7 @@ export function useFleetDrain(): UseFleetDrainResult {
 
   // Single-flight, no retries (plan
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). The
-  // control's post-write `refresh()` is never dropped: one issued while a
+  // page's post-write `refresh()` is never dropped: one issued while a
   // poll is in flight runs once, right after it, so the write is visible.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
@@ -123,74 +130,56 @@ export function useFleetDrain(): UseFleetDrainResult {
   return { read, refresh };
 }
 
-/** The outcome of a drain/undrain write, as the control renders it. */
-export type DrainWriteResult =
-  | { ok: true; changed: boolean }
-  | { ok: false; status: number | null; body: string };
+export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
 
 /**
- * `POST /api/v1/operations/fleet/drain`.
+ * `POST /api/v1/operations/fleet/undrain` — release a RAW drain, one set
+ * outside any maintenance window (an agent's `coord_fleet_drain`, a legacy
+ * row). A window's own holds are released through the window, never here.
  *
- * The body is assembled here from the three fields coord's `DrainRequest`
- * declares and nothing else: that struct is `#[serde(deny_unknown_fields)]`,
- * so one hopeful extra key is a 422 for the whole write. `drained_by` is
- * deliberately absent — coord stamps the author from the authenticated
- * operator context, and an audit trail with a client-asserted author is not an
- * audit trail.
+ * `lanes` releases only those lanes; absent releases the whole drain. The body
+ * is closed (`device_id`, `reason`, `lanes?`) because coord's `UndrainRequest`
+ * is `deny_unknown_fields`, and carries no author — coord stamps it. Returns
+ * a typed outcome rather than throwing; `describeMaintenanceError` reads a
+ * refusal.
  */
-export async function postDrain(input: {
-  deviceId: string;
-  untilIso: string;
-  reason: string;
-}): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_DRAIN_API, {
-    device_id: input.deviceId,
-    until: input.untilIso,
-    reason: input.reason,
-  });
-}
-
-/** `POST /api/v1/operations/fleet/undrain`. Coord requires a reason here too. */
 export async function postUndrain(input: {
   deviceId: string;
   reason: string;
-}): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_UNDRAIN_API, {
+  lanes?: DrainLane[];
+}): Promise<
+  /** `changed: null` — a 2xx whose body did not say: accepted, effect UNKNOWN. */
+  | { ok: true; changed: boolean | null }
+  | { ok: false; status: number | null; body: string }
+> {
+  const body: Record<string, unknown> = {
     device_id: input.deviceId,
-    reason: input.reason,
-  });
-}
-
-async function postDrainChange(
-  url: string,
-  body: Record<string, string>
-): Promise<DrainWriteResult> {
+    reason: input.reason.trim(),
+  };
+  if (input.lanes && input.lanes.length > 0) body.lanes = input.lanes;
   try {
-    const res = await httpClient.fetch(url, {
+    const res = await httpClient.fetch(FLEET_UNDRAIN_API, {
       method: "POST",
       body: JSON.stringify(body),
     });
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
     }
-    // Coord reports `changed: false` for a request that altered nothing — an
-    // undrain of a machine that was not held. Passed through rather than
-    // dressed up as a successful release, so the operator can tell "I released
-    // it" from "it was not held".
-    let changed = true;
+    // `changed: false` is "it was not held" — passed through, not dressed up
+    // as a release.
+    let changed: boolean | null = null;
     try {
       const payload: unknown = await res.json();
       if (
         typeof payload === "object" &&
         payload !== null &&
-        "changed" in payload &&
-        typeof (payload as { changed: unknown }).changed === "boolean"
+        typeof (payload as { changed?: unknown }).changed === "boolean"
       ) {
         changed = (payload as { changed: boolean }).changed;
       }
     } catch {
-      // A success with an unreadable body still succeeded; `changed` stays
-      // true, which is the reading that does not claim a no-op happened.
+      // A success with an unreadable body still succeeded; whether it
+      // changed anything stays UNKNOWN (`null`), never an assumed `true`.
     }
     return { ok: true, changed };
   } catch (err) {

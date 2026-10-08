@@ -1,5 +1,6 @@
 /**
- * runnerStatus — pure derivation for `/admin/coord/runners`.
+ * runnerStatus — pure derivation for the runner session wind-down on
+ * `/admin/coord/machine-maintenance` (formerly `/admin/coord/runners`).
  *
  * Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8. The page is a
  * DEVICE MAINTENANCE surface (D10): drain one runner, watch whether it has
@@ -41,7 +42,12 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
-import type { DeviceDrainState } from "./fleetDrain";
+import {
+  activeDrainLanes,
+  unknownDrainLanes,
+  type DeviceDrainState,
+  type DrainLane,
+} from "./fleetDrain";
 
 /** Coord's staleness bound (contract C1: stale = age > 180 s). */
 export const READINESS_STALE_SECS = 180;
@@ -425,10 +431,25 @@ export function countLabel(value: number | null): string {
 }
 
 /** The drain half of the strip, as one badge label. */
-export function drainBadgeLabel(drain: DeviceDrainState): string {
+export function drainBadgeLabel(drain: DeviceDrainState, now: number): string {
   switch (drain.state) {
-    case "drained":
-      return "drained";
+    case "drained": {
+      // The lanes held NOW, each by its own deadline — the same reading the
+      // maintenance levers use, so the strip agrees with them after one lane
+      // lapses. A lane whose per-lane entry is unreadable is UNKNOWN.
+      const lanes = activeDrainLanes(drain.entry, now);
+      const unknown = unknownDrainLanes(drain.entry);
+      const lane = (l: DrainLane) => (l === "agent" ? "agent work" : "CI");
+      if (unknown.length > 0) {
+        return lanes.length > 0
+          ? `drained · ${lanes.map(lane).join(" + ")} · ${unknown.map(lane).join(" + ")} ${UNKNOWN_LABEL}`
+          : `drain ${UNKNOWN_LABEL}`;
+      }
+      if (lanes.length === 2) return "drained";
+      const [only] = lanes;
+      if (lanes.length === 1 && only) return `drained · ${lane(only)} only`;
+      return "drain expired";
+    }
     case "expired":
       return "drain expired";
     case "not_drained":

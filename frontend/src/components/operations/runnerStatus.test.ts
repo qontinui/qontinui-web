@@ -1,5 +1,6 @@
 /**
- * runnerStatus — the derivations behind `/admin/coord/runners`.
+ * runnerStatus — the derivations behind the session wind-down on
+ * `/admin/coord/machine-maintenance`.
  *
  * Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8. Each block
  * pins one way the page could tell an operator a machine is safe to rebuild
@@ -221,9 +222,55 @@ describe("readinessCounts", () => {
 });
 
 describe("drainBadgeLabel", () => {
+  const T = Date.parse("2026-09-28T12:00:00Z");
+  const hold = (until: string, reason: string) => ({
+    until,
+    reason,
+    drainedBy: "jan@example.com",
+    drainedAt: "2026-09-28T10:00:00Z",
+  });
+  const perLane = {
+    state: "drained" as const,
+    entry: {
+      ...hold("2026-09-28T20:00:00Z", "ci box"),
+      lanes: ["agent", "ci"] as ("agent" | "ci")[],
+      byLane: {
+        agent: hold("2026-09-28T14:00:00Z", "agent pause"),
+        ci: hold("2026-09-28T20:00:00Z", "ci box"),
+      },
+    },
+  };
+
   it("never renders an unknown drain as not drained", () => {
-    expect(drainBadgeLabel({ state: "unknown", reason: "x" })).toBe("drain UNKNOWN");
-    expect(drainBadgeLabel({ state: "not_drained" })).toBe("not drained");
+    expect(drainBadgeLabel({ state: "unknown", reason: "x" }, T)).toBe(
+      "drain UNKNOWN"
+    );
+    expect(drainBadgeLabel({ state: "not_drained" }, T)).toBe("not drained");
+  });
+
+  it("agrees with the maintenance levers after one lane lapses", () => {
+    expect(drainBadgeLabel(perLane, T)).toBe("drained");
+    expect(drainBadgeLabel(perLane, Date.parse("2026-09-28T15:00:00Z"))).toBe(
+      "drained · CI only"
+    );
+  });
+
+  it("names a lane whose per-lane entry could not be read as UNKNOWN", () => {
+    const dropped = {
+      state: "drained" as const,
+      entry: { ...perLane.entry, byLane: { ci: perLane.entry.byLane.ci } },
+    };
+    expect(drainBadgeLabel(dropped, T)).toBe(
+      "drained · CI · agent work UNKNOWN"
+    );
+  });
+
+  it("reads 'drain UNKNOWN' when every claimed lane is unreadable", () => {
+    const onlyUnknown = {
+      state: "drained" as const,
+      entry: { ...perLane.entry, byLane: {} },
+    };
+    expect(drainBadgeLabel(onlyUnknown, T)).toBe("drain UNKNOWN");
   });
 });
 

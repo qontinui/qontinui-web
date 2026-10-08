@@ -5,10 +5,11 @@
  *
  * Extracted by plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8
  * out of `SpawnModal`, which rendered its own `<Select>` over
- * `GET /operations/fleet/health`. `/admin/coord/runners` needs the same
- * choice, and a second hand-rolled copy is how the two would drift on the
- * one thing that matters in a picker: whether a `stale` machine reads
- * differently from a dead one (see {@link deviceStateLabel}).
+ * `GET /operations/fleet/health`, so the one thing that matters in a device
+ * picker — whether a `stale` machine reads differently from a dead one (see
+ * {@link deviceStateLabel}) — is decided in one place. The Machine
+ * Maintenance page picks a MACHINE rather than a device row and has its own
+ * `MachinePicker`.
  *
  * **Presentation only.** It does not fetch: the caller owns the roster read
  * and its failure states, because "the roster is empty" and "the roster could

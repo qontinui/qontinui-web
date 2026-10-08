@@ -258,6 +258,25 @@ const nextConfig = {
         destination: '/admin/coord/devops',
         permanent: true,
       },
+      // Plan 2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place
+      // Phase 7: "Runner Drain" became "Maintenance" — one page that pauses a
+      // machine's agent work AND its CI (the old drain never stopped GitHub
+      // routing jobs by label). The page is keyed on `?machine=` (a device id,
+      // or `ci:<host>`), so the old `?device=<id>` deep link is carried over
+      // as `?machine=<id>` by the first entry; Next appends the original query
+      // too, and the page ignores the leftover `device`. Order matters: the
+      // query-matching entry must come before the bare one.
+      {
+        source: '/admin/coord/runners',
+        has: [{ type: 'query', key: 'device', value: '(?<device>.+)' }],
+        destination: '/admin/coord/machine-maintenance?machine=:device',
+        permanent: true,
+      },
+      {
+        source: '/admin/coord/runners',
+        destination: '/admin/coord/machine-maintenance',
+        permanent: true,
+      },
       // Plan 2026-08-26-sessions-console-consolidation Phase 3: the six
       // session surfaces collapse onto `/sessions`. These four 308s are the
       // ONLY compatibility this phase ships — the retired pages are deleted,

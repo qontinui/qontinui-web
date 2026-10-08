@@ -77,7 +77,8 @@ const LABEL = "GitHub-hosted CI";
  * - **Writes** — `On` / `Off` through that dial. Turning
  *   it OFF asks for a reason first, because off is the change that can stop a
  *   tenant's CI when it has no self-hosted runners; the reason becomes the
- *   write's `change_note` (the `DeviceDrainControl` precedent).
+ *   write's `change_note` (the precedent the Machine Maintenance levers set:
+ *   no pause without a reason).
  * - **Repo rows** — the effective value and where it comes from, and an
  *   `Inherit` / `On` / `Off` control that writes the repo band (`inherit`
  *   clears the override).
