@@ -17,121 +17,199 @@ import {
 
 const DEV = "84c02292-32cb-4983-be85-d00f868b7003";
 
+function machine(over: Record<string, unknown> = {}) {
+  return {
+    kind: "workstation",
+    machine_key: `device:${DEV}`,
+    device_id: DEV,
+    ci_host_name: null,
+    name: "msi",
+    registration: "registered",
+    role: null,
+    suggestion: null,
+    lanes: {
+      agent: { effective: "open", role: "open", drain: { state: "none" } },
+      ci: { effective: "open", role: "open", drain: { state: "none" } },
+    },
+    pre_change_sessions: { state: "not_applicable" },
+    ...over,
+  };
+}
+
+const roleRow = (dispatch_role: string) => ({
+  dispatch_role,
+  reason: "why",
+  version: 2,
+  updated_by: "op@example.com",
+  updated_at: "2026-10-08T10:00:00Z",
+});
+
 describe("parseDispatchRoles", () => {
   it("an unrecognised body is UNKNOWN, never an empty fleet", () => {
     expect(parseDispatchRoles({ whatever: 1 }).state).toBe("unknown");
     expect(parseDispatchRoles(null).state).toBe("unknown");
+    expect(parseDispatchRoles({ state: "known", machines: null }).state).toBe(
+      "unknown"
+    );
   });
 
-  it("an empty machines list is known-and-empty", () => {
-    const read = parseDispatchRoles({ machines: [] });
-    expect(read).toEqual({ state: "known", machines: [] });
-  });
-
-  it("reads device rows, host rows, and sorts by name", () => {
+  it("coord's own unknown carries its detail", () => {
     const read = parseDispatchRoles({
+      state: "unknown",
+      machines: null,
+      detail: "census read failed",
+    });
+    expect(read.state).toBe("unknown");
+    if (read.state !== "unknown") throw new Error("unreachable");
+    expect(read.reason).toContain("census read failed");
+  });
+
+  it("an empty known list is known-and-empty", () => {
+    expect(parseDispatchRoles({ state: "known", machines: [] })).toEqual({
+      state: "known",
+      machines: [],
+    });
+  });
+
+  it("reads workstation and ci_host rows, sorted by name", () => {
+    const read = parseDispatchRoles({
+      state: "known",
       machines: [
-        { device_id: DEV, name: "msi", dispatch_role: "bench" },
-        { ci_host_name: "dell-2020", dispatch_role: "ci_node" },
+        machine({ role: roleRow("bench") }),
+        machine({
+          kind: "ci_host",
+          machine_key: "host:dell-2020",
+          device_id: null,
+          ci_host_name: "dell-2020",
+          name: "dell-2020",
+          registration: "assigned_not_registered",
+          role: roleRow("ci_node"),
+          lanes: {},
+        }),
       ],
     });
     if (read.state !== "known") throw new Error("expected known");
     expect(read.machines.map((m) => m.name)).toEqual(["dell-2020", "msi"]);
-    const dell = read.machines[0];
+    const [dell, msi] = read.machines;
     expect(dell.registered).toBe(false);
     expect(dell.hostOnly).toBe(true);
     expect(dell.key).toBe("host:dell-2020");
-    expect(read.machines[1].key).toBe(`device:${DEV}`);
+    // `lanes: {}` (no device rows) is no lane state, not two unknown lanes.
+    expect(dell.lanes).toBeNull();
+    expect(msi.role).toBe("bench");
+    expect(msi.version).toBe(2);
+    expect(msi.updatedBy).toBe("op@example.com");
   });
 });
 
 describe("parseRoleMachine", () => {
-  it("'unassigned' and a missing role are both unassigned (null)", () => {
-    expect(
-      parseRoleMachine({ device_id: DEV, dispatch_role: "unassigned" })?.role
-    ).toBeNull();
-    expect(parseRoleMachine({ device_id: DEV })?.role).toBeNull();
+  it("a null role row is unassigned", () => {
+    expect(parseRoleMachine(machine())?.role).toBeNull();
+    expect(parseRoleMachine(machine())?.unrecognisedRole).toBeNull();
   });
 
   it("an unknown role value is surfaced verbatim, never coerced", () => {
-    const m = parseRoleMachine({
-      device_id: DEV,
-      dispatch_role: "session_host",
-    });
+    const m = parseRoleMachine(machine({ role: roleRow("session_host") }));
     expect(m?.role).toBeNull();
     expect(m?.unrecognisedRole).toBe("session_host");
     expect(describeRole(m!)).toContain("Unrecognised");
   });
 
-  it("no suggestion when coord serves none; object or bare suggestion read", () => {
-    expect(parseRoleMachine({ device_id: DEV })?.suggestion).toBeNull();
-    expect(
-      parseRoleMachine({ device_id: DEV, suggestion: "bench" })?.suggestion
-        ?.role
-    ).toBe("bench");
-    const s = parseRoleMachine({
-      device_id: DEV,
-      suggestion: { role: "workhorse", mem_total_bytes: 66e9 },
-    })?.suggestion;
-    expect(s?.role).toBe("workhorse");
-    expect(s?.memTotalBytes).toBe(66e9);
+  it("no suggestion when coord serves none; served suggestion read", () => {
+    expect(parseRoleMachine(machine())?.suggestion).toBeNull();
+    const s = parseRoleMachine(
+      machine({
+        suggestion: {
+          dispatch_role: "workhorse",
+          mem_total_bytes: 66e9,
+          sample_age_secs: 12,
+        },
+      })
+    )?.suggestion;
+    expect(s).toEqual({
+      role: "workhorse",
+      memTotalBytes: 66e9,
+      sampleAgeSecs: 12,
+    });
   });
 
   it("a row naming no machine is dropped", () => {
-    expect(parseRoleMachine({ dispatch_role: "bench" })).toBeNull();
+    expect(
+      parseRoleMachine(machine({ device_id: null, ci_host_name: null }))
+    ).toBeNull();
   });
 
-  it("explicit agent_host overrides the host-row default", () => {
+  it("pre-change sessions only when coord says known", () => {
     expect(
-      parseRoleMachine({ device_id: DEV, agent_host: false })?.hostOnly
-    ).toBe(true);
-    expect(parseRoleMachine({ device_id: DEV })?.hostOnly).toBe(false);
+      parseRoleMachine(
+        machine({ pre_change_sessions: { state: "known", count: 2 } })
+      )?.sessionsBeforeChange
+    ).toBe(2);
+    expect(
+      parseRoleMachine(machine({ pre_change_sessions: { state: "unknown" } }))
+        ?.sessionsBeforeChange
+    ).toBeNull();
   });
 });
 
 describe("describeRole", () => {
   it("unassigned names what it behaves as", () => {
-    expect(describeRole(parseRoleMachine({ device_id: DEV })!)).toBe(
+    expect(describeRole(parseRoleMachine(machine())!)).toBe(
       "Unassigned — behaves as Workhorse"
     );
   });
-  it("a host row with no device is assigned, not yet registered", () => {
+  it("an assigned_not_registered host row says so", () => {
     expect(
       describeRole(
-        parseRoleMachine({
-          ci_host_name: "dell-2024",
-          dispatch_role: "ci_node",
-        })!
+        parseRoleMachine(
+          machine({
+            registration: "assigned_not_registered",
+            role: roleRow("ci_node"),
+          })
+        )!
       )
     ).toBe("CI node — assigned, not yet registered");
   });
 });
 
 describe("parseLane — role and drain kept apart", () => {
-  it("closed_by_role does not claim the drain is clear", () => {
-    expect(parseLane("closed_by_role").drain.state).toBe("not_reported");
-  });
-  it("closed_by_drain carries the hold", () => {
+  it("closed_by_role still carries a separate drain layer", () => {
     const l = parseLane({
-      state: "closed_by_drain",
-      until: "2026-10-09T00:00:00Z",
+      effective: "closed_by_role",
+      role: "closed",
+      drain: {
+        state: "drained",
+        until: "2026-10-09T00:00:00Z",
+        reason: "rebuild",
+        drained_by: "op",
+      },
     });
+    expect(l.role).toBe("closed");
     expect(l.drain).toEqual({
-      state: "held",
+      state: "drained",
       until: "2026-10-09T00:00:00Z",
-      reason: null,
+      reason: "rebuild",
+      drainedBy: "op",
     });
   });
-  it("an explicit drain object wins over the state string", () => {
+  it("partial drain is read", () => {
+    expect(
+      parseLane({
+        effective: "open",
+        role: "open",
+        drain: { state: "partial", drained_devices: 2, total_devices: 13 },
+      }).drain
+    ).toEqual({ state: "partial", drainedDevices: 2, totalDevices: 13 });
+  });
+  it("anything unrecognised is unknown", () => {
     const l = parseLane({
-      state: "closed_by_role",
-      drain: { until: "2026-10-09T00:00:00Z", reason: "rebuild" },
+      effective: "x",
+      role: "weird",
+      drain: { state: "?" },
     });
-    expect(l.drain.state).toBe("held");
-  });
-  it("an unrecognised state is unknown", () => {
-    expect(parseLane("weird").drain.state).toBe("unknown");
-    expect(parseLane(undefined).served).toBeNull();
+    expect(l.role).toBe("unknown");
+    expect(l.drain.state).toBe("unknown");
+    expect(parseLane(undefined).effective).toBeNull();
   });
 });
 
@@ -154,14 +232,24 @@ describe("describeRoleEffect", () => {
 });
 
 describe("describeRoleWriteError", () => {
-  it("last_open_lane under detail is typed, with its lane, and offers Force", () => {
+  it("last_open_lane under detail is typed, with its lanes, and offers Force", () => {
     const r = describeRoleWriteError(
       409,
-      JSON.stringify({ detail: { error: "last_open_lane", lane: "agent" } })
+      JSON.stringify({
+        detail: {
+          error: "last_open_lane",
+          detail: "pass `force: true` to apply it anyway",
+          lanes: [
+            { lane: "agent", remaining: [], offline_only: false },
+            { lane: "ci", remaining: ["msi"], offline_only: true },
+          ],
+        },
+      })
     );
     expect(r.kind).toBe("last_open_lane");
     if (r.kind !== "last_open_lane") throw new Error("unreachable");
-    expect(r.lane).toBe("agent");
+    expect(r.lanes).toEqual(["agent", "ci"]);
+    expect(r.message).toContain("agent sessions or CI");
     expect(r.message).toContain("Force");
   });
   it("no_agent_host at the top level is typed", () => {

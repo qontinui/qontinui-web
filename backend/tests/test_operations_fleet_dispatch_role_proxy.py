@@ -247,9 +247,19 @@ class TestRefusalsPassThrough:
     @pytest.mark.parametrize(
         ("status", "refusal"),
         [
-            (409, {"error": "last_open_lane", "lane": "agent", "hint": "force"}),
-            (422, {"error": "no_agent_host", "ci_host_name": "dell-2020"}),
-            (403, {"error": "operator_required"}),
+            # Coord's own bodies (dispatch_role_routes.rs, plan Phase 3).
+            (
+                409,
+                {
+                    "error": "last_open_lane",
+                    "detail": "pass `force: true` to apply it anyway",
+                    "lanes": [
+                        {"lane": "agent", "remaining": [], "offline_only": False}
+                    ],
+                },
+            ),
+            (422, {"error": "no_agent_host", "detail": "no workstation runner"}),
+            (403, {"error": "admin_required"}),
         ],
     )
     def test_typed_refusal_arrives_structured_with_coords_status(

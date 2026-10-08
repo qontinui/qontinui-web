@@ -34,16 +34,55 @@ function json(status: number, body: unknown) {
   };
 }
 
+// Coord's `DispatchRolesResponse` / `MachineView` shape
+// (qontinui-coord dispatch_role_routes.rs, plan Phase 3).
+const lane = (effective: string, role: string, drain = "none") => ({
+  effective,
+  role,
+  drain: { state: drain, total_devices: 1 },
+});
 const MACHINES = {
+  state: "known",
+  roles_table: "present",
   machines: [
     {
+      kind: "workstation",
+      machine_key: "device:3e7e4b04-75de-4efb-b718-c8ce8fcf7b17",
       device_id: "3e7e4b04-75de-4efb-b718-c8ce8fcf7b17",
+      ci_host_name: null,
       name: "monster",
-      dispatch_role: "unassigned",
-      suggestion: { role: "bench", mem_total_bytes: 33_000_000_000 },
-      lanes: { agent: "open", ci: "open" },
+      registration: "registered",
+      assignment: "unassigned",
+      role: null,
+      behaves_as: "workhorse",
+      suggestion: {
+        dispatch_role: "bench",
+        mem_total_bytes: 33_000_000_000,
+        sample_age_secs: 30,
+      },
+      lanes: { agent: lane("open", "open"), ci: lane("open", "open") },
+      pre_change_sessions: { state: "not_applicable" },
     },
-    { ci_host_name: "dell-2024", dispatch_role: "ci_node" },
+    {
+      kind: "ci_host",
+      machine_key: "host:dell-2024",
+      device_id: null,
+      ci_host_name: "dell-2024",
+      name: "dell-2024",
+      registration: "assigned_not_registered",
+      assignment: "assigned",
+      role: {
+        dispatch_role: "ci_node",
+        reason: "remote CI box",
+        version: 1,
+        updated_by: "op@example.com",
+        updated_at: "2026-10-08T10:00:00Z",
+      },
+      behaves_as: "ci_node",
+      suggestion: null,
+      lanes: {},
+      pre_change_sessions: { state: "not_applicable" },
+    },
   ],
 };
 
@@ -118,7 +157,13 @@ describe("FleetRolesSection", () => {
 
   it("last_open_lane renders a sentence and offers Force, which resends with force", async () => {
     putAnswers = [
-      json(409, { detail: { error: "last_open_lane", lane: "agent" } }),
+      json(409, {
+        detail: {
+          error: "last_open_lane",
+          detail: "pass `force: true` to apply it anyway",
+          lanes: [{ lane: "agent", remaining: [], offline_only: false }],
+        },
+      }),
       json(200, { ok: true }),
     ];
     render(<FleetRolesSection />);
