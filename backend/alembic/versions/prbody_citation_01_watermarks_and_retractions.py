@@ -1,7 +1,7 @@
 """coord.pr_body_citation_watermarks and coord.work_unit_citation_retractions
 
 Revision ID: prbody_citation_01
-Revises: policy_rules_agent_name_uq_01
+Revises: cinode_02_required_capabilities
 Create Date: 2026-10-05
 
 Phase 1 of plan
@@ -99,8 +99,8 @@ reader (Phases 2 to 4) land after this revision is applied in production.
 
 ## Head choice
 
-``down_revision`` is ``policy_rules_agent_name_uq_01``, the single head of
-``origin/main`` at ``3ec331660`` when this revision was last re-pointed
+``down_revision`` is ``cinode_02_required_capabilities``, the single head of
+``origin/main`` at ``e3c974cf2`` when this revision was last re-pointed
 (``scripts/ci/count_alembic_heads.py`` reported ``HEAD_COUNT=1``). If main has
 moved before it lands, re-point ``down_revision``, the ``Revises:`` header and
 ``_PARENT_REVISION_ID`` in the migration test at the new single head. Do not
@@ -129,7 +129,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "prbody_citation_01"
-down_revision: str | Sequence[str] | None = "policy_rules_agent_name_uq_01"
+down_revision: str | Sequence[str] | None = "cinode_02_required_capabilities"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

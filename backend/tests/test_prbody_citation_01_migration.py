@@ -70,7 +70,7 @@ _REVISION_FILENAME = "prbody_citation_01_watermarks_and_retractions.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "policy_rules_agent_name_uq_01"
+_PARENT_REVISION_ID = "cinode_02_required_capabilities"
 
 _SCHEMA = "coord"
 _WATERMARKS = "pr_body_citation_watermarks"
