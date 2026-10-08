@@ -199,6 +199,9 @@ def test_fcap_01_adds_and_drops_exactly_its_columns_with_no_check(
     assert "DEFAULT" not in add.upper()
     assert statements[0] == "SET LOCAL lock_timeout = '3s'"
     assert "SET LOCAL lock_timeout = DEFAULT" in statements
+    down_statements = _recorded_sql(monkeypatch, "fcap_01", "downgrade")
+    assert down_statements[0] == "SET LOCAL lock_timeout = '3s'"
+    assert down_statements[-1] == "SET LOCAL lock_timeout = DEFAULT"
 
 
 def test_fcap_02_widens_both_tables_together(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,6 +218,13 @@ def test_fcap_02_widens_both_tables_together(monkeypatch: pytest.MonkeyPatch) ->
             and "DROP COLUMN IF EXISTS workload_census_enabled" in s
             for s in down
         ), f"downgrade does not narrow coord.{table}"
+    # Both directions bound the ACCESS EXCLUSIVE wait and restore the default,
+    # or the SET LOCAL leaks into every later revision in the same transaction.
+    for statements in (up, down):
+        assert statements[0] == "SET LOCAL lock_timeout = '3s'"
+        assert "SET LOCAL lock_timeout = DEFAULT" in statements
+        restore = statements.index("SET LOCAL lock_timeout = DEFAULT")
+        assert all("ALTER TABLE" not in st for st in statements[restore:])
 
 
 def test_the_comments_state_what_null_means() -> None:
@@ -245,6 +255,16 @@ def test_the_comments_state_what_null_means() -> None:
     parent = comment_body_from_source(src2, f"coord.{_POLICY}.workload_census_enabled")
     assert "NULL = no override, the census" in parent
     assert "RUNS" in parent
+    snapshot = comment_body_from_source(
+        src2, f"coord.{_POLICY_VERSIONS}.workload_census_enabled"
+    )
+    assert "Snapshot of coord.fleet_runtime_policy.workload_census_enabled" in snapshot
+    assert "NULL is ON" in snapshot
+    assert "BEFORE revision fcap_02 carry NULL" in snapshot
+    assert "Immutable" in snapshot
+
+    gpu = comment_body_from_source(src1, f"coord.{_SAMPLES}.gpu")
+    assert "coord.computers.gpus (web#1598, pending)" in gpu
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +315,18 @@ def _assert_advice_log_present(engine: Engine) -> None:
         ).scalar_one()
     assert fks == 0, (
         "an append-only log carries no FK (computer_id's waits on web#1598)"
+    )
+    src3 = _source("fcap_03")
+    for name in ("confidence", "kind", "computer_id"):
+        assert column_comment(engine, _ADVICE, name) == comment_body_from_source(
+            src3, f"coord.{_ADVICE}.{name}"
+        ), f"{_ADVICE}.{name}'s live comment differs from the one its revision emits"
+    with engine.connect() as conn:
+        table_comment = conn.execute(
+            text("SELECT obj_description('coord.capacity_advice_log'::regclass)")
+        ).scalar_one()
+    assert table_comment == comment_body_from_source(
+        src3, f"coord.{_ADVICE}", object_kind="TABLE"
     )
 
 
