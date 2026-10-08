@@ -150,7 +150,13 @@ function LanesTable({ m }: { m: RoleMachine }) {
         {LANES.map((l) => (
           <TableRow key={l} data-lane={l}>
             <TableCell>{LANE_LABEL[l]}</TableCell>
-            <TableCell>{m.lanes ? m.lanes[l].role : "not served"}</TableCell>
+            <TableCell>
+              {l === "agent" && m.hostOnly
+                ? "n/a (no workstation runner)"
+                : m.lanes
+                  ? m.lanes[l].role
+                  : "not served"}
+            </TableCell>
             <TableCell className="break-words whitespace-normal">
               {m.lanes ? <DrainText lane={m.lanes[l]} /> : "not served"}
             </TableCell>
@@ -217,6 +223,9 @@ export function FleetRolesSection() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<RoleWriteRefusal | null>(null);
+  // Set after a write whose outcome is unknown (5xx / transport failure): a
+  // later `changed: false` may then be the earlier attempt's own change.
+  const [ambiguousAttempt, setAmbiguousAttempt] = useState(false);
   const [hostName, setHostName] = useState("");
   const [hostRole, setHostRole] = useState<DispatchRole>("ci_node");
 
@@ -224,12 +233,14 @@ export function FleetRolesSection() {
     setPending(change);
     setReason("");
     setRefusal(null);
+    setAmbiguousAttempt(false);
   }, []);
 
   const close = useCallback(() => {
     setPending(null);
     setReason("");
     setRefusal(null);
+    setAmbiguousAttempt(false);
   }, []);
 
   const pickFor = (m: RoleMachine) => (to: DispatchRole) =>
@@ -266,7 +277,10 @@ export function FleetRolesSection() {
         const r = describeRoleWriteError(res.status, res.body);
         setRefusal(r);
         // A lost answer may have applied; re-read so the list shows coord's truth.
-        if (res.status === null || res.status >= 500) void refresh();
+        if (res.status === null || res.status >= 500) {
+          setAmbiguousAttempt(true);
+          void refresh();
+        }
         return;
       }
       toast.success(
@@ -280,12 +294,14 @@ export function FleetRolesSection() {
                   } on it now)`
                 : ""
             }.`
-          : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
+          : ambiguousAttempt
+            ? `${pending.name} is ${ROLE_LABEL[pending.to]} — the earlier attempt may have applied it.`
+            : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
       );
       close();
       void refresh();
     },
-    [close, pending, reason, refresh]
+    [ambiguousAttempt, close, pending, reason, refresh]
   );
 
   // A name coord already lists is set on its own row: writing it again by
@@ -357,7 +373,11 @@ export function FleetRolesSection() {
           itemKey={(m) => m.key}
           empty={
             <p className="text-xs text-muted-foreground">
-              Coord serves no machines for this tenant.
+              Coord lists no machines for this tenant
+              {read.state === "known" && (read.omitted ?? 0) > 0
+                ? ` (${read.omitted} not seen recently are left out of its read)`
+                : ""}
+              .
             </p>
           }
           renderRow={(m, { expanded, onToggle }) => (
@@ -406,7 +426,7 @@ export function FleetRolesSection() {
                       m.role !== null &&
                       !ROLE_OPENS[m.role].ci && (
                         <p
-                          className="break-words text-amber-600 dark:text-amber-500"
+                          className="break-words text-muted-foreground"
                           data-testid="fleet-roles-github-runner-warning"
                         >
                           This role closes CI for coord, but GitHub runner
@@ -421,6 +441,23 @@ export function FleetRolesSection() {
                           Up to {m.sessionsBeforeChange} live session
                           {m.sessionsBeforeChange === 1 ? "" : "s"} started
                           before this role was set — not safe to rebuild yet.
+                        </p>
+                      )}
+                    {!m.hostOnly &&
+                      read.state === "known" &&
+                      read.machines.some(
+                        (h) =>
+                          h.hostOnly &&
+                          h.role !== null &&
+                          h.name.toLowerCase() === m.name.toLowerCase()
+                      ) && (
+                        <p
+                          className="break-words text-muted-foreground"
+                          data-testid="fleet-roles-host-row-twin"
+                        >
+                          A CI-host role is also set under the name {m.name}; it
+                          governs GitHub runner registrations only and does not
+                          reach this runner — set this row too.
                         </p>
                       )}
                     {m.sessionsUnknown && (
@@ -473,6 +510,25 @@ export function FleetRolesSection() {
           )}
         />
       )}
+
+      {read.state === "known" &&
+        ((read.omitted ?? 0) > 0 || (read.unidentifiable ?? 0) > 0) && (
+          <p
+            className="mt-2 text-[11px] text-muted-foreground break-words"
+            data-testid="fleet-roles-omitted"
+          >
+            {(read.omitted ?? 0) > 0
+              ? `${read.omitted} machine${read.omitted === 1 ? "" : "s"} not seen recently ${
+                  read.omitted === 1 ? "is" : "are"
+                } not listed (coord leaves them out of this read). `
+              : ""}
+            {(read.unidentifiable ?? 0) > 0
+              ? `${read.unidentifiable} CI runner registration${
+                  read.unidentifiable === 1 ? "" : "s"
+                } could not be named.`
+              : ""}
+          </p>
+        )}
 
       <CoordAdminOnly>
         <div
@@ -534,9 +590,11 @@ export function FleetRolesSection() {
           )}
           <p className="text-[11px] text-muted-foreground break-words">
             For a CI host with no workstation runner (Workhorse is not possible
-            there). The role applies the moment a runner registers under that
-            name; until then the row reads &ldquo;assigned, not yet
-            registered&rdquo;.
+            there). The role applies when a GitHub self-hosted runner registers
+            under that name; until then the row reads &ldquo;assigned, not yet
+            registered&rdquo;. It does NOT reach a qontinui runner on that
+            machine: that registers as its own row, whose role must be set
+            there.
           </p>
         </div>
       </CoordAdminOnly>

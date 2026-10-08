@@ -305,6 +305,29 @@ describe("FleetRolesSection", () => {
     ).toContain("GitHub runner");
   });
 
+  it("a manual retry after an unclear failure does not claim 'nothing changed'", async () => {
+    putAnswers = [
+      json(504, { detail: "timeout waiting for coord" }),
+      json(200, { changed: false }),
+    ];
+    const { toast } = await import("sonner");
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("monster"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
+      target: { value: "x" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-submit"));
+    await screen.findByTestId("fleet-roles-refusal");
+    fireEvent.click(screen.getByTestId("fleet-roles-submit"));
+    await waitFor(() => expect(puts).toHaveLength(2));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "monster is Bench — the earlier attempt may have applied it."
+      )
+    );
+  });
+
   it("hides the write controls from a non-admin", async () => {
     authState.isCoordAdmin = false;
     render(<FleetRolesSection />);
