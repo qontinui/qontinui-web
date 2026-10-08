@@ -169,7 +169,7 @@ describe("FleetRolesSection", () => {
     });
     fireEvent.click(screen.getByTestId("fleet-roles-host-open"));
     expect(screen.getByTestId("fleet-roles-effect").textContent).toBe(
-      "dell-2020 → CI node: still no sessions; CI stays open."
+      "dell-2020 → CI node: still no sessions (no workstation runner); CI stays open."
     );
     expect(
       screen.getByTestId("fleet-roles-not-yet-applied").textContent

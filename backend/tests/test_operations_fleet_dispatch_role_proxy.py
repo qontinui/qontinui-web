@@ -231,6 +231,12 @@ class TestWriteBody:
                 "reason": "r",
                 "updated_by": "someone-else@example.com",
             },
+            # the device-list spelling, which coord's CI-host key never uses
+            {
+                "ci_host_name": "gh-runner-msi-wsl",
+                "dispatch_role": "bench",
+                "reason": "r",
+            },
             # whitespace inside a host name (mdroles_01's CHECK)
             {"ci_host_name": "dell 2020", "dispatch_role": "bench", "reason": "r"},
         ],

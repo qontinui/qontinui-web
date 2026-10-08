@@ -70,6 +70,7 @@ describe("parseDispatchRoles", () => {
       machines: [],
       omitted: null,
       unidentifiable: null,
+      notice: null,
     });
   });
 
@@ -368,7 +369,7 @@ describe("describeRoleWriteError", () => {
   });
   it("a CI host never took sessions, so its effect sentence does not say it stops them", () => {
     expect(describeRoleEffect("dell-2020", null, "ci_node", true)).toBe(
-      "dell-2020 → CI node: still no sessions; CI stays open."
+      "dell-2020 → CI node: still no sessions (no workstation runner); CI stays open."
     );
   });
   it("only the proxy's own connect failure says nothing changed on a 502", () => {
@@ -410,6 +411,53 @@ describe("describeRoleWriteError", () => {
       JSON.stringify({ error: "schema_pending", detail: "nothing was written" })
     );
     expect(r503.kind === "other" && r503.mayHaveApplied).toBeFalsy();
+  });
+  it("another tenant's closing role is not promised to reopen", () => {
+    expect(
+      describeRoleEffect("msi", null, "workhorse", false, {
+        agent: "closed",
+        ci: "closed",
+      })
+    ).toBe(
+      "msi → Workhorse: sessions stay closed by another tenant's role; CI stay closed by another tenant's role."
+    );
+  });
+  it("an unknown served layer is not presented as open", () => {
+    expect(
+      describeRoleEffect("msi", null, "workhorse", false, {
+        agent: "unknown",
+        ci: "open",
+      })
+    ).toBe(
+      "msi → Workhorse: sessions open (current state unknown); CI stays open."
+    );
+  });
+  it("an unassigned machine closed by a co-tenant says so", () => {
+    const m = parseRoleMachine(
+      machine({
+        lanes: {
+          agent: {
+            effective: "closed_by_role",
+            role: "closed",
+            drain: { state: "none" },
+          },
+          ci: { effective: "open", role: "open", drain: { state: "none" } },
+        },
+      })
+    );
+    expect(describeRole(m!)).toBe(
+      "Unassigned here — another tenant's role closes sessions"
+    );
+  });
+  it("carries coord's read-level notice", () => {
+    const read = parseDispatchRoles({
+      state: "known",
+      machines: [],
+      detail: "drain read failed; dispatch is failing CLOSED",
+      roles_table: "present",
+    });
+    if (read.state !== "known") throw new Error("expected known");
+    expect(read.notice).toContain("failing CLOSED");
   });
   it("a 504 says the change may have applied", () => {
     expect(describeRoleWriteError(504, "").message).toContain("MAY");
