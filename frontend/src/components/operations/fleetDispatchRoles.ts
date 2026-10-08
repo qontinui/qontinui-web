@@ -373,7 +373,12 @@ export type RoleWriteRefusal =
   | { kind: "last_open_lane"; lanes: Lane[]; message: string }
   | { kind: "no_agent_host"; message: string }
   | { kind: "not_admin"; message: string }
-  | { kind: "other"; message: string };
+  | {
+      kind: "other";
+      message: string;
+      /** The write's outcome is unknown: it may have been applied. */
+      mayHaveApplied?: boolean;
+    };
 
 /**
  * Turn a non-2xx role write into a readable refusal. The web proxy passes
@@ -389,6 +394,7 @@ export function describeRoleWriteError(
     // sent, so this cannot claim nothing changed.
     return {
       kind: "other",
+      mayHaveApplied: true,
       message:
         `The request failed before an answer arrived (${body}). The change ` +
         "may or may not have been applied — the list re-reads to show what " +
@@ -514,6 +520,7 @@ export function describeRoleWriteError(
   if (status === 502 || status === 504) {
     return {
       kind: "other",
+      mayHaveApplied: true,
       message:
         "The answer was lost on the way back; the change MAY have been " +
         "applied — the list re-reads to show what coord now holds.",
@@ -522,6 +529,17 @@ export function describeRoleWriteError(
   const parts = [`HTTP ${status}`];
   if (code) parts.push(code);
   if (coordMsg) parts.push(coordMsg);
+  // A 500 can follow a failed commit or a failure after one; a 503
+  // (`schema_pending`, an unavailable backend) is refused before any write.
+  if (status >= 500 && status !== 503) {
+    return {
+      kind: "other",
+      mayHaveApplied: true,
+      message:
+        `${parts.join(" — ")}. The change MAY have been applied — the list ` +
+        "re-reads to show what coord now holds.",
+    };
+  }
   return { kind: "other", message: parts.join(" — ") };
 }
 

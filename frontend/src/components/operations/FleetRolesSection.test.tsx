@@ -241,11 +241,11 @@ describe("FleetRolesSection", () => {
     expect(screen.queryByTestId("fleet-roles-force")).toBeNull();
   });
 
-  it("refuses to assign by host name a machine already listed", async () => {
+  it("refuses to assign by host name a CI host already listed, but not a workstation's name", async () => {
     render(<FleetRolesSection />);
     await screen.findByText("Unassigned — behaves as Workhorse");
     fireEvent.change(screen.getByTestId("fleet-roles-host-input"), {
-      target: { value: "MONSTER" },
+      target: { value: "DELL-2024" },
     });
     expect(
       (screen.getByTestId("fleet-roles-host-open") as HTMLButtonElement)
@@ -254,6 +254,14 @@ describe("FleetRolesSection", () => {
     expect(screen.getByTestId("fleet-roles-host-error").textContent).toContain(
       "already listed"
     );
+    // A workstation named "monster" is a different machine to coord.
+    fireEvent.change(screen.getByTestId("fleet-roles-host-input"), {
+      target: { value: "monster" },
+    });
+    expect(
+      (screen.getByTestId("fleet-roles-host-open") as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
   });
 
   it("warns only on a CI host row whose role closes CI; workstation lanes show role and drain apart", async () => {

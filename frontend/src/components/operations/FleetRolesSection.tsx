@@ -4,8 +4,8 @@
  * Roles — set each machine's dispatch role (Workhorse / Bench / CI node).
  *
  * Plan `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node` Phase 6, the
- * MINIMAL cut (operator decision 2026-10-08: the operator needs a UI to set
- * dell-2020 and dell-2024 to `ci_node`). Meaning lives in
+ * MINIMAL cut (operator request 2026-10-08, from coord finding e4a7e7e9:
+ * dell-2020 and dell-2024 need to be set to `ci_node`). Meaning lives in
  * `./fleetDispatchRoles.ts`; transport in `./useFleetDispatchRoles.ts`.
  *
  * Composed from the console primitives (style guide §3 — `CollapsiblePanel`
@@ -277,7 +277,7 @@ export function FleetRolesSection() {
         const r = describeRoleWriteError(res.status, res.body);
         setRefusal(r);
         // A lost answer may have applied; re-read so the list shows coord's truth.
-        if (res.status === null || res.status >= 500) {
+        if (r.kind === "other" && r.mayHaveApplied) {
           setAmbiguousAttempt(true);
           void refresh();
         }
@@ -288,7 +288,9 @@ export function FleetRolesSection() {
           ? `${pending.name} is now ${ROLE_LABEL[pending.to]}${
               force ? " (forced)" : ""
             }. Work already running on it is not stopped${
-              res.liveSessions !== null
+              // Coord counts sessions only for a device write; for a host
+              // write it reports a constant, which is not a measurement.
+              res.liveSessions !== null && pending.deviceId !== null
                 ? ` (${res.liveSessions} live session${
                     res.liveSessions === 1 ? "" : "s"
                   } on it now)`
@@ -308,11 +310,15 @@ export function FleetRolesSection() {
   // host name would put a second role row on one machine (§D4).
   const listedMatch =
     read.state === "known"
-      ? (read.machines.find((m) =>
-          [m.name, m.ciHostName].some(
-            (n) =>
-              n !== null && n.toLowerCase() === hostName.trim().toLowerCase()
-          )
+      ? (read.machines.find(
+          (m) =>
+            // Only a CI-host row is the same machine key: a workstation of the
+            // same name is a different machine to coord (see the twin note).
+            m.hostOnly &&
+            [m.name, m.ciHostName].some(
+              (n) =>
+                n !== null && n.toLowerCase() === hostName.trim().toLowerCase()
+            )
         ) ?? null)
       : null;
   const hostError =
