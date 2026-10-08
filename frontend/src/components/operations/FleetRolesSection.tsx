@@ -88,7 +88,6 @@ interface PendingChange {
   from: DispatchRole | null;
   to: DispatchRole;
   hostOnly: boolean;
-  sessionsBeforeChange: number | null;
 }
 
 function laneSummary(m: RoleMachine): string {
@@ -238,7 +237,6 @@ export function FleetRolesSection() {
       from: m.role,
       to,
       hostOnly: m.hostOnly,
-      sessionsBeforeChange: m.sessionsBeforeChange,
     });
 
   const submit = useCallback(
@@ -262,7 +260,7 @@ export function FleetRolesSection() {
         const r = describeRoleWriteError(res.status, res.body);
         setRefusal(r);
         // A lost answer may have applied; re-read so the list shows coord's truth.
-        if (res.status === 504) void refresh();
+        if (res.status === null || res.status >= 500) void refresh();
         return;
       }
       toast.success(
@@ -398,6 +396,7 @@ export function FleetRolesSection() {
                       </p>
                     )}
                     {m.hostOnly &&
+                      m.registered &&
                       m.role !== null &&
                       !ROLE_OPENS[m.role].ci && (
                         <p
@@ -416,6 +415,20 @@ export function FleetRolesSection() {
                           Up to {m.sessionsBeforeChange} live session
                           {m.sessionsBeforeChange === 1 ? "" : "s"} started
                           before this role was set — not safe to rebuild yet.
+                        </p>
+                      )}
+                    {m.sessionsUnknown && (
+                      <p className="break-words text-amber-600 dark:text-amber-500">
+                        Coord could not count the live sessions on this machine
+                        — do not assume it is safe to rebuild.
+                      </p>
+                    )}
+                    {m.sessionsStartUnrecorded !== null &&
+                      m.sessionsStartUnrecorded > 0 && (
+                        <p className="break-words text-amber-600 dark:text-amber-500">
+                          {m.sessionsStartUnrecorded} live session
+                          {m.sessionsStartUnrecorded === 1 ? "" : "s"} with no
+                          recorded start — not safe to rebuild yet.
                         </p>
                       )}
                   </div>
@@ -498,7 +511,6 @@ export function FleetRolesSection() {
                   from: null,
                   to: hostRole,
                   hostOnly: true,
-                  sessionsBeforeChange: null,
                 })
               }
               data-testid="fleet-roles-host-open"
@@ -543,16 +555,17 @@ export function FleetRolesSection() {
                     className="break-words font-medium text-foreground"
                     data-testid="fleet-roles-effect"
                   >
-                    {describeRoleEffect(pending.name, pending.from, pending.to)}
+                    {describeRoleEffect(
+                      pending.name,
+                      pending.from,
+                      pending.to,
+                      pending.hostOnly
+                    )}
                   </p>
                 )}
                 <p className="break-words">
                   This changes what coord sends next. Work already running on
-                  the machine is not stopped
-                  {pending?.sessionsBeforeChange
-                    ? ` (${pending.sessionsBeforeChange} session(s) still running)`
-                    : ""}
-                  .
+                  the machine is not stopped.
                 </p>
                 {pending &&
                   pending.deviceId !== null &&
@@ -562,9 +575,9 @@ export function FleetRolesSection() {
                       data-testid="fleet-roles-linked-hosts-note"
                     >
                       This sets the workstation only. Its GitHub runner hosts
-                      (e.g. gh-runner-{pending.name}-wsl) are listed here as
-                      separate machines and keep their own role — set them too
-                      if this machine should take no CI.
+                      (rows named gh-runner-…) are listed here as separate
+                      machines and keep their own role — set them too if this
+                      machine should take no CI.
                     </p>
                   )}
                 <p

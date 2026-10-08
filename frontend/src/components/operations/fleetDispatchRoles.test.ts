@@ -151,6 +151,33 @@ describe("parseRoleMachine", () => {
     ).toBeNull();
   });
 
+  it("unknown and unrecorded pre-change sessions are surfaced, not zero", () => {
+    const m = parseRoleMachine(
+      machine({ pre_change_sessions: { state: "unknown" } })
+    );
+    expect(m?.sessionsUnknown).toBe(true);
+    expect(
+      parseRoleMachine(
+        machine({
+          pre_change_sessions: {
+            state: "known",
+            count: 0,
+            start_unrecorded: 3,
+          },
+        })
+      )?.sessionsStartUnrecorded
+    ).toBe(3);
+  });
+  it("a workhorse suggestion is not offered for a CI host", () => {
+    expect(
+      parseRoleMachine(
+        machine({
+          kind: "ci_host",
+          suggestion: { dispatch_role: "workhorse", mem_total_bytes: 66e9 },
+        })
+      )?.suggestion
+    ).toBeNull();
+  });
   it("pre-change sessions only when coord says known", () => {
     expect(
       parseRoleMachine(
@@ -319,9 +346,14 @@ describe("describeRoleWriteError", () => {
     expect(r.kind).toBe("other");
     expect(r.message).toContain("device_not_in_tenant");
   });
-  it("a network failure says nothing changed", () => {
-    expect(describeRoleWriteError(null, "boom").message).toContain(
-      "Nothing was changed"
+  it("a network failure does not claim nothing changed", () => {
+    const m = describeRoleWriteError(null, "boom").message;
+    expect(m).toContain("may or may not");
+    expect(m).not.toContain("Nothing was changed");
+  });
+  it("a CI host never took sessions, so its effect sentence does not say it stops them", () => {
+    expect(describeRoleEffect("dell-2020", null, "ci_node", true)).toBe(
+      "dell-2020 → CI node: still no sessions; CI stays open."
     );
   });
   it("a 504 says the change may have applied", () => {
