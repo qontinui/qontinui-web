@@ -80,7 +80,11 @@ const MACHINES = {
       },
       behaves_as: "ci_node",
       suggestion: null,
-      lanes: {},
+      // Coord serves both lane keys even with no device rows.
+      lanes: {
+        agent: lane("unknown", "open"),
+        ci: lane("unknown", "open"),
+      },
       pre_change_sessions: { state: "not_applicable" },
     },
     {
@@ -243,19 +247,35 @@ describe("FleetRolesSection", () => {
     );
   });
 
-  it("warns on a CI-closing role that GitHub runners still get jobs", async () => {
+  it("warns only on a CI host row whose role closes CI; workstation lanes show role and drain apart", async () => {
+    // nomad (a workstation, Bench): no GitHub-runner warning on its row.
     render(<FleetRolesSection />);
-    fireEvent.click(await screen.findByText("dell-2024"));
+    fireEvent.click(await screen.findByText("nomad"));
     expect(
       screen.queryByTestId("fleet-roles-github-runner-warning")
     ).toBeNull();
-    fireEvent.click(screen.getByText("nomad"));
-    expect(
-      screen.getByTestId("fleet-roles-github-runner-warning").textContent
-    ).toContain("GitHub runner services");
     // Role and drain shown separately: Bench closes the lane AND it is drained.
     expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
       "drained until"
+    );
+  });
+
+  it("a Bench CI host row carries the GitHub-runner warning", async () => {
+    const benchHost = {
+      ...MACHINES.machines[1],
+      role: { ...MACHINES.machines[1].role!, dispatch_role: "bench" },
+    };
+    fetchMock.mockImplementation(async () =>
+      json(200, { ...MACHINES, machines: [benchHost] })
+    );
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("dell-2024"));
+    expect(
+      screen.getByTestId("fleet-roles-github-runner-warning").textContent
+    ).toContain("GitHub runner");
+    // Assigned, not registered: no lane state rendered from an empty device list.
+    expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
+      "not served"
     );
   });
 

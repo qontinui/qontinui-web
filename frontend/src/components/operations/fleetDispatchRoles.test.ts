@@ -84,7 +84,19 @@ describe("parseDispatchRoles", () => {
           name: "dell-2020",
           registration: "assigned_not_registered",
           role: roleRow("ci_node"),
-          lanes: {},
+          // Coord's real shape: both keys, role layer `open` over no devices.
+          lanes: {
+            agent: {
+              effective: "unknown",
+              role: "open",
+              drain: { state: "none" },
+            },
+            ci: {
+              effective: "unknown",
+              role: "open",
+              drain: { state: "none" },
+            },
+          },
         }),
       ],
     });
@@ -94,7 +106,7 @@ describe("parseDispatchRoles", () => {
     expect(dell.registered).toBe(false);
     expect(dell.hostOnly).toBe(true);
     expect(dell.key).toBe("host:dell-2020");
-    // `lanes: {}` (no device rows) is no lane state, not two unknown lanes.
+    // No device rows: no lane state, whatever the lane keys say.
     expect(dell.lanes).toBeNull();
     expect(msi.role).toBe("bench");
     expect(msi.version).toBe(2);
@@ -294,6 +306,18 @@ describe("describeRoleWriteError", () => {
         JSON.stringify({ detail: "not_coord_tenant_admin" })
       ).kind
     ).toBe("not_admin");
+  });
+  it("a 403 device_not_in_tenant is not reported as not-an-operator", () => {
+    const r = describeRoleWriteError(
+      403,
+      JSON.stringify({
+        error: "device_not_in_tenant",
+        message: "{'error': 'device_not_in_tenant'}",
+        detail: "no device with this id is bound to your tenant",
+      })
+    );
+    expect(r.kind).toBe("other");
+    expect(r.message).toContain("device_not_in_tenant");
   });
   it("a network failure says nothing changed", () => {
     expect(describeRoleWriteError(null, "boom").message).toContain(

@@ -266,9 +266,17 @@ export function FleetRolesSection() {
         return;
       }
       toast.success(
-        `${pending.name} is now ${ROLE_LABEL[pending.to]}${
-          force ? " (forced)" : ""
-        }. Work already running on it is not stopped.`
+        res.changed
+          ? `${pending.name} is now ${ROLE_LABEL[pending.to]}${
+              force ? " (forced)" : ""
+            }. Work already running on it is not stopped${
+              res.liveSessions !== null
+                ? ` (${res.liveSessions} live session${
+                    res.liveSessions === 1 ? "" : "s"
+                  } on it now)`
+                : ""
+            }.`
+          : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
       );
       close();
       void refresh();
@@ -389,16 +397,19 @@ export function FleetRolesSection() {
                         .
                       </p>
                     )}
-                    {m.role !== null && !ROLE_OPENS[m.role].ci && (
-                      <p
-                        className="break-words text-amber-600 dark:text-amber-500"
-                        data-testid="fleet-roles-github-runner-warning"
-                      >
-                        This role closes CI, but GitHub runner services
-                        registered on this machine still receive jobs: label
-                        removal does not follow the role yet.
-                      </p>
-                    )}
+                    {m.hostOnly &&
+                      m.role !== null &&
+                      !ROLE_OPENS[m.role].ci && (
+                        <p
+                          className="break-words text-amber-600 dark:text-amber-500"
+                          data-testid="fleet-roles-github-runner-warning"
+                        >
+                          This role closes CI for coord, but GitHub runner
+                          services registered under this host still receive
+                          GitHub jobs: label removal does not follow the role
+                          yet.
+                        </p>
+                      )}
                     {m.sessionsBeforeChange !== null &&
                       m.sessionsBeforeChange > 0 && (
                         <p className="break-words text-amber-600 dark:text-amber-500">
@@ -543,6 +554,19 @@ export function FleetRolesSection() {
                     : ""}
                   .
                 </p>
+                {pending &&
+                  pending.deviceId !== null &&
+                  !ROLE_OPENS[pending.to].ci && (
+                    <p
+                      className="break-words"
+                      data-testid="fleet-roles-linked-hosts-note"
+                    >
+                      This sets the workstation only. Its GitHub runner hosts
+                      (e.g. gh-runner-{pending.name}-wsl) are listed here as
+                      separate machines and keep their own role — set them too
+                      if this machine should take no CI.
+                    </p>
+                  )}
                 <p
                   className="break-words"
                   data-testid="fleet-roles-not-yet-applied"
