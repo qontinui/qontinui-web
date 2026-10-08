@@ -279,6 +279,12 @@ export type PrMergeStatus =
   | "ready"
   | "queued"
   | "ready-but-unlanded"
+  // green + CLEAN, but the only proposal at this head is TERMINAL and HELD —
+  // coord will not re-cut it. Split out of `ready-but-unlanded` (which keeps
+  // the no-proposal stall); the move, author's or operator's, is named in
+  // `blocking_summary`. Plan
+  // `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`.
+  | "terminal-proposal-held"
   // repo cannot be cloned by coord (deleted/renamed or GitHub App access
   // revoked) — not fixable by a rebase or reevaluate.
   | "repo-unreachable"
