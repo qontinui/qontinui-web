@@ -311,7 +311,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.work_unit_citation_retractions.applied_at IS
-            'When the citation row was deleted on observing the land. NULL unless state reached applied.'
+            'On an applied row (and a superseded one, which was applied first): when the citation row was deleted on observing the land. On an ambiguous row: when coord resolved the same-second tie (a newer body, or its own REST read of the current one); the state stays ambiguous as the record. NULL on a pending or withdrawn row, and on an ambiguous row whose tie is still open.'
         """
     )
 
