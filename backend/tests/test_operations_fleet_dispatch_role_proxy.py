@@ -96,20 +96,64 @@ def _configure_mock_client(MockClient, mock_instance):
 
 class TestReadRoles:
     def test_proxies_coords_read_untouched(self, auth_client: TestClient):
+        # Coord's `DispatchRolesResponse` (qontinui-coord#3015
+        # dispatch_role_routes.rs), including the fields added after the
+        # draft: `roster_truncated`, `not_registered` lanes and a redacted
+        # operator email for a non-admin reader.
+        not_registered = {
+            "effective": "not_registered",
+            "role": "not_registered",
+            "drain": {
+                "state": "none",
+                "until": None,
+                "reason": None,
+                "drained_by": None,
+                "drained_devices": 0,
+                "total_devices": 0,
+            },
+        }
         body = {
+            "state": "known",
+            "as_of": "2026-10-08T10:00:00Z",
+            "detail": None,
+            "roles_table": "present",
             "machines": [
                 {
-                    "device_id": DEVICE_ID,
-                    "name": "monster",
-                    "dispatch_role": "unassigned",
-                    "suggestion": {"role": "bench", "mem_total_bytes": 33e9},
-                    "lanes": {
-                        "agent": {"state": "closed_by_drain"},
-                        "ci": {"state": "open"},
+                    "kind": "ci_host",
+                    "machine_key": "/dell-2020",
+                    "device_id": None,
+                    "ci_host_name": "dell-2020",
+                    "name": "dell-2020",
+                    "registration": "assigned_not_registered",
+                    "device_ids": [],
+                    "last_seen_at": None,
+                    "heartbeat_fresh": False,
+                    "assignment": "assigned",
+                    "role": {
+                        "dispatch_role": "ci_node",
+                        "reason": "remote CI box",
+                        "version": 1,
+                        "updated_by": "[redacted]",
+                        "updated_at": "2026-10-08T10:00:00Z",
+                    },
+                    "behaves_as": "ci_node",
+                    "suggestion": None,
+                    "suggestion_basis": "assigned",
+                    "lanes": {"agent": not_registered, "ci": not_registered},
+                    "pre_change_sessions": {
+                        "state": "not_applicable",
+                        "count": None,
+                        "start_unrecorded": None,
                     },
                     "a_field_a_newer_coord_adds": True,
                 }
-            ]
+            ],
+            "older_machines_omitted": 0,
+            "unidentifiable_ci_runner_rows": 0,
+            "roster_truncated": True,
+            "suggestion_rule": {"otherwise": "workhorse"},
+            "pre_change_sessions_note": "upper bound",
+            "not_served": {"linked_ci_hosts": "x", "trust_tier": "y"},
         }
         with _patch_httpx() as MockClient:
             mock_instance = MagicMock()
@@ -249,6 +293,38 @@ class TestWriteBody:
         assert mock_instance.put.await_count == 0
 
 
+class TestWriteAnswerPassesThrough:
+    def test_null_live_sessions_and_unapplied_effects_arrive_untouched(
+        self, auth_client: TestClient
+    ):
+        # A `ci_host_name` write: coord measures no sessions there and says so
+        # with `null`, which must not be coerced to 0 on the way through.
+        answer = {
+            "changed": True,
+            "machine_key": "/dell-2020",
+            "previous_role": None,
+            "dispatch_role": "ci_node",
+            "version": 1,
+            "forced_over": [],
+            "lanes": {"agent": "closed", "ci": "open"},
+            "applies_to": "new dispatch only",
+            "live_sessions_on_machine": None,
+            "effects_not_applied": [
+                {"effect": "github_routing_labels", "plan_phase": 4, "detail": "x"},
+                {"effect": "linked_ci_host_fanout", "plan_phase": 3, "detail": "y"},
+            ],
+            "linked_ci_hosts": "not served",
+        }
+        resp, _ = _put(
+            auth_client,
+            {"ci_host_name": "dell-2020", "dispatch_role": "ci_node", "reason": "r"},
+            coord_resp=_mock_response(200, answer),
+        )
+        assert resp.status_code == 200
+        assert resp.json() == answer
+        assert resp.json()["live_sessions_on_machine"] is None
+
+
 class TestRefusalsPassThrough:
     @pytest.mark.parametrize(
         ("status", "refusal"),
@@ -260,7 +336,12 @@ class TestRefusalsPassThrough:
                     "error": "last_open_lane",
                     "detail": "pass `force: true` to apply it anyway",
                     "lanes": [
-                        {"lane": "agent", "remaining": [], "offline_only": False}
+                        {
+                            "lane": "ci",
+                            "capacity": "github_runner_hosts",
+                            "remaining": ["msi-wsl"],
+                            "offline_only": True,
+                        }
                     ],
                 },
             ),

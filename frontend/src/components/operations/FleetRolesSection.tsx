@@ -65,13 +65,17 @@ import {
   LANE_LABEL,
   ROLE_LABEL,
   ROLE_OPENS,
+  describeEffectNotApplied,
+  describeLiveSessions,
   describeRole,
   describeRoleEffect,
   describeRoleWriteError,
   formatGiB,
+  laneNotRegistered,
   validateRoleForm,
   type DispatchRole,
   type Lane,
+  type LaneRoleLayer,
   type LaneView,
   type RoleMachine,
   type RoleWriteRefusal,
@@ -90,7 +94,7 @@ interface PendingChange {
   to: DispatchRole;
   hostOnly: boolean;
   /** Coord's role layer per lane, for the "before" half of the sentence. */
-  servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>;
+  servedRoleLayer?: Partial<Record<Lane, LaneRoleLayer>>;
 }
 
 /** The key a role write names: the device, or the canonical host name. */
@@ -103,11 +107,12 @@ function machineWriteKey(c: {
     : `host:${(c.ciHostName ?? "").trim().toLowerCase()}`;
 }
 
-function laneSummary(m: RoleMachine): string {
-  if (m.lanes === null)
-    return m.registered
-      ? "lane state not served"
+function laneSummary(m: RoleMachine, maybeCut: boolean): string {
+  if (!m.registered)
+    return maybeCut
+      ? "no lanes shown — may be cut from a truncated read"
       : "no lanes until a runner registers";
+  if (m.lanes === null) return "lane state not served";
   return LANES.map(
     (l) =>
       `${LANE_LABEL[l]}: ${
@@ -145,12 +150,37 @@ function DrainText({ lane }: { lane: LaneView }) {
   }
 }
 
+/** Coord's `not_registered` lane value: no device row, so no lane state. */
+function NotRegisteredBadge({
+  testId = "fleet-roles-lane-not-registered",
+  maybeCut = false,
+}: {
+  testId?: string;
+  /** Coord's roster hit its cap: the row may only LOOK unregistered. */
+  maybeCut?: boolean;
+}) {
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px]"
+      data-testid={testId}
+      title={
+        maybeCut
+          ? "Coord's machine read reached its row cap: this machine's device rows may have been cut, so it may be registered."
+          : undefined
+      }
+    >
+      {maybeCut ? "not registered?" : "not registered"}
+    </Badge>
+  );
+}
+
 /**
  * Per lane: coord's role layer and drain layer, side by side (§D2). The role
  * layer is coord's FLEET-effective role, so a co-tenant's Bench shows here as
  * closed even when this tenant assigned Workhorse.
  */
-function LanesTable({ m }: { m: RoleMachine }) {
+function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
   return (
     <Table className="text-xs" data-testid="fleet-roles-lanes">
       <TableHeader>
@@ -162,26 +192,47 @@ function LanesTable({ m }: { m: RoleMachine }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {LANES.map((l) => (
-          <TableRow key={l} data-lane={l}>
-            <TableCell>{LANE_LABEL[l]}</TableCell>
-            <TableCell>
-              {l === "agent" && m.hostOnly
-                ? "n/a (no workstation runner)"
-                : m.lanes
-                  ? m.lanes[l].role
-                  : "not served"}
-            </TableCell>
-            <TableCell className="break-words whitespace-normal">
-              {m.lanes ? <DrainText lane={m.lanes[l]} /> : "not served"}
-            </TableCell>
-            <TableCell className="font-mono">
-              {l === "agent" && m.hostOnly
-                ? "n/a"
-                : (m.lanes?.[l].effective ?? "not served")}
-            </TableCell>
-          </TableRow>
-        ))}
+        {LANES.map((l) => {
+          const lane = m.lanes ? m.lanes[l] : null;
+          const na = l === "agent" && m.hostOnly;
+          const unregistered = lane !== null && laneNotRegistered(lane);
+          return (
+            <TableRow key={l} data-lane={l}>
+              <TableCell>{LANE_LABEL[l]}</TableCell>
+              <TableCell>
+                {na ? (
+                  "n/a (no workstation runner)"
+                ) : lane === null ? (
+                  "not served"
+                ) : lane.role === "not_registered" ? (
+                  <NotRegisteredBadge maybeCut={maybeCut} />
+                ) : (
+                  lane.role
+                )}
+              </TableCell>
+              <TableCell className="break-words whitespace-normal">
+                {lane === null ? (
+                  "not served"
+                ) : unregistered ? (
+                  "—"
+                ) : (
+                  <DrainText lane={lane} />
+                )}
+              </TableCell>
+              <TableCell className="font-mono">
+                {na ? (
+                  "n/a"
+                ) : lane === null ? (
+                  "not served"
+                ) : lane.effective === "not_registered" ? (
+                  <NotRegisteredBadge maybeCut={maybeCut} />
+                ) : (
+                  (lane.effective ?? "not served")
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -269,9 +320,10 @@ export function FleetRolesSection() {
       from: m.role,
       to,
       hostOnly: m.hostOnly,
-      // An unreadable own row may itself be the closure being replaced.
+      // An unreadable own row may itself be the closure being replaced; an
+      // unregistered machine has no lane state to read "before" from.
       servedRoleLayer:
-        m.lanes && m.unrecognisedRole === null
+        m.lanes && m.registered && m.unrecognisedRole === null
           ? { agent: m.lanes.agent.role, ci: m.lanes.ci.role }
           : undefined,
     });
@@ -304,23 +356,35 @@ export function FleetRolesSection() {
         }
         return;
       }
-      toast.success(
-        res.changed
-          ? `${pending.name} is now ${ROLE_LABEL[pending.to]}${
-              force ? " (forced)" : ""
-            }. Work already running on it is not stopped${
-              // Coord counts sessions only for a device write; for a host
-              // write it reports a constant, which is not a measurement.
-              res.liveSessions !== null && pending.deviceId !== null
-                ? ` (${res.liveSessions} live session${
-                    res.liveSessions === 1 ? "" : "s"
-                  } on it now)`
-                : ""
-            }.`
-          : ambiguousKeys.has(machineWriteKey(pending))
-            ? `${pending.name} is ${ROLE_LABEL[pending.to]} — the earlier attempt may have applied it.`
-            : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`
-      );
+      const live =
+        res.changed && res.liveSessions !== undefined
+          ? // Coord never measures sessions on a CI host, so a host write is
+            // unknown whatever number a coord build might send (never 0).
+            describeLiveSessions(
+              pending.deviceId === null ? "unknown" : res.liveSessions
+            )
+          : null;
+      const message = res.changed
+        ? `${pending.name} is now ${ROLE_LABEL[pending.to]}${
+            force ? " (forced)" : ""
+          }. Work already running on it is not stopped${
+            live ? ` (${live})` : ""
+          }.`
+        : ambiguousKeys.has(machineWriteKey(pending))
+          ? `${pending.name} is ${ROLE_LABEL[pending.to]} — the earlier attempt may have applied it.`
+          : `${pending.name} was already ${ROLE_LABEL[pending.to]} — nothing changed.`;
+      // What coord says it did NOT do for this change, in its own list.
+      const notApplied =
+        res.notApplied && res.notApplied.length > 0
+          ? `Not applied by coord yet: ${res.notApplied
+              .map(describeEffectNotApplied)
+              .join("; ")}.`
+          : null;
+      // Stays until dismissed: this is the only place the page says what coord
+      // did not do (e.g. GitHub still routes jobs to a machine just benched).
+      toast.success(message);
+      if (notApplied)
+        toast.warning(notApplied, { duration: Infinity, closeButton: true });
       // A definite answer settles the earlier ambiguity for this machine.
       const settled = machineWriteKey(pending);
       setAmbiguousKeys((prev) => {
@@ -421,7 +485,14 @@ export function FleetRolesSection() {
               identity={m.name}
               label={describeRole(m)}
               status={
-                m.role === null && m.suggestion ? (
+                !m.registered ? (
+                  <NotRegisteredBadge
+                    testId="fleet-roles-row-not-registered"
+                    maybeCut={
+                      read.state === "known" && read.rosterTruncated === true
+                    }
+                  />
+                ) : m.role === null && m.suggestion ? (
                   <Badge
                     variant="secondary"
                     className="text-[10px] shrink-0"
@@ -431,7 +502,10 @@ export function FleetRolesSection() {
                   </Badge>
                 ) : undefined
               }
-              reason={laneSummary(m)}
+              reason={laneSummary(
+                m,
+                read.state === "known" && read.rosterTruncated === true
+              )}
               attention={m.unrecognisedRole !== null ? "waiting" : undefined}
               expanded={expanded}
               onToggle={onToggle}
@@ -512,7 +586,14 @@ export function FleetRolesSection() {
                       )}
                   </div>
                 }
-                problems={<LanesTable m={m} />}
+                problems={
+                  <LanesTable
+                    m={m}
+                    maybeCut={
+                      read.state === "known" && read.rosterTruncated === true
+                    }
+                  />
+                }
                 actions={
                   <CoordAdminOnly fallback={<ReadOnlyNotice />}>
                     <div className="space-y-1.5">
@@ -550,6 +631,26 @@ export function FleetRolesSection() {
           data-testid="fleet-roles-notice"
         >
           {read.notice}
+        </p>
+      )}
+      {read.state === "known" && read.rosterTruncated === true && (
+        <p
+          className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
+          role="status"
+          data-testid="fleet-roles-truncated"
+        >
+          Coord&apos;s device read reached its row cap, so this list may be
+          incomplete: the least-recently-seen device rows may have been cut. A
+          machine whose rows were cut can show as not registered even if it is,
+          and a CI host can show fewer registrations than it has.
+        </p>
+      )}
+      {read.state === "known" && read.rosterTruncated === null && (
+        <p
+          className="mt-2 text-[11px] text-muted-foreground break-words"
+          data-testid="fleet-roles-truncation-unreported"
+        >
+          Coord does not report whether this read was cut at its row cap.
         </p>
       )}
       {read.state === "known" &&
