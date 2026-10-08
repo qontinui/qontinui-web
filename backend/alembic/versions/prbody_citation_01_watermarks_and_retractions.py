@@ -54,10 +54,10 @@ deleted row's evidence instead.
   CHECK that rejected the citation table's real spelling would make every
   watermark write for such a repo fail, which would silently disable the
   ordering guard for it. (Decided from reading coord's write path, not from a
-  live read of production values.) The watermark is written only by the
-  webhook and REST paths, which both carry the ``owner/name`` full name, so a
-  short-name citation row never joins a watermark; that is the coord writer's
-  concern, not this schema's.
+  live read of production values.) The coord writer must write the watermark
+  only from the webhook and REST paths, which both carry the ``owner/name``
+  full name, so a short-name citation row never joins a watermark; that is the
+  coord writer's concern, not this schema's.
 * ``pr_number`` INTEGER NOT NULL, CHECK ``> 0``.
 * ``body_updated_at`` TIMESTAMPTZ NOT NULL: GitHub's ``pull_request.updated_at``
   of the newest processed body.
@@ -90,9 +90,10 @@ Primary key ``(repo, pr_number)``: the writer's upsert key and the lookup key.
   ``ambiguous`` row (a newer body, or coord's REST read of the current one,
   settled the tie; the state stays ``ambiguous`` as the record). NULL on a
   ``pending`` or ``withdrawn`` row and on an unresolved ``ambiguous`` one.
-  Duplicate unresolved ``ambiguous`` rows for one body are prevented by the
-  writer (an existence check on ``body_updated_at`` under its per-PR lock), not
-  by an index.
+  Duplicate unresolved ``ambiguous`` rows for one body must be prevented by the
+  coord writer (an existence check on ``(work_unit_id, repo, pr_number,
+  body_updated_at)`` with ``state = 'ambiguous'`` and ``applied_at IS NULL``,
+  under its per-PR lock), not by an index.
 
 Indexes: a partial UNIQUE index on ``(work_unit_id, repo, pr_number) WHERE
 state = 'pending'`` (at most one open retraction per citation, and the writer's
@@ -249,7 +250,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.work_unit_citation_retractions IS
-            'Ledger of pr_body citation retractions decided when a newer PR body drops a work-unit marker. pending: the PR has not landed, so the citation row stays. applied: the PR landed and the pr_body row was deleted; this row preserves it. withdrawn: the marker reappeared before the land. superseded: it reappeared after an applied retraction and the row was re-created. ambiguous: equal updated_at with a different body, nothing applied (applied_at then records when the tie was resolved). No FK to coord.work_units: the ledger outlives the unit.'
+            'Ledger of pr_body citation retractions decided when a newer PR body drops a work-unit marker. pending: the PR has not landed, so the citation row stays. applied: the PR landed and the pr_body row was deleted; this row preserves it. withdrawn: the marker reappeared before the land. superseded: it reappeared after an applied retraction and the row was re-created. ambiguous: equal updated_at with a different body, nothing applied (applied_at records when the tie was resolved, NULL while it is open). No FK to coord.work_units: the ledger outlives the unit.'
         """
     )
     op.execute(
