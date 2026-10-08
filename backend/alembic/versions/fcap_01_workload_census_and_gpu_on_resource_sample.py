@@ -36,7 +36,8 @@ that a 32 GB GPU sat idle. Two columns close that:
   ``{index, util_pct, mem_used_bytes, power_w, temp_c}`` from
   ``nvidia-smi --query-gpu``. The STATIC inventory (vendor, model, VRAM,
   driver) is owned by ``coord.computers.gpus`` (the computers plan's ``gpus``
-  amendment) and is deliberately not duplicated here. Written on the **host
+  amendment, web#1598, pending at authoring time) and is deliberately not
+  duplicated here. Written on the **host
   lane only** (the one-writer rule of runner#1988): a ``wsl`` lane row carries
   ``gpu = NULL`` so a fleet VRAM sum never double-counts.
 
@@ -202,7 +203,8 @@ def upgrade() -> None:
             'Decision 3): a JSON array, one entry per GPU, each {index, '
             'util_pct, mem_used_bytes, power_w, temp_c}, from nvidia-smi '
             '--query-gpu. The STATIC inventory (vendor, model, VRAM, driver) '
-            'lives in coord.computers.gpus and is not duplicated here. Written '
+            'lives in coord.computers.gpus (web#1598, pending) and is not '
+            'duplicated here. Written '
             'on the HOST lane only (one writer): a wsl lane row carries NULL, '
             'so a fleet VRAM sum never double-counts. Bounded to at most 16 '
             'entries app-side, NOT by a CHECK (same reason as workloads). NULL '
@@ -225,6 +227,9 @@ def downgrade() -> None:
     the `downgrade()` body), and as a literal coord's migration classifier can
     read rather than a dynamic string.
     """
+    # Same bounded lock wait as upgrade(): the runner keeps publishing into
+    # this table, and a queued ACCESS EXCLUSIVE lock blocks every writer.
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
         ALTER TABLE coord.device_resource_samples
@@ -232,3 +237,4 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS workloads
         """
     )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")

@@ -45,6 +45,25 @@ A ``DEFAULT true`` would erase the distinction between "never decided" and
 "decided on", and a ``NOT NULL`` would force a backfill of every snapshot row
 — rewriting immutable history. Neither is wanted.
 
+Degrade obligation on the coord side
+====================================
+
+The coord PR that tail-appends ``workload_census_enabled`` to ``CONTROL_COLS``
+(qontinui-coord ``crates/coord/src/fleet_policy.rs``) must:
+
+(a) add the name to the **refuse-on-miss** set next to ``SESSION_FLOOR_COLS``
+    (``is_session_floor_miss`` / ``session_floor_miss_matches``, around
+    ``fleet_policy.rs:420-427`` at authoring time) — or to a generalised
+    tail-column set that replaces it — so a 42703 naming this column returns
+    **503**. Left to the generic degrade path, a coord deploy that lands ahead
+    of this revision would silently degrade every policy read to
+    ``controls: null`` and the write path to an identity-only snapshot (around
+    ``fleet_policy.rs:850-856`` and ``:1776-1784``) — a versions row that
+    records a write while dropping every control it carried, i.e. an audit
+    trail that lies.
+(b) merge only after this revision has been applied
+    ``[policy: alembic-sole-authorship]``.
+
 Idempotency and locking
 =======================
 
@@ -136,6 +155,7 @@ def downgrade() -> None:
     cannot. Static literals inside `downgrade()`, out of
     `scripts/ci/check_coord_column_drops.py`'s upgrade-path scan.
     """
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
         ALTER TABLE coord.fleet_runtime_policy_versions
@@ -148,3 +168,4 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS workload_census_enabled
         """
     )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
