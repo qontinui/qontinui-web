@@ -315,10 +315,23 @@ export function describeRoleEffect(
   from: DispatchRole | null,
   to: DispatchRole,
   /** A CI host has no workstation runner: it never took sessions. */
-  hostOnly = false
+  hostOnly = false,
+  /**
+   * Coord's role layer per lane, when known — the FLEET-effective role
+   * (a co-tenant's Bench, or an unparseable stored role read as Bench), which
+   * is what "before" really was. Falls back to this tenant's `from`.
+   */
+  servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>
 ): string {
   const was = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
-  const before = hostOnly ? { ...was, agent: false } : was;
+  const layered = (lane: Lane): boolean => {
+    const r = servedRoleLayer?.[lane];
+    return r === "open" ? true : r === "closed" ? false : was[lane];
+  };
+  const before = {
+    agent: hostOnly ? false : layered("agent"),
+    ci: layered("ci"),
+  };
   const after = ROLE_OPENS[to];
   const clause = (lane: Lane): string => {
     const what = lane === "agent" ? "sessions" : "CI";
@@ -429,6 +442,14 @@ export function describeRoleWriteError(
         `Bench.${coordMsg ? ` Coord: ${coordMsg}` : ""}`,
     };
   }
+  if (code === "tenant_not_resolved" || /tenant_not_resolved/.test(body)) {
+    return {
+      kind: "other",
+      message:
+        "No coord tenant is selected for your account, so the write was not " +
+        "sent. Pick a tenant and retry. Nothing was changed.",
+    };
+  }
   if (
     // Coord also answers 403 `device_not_in_tenant`, which is not an
     // authorization failure of the operator — it falls through to the generic
@@ -452,14 +473,21 @@ export function describeRoleWriteError(
         "is a deploy behind this console. Nothing was changed.",
     };
   }
+  // Only the web proxy's own connect failure proves coord never saw the
+  // write; any other 502 (a gateway dropping an answer) or 504 may follow a
+  // commit.
+  if (status === 502 && /coord is not reachable/.test(body)) {
+    return {
+      kind: "other",
+      message: "Coord could not be reached. Nothing was changed.",
+    };
+  }
   if (status === 502 || status === 504) {
     return {
       kind: "other",
       message:
-        status === 502
-          ? "Coord could not be reached. Nothing was changed."
-          : "Coord's answer was lost; the change MAY have been applied — the " +
-            "list re-reads to show what coord now holds.",
+        "The answer was lost on the way back; the change MAY have been " +
+        "applied — the list re-reads to show what coord now holds.",
     };
   }
   const parts = [`HTTP ${status}`];

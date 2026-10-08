@@ -127,8 +127,9 @@ export async function putDispatchRole(input: {
       // Never auto-retry: coord answers a repeated PUT with `changed: false`,
       // so a retry after a lost-but-committed first attempt would report
       // "nothing changed" for a change this operator just made. A 5xx must
-      // reach the caller, which re-reads instead.
-      noRetryStatuses: [500, 502, 503, 504],
+      // reach the caller, which re-reads instead. `maxRetries: 0` disables the
+      // whole chain (PUT is otherwise retried as idempotent on any 5xx).
+      maxRetries: 0,
     });
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
