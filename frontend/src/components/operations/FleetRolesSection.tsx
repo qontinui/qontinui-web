@@ -33,6 +33,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -56,6 +64,7 @@ import {
   LANES,
   LANE_LABEL,
   ROLE_LABEL,
+  ROLE_OPENS,
   describeRole,
   describeRoleEffect,
   describeRoleWriteError,
@@ -126,30 +135,30 @@ function DrainText({ lane }: { lane: LaneView }) {
  */
 function LanesTable({ m }: { m: RoleMachine }) {
   return (
-    <table className="text-xs" data-testid="fleet-roles-lanes">
-      <thead>
-        <tr className="text-muted-foreground">
-          <th className="pr-4 text-left font-medium">Lane</th>
-          <th className="pr-4 text-left font-medium">Role</th>
-          <th className="pr-4 text-left font-medium">Drain</th>
-          <th className="text-left font-medium">Coord says</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table className="text-xs" data-testid="fleet-roles-lanes">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Lane</TableHead>
+          <TableHead>Role</TableHead>
+          <TableHead>Drain</TableHead>
+          <TableHead>Coord says</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {LANES.map((l) => (
-          <tr key={l} data-lane={l}>
-            <td className="pr-4">{LANE_LABEL[l]}</td>
-            <td className="pr-4">{m.lanes ? m.lanes[l].role : "not served"}</td>
-            <td className="pr-4 break-words">
+          <TableRow key={l} data-lane={l}>
+            <TableCell>{LANE_LABEL[l]}</TableCell>
+            <TableCell>{m.lanes ? m.lanes[l].role : "not served"}</TableCell>
+            <TableCell className="break-words whitespace-normal">
               {m.lanes ? <DrainText lane={m.lanes[l]} /> : "not served"}
-            </td>
-            <td className="font-mono">
+            </TableCell>
+            <TableCell className="font-mono">
               {m.lanes?.[l].effective ?? "not served"}
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -267,7 +276,24 @@ export function FleetRolesSection() {
     [close, pending, reason, refresh]
   );
 
-  const hostError = validateRoleForm({ reason: "x", ciHostName: hostName });
+  // A name coord already lists is set on its own row: writing it again by
+  // host name would put a second role row on one machine (§D4).
+  const listedMatch =
+    read.state === "known"
+      ? (read.machines.find((m) =>
+          [m.name, m.ciHostName].some(
+            (n) =>
+              n !== null && n.toLowerCase() === hostName.trim().toLowerCase()
+          )
+        ) ?? null)
+      : null;
+  const hostError =
+    validateRoleForm({ reason: "x", ciHostName: hostName }) ??
+    (listedMatch
+      ? `${listedMatch.name} is already listed above — set its role on its row.`
+      : read.state !== "known"
+        ? "The machine list has not been read, so a duplicate cannot be ruled out."
+        : null);
 
   const summary =
     read.state === "known" ? (
@@ -363,13 +389,22 @@ export function FleetRolesSection() {
                         .
                       </p>
                     )}
+                    {m.role !== null && !ROLE_OPENS[m.role].ci && (
+                      <p
+                        className="break-words text-amber-600 dark:text-amber-500"
+                        data-testid="fleet-roles-github-runner-warning"
+                      >
+                        This role closes CI, but GitHub runner services
+                        registered on this machine still receive jobs: label
+                        removal does not follow the role yet.
+                      </p>
+                    )}
                     {m.sessionsBeforeChange !== null &&
                       m.sessionsBeforeChange > 0 && (
                         <p className="break-words text-amber-600 dark:text-amber-500">
-                          {m.sessionsBeforeChange} session
-                          {m.sessionsBeforeChange === 1 ? "" : "s"} placed
-                          before this role still running — not safe to rebuild
-                          yet.
+                          Up to {m.sessionsBeforeChange} live session
+                          {m.sessionsBeforeChange === 1 ? "" : "s"} started
+                          before this role was set — not safe to rebuild yet.
                         </p>
                       )}
                   </div>
@@ -460,6 +495,14 @@ export function FleetRolesSection() {
               Assign…
             </Button>
           </div>
+          {hostName.trim() !== "" && hostError !== null && (
+            <p
+              className="text-[11px] text-muted-foreground break-words"
+              data-testid="fleet-roles-host-error"
+            >
+              {hostError}
+            </p>
+          )}
           <p className="text-[11px] text-muted-foreground break-words">
             For a CI host with no workstation runner (Workhorse is not possible
             there). The role applies the moment a runner registers under that
@@ -504,9 +547,9 @@ export function FleetRolesSection() {
                   className="break-words"
                   data-testid="fleet-roles-not-yet-applied"
                 >
-                  Not applied yet: GitHub runner routing labels (Phase 4) and
-                  the CI-node switch (Phase 5) do not follow the role. GitHub
-                  may still route jobs to a machine whose role closes CI.
+                  Not automatic yet: GitHub runner routing labels and the
+                  CI-node switch do not follow the role. GitHub may still route
+                  jobs to a machine whose role closes CI.
                 </p>
               </div>
             </DialogDescription>
@@ -527,7 +570,7 @@ export function FleetRolesSection() {
 
           {refusal && (
             <p
-              className="text-xs break-words text-amber-600 dark:text-amber-500"
+              className="text-xs break-words text-red-600 dark:text-red-400"
               role="alert"
               data-testid="fleet-roles-refusal"
               data-refusal={refusal.kind}
