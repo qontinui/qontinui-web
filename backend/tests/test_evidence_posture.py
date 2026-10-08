@@ -311,7 +311,7 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.api.v1.endpoints.devices_ws._route_device_message": (
         "dispatches frames inside the device WebSocket session, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._verify_grant": (
+    "app.services.runner.remote_relay.grants.GrantAuthorizer._verify_grant": (
         "verifies a relay capability grant inside a WebSocket session, not an HTTP route"
     ),
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_attach": (
@@ -320,10 +320,10 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_create": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_end": (
+    "app.services.runner.remote_relay.end.EndCoordinator._handle_end": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._end_with_fresh_grant": (
+    "app.services.runner.remote_relay.end.EndCoordinator._end_with_fresh_grant": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
     "app.services.runner.remote_terminal_relay.handle_source_frame": (

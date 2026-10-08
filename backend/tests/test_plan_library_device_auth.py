@@ -43,6 +43,8 @@ import pytest_asyncio
 from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests._ops_patch import setattr_ops
+
 API_PREFIX = "/api/v1/plan-library"
 
 pytestmark = pytest.mark.asyncio
@@ -526,15 +528,13 @@ class TestDeviceCallerSkipsTheOperatorIdentityResolution:
         """Count ``get_coord_identity`` calls and answer with a home tenant."""
         from types import SimpleNamespace
 
-        from app.api.v1.endpoints import operations
-
         calls: list[str] = []
 
         async def _fake(request):  # noqa: ANN001 — test double
             calls.append("me")
             return SimpleNamespace(home_tenant_id=uuid4())
 
-        monkeypatch.setattr(operations, "get_coord_identity", _fake)
+        setattr_ops(monkeypatch, "get_coord_identity", _fake)
         return calls
 
     @staticmethod

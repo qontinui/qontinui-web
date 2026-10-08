@@ -47,6 +47,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 TENANT = UUID("11111111-1111-1111-1111-111111111111")
 USER_ID = UUID("99999999-9999-9999-9999-999999999999")
 USER_EMAIL = "real-operator@example.com"
@@ -137,12 +139,10 @@ def _run(
 ):
     """POST the respond route with coord's GET answering ``row_response``
     (or raising ``get_side_effect``)."""
-    from app.api.v1.endpoints import operations
 
     with (
         patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
-        patch.object(
-            operations,
+        patch_ops(
             "get_coord_identity",
             new=AsyncMock(return_value=identity or _identity(admin=admin)),
         ),
@@ -255,12 +255,9 @@ def test_an_unreadable_row_fails_closed(row_response):
 
 
 def test_coord_unreachable_fails_closed():
-    from app.api.v1.endpoints import operations
-
     with (
         patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
-        patch.object(
-            operations,
+        patch_ops(
             "get_coord_identity",
             new=AsyncMock(return_value=_identity(admin=True)),
         ),

@@ -35,6 +35,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
     table_exists,
@@ -53,13 +54,12 @@ def _revision_source() -> str:
 
 
 def test_down_revision_pins_the_parent_on_one_line() -> None:
-    match = re.search(
-        r'^down_revision = "(?P<parent>[^"]+)"$',
-        _revision_source(),
-        re.MULTILINE,
+    source = _revision_source()
+    assert re.search(r'^down_revision = "[^"]+"$', source, re.MULTILINE), (
+        "down_revision must be one unannotated line"
     )
-    assert match is not None, "down_revision must be one unannotated line"
-    assert match.group("parent") == _PARENT_REVISION_ID
+    declared = declared_parent_revision_id(source, _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID
 
 
 def test_the_revision_id_is_unique_in_the_chain() -> None:

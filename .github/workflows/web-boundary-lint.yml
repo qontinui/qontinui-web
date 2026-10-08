@@ -7,9 +7,10 @@ name: web/backend ↔ qontinui boundary lint
 # extracted it: this workflow used to carry a multi-line `run:` block of pipes
 # and `$(...)`, which the runner-as-CI-node lane (.qontinui/ci.toml, argv-only,
 # deliberately shell-free) could not mirror — so the manifest header recorded
-# it as inexpressible. Three lanes now invoke the one script:
+# it as inexpressible. Four lanes now invoke the one script:
 #
 #   * this workflow, step "Scan backend/app for qontinui.* boundary violations"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `web-boundary-lint`
 #   * .pre-commit-config.yaml, hook `web-boundary-lint` (--files mode)
 #
