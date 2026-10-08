@@ -11,19 +11,21 @@ Without a database (always runs):
    agrees with ``down_revision``.
 2. The upgrade path drops nothing (the coord column-drop guard agrees), every
    statement is a static ``op.execute`` on ``coord.canonical_repos``, and the
-   column is declared ``JSONB NOT NULL DEFAULT '[]'`` — additive, so a coord
-   build that never reads it is unaffected.
-3. The seed targets ``qontinui/qontinui-runner`` with ``["os:windows"]`` only,
-   and is guarded on the default so a re-run never overwrites a set value.
+   column is ONE ``ADD COLUMN IF NOT EXISTS … JSONB DEFAULT '[]' CONSTRAINT …
+   CHECK (…)`` — the shape coord's merge-train migration classifier admits
+   without an operator override: no ``NOT NULL``, no ``DO $$`` block, no DML.
+3. This revision seeds nothing: the runner's ``["os:windows"]`` lives in the
+   stacked ``cinode_04_runner_requires_windows``.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port`` (``conftest.py``
 derives ``DATABASE_URL`` from it at import time):
 
-4. The column lands with the declared type, nullability and default, and every
-   pre-existing row backfills to ``[]`` except the seeded runner row.
-5. The CHECK refuses a non-array and an array holding a non-string, and admits
-   an array of strings.
+4. The column lands with the declared type and default, and every pre-existing
+   row — the runner's included — backfills to ``[]``.
+5. The CHECK refuses NULL (the column carries no ``NOT NULL``; the CHECK's
+   ``IS NOT NULL`` conjunct is the only thing standing in for it), a non-array
+   and an array holding a non-string, and admits an array of strings.
 6. ``upgrade()`` is idempotent and preserves a value set after the first run;
    up, down, up leaves no residue.
 """
@@ -31,7 +33,6 @@ derives ``DATABASE_URL`` from it at import time):
 from __future__ import annotations
 
 import ast
-import json
 import re
 import sys
 from pathlib import Path
@@ -63,13 +64,12 @@ _REVISION_FILENAME = "cinode_02_ci_node_required_capabilities.py"
 
 # Pinned as a literal so a re-point of down_revision is a deliberate two-file
 # change: this line, the assignment, and the Revises header.
-_PARENT_REVISION_ID = "coord_agent_questions_effect"
+_PARENT_REVISION_ID = "policy_rules_agent_name_uq_01"
 
 _TABLE = "canonical_repos"
 _COLUMN = "ci_node_required_capabilities"
 _CONSTRAINT = "ck_canonical_repos_ci_node_required_capabilities"
-_SEEDED_REPO = "qontinui/qontinui-runner"
-_SEED = ["os:windows"]
+_RUNNER_REPO = "qontinui/qontinui-runner"
 
 _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
@@ -190,21 +190,42 @@ def test_both_directions_are_static_op_execute_on_canonical_repos() -> None:
         )
 
 
-def test_upgrade_adds_the_column_jsonb_not_null_default_empty_array() -> None:
+def test_upgrade_adds_the_column_in_the_classifier_admitted_shape() -> None:
     adds = [
         _normalized(sql)
         for sql in _sql_literals("upgrade")
         if "ADD COLUMN" in sql.upper()
     ]
-    assert adds == [
+    assert len(adds) == 1, adds
+    assert adds[0].startswith(
         f"ALTER TABLE coord.{_TABLE} ADD COLUMN IF NOT EXISTS {_COLUMN} "
-        "JSONB NOT NULL DEFAULT '[]'::jsonb"
-    ]
+        f"JSONB DEFAULT '[]'::jsonb CONSTRAINT {_CONSTRAINT} CHECK ("
+    ), adds[0]
+
+
+def test_upgrade_avoids_every_shape_the_coord_classifier_rejects() -> None:
+    """qontinui-coord ``pr_merge/migration_classifier.rs`` refuses each of these.
+
+    ``NOT NULL`` is checked outside the CHECK's parentheses only: inside them
+    it is the ``IS NOT NULL`` conjunct, which the classifier keeps in one word.
+    """
+    statements = [_normalized(sql) for sql in _sql_literals("upgrade")]
+    assert len(statements) == 2, statements
+    for sql in statements:
+        upper = sql.upper()
+        assert "$$" not in upper, "dollar-quoted block: fail-closed in the lexer"
+        assert not upper.startswith(("UPDATE", "INSERT", "DELETE", "DO ")), sql
+        outside_check = upper.split(" CHECK (", 1)[0]
+        assert "NOT NULL" not in outside_check, sql
+    assert statements[1].upper().startswith("COMMENT ON COLUMN ")
 
 
 def test_the_check_pins_an_array_of_strings() -> None:
     upgrade_sql = "\n".join(_sql_literals("upgrade"))
     assert _CONSTRAINT in upgrade_sql
+    # The column has no NOT NULL (classifier shape), and a CHECK passes on NULL
+    # unless it says otherwise.
+    assert f"{_COLUMN} IS NOT NULL" in upgrade_sql
     assert f"jsonb_typeof({_COLUMN}) = 'array'" in upgrade_sql
     # STRICT mode: a lax filter unwraps a nested array item before testing
     # it, so '[["os:windows"]]' would pass a lax check.
@@ -224,19 +245,12 @@ def test_downgrade_removes_exactly_the_constraint_and_the_column() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_seed_is_the_runner_windows_leg_and_guarded_on_the_default() -> None:
-    updates = [
-        _normalized(sql)
-        for sql in _sql_literals("upgrade")
-        if sql.strip().upper().startswith("UPDATE")
-    ]
-    assert updates == [
-        f"UPDATE coord.{_TABLE} SET {_COLUMN} = '{json.dumps(_SEED)}'::jsonb "
-        f"WHERE repo = '{_SEEDED_REPO}' AND {_COLUMN} = '[]'::jsonb"
-    ]
-    # The allowlist is matched from the device's ci_repo:<repo> token against
-    # the row's own repo (Phase 4c); storing it here would duplicate ``repo``.
-    assert not any("ci_repo:" in sql for sql in updates)
+def test_this_revision_seeds_nothing() -> None:
+    """The runner seed is DML, which the classifier rejects: it lives in
+    ``cinode_04_runner_requires_windows`` behind an audited override."""
+    upgrade_sql = "\n".join(_sql_literals("upgrade")).upper()
+    assert "UPDATE " not in upgrade_sql
+    assert "'[\"OS:WINDOWS\"]'" not in upgrade_sql
 
 
 # ---------------------------------------------------------------------------
@@ -275,14 +289,14 @@ def _set_caps(engine: Engine, repo: str, value: str) -> None:
 
 
 @_needs_pg
-def test_column_lands_backfilled_and_the_runner_row_is_seeded() -> None:
+def test_column_lands_backfilled_and_nothing_is_seeded() -> None:
     with ephemeral_database(admin_database_url(), "cinode02_seed") as (
         engine,
         db_url,
     ):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) is None
-        _insert_repo(engine, _SEEDED_REPO)
+        _insert_repo(engine, _RUNNER_REPO)
         _insert_repo(engine, "qontinui/qontinui-coord")
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
@@ -290,11 +304,19 @@ def test_column_lands_backfilled_and_the_runner_row_is_seeded() -> None:
         assert info is not None
         data_type, nullable, default = info
         assert data_type == "jsonb"
-        assert nullable == "NO"
+        # No NOT NULL on the column (classifier shape); the CHECK refuses NULL.
+        assert nullable == "YES"
         assert default == "'[]'::jsonb"
         assert column_comment(engine, _TABLE, _COLUMN)
-        assert _caps(engine, _SEEDED_REPO) == _SEED
+        assert _caps(engine, _RUNNER_REPO) == []
         assert _caps(engine, "qontinui/qontinui-coord") == []
+        assert (
+            scalar(
+                engine,
+                f"SELECT count(*) FROM coord.{_TABLE} WHERE {_COLUMN} IS NULL",
+            )
+            == 0
+        )
 
         # A row inserted after the migration takes the default.
         _insert_repo(engine, "qontinui/qontinui-web")
@@ -309,6 +331,23 @@ def test_the_check_refuses_a_malformed_value() -> None:
     ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert_repo(engine, "qontinui/qontinui-web")
+        # The column has no NOT NULL; the CHECK's IS NOT NULL conjunct refuses
+        # NULL on both write paths.
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"UPDATE coord.{_TABLE} SET {_COLUMN} = NULL "
+                    "WHERE repo = 'qontinui/qontinui-web'"
+                )
+            )
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO coord.{_TABLE} (repo, github_remote, {_COLUMN}) "
+                    "VALUES ('qontinui/nullcaps', "
+                    "'https://github.com/qontinui/nullcaps.git', NULL)"
+                )
+            )
         for bad in (
             '{"os": "windows"}',
             '"os:windows"',
@@ -329,14 +368,23 @@ def test_upgrade_is_idempotent_keeps_a_set_value_and_round_trips() -> None:
         db_url,
     ):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
-        _insert_repo(engine, _SEEDED_REPO)
+        _insert_repo(engine, _RUNNER_REPO)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
 
-        # An operator changes the runner's requirement; a re-run must keep it.
-        _set_caps(engine, _SEEDED_REPO, '["os:windows", "shell:powershell"]')
+        # An operator sets the runner's requirement; a re-run must keep it, and
+        # the re-run's skipped ADD COLUMN must not leave a second CHECK.
+        _set_caps(engine, _RUNNER_REPO, '["os:windows", "shell:powershell"]')
         run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        assert _caps(engine, _SEEDED_REPO) == ["os:windows", "shell:powershell"]
+        assert _caps(engine, _RUNNER_REPO) == ["os:windows", "shell:powershell"]
+        assert (
+            scalar(
+                engine,
+                "SELECT count(*) FROM pg_constraint WHERE conname = :c",
+                c=_CONSTRAINT,
+            )
+            == 1
+        )
 
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) is None
@@ -350,4 +398,4 @@ def test_upgrade_is_idempotent_keeps_a_set_value_and_round_trips() -> None:
         )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        assert _caps(engine, _SEEDED_REPO) == _SEED
+        assert _caps(engine, _RUNNER_REPO) == []
