@@ -124,6 +124,13 @@ export interface RoleMachine {
    * known`.
    */
   sessionsBeforeChange: number | null;
+  /**
+   * Coord could not count the pre-change sessions (`state: unknown`). Rendered
+   * as such — never as zero (§D9: "safe to rebuild" is never implied).
+   */
+  sessionsUnknown: boolean;
+  /** Live sessions with no recorded start — counted nowhere above. */
+  sessionsStartUnrecorded: number | null;
   updatedAt: string | null;
   updatedBy: string | null;
   reason: string | null;
@@ -198,9 +205,14 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
   if (v.role !== null && v.role !== undefined && roleRow === null)
     unrecognisedRole = String(v.role);
 
+  const hostOnly = v.kind === "ci_host";
   const sug = v.suggestion;
+  // Coord's RAM rule may suggest `workhorse` for a CI host, which coord would
+  // refuse (`no_agent_host`); an unusable suggestion is not offered.
   const suggestion: RoleSuggestion | null =
-    isRecord(sug) && isDispatchRole(sug.dispatch_role)
+    isRecord(sug) &&
+    isDispatchRole(sug.dispatch_role) &&
+    !(hostOnly && sug.dispatch_role === "workhorse")
       ? {
           role: sug.dispatch_role,
           memTotalBytes: num(sug.mem_total_bytes),
@@ -235,12 +247,14 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
     role,
     unrecognisedRole,
     registered: v.registration !== "assigned_not_registered",
-    hostOnly: v.kind === "ci_host",
+    hostOnly,
     heartbeatFresh:
       typeof v.heartbeat_fresh === "boolean" ? v.heartbeat_fresh : null,
     suggestion,
     lanes,
     sessionsBeforeChange: pre && pre.state === "known" ? num(pre.count) : null,
+    sessionsUnknown: pre !== null && pre.state === "unknown",
+    sessionsStartUnrecorded: pre ? num(pre.start_unrecorded) : null,
     updatedAt: roleRow ? str(roleRow.updated_at) : null,
     updatedBy: roleRow ? str(roleRow.updated_by) : null,
     reason: roleRow ? str(roleRow.reason) : null,
@@ -299,9 +313,12 @@ export function describeRole(m: RoleMachine): string {
 export function describeRoleEffect(
   name: string,
   from: DispatchRole | null,
-  to: DispatchRole
+  to: DispatchRole,
+  /** A CI host has no workstation runner: it never took sessions. */
+  hostOnly = false
 ): string {
-  const before = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
+  const was = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
+  const before = hostOnly ? { ...was, agent: false } : was;
   const after = ROLE_OPENS[to];
   const clause = (lane: Lane): string => {
     const what = lane === "agent" ? "sessions" : "CI";
@@ -341,9 +358,14 @@ export function describeRoleWriteError(
   body: string
 ): RoleWriteRefusal {
   if (status === null) {
+    // A timeout or a dropped connection can happen AFTER the request was
+    // sent, so this cannot claim nothing changed.
     return {
       kind: "other",
-      message: `The request did not reach the server (${body}). Nothing was changed.`,
+      message:
+        `The request failed before an answer arrived (${body}). The change ` +
+        "may or may not have been applied — the list re-reads to show what " +
+        "coord now holds.",
     };
   }
   let parsed: unknown = null;

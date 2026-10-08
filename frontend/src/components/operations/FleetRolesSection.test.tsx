@@ -169,7 +169,7 @@ describe("FleetRolesSection", () => {
     });
     fireEvent.click(screen.getByTestId("fleet-roles-host-open"));
     expect(screen.getByTestId("fleet-roles-effect").textContent).toBe(
-      "dell-2020 → CI node: coord will send no sessions here; CI stays open."
+      "dell-2020 → CI node: still no sessions; CI stays open."
     );
     expect(
       screen.getByTestId("fleet-roles-not-yet-applied").textContent
@@ -189,6 +189,15 @@ describe("FleetRolesSection", () => {
       force: false,
       ci_host_name: "dell-2020",
     });
+  });
+
+  it("a workstation row's confirm names the operator's effect sentence", async () => {
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("monster"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-ci_node"));
+    expect(screen.getByTestId("fleet-roles-effect").textContent).toBe(
+      "monster → CI node: coord will send no sessions here; CI stays open."
+    );
   });
 
   it("last_open_lane renders a sentence and offers Force, which resends with force", async () => {
@@ -260,23 +269,40 @@ describe("FleetRolesSection", () => {
     );
   });
 
-  it("a Bench CI host row carries the GitHub-runner warning", async () => {
+  it("a registered Bench CI host row carries the GitHub-runner warning; an unregistered one does not", async () => {
     const benchHost = {
       ...MACHINES.machines[1],
       role: { ...MACHINES.machines[1].role!, dispatch_role: "bench" },
     };
     fetchMock.mockImplementation(async () =>
-      json(200, { ...MACHINES, machines: [benchHost] })
+      json(200, {
+        ...MACHINES,
+        machines: [
+          benchHost,
+          {
+            ...benchHost,
+            machine_key: "host:gh-runner-msi-wsl",
+            ci_host_name: "gh-runner-msi-wsl",
+            name: "gh-runner-msi-wsl",
+            registration: "registered",
+          },
+        ],
+      })
     );
     render(<FleetRolesSection />);
+    // Unregistered (dell-2024): no runners exist, so no warning, and no lane
+    // state rendered from an empty device list.
     fireEvent.click(await screen.findByText("dell-2024"));
     expect(
-      screen.getByTestId("fleet-roles-github-runner-warning").textContent
-    ).toContain("GitHub runner");
-    // Assigned, not registered: no lane state rendered from an empty device list.
+      screen.queryByTestId("fleet-roles-github-runner-warning")
+    ).toBeNull();
     expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
       "not served"
     );
+    fireEvent.click(screen.getByText("gh-runner-msi-wsl"));
+    expect(
+      screen.getByTestId("fleet-roles-github-runner-warning").textContent
+    ).toContain("GitHub runner");
   });
 
   it("hides the write controls from a non-admin", async () => {

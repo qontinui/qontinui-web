@@ -124,6 +124,11 @@ export async function putDispatchRole(input: {
     const res = await httpClient.fetch(FLEET_DISPATCH_ROLE_API, {
       method: "PUT",
       body: JSON.stringify(body),
+      // Never auto-retry: coord answers a repeated PUT with `changed: false`,
+      // so a retry after a lost-but-committed first attempt would report
+      // "nothing changed" for a change this operator just made. A 5xx must
+      // reach the caller, which re-reads instead.
+      noRetryStatuses: [500, 502, 503, 504],
     });
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
