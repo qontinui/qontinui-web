@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
 import { ATTENTION_BY_KIND } from "@/components/operations/prPipeline";
-import { UNKNOWN_AMBER } from "@/components/console/statusRow";
+import { AUTHOR_RED, UNKNOWN_AMBER } from "@/components/console/statusRow";
 import type { PrMergeStatus } from "@/services/admin-dev-service";
 import {
   derivePrStatus,
@@ -167,6 +167,38 @@ describe("the readings the palette audit cannot make", () => {
       kind: "terminal-proposal-held",
       attention: "waiting",
       reason: "already landed — close the PR",
+    });
+  });
+
+  it("paints `dependency-upstream-closed` author red, out of the predicate-blocked floor", () => {
+    // coord's dead-edge token (qontinui-coord#2819): the dep label names an
+    // upstream PR that is CLOSED and did not land. Its generic sibling
+    // `has-cross-repo-dependency` stays in `predicate-blocked`, where it
+    // self-clears; this one never does — coord classifies it `AuthorActs` —
+    // so the self-clearing amber would be exactly the reassurance the token
+    // was split out to retract. Without a row here it would also fall to
+    // `unknown`, i.e. the ignorance floor, for a state coord fully diagnosed.
+    expect(PR_ATTENTION_BY_MERGE_STATUS["dependency-upstream-closed"]).toBe(
+      "author"
+    );
+    expect(PR_MERGE_STATUS_CLASS["dependency-upstream-closed"]).toBe(
+      AUTHOR_RED
+    );
+    expect(PR_AUTHOR_GLYPH_STATUSES.has("dependency-upstream-closed")).toBe(
+      true
+    );
+    expect(mergeStatusLabel("dependency-upstream-closed")).toBe(
+      "dependency upstream closed"
+    );
+    expect(
+      derivePrStatus({
+        merge_status: "dependency-upstream-closed",
+        blocking_summary: "upstream qontinui-coord#1664 is closed",
+      })
+    ).toMatchObject({
+      kind: "dependency-upstream-closed",
+      attention: "author",
+      reason: "upstream qontinui-coord#1664 is closed",
     });
   });
 
