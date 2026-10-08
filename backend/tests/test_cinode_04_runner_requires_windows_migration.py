@@ -6,7 +6,8 @@ Phase 4b, data half: seed ``qontinui/qontinui-runner``'s
 
 Without a database (always runs):
 
-1. Chain wiring: the parent is ``cinode_02_required_capabilities`` and the
+1. Chain wiring: the parent is ``coord_devices_ui_thread_01`` (main's head
+   when this landed; ``cinode_02`` is further down the chain) and the
    ``Revises:`` header agrees with ``down_revision``.
 2. Each direction is exactly one guarded ``UPDATE`` of the runner row: the
    upgrade writes only over the default ``[]``, the downgrade resets only the
@@ -47,7 +48,7 @@ _REVISION_FILENAME = "cinode_04_runner_requires_windows.py"
 
 # Pinned as a literal so a re-point of down_revision is a deliberate change of
 # this line, the assignment, and the Revises header together.
-_PARENT_REVISION_ID = "cinode_02_required_capabilities"
+_PARENT_REVISION_ID = "coord_devices_ui_thread_01"
 
 _TABLE = "canonical_repos"
 _COLUMN = "ci_node_required_capabilities"
@@ -94,7 +95,7 @@ def _sql_literals(name: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_revision_chains_off_cinode_02() -> None:
+def test_revision_chains_off_its_parent() -> None:
     module = load_revision_module(_revision_path(), f"_test_{_REVISION_ID}")
     assert module.revision == _REVISION_ID
     assert module.down_revision == _PARENT_REVISION_ID

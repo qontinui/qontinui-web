@@ -1,7 +1,7 @@
 """runner-as-CI-node — seed qontinui-runner's ci_node lane to require os:windows
 
 Revision ID: cinode_04_runner_requires_windows
-Revises: cinode_02_required_capabilities
+Revises: coord_devices_ui_thread_01
 Create Date: 2026-10-08
 
 Phase 4b of plan
@@ -36,7 +36,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cinode_04_runner_requires_windows"
-down_revision: str | None = "cinode_02_required_capabilities"
+down_revision: str | None = "coord_devices_ui_thread_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
