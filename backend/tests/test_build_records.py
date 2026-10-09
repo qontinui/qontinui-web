@@ -42,6 +42,9 @@ from app.services.build_record_allowlist import (
     build_record_violations,
     validate_build_record,
 )
+from app.services.github_repo_visibility import (
+    repo_visibility as _REAL_REPO_VISIBILITY,
+)
 
 TENANT_A = UUID("aaaaaaaa-0000-4000-8000-0000000000b1")
 TENANT_B = UUID("bbbbbbbb-0000-4000-8000-0000000000b2")
@@ -353,10 +356,14 @@ class _Coord:
         self.puts: list[tuple[str, Any, UUID | None]] = []
         #: Awaited while the document is being "composed" — a race window.
         self.during_document_fetch: Any = None
+        #: Raised by the product listing when set.
+        self.listing_error: Exception | None = None
 
     async def get(self, path: str, *, tenant_id: UUID | None = None, **_: Any) -> Any:
         assert tenant_id is not None, "every build-record proxy forwards the bearer"
         if path == "/coord/build-record-products":
+            if self.listing_error is not None:
+                raise self.listing_error
             return {"products": self.products.get(tenant_id, [])}
         prefix = "/coord/build-records/"
         if path.startswith(prefix):
@@ -401,6 +408,7 @@ def _now_rfc3339(delta: timedelta = timedelta(0)) -> str:
 @pytest.fixture()
 def coord(monkeypatch: pytest.MonkeyPatch) -> _Coord:
     from app.api.v1.endpoints import build_records
+    from app.services import github_repo_visibility
     from app.services.github_repo_visibility import Visibility
 
     stub = _Coord()
@@ -413,6 +421,8 @@ def coord(monkeypatch: pytest.MonkeyPatch) -> _Coord:
     monkeypatch.setattr(build_records, "_proxy_coord_get", stub.get)
     monkeypatch.setattr(build_records, "_proxy_coord_put", stub.put)
     monkeypatch.setattr(build_records, "repo_visibility", visibility)
+    # The scheduled/on-demand re-check imports it from the service module.
+    monkeypatch.setattr(github_repo_visibility, "repo_visibility", visibility)
     return stub
 
 
@@ -1547,3 +1557,188 @@ class TestRealAppWrites:
         assert body["error"] == "build_record_not_published"
         assert body["slug"] == SLUG
         assert {"message", "timestamp", "path"} <= body.keys()
+
+
+# ===========================================================================
+# Third review
+# ===========================================================================
+
+
+def test_slot_patterns_are_full_matches() -> None:
+    """``$`` also matches before a trailing newline; fullmatch does not."""
+    doc = _document()
+    doc["product"]["slug"] = SLUG + "\n"
+    doc["product"]["repos"] = ["qontinui/qontinui-design-tokens\n"]
+    violations = build_record_violations(doc)
+    assert "product.slug: not a valid slug value" in violations
+    assert "product.repos[0]: not a valid repo value" in violations
+
+
+@pytest.mark.asyncio
+class TestThirdReview:
+    async def test_post_store_transport_error_retracts_and_502s(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+
+        async def coord_drops_after_compose() -> None:
+            coord.listing_error = httpx.ConnectError("coord went away")
+
+        coord.during_document_fetch = coord_drops_after_compose
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 502
+        assert r.json()["error"] == "build_record_post_publish_check_unanswered"
+        assert r.json()["retracted"] is True
+        assert await _snapshot_count(async_db_session) == 1
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 404
+
+    @pytest.mark.parametrize(
+        ("github", "status", "error"),
+        [
+            ({"private": False}, 201, None),
+            ({"private": True}, 502, "build_record_repo_not_public"),
+        ],
+    )
+    async def test_publish_runs_the_real_visibility_check(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        monkeypatch: pytest.MonkeyPatch,
+        github: dict[str, Any],
+        status: int,
+        error: str | None,
+    ) -> None:
+        """Only the HTTP transport is fake: the route calls the REAL
+        ``repo_visibility``, which builds its client through the production
+        ``client=None`` branch (``_client_factory``)."""
+        from app.api.v1.endpoints import build_records
+        from app.services import github_repo_visibility
+
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert "authorization" not in request.headers
+            asked.append(request.url.path)
+            name = request.url.path.removeprefix("/repos/")
+            return httpx.Response(200, json={**github, "full_name": name})
+
+        # The fixture faked repo_visibility in both modules; put the REAL one
+        # (captured at import, before any patch) back on the route's module.
+        monkeypatch.setattr(build_records, "repo_visibility", _REAL_REPO_VISIBILITY)
+        monkeypatch.setattr(
+            github_repo_visibility,
+            "_client_factory",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        coord.define(TENANT_A)
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == status, r.text
+        if error is not None:
+            assert r.json()["error"] == error
+        assert asked == ["/repos/qontinui/qontinui-design-tokens"]
+
+    async def test_visibility_recheck_is_bounded_and_rotates(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services.github_repo_visibility import Visibility
+
+        for slug in ("vis-a", "vis-b", "vis-c"):
+            coord.define(TENANT_A, slug)
+            assert (
+                await client_a.post(f"/api/v1/build-records/{slug}/publish")
+            ).status_code == 201
+        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.UNKNOWN
+
+        # Budget 1: one slug per call, oldest-checked first, so three calls
+        # visit three different slugs. UNKNOWN never retracts.
+        for _ in range(3):
+            assert await recheck_visibility(async_db_session, budget=1) == []
+        checked = (
+            (
+                await async_db_session.execute(
+                    select(BuildRecordPublicSlug).where(
+                        BuildRecordPublicSlug.public_slug.in_(
+                            ["vis-a", "vis-b", "vis-c"]
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert all(o.last_visibility_check_at is not None for o in checked)
+        assert all(o.unpublished_at is None for o in checked)
+
+        # The repo went private: the next call (oldest = vis-a) retracts it.
+        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.NOT_PUBLIC
+        assert await recheck_visibility(async_db_session, budget=1) == ["vis-a"]
+        public = "/api/v1/public/build-records"
+        assert (await client_a.get(f"{public}/vis-a")).status_code == 404
+        assert (await client_a.get(f"{public}/vis-b")).status_code == 200
+
+
+@pytest.mark.asyncio
+class TestReconcileResilience:
+    async def test_list_products_treats_transport_errors_as_unanswered(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import operations
+        from app.jobs.build_record_reconcile import _list_products
+
+        for exc in (httpx.ConnectError("down"), ValueError("not json")):
+
+            async def broken(*_: Any, __exc: Exception = exc, **___: Any) -> Any:
+                raise __exc
+
+            monkeypatch.setattr(operations, "_proxy_coord_get", broken)
+            assert await _list_products(TENANT_A) is None
+
+    async def test_one_failing_or_slow_tenant_does_not_starve_the_rest(
+        self, committed: Any, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        tenant_c = UUID("cccccccc-0000-4000-8000-0000000000c3")
+        slugs = {}
+        for tenant in (TENANT_A, TENANT_B, tenant_c):
+            slug = f"lock-res-{uuid4().hex[:8]}"
+            slugs[tenant] = slug
+            coord.define(tenant, slug)
+            async with _client(_committed_app(committed, tenant)) as c:
+                assert (
+                    await c.post(f"/api/v1/build-records/{slug}/publish")
+                ).status_code == 201
+
+        async def bearer(tenant_id: UUID) -> str:
+            return "service-token"
+
+        async def listing(tenant_id: UUID) -> list[Any] | None:
+            if tenant_id == TENANT_A:
+                raise RuntimeError("an unexpected bug in one tenant")
+            if tenant_id == TENANT_B:
+                await asyncio.sleep(5)  # past the per-tenant timeout
+            return []  # tenant C: product deleted in coord
+
+        monkeypatch.setattr(job, "_service_bearer", bearer)
+        monkeypatch.setattr(job, "_list_products", listing)
+        monkeypatch.setattr(job, "TENANT_TIMEOUT_SECONDS", 0.2)
+        totals = await job.reconcile_all(committed)
+        assert totals["unanswered_tenants"] >= 2
+
+        async with committed() as session:
+            rows = {
+                r.public_slug: r.unpublished_at
+                for r in (
+                    await session.execute(
+                        select(BuildRecordPublicSlug).where(
+                            BuildRecordPublicSlug.public_slug.in_(slugs.values())
+                        )
+                    )
+                ).scalars()
+            }
+        assert rows[slugs[tenant_c]] is not None  # reached despite A and B
+        assert rows[slugs[TENANT_A]] is None
+        assert rows[slugs[TENANT_B]] is None

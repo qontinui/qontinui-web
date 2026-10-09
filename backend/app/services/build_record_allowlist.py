@@ -231,7 +231,7 @@ def _is_count(value: Any) -> bool:
 def _is_unknown(value: Any) -> bool:
     if not isinstance(value, str):
         return False
-    match = _UNKNOWN_RE.match(value)
+    match = _UNKNOWN_RE.fullmatch(value)
     if match is None:
         return False
     path, reason = match.groups()
@@ -244,7 +244,7 @@ def _is_unknown(value: Any) -> bool:
 def _is_timestamp(value: str) -> bool:
     """RFC 3339 by shape AND by value: ``2026-13-40T…`` matches the regex and
     is still refused, because it does not parse."""
-    if RFC3339_RE.match(value) is None:
+    if RFC3339_RE.fullmatch(value) is None:
         return False
     try:
         return datetime.fromisoformat(value).tzinfo is not None
@@ -272,11 +272,11 @@ def _slot_ok(slot: Slot, value: Any) -> bool:
     if slot in (Slot.STATUS, Slot.STATUS_OR_NULL):
         return value in WORK_UNIT_STATUSES
     if slot is Slot.REPO:
-        return REPO_RE.match(value) is not None
+        return REPO_RE.fullmatch(value) is not None
     if slot is Slot.SLUG:
-        return SLUG_RE.match(value) is not None
+        return SLUG_RE.fullmatch(value) is not None
     if slot is Slot.WORK_UNIT_SLUG:
-        return WORK_UNIT_SLUG_RE.match(value) is not None
+        return WORK_UNIT_SLUG_RE.fullmatch(value) is not None
     return True  # TEXT / TEXT_OR_NULL — the content scan below still applies
 
 

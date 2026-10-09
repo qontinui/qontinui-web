@@ -48,6 +48,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -62,7 +63,11 @@ from app.api.v1.endpoints.operations import (
     get_tenant_id,
     require_coord_tenant_admin_target,
 )
-from app.jobs.build_record_reconcile import reconcile_tenant, retract_live
+from app.jobs.build_record_reconcile import (
+    recheck_visibility,
+    reconcile_tenant,
+    retract_live,
+)
 from app.models.build_record import (
     BUILD_RECORD_SLUG_PATTERN,
     BuildRecordPublicSlug,
@@ -101,7 +106,7 @@ class BuildRecordProductWrite(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> BuildRecordProductWrite:
-        bad = [r for r in self.repos if not REPO_RE.match(r)]
+        bad = [r for r in self.repos if not REPO_RE.fullmatch(r)]
         if bad:
             raise ValueError(f"repos must be 'owner/name'; invalid: {bad}")
         if (
@@ -469,7 +474,7 @@ async def publish_build_record(
     # meanwhile. A failed re-read is not a "still public".
     try:
         after = await _find_product(slug, tenant_id)
-    except HTTPException:
+    except (HTTPException, httpx.HTTPError, ValueError):
         await retract_live(db, slug, tenant_id)
         await db.commit()
         _refuse(502, "build_record_post_publish_check_unanswered", slug, retracted=True)
@@ -542,7 +547,8 @@ async def reconcile_build_records(
 ) -> BuildRecordReconcileResult:
     """Retract every live public build record of this tenant whose coord
     product is gone, private or another tenant's — now, with the caller's own
-    coord credential. The same reconcile also runs on the in-process scheduler
+    coord credential — and then whose repos GitHub no longer reports public
+    (the same bounded, oldest-checked-first re-check the scheduler runs). The same reconcile also runs on the in-process scheduler
     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
     the launch kit and the operator notice, which should not wait for a tick.
 
@@ -558,6 +564,6 @@ async def reconcile_build_records(
             status_code=502,
             detail={"error": "coord_build_record_products_malformed"},
         )
-    return BuildRecordReconcileResult(
-        retracted=await reconcile_tenant(db, tenant_id, products)
-    )
+    retracted = await reconcile_tenant(db, tenant_id, products)
+    retracted += await recheck_visibility(db, tenant_id=tenant_id)
+    return BuildRecordReconcileResult(retracted=sorted(set(retracted)))

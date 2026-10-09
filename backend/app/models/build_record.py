@@ -62,6 +62,12 @@ class BuildRecordPublicSlug(Base):
     unpublished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: When the scheduled reconcile last asked GitHub whether this page's repos
+    #: are still public (revision ``brs_03_build_record_visibility_check``);
+    #: the oldest-checked-first cursor that bounds GitHub calls per tick.
+    last_visibility_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class BuildRecordSnapshot(Base):

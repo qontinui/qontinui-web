@@ -46,6 +46,15 @@ _HEADERS: Final = {
 }
 
 
+def _client_factory() -> httpx.AsyncClient:
+    """The client production asks with: no auth headers, explicit timeout.
+
+    Module-level so a test can swap in an ``httpx.MockTransport`` and still
+    drive the production ``client=None`` branch of :func:`repo_visibility`.
+    """
+    return httpx.AsyncClient(timeout=_TIMEOUT)
+
+
 class Visibility(Enum):
     PUBLIC = "public"
     NOT_PUBLIC = "not_public"
@@ -65,7 +74,7 @@ async def repo_visibility(
         if client is not None:
             resp = await client.get(url, headers=_HEADERS)
         else:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as owned:
+            async with _client_factory() as owned:
                 resp = await owned.get(url, headers=_HEADERS)
     except httpx.HTTPError as exc:
         logger.warning("github_visibility_unreachable", exc_type=type(exc).__name__)
