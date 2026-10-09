@@ -81,63 +81,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { messageFromErrorBody } from "@/lib/errors/backend-error-message";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchPrMergeGraph,
+  type GraphNode,
+  type GraphResponse,
+} from "@/lib/api/operations/prMergeTrain";
 
 const log = createLogger("MergeDependencyGraph");
-
-// ---------------------------------------------------------------------------
-// Wire types — mirror src/pr_merge/graph_routes.rs::GraphResponse.
-// ---------------------------------------------------------------------------
-
-interface PrRef {
-  repo: string;
-  pr: number;
-}
-
-interface GraphNode {
-  repo: string;
-  pr_number: number;
-  tenant_id: string | null;
-  outer_state: string | null;
-  /**
-   * The topological-merge predicate (`is_pr_ready_for_topo_merge`). It
-   * requires review `APPROVED`, which agents on this fleet never give, so it
-   * reads `false` for PRs the merge train will land. Secondary signal only —
-   * never the "landable" colour.
-   */
-  topo_merge_ready?: boolean;
-  /**
-   * The merge predicate's latest verdict (the latest `predicate_eval`
-   * `pr_events` row — the same verdict `coord_pr_status` serves). `"none"`
-   * means the predicate passed; `null` means no verdict is recorded. Absent
-   * on a coord that predates the field.
-   */
-  block_reason_code?: string | null;
-  /**
-   * LEGACY: the pre-rename wire name of `topo_merge_ready` (same predicate).
-   * Served only by a coord predating plan
-   * `2026-09-28-coord-pr-merge-ready-false-stall-and-events-tenant-mismatch`
-   * Phase 2c; read only when `block_reason_code` is absent.
-   */
-  ready?: boolean;
-  merge_state_status: string | null;
-}
-
-interface GraphEdge {
-  from: PrRef;
-  to: PrRef;
-  /** "upstream_of" | "stacked_on" — kept as string for forward-compat. */
-  kind: string;
-}
-
-interface GraphResponse {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  topo_order: PrRef[];
-  cycle_detected: boolean;
-  cycle_members: PrRef[];
-}
 
 // ---------------------------------------------------------------------------
 // Readiness — which predicate says "landable"
@@ -440,18 +391,17 @@ export function MergeDependencyGraph({ repo, pr }: MergeDependencyGraphProps) {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ repo, pr: String(pr) });
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/graph?${params.toString()}`
-      );
-      if (!res.ok) {
-        throw new Error(graphErrorMessage(await res.text(), res.status));
-      }
-      const body = (await res.json()) as GraphResponse;
-      setGraph(body);
+      setGraph(await fetchPrMergeGraph(repo, pr));
     } catch (err) {
       log.warn("fetchGraph failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      const status = httpStatusOf(err);
+      setError(
+        status !== null
+          ? graphErrorMessage(httpBodyOf(err) ?? "", status)
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      );
       setGraph(null);
     } finally {
       setLoading(false);

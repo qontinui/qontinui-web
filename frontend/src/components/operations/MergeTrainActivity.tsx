@@ -55,9 +55,10 @@ import {
   type Attention,
 } from "@/components/console";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { engageKillSwitch } from "@/lib/api/operations/prMergeTrain";
 import { CiRepoStrip } from "./CiRepoStrip";
-import { OPERATIONS_API, relativeTime } from "./utils";
+import { relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatChurnValue,
@@ -515,25 +516,20 @@ function EmergencyStopControl({
     if (!ok) return;
     setSubmitting(true);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/kill-switch`,
-        {
-          method: "POST",
-          body: JSON.stringify({ scope, reason: trimmed }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
-      }
-      const data = (await res.json()) as MergeEnabledResponse;
+      const data = await engageKillSwitch(scope, trimmed);
       setResult(data);
       setReason("");
       setTenantWide(false);
       onActed?.();
     } catch (err) {
       log.warn("emergency stop failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      const status = httpStatusOf(err);
+      if (status !== null) {
+        const body = httpBodyOf(err) ?? "";
+        setError(`HTTP ${status}${body ? `: ${body}` : ""}`);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setSubmitting(false);
     }
