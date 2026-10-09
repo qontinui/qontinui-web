@@ -36,6 +36,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
 _HOME = UUID("11111111-1111-1111-1111-111111111111")
 _SELECTED = UUID("22222222-2222-2222-2222-222222222222")
@@ -193,7 +195,7 @@ def _call(
     coord_raises: Exception | None = None,
 ) -> tuple[httpx.Response, AsyncMock, MagicMock]:
     """Drive one request; return (response, mocked httpx instance, ctor mock)."""
-    from app.api.v1.endpoints import fleet_targets, operations
+    from app.api.v1.endpoints import fleet_targets
 
     instance = AsyncMock()
     instance.post.return_value = _coord_response(coord_status, coord_body)
@@ -206,7 +208,7 @@ def _call(
     identity = AsyncMock(return_value=_identity(effective))
 
     with (
-        patch.object(operations, "get_coord_identity", new=identity),
+        patch_ops("get_coord_identity", new=identity),
         patch.object(fleet_targets, "get_coord_identity", new=identity),
         patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as ctor,
     ):
@@ -437,7 +439,7 @@ def test_unbound_refusal_wire_shape_under_the_real_error_envelope():
     the top level). Pin that the 409 arrives there as readable prose."""
     from fastapi.exceptions import HTTPException as FastAPIHTTPException
 
-    from app.api.v1.endpoints import fleet_targets, operations
+    from app.api.v1.endpoints import fleet_targets
     from app.middleware.error_handler import http_exception_handler
 
     session = _FakeSession(device=_device())
@@ -450,7 +452,7 @@ def test_unbound_refusal_wire_shape_under_the_real_error_envelope():
     client = _client(session)
     client.app.add_exception_handler(FastAPIHTTPException, http_exception_handler)  # type: ignore[attr-defined]
     with (
-        patch.object(operations, "get_coord_identity", new=identity),
+        patch_ops("get_coord_identity", new=identity),
         patch.object(fleet_targets, "get_coord_identity", new=identity),
         patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as ctor,
     ):
