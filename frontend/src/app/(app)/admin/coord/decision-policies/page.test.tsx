@@ -22,15 +22,20 @@ const post = vi.fn();
 const patch = vi.fn();
 const del = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: (...args: unknown[]) => post(...args),
-    patch: (...args: unknown[]) => patch(...args),
-    delete: (...args: unknown[]) => del(...args),
-    put: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => get(...args),
+        post: (...args: unknown[]) => post(...args),
+        patch: (...args: unknown[]) => patch(...args),
+        delete: (...args: unknown[]) => del(...args),
+        put: vi.fn(),
+      }),
+    },
+  };
+});
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -381,7 +386,9 @@ describe("the graduation control", () => {
     await pickAutonomy(user, "Auto decide");
 
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0]?.[0]).toContain("always_escalate to auto_decide");
+    expect(confirm.mock.calls[0]?.[0]).toContain(
+      "always_escalate to auto_decide"
+    );
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
     expect(patch.mock.calls[0]?.[0]).toBe(
       "/api/v1/operations/coord/policies/pf-1"
@@ -468,7 +475,9 @@ describe("every failing call gets its own sentence", () => {
 
     const panel = await screen.findByTestId("decision-policies-load-failed");
     expect(panel).toBe(screen.getByRole("alert"));
-    expect(panel.textContent).toContain("not the same as this workspace having none");
+    expect(panel.textContent).toContain(
+      "not the same as this workspace having none"
+    );
     expect(toastError).toHaveBeenCalledWith(
       "Failed to load decision policies: coord unreachable"
     );
@@ -505,7 +514,9 @@ describe("every failing call gets its own sentence", () => {
     await expandFirstRow(user);
 
     await user.click(screen.getByTestId("decision-policy-graduation"));
-    await user.click(await screen.findByRole("option", { name: "Auto decide" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Auto decide" })
+    );
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(

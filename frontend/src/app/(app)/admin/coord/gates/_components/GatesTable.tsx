@@ -74,7 +74,7 @@ import type {
 import { summarizeClearanceProvenance } from "@/components/operations/utils";
 import { summarizeContinuation } from "@/components/operations/gatesPredicate";
 import type { ContinuationSpawn } from "@/components/operations/types";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   clearanceBandIndex,
   lookupClearanceBand,
@@ -227,7 +227,7 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
       <div className="min-w-[8rem]">
         <div className="text-sm text-muted-foreground">—</div>
         <div className="text-[11px] text-muted-foreground/70">
-          {basis === "indeterminate" ? "indeterminate" : detail ?? basis}
+          {basis === "indeterminate" ? "indeterminate" : (detail ?? basis)}
         </div>
       </div>
     );
@@ -392,7 +392,10 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
       data-testid="gates-continuation"
       data-continuation-kind={status.status.kind}
     >
-      <StatusBadge status={status.status} palette={CONTINUATION_STATUS_PALETTE} />
+      <StatusBadge
+        status={status.status}
+        palette={CONTINUATION_STATUS_PALETTE}
+      />
       {historic && deferral && (
         <span
           // Muted, deliberately: a deferral the row has already moved past is
@@ -421,7 +424,11 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
  * A `work_completed` / `armed` / `dispatched` continuation is not a problem and
  * contributes nothing here — the timeline in `history` still records it.
  */
-function ContinuationProblem({ status }: { status: ContinuationStatus | null }) {
+function ContinuationProblem({
+  status,
+}: {
+  status: ContinuationStatus | null;
+}) {
   if (!status || status.status.attention === "none") return null;
   const { status: s, deferral, outcomeDetail } = status;
   const tone = s.attention === "author" ? "text-red-200" : "text-amber-200";
@@ -695,14 +702,11 @@ export function GatesTable({
           g.continuation_deferred_reason,
           g.continuation_expired_reason,
         ];
-        return haystacks.some(
-          (h) => h != null && h.toLowerCase().includes(q)
-        );
+        return haystacks.some((h) => h != null && h.toLowerCase().includes(q));
       });
     }
 
-    if (verdictFilter !== ALL)
-      r = r.filter((g) => g.verdict === verdictFilter);
+    if (verdictFilter !== ALL) r = r.filter((g) => g.verdict === verdictFilter);
     if (basisFilter !== ALL)
       r = r.filter((g) => g.progress.basis === (basisFilter as ProgressBasis));
     if (continuationFilter !== ALL)
@@ -892,9 +896,7 @@ export function GatesTable({
                     <TableRow
                       data-testid="gates-table-row"
                       data-expanded={expanded ? "true" : "false"}
-                      onClick={() =>
-                        setOpenGate(expanded ? null : g.gate_id)
-                      }
+                      onClick={() => setOpenGate(expanded ? null : g.gate_id)}
                       // R4 — a 2px left border, not a coloured row: the body
                       // stays neutral so 40 rows read when 6 are red.
                       {...rowAccentProps(status, "cursor-pointer")}

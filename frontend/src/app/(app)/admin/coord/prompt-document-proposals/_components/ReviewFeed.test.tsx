@@ -57,14 +57,19 @@ import userEvent from "@testing-library/user-event";
 
 const getMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        post: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -514,7 +519,9 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     render(<ReviewFeed />);
 
     await user.click(
-      await screen.findByRole("button", { name: /recently proposed & approved/i })
+      await screen.findByRole("button", {
+        name: /recently proposed & approved/i,
+      })
     );
     const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
     await user.click(row.querySelector("button")!);
@@ -749,7 +756,9 @@ describe("ReviewFeed — ?proposal= deep link", () => {
         ).not.toBeNull()
       );
       const other = screen.getByTestId("proposal-p-pending-1");
-      expect(other.querySelector('[data-testid="proposal-approve"]')).toBeNull();
+      expect(
+        other.querySelector('[data-testid="proposal-approve"]')
+      ).toBeNull();
       expect(screen.getAllByTestId("proposal-approve")).toHaveLength(1);
     } finally {
       window.history.replaceState({}, "", "/");
@@ -846,7 +855,8 @@ describe("ReviewFeed — ?proposal= deep link beyond the queue", () => {
     try {
       let pending: PromptDocumentProposal[] = [];
       routes(NO_RETIREMENTS, {
-        pending: () => Promise.resolve({ proposals: pending, total: pending.length }),
+        pending: () =>
+          Promise.resolve({ proposals: pending, total: pending.length }),
       });
       render(<ReviewFeed />);
       await waitFor(async () =>

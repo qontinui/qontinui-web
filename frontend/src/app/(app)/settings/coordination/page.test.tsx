@@ -14,8 +14,9 @@ import userEvent from "@testing-library/user-event";
 const get = vi.fn();
 const put = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  const verbs = {
     get: (...args: unknown[]) => get(...args),
     // The typed `/operations` client reads through `httpClient.fetch`; route
     // it into the same `get` mock so a case keys on the URL either way.
@@ -24,8 +25,11 @@ vi.mock("@/services/service-factory", () => ({
     post: vi.fn(),
     put: (...args: unknown[]) => put(...args),
     delete: vi.fn(),
-  },
-}));
+  };
+  // The next-step settings go through the typed client (`fetch`); the fixer
+  // spawn switch's own hook still reads through the `httpClient.get` helper.
+  return { httpClient: { ...verbs, fetch: fetchFromVerbs(verbs) } };
+});
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },

@@ -41,21 +41,26 @@ import userEvent from "@testing-library/user-event";
 import type {
   KindTierRow,
   KindTiersResponse,
-} from "../_hooks/usePromptDocumentKindTiers";
+} from "@/lib/api/operations/coordPromptDocuments";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
 const deleteMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    delete: (...args: unknown[]) => deleteMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        put: (...args: unknown[]) => putMock(...args),
+        delete: (...args: unknown[]) => deleteMock(...args),
+        post: vi.fn(),
+        patch: vi.fn(),
+      }),
+    },
+  };
+});
 const toastSuccess = vi.fn();
 const toastWarning = vi.fn();
 const toastError = vi.fn();

@@ -28,15 +28,20 @@ import userEvent from "@testing-library/user-event";
 const getMock = vi.fn();
 const putMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        put: (...args: unknown[]) => putMock(...args),
+        post: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -93,7 +98,9 @@ describe("SessionComplianceSection", () => {
     // Both readings of a 404 are named — the UI reports what coord said, and
     // does not pick one diagnosis and state it as fact.
     expect(notice).toHaveTextContent(/doesn't serve the session-compliance/i);
-    expect(notice).toHaveTextContent(/nothing stored under them for this tenant/i);
+    expect(notice).toHaveTextContent(
+      /nothing stored under them for this tenant/i
+    );
     // The honesty clause: absence of data is not evidence of absence of work.
     expect(notice).toHaveTextContent(
       /not the same as nothing having happened/i
@@ -143,7 +150,9 @@ describe("SessionComplianceSection", () => {
 
     const applicability = await screen.findByTestId("compliance-applicability");
     expect(applicability).toHaveTextContent("Currently applicable: yes");
-    expect(applicability).toHaveTextContent(/worked out by coord, not set here/i);
+    expect(applicability).toHaveTextContent(
+      /worked out by coord, not set here/i
+    );
     expect(applicability).toHaveTextContent("version 7");
     expect(screen.getByTestId("clause-resolved-via")).toHaveTextContent(
       /matched a structured clause row/i

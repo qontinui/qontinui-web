@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  createPrioritySet,
+  deletePrioritySet,
+  fetchCompositionRules,
+  fetchPrioritySets,
+  updatePrioritySet,
+  type CreatePrioritySetInput,
+  type UpdatePrioritySetInput,
+} from "@/lib/api/operations/coordSettings";
 import {
   type PrioritySetRow,
   type CompositionRuleRow,
@@ -12,33 +20,6 @@ import {
   unwrapPrioritySets,
   unwrapCompositionRules,
 } from "./priority-set-delivery";
-
-const SETS_URL = "/api/v1/operations/coord/priority-sets";
-const RULES_URL = "/api/v1/operations/coord/composition-rules";
-
-/** Payload for creating a tenant priority set (v1 uses bare-string ordering). */
-export interface CreatePrioritySetInput {
-  set_name: string;
-  /** null = tenant-wide. */
-  repo: string | null;
-  ordering: string[];
-  non_factors: string[];
-}
-
-/**
- * Partial payload for a PATCH edit. Only the changed fields are sent (minimal
- * diff computed by the caller). `ordering` is v1 bare-string only — an edit
- * writes back bare strings even if the row's wire ordering was object-shaped
- * (`{name, weight}`), the same simplification as create.
- */
-export interface UpdatePrioritySetInput {
-  set_name?: string;
-  /** null = tenant-wide. */
-  repo?: string | null;
-  ordering?: string[];
-  non_factors?: string[];
-  enabled?: boolean;
-}
 
 interface UsePrioritySetsReturn {
   sets: PrioritySetRow[];
@@ -79,8 +60,8 @@ export function usePrioritySets(): UsePrioritySetsReturn {
     // Coord returns {priority_sets, total} / {composition_rules, total}
     // envelopes — unwrap defensively (see priority-set-delivery.ts).
     const [setsData, rulesData] = await Promise.all([
-      httpClient.get<unknown>(SETS_URL),
-      httpClient.get<unknown>(RULES_URL),
+      fetchPrioritySets(),
+      fetchCompositionRules(),
     ]);
     setSets(unwrapPrioritySets(setsData));
     setRules(unwrapCompositionRules(rulesData));
@@ -93,8 +74,8 @@ export function usePrioritySets(): UsePrioritySetsReturn {
       setError(null);
       try {
         const [setsData, rulesData] = await Promise.all([
-          httpClient.get<unknown>(SETS_URL),
-          httpClient.get<unknown>(RULES_URL),
+          fetchPrioritySets(),
+          fetchCompositionRules(),
         ]);
         if (!cancelled) {
           setSets(unwrapPrioritySets(setsData));
@@ -121,7 +102,7 @@ export function usePrioritySets(): UsePrioritySetsReturn {
       setCreating(true);
       setCreateError(null);
       try {
-        await httpClient.post<PrioritySetRow>(SETS_URL, input);
+        await createPrioritySet(input);
         await reload();
         toast.success(`Priority set "${input.set_name}" created`);
         return true;
@@ -136,15 +117,12 @@ export function usePrioritySets(): UsePrioritySetsReturn {
   );
 
   const updateSet = useCallback(
-    async (
-      id: string,
-      partial: UpdatePrioritySetInput
-    ): Promise<boolean> => {
+    async (id: string, partial: UpdatePrioritySetInput): Promise<boolean> => {
       // No-op edit (empty diff) — nothing to PATCH; treat as a clean save.
       if (Object.keys(partial).length === 0) return true;
       setUpdatingId(id);
       try {
-        await httpClient.patch<PrioritySetRow>(`${SETS_URL}/${id}`, partial);
+        await updatePrioritySet(id, partial);
         await reload();
         toast.success("Priority set updated");
         return true;
@@ -164,7 +142,7 @@ export function usePrioritySets(): UsePrioritySetsReturn {
     async (id: string): Promise<void> => {
       setDeletingId(id);
       try {
-        await httpClient.delete<unknown>(`${SETS_URL}/${id}`);
+        await deletePrioritySet(id);
         await reload();
         toast.success("Priority set disabled");
       } catch (err) {

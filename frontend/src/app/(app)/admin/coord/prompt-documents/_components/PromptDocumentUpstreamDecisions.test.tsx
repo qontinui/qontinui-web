@@ -26,15 +26,20 @@ import userEvent from "@testing-library/user-event";
 const getMock = vi.fn();
 const postMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: (...args: unknown[]) => postMock(...args),
-    patch: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        post: (...args: unknown[]) => postMock(...args),
+        patch: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),

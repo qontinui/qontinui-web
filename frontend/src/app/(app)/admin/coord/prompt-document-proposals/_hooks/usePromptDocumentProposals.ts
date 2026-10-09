@@ -2,21 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  decidePolicyProposal,
+  fetchPromptDocumentVersion,
+  fetchPromptDocumentVersions,
+  listPolicyProposals,
+  listPromptDocumentWrites,
+  listPromptDocuments,
+  updatePromptDocument,
+  withdrawPromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import { canWithdraw, writeKey } from "../_lib/writes";
 import { isUnavailableSevere } from "../types";
 import type {
-  ListPolicyProposalsResponse,
-  ListWritesResponse,
   PromptDocumentProposal,
   PromptDocumentWrite,
   UnavailableKind,
 } from "../types";
-
-const API = "/api/v1/operations";
-const POLICY_PROPOSALS = `${API}/coord/prompt-document-proposals`;
-const WRITES = `${API}/coord/prompt-document-writes`;
-const DOCUMENTS = `${API}/coord/prompt-documents`;
 
 /**
  * How many retired proposals the collapsed section asks for. Small on purpose:
@@ -47,11 +49,6 @@ const STALE_LIMIT = 20;
  * cannot deliver.
  */
 const DECIDED_LIMIT = 20;
-
-/** `/coord/prompt-documents/:kind/:name`, each segment encoded. */
-function docPath(kind: string, name: string): string {
-  return `${DOCUMENTS}/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
-}
 
 /** Key for the live-version map — the `(kind, name)` document address. */
 function docKey(kind: string, name: string): string {
@@ -114,9 +111,7 @@ async function readPolicyProposalSection(
   fallbackNote: string
 ): Promise<SectionOutcome> {
   try {
-    const data = await httpClient.get<ListPolicyProposalsResponse>(
-      `${POLICY_PROPOSALS}?status=${encodeURIComponent(status)}&limit=${limit}`
-    );
+    const data = await listPolicyProposals(status, limit);
     return {
       proposals: data.proposals ?? [],
       // `unavailable` is coord's own "I could not answer" note — an empty list
@@ -131,18 +126,6 @@ async function readPolicyProposalSection(
       unavailableKind: isQueryRefusal(err) ? "not_deployed" : null,
     };
   }
-}
-
-/** Shape of the document-list rows this hook needs (bodies omitted upstream). */
-interface DocumentVersionRow {
-  kind: string;
-  name: string;
-  current_version: number;
-}
-
-/** One immutable version snapshot — the body an undo PATCHes back in. */
-interface VersionSnapshot {
-  body: string;
 }
 
 /**
@@ -202,9 +185,9 @@ export type WriteDiffState =
 export function usePromptDocumentProposals() {
   const [proposals, setProposals] = useState<PromptDocumentProposal[]>([]);
   /** Proposals coord retired itself — the terminal `stale` status. */
-  const [staleProposals, setStaleProposals] = useState<PromptDocumentProposal[]>(
-    []
-  );
+  const [staleProposals, setStaleProposals] = useState<
+    PromptDocumentProposal[]
+  >([]);
   /**
    * Why the retired section could not be read, or `null` when it was read
    * fine. Non-null ⇒ the section renders UNKNOWN; it must never render as
@@ -291,9 +274,7 @@ export function usePromptDocumentProposals() {
 
   const loadPolicyProposals = useCallback(async () => {
     try {
-      const data = await httpClient.get<ListPolicyProposalsResponse>(
-        `${POLICY_PROPOSALS}?status=pending`
-      );
+      const data = await listPolicyProposals("pending");
       setProposals(data.proposals ?? []);
       setUnavailable(data.unavailable ?? null);
       setUnavailableKind(data.unavailable_kind ?? null);
@@ -377,9 +358,7 @@ export function usePromptDocumentProposals() {
 
   const loadWrites = useCallback(async () => {
     try {
-      const data = await httpClient.get<ListWritesResponse>(
-        `${WRITES}?limit=40`
-      );
+      const data = await listPromptDocumentWrites(40);
       setWrites(data.writes ?? []);
       // All five caveats are independent and can co-occur — showing only the
       // first would swallow the others.
@@ -421,9 +400,7 @@ export function usePromptDocumentProposals() {
    */
   const loadLiveVersions = useCallback(async () => {
     try {
-      const data = await httpClient.get<{ documents?: DocumentVersionRow[] }>(
-        DOCUMENTS
-      );
+      const data = await listPromptDocuments();
       setLiveVersions(
         new Map(
           (data.documents ?? []).map((d) => [
@@ -505,13 +482,20 @@ export function usePromptDocumentProposals() {
       requestedDiffs.current.add(key);
       setWriteDiffs((prev) => new Map(prev).set(key, { status: "loading" }));
 
-      const path = docPath(write.kind, write.name);
       const previousVersion = write.version_number - 1;
       try {
         const [current, previous] = await Promise.all([
-          httpClient.get<VersionSnapshot>(`${path}/versions/${write.version_number}`),
+          fetchPromptDocumentVersion(
+            write.kind,
+            write.name,
+            write.version_number
+          ),
           previousVersion >= 1
-            ? httpClient.get<VersionSnapshot>(`${path}/versions/${previousVersion}`)
+            ? fetchPromptDocumentVersion(
+                write.kind,
+                write.name,
+                previousVersion
+              )
             : Promise.resolve({ body: "" }),
         ]);
         setWriteDiffs((prev) => {
@@ -554,10 +538,7 @@ export function usePromptDocumentProposals() {
       try {
         setActing(true);
         const note = decisionNote.trim();
-        await httpClient.post(
-          `${POLICY_PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
-          note ? { decision_note: note } : {}
-        );
+        await decidePolicyProposal(proposal.id, action, note);
         toast.success(
           action === "approve"
             ? `Approved — the edit to ${proposal.doc_name} has been applied.`
@@ -615,9 +596,7 @@ export function usePromptDocumentProposals() {
       try {
         setActing(true);
         // Live re-read: has the document moved under us since page load?
-        const live = await httpClient.get<{ current_version?: number }>(
-          `${docPath(write.kind, write.name)}/versions`
-        );
+        const live = await fetchPromptDocumentVersions(write.kind, write.name);
         if (live.current_version !== write.version_number) {
           // A missing `current_version` fails closed here (strict !==), so
           // describe it as unknown rather than printing "now vundefined".
@@ -631,10 +610,12 @@ export function usePromptDocumentProposals() {
           await reload();
           return false;
         }
-        const snapshot = await httpClient.get<VersionSnapshot>(
-          `${docPath(write.kind, write.name)}/versions/${target}`
+        const snapshot = await fetchPromptDocumentVersion(
+          write.kind,
+          write.name,
+          target
         );
-        await httpClient.patch(docPath(write.kind, write.name), {
+        await updatePromptDocument(write.kind, write.name, {
           body: snapshot.body,
           change_description: `Undid v${write.version_number} — restored the wording from v${target} via the review feed`,
         });
@@ -689,10 +670,7 @@ export function usePromptDocumentProposals() {
       }
       try {
         setActing(true);
-        const path = docPath(write.kind, write.name);
-        const live = await httpClient.get<{ current_version?: number }>(
-          `${path}/versions`
-        );
+        const live = await fetchPromptDocumentVersions(write.kind, write.name);
         if (live.current_version !== write.version_number) {
           const now =
             typeof live.current_version === "number"
@@ -704,7 +682,7 @@ export function usePromptDocumentProposals() {
           await reload();
           return false;
         }
-        await httpClient.post(`${path}/withdraw`, { reason: trimmed });
+        await withdrawPromptDocument(write.kind, write.name, trimmed);
         toast.success(
           `Withdrew ${write.label}. It no longer counts as a decision; Undo on the new version reinstates it.`
         );

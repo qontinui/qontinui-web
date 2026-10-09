@@ -2,25 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchAutoPublishStatus,
+  previewPublishAll,
+  publishAllDocuments,
+  updatePromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import {
   classifyPublishError,
   type PublishRefusal,
 } from "./usePromptDocumentPublications";
 import type {
   AutoPublishStatusEntry,
-  AutoPublishStatusResponse,
   PromptDocumentKind,
-  PublishAllArmedResponse,
   PublishAllCandidate,
-  PublishAllDryRunResponse,
+  PublishAllArmedResponse,
   PublishAllItem,
   PublishMode,
 } from "../types";
-
-const API = "/api/v1/operations";
-const PUBLISH_ALL = `${API}/coord/prompt-documents/publish-all`;
-const AUTO_PUBLISH_STATUS = `${API}/coord/prompt-documents/auto-publish/status`;
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -177,10 +176,7 @@ export function usePublishAll() {
   const loadCandidates = useCallback(async (): Promise<void> => {
     try {
       setPreviewing(true);
-      const data = await httpClient.post<PublishAllDryRunResponse>(
-        PUBLISH_ALL,
-        { dry_run: true }
-      );
+      const data = await previewPublishAll();
       setCandidates(data.candidates ?? []);
       setUnavailable(null);
     } catch (err) {
@@ -198,8 +194,7 @@ export function usePublishAll() {
     // the mode or switch the operator just changed.
     const request = ++statusRequest.current;
     try {
-      const data =
-        await httpClient.get<AutoPublishStatusResponse>(AUTO_PUBLISH_STATUS);
+      const data = await fetchAutoPublishStatus();
       if (request !== statusRequest.current) return;
       setStatus(data.candidates ?? []);
       // The D5 switch as coord resolved it. Absent is UNKNOWN (`undefined`),
@@ -260,20 +255,17 @@ export function usePublishAll() {
       }));
       try {
         setPublishing(true);
-        const result = await httpClient.post<PublishAllArmedResponse>(
-          PUBLISH_ALL,
-          {
-            // **Explicit, and never omitted.** On publish-all `dry_run`
-            // defaults to TRUE — the opposite of `/publish`, whose default is
-            // false. Leaving it out here would take another preview and report
-            // it as a publication: a silent no-op that looks exactly like
-            // success, on the one button whose whole job is to ship 26
-            // documents at once.
-            dry_run: false,
-            release_note: releaseNote.trim() ? releaseNote.trim() : null,
-            items,
-          }
-        );
+        const result = await publishAllDocuments({
+          // **Explicit, and never omitted.** On publish-all `dry_run`
+          // defaults to TRUE — the opposite of `/publish`, whose default is
+          // false. Leaving it out here would take another preview and report
+          // it as a publication: a silent no-op that looks exactly like
+          // success, on the one button whose whole job is to ship 26
+          // documents at once.
+          dry_run: false,
+          release_note: releaseNote.trim() ? releaseNote.trim() : null,
+          items,
+        });
         const results = result.results ?? [];
         const published = results.filter(
           (r) => r.outcome === "published"
@@ -334,15 +326,10 @@ export function usePublishAll() {
     ): Promise<boolean> => {
       try {
         setSavingMode(true);
-        await httpClient.patch(
-          `${API}/coord/prompt-documents/${encodeURIComponent(
-            kind
-          )}/${encodeURIComponent(name)}`,
-          {
-            publish_mode: mode,
-            change_description: `Publish mode set to \`${mode}\` by an operator`,
-          }
-        );
+        await updatePromptDocument(kind, name, {
+          publish_mode: mode,
+          change_description: `Publish mode set to \`${mode}\` by an operator`,
+        });
         setModeSchemaPending(null);
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
         // The badges key on the served mode, so the status read is re-taken:

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { CoordPolicyRow } from "./coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   createCoordPolicy,
   deleteCoordPolicy,
@@ -11,7 +11,7 @@ import {
   patchCoordPolicy,
   putCoordPolicySystemOverride,
   restoreCoordPolicyDefault,
-} from "./coordPolicyApi";
+} from "@/lib/api/operations/coordPolicies";
 
 /**
  * The one CRUD chain against the tenant-admin coord-proxy
@@ -36,7 +36,7 @@ import {
  * `coord.policy_rules` has no tombstone, so `enabled = false` means "turned
  * off" and "deleted" indistinguishably. Listing that arm would resurrect every
  * rule the tenant has ever deleted and offer to switch each back on. The
- * distinction has to come from coord first; `coordPolicyApi.listCoordPolicies`
+ * distinction has to come from coord first; `coordPolicies.listCoordPolicies`
  * carries the full note and the fix that would unblock it.
  *
  * The create/update bodies are generic: v1 surfaces post `{kind, condition,
@@ -90,7 +90,7 @@ export interface UseCoordPoliciesResult<TCreate, TUpdate> {
    * Escape hatch for a multi-call sequence that must read as ONE edit (the
    * gate-clearance replace flow, which coord's payload-less PATCH forces):
    * holds the saving flag, runs `fn`, and reloads once at the end. `fn`
-   * composes the raw `coordPolicyApi` calls, so no route is spelled twice.
+   * composes the raw `coordPolicies` client calls, so no route is spelled twice.
    */
   runSequence: <T>(fn: () => Promise<T>) => Promise<T>;
 }

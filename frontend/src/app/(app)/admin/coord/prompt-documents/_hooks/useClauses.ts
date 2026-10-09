@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  createClause as createClauseRequest,
+  deleteClause as deleteClauseRequest,
+  listClauses,
+  patchPromptDocumentAttrs,
+  reorderClauses as reorderClausesRequest,
+  updateClause as updateClauseRequest,
+} from "@/lib/api/operations/coordPromptDocuments";
 import type {
   Clause,
   ClauseCreate,
@@ -11,21 +18,6 @@ import type {
   PromptDocumentAttrs,
   PromptDocumentKind,
 } from "../types";
-
-const API = "/api/v1/operations";
-
-/** `/coord/prompt-documents/:kind/:name/clauses`, each segment encoded. */
-function clausesPath(kind: PromptDocumentKind, name: string): string {
-  return `${API}/coord/prompt-documents/${encodeURIComponent(
-    kind
-  )}/${encodeURIComponent(name)}/clauses`;
-}
-
-function docPath(kind: PromptDocumentKind, name: string): string {
-  return `${API}/coord/prompt-documents/${encodeURIComponent(
-    kind
-  )}/${encodeURIComponent(name)}`;
-}
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -61,9 +53,7 @@ export function useClauses(
     if (!enabled || !name) return;
     try {
       setLoading(true);
-      const data = await httpClient.get<ListClausesResponse>(
-        clausesPath(kind, name)
-      );
+      const data = await listClauses(kind, name);
       setClauses(unwrap(data));
       setError(null);
     } catch (err) {
@@ -80,7 +70,7 @@ export function useClauses(
   const createClause = async (body: ClauseCreate): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.post(clausesPath(kind, name), body);
+      await createClauseRequest(kind, name, body);
       toast.success("Clause created");
       await load();
       return true;
@@ -98,10 +88,7 @@ export function useClauses(
   ): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.patch(
-        `${clausesPath(kind, name)}/${encodeURIComponent(clauseId)}`,
-        body
-      );
+      await updateClauseRequest(kind, name, clauseId, body);
       toast.success("Clause updated");
       await load();
       return true;
@@ -116,9 +103,7 @@ export function useClauses(
   const deleteClause = async (clauseId: string): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.delete(
-        `${clausesPath(kind, name)}/${encodeURIComponent(clauseId)}`
-      );
+      await deleteClauseRequest(kind, name, clauseId);
       toast.success("Clause deleted");
       await load();
       return true;
@@ -134,9 +119,7 @@ export function useClauses(
   const reorderClauses = async (clauseIds: string[]): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.post(`${clausesPath(kind, name)}/reorder`, {
-        clause_ids: clauseIds,
-      });
+      await reorderClausesRequest(kind, name, clauseIds);
       await load();
       return true;
     } catch (err) {
@@ -162,7 +145,7 @@ export function useClauses(
       setSaving(true);
       for (const c of candidates) {
         try {
-          await httpClient.post(clausesPath(kind, name), c);
+          await createClauseRequest(kind, name, c);
           created += 1;
         } catch (err) {
           failures.push(`${c.clause_id}: ${message(err, "rejected")}`);
@@ -195,15 +178,9 @@ export function useClauses(
   const saveAttrs = async (attrs: PromptDocumentAttrs): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.patch(
-        docPath(kind, name),
-        { attrs },
-        {
-          // Safe to re-issue: `update_prompt_document` replaces attrs in place
-          // with the merged object; an attrs-only edit creates no version row.
-          idempotent: true,
-        }
-      );
+      // Safe to re-issue: `update_prompt_document` replaces attrs in place
+      // with the merged object; an attrs-only edit creates no version row.
+      await patchPromptDocumentAttrs(kind, name, attrs);
       toast.success("Category settings saved");
       onAttrsSaved?.();
       return true;

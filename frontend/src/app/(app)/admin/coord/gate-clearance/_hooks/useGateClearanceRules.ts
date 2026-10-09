@@ -1,11 +1,11 @@
 "use client";
 
 import { toast } from "sonner";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   createCoordPolicy,
   deleteCoordPolicy,
-} from "../../_shared/coordPolicyApi";
+} from "@/lib/api/operations/coordPolicies";
 import { useCoordPolicies } from "../../_shared/useCoordPolicies";
 import {
   buildCreateBody,
@@ -92,7 +92,7 @@ export function useGateClearanceRules() {
    * Deliberately NOT "disable the old rule, then delete it", for two reasons
    * that both survived the proxy learning to forward `enabled`: a disabled row
    * is invisible in this console (no caller lists that arm, and
-   * `coordPolicyApi.listCoordPolicies` says why it must not), so a failure
+   * `coordPolicies.listCoordPolicies` says why it must not), so a failure
    * after the disable would strand an orphan the user could neither see nor
    * clean up — and the disable would not be a step short of the delete anyway,
    * since coord's DELETE writes exactly that column. It would be the same

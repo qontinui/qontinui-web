@@ -14,11 +14,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Lock, ShieldCheck, ShieldQuestion } from "lucide-react";
-import {
-  usePromptDocumentKindTiers,
-  type KindTierRow,
-  type KindTiersResponse,
-} from "../_hooks/usePromptDocumentKindTiers";
+import { usePromptDocumentKindTiers } from "../_hooks/usePromptDocumentKindTiers";
+import type {
+  KindTierRow,
+  KindTiersResponse,
+} from "@/lib/api/operations/coordPromptDocuments";
 import {
   AGENT_WRITE_TIERS,
   isAgentWriteTier,

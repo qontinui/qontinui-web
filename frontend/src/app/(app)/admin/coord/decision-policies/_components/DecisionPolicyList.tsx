@@ -32,7 +32,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   AUTONOMY_DESCRIPTIONS,
   AUTONOMY_LABELS,
@@ -285,8 +285,9 @@ function PolicyRow({
               )}
             </p>
             <p className="text-muted-foreground">
-              mode {MODE_LABELS[rule.mode as keyof typeof MODE_LABELS] ?? rule.mode} ·
-              priority {rule.priority} ·{" "}
+              mode{" "}
+              {MODE_LABELS[rule.mode as keyof typeof MODE_LABELS] ?? rule.mode}{" "}
+              · priority {rule.priority} ·{" "}
               {rule.enabled ? "enabled" : "disabled"}
               {rule.rationale ? ` · ${rule.rationale}` : ""}
             </p>
@@ -301,9 +302,11 @@ function PolicyRow({
               className="space-y-1 text-[11px] text-warning"
               data-testid="decision-policy-problems"
             >
-              {(warnings ?? [
-                `coord served mode \`${rule.mode}\`, which this console does not know — what it serves for this domain is unknown.`,
-              ]).map((w) => (
+              {(
+                warnings ?? [
+                  `coord served mode \`${rule.mode}\`, which this console does not know — what it serves for this domain is unknown.`,
+                ]
+              ).map((w) => (
                 <p key={w} className="flex items-start gap-1">
                   <AlertTriangle
                     className="mt-0.5 size-3 shrink-0"

@@ -52,7 +52,7 @@ export {
   CI_RUNNER_MIRROR_POLL_MS,
   useCiRunnerMirror,
 } from "./useCiRunnerMirror";
-export { OPERATOR_AUDIT_API, OperatorAuditPanel } from "./OperatorAuditPanel";
+export { OperatorAuditPanel } from "./OperatorAuditPanel";
 export {
   AUDIT_FILTERS,
   DEFAULT_AUDIT_FILTER_ID,

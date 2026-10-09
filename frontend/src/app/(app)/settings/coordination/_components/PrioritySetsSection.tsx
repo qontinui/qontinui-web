@@ -35,7 +35,7 @@ import {
   orderingNames,
   slugifySetName,
 } from "../_hooks/priority-set-delivery";
-import type { UpdatePrioritySetInput } from "../_hooks/usePrioritySets";
+import type { UpdatePrioritySetInput } from "@/lib/api/operations/coordSettings";
 
 // ---- a minimal add/remove/reorder list editor for bare strings -------------
 
@@ -66,8 +66,7 @@ function ListEditor({
     setEntry("");
   };
 
-  const removeAt = (idx: number) =>
-    onChange(items.filter((_, i) => i !== idx));
+  const removeAt = (idx: number) => onChange(items.filter((_, i) => i !== idx));
 
   const move = (idx: number, dir: -1 | 1) => {
     const target = idx + dir;
@@ -633,10 +632,7 @@ function CreateForm({
 function WiringSummary({ rules }: { rules: CompositionRuleRow[] }) {
   const [open, setOpen] = useState(false);
   const bySurface = useMemo(() => {
-    const map = new Map<
-      string,
-      { set: string; role: string }[]
-    >();
+    const map = new Map<string, { set: string; role: string }[]>();
     for (const rule of rules) {
       if (!rule.enabled) continue;
       const existing = map.get(rule.surface) ?? [];
@@ -712,9 +708,7 @@ export function PrioritySetsSection({ canEdit }: { canEdit: boolean }) {
   const enabledSets = sets.filter((s) => s.enabled);
   // "Custom" here means operator-created (not seeded/system) — drives the
   // "no custom sets yet" hint. Seeded defaults are own-tenant but not custom.
-  const hasCustom = enabledSets.some(
-    (s) => classifySetOrigin(s) === "custom"
-  );
+  const hasCustom = enabledSets.some((s) => classifySetOrigin(s) === "custom");
 
   if (loading) {
     return (

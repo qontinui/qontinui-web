@@ -15,15 +15,20 @@ import { render, screen, within } from "@testing-library/react";
 
 const getMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        post: vi.fn(),
+        patch: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -68,7 +73,9 @@ describe("prompt-document list — withdrawn decision records", () => {
       }),
     ]);
     const row = await screen.findByTestId("doc-row-decision_record-voided");
-    const badge = within(row).getByTestId("doc-withdrawn-decision_record-voided");
+    const badge = within(row).getByTestId(
+      "doc-withdrawn-decision_record-voided"
+    );
     expect(badge).toHaveTextContent("Withdrawn");
     expect(badge.getAttribute("title")).toContain(
       "never decided — recorded from a guess"
