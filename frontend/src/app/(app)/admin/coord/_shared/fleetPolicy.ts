@@ -62,6 +62,3 @@ export interface FleetPolicyWriteResult {
   effective: FleetPolicyView | null;
   readback_error: string | null;
 }
-
-/** The backend proxy both dials read and write. */
-export const FLEET_POLICY_API = "/api/v1/operations/fleet-policy";

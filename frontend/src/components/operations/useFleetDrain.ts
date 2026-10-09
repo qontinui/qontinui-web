@@ -38,14 +38,15 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchFleetDrain,
+  postFleetDrain,
+  postFleetUndrain,
+} from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
-
-export const FLEET_DRAIN_API = `${OPERATIONS_API}/fleet/drain`;
-export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
 
 /**
  * Poll cadence. Slow on purpose — see the module doc. A drain is measured in
@@ -71,11 +72,14 @@ export function useFleetDrain(): UseFleetDrainResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DRAIN_API,
-        COORD_DASHBOARD_POLL_OPTIONS
+      next = parseFleetDrain(
+        await fetchFleetDrain(COORD_DASHBOARD_POLL_OPTIONS)
       );
-      if (res.status === 404) {
+    } catch (err) {
+      // The client rejects a non-2xx as `<METHOD> <url> failed: <status> - …`,
+      // so the status is read back with the console's one anchored parser.
+      const status = httpStatusOf(err);
+      if (status === 404) {
         next = {
           state: "unknown",
           reason:
@@ -84,36 +88,28 @@ export function useFleetDrain(): UseFleetDrainResult {
             "drained — this build simply cannot ask. Expected while coord " +
             "is a deploy behind this console.",
         };
-      } else if (!res.ok) {
+      } else if (status !== null) {
         next = {
           state: "unknown",
           reason:
-            `The drain read returned HTTP ${res.status}, so no machine's ` +
+            `The drain read returned HTTP ${status}, so no machine's ` +
             "drain state could be determined from it.",
         };
       } else {
-        // Two arms rather than a nullable `payload`: an unreadable body and a
-        // body that reads as `undefined` are the same UNKNOWN to the operator,
-        // but only one of them has a message worth showing.
-        let parsed: unknown;
-        try {
-          parsed = await res.json();
-        } catch (err) {
-          throw new Error(
-            `the drain read did not return valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`
-          );
-        }
-        next = parseFleetDrain(parsed);
+        // An unreadable body (the client's `res.json()` throws a SyntaxError)
+        // and a transport failure are the same UNKNOWN to the operator, but
+        // only the first has a message worth naming.
+        const detail =
+          err instanceof SyntaxError
+            ? `the drain read did not return valid JSON: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        next = {
+          state: "unknown",
+          reason: `Coord's drain state could not be read — ${detail}`,
+        };
       }
-    } catch (err) {
-      next = {
-        state: "unknown",
-        reason: `Coord's drain state could not be read — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
     }
     if (isCurrent()) setRead(next);
   }, []);
@@ -143,11 +139,13 @@ export async function postDrain(input: {
   untilIso: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_DRAIN_API, {
-    device_id: input.deviceId,
-    until: input.untilIso,
-    reason: input.reason,
-  });
+  return settleDrainChange(
+    postFleetDrain({
+      device_id: input.deviceId,
+      until: input.untilIso,
+      reason: input.reason,
+    })
+  );
 }
 
 /** `POST /api/v1/operations/fleet/undrain`. Coord requires a reason here too. */
@@ -155,49 +153,38 @@ export async function postUndrain(input: {
   deviceId: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_UNDRAIN_API, {
-    device_id: input.deviceId,
-    reason: input.reason,
-  });
+  return settleDrainChange(
+    postFleetUndrain({ device_id: input.deviceId, reason: input.reason })
+  );
 }
 
-async function postDrainChange(
-  url: string,
-  body: Record<string, string>
+async function settleDrainChange(
+  write: Promise<unknown>
 ): Promise<DrainWriteResult> {
   try {
-    const res = await httpClient.fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      return { ok: false, status: res.status, body: await res.text() };
-    }
+    const payload = await write;
     // Coord reports `changed: false` for a request that altered nothing — an
     // undrain of a machine that was not held. Passed through rather than
     // dressed up as a successful release, so the operator can tell "I released
-    // it" from "it was not held".
+    // it" from "it was not held". A success with an unreadable body (the
+    // client resolves `null`) still succeeded; `changed` stays true, which is
+    // the reading that does not claim a no-op happened.
     let changed = true;
-    try {
-      const payload: unknown = await res.json();
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "changed" in payload &&
-        typeof (payload as { changed: unknown }).changed === "boolean"
-      ) {
-        changed = (payload as { changed: boolean }).changed;
-      }
-    } catch {
-      // A success with an unreadable body still succeeded; `changed` stays
-      // true, which is the reading that does not claim a no-op happened.
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "changed" in payload &&
+      typeof (payload as { changed: unknown }).changed === "boolean"
+    ) {
+      changed = (payload as { changed: boolean }).changed;
     }
     return { ok: true, changed };
   } catch (err) {
     return {
       ok: false,
-      status: null,
-      body: err instanceof Error ? err.message : String(err),
+      status: httpStatusOf(err),
+      body:
+        httpBodyOf(err) ?? (err instanceof Error ? err.message : String(err)),
     };
   }
 }

@@ -21,16 +21,12 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchFaultToVisibility } from "@/lib/api/operations/coordAlerts";
 import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-
-/** Same-origin literal, like `OPERATIONS_BASE` (`@/lib/api/operations/base`). */
-export const FAULT_TO_VISIBILITY_API =
-  "/api/v1/operations/alerts/fault-to-visibility";
 
 /**
  * Poll cadence. The read is a trailing-window percentile (coord's default
@@ -74,8 +70,7 @@ export function isFaultToVisibilityPayload(
   return (
     Array.isArray(b.kinds) &&
     b.kinds.every(
-      (k) =>
-        isRow(k) && typeof (k as Record<string, unknown>).kind === "string"
+      (k) => isRow(k) && typeof (k as Record<string, unknown>).kind === "string"
     ) &&
     isRow(b.totals)
   );
@@ -109,10 +104,7 @@ export function useFaultToVisibility(): UseFaultToVisibilityResult {
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<unknown>(
-        FAULT_TO_VISIBILITY_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchFaultToVisibility(COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       if (!isFaultToVisibilityPayload(body)) {
         setError("coord answered without a fault-to-visibility body");

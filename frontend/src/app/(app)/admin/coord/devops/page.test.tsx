@@ -43,7 +43,23 @@ const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
-    fetch: (...args: unknown[]) => httpFetch(...args),
+    // The typed client's reads (`fetchFleetHealth`, resource samples,
+    // worktree slots, fault-to-visibility, the CI-runner mirror) go through
+    // `httpClient.fetch`. This suite's routes answer those in `httpGet`'s
+    // table as a parsed body, so they are served from there as a 200 Response,
+    // and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string, init?: unknown) =>
+      [
+        "fleet/health",
+        "resource-samples",
+        "worktree-slots",
+        "fault-to-visibility",
+        "fleet/ci-runners",
+      ].some((served) => String(url).includes(served))
+        ? new Response(JSON.stringify(await httpGet(url, init)), {
+            status: 200,
+          })
+        : httpFetch(url, init),
   },
 }));
 
@@ -151,11 +167,13 @@ import {
   deviceStateBadgeVariant,
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
-import { FAULT_TO_VISIBILITY_API } from "@/components/operations/useFaultToVisibility";
 import knownFleetHealth from "../../../../../../test-fixtures/devops-readout/known-fleet-health.json";
 import knownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/known-fault-to-visibility.json";
 import unknownFleetHealth from "../../../../../../test-fixtures/devops-readout/unknown-fleet-health.json";
 import unknownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/unknown-fault-to-visibility.json";
+
+/** The poll URL the devops page reads fault-to-visibility from. */
+const FAULT_TO_VISIBILITY_API = "/api/v1/operations/alerts/fault-to-visibility";
 
 /**
  * Coord wire shape — mirrors `DeviceHealthSnapshot` (fleet_health.rs).
@@ -2836,13 +2854,15 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
     const open = await screen.findByTestId("devops-runner-wedge-open");
     expect(open).toHaveTextContent("wedged: backend_wedged");
     expect(open.className).toContain("border-l-red-500");
-    expect(screen.getByTestId("devops-runner-wedges-summary")).toHaveTextContent(
-      "1 open · 1 ended recently"
-    );
+    expect(
+      screen.getByTestId("devops-runner-wedges-summary")
+    ).toHaveTextContent("1 open · 1 ended recently");
     const groups = [
       ...screen
         .getByTestId("devops-runner-capability")
-        .querySelectorAll<HTMLElement>("[data-testid^='devops-runner-capability-group-']"),
+        .querySelectorAll<HTMLElement>(
+          "[data-testid^='devops-runner-capability-group-']"
+        ),
     ].map((g) => g.dataset.testid);
     expect(groups).toEqual([
       "devops-runner-capability-group-inoperative",
@@ -2896,7 +2916,10 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
       ],
     ] as const) {
       const spec = JSON.parse(
-        readFileSync(join(specsDir, specId, "state-machine.derived.json"), "utf8")
+        readFileSync(
+          join(specsDir, specId, "state-machine.derived.json"),
+          "utf8"
+        )
       ) as {
         id: string;
         metadata: { routeStubs: Array<{ urlPattern: string; body: unknown }> };

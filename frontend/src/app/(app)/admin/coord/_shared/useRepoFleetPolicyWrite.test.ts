@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import { act, renderHook } from "@testing-library/react";
 
 const putMock = vi.fn();
@@ -13,6 +14,10 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: vi.fn(),
     put: (...args: unknown[]) => putMock(...args),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        put: putMock,
+      }),
   },
 }));
 vi.mock("sonner", () => ({

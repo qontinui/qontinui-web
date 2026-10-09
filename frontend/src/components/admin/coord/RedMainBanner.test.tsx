@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import { act, render, screen } from "@testing-library/react";
 
 const getMock = vi.fn();
@@ -6,7 +7,15 @@ const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => getMock(...args),
-    fetch: (...args: unknown[]) => fetchMock(...args),
+    // The red-main read is a GET through `fetch` (the typed client); any
+    // other verb must still reach `fetchMock`, which the "never POSTs" case
+    // asserts is untouched.
+    fetch: async (url: string, init?: RequestInit) =>
+      init?.method === "GET"
+        ? fetchViaVerbs(url, init, {
+            get: getMock,
+          })
+        : fetchMock(url, init),
   },
 }));
 
@@ -102,7 +111,10 @@ describe("parseRedMainAlerts", () => {
     // A malformed detail payload must never hide a live episode.
     const got = parseRedMainAlerts([
       { alert_key: "red_main:owner/repo", detail: undefined },
-      { alert_key: "red_main:owner/other", detail: { workflows: "not-a-list" } },
+      {
+        alert_key: "red_main:owner/other",
+        detail: { workflows: "not-a-list" },
+      },
     ]);
     expect(got.map((a) => a.repo)).toEqual(["owner/other", "owner/repo"]);
     for (const a of got) {
@@ -216,9 +228,10 @@ describe("parseAlertClaim", () => {
   });
 
   it("is UNKNOWN for every row when the body says claims_scrape_up: false", () => {
-    expect(
-      parseAlertClaim({ claimed: false, claim: null }, false)
-    ).toEqual({ kind: "unknown", cause: "unreadable" });
+    expect(parseAlertClaim({ claimed: false, claim: null }, false)).toEqual({
+      kind: "unknown",
+      cause: "unreadable",
+    });
     expect(parseAlertClaim({ claimed: true }, false).kind).toBe("unknown");
   });
 
@@ -243,7 +256,10 @@ describe("parseAlertClaim", () => {
   it("never infers a verdict from a lease object alone", () => {
     expect(
       parseAlertClaim({
-        claim: { claimed_by: "session:abc", claim_expires_at: "2099-01-01T00:00:00Z" },
+        claim: {
+          claimed_by: "session:abc",
+          claim_expires_at: "2099-01-01T00:00:00Z",
+        },
       }).kind
     ).toBe("unknown");
   });
@@ -251,9 +267,9 @@ describe("parseAlertClaim", () => {
 
 describe("compactPrincipal", () => {
   it("keeps the principal kind and shortens only the id", () => {
-    expect(
-      compactPrincipal("agent:11111111-2222-3333-4444-555555555555")
-    ).toBe("agent:11111111…");
+    expect(compactPrincipal("agent:11111111-2222-3333-4444-555555555555")).toBe(
+      "agent:11111111…"
+    );
     expect(compactPrincipal("device:c79a07d5")).toBe("device:c79a07d5");
     expect(compactPrincipal("no-prefix-but-quite-long")).toBe("no-prefi…");
   });
@@ -457,7 +473,9 @@ describe("<RedMainBanner> claim and remediation", () => {
     expect(chip).toHaveAttribute("data-claim-unknown-cause", "not-reported");
     expect(chip.textContent).toBe("claim unknown");
     expect(chip.textContent).not.toContain("no agent");
-    expect(chip.getAttribute("title")).toContain("does not report alert claims");
+    expect(chip.getAttribute("title")).toContain(
+      "does not report alert claims"
+    );
   });
 
   it("shows coord's own active remediation, read only", async () => {

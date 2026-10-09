@@ -53,7 +53,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import { fetchAlerts } from "@/lib/api/operations/coordAlerts";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
 /**
@@ -103,7 +103,6 @@ export interface CoordAlertRow {
   claim?: CoordAlertClaim | null;
 }
 
-const API = "/api/v1/operations";
 /** The banner's poll cadence. */
 const POLL_INTERVAL_MS = 10_000;
 
@@ -315,7 +314,9 @@ export function parseRedMainAlerts(
     // Deliberately NOT the `0` default above: absent or malformed means UNREAD.
     const rawQueued = detail.queued_proposal_count;
     const queuedProposalCount =
-      typeof rawQueued === "number" && Number.isInteger(rawQueued) && rawQueued >= 0
+      typeof rawQueued === "number" &&
+      Number.isInteger(rawQueued) &&
+      rawQueued >= 0
         ? rawQueued
         : null;
     out.push({
@@ -510,8 +511,8 @@ export function RedMainBanner() {
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
       // this banner is mounted by the coord layout on every page, and the
       // next tick is the retry. `inFlight` above is its single-flight.
-      const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`,
+      const body = await fetchAlerts(
+        { includeResolved: false, kind: RED_MAIN_KIND },
         COORD_DASHBOARD_POLL_OPTIONS
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord

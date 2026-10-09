@@ -7,7 +7,7 @@
  * serves a different router (`/api/v1/fleet`).
  *
  * `GET /fleet/health` is coord's device liveness read
- * (`backend/app/api/v1/endpoints/operations.py` `get_fleet_health`, proxying coord's
+ * (`backend/app/api/v1/endpoints/operations/__init__.py` `get_fleet_health`, proxying coord's
  * `/coord/fleet/health`, `fleet_health.rs`). {@link fetchFleetHealth} is the
  * ONE reader of it in the web app: `useFleetHealth`, `useFleetAlarmBadge`,
  * the conditions runner hint and the spawn modal's device roster all call it,
@@ -32,10 +32,21 @@
  * Phase 8).
  */
 
+import type { CiHostingView } from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
+import type {
+  FleetPolicyView,
+  FleetPolicyWriteResult,
+} from "@/app/(app)/admin/coord/_shared/fleetPolicy";
 import type { DeviceCredentialDark } from "@/components/operations/coordCredentialStatus";
+import type { ResourceSamplesResponse } from "@/components/operations/fleetResources";
+import type {
+  AggregatedTaskRuns,
+  FleetStatus,
+} from "@/components/operations/types";
+import type { WorktreeSlotsResponse } from "@/components/operations/useFleetWorktreeSlots";
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_BASE } from "./base";
+import { OPERATIONS_BASE, readJson } from "./base";
 
 export interface FleetHealthDevice {
   device_id: string;
@@ -348,20 +359,301 @@ export interface FleetHealthPayload {
 }
 
 /**
- * `GET /fleet/health` — parsed.
+ * `GET /fleet/health` (`operations/__init__.py` `get_fleet_health`) — parsed.
  *
- * Returns the parsed body and rejects with `httpClient.get`'s own error
- * (`GET <url> failed: <status> - <body>`), which is the shape every caller
- * already reads: `describeCoordPollError` and `httpStatusOf` parse exactly
- * that message. `options` carries the caller's retry budget — the dashboard
- * polls pass `COORD_DASHBOARD_POLL_OPTIONS` (one request; the next tick is
- * the retry). The read is declared `idempotent` regardless.
+ * Same-origin over {@link OPERATIONS_BASE} through `httpClient.fetch`, with
+ * the init `httpClient.get` used to send (`{...options, method: "GET"}`, the
+ * read declared `idempotent`). A non-2xx rejects through `readJson` with
+ * `GET /api/v1/operations/fleet/health failed: <status> - <body>` — the shape
+ * every caller already reads: `describeCoordPollError` and `httpStatusOf`
+ * parse exactly that message. `options` carries the caller's retry budget —
+ * the dashboard polls pass `COORD_DASHBOARD_POLL_OPTIONS` (one request; the
+ * next tick is the retry).
  */
-export function fetchFleetHealth(
+export async function fetchFleetHealth(
   options: HttpOptions = {}
 ): Promise<FleetHealthPayload> {
-  return httpClient.get<FleetHealthPayload>(`${OPERATIONS_BASE}/fleet/health`, {
+  const url = `${OPERATIONS_BASE}/fleet/health`;
+  const res = await httpClient.fetch(url, {
     ...options,
+    method: "GET",
     idempotent: true,
   });
+  return readJson<FleetHealthPayload>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet` (`operations/__init__.py` `get_fleet`) — the runner registry,
+ * web-local rather than a coord proxy, so it keeps `httpClient`'s default
+ * retries (`options` is the caller's, `{}` for the default).
+ */
+export async function fetchFleet(
+  options: HttpOptions = {}
+): Promise<FleetStatus> {
+  const url = `${OPERATIONS_BASE}/fleet`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<FleetStatus>(res, `GET ${url}`);
+}
+
+/** `GET /fleet/tasks` — the in-process beacon's aggregated task runs. */
+export async function fetchFleetTasks(
+  options: HttpOptions = {}
+): Promise<AggregatedTaskRuns> {
+  const url = `${OPERATIONS_BASE}/fleet/tasks`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<AggregatedTaskRuns>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/runners/{runner_id}/output` body — the live tail of one task
+ * run's output. A runner names its text `output` or `text`.
+ */
+export interface RunnerOutputResponse {
+  output?: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+/** `GET /fleet/runners/{runner_id}/output?task_run_id=&tail_chars=`. */
+export async function fetchRunnerOutput(
+  runnerId: string,
+  taskRunId: string,
+  tailChars: number,
+  options: HttpOptions = {}
+): Promise<RunnerOutputResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=${tailChars}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<RunnerOutputResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/drain` — which machines coord holds out of the fleet. Returned
+ * UNPARSED: `parseFleetDrain` (`components/operations/fleetDrain.ts`) owns
+ * what the body means, and a body it cannot read is UNKNOWN, not empty.
+ */
+export async function fetchFleetDrain(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/drain`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `POST /fleet/drain`. Resolves coord's body (`{changed}`), or `null` for a 2xx
+ * whose body does not parse — the write landed either way. Never re-sent on a
+ * 5xx (`idempotent: false`).
+ */
+export async function postFleetDrain(body: {
+  device_id: string;
+  until: string;
+  reason: string;
+}): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/drain`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `POST /fleet/undrain` — same contract as {@link postFleetDrain}. */
+export async function postFleetUndrain(body: {
+  device_id: string;
+  reason: string;
+}): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/undrain`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `GET /fleet/dispatch-roles` — each machine's role, returned unparsed. */
+export async function fetchFleetDispatchRoles(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/dispatch-roles`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `PUT /fleet/dispatch-role`. Never auto-retried (`maxRetries: 0`): coord
+ * answers a repeated PUT with `changed: false`, so a retry after a
+ * lost-but-committed first attempt would report "nothing changed" for a change
+ * the operator just made.
+ */
+export async function putFleetDispatchRole(
+  body: Record<string, unknown>
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/dispatch-role`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<unknown>(res, `PUT ${url}`, { unparseable: "null" });
+}
+
+/**
+ * `GET /fleet/resource-samples?window_secs=` — the per-device resource
+ * sparklines. `windowSecs` is the sparkline window in seconds.
+ */
+export async function fetchFleetResourceSamples(
+  windowSecs: number,
+  options: HttpOptions = {}
+): Promise<ResourceSamplesResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/resource-samples?window_secs=${encodeURIComponent(String(windowSecs))}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ResourceSamplesResponse>(res, `GET ${url}`);
+}
+
+/** `GET /fleet/worktree-cap` — per-device worktree caps, returned unparsed. */
+export async function fetchFleetWorktreeCap(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `POST /fleet/worktree-cap` — set a cap. Never re-sent on a 5xx. */
+export async function postFleetWorktreeCap(body: {
+  device_id: string;
+  max_worktrees: number;
+  reason: string;
+}): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `POST /fleet/worktree-cap/clear` — remove a cap. Never re-sent on a 5xx. */
+export async function postFleetWorktreeCapClear(body: {
+  device_id: string;
+  reason: string;
+}): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap/clear`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `GET /fleet/worktree-slots` — live worktree slot occupancy per device. */
+export async function fetchFleetWorktreeSlots(
+  options: HttpOptions = {}
+): Promise<WorktreeSlotsResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-slots`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<WorktreeSlotsResponse>(res, `GET ${url}`);
+}
+
+/** `GET /fleet/ci-runners` — coord's mirror of the self-hosted CI runners, unparsed. */
+export async function fetchCiRunnerMirror(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/ci-runners`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `GET /fleet-policy?domain=` — one fleet-policy dial's resolved view. */
+export async function fetchFleetPolicy(
+  domain: string,
+  options: HttpOptions = {}
+): Promise<FleetPolicyView> {
+  const url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<FleetPolicyView>(res, `GET ${url}`);
+}
+
+/** The body of `PUT /fleet-policy`: one dial's level at one scope band. */
+export interface FleetPolicyWriteRequest {
+  domain: string;
+  scope_band: "tenant" | "repo";
+  scope_key: string | null;
+  level: string;
+  master_enabled: boolean;
+  change_note: string;
+}
+
+/**
+ * `PUT /fleet-policy` — write a dial level. A `PUT` is retried on a 5xx by
+ * method (RFC 9110), and re-writing the same level is a no-op.
+ */
+export async function putFleetPolicy(
+  body: FleetPolicyWriteRequest
+): Promise<FleetPolicyWriteResult> {
+  const url = `${OPERATIONS_BASE}/fleet-policy`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    idempotent: true,
+  });
+  return readJson<FleetPolicyWriteResult>(res, `PUT ${url}`);
+}
+
+/** `GET /ci-hosting` — coord's hosted-CI status. */
+export async function fetchCiHosting(
+  options: HttpOptions = {}
+): Promise<CiHostingView> {
+  const url = `${OPERATIONS_BASE}/ci-hosting`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<CiHostingView>(res, `GET ${url}`);
 }

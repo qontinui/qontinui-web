@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  FLEET_POLICY_API,
+  fetchFleetPolicy,
+  putFleetPolicy,
+} from "@/lib/api/operations/coordFleet";
+import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "../../_shared/fleetPolicy";
@@ -76,11 +78,7 @@ export function usePolicyAutoPublishPolicy() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const view = await httpClient.get<FleetPolicyView>(
-        `${FLEET_POLICY_API}?domain=${encodeURIComponent(
-          POLICY_AUTO_PUBLISH_DOMAIN
-        )}`
-      );
+      const view = await fetchFleetPolicy(POLICY_AUTO_PUBLISH_DOMAIN);
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
@@ -115,19 +113,16 @@ export function usePolicyAutoPublishPolicy() {
     ): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain: POLICY_AUTO_PUBLISH_DOMAIN,
-            scope_band: "tenant",
-            scope_key: null,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ??
-              `Set automatic publishing to "${level}" from the console`,
-          }
-        );
+        const result = await putFleetPolicy({
+          domain: POLICY_AUTO_PUBLISH_DOMAIN,
+          scope_band: "tenant",
+          scope_key: null,
+          level,
+          master_enabled: true,
+          change_note:
+            changeNote ??
+            `Set automatic publishing to "${level}" from the console`,
+        });
         setLastWrite(result);
 
         if (result.effective) {
