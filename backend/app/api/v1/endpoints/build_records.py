@@ -55,6 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.operations import (
@@ -529,7 +530,8 @@ async def publish_build_record(
     document = await _proxy_coord_get(
         f"/coord/build-records/{slug}", tenant_id=tenant_id, structured_errors=True
     )
-    violations = _document_violations(document, slug, product)
+    # CPU-bound (Unicode normalisation, regexes): off the event loop.
+    violations = await run_in_threadpool(_document_violations, document, slug, product)
     if violations:
         logger.warning(
             "build_record_publish_refused_allowlist",

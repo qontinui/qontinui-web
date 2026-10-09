@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Path, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_async_db
 from app.core.error_codes import ErrorCode
@@ -142,7 +143,15 @@ async def read_public_build_record(
         .limit(1)
     )
     snapshot = (await db.execute(stmt)).scalar_one_or_none()
-    if snapshot is not None and build_record_violations(snapshot.document):
+    # The re-validation is CPU-bound (Unicode normalisation, regexes) and this
+    # route is unauthenticated: run it off the event loop, so no stored
+    # document can stall every other request.
+    violations: list[str] = (
+        await run_in_threadpool(build_record_violations, snapshot.document)
+        if snapshot is not None
+        else []
+    )
+    if snapshot is not None and violations:
         # Stored under an older, looser allowlist: never serve it.
         logger.warning(
             "public_build_record_fails_current_allowlist",

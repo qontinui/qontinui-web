@@ -13,6 +13,12 @@ unauthenticated reader. The key set is the binding cross-repo contract's
 What the validator refuses
 ==========================
 
+**Size**, before anything else: a document over 1 MiB serialized, and any
+scanned string over 512 characters (both reported by slot). Every regex below
+is written to run in linear time (anchored starts, possessive quantifiers),
+so with the caps no input can make validation slow — the public route runs it
+on every read.
+
 **Shape.** Any key not in :data:`BUILD_RECORD_ALLOWLIST`, at any depth; a
 container where a scalar belongs and the reverse.
 
@@ -72,6 +78,7 @@ non-repo ``a/b`` token (``CI/CD``) is refused. Two all-digit segments
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from datetime import datetime
@@ -106,6 +113,12 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
     }
 )
 
+#: Longest string the content scan will read. Every real title, slug and
+#: unknown is far shorter; a longer one is refused before any regex runs.
+MAX_SCANNED_STRING_CHARS: Final = 512
+#: Largest serialized document accepted (UTF-8 JSON).
+MAX_DOCUMENT_BYTES: Final = 1024 * 1024
+
 SLUG_RE: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 #: A work-unit slug. ``coord.work_units.slug`` is unconstrained ``TEXT``
 #: (``coord_workunits_01_work_units``), and real plan stems run past 140
@@ -124,7 +137,11 @@ _UUID_RE: Final = re.compile(
     r"|(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])"
 )
 #: ``user@host`` is enough — an internal host needs no dot to identify a person.
-_EMAIL_RE: Final = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+")
+#: Starts only at the beginning of a local-part run (lookbehind) and never
+#: backtracks into it (possessive), so a long run with no ``@`` is O(n), not
+#: O(n²) — every regex in this module is written to stay linear; see the
+#: adversarial timing test in ``tests/test_build_records.py``.
+_EMAIL_RE: Final = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]++@[A-Za-z0-9-]")
 #: Characters that render as ``/`` but are not it (NFKC already folds U+FF0F
 #: and U+FF89 to U+30CE, both listed anyway). Any OTHER non-ASCII math symbol
 #: or "other punctuation" sitting between two ASCII alphanumerics is treated
@@ -139,7 +156,7 @@ _LOOKALIKE_SLASHES: Final = dict.fromkeys(
 #: A non-ASCII character between two ASCII alphanumerics (spaces allowed);
 #: :func:`_infix_to_slash` keeps it only when it is ``Sm`` or ``Po``.
 _INFIX_SYMBOL_RE: Final = re.compile(
-    r"(?<=[A-Za-z0-9])\s*([^\x00-\x7f])\s*(?=[A-Za-z0-9])"
+    r"(?<=[A-Za-z0-9])\s*+([^\x00-\x7f])\s*+(?=[A-Za-z0-9])"
 )
 
 #: A compact confusable skeleton (in the spirit of Unicode TR39) for the
@@ -260,15 +277,18 @@ _REFUSED_CATEGORIES: Final = frozenset({"Cf", "Cc", "Cn", "Co", "Cs"})
 #: which are not refused — an accent is legitimate — but must not split a
 #: token: ``secre\u0301t`` scans as ``secret``).
 _STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs"})
-_SPACED_SLASH_RE: Final = re.compile(r"\s*/\s*")
+#: Starts only at the first whitespace of a run (or at the ``/`` itself) and
+#: is possessive: ``\s*/\s*`` restarted at every position of a long
+#: whitespace run, which was O(n²) (a 100k-space title took 14.7 s).
+_SPACED_SLASH_RE: Final = re.compile(r"(?<!\s)\s*+/\s*+")
 #: Combining marks that draw a stroke THROUGH the previous character, so
 #: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
 _OVERLAY_MARKS: Final = frozenset(
     "\u0334\u0335\u0336\u0337\u0338\u20d2\u20d3\u20e5\u20e6"
 )
 _PATH_RUN_RE: Final = re.compile(r"[A-Za-z0-9._/-]+")
-_UNKNOWN_RE: Final = re.compile(r"^([a-z_][a-z0-9_.\[\]]*): ([a-z_]+)$")
-_INDEX_RE: Final = re.compile(r"\[\d+\]")
+_UNKNOWN_RE: Final = re.compile(r"^([a-z_][a-z0-9_.\[\]]*+): ([a-z_]++)$")
+_INDEX_RE: Final = re.compile(r"\[\d++\]")
 
 
 class Slot(Enum):
@@ -458,6 +478,9 @@ def _walk(
     if isinstance(value, dict | list):
         out.append(f"{where}: expected a scalar, got {type(value).__name__}")
         return
+    if isinstance(value, str) and len(value) > MAX_SCANNED_STRING_CHARS:
+        out.append(f"{where}: longer than {MAX_SCANNED_STRING_CHARS} characters")
+        return
     if not _slot_ok(shape, value):
         out.append(f"{where}: not a valid {shape.value} value")
         return
@@ -552,8 +575,23 @@ def names_token(text: str, name: str) -> bool:
     return re.search(pattern, normalize_for_scan(text).lower()) is not None
 
 
+def _too_large(document: Any) -> bool:
+    try:
+        encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError, RecursionError):
+        return True
+    return len(encoded.encode("utf-8")) > MAX_DOCUMENT_BYTES
+
+
 def build_record_violations(document: Any) -> list[str]:
-    """Every way ``document`` breaks the allowlist; empty when it is publishable."""
+    """Every way ``document`` breaks the allowlist; empty when it is publishable.
+
+    Size first: a document over :data:`MAX_DOCUMENT_BYTES` is refused without
+    being walked, and a string over :data:`MAX_SCANNED_STRING_CHARS` is
+    refused without being scanned — no input can make this function slow.
+    """
+    if _too_large(document):
+        return [f"<root>: larger than {MAX_DOCUMENT_BYTES} bytes serialized"]
     out: list[str] = []
     strings: list[tuple[str, str]] = []
     _walk(document, BUILD_RECORD_ALLOWLIST, "", out, strings)
