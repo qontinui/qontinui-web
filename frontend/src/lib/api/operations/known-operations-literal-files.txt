@@ -16,7 +16,6 @@ app/(app)/admin/coord/memory/[name]/page.tsx
 app/(app)/admin/coord/memory/[name]/version/[version]/page.tsx
 app/(app)/admin/coord/memory/page.tsx
 app/(app)/admin/coord/notifications/page.tsx
-app/(app)/admin/coord/onboarding-status/page.tsx
 app/(app)/admin/coord/plans/useDeriveMode.ts
 app/(app)/admin/coord/plans/useThroughput.ts
 app/(app)/admin/coord/policies/page.tsx
@@ -39,10 +38,8 @@ app/(app)/admin/coord/work-units/page.tsx
 app/(app)/conditions/_hooks/runnerAvailability.ts
 app/(app)/overview/_hooks/useDomainCost.ts
 app/(app)/overview/_hooks/useSummaryData.ts
-app/(app)/settings/coordination/_hooks/useAutoFixPrSetting.ts
 app/(app)/settings/coordination/_hooks/useNextStepSettings.ts
 app/(app)/settings/coordination/_hooks/usePrioritySets.ts
-app/(app)/settings/repos/page.tsx
 components/admin/agent-claims/AgentClaimsDashboard.tsx
 components/admin/coord/CoordNav.tsx
 components/admin/coord/DeployRow.tsx
@@ -50,21 +47,12 @@ components/admin/coord/GapRow.tsx
 components/admin/coord/LandRow.tsx
 components/admin/coord/RedMainBanner.tsx
 components/commits/api.ts
-components/operations/ConnectInstalledOrg.tsx
-components/operations/ConnectedOrgs.tsx
 components/operations/FleetOverview.tsx
 components/operations/MergeDependencyGraph.tsx
-components/operations/MergeOrchestrationOnboarding.tsx
-components/operations/MergeOrchestrationSettings.tsx
 components/operations/MergeTrainActivity.tsx
-components/operations/OnboardingDoctor.tsx
 components/operations/OperatorAuditPanel.tsx
 components/operations/OutputViewer.tsx
 components/operations/StuckPrRecoveryPanel.tsx
-components/operations/merge-settings/MergeEnabledControl.tsx
-components/operations/merge-settings/RepoOverrideCard.tsx
-components/operations/merge-settings/TenantDefaultsCard.tsx
-components/operations/merge-settings/TenantMergePauseControl.tsx
 components/operations/useCiRunnerMirror.ts
 components/operations/useFaultToVisibility.ts
 components/operations/useFleetDispatchRoles.ts
@@ -78,6 +66,4 @@ components/operations/useRunnerWindDown.ts
 components/operations/useTrainHealth.ts
 components/operations/utils.ts
 components/sessions/api.ts
-lib/onboarding-connect-state.ts
-lib/onboarding-pending.ts
 services/runner-releases-service.ts

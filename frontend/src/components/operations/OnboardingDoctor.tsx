@@ -35,47 +35,13 @@ import {
   Stethoscope,
   XCircle,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-
-const API = "/api/v1/operations";
-
-// ----------------------------------------------------------------------------
-// Wire types — FROZEN contract with coord's onboarding doctor (P4).
-// ----------------------------------------------------------------------------
-
-type DoctorStatus = "pass" | "warn" | "fail" | "skip";
-
-interface DoctorCheck {
-  id: string;
-  label: string;
-  status: DoctorStatus;
-  detail: string;
-  remediation: string | null;
-}
-
-interface DoctorSummary {
-  pass: number;
-  warn: number;
-  fail: number;
-  skip: number;
-  ready_to_land: boolean;
-}
-
-interface DoctorResponse {
-  repo: string;
-  checks: DoctorCheck[];
-  summary: DoctorSummary;
-}
-
-/** Subset of the `GET /pr-merge/repos` row we need for quick-picks. */
-interface TenantRepoRow {
-  repo: string;
-}
-
-interface TenantReposResponse {
-  repos: TenantRepoRow[];
-  total: number;
-}
+import { fetchTenantMergeRepos } from "@/lib/api/operations/prMerge";
+import {
+  fetchOnboardingDoctor,
+  type DoctorCheck,
+  type DoctorResponse,
+  type DoctorStatus,
+} from "@/lib/api/operations/prMergeOnboarding";
 
 /** Mirrors the backend proxy's owner/name validation (422 otherwise). */
 const OWNER_REPO_RE =
@@ -184,9 +150,7 @@ export function OnboardingDoctor() {
     setChecking(true);
     setError(null);
     try {
-      const body = await httpClient.get<DoctorResponse>(
-        `${API}/pr-merge/onboarding/doctor?repo=${encodeURIComponent(trimmed)}`
-      );
+      const body = await fetchOnboardingDoctor(trimmed);
       setResult(body);
       setCheckedRepo(trimmed);
     } catch (e) {
@@ -201,8 +165,7 @@ export function OnboardingDoctor() {
   // (e.g. no coord operator row yet) just hides the buttons.
   useEffect(() => {
     let cancelled = false;
-    httpClient
-      .get<TenantReposResponse>(`${API}/pr-merge/repos`)
+    fetchTenantMergeRepos()
       .then((body) => {
         if (!cancelled) {
           setEnrolledRepos((body.repos ?? []).map((r) => r.repo));

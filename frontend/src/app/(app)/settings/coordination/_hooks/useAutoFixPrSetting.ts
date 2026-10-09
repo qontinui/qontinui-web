@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchTenantMergeSettings,
+  patchTenantMergeSettings,
+} from "@/lib/api/operations/prMerge";
 import {
   type AutoFixPrChoice,
   type AutoFixPrState,
@@ -10,13 +13,6 @@ import {
   readAutoFixPr,
   tenantFromChoice,
 } from "./auto-fix-pr";
-
-const SETTINGS_PATH = "/api/v1/operations/pr-merge/settings";
-
-interface TenantSettingsResponse {
-  tenant_id: string;
-  profile: unknown;
-}
 
 export interface UseAutoFixPrSettingReturn {
   loading: boolean;
@@ -54,8 +50,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
     setError(null);
     (async () => {
       try {
-        const data =
-          await httpClient.get<TenantSettingsResponse>(SETTINGS_PATH);
+        const data = await fetchTenantMergeSettings();
         if (!cancelled) setState(readAutoFixPr(data?.profile));
       } catch (err) {
         if (!cancelled) {
@@ -83,10 +78,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
     setSaving(true);
     const sent = tenantFromChoice(choice);
     try {
-      const data = await httpClient.patch<TenantSettingsResponse>(
-        SETTINGS_PATH,
-        { auto_fix_pr: sent }
-      );
+      const data = await patchTenantMergeSettings({ auto_fix_pr: sent });
       const next = readAutoFixPr(data?.profile);
       if (next === null || next.tenant !== sent) {
         toast.error(
