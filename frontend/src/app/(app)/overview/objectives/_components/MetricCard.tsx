@@ -26,6 +26,7 @@ import { bodyWithoutLeadHeading, type IntentDocument } from "../../_lib/intent";
 import { saveMetricText } from "../../_lib/metric-text-api";
 import {
   baselineLine,
+  checkpointResultsNotice,
   currentValueText,
   definitionHref,
   metricAnchor,
@@ -193,6 +194,7 @@ export function MetricCard({
   });
   const hasCheckpoints = metric.checkpoint_results.length > 0;
   const current = currentValueText(metric);
+  const resultsNotice = checkpointResultsNotice(metric);
 
   return (
     <article
@@ -245,6 +247,17 @@ export function MetricCard({
             </p>
           )}
 
+          {resultsNotice && (
+            <p
+              className={`mt-3 ${NOTICE} ${MUTED}`}
+              role="status"
+              data-ui-bridge-id={`${base}.checkpoint-results-read`}
+              data-read={metric.checkpoint_results_read}
+            >
+              <span aria-hidden>? </span>
+              {resultsNotice}
+            </p>
+          )}
           {hasCheckpoints ? (
             <div className="mt-4">
               <p className="text-sm font-medium text-foreground">Checkpoints</p>

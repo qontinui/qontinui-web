@@ -20,16 +20,26 @@ from app.overview.intent_documents import (
 SourceQueryType = Literal["named", "http", "manual", "untyped", "absent"]
 SourceStatus = Literal["ok", "degraded", "unavailable", "truncated"]
 Verdict = Literal["met", "missed", "unknown"]
-ReportShape = Literal["structured", "prose_only", "unreadable_block"]
-PlacedBy = Literal["block", "results", "checkpoint_key"]
+#: ``structured``: coord's results table holds its rows. ``rows_not_recorded``:
+#: a valid block, the results read SUCCEEDED, and it holds no rows for it yet.
+#: ``rows_unread``: a valid block whose rows the results read could not vouch
+#: for (the read failed, or its page came back full).
+ReportShape = Literal[
+    "structured", "prose_only", "unreadable_block", "rows_not_recorded", "rows_unread"
+]
+#: ``table``: coord's results table files the report's rows (or its marker)
+#: under a checkpoint.
+PlacedBy = Literal["table", "block", "results", "checkpoint_key"]
 CheckpointStatus = Literal[
     "reported",
     "reported_prose_only",
     "reported_unreadable",
+    "reported_rows_not_recorded",
     "awaiting",
     "no_report_found",
     "possible_report_unrecorded",
     "unreadable",
+    "checkpoint_results_unreadable",
     "not_fully_read",
 ]
 FindingsReadState = Literal["ok", "truncated", "unavailable", "not_read"]
@@ -59,8 +69,12 @@ class ObjectivesSources(BaseModel):
     intent_documents: SourceRead
     #: The per-metric findings list reads.
     findings: SourceRead
-    #: The by-id reads of the ids metric documents record in ``results:``.
+    #: The by-id reads of the ids metric documents record in ``results:`` and
+    #: of every result row's evidence finding (each report's inline body).
     findings_by_id: SourceRead
+    #: The read of coord's checkpoint results table — where every verdict
+    #: row comes from (Phase 4).
+    checkpoint_results: SourceRead
 
 
 class ObjectiveRead(BaseModel):
@@ -139,7 +153,8 @@ class ActionRead(BaseModel):
 
 
 class ResultRowRead(BaseModel):
-    """One row of a valid ``metric-checkpoint/v1`` block, as stated."""
+    """One verdict row from coord's checkpoint results table, as the
+    measurer stated it."""
 
     id: str
     verdict: Verdict
@@ -186,6 +201,9 @@ class ReportRead(BaseModel):
     rows: list[ResultRowRead] = Field(default_factory=list)
     #: Its id is in the document's ``results:`` list.
     recorded: bool = False
+    #: Why the report's own text (title, body, date) is not served: its rows
+    #: are in coord's results table but the finding could not be read by id.
+    body_unavailable: str | None = None
 
 
 class TallyRead(BaseModel):
@@ -220,8 +238,10 @@ class CriterionResultRead(BaseModel):
     method: str | None
     verdict: Verdict
     #: For ``unknown``: the row's own reason (``could_not_run`` …) or one of
-    #: ``not_reported``, ``results_not_fully_read``, ``results_unreadable``,
-    #: ``reported_prose_only``, ``report_unreadable``.
+    #: ``not_reported``, ``results_not_fully_read``, ``results_unreadable``
+    #: (the findings read failed), ``checkpoint_results_unreadable`` (the
+    #: results-table read failed), ``reported_prose_only``,
+    #: ``report_unreadable``, ``rows_not_recorded``.
     unknown_reason: str | None = None
     row: ResultRowRead | None = None
     measured_at: str | None = None
@@ -326,6 +346,8 @@ class MetricRead(BaseModel):
     extra_fields: list[ExtraFieldRead] = Field(default_factory=list)
 
     findings_read: FindingsReadState = "not_read"
+    #: This metric's share of the checkpoint results read.
+    checkpoint_results_read: FindingsReadState = "not_read"
     checkpoint_results: list[CheckpointResultRead] = Field(default_factory=list)
     #: Every declared criterion, latest verdict wins (D7).
     criteria_latest: list[CriterionResultRead] = Field(default_factory=list)

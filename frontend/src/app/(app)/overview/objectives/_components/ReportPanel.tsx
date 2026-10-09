@@ -32,6 +32,8 @@ const SHAPE_WORDS: Record<ReportRead["shape"], string> = {
   structured: "with a readable result",
   prose_only: "in prose only",
   unreadable_block: "with a result that could not be read",
+  rows_not_recorded: "with a result whose rows are not yet recorded",
+  rows_unread: "with a result whose rows could not be read",
 };
 
 export function ReportPanel({
@@ -84,6 +86,13 @@ export function ReportPanel({
         <div className="mt-3">
           {report.body ? (
             <MarkdownView headingOffset={3}>{report.body}</MarkdownView>
+          ) : report.body_unavailable ? (
+            <p
+              className={MUTED}
+              data-ui-bridge-id={`${uiBridgeId}.body-unavailable`}
+            >
+              {report.body_unavailable}
+            </p>
           ) : (
             <p className={MUTED}>
               The report&rsquo;s text was not served with it.
