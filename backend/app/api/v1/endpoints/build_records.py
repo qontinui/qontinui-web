@@ -64,8 +64,8 @@ from app.api.v1.endpoints.operations import (
     require_coord_tenant_admin_target,
 )
 from app.jobs.build_record_reconcile import (
-    recheck_visibility,
     reconcile_tenant,
+    repos_outside,
     retract_live,
 )
 from app.models.build_record import (
@@ -73,7 +73,12 @@ from app.models.build_record import (
     BuildRecordPublicSlug,
     BuildRecordSnapshot,
 )
-from app.services.build_record_allowlist import REPO_RE, build_record_violations
+from app.services.build_record_allowlist import (
+    REPO_RE,
+    build_record_violations,
+    names_token,
+    scanned_strings,
+)
 from app.services.github_repo_visibility import Visibility, repo_visibility
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +92,9 @@ RESERVED_SLUGS: frozenset[str] = frozenset({"products"})
 #: publish. A document composed earlier than this is not the record "now".
 GENERATED_AT_MAX_AGE = timedelta(minutes=15)
 GENERATED_AT_MAX_SKEW = timedelta(minutes=5)
+
+#: Concurrent anonymous GitHub reads per publish.
+GITHUB_CONCURRENCY = 4
 
 #: A product slug in a path: the coord contract's domain, checked before any
 #: value is interpolated into a coord URL.
@@ -211,25 +219,30 @@ async def put_build_record_product(
     """Create or replace one product definition. Tenant admins only: this is
     the switch that makes a product publishable (``is_public``).
 
-    ``is_public: false`` retracts this tenant's live public snapshot of the
-    slug FIRST and commits, then calls coord — so whatever coord answers, the
+    ``is_public: false`` — or a ``repos`` list that no longer covers every repo
+    the live snapshot names — retracts this tenant's live public snapshot of
+    the slug FIRST and commits, then calls coord — so whatever coord answers, the
     page is not left public under a product that was just made private. The
     ``X-Build-Record-Retracted`` header says whether this request retracted.
     """
     if slug in RESERVED_SLUGS:
         _refuse(422, "build_record_slug_reserved", slug)
 
+    # Retract BEFORE asking coord (fail-closed: whatever coord answers, the
+    # page is not left public under a definition that no longer allows it):
+    # the product made private, or narrowed so the live snapshot names a repo
+    # the definition no longer includes.
     retracted = False
-    if not body.is_public:
+    if not body.is_public or await repos_outside(
+        db, slug, {r.lower() for r in body.repos}
+    ):
         retracted = await retract_live(db, slug, tenant_id)
-        await db.commit()
-        if retracted:
-            logger.info("build_record_retracted_by_product_private", slug=slug)
+    await db.commit()
     retracted_header = {"X-Build-Record-Retracted": "true" if retracted else "false"}
     response.headers.update(retracted_header)
 
     try:
-        return await _proxy_coord_put(
+        row = await _proxy_coord_put(
             f"/coord/build-record-products/{slug}",
             body.model_dump(mode="json"),
             tenant_id=tenant_id,
@@ -239,6 +252,23 @@ async def put_build_record_product(
         # The retraction above is already committed; say so on the error too.
         exc.headers = {**(exc.headers or {}), **retracted_header}
         raise
+
+    # coord's stored row is the authority on the repo set (it may normalise
+    # what it was sent); re-check against it.
+    stored = row.get("repos") if isinstance(row, dict) else None
+    if (
+        not retracted
+        and isinstance(stored, list)
+        and await repos_outside(
+            db, slug, {r.lower() for r in stored if isinstance(r, str)}
+        )
+    ):
+        retracted = await retract_live(db, slug, tenant_id)
+        await db.commit()
+    if retracted:
+        logger.info("build_record_retracted_by_product_put", slug=slug)
+    response.headers["X-Build-Record-Retracted"] = "true" if retracted else "false"
+    return row
 
 
 @router.get("/{slug}")
@@ -292,6 +322,21 @@ def _document_violations(
             )
     if "generated_at" not in document:
         violations.append("generated_at: required to publish")
+
+    # Repos the product defines but coord left out of the document are the
+    # ones it could NOT establish as public — their names must not leak
+    # through a title or a slug either. Token-bounded, case-insensitive,
+    # after the same normalisation as the allowlist scan; the slot is
+    # reported, never the name.
+    in_document = {r.lower() for r in doc_product.get("repos") or []}
+    excluded_names = {
+        repo.split("/", 1)[1]
+        for repo in defined_repos - in_document
+        if "/" in repo and repo.split("/", 1)[1]
+    }
+    for where, text in scanned_strings(document):
+        if any(names_token(text, name) for name in excluded_names):
+            violations.append(f"{where}: names a repo excluded as not known public")
     return violations
 
 
@@ -311,7 +356,13 @@ def _product_refusal(
 async def _confirm_repos_public(slug: str, repos: list[str]) -> None:
     """Refuse unless GitHub, asked anonymously, says every repo is public."""
     unique = sorted({r.lower(): r for r in repos}.values())
-    answers = await asyncio.gather(*(repo_visibility(r) for r in unique))
+    gate = asyncio.Semaphore(GITHUB_CONCURRENCY)
+
+    async def ask(repo: str) -> Visibility:
+        async with gate:
+            return await repo_visibility(repo)
+
+    answers = await asyncio.gather(*(ask(r) for r in unique))
     if any(a is Visibility.NOT_PUBLIC for a in answers):
         _refuse(502, "build_record_repo_not_public", slug)
     if any(a is not Visibility.PUBLIC for a in answers):
@@ -547,8 +598,10 @@ async def reconcile_build_records(
 ) -> BuildRecordReconcileResult:
     """Retract every live public build record of this tenant whose coord
     product is gone, private or another tenant's — now, with the caller's own
-    coord credential — and then whose repos GitHub no longer reports public
-    (the same bounded, oldest-checked-first re-check the scheduler runs). The same reconcile also runs on the in-process scheduler
+    coord credential — or whose snapshot names a repo the product no longer
+    includes. GitHub visibility is NOT re-checked here: that spends the shared
+    anonymous GitHub budget and runs only as the scheduled
+    ``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler
     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
     the launch kit and the operator notice, which should not wait for a tick.
 
@@ -564,6 +617,6 @@ async def reconcile_build_records(
             status_code=502,
             detail={"error": "coord_build_record_products_malformed"},
         )
-    retracted = await reconcile_tenant(db, tenant_id, products)
-    retracted += await recheck_visibility(db, tenant_id=tenant_id)
-    return BuildRecordReconcileResult(retracted=sorted(set(retracted)))
+    return BuildRecordReconcileResult(
+        retracted=await reconcile_tenant(db, tenant_id, products)
+    )

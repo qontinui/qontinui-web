@@ -43,6 +43,9 @@ from app.services.build_record_allowlist import (
     validate_build_record,
 )
 from app.services.github_repo_visibility import (
+    check_repo as _REAL_CHECK_REPO,
+)
+from app.services.github_repo_visibility import (
     repo_visibility as _REAL_REPO_VISIBILITY,
 )
 
@@ -385,19 +388,26 @@ class _Coord:
         return {"slug": path.rsplit("/", 1)[1], **body}
 
     def define(
-        self, tenant_id: UUID, slug: str = SLUG, *, is_public: bool = True
+        self,
+        tenant_id: UUID,
+        slug: str = SLUG,
+        *,
+        is_public: bool = True,
+        repos: list[str] | None = None,
     ) -> None:
+        repos = repos or ["qontinui/qontinui-design-tokens"]
         self.products.setdefault(tenant_id, []).append(
             {
                 "slug": slug,
                 "title": "Design tokens",
                 "is_public": is_public,
                 "tenant_id": str(tenant_id),
-                "repos": ["qontinui/qontinui-design-tokens"],
+                "repos": list(repos),
             }
         )
         doc = _document(slug)
         doc["generated_at"] = _now_rfc3339()
+        doc["product"]["repos"] = list(repos)
         self.documents[(tenant_id, slug)] = doc
 
 
@@ -421,8 +431,20 @@ def coord(monkeypatch: pytest.MonkeyPatch) -> _Coord:
     monkeypatch.setattr(build_records, "_proxy_coord_get", stub.get)
     monkeypatch.setattr(build_records, "_proxy_coord_put", stub.put)
     monkeypatch.setattr(build_records, "repo_visibility", visibility)
-    # The scheduled/on-demand re-check imports it from the service module.
+    # The scheduled re-check imports check_repo from the service module.
     monkeypatch.setattr(github_repo_visibility, "repo_visibility", visibility)
+    #: X-RateLimit-Remaining the fake GitHub reports (None = header absent).
+    stub.rate_remaining: int | None = None  # type: ignore[misc]
+    stub.github_calls: list[str] = []  # type: ignore[misc]
+
+    async def check(repo: str, **_: Any) -> Any:
+        stub.github_calls.append(repo)
+        verdict = stub.visibility.get(repo, Visibility.PUBLIC)
+        return github_repo_visibility.VisibilityAnswer(
+            verdict, stub.rate_remaining, rate_limited=False
+        )
+
+    monkeypatch.setattr(github_repo_visibility, "check_repo", check)
     return stub
 
 
@@ -1627,6 +1649,7 @@ class TestThirdReview:
         # The fixture faked repo_visibility in both modules; put the REAL one
         # (captured at import, before any patch) back on the route's module.
         monkeypatch.setattr(build_records, "repo_visibility", _REAL_REPO_VISIBILITY)
+        monkeypatch.setattr(github_repo_visibility, "check_repo", _REAL_CHECK_REPO)
         monkeypatch.setattr(
             github_repo_visibility,
             "_client_factory",
@@ -1638,46 +1661,6 @@ class TestThirdReview:
         if error is not None:
             assert r.json()["error"] == error
         assert asked == ["/repos/qontinui/qontinui-design-tokens"]
-
-    async def test_visibility_recheck_is_bounded_and_rotates(
-        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
-    ) -> None:
-        from app.jobs.build_record_reconcile import recheck_visibility
-        from app.services.github_repo_visibility import Visibility
-
-        for slug in ("vis-a", "vis-b", "vis-c"):
-            coord.define(TENANT_A, slug)
-            assert (
-                await client_a.post(f"/api/v1/build-records/{slug}/publish")
-            ).status_code == 201
-        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.UNKNOWN
-
-        # Budget 1: one slug per call, oldest-checked first, so three calls
-        # visit three different slugs. UNKNOWN never retracts.
-        for _ in range(3):
-            assert await recheck_visibility(async_db_session, budget=1) == []
-        checked = (
-            (
-                await async_db_session.execute(
-                    select(BuildRecordPublicSlug).where(
-                        BuildRecordPublicSlug.public_slug.in_(
-                            ["vis-a", "vis-b", "vis-c"]
-                        )
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert all(o.last_visibility_check_at is not None for o in checked)
-        assert all(o.unpublished_at is None for o in checked)
-
-        # The repo went private: the next call (oldest = vis-a) retracts it.
-        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.NOT_PUBLIC
-        assert await recheck_visibility(async_db_session, budget=1) == ["vis-a"]
-        public = "/api/v1/public/build-records"
-        assert (await client_a.get(f"{public}/vis-a")).status_code == 404
-        assert (await client_a.get(f"{public}/vis-b")).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -1742,3 +1725,326 @@ class TestReconcileResilience:
         assert rows[slugs[tenant_c]] is not None  # reached despite A and B
         assert rows[slugs[TENANT_A]] is None
         assert rows[slugs[TENANT_B]] is None
+
+
+# ===========================================================================
+# Fourth review
+# ===========================================================================
+
+
+class TestHiddenCharacters:
+    @pytest.mark.parametrize(
+        ("slot", "value"),
+        [
+            (("prs", 0, "title"), "port from acme​/secret"),  # zero-width space
+            (("prs", 0, "title"), "port from acme­/secret"),  # soft hyphen
+            (("prs", 0, "title"), "port from acme/⁠secret"),  # word joiner
+            (("work_units", 0, "title"), "owner joe​@corp"),
+            (
+                ("work_units", 0, "title"),
+                "device 0b6c1f1e-1111-4111-​8111-111111111111",
+            ),
+            (("prs", 0, "title"), "port from acme̸secret"),  # overlay solidus
+        ],
+    )
+    def test_invisible_and_overlay_characters_are_refused(
+        self, slot: tuple[Any, ...], value: str
+    ) -> None:
+        doc = _document()
+        target: Any = doc
+        for step in slot[:-1]:
+            target = target[step]
+        target[slot[-1]] = value
+        where = ".".join(
+            f"{s}" if isinstance(s, str) else f"[{s}]" for s in slot
+        ).replace(".[", "[")
+        assert build_record_violations(doc) == [
+            f"{where}: contains an invisible, control or overlay character"
+        ]
+
+
+@pytest.mark.asyncio
+class TestFourthReviewPublish:
+    @pytest.mark.parametrize(
+        "where",
+        [
+            ("prs", 0, "title", "Port retry loop from secret-engine"),
+            ("work_units", 0, "slug", "2026-10-01-secret-engine-cutover"),
+        ],
+    )
+    async def test_excluded_repo_name_never_leaks(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        where: tuple[Any, ...],
+    ) -> None:
+        coord.define(TENANT_A)
+        # The definition names a repo coord could not establish as public, so
+        # coord left it out of the document — its NAME must not appear either.
+        coord.products[TENANT_A][0]["repos"].append("acme/Secret-Engine")
+        target: Any = coord.documents[(TENANT_A, SLUG)]
+        for step in where[:-2]:
+            target = target[step]
+        target[where[-2]] = where[-1]
+        if where[0] == "work_units":
+            coord.documents[(TENANT_A, SLUG)]["timeline"][0]["work_unit"] = where[-1]
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 502, r.text
+        violations = r.json()["violations"]
+        assert any("names a repo excluded as not known public" in v for v in violations)
+        assert not any("secret" in v.lower() for v in violations)  # slot only
+        assert await _snapshot_count(async_db_session) == 0
+
+    async def test_put_narrowing_repos_retracts_the_live_page(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        repos = ["qontinui/qontinui-design-tokens", "qontinui/qontinui-icons"]
+        coord.define(TENANT_A, repos=repos)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_a.put(
+            f"/api/v1/build-records/products/{SLUG}",
+            json={"title": "t", "repos": repos[:1], "is_public": True},
+        )
+        assert r.status_code == 200, r.text
+        assert r.headers["X-Build-Record-Retracted"] == "true"
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 404
+
+    async def test_put_keeping_every_repo_leaves_the_page_live(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_a.put(
+            f"/api/v1/build-records/products/{SLUG}",
+            json={
+                "title": "t",
+                "repos": ["Qontinui/qontinui-design-tokens", "qontinui/more"],
+                "is_public": True,
+            },
+        )
+        assert r.headers["X-Build-Record-Retracted"] == "false"
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 200
+
+    async def test_reconcile_retracts_a_page_whose_repo_left_the_definition(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        repos = ["qontinui/qontinui-design-tokens", "qontinui/qontinui-icons"]
+        coord.define(TENANT_A, repos=repos)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        coord.products[TENANT_A][0]["repos"] = repos[:1]  # via coord's door
+        r = await client_a.post("/api/v1/build-records/reconcile")
+        assert r.json() == {"retracted": [SLUG]}
+
+    async def test_on_demand_reconcile_never_calls_github(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        coord.github_calls.clear()
+        assert (await client_a.post("/api/v1/build-records/reconcile")).json() == {
+            "retracted": []
+        }
+        assert coord.github_calls == []
+
+
+@pytest.mark.asyncio
+class TestVisibilityTick:
+    """The scheduled GitHub re-check: hard cap, cursor, stops."""
+
+    @staticmethod
+    async def _publish(client: httpx.AsyncClient, coord: _Coord, slug: str, **kw):
+        coord.define(TENANT_A, slug, **kw)
+        r = await client.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    @staticmethod
+    async def _owner(db: AsyncSession, slug: str) -> BuildRecordPublicSlug:
+        return (
+            await db.execute(
+                select(BuildRecordPublicSlug)
+                .where(BuildRecordPublicSlug.public_slug == slug)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+
+    async def test_budget_is_a_hard_cap_and_the_cursor_rotates(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for slug in ("vis-a", "vis-b", "vis-c"):
+            await self._publish(client_a, coord, slug)
+        coord.github_calls.clear()
+
+        first = await recheck_visibility(async_db_session, budget=2)
+        assert first.calls == 2 == len(coord.github_calls)
+        assert first.completed == ["vis-a", "vis-b"]
+        second = await recheck_visibility(async_db_session, budget=2)
+        assert second.completed[0] == "vis-c"  # never-checked first
+        assert second.calls == 2
+
+    async def test_a_wide_slug_resumes_at_its_offset(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        repos = [
+            "qontinui/qontinui-design-tokens",
+            "qontinui/r2",
+            "qontinui/r3",
+        ]
+        await self._publish(client_a, coord, "vis-wide", repos=repos)
+        coord.github_calls.clear()
+
+        tick = await recheck_visibility(async_db_session, budget=2)
+        assert tick.calls == 2 and tick.completed == []
+        owner = await self._owner(async_db_session, "vis-wide")
+        assert owner.visibility_check_offset == 2
+        assert owner.last_visibility_check_at is None  # not a complete answer
+
+        tick = await recheck_visibility(async_db_session, budget=2)
+        assert coord.github_calls[2] == "qontinui/r3"  # resumed, not restarted
+        assert "vis-wide" in tick.completed
+        owner = await self._owner(async_db_session, "vis-wide")
+        assert owner.visibility_check_offset == 0
+        assert owner.last_visibility_check_at is not None
+
+    async def test_unknown_stops_the_tick_without_advancing(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services.github_repo_visibility import Visibility
+
+        for slug in ("vis-a", "vis-b"):
+            await self._publish(client_a, coord, slug)
+        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.UNKNOWN
+        coord.github_calls.clear()
+
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.calls == 1
+        assert tick.stopped == "unanswered"
+        assert tick.completed == [] and tick.retracted == []
+        owner = await self._owner(async_db_session, "vis-a")
+        assert owner.last_visibility_check_at is None
+        assert owner.unpublished_at is None
+
+    async def test_low_rate_limit_remaining_stops_the_tick(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for slug in ("vis-a", "vis-b"):
+            await self._publish(client_a, coord, slug)
+        coord.rate_remaining = 3
+        tick = await recheck_visibility(async_db_session, budget=8, reserve=10)
+        assert tick.calls == 1
+        assert tick.stopped == "rate_limit_low"
+        assert tick.completed == ["vis-a"]  # its one repo WAS answered
+
+    async def test_not_public_retracts(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services.github_repo_visibility import Visibility
+
+        await self._publish(client_a, coord, "vis-a")
+        coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.NOT_PUBLIC
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.retracted == ["vis-a"]
+        assert (
+            await client_a.get("/api/v1/public/build-records/vis-a")
+        ).status_code == 404
+
+    async def test_rate_limited_status_is_an_unknown_that_stops(self) -> None:
+        from app.services.github_repo_visibility import Visibility, check_repo
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                headers={"X-RateLimit-Remaining": "0"},
+                json={"message": "API rate limit exceeded"},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            answer = await check_repo("qontinui/tokens", client=c)
+        assert answer.visibility is Visibility.UNKNOWN
+        assert answer.rate_limited is True
+        assert answer.rate_limit_remaining == 0
+
+
+def test_the_two_build_record_tasks_are_registered_separately() -> None:
+    from app.core.scheduler import SchedulerService, install_default_tasks
+    from app.jobs.build_record_reconcile import TENANT_PHASE_DEADLINE_SECONDS
+
+    service = SchedulerService()
+    install_default_tasks(service)
+    reconcile = service._tasks["build_record_reconcile"]
+    recheck = service._tasks["build_record_visibility_recheck"]
+    assert reconcile.coro is not recheck.coro
+    # The tenant phase ends on its own deadline, well inside the task timeout.
+    assert TENANT_PHASE_DEADLINE_SECONDS <= reconcile.timeout_seconds / 2
+
+
+@pytest.mark.asyncio
+class TestListProductsThroughTheRealProxy:
+    """``_reconcile_one_tenant`` with the REAL ``_list_products`` and
+    ``_proxy_coord_get``; only coord's HTTP transport is fake."""
+
+    @pytest.mark.parametrize(
+        "coord_answer",
+        [
+            "connect_error",  # → CoordTransportUnavailable (an HTTPException)
+            "read_error",  # → raw httpx.ReadError (an httpx.HTTPError)
+            "non_json_200",  # → json.JSONDecodeError (a ValueError)
+        ],
+    )
+    async def test_unanswered_coord_reads_as_none(
+        self, committed: Any, monkeypatch: pytest.MonkeyPatch, coord_answer: str
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.headers["authorization"] == "Bearer service-token"
+            if coord_answer == "connect_error":
+                raise httpx.ConnectError("refused", request=request)
+            if coord_answer == "read_error":
+                raise httpx.ReadError("connection reset", request=request)
+            return httpx.Response(200, text="<html>not json</html>")
+
+        real_client = httpx.AsyncClient
+
+        def fake_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+            return real_client(*args, transport=httpx.MockTransport(handler), **kwargs)
+
+        async def bearer(tenant_id: UUID) -> str:
+            return "service-token"
+
+        monkeypatch.setattr(job, "_service_bearer", bearer)
+        monkeypatch.setattr(httpx, "AsyncClient", fake_client)
+        assert await job._reconcile_one_tenant(committed, TENANT_A) is None
+
+    async def test_an_answered_listing_reconciles(
+        self, committed: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/coord/build-record-products"
+            return httpx.Response(200, json={"products": []})
+
+        real_client = httpx.AsyncClient
+
+        def fake_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+            return real_client(*args, transport=httpx.MockTransport(handler), **kwargs)
+
+        async def bearer(tenant_id: UUID) -> str:
+            return "service-token"
+
+        monkeypatch.setattr(job, "_service_bearer", bearer)
+        monkeypatch.setattr(httpx, "AsyncClient", fake_client)
+        assert await job._reconcile_one_tenant(committed, TENANT_A) == 0

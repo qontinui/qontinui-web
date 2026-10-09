@@ -68656,7 +68656,7 @@
     },
     "/api/v1/build-records/products/{slug}": {
       "put": {
-        "description": "Create or replace one product definition. Tenant admins only: this is\nthe switch that makes a product publishable (``is_public``).\n\n``is_public: false`` retracts this tenant's live public snapshot of the\nslug FIRST and commits, then calls coord \u2014 so whatever coord answers, the\npage is not left public under a product that was just made private. The\n``X-Build-Record-Retracted`` header says whether this request retracted.",
+        "description": "Create or replace one product definition. Tenant admins only: this is\nthe switch that makes a product publishable (``is_public``).\n\n``is_public: false`` \u2014 or a ``repos`` list that no longer covers every repo\nthe live snapshot names \u2014 retracts this tenant's live public snapshot of\nthe slug FIRST and commits, then calls coord \u2014 so whatever coord answers, the\npage is not left public under a product that was just made private. The\n``X-Build-Record-Retracted`` header says whether this request retracted.",
         "operationId": "api_v1_build_records_products_slug_put",
         "parameters": [
           {
@@ -68715,7 +68715,7 @@
     },
     "/api/v1/build-records/reconcile": {
       "post": {
-        "description": "Retract every live public build record of this tenant whose coord\nproduct is gone, private or another tenant's \u2014 now, with the caller's own\ncoord credential \u2014 and then whose repos GitHub no longer reports public\n(the same bounded, oldest-checked-first re-check the scheduler runs). The same reconcile also runs on the in-process scheduler\nevery 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for\nthe launch kit and the operator notice, which should not wait for a tick.\n\nA coord read that fails is a refusal (coord's status), never an empty\nlisting \u2014 an unanswered question retracts nothing.",
+        "description": "Retract every live public build record of this tenant whose coord\nproduct is gone, private or another tenant's \u2014 now, with the caller's own\ncoord credential \u2014 or whose snapshot names a repo the product no longer\nincludes. GitHub visibility is NOT re-checked here: that spends the shared\nanonymous GitHub budget and runs only as the scheduled\n``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler\nevery 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for\nthe launch kit and the operator notice, which should not wait for a tick.\n\nA coord read that fails is a refusal (coord's status), never an empty\nlisting \u2014 an unanswered question retracts nothing.",
         "operationId": "api_v1_build_records_reconcile_post",
         "responses": {
           "200": {

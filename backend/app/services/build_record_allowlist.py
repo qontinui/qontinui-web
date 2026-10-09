@@ -44,6 +44,13 @@ removed (:func:`normalize_for_scan`):
   session, user and tenant ids);
 * an email-shaped substring, ``user@host`` included (operator identities).
 
+A string carrying a format (``Cf``) or control (``Cc``) character, or a
+combining overlay (U+0334–U+0338, U+20D2/3, U+20E5/6), is refused outright:
+those split a token for every check above while rendering as nothing.
+
+:func:`names_token` is the token-bounded check the publish route also runs
+for the NAMES of repos coord excluded (defined but not in the document).
+
 **Cross-field.** A ``schema`` other than :data:`BUILD_RECORD_SCHEMA`; a PR
 whose ``repo`` is not one of ``product.repos`` (coord lists only repos
 POSITIVELY known public there).
@@ -118,6 +125,11 @@ _LOOKALIKE_SLASHES: Final = dict.fromkeys(
     map(ord, "\u2215\u2044\u29f8\u2571\u1735"), "/"
 )
 _SPACED_SLASH_RE: Final = re.compile(r"\s*/\s*")
+#: Combining marks that draw a stroke THROUGH the previous character, so
+#: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
+_OVERLAY_MARKS: Final = frozenset(
+    "\u0334\u0335\u0336\u0337\u0338\u20d2\u20d3\u20e5\u20e6"
+)
 _PATH_RUN_RE: Final = re.compile(r"[A-Za-z0-9._/-]+")
 _UNKNOWN_RE: Final = re.compile(r"^([a-z_][a-z0-9_.\[\]]*): ([a-z_]+)$")
 _INDEX_RE: Final = re.compile(r"\[\d+\]")
@@ -340,6 +352,32 @@ def _repo_tokens(text: str) -> list[str]:
     return pairs
 
 
+def _has_hidden_characters(text: str) -> bool:
+    """Format (``Cf``: zero-width space, soft hyphen, word joiner, bidi marks…)
+    and control (``Cc``) characters split a token for a regex while rendering
+    as nothing, and overlay marks draw a slash that is not one. Every scanned
+    string carrying any of them is refused outright — no scan can be trusted
+    on it."""
+    return any(
+        unicodedata.category(ch) in ("Cf", "Cc") or ch in _OVERLAY_MARKS for ch in text
+    )
+
+
+def scanned_strings(document: Any) -> list[tuple[str, str]]:
+    """``(slot, value)`` for every string the content scan reads — every
+    allowlisted string except the fixed ``schema`` literal."""
+    strings: list[tuple[str, str]] = []
+    _walk(document, BUILD_RECORD_ALLOWLIST, "", [], strings)
+    return strings
+
+
+def names_token(text: str, name: str) -> bool:
+    """Whether normalised ``text`` contains ``name`` as a whole token
+    (case-insensitive; bounded by anything that is not a letter or digit)."""
+    pattern = rf"(?<![a-z0-9]){re.escape(name.lower())}(?![a-z0-9])"
+    return re.search(pattern, normalize_for_scan(text).lower()) is not None
+
+
 def build_record_violations(document: Any) -> list[str]:
     """Every way ``document`` breaks the allowlist; empty when it is publishable."""
     out: list[str] = []
@@ -359,6 +397,9 @@ def build_record_violations(document: Any) -> list[str]:
     )
 
     for where, text in strings:
+        if _has_hidden_characters(text):
+            out.append(f"{where}: contains an invisible, control or overlay character")
+            continue
         normalized = normalize_for_scan(text)
         if any(token not in public_repos for token in _repo_tokens(text)):
             out.append(f"{where}: names an owner/name not in product.repos")
