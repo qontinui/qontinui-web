@@ -56,8 +56,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
 import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
-import { OPERATIONS_API } from "@/components/operations/utils";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchGithubAppConfig,
+  fetchPendingInstallation,
+  type GithubAppConfig,
+} from "@/lib/api/operations/prMergeOnboarding";
 import {
   assertNonceStorageAvailable,
   authorizeUrl,
@@ -69,16 +72,8 @@ import {
 import {
   describePendingInstallation,
   describePendingInstallationFailure,
-  fetchPendingInstallation,
   type PendingInstallationVerdict,
 } from "@/lib/onboarding-pending";
-
-/** Coord's app-config envelope (`GET /coord/onboarding/github-app`). */
-interface GithubAppConfig {
-  app_slug: string;
-  client_id: string | null;
-  oauth_configured: boolean;
-}
 
 /**
  * Blur → check debounce. A blur/focus flutter (tabbing through the form, a
@@ -200,11 +195,9 @@ export function ConnectInstalledOrg({
     let cancelled = false;
     (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/github-app`
-        );
+        const body = await fetchGithubAppConfig();
         if (cancelled) return;
-        if (res.ok) setConfig((await res.json()) as GithubAppConfig);
+        setConfig(body);
       } catch {
         // Leave config null → the card hides. This is a secondary path; a
         // failed probe must not break the primary install CTA above it.
