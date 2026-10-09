@@ -30,12 +30,16 @@ switch ``QONTINUI_SCHEDULER_BUILD_RECORD_VISIBILITY_RECHECK_ENABLED``),
 scheduled only (never from the on-demand route: anonymous GitHub reads are
 capped at 60/hour per egress IP, and a caller-triggered loop could spend the
 publish route's share). Per tick it makes at most
-:data:`VISIBILITY_CALLS_PER_TICK` GitHub calls, counted in repos and never
-exceeded, least-recently-attempted slug first, resuming a wide slug at its
-stored offset (revision ``brs_03_build_record_visibility_check``). It stops
-the tick only on a transport error or a rate-limit signal; any other
-unanswered repo gives up that slug for the tick and moves it to the back, and
-six consecutive give-ups retract it. NOT_PUBLIC retracts.
+:data:`VISIBILITY_CALLS_PER_TICK_ANONYMOUS` (8) GitHub calls — 80 with the
+operator token — counted in repos, stalest page first, resuming a wide slug
+at its stored offset (revision ``brs_03_build_record_visibility_check``).
+Real throughput is :func:`recheck_throughput_per_hour`: ~30 repos/hour
+(~720/day) anonymous, 480/hour with the token. It stops the tick only on a
+transport error or a rate-limit signal; any other unanswered repo gives up
+that slug for the tick and moves it to the back; six blamed give-ups retract
+it. NOT_PUBLIC retracts. A staleness sweep retracts a page with no complete
+answer past 24 h (if attempted) or 72 h (if never reached), and the tick
+warns when the live repos exceed what can be checked in 72 h.
 
 Retraction only sets ``unpublished_at``; snapshots are kept, and
 ``POST /{slug}/publish`` with ``reactivate`` undoes it.
@@ -71,21 +75,48 @@ TENANT_TIMEOUT_SECONDS = 30.0
 #: the tenants it did not reach are counted rather than lost to a cancel.
 TENANT_PHASE_DEADLINE_SECONDS = 300.0
 
-#: Hard cap on GitHub calls per visibility tick: at most 48/hour at a
-#: 10-minute cadence. That is a CAP, not a reservation — the anonymous limit
-#: (60/hour) is per egress IP and shared with this backend's other GitHub
-#: reads. What protects publish is the persisted budget
-#: (``app/services/github_rate_budget.py``): the re-check stops at
-#: ``RECHECK_RESERVE``, publish refuses only at the lower ``PUBLISH_RESERVE``.
-VISIBILITY_CALLS_PER_TICK = 8
+#: Hard caps on GitHub calls per visibility tick (one per repo), by mode.
+#: These are CAPS, not reservations. What protects publish is the persisted
+#: budget (``app/services/github_rate_budget.py``): the re-check stops at
+#: ``RECHECK_RESERVE`` remaining, publish refuses only at the lower
+#: ``PUBLISH_RESERVE``.
+VISIBILITY_CALLS_PER_TICK_ANONYMOUS = 8
+VISIBILITY_CALLS_PER_TICK_TOKEN = 80
+#: Ticks per hour at the task's ``5-59/10`` cadence.
+TICKS_PER_HOUR = 6
+#: GitHub's per-hour limits for the two modes.
+GITHUB_LIMIT_ANONYMOUS = 60
+GITHUB_LIMIT_TOKEN = 5000
 #: Consecutive give-ups on an unanswerable repo before the page is retracted.
 VISIBILITY_UNKNOWN_RETRACT_AFTER = 6
-#: A live page with no complete visibility answer for this long is retracted,
-#: whatever the reason (a lone unanswerable repo, a long outage, a budget too
-#: small for the number of live repos). The clock starts at the later of the
-#: last complete answer and the latest publish (which itself checked every
-#: repo).
+#: The staleness clock of a page is the later of its last complete answer
+#: and its latest publish (a publish checks every repo itself). A page the
+#: tick ATTEMPTED and could not answer is retracted once that clock is older
+#: than this…
 VISIBILITY_STALE_AFTER = timedelta(hours=24)
+#: …and a page the tick never reached (budget, rate limit, a pause of the
+#: task) only once it is older than this longer ceiling — so a pause or an
+#: outage shorter than this never retracts a page GitHub would call public.
+VISIBILITY_UNREACHED_STALE_AFTER = timedelta(hours=72)
+
+
+def recheck_throughput_per_hour(*, token: bool) -> int:
+    """Repos the re-check can actually check per hour in each mode.
+
+    ``min(per-tick cap × ticks/hour, limit − RECHECK_RESERVE)``. Anonymous:
+    ``min(8 × 6, 60 − 30)`` = **30/hour (~720/day, ~2,160 per 72 h)** — the
+    re-check stops at 30 remaining of the 60/hour window. With
+    ``GITHUB_VISIBILITY_TOKEN``: ``min(80 × 6, 5000 − 30)`` = **480/hour**.
+    An upper bound: other anonymous GitHub reads from the same egress IP
+    (publish, ``releases.py``, ``auth/identities.py``) lower it further.
+    """
+    from app.services.github_rate_budget import RECHECK_RESERVE
+
+    if token:
+        per_tick, limit = VISIBILITY_CALLS_PER_TICK_TOKEN, GITHUB_LIMIT_TOKEN
+    else:
+        per_tick, limit = VISIBILITY_CALLS_PER_TICK_ANONYMOUS, GITHUB_LIMIT_ANONYMOUS
+    return min(per_tick * TICKS_PER_HOUR, limit - RECHECK_RESERVE)
 
 
 @dataclass
@@ -366,19 +397,18 @@ class VisibilityTick:
     unblamed: list[str] = field(default_factory=list)
     #: The operator token was rejected (401); the tick fell back to anonymous.
     credential_error: bool = False
-    #: Retracted because no complete answer arrived within
-    #: :data:`VISIBILITY_STALE_AFTER` (also listed in ``retracted``).
+    #: Retracted by the staleness sweep (also listed in ``retracted``).
     stale: list[str] = field(default_factory=list)
+    #: Set when the live repos exceed what the re-check can check within
+    #: :data:`VISIBILITY_UNREACHED_STALE_AFTER` at the current throughput:
+    #: ``{"live_repos", "capacity", "mode"}``. Pages WILL start retracting.
+    capacity_shortfall: dict[str, Any] | None = None
     #: Why the tick stopped early, or ``None`` when the budget or list ran out.
     stopped: str | None = None
 
 
-async def _retract_stale(db: AsyncSession, tick: VisibilityTick) -> None:
-    """Retract every live page with no complete answer within
-    :data:`VISIBILITY_STALE_AFTER` (see there). Runs after the tick's checks,
-    so a slug answered this tick is never stale. No commit."""
-    cutoff = datetime.now(UTC) - VISIBILITY_STALE_AFTER
-    latest_publish = (
+def _latest_publish_subquery() -> Any:
+    return (
         select(
             BuildRecordSnapshot.public_slug,
             func.max(BuildRecordSnapshot.published_at).label("published_at"),
@@ -386,23 +416,97 @@ async def _retract_stale(db: AsyncSession, tick: VisibilityTick) -> None:
         .group_by(BuildRecordSnapshot.public_slug)
         .subquery()
     )
+
+
+async def _retract_stale(
+    db: AsyncSession, tick: VisibilityTick, attempted_unanswered: set[str]
+) -> None:
+    """The staleness sweep. Runs after the tick's checks; no commit.
+
+    * A page the tick ATTEMPTED and got no complete answer for (given up, or
+      the tick stopped on it) is retracted when its staleness clock is older
+      than :data:`VISIBILITY_STALE_AFTER`.
+    * Any other live page — including one the tick never reached — only when
+      older than :data:`VISIBILITY_UNREACHED_STALE_AFTER`.
+    * A page answered this tick has a fresh clock and is never stale.
+    """
+    now = datetime.now(UTC)
+    latest = _latest_publish_subquery()
     rows = (
         await db.execute(
-            select(BuildRecordPublicSlug, latest_publish.c.published_at)
+            select(BuildRecordPublicSlug, latest.c.published_at)
             .outerjoin(
-                latest_publish,
-                latest_publish.c.public_slug == BuildRecordPublicSlug.public_slug,
+                latest, latest.c.public_slug == BuildRecordPublicSlug.public_slug
             )
             .where(BuildRecordPublicSlug.unpublished_at.is_(None))
         )
     ).all()
     for owner, published_at in rows:
         moments = [m for m in (owner.last_visibility_check_at, published_at) if m]
-        if moments and max(moments) >= cutoff:
+        clock = max(moments) if moments else None
+        ceiling = (
+            VISIBILITY_STALE_AFTER
+            if owner.public_slug in attempted_unanswered
+            else VISIBILITY_UNREACHED_STALE_AFTER
+        )
+        if clock is not None and clock >= now - ceiling:
             continue
         if await retract_live(db, owner.public_slug, owner.tenant_id):
             tick.retracted.append(owner.public_slug)
             tick.stale.append(owner.public_slug)
+
+
+async def _check_capacity(db: AsyncSession, tick: VisibilityTick, token: bool) -> None:
+    """WARN (and record on the tick) when the live repos exceed what the
+    re-check can check within the unreached ceiling at this throughput."""
+    latest_repo_counts = (
+        select(
+            BuildRecordSnapshot.public_slug,
+            func.coalesce(
+                func.jsonb_array_length(
+                    BuildRecordSnapshot.document["product"]["repos"]
+                ),
+                0,
+            ).label("repos"),
+        )
+        .distinct(BuildRecordSnapshot.public_slug)
+        .order_by(BuildRecordSnapshot.public_slug, BuildRecordSnapshot.version.desc())
+        .subquery()
+    )
+    live_repos = (
+        await db.execute(
+            select(func.coalesce(func.sum(latest_repo_counts.c.repos), 0))
+            .select_from(BuildRecordPublicSlug)
+            .join(
+                latest_repo_counts,
+                latest_repo_counts.c.public_slug == BuildRecordPublicSlug.public_slug,
+            )
+            .where(BuildRecordPublicSlug.unpublished_at.is_(None))
+        )
+    ).scalar_one()
+    hours = VISIBILITY_UNREACHED_STALE_AFTER.total_seconds() / 3600
+    capacity = int(recheck_throughput_per_hour(token=token) * hours)
+    if int(live_repos) > capacity:
+        mode = "token" if token else "anonymous"
+        tick.capacity_shortfall = {
+            "live_repos": int(live_repos),
+            "capacity": capacity,
+            "mode": mode,
+        }
+        logger.warning(
+            "build_record_visibility_capacity_short",
+            live_repos=int(live_repos),
+            capacity_per_72h=capacity,
+            mode=mode,
+            note=(
+                "more live repos than the re-check can check within 72 h; "
+                "pages it cannot reach will be retracted as stale. Set "
+                "GITHUB_VISIBILITY_TOKEN (operator resource) to raise throughput."
+                if not token
+                else "more live repos than the re-check can check within 72 h "
+                "even with the operator token; pages will be retracted as stale."
+            ),
+        )
 
 
 def _mark_complete(
@@ -418,11 +522,18 @@ def _mark_complete(
 async def recheck_visibility(
     db: AsyncSession,
     *,
-    budget: int = VISIBILITY_CALLS_PER_TICK,
+    budget: int | None = None,
     reserve: int | None = None,
 ) -> VisibilityTick:
-    """Re-ask GitHub about the repos on live pages, least-recently-attempted
-    first.
+    """Re-ask GitHub about the repos on live pages, stalest first.
+
+    * **Order**: by the later of the staleness clock (last complete answer,
+      latest publish) and the last attempt, oldest first — the stalest page is
+      checked first, and a page just given up on or cut off moves behind the
+      others, so nothing can wedge the head of the queue.
+    * **Budget** defaults to the mode's per-tick cap
+      (:data:`VISIBILITY_CALLS_PER_TICK_TOKEN` with an operator token, else
+      :data:`VISIBILITY_CALLS_PER_TICK_ANONYMOUS`).
 
     * **Hard cap**: at most ``budget`` GitHub calls, one per repo. A slug wider
       than what is left is checked as far as the budget reaches and resumed at
@@ -442,9 +553,13 @@ async def recheck_visibility(
       GitHub that is down, the tick stops, and no slug is counted.
     * A tick-stopping answer still stamps that slug's attempt time, so no slug
       can hold the head of the queue.
-    * Whatever happened, a live page with no complete answer for
-      :data:`VISIBILITY_STALE_AFTER` is retracted at the end of the tick — the
-      per-tick outage exemption never lets an unanswerable page live forever.
+    * **Staleness sweep** at the end (:func:`_retract_stale`): a page attempted
+      this tick without a complete answer is retracted past 24 h; any other
+      page only past 72 h. A pause or outage shorter than that retracts
+      nothing GitHub would call public, and an unanswerable page never lives
+      forever.
+    * **Capacity**: when the live repos exceed what this mode can check in
+      72 h, a WARNING is logged and ``capacity_shortfall`` is set.
     * A rejected operator token (401) is retried anonymously by
       ``check_repo`` and logged at ERROR here.
     * ``last_visibility_check_at`` advances only on a COMPLETE definite answer.
@@ -452,24 +567,42 @@ async def recheck_visibility(
     Commits.
     """
     from app.services import github_rate_budget
-    from app.services.github_repo_visibility import Visibility, check_repo
+    from app.services.github_repo_visibility import Visibility, _token, check_repo
 
     reserve = github_rate_budget.RECHECK_RESERVE if reserve is None else reserve
+    token = _token() is not None
+    if budget is None:
+        budget = (
+            VISIBILITY_CALLS_PER_TICK_TOKEN
+            if token
+            else VISIBILITY_CALLS_PER_TICK_ANONYMOUS
+        )
     tick = VisibilityTick()
+    await _check_capacity(db, tick, token)
+    attempted_unanswered: set[str] = set()
     if await github_rate_budget.reserved(db, reserve):
         tick.stopped = "budget_reserved"
-        await _retract_stale(db, tick)
+        await _retract_stale(db, tick, attempted_unanswered)
         await db.commit()
         return tick
 
+    latest = _latest_publish_subquery()
+    # GREATEST ignores NULLs in Postgres; all-NULL sorts first.
+    queue_key = func.greatest(
+        BuildRecordPublicSlug.last_visibility_check_at,
+        latest.c.published_at,
+        BuildRecordPublicSlug.last_visibility_attempt_at,
+    )
     owners = (
         (
             await db.execute(
                 select(BuildRecordPublicSlug)
+                .outerjoin(
+                    latest, latest.c.public_slug == BuildRecordPublicSlug.public_slug
+                )
                 .where(BuildRecordPublicSlug.unpublished_at.is_(None))
                 .order_by(
-                    BuildRecordPublicSlug.last_visibility_attempt_at.asc().nulls_first(),
-                    BuildRecordPublicSlug.public_slug,
+                    queue_key.asc().nulls_first(), BuildRecordPublicSlug.public_slug
                 )
             )
         )
@@ -512,6 +645,10 @@ async def recheck_visibility(
             outcome = "complete"
 
         now = datetime.now(UTC)
+        if outcome == "gave_up" or (
+            outcome == "pending" and tick.stopped in ("rate_limited", "transport")
+        ):
+            attempted_unanswered.add(slug)
         if outcome == "gave_up":
             # Behind the others either way; whether it is BLAMED is decided
             # once the tick knows if GitHub answered anyone at all.
@@ -550,7 +687,7 @@ async def recheck_visibility(
             note="GITHUB_VISIBILITY_TOKEN rejected; this tick ran anonymously",
         )
     await github_rate_budget.record(db, answers)
-    await _retract_stale(db, tick)
+    await _retract_stale(db, tick, attempted_unanswered)
     await db.commit()
     if tick.retracted:
         logger.info("build_record_visibility_retracted", slugs=tick.retracted)
@@ -570,6 +707,7 @@ async def recheck_visibility_all(
         "gave_up": len(tick.gave_up),
         "unblamed": len(tick.unblamed),
         "stale": len(tick.stale),
+        "capacity_shortfall": tick.capacity_shortfall,
         "credential_error": tick.credential_error,
         "stopped": tick.stopped,
     }
