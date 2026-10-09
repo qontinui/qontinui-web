@@ -322,7 +322,10 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
         "reconciliation and by-id add the coord overlay; /vocabulary is a "
-        "static description of the write doors' closed fields (auth only)",
+        "static description of the write doors' closed fields (auth only); "
+        "/model-routing is the caller's personal organization's stored "
+        "level -> model-family map (web DB, _resolve_org_id), never the "
+        "selected coord tenant",
         frozenset(
             {
                 "/api/v1/plan-library",
@@ -332,6 +335,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/plan-library/edges/{edge_id}",
                 "/api/v1/plan-library/export",
                 "/api/v1/plan-library/followups",
+                "/api/v1/plan-library/model-routing",
                 "/api/v1/plan-library/vocabulary",
                 "/api/v1/plan-library/{artifact_id}/edges",
                 "/api/v1/plan-library/{artifact_id}/export",

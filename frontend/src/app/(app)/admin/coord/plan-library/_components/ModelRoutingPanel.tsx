@@ -125,7 +125,9 @@ export function ModelRoutingPanel() {
               <code>/plan-triage --route-by-difficulty</code>; without the flag
               a sweep only reports the model a plan would have drawn. A sweep
               already paging when you save sees two different maps and stops
-              rather than mixing them — re-run it.
+              rather than mixing them — re-run it. The map belongs to your
+              account&apos;s plan library, not to the Project selected in the
+              sidebar.
             </p>
           </div>
         </div>
