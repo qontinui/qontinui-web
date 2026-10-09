@@ -17,6 +17,7 @@
  * resolve.
  */
 
+import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE, readJson } from "./base";
 
@@ -115,4 +116,40 @@ export function spawnAgent(body: Record<string, unknown>): Promise<Response> {
     idempotent: false,
     maxRetries: 0,
   });
+}
+
+/**
+ * `GET /agent-logs/recent?<query>` (`get_agent_logs_recent`) - the fleet-wide
+ * recent log tail. `query` carries `limit`. Returned as `unknown`: the caller
+ * tolerates both the `{logs}` envelope and a bare list.
+ */
+export async function fetchRecentAgentLogs(
+  query: URLSearchParams,
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/agent-logs/recent?${query.toString()}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /agent-logs/by-agent/{agent_id}?<query>` (`get_agent_logs_by_agent`) -
+ * one agent's log tail. `query` carries `limit` and, optionally, `since`.
+ */
+export async function fetchAgentLogsByAgent(
+  agentId: string,
+  query: URLSearchParams,
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${query.toString()}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
 }
