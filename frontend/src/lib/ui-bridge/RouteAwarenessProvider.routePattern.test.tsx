@@ -247,6 +247,25 @@ describe("RouteAwarenessProvider route pattern", () => {
     });
   });
 
+  it("passes useParams() raw, so a ONE-segment catch-all templates as [...name], not [name]", () => {
+    // Flattened, `["x"]` becomes the string "x" and templates as `[slug]`;
+    // only the raw array distinguishes a catch-all from a plain param.
+    nav.pathname = `/docs/${SENTINEL}`;
+    nav.params = { slug: [SENTINEL] };
+
+    render(
+      <App>
+        <Page />
+      </App>
+    );
+
+    expectSentinelNeverInPattern();
+    expect(lastReported()).toMatchObject({
+      pattern: "/docs/[...slug]",
+      patternSource: "router",
+    });
+  });
+
   it("a static route reports itself", () => {
     nav.pathname = "/login";
     nav.params = {};

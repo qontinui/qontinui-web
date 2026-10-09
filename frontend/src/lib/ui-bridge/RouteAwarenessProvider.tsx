@@ -12,8 +12,9 @@
  * concrete `/search/<what the user typed>` would leak user input. Hence:
  *
  * - `routePatternFromParams` derives the template from the RAW `useParams()`
- *   (flattening a catch-all array with `/` would destroy its `[...slug]` run),
- *   and returns `null` rather than leak;
+ *   (flattened, a one-segment catch-all `["x"]` becomes the string `"x"` and
+ *   would template as `[slug]` instead of `[...slug]`), and returns `null`
+ *   rather than leak;
  * - `patternSource: "router"` asserts the template came from the router — a
  *   consumer drops a pattern that does not carry it;
  * - this provider OWNS the not-found signal and provides it to children. On a

@@ -3,12 +3,13 @@
 /**
  * Root not-found boundary.
  *
- * Rendered by Next.js for every unmatched URL (and for any `notFound()` call
- * without a nearer boundary) INSIDE the root layout, where
- * `RouteAwarenessProvider` is mounted with `useParams() == {}`. On its own that
+ * Rendered by Next.js INSIDE the root layout, below `RouteAwarenessProvider`,
+ * for every unmatched URL and for any `notFound()` call without a nearer
+ * boundary. For an unmatched URL `useParams()` is `{}`, so on its own that
  * provider would derive its route "pattern" from the concrete pathname —
  * `/search/<what the user typed>` — and report it to the UI Bridge navigation
- * tracker as a template.
+ * tracker as a template. A `notFound()` thrown from a dynamic page still has
+ * that page's params; the signal reports `pattern: null` there too.
  *
  * `useMarkRouteUnmatched()` raises the provider-owned not-found signal in a
  * layout effect, which runs before the provider's passive effect in the same
@@ -20,6 +21,11 @@
  * `RouteAwarenessProvider`, which must stay an ancestor (root layout ->
  * `UIBridgeWrapper` -> `RouteAwarenessProvider` -> children). Without it the
  * hook silently does nothing.
+ *
+ * Precondition: this boundary must mount in the SAME commit as the navigation
+ * that reached it. A future root-level `loading.tsx`, or a Suspense boundary
+ * between the provider and its children, would first commit a loading state
+ * with the new concrete pathname, and the provider would report it once.
  */
 
 import Link from "next/link";
