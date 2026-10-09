@@ -8,8 +8,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const getMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => getMock(...args) },
+vi.mock("@/lib/api/operations/ciStatus", () => ({
+  fetchCiHosting: (...args: unknown[]) => getMock(...args),
 }));
 
 import { CI_HOSTING_NOT_SERVED, useCiHosting } from "./useCiHosting";
