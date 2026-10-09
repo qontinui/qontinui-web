@@ -17,6 +17,9 @@ const put = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    // The typed `/operations` client reads through `httpClient.fetch`; route
+    // it into the same `get` mock so a case keys on the URL either way.
+    fetch: async (url: unknown) => new Response(JSON.stringify(await get(url))),
     patch: vi.fn(),
     post: vi.fn(),
     put: (...args: unknown[]) => put(...args),

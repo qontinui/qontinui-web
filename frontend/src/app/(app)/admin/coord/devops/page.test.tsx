@@ -43,7 +43,16 @@ const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
-    fetch: (...args: unknown[]) => httpFetch(...args),
+    // `/fleet/health` is read through `httpClient.fetch` (the typed client's
+    // `fetchFleetHealth`). This suite's routes answer it in `httpGet`'s table
+    // as a parsed body, so that one fetch read is served from there as a 200
+    // Response, and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string, init?: unknown) =>
+      String(url).includes("fleet/health")
+        ? new Response(JSON.stringify(await httpGet(url, init)), {
+            status: 200,
+          })
+        : httpFetch(url, init),
   },
 }));
 
@@ -2836,13 +2845,15 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
     const open = await screen.findByTestId("devops-runner-wedge-open");
     expect(open).toHaveTextContent("wedged: backend_wedged");
     expect(open.className).toContain("border-l-red-500");
-    expect(screen.getByTestId("devops-runner-wedges-summary")).toHaveTextContent(
-      "1 open · 1 ended recently"
-    );
+    expect(
+      screen.getByTestId("devops-runner-wedges-summary")
+    ).toHaveTextContent("1 open · 1 ended recently");
     const groups = [
       ...screen
         .getByTestId("devops-runner-capability")
-        .querySelectorAll<HTMLElement>("[data-testid^='devops-runner-capability-group-']"),
+        .querySelectorAll<HTMLElement>(
+          "[data-testid^='devops-runner-capability-group-']"
+        ),
     ].map((g) => g.dataset.testid);
     expect(groups).toEqual([
       "devops-runner-capability-group-inoperative",
@@ -2896,7 +2907,10 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
       ],
     ] as const) {
       const spec = JSON.parse(
-        readFileSync(join(specsDir, specId, "state-machine.derived.json"), "utf8")
+        readFileSync(
+          join(specsDir, specId, "state-machine.derived.json"),
+          "utf8"
+        )
       ) as {
         id: string;
         metadata: { routeStubs: Array<{ urlPattern: string; body: unknown }> };

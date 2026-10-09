@@ -20,8 +20,17 @@ const patch = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    patch: (...args: unknown[]) => patch(...args),
+    // The typed `/operations` client sends through `httpClient.fetch`; route
+    // it into the `get` / `patch` mocks so each case still scripts the
+    // parsed body (or the rejection) per verb.
+    fetch: async (url: unknown, init?: { method?: string; body?: string }) =>
+      new Response(
+        JSON.stringify(
+          init?.method === "PATCH"
+            ? await patch(url, JSON.parse(init.body ?? "null"))
+            : await get(url)
+        )
+      ),
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),

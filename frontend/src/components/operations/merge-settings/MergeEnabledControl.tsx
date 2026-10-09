@@ -6,9 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
-import type { MergeEnabledResponse } from "../mergeTypes";
+import { writeMergeEnabled } from "@/lib/api/operations/prMerge";
+import { httpErrorText } from "./httpError";
 import { pinSentence, type PinChoice } from "./pinChoice";
 
 const log = createLogger("MergeOrchestrationSettings");
@@ -63,26 +62,15 @@ export function MergeEnabledControl({
       }
       setSubmitting(true);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/merge-enabled`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              scope: `repo:${repo}`,
-              enabled,
-              reason: reason.trim(),
-            }),
-          }
-        );
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
-        }
-        (await res.json()) as MergeEnabledResponse;
+        await writeMergeEnabled({
+          scope: `repo:${repo}`,
+          enabled,
+          reason: reason.trim(),
+        });
         onChanged();
       } catch (err) {
         log.warn("merge-enabled write failed", err);
-        setError(err instanceof Error ? err.message : String(err));
+        setError(httpErrorText(err, { withBody: true }));
       } finally {
         setSubmitting(false);
       }

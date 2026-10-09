@@ -9,8 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
+import {
+  fetchRepoMergeProfile,
+  patchRepoMergeProfile,
+  writeMergeEnabled,
+} from "@/lib/api/operations/prMerge";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { httpErrorText } from "./httpError";
 import {
   MergeEnabledBadge,
   pinChoice,
@@ -201,13 +206,7 @@ export function RepoOverrideCard({
   // but the layered defaults require an extra fetch per card.
   useEffect(() => {
     let cancelled = false;
-    const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-    httpClient
-      .fetch(url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as RepoProfileResponse;
-      })
+    fetchRepoMergeProfile(repoRow.repo)
       .then((body) => {
         if (cancelled) return;
         setReadSettled(true);
@@ -231,7 +230,7 @@ export function RepoOverrideCard({
         // shows (or knowingly lacks) what the save returned; an error line
         // here would sit beside correct fields.
         if (adoptedSaveResponseRef.current) return;
-        setLoadError(err instanceof Error ? err.message : String(err));
+        setLoadError(httpErrorText(err));
       });
     return () => {
       cancelled = true;
@@ -302,14 +301,7 @@ export function RepoOverrideCard({
       // merge-enablement-only save) — an empty body is a wasted round-trip and
       // needlessly couples the enablement POST to the PATCH succeeding.
       if (Object.keys(body).length > 0) {
-        const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-        const res = await httpClient.fetch(url, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
+        const saved = await patchRepoMergeProfile(repoRow.repo, body);
         // The write landed, so the initial profile read — if it has not
         // arrived yet — now carries PRE-save values. Ignore it from here on,
         // whatever this response's body turns out to be.
@@ -320,9 +312,6 @@ export function RepoOverrideCard({
         // save consumed the operator's edits). A body that does not parse,
         // or an older coord's body without `raw_override`, leaves the fields
         // as the operator typed them — which is what was just written.
-        const saved = (await res
-          .json()
-          .catch(() => null)) as RepoProfileResponse | null;
         if (saved && typeof saved === "object" && saved.profile) {
           setRepoProfile(saved);
           setLoadError(null);
@@ -343,21 +332,18 @@ export function RepoOverrideCard({
       // All three values write, including `null` — clearing a pin back to
       // inherit is a real action here, not a no-op placeholder.
       if (mergePin !== storedPin) {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/merge-enabled`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              scope: `repo:${repoRow.repo}`,
-              enabled: pinValue(mergePin),
-              reason: "dashboard: per-repo override save",
-            }),
-          }
-        );
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
+        try {
+          await writeMergeEnabled({
+            scope: `repo:${repoRow.repo}`,
+            enabled: pinValue(mergePin),
+            reason: "dashboard: per-repo override save",
+          });
+        } catch (err) {
+          // Only a reply from coord is labelled; a transport failure
+          // (no status) surfaces as itself.
+          if (httpStatusOf(err) === null) throw err;
           throw new Error(
-            `merge-enabled: HTTP ${res.status}${detail ? `: ${detail}` : ""}`
+            `merge-enabled: ${httpErrorText(err, { withBody: true })}`
           );
         }
       }
@@ -365,7 +351,7 @@ export function RepoOverrideCard({
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(httpErrorText(err));
     } finally {
       savingRef.current = false;
       editedDuringSaveRef.current = new Set();

@@ -31,20 +31,6 @@ const net = vi.hoisted(() => ({
 }));
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: async (url: string, init?: { body?: string }) => {
-      const res = (await net.route(url, init)) as {
-        ok: boolean;
-        status: number;
-        json: () => Promise<unknown>;
-        text: () => Promise<string>;
-      };
-      if (!res.ok) {
-        throw new Error(
-          `GET ${url} failed: ${res.status} - ${await res.text()}`
-        );
-      }
-      return res.json();
-    },
     fetch: (url: string, init?: { body?: string }) => net.route(url, init),
   },
 }));

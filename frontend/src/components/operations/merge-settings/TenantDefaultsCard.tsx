@@ -9,8 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
+import { patchTenantMergeSettings } from "@/lib/api/operations/prMerge";
+import { httpErrorText } from "./httpError";
 import { TenantMergePauseControl } from "./TenantMergePauseControl";
 import {
   ffLandHeadSyncSupported,
@@ -111,20 +111,11 @@ export function TenantDefaultsCard({
       if (ffLandHeadSyncSupported(profile)) {
         body.ff_land_head_sync_enabled = ffLandHeadSync;
       }
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/settings`,
-        {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }
-      );
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      await patchTenantMergeSettings(body);
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(httpErrorText(err));
     } finally {
       setSaving(false);
     }
@@ -226,12 +217,12 @@ export function TenantDefaultsCard({
             </Label>
             <p className="text-xs text-muted-foreground">
               When a repo&apos;s main goes red (candidates rebased onto it
-              generally fail CI until it&apos;s fixed), coord consults
-              its red-main-fix policy and, where that policy is graduated and
-              the fleet flag is armed, opens a visible terminal session on your
+              generally fail CI until it&apos;s fixed), coord consults its
+              red-main-fix policy and, where that policy is graduated and the
+              fleet flag is armed, opens a visible terminal session on your
               device that diagnoses the failing check and authors a fix; the fix
-              lands through coord&apos;s ordinary merge path. On by default — turn
-              this off to opt this repo out. Reversible any time.
+              lands through coord&apos;s ordinary merge path. On by default —
+              turn this off to opt this repo out. Reversible any time.
             </p>
           </div>
           <Switch
@@ -249,14 +240,14 @@ export function TenantDefaultsCard({
             <p className="text-xs text-muted-foreground">
               coord lands a PR by rebasing its commits onto the base branch and
               pushing them straight there. When the rebase rewrites the shas —
-              69.4% of lands, measured over the 90 days to 2026-08-26 — the PR&apos;s
-              head ref is left behind, so GitHub shows grey{" "}
-              <span className="font-mono">Closed</span> on work that demonstrably
-              landed. With this on, coord also moves the head ref to the rebased
-              tip, and GitHub marks the PR{" "}
-              <span className="font-mono">Merged</span> by itself. Off by default
-              — it is a force-update on a branch coord does not own, so it is
-              graduated per repo below rather than flipped fleet-wide.
+              69.4% of lands, measured over the 90 days to 2026-08-26 — the
+              PR&apos;s head ref is left behind, so GitHub shows grey{" "}
+              <span className="font-mono">Closed</span> on work that
+              demonstrably landed. With this on, coord also moves the head ref
+              to the rebased tip, and GitHub marks the PR{" "}
+              <span className="font-mono">Merged</span> by itself. Off by
+              default — it is a force-update on a branch coord does not own, so
+              it is graduated per repo below rather than flipped fleet-wide.
             </p>
             {!ffLandHeadSyncSupported(profile) && (
               <p
@@ -267,7 +258,8 @@ export function TenantDefaultsCard({
                 (qontinui-web#1092) and coord&apos;s resolver reads them
                 (qontinui-coord#1660), but the settings API does not carry the
                 field yet, so there is no writer for it. Shown here so the dial
-                is discoverable, and it goes live by itself once coord serves it.
+                is discoverable, and it goes live by itself once coord serves
+                it.
               </p>
             )}
           </div>

@@ -17,30 +17,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { GitBranch, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { relativeTime } from "@/components/operations/utils";
 import {
-  GitBranch,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
-import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
-
-interface CanonicalRepo {
-  repo: string;
-  mirror_state?: string | null;
-  last_reconciled_at?: string | null;
-  created_at?: string | null;
-}
-
-interface ReposResponse {
-  repos: CanonicalRepo[];
-}
-
-const FETCH_OPTS: RequestInit = {
-  credentials: "include",
-  cache: "no-store",
-};
+  deregisterCanonicalRepo,
+  fetchCanonicalRepos,
+  registerCanonicalRepo,
+  type CanonicalRepo,
+} from "@/lib/api/operations/prMerge";
 
 function mirrorBadgeVariant(state: string | null | undefined) {
   switch (state) {
@@ -75,9 +60,7 @@ export default function ReposSettingsPage() {
 
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, FETCH_OPTS);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = (await res.json()) as ReposResponse;
+      const data = await fetchCanonicalRepos();
       setRepos(data.repos ?? []);
     } catch {
       toast.error("Failed to load repositories");
@@ -98,15 +81,14 @@ export default function ReposSettingsPage() {
     }
     setAdding(true);
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: trimmed }),
-      });
-      if (!res.ok) {
-        const detail = await res.text();
-        throw new Error(detail || `${res.status}`);
+      try {
+        await registerCanonicalRepo(trimmed);
+      } catch (err) {
+        // The toast has always carried coord's reply text (or the bare
+        // status when the reply was empty); a transport failure is itself.
+        const status = httpStatusOf(err);
+        if (status === null) throw err;
+        throw new Error(httpBodyOf(err) || `${status}`);
       }
       toast.success(`Registered ${trimmed}`);
       setSlug("");
@@ -122,11 +104,7 @@ export default function ReposSettingsPage() {
 
   const handleDelete = async (repo: string) => {
     try {
-      const res = await fetch(
-        `${OPERATIONS_API}/repos?repo=${encodeURIComponent(repo)}`,
-        { ...FETCH_OPTS, method: "DELETE" }
-      );
-      if (!res.ok) throw new Error(`${res.status}`);
+      await deregisterCanonicalRepo(repo);
       toast.success(`Removed ${repo}`);
       await fetchRepos();
     } catch {
