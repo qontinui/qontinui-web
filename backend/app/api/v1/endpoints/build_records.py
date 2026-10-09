@@ -439,6 +439,16 @@ async def _store_next_version(
         generated_at=generated_at,
     )
     db.add(snapshot)
+    # This publish just confirmed every repo with GitHub (``_confirm_repos_public``
+    # ran before the store), so it IS a complete visibility answer: reset the
+    # re-check cursor for both a first publish and a reactivation, so a page
+    # never inherits an unanswered run from before it was retracted.
+    now = datetime.now(UTC)
+    owner.last_visibility_check_at = now
+    owner.last_visibility_attempt_at = now
+    owner.first_unanswered_attempt_at = None
+    owner.visibility_unknown_attempts = 0
+    owner.visibility_check_offset = 0
     await db.commit()
     await db.refresh(snapshot)
     return snapshot
