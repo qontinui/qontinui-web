@@ -12,7 +12,10 @@ Routes (mounted at ``/api/v1/build-records``):
 * ``GET  /{slug}``             → coord ``GET /coord/build-records/{slug}``
 * ``POST /{slug}/publish``     → fetch the document from coord, refuse unless
   the product is public, RE-VALIDATE the D3 allowlist here, and freeze it as
-  the next version in ``web.build_record_snapshots``.
+  the next version in ``web.build_record_snapshots`` (re-activating a slug
+  that was unpublished).
+* ``DELETE /{slug}/publish``   → the D7 one-step unpublish: retract the public
+  address so the public reader 404s at once, keeping every snapshot as history.
 
 The proxies follow ``digital_twin.py``'s shape: the caller's bearer and the
 Project-selector header are forwarded (``get_tenant_id`` /
@@ -33,8 +36,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
-from typing import Annotated, Any
+from datetime import UTC, datetime
+from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
 import structlog
@@ -96,6 +99,15 @@ class BuildRecordProductWrite(BaseModel):
         ):
             raise ValueError("window_end must not precede window_start")
         return self
+
+
+class BuildRecordUnpublishResult(BaseModel):
+    """What ``DELETE /{slug}/publish`` returns."""
+
+    public_slug: str
+    unpublished_at: datetime
+    #: The newest kept snapshot — what a later publish's version follows.
+    latest_version: int | None
 
 
 class BuildRecordPublishResult(BaseModel):
@@ -181,6 +193,23 @@ async def _find_product(slug: str, tenant_id: UUID) -> dict[str, Any] | None:
     return None
 
 
+def _raise_owned_elsewhere(slug: str) -> NoReturn:
+    raise HTTPException(
+        status_code=409,
+        detail={"error": "public_slug_owned_by_another_tenant", "slug": slug},
+    )
+
+
+async def _latest_version(db: AsyncSession, slug: str) -> int | None:
+    return (
+        await db.execute(
+            select(func.max(BuildRecordSnapshot.version)).where(
+                BuildRecordSnapshot.public_slug == slug
+            )
+        )
+    ).scalar_one()
+
+
 async def _store_next_version(
     db: AsyncSession, *, slug: str, tenant_id: UUID, document: dict[str, Any]
 ) -> BuildRecordSnapshot:
@@ -205,18 +234,11 @@ async def _store_next_version(
     if owner.tenant_id != tenant_id:
         # Nothing was written (the claim was a no-op on the existing owner);
         # the request's session rolls back on the raise and drops the lock.
-        raise HTTPException(
-            status_code=409,
-            detail={"error": "public_slug_owned_by_another_tenant", "slug": slug},
-        )
+        _raise_owned_elsewhere(slug)
 
-    latest = (
-        await db.execute(
-            select(func.max(BuildRecordSnapshot.version)).where(
-                BuildRecordSnapshot.public_slug == slug
-            )
-        )
-    ).scalar_one()
+    # Publishing re-activates a slug its owner unpublished.
+    owner.unpublished_at = None
+    latest = await _latest_version(db, slug)
     snapshot = BuildRecordSnapshot(
         tenant_id=tenant_id,
         public_slug=slug,
@@ -299,4 +321,48 @@ async def publish_build_record(
         public_slug=snapshot.public_slug,
         version=snapshot.version,
         content_sha256=snapshot.content_sha256,
+    )
+
+
+@router.delete("/{slug}/publish", response_model=BuildRecordUnpublishResult)
+async def unpublish_build_record(
+    slug: SlugPath,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+    db: AsyncSession = Depends(get_async_db),
+) -> BuildRecordUnpublishResult:
+    """D7's one-step unpublish: retract the public address immediately.
+
+    ``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment
+    this commits. Every snapshot row is kept as history and the tenant keeps
+    the slug; ``POST /{slug}/publish`` re-activates it as the next version.
+    Idempotent: unpublishing a retracted slug keeps its first retraction time.
+
+    Refuses with the publish route's own answers: 404
+    ``build_record_not_published`` when nothing was ever published under the
+    slug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns
+    it. coord is not consulted — retraction must work while coord is down.
+    """
+    owner = (
+        await db.execute(
+            select(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == slug)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if owner is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "build_record_not_published", "slug": slug},
+        )
+    if owner.tenant_id != tenant_id:
+        _raise_owned_elsewhere(slug)
+
+    if owner.unpublished_at is None:
+        owner.unpublished_at = datetime.now(UTC)
+    unpublished_at = owner.unpublished_at
+    latest = await _latest_version(db, slug)
+    await db.commit()
+    logger.info("build_record_unpublished", slug=slug, latest_version=latest)
+    return BuildRecordUnpublishResult(
+        public_slug=slug, unpublished_at=unpublished_at, latest_version=latest
     )
