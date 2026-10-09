@@ -565,7 +565,9 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
               ageSecs: num(r.age_secs),
               fork: str(r.fork),
               options: parseOptions(r.options),
-              recommendation: str(r.recommendation),
+              // coord counts a recommendation only when non-blank after trim
+              // (its `shape`); a whitespace-only one is no recommendation.
+              recommendation: nonBlank(str(r.recommendation)),
               ifOverturned: str(r.if_overturned),
               shape: str(r.shape),
               answerAt: str(r.answer_at),
@@ -620,6 +622,24 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
   if (needs.state !== "read") return null;
   const listed = needs.items?.length ?? 0;
   return needs.total !== null && needs.total >= listed ? needs.total : null;
+}
+
+/** A link target coord served, kept only when it is an in-app path. */
+export function internalHref(v: string | null): string | null {
+  return v !== null && v.startsWith("/") && !v.startsWith("//") ? v : null;
+}
+
+/** A window in seconds as a short label ("24 h", "7 d"); null when unknown. */
+export function windowLabel(secs: number | null): string | null {
+  if (secs === null || secs <= 0) return null;
+  return secs % 86_400 === 0 && secs >= 2 * 86_400
+    ? `${secs / 86_400} d`
+    : `${Math.round(secs / 3600)} h`;
+}
+
+/** `null` for a string that is empty or whitespace-only. */
+function nonBlank(v: string | null): string | null {
+  return v !== null && v.trim() !== "" ? v : null;
 }
 
 /** A needs-you row's `reason`: the recommendation, or the literal label. */
@@ -826,6 +846,8 @@ export interface DegradationsView {
   open: DegradationView[] | null;
   declared: DegradationView[] | null;
   recentlyCleared: DegradationView[] | null;
+  /** The recently-cleared window coord applied, in seconds; null = not served. */
+  recentlyClearedWindowSecs: number | null;
   /** Per-plane watcher freshness; null = not served. */
   planes: PlaneView[] | null;
   error: string | null;
@@ -845,6 +867,7 @@ function parseDegradations(raw: unknown): DegradationsView {
     recentlyCleared: rowsServed
       ? parseDegradationList(o.recently_cleared)
       : null,
+    recentlyClearedWindowSecs: num(o.recently_cleared_window_secs),
     planes: parsePlanes(o.planes),
     error: str(o.error),
   };
@@ -1146,6 +1169,26 @@ export function deriveHomeStrip(
     headline = "Something is degrading";
   } else if (stale && unread.length === 0) {
     headline = "Cannot tell now — the latest read failed";
+  } else if (
+    !stale &&
+    needsRead &&
+    needsTotal !== null &&
+    degradedRead &&
+    open !== null
+  ) {
+    // Both blocks the question is about were READ and are empty: answer it,
+    // and name what else is unread as a clause rather than replacing the
+    // answer. coord always serves `correctness` as unknown until the
+    // verification-metrics door deploys, so a headline that let ANY unread
+    // block override this would read "cannot tell" on every calm fleet. The
+    // amber floor above still holds — the level is never green over a gap.
+    headline = "Nothing needs you and nothing is degrading";
+    if (attention === "waiting") {
+      headline +=
+        unread.length > 0
+          ? ` — not read: ${unreadPhrase}`
+          : " — some sources are not read";
+    }
   } else if (attention === "waiting") {
     headline = "Cannot tell — part of this view is not read";
   } else {
