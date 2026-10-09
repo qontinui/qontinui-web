@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.build_record import BuildRecordPublicSlug, BuildRecordSnapshot
 from app.services.build_record_allowlist import (
+    ALLOWLIST_VERSION,
     BUILD_RECORD_ALLOWED_PATHS,
     BUILD_RECORD_SCHEMA,
     BuildRecordRejected,
@@ -449,17 +450,33 @@ def _app_with_production_errors() -> FastAPI:
     a refusal's ``{"error": …}`` sits at the top level here exactly as it
     does for a real caller."""
     from fastapi.exceptions import RequestValidationError
+    from slowapi.errors import RateLimitExceeded
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     from app.middleware.error_handler import (
         http_exception_handler,
         validation_exception_handler,
     )
+    from app.middleware.rate_limit import rate_limit_exceeded_handler
 
     app = FastAPI()
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
     return app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_public_rate_limit_bucket():
+    """The public read is rate-limited per peer; every test starts empty."""
+    from app.api.v1.endpoints import public
+    from app.middleware.rate_limit import user_limiter
+
+    user_limiter.reset()
+    public._REVALIDATION_CACHE.clear()
+    yield
+    user_limiter.reset()
+    public._REVALIDATION_CACHE.clear()
 
 
 def _build_app(db_session: AsyncSession, tenant_id: UUID) -> FastAPI:
@@ -939,6 +956,7 @@ class TestPublishGuards:
                 document=doc,
                 content_sha256="0" * 64,
                 generated_at=datetime(2026, 10, 9, tzinfo=UTC),
+                allowlist_version=0,  # validated under an OLDER allowlist: re-validated on read
             )
         )
         await async_db_session.flush()
@@ -1017,6 +1035,7 @@ class TestRealApp:
                         json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
                     ).hexdigest(),
                     generated_at=datetime(2026, 10, 9, 12, tzinfo=UTC),
+                    allowlist_version=ALLOWLIST_VERSION,
                 )
             )
             await async_db_session.flush()
@@ -2924,6 +2943,7 @@ class TestRev9:
                     document=doc,
                     content_sha256=canonical_sha256(doc),
                     generated_at=base.generated_at,
+                    allowlist_version=ALLOWLIST_VERSION,
                     published_at=now - timedelta(days=10),
                 )
             )
@@ -3273,6 +3293,7 @@ async def test_a_slow_tick_never_blocks_an_unpublish(
                     document=doc,
                     content_sha256=canonical_sha256(doc),
                     generated_at=now,
+                    allowlist_version=ALLOWLIST_VERSION,
                 )
             )
         await s.commit()
@@ -3628,73 +3649,249 @@ class TestRev12:
 # ===========================================================================
 
 
+def _scaling_ratio(run: Any, small: Any, large: Any) -> float:
+    """CPU time of ``run(large)`` / ``run(small)`` where ``large`` is twice
+    ``small``: ~2 for a linear operation, ~4 for a quadratic one. Uses
+    ``process_time`` and the minimum of several repeats, so a slow or
+    instrumented interpreter (coverage) scales both sides alike."""
+
+    def cost(arg: Any) -> float:
+        best = float("inf")
+        for _ in range(5):
+            started = time.process_time()
+            for _ in range(5):
+                run(arg)
+            best = min(best, time.process_time() - started)
+        return max(best, 1e-6)
+
+    return cost(large) / cost(small)
+
+
 class TestRedos:
-    def test_a_huge_title_is_refused_fast(self) -> None:
-        doc = _document()
-        doc["work_units"][0]["title"] = "Ship it" + " " * 100_000 + "now"
-        started = time.perf_counter()
-        violations = build_record_violations(doc)
-        elapsed = time.perf_counter() - started
-        assert violations == ["work_units[0].title: longer than 512 characters"]
-        assert elapsed < 0.05, elapsed
+    def test_a_huge_title_is_refused_without_scanning(self) -> None:
+        def run(n: int) -> list[str]:
+            doc = _document()
+            doc["work_units"][0]["title"] = "Ship it" + " " * n + "now"
+            return build_record_violations(doc)
+
+        assert run(100_000) == ["work_units[0].title: longer than 512 characters"]
+        assert _scaling_ratio(run, 100_000, 200_000) < 3.0
 
     def test_an_oversized_document_is_refused_unwalked(self) -> None:
+        from app.services.build_record_allowlist import MAX_DOCUMENT_BYTES
+
         doc = _document()
-        doc["unknowns"] = ["sessions.count: not_established"] * 40_000  # > 1 MiB
-        started = time.perf_counter()
-        violations = build_record_violations(doc)
-        assert violations == ["<root>: larger than 1048576 bytes serialized"]
-        assert time.perf_counter() - started < 0.5
+        doc["unknowns"] = ["sessions.count: not_established"] * 10_000  # > 256 KiB
+        assert build_record_violations(doc) == [
+            f"<root>: larger than {MAX_DOCUMENT_BYTES} bytes serialized"
+        ]
 
     def test_a_512_character_title_is_still_scanned(self) -> None:
         doc = _document()
-        doc["work_units"][0]["title"] = "x" * 500 + " acme/secret"
+        doc["work_units"][0]["title"] = "x" * 400 + " acme/secret"
         assert build_record_violations(doc) == [
             "work_units[0].title: names an owner/name not in product.repos"
         ]
 
+    @pytest.mark.parametrize("char", ["\ufdfa", "\u33af", "\ufb03"])
+    def test_the_cap_applies_after_nfkd(self, char: str) -> None:
+        """U+FDFA decomposes to 18 characters: 300 of them are 300 characters
+        as written but 5,400 once decomposed."""
+        doc = _document()
+        doc["work_units"][0]["title"] = char * 300
+        assert build_record_violations(doc) == [
+            "work_units[0].title: longer than 512 characters"
+        ]
+
     @pytest.mark.parametrize(
-        ("pattern", "text", "full"),
+        ("pattern", "make", "full"),
         [
-            ("_SPACED_SLASH_RE", " " * 40_000 + "x", False),
-            ("_SPACED_SLASH_RE", "a" + " " * 40_000, False),
-            ("_EMAIL_RE", "a." * 20_000, False),
-            ("_EMAIL_RE", "a" * 40_000, False),
-            ("_INFIX_SYMBOL_RE", "a" + " " * 40_000 + "b", False),
-            ("_INFIX_SYMBOL_RE", "a" + " " * 20_000 + "·" + " " * 20_000, False),
-            ("_UUID_RE", "a" * 40_000, False),
-            ("_UUID_RE", "0123456789abcdef-" * 2_400, False),
-            ("_PATH_RUN_RE", "a." * 20_000, False),
-            ("_INDEX_RE", "[" + "1" * 40_000, False),
-            ("_UNKNOWN_RE", "a" * 40_000, True),
-            ("_UNKNOWN_RE", "a" * 40_000 + ": " + "b" * 40_000 + "!", True),
-            ("SLUG_RE", "a" * 40_000, True),
-            ("WORK_UNIT_SLUG_RE", "a" * 40_000, True),
-            ("REPO_RE", "a" * 40_000, True),
-            ("RFC3339_RE", "2026-10-09T00:00:00." + "1" * 40_000, True),
+            ("_SPACED_SLASH_RE", lambda n: " " * n + "x", False),
+            ("_SPACED_SLASH_RE", lambda n: "a" + " " * n, False),
+            ("_EMAIL_RE", lambda n: "a." * (n // 2), False),
+            ("_EMAIL_RE", lambda n: "a" * n, False),
+            ("_INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "b", False),
+            ("_INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "\u00b7" + " " * n, False),
+            ("_UUID_RE", lambda n: "a" * n, False),
+            ("_UUID_RE", lambda n: "0123456789abcdef-" * (n // 17), False),
+            ("_PATH_RUN_RE", lambda n: "a." * (n // 2), False),
+            ("_INDEX_RE", lambda n: "[" + "1" * n, False),
+            ("_UNKNOWN_RE", lambda n: "a" * n, True),
+            ("_UNKNOWN_RE", lambda n: "a" * n + ": " + "b" * n + "!", True),
+            ("SLUG_RE", lambda n: "a" * n, True),
+            ("WORK_UNIT_SLUG_RE", lambda n: "a" * n, True),
+            ("REPO_RE", lambda n: "a" * n, True),
+            ("RFC3339_RE", lambda n: "2026-10-09T00:00:00." + "1" * n, True),
         ],
     )
-    def test_every_regex_stays_linear_on_adversarial_input(
-        self, pattern: str, text: str, full: bool
+    def test_every_regex_scales_linearly(
+        self, pattern: str, make: Any, full: bool
     ) -> None:
-        """A quadratic pattern takes seconds on 40k characters; linear ones
-        take well under a millisecond per thousand."""
+        """Doubling an adversarial input must not quadruple the cost."""
         from app.services import build_record_allowlist as allowlist
 
         compiled = getattr(allowlist, pattern)
-        started = time.perf_counter()
-        if full:
-            compiled.fullmatch(text)
-        else:
-            list(compiled.finditer(text))
-        assert time.perf_counter() - started < 0.05, pattern
 
-    def test_normalisation_and_names_token_stay_fast_at_the_cap(self) -> None:
+        def run(n: int) -> None:
+            text = make(n)
+            if full:
+                compiled.fullmatch(text)
+            else:
+                for _ in compiled.finditer(text):
+                    pass
+
+        assert _scaling_ratio(run, 20_000, 40_000) < 3.0, pattern
+
+    def test_normalisation_and_names_token_scale_linearly(self) -> None:
         from app.services.build_record_allowlist import names_token, normalize_for_scan
 
-        text = " " * 511 + "/"
-        started = time.perf_counter()
-        for _ in range(100):
+        def run(n: int) -> None:
+            text = " " * n + "/"
             normalize_for_scan(text)
             names_token(text, "secret-engine")
-        assert time.perf_counter() - started < 0.5
+
+        assert _scaling_ratio(run, 20_000, 40_000) < 3.0
+
+
+# ===========================================================================
+# Fourteenth review — read cost, rate limit, publish cost
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+class TestRev14:
+    async def test_a_current_version_snapshot_is_served_without_a_scan(
+        self, client_a: httpx.AsyncClient, coord: _Coord, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints import public
+
+        coord.define(TENANT_A)
+        assert (
+            await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        ).status_code == 201
+
+        def must_not_scan(*_: Any, **__: Any) -> list[str]:
+            raise AssertionError("a current-version snapshot was re-scanned")
+
+        monkeypatch.setattr(public, "build_record_violations", must_not_scan)
+        r = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert r.status_code == 200
+
+    async def test_an_old_version_snapshot_is_rescanned_once_then_cached(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints import public
+
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        await async_db_session.execute(
+            update(BuildRecordSnapshot)
+            .where(BuildRecordSnapshot.public_slug == SLUG)
+            .values(allowlist_version=ALLOWLIST_VERSION - 1)
+        )
+        calls = {"n": 0}
+        real = public.build_record_violations
+
+        def counting(document: Any) -> list[str]:
+            calls["n"] += 1
+            return real(document)
+
+        monkeypatch.setattr(public, "build_record_violations", counting)
+        for _ in range(5):
+            r = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+            assert r.status_code == 200
+        assert calls["n"] == 1
+
+    async def test_the_public_read_is_rate_limited_per_peer(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        from app.api.v1.endpoints.public import PUBLIC_BUILD_RECORD_RATE_LIMIT
+
+        limit = int(PUBLIC_BUILD_RECORD_RATE_LIMIT.split()[0])
+        codes = []
+        for i in range(limit + 1):
+            # Different slugs share ONE bucket per peer (shared_limit scope).
+            r = await client_a.get(f"/api/v1/public/build-records/no-such-{i}")
+            codes.append(r.status_code)
+        assert codes[:limit] == [404] * limit
+        assert codes[limit] == 429
+        # Another peer (as the ALB reports it) has its own bucket.
+        other = await client_a.get(
+            "/api/v1/public/build-records/x",
+            headers={"x-forwarded-for": "198.51.100.7, 203.0.113.9"},
+        )
+        assert other.status_code == 404
+
+    async def test_too_many_excluded_repos_are_refused_before_scanning(
+        self, client_a: httpx.AsyncClient, coord: _Coord, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints import build_records
+
+        coord.define(TENANT_A)
+        coord.products[TENANT_A][0]["repos"] += [f"acme/hidden-{i}" for i in range(51)]
+
+        async def must_not_scan(*_: Any, **__: Any) -> Any:
+            raise AssertionError("scanned despite the excluded-repo cap")
+
+        monkeypatch.setattr(build_records, "scan_off_loop", must_not_scan)
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["error"] == "build_record_too_many_excluded_repos"
+
+    async def test_scans_run_under_their_own_small_limiter(self) -> None:
+        from app.services import build_record_allowlist as allowlist
+
+        assert await allowlist.scan_off_loop(len, "abc") == 3
+        assert allowlist._scan_limiter.total_tokens == allowlist.SCAN_CONCURRENCY == 2
+
+
+def test_one_alternation_finds_every_excluded_name() -> None:
+    from app.services.build_record_allowlist import names_pattern
+
+    pattern = names_pattern(["secret-engine", "Billing", "a.b"])
+    assert pattern is not None
+    assert pattern.search("port from secret-engine")
+    assert pattern.search("the billing fix")
+    assert pattern.search("x a.b y")
+    assert not pattern.search("axb and secret-engines")
+
+
+@pytest.mark.asyncio
+class TestPublicationState:
+    async def test_the_owner_sees_its_publication(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        coord.define(TENANT_A)
+        published = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_a.get(f"/api/v1/build-records/{SLUG}/publication")
+        assert r.status_code == 200
+        assert r.json() == {
+            "public_slug": SLUG,
+            "owned_by_caller_tenant": True,
+            "unpublished": False,
+            "version": 1,
+            "content_sha256": published.json()["content_sha256"],
+        }
+        await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+        after = (await client_a.get(f"/api/v1/build-records/{SLUG}/publication")).json()
+        assert after["unpublished"] is True and after["version"] == 1
+
+    async def test_another_tenant_learns_nothing(
+        self, client_a: httpx.AsyncClient, client_b: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        owned_elsewhere = await client_b.get(
+            f"/api/v1/build-records/{SLUG}/publication"
+        )
+        never = await client_b.get("/api/v1/build-records/never-published/publication")
+        blank = {
+            "owned_by_caller_tenant": False,
+            "unpublished": False,
+            "version": None,
+            "content_sha256": None,
+        }
+        assert owned_elsewhere.json() == {"public_slug": SLUG, **blank}
+        assert never.json() == {"public_slug": "never-published", **blank}
+        # Indistinguishable, and no tenant id anywhere in the body.
+        assert str(TENANT_A) not in owned_elsewhere.text
