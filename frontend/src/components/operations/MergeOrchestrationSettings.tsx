@@ -27,9 +27,10 @@
  * surface an operator is actually on during an incident.
  *
  * This module is the composer only: it owns the page's three reads and the
- * section order. Each card lives in `./merge-settings/`, beside the shared wire
- * types (`types.ts`), the parse/format helpers (`format.ts`) and the
- * pinned-vs-inherited helpers (`pinChoice.tsx`).
+ * section order. Each card lives in `./merge-settings/`, beside the form-field
+ * shape (`types.ts`), the parse/format helpers (`format.ts`) and the
+ * pinned-vs-inherited helpers (`pinChoice.tsx`). The routes and their wire
+ * types are the typed client's, `@/lib/api/operations/prMerge`.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -38,20 +39,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchMergeSlo,
+  fetchTenantRepos,
+  fetchTenantSettings,
+  type EffectiveProfile,
+  type SloResponse,
+  type TenantRepoRow,
+} from "@/lib/api/operations/prMerge";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-import { OPERATIONS_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { TenantDefaultsCard } from "./merge-settings/TenantDefaultsCard";
 import { RepoOverrideCard } from "./merge-settings/RepoOverrideCard";
 import { SloDashboardCard } from "./merge-settings/SloDashboardCard";
 import { ffLandHeadSyncSupported } from "./merge-settings/format";
-import type {
-  EffectiveProfile,
-  SloResponse,
-  TenantRepoRow,
-  TenantReposResponse,
-  TenantSettingsResponse,
-} from "./merge-settings/types";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -68,29 +69,41 @@ export function MergeOrchestrationSettings() {
 
   useEffect(() => {
     let cancelled = false;
+    // All three reads are settled before any is judged, so the page words a
+    // refusal exactly as it did when it checked raw responses in order:
+    // `settings: HTTP <status>`, then `repos: HTTP <status>`. A rejection
+    // that is not a status (network, unparseable body) is its own message.
+    const settle = <T,>(read: Promise<T>) =>
+      read.then(
+        (body) => ({ ok: true as const, body }),
+        (err: unknown) => ({ ok: false as const, err })
+      );
+    const refusal = (label: string, err: unknown): unknown => {
+      const status = httpStatusOf(err);
+      return status === null ? err : new Error(`${label}: HTTP ${status}`);
+    };
     Promise.all([
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/repos`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/slo`),
+      settle(fetchTenantSettings()),
+      settle(fetchTenantRepos()),
+      settle(fetchMergeSlo()),
     ])
-      .then(async ([s, r, sl]) => {
-        if (!s.ok) throw new Error(`settings: HTTP ${s.status}`);
-        if (!r.ok) throw new Error(`repos: HTTP ${r.status}`);
-        // SLO is best-effort — a failure (e.g. coord down) shouldn't
-        // block the rest of the page from rendering.
-        const sb = (await s.json()) as TenantSettingsResponse;
-        const rb = (await r.json()) as TenantReposResponse;
+      .then(([s, r, sl]) => {
+        if (!s.ok) throw refusal("settings", s.err);
+        if (!r.ok) throw refusal("repos", r.err);
         if (cancelled) return;
-        setProfile(sb.profile);
-        setRepos(rb.repos);
+        setProfile(s.body.profile);
+        setRepos(r.body.repos);
         setError(null);
         if (sl.ok) {
-          const slBody = (await sl.json()) as SloResponse;
-          if (!cancelled) setSlo(slBody);
+          setSlo(sl.body);
+        } else if (httpStatusOf(sl.err) !== null) {
+          // SLO is best-effort — a refusal (e.g. coord down) shouldn't
+          // block the rest of the page from rendering. Log but don't
+          // propagate to top-level error banner — the SLO card surfaces its
+          // own loading state.
+          log.warn("slo fetch failed", httpBodyOf(sl.err) ?? "?");
         } else {
-          // Log but don't propagate to top-level error banner — the
-          // SLO card surfaces its own loading state.
-          log.warn("slo fetch failed", await sl.text().catch(() => "?"));
+          throw sl.err;
         }
       })
       .catch((err) => {
