@@ -20,6 +20,9 @@ Routes (mounted at ``/api/v1/build-records``):
   ``{"reactivate": true}``.
 * ``DELETE /{slug}/publish``   → the D7 one-step unpublish: retract the public
   address so the public reader 404s at once, keeping every snapshot as history.
+* ``POST /reconcile``          → retract every live record whose coord product
+  is no longer public (also run by the scheduler; see
+  ``app/jobs/build_record_reconcile.py``).
 
 The proxies follow ``digital_twin.py``'s shape: the caller's bearer and the
 Project-selector header are forwarded (``get_tenant_id`` /
@@ -38,9 +41,10 @@ could never be read through ``GET /{slug}``.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
@@ -58,12 +62,14 @@ from app.api.v1.endpoints.operations import (
     get_tenant_id,
     require_coord_tenant_admin_target,
 )
+from app.jobs.build_record_reconcile import reconcile_tenant, retract_live
 from app.models.build_record import (
     BUILD_RECORD_SLUG_PATTERN,
     BuildRecordPublicSlug,
     BuildRecordSnapshot,
 )
 from app.services.build_record_allowlist import REPO_RE, build_record_violations
+from app.services.github_repo_visibility import Visibility, repo_visibility
 
 logger = structlog.get_logger(__name__)
 
@@ -71,6 +77,11 @@ router = APIRouter()
 
 #: Slugs the PUT proxy refuses because a static route already owns the path.
 RESERVED_SLUGS: frozenset[str] = frozenset({"products"})
+
+#: How old (and how far in the future) coord's ``generated_at`` may be at
+#: publish. A document composed earlier than this is not the record "now".
+GENERATED_AT_MAX_AGE = timedelta(minutes=15)
+GENERATED_AT_MAX_SKEW = timedelta(minutes=5)
 
 #: A product slug in a path: the coord contract's domain, checked before any
 #: value is interpolated into a coord URL.
@@ -205,25 +216,24 @@ async def put_build_record_product(
 
     retracted = False
     if not body.is_public:
-        owner = await _read_owner(db, slug, lock=True)
-        if (
-            owner is not None
-            and owner.tenant_id == tenant_id
-            and owner.unpublished_at is None
-        ):
-            owner.unpublished_at = datetime.now(UTC)
-            retracted = True
+        retracted = await retract_live(db, slug, tenant_id)
         await db.commit()
         if retracted:
             logger.info("build_record_retracted_by_product_private", slug=slug)
-    response.headers["X-Build-Record-Retracted"] = "true" if retracted else "false"
+    retracted_header = {"X-Build-Record-Retracted": "true" if retracted else "false"}
+    response.headers.update(retracted_header)
 
-    return await _proxy_coord_put(
-        f"/coord/build-record-products/{slug}",
-        body.model_dump(mode="json"),
-        tenant_id=tenant_id,
-        structured_errors=True,
-    )
+    try:
+        return await _proxy_coord_put(
+            f"/coord/build-record-products/{slug}",
+            body.model_dump(mode="json"),
+            tenant_id=tenant_id,
+            structured_errors=True,
+        )
+    except HTTPException as exc:
+        # The retraction above is already committed; say so on the error too.
+        exc.headers = {**(exc.headers or {}), **retracted_header}
+        raise
 
 
 @router.get("/{slug}")
@@ -278,6 +288,29 @@ def _document_violations(
     if "generated_at" not in document:
         violations.append("generated_at: required to publish")
     return violations
+
+
+def _product_refusal(
+    product: dict[str, Any] | None, tenant_id: UUID
+) -> tuple[int, str] | None:
+    """Why coord's product row does not allow a public page, or ``None``."""
+    if product is None:
+        return 404, "build_record_product_not_found"
+    if str(product.get("tenant_id")) != str(tenant_id):
+        return 409, "build_record_tenant_mismatch"
+    if product.get("is_public") is not True:
+        return 409, "build_record_product_not_public"
+    return None
+
+
+async def _confirm_repos_public(slug: str, repos: list[str]) -> None:
+    """Refuse unless GitHub, asked anonymously, says every repo is public."""
+    unique = sorted({r.lower(): r for r in repos}.values())
+    answers = await asyncio.gather(*(repo_visibility(r) for r in unique))
+    if any(a is Visibility.NOT_PUBLIC for a in answers):
+        _refuse(502, "build_record_repo_not_public", slug)
+    if any(a is not Visibility.PUBLIC for a in answers):
+        _refuse(502, "build_record_repo_visibility_unknown", slug)
 
 
 async def _store_next_version(
@@ -357,13 +390,27 @@ async def publish_build_record(
       ``build_record_tenant_mismatch``;
     * the product's ``is_public`` is not ``true`` → 409 (D3: nothing is public
       by default);
+
+    — and in those three cases a LIVE snapshot this tenant owns is retracted
+    on the spot (``retracted`` in the refusal says whether it was);
+
     * coord's document fails the D3 allowlist, names another product, or lists
       a repo outside the product definition → 502 (coord sent something it
       must not; the violations are listed);
+    * coord's ``generated_at`` is outside [now − 15 min, now + 5 min] → 502
+      ``build_record_generated_at_out_of_window``;
+    * GitHub, asked anonymously, does not confirm a listed repo is public →
+      502 ``build_record_repo_not_public`` (it said private / absent) or
+      ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
     * the slug was retracted or re-activated while coord was being asked → 409
       ``build_record_retraction_changed``;
     * the document is older than the latest snapshot → 409
       ``build_record_stale``.
+
+    After storing, the product is read from coord once more; if it went
+    private (or the read fails) in the meantime, the new version is retracted
+    at once and the answer is 409 ``build_record_product_not_public`` /
+    502 ``build_record_post_publish_check_unanswered`` with ``retracted``.
     """
     reactivate = request_body.reactivate if request_body is not None else False
 
@@ -379,12 +426,14 @@ async def publish_build_record(
     await db.commit()
 
     product = await _find_product(slug, tenant_id)
-    if product is None:
-        _refuse(404, "build_record_product_not_found", slug)
-    if str(product.get("tenant_id")) != str(tenant_id):
-        _refuse(409, "build_record_tenant_mismatch", slug)
-    if product.get("is_public") is not True:
-        _refuse(409, "build_record_product_not_public", slug)
+    refusal = _product_refusal(product, tenant_id)
+    if refusal is not None:
+        # Retract-on-attempt: a product that is gone, private or not ours must
+        # not keep a live page just because nobody unpublished it.
+        retracted = await retract_live(db, slug, tenant_id)
+        await db.commit()
+        _refuse(refusal[0], refusal[1], slug, retracted=retracted)
+    assert product is not None
 
     document = await _proxy_coord_get(
         f"/coord/build-records/{slug}", tenant_id=tenant_id, structured_errors=True
@@ -398,15 +447,37 @@ async def publish_build_record(
         )
         _refuse(502, "build_record_allowlist_violation", slug, violations=violations)
 
+    generated_at = datetime.fromisoformat(document["generated_at"])
+    now = datetime.now(UTC)
+    if not (now - GENERATED_AT_MAX_AGE <= generated_at <= now + GENERATED_AT_MAX_SKEW):
+        _refuse(502, "build_record_generated_at_out_of_window", slug)
+
+    await _confirm_repos_public(slug, document["product"].get("repos") or [])
+
     snapshot = await _store_next_version(
         db,
         slug=slug,
         tenant_id=tenant_id,
         document=document,
-        generated_at=datetime.fromisoformat(document["generated_at"]),
+        generated_at=generated_at,
         expected_unpublished_at=expected_unpublished_at,
         reactivate=reactivate,
     )
+
+    # Close the window between the is_public check above and the store: a PUT
+    # (here or through coord's own door) may have made the product private
+    # meanwhile. A failed re-read is not a "still public".
+    try:
+        after = await _find_product(slug, tenant_id)
+    except HTTPException:
+        await retract_live(db, slug, tenant_id)
+        await db.commit()
+        _refuse(502, "build_record_post_publish_check_unanswered", slug, retracted=True)
+    late_refusal = _product_refusal(after, tenant_id)
+    if late_refusal is not None:
+        await retract_live(db, slug, tenant_id)
+        await db.commit()
+        _refuse(late_refusal[0], late_refusal[1], slug, retracted=True)
     logger.info(
         "build_record_published",
         slug=slug,
@@ -455,4 +526,38 @@ async def unpublish_build_record(
     logger.info("build_record_unpublished", slug=slug, latest_version=latest_version)
     return BuildRecordUnpublishResult(
         public_slug=slug, unpublished_at=unpublished_at, latest_version=latest_version
+    )
+
+
+class BuildRecordReconcileResult(BaseModel):
+    """What ``POST /reconcile`` returns."""
+
+    retracted: list[str]
+
+
+@router.post("/reconcile", response_model=BuildRecordReconcileResult)
+async def reconcile_build_records(
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+    db: AsyncSession = Depends(get_async_db),
+) -> BuildRecordReconcileResult:
+    """Retract every live public build record of this tenant whose coord
+    product is gone, private or another tenant's — now, with the caller's own
+    coord credential. The same reconcile also runs on the in-process scheduler
+    every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
+    the launch kit and the operator notice, which should not wait for a tick.
+
+    A coord read that fails is a refusal (coord's status), never an empty
+    listing — an unanswered question retracts nothing.
+    """
+    listing = await _proxy_coord_get(
+        "/coord/build-record-products", tenant_id=tenant_id, structured_errors=True
+    )
+    products = listing.get("products") if isinstance(listing, dict) else None
+    if not isinstance(products, list):
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "coord_build_record_products_malformed"},
+        )
+    return BuildRecordReconcileResult(
+        retracted=await reconcile_tenant(db, tenant_id, products)
     )

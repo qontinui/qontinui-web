@@ -24,26 +24,34 @@ container where a scalar belongs and the reverse.
 * statuses — coord's canonical work-unit vocabulary
   (:data:`WORK_UNIT_STATUSES`, ``WorkUnitStatus::from_wire`` in qontinui-coord
   ``work_unit_registry.rs``); a legacy opaque status is refused, never passed;
-* repos — ``owner/name``; slugs — the product/work-unit slug pattern;
+* repos — ``owner/name``; the product slug — the product slug pattern;
+  work-unit slugs — :data:`WORK_UNIT_SLUG_RE` (plan stems are longer);
+* PR and work-unit titles — any string or ``null`` (coord nulls a title that
+  would fail the scan below and records ``<path>: not_established``);
+* timestamps are PARSED, not only pattern-matched;
 * ``unknowns[]`` and ``sessions.unknown_reason`` — ONLY the constrained form
   ``<allowlisted path>: <reason code>`` with a reason from
   :data:`UNKNOWN_REASON_CODES`. Free text is refused: it is the one slot an
   unvetted sentence (a device name, an operator, a findings body) would ride.
 
-**Content, in every string anywhere** (titles included):
+**Content, in every string anywhere** (titles included), read after NFKC
+normalisation with lookalike slashes mapped to ``/`` and spaces around ``/``
+removed (:func:`normalize_for_scan`):
 
 * an ``owner/name`` token that is not one of ``product.repos`` — a private
   repo name leaking through a title, a slug or an unknown;
-* a UUID-shaped substring (device, session, user and tenant ids);
-* an email-shaped substring (operator identities).
+* a UUID-shaped substring, dashed or as a bare 32-hex run (device,
+  session, user and tenant ids);
+* an email-shaped substring, ``user@host`` included (operator identities).
 
 **Cross-field.** A ``schema`` other than :data:`BUILD_RECORD_SCHEMA`; a PR
 whose ``repo`` is not one of ``product.repos`` (coord lists only repos
 POSITIVELY known public there).
 
 A key the allowlist names but the document omits is not a violation: absence
-leaks nothing. Violation messages name the SLOT, never the offending value, so
-a refusal cannot itself leak what it refused.
+leaks nothing. Violation messages name the SLOT, never the offending value
+(an unlisted key is reported as ``<unlisted key>``), so a refusal cannot
+itself leak what it refused.
 
 Known false-positive class, accepted fail-closed: a title containing a
 non-repo ``a/b`` token (``CI/CD``) is refused. Two all-digit segments
@@ -53,6 +61,8 @@ non-repo ``a/b`` token (``CI/CD``) is refused. Two all-digit segments
 from __future__ import annotations
 
 import re
+import unicodedata
+from datetime import datetime
 from enum import Enum
 from typing import Any, Final
 
@@ -85,14 +95,29 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 )
 
 SLUG_RE: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+#: A work-unit slug. ``coord.work_units.slug`` is unconstrained ``TEXT``
+#: (``coord_workunits_01_work_units``), and real plan stems run past 140
+#: characters and carry upper case, ``.`` and ``_`` (``PLAN_2026_06_17_…``,
+#: ``….VETTED-INPROGRESS``) — so this is wider than the product slug. It still
+#: forbids ``/`` and whitespace, and the content scan below still applies.
+WORK_UNIT_SLUG_RE: Final = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$")
 REPO_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")
 RFC3339_RE: Final = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
 )
+#: A dashed UUID, or the same 128 bits as a bare 32-hex run. A 40-hex commit
+#: sha is NOT matched (the run must be exactly 32 hex characters long).
 _UUID_RE: Final = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])"
 )
-_EMAIL_RE: Final = re.compile(r"[^\s@<>()\[\],;:\"']+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
+#: ``user@host`` is enough — an internal host needs no dot to identify a person.
+_EMAIL_RE: Final = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+")
+#: Characters that render as ``/`` but are not it (NFKC already folds U+FF0F).
+_LOOKALIKE_SLASHES: Final = dict.fromkeys(
+    map(ord, "\u2215\u2044\u29f8\u2571\u1735"), "/"
+)
+_SPACED_SLASH_RE: Final = re.compile(r"\s*/\s*")
 _PATH_RUN_RE: Final = re.compile(r"[A-Za-z0-9._/-]+")
 _UNKNOWN_RE: Final = re.compile(r"^([a-z_][a-z0-9_.\[\]]*): ([a-z_]+)$")
 _INDEX_RE: Final = re.compile(r"\[\d+\]")
@@ -107,9 +132,11 @@ class Slot(Enum):
     COUNT = "count"
     REPO = "repo"
     SLUG = "slug"
+    WORK_UNIT_SLUG = "work_unit_slug"
     STATUS = "status"
     STATUS_OR_NULL = "status_or_null"
     TEXT = "text"
+    TEXT_OR_NULL = "text_or_null"
     UNKNOWN = "unknown"
     UNKNOWN_OR_NULL = "unknown_or_null"
 
@@ -129,8 +156,8 @@ BUILD_RECORD_ALLOWLIST: Final[dict[str, Any]] = {
     },
     "work_units": [
         {
-            "slug": Slot.SLUG,
-            "title": Slot.TEXT,
+            "slug": Slot.WORK_UNIT_SLUG,
+            "title": Slot.TEXT_OR_NULL,
             "status": Slot.STATUS,
             "vetted_at": Slot.TIMESTAMP_OR_NULL,
             "shipped_at": Slot.TIMESTAMP_OR_NULL,
@@ -139,7 +166,7 @@ BUILD_RECORD_ALLOWLIST: Final[dict[str, Any]] = {
     "timeline": [
         {
             "at": Slot.TIMESTAMP,
-            "work_unit": Slot.SLUG,
+            "work_unit": Slot.WORK_UNIT_SLUG,
             "from_status": Slot.STATUS_OR_NULL,
             "to_status": Slot.STATUS,
         }
@@ -148,7 +175,7 @@ BUILD_RECORD_ALLOWLIST: Final[dict[str, Any]] = {
         {
             "repo": Slot.REPO,
             "number": Slot.COUNT,
-            "title": Slot.TEXT,
+            "title": Slot.TEXT_OR_NULL,
             "opened_at": Slot.TIMESTAMP_OR_NULL,
             "landed_at": Slot.TIMESTAMP_OR_NULL,
             "ci_duration_secs": Slot.COUNT,
@@ -214,6 +241,17 @@ def _is_unknown(value: Any) -> bool:
     )
 
 
+def _is_timestamp(value: str) -> bool:
+    """RFC 3339 by shape AND by value: ``2026-13-40T…`` matches the regex and
+    is still refused, because it does not parse."""
+    if RFC3339_RE.match(value) is None:
+        return False
+    try:
+        return datetime.fromisoformat(value).tzinfo is not None
+    except ValueError:
+        return False
+
+
 def _slot_ok(slot: Slot, value: Any) -> bool:
     if slot is Slot.SCHEMA:
         return isinstance(value, str) and value == BUILD_RECORD_SCHEMA
@@ -225,19 +263,21 @@ def _slot_ok(slot: Slot, value: Any) -> bool:
         return value is None or _is_unknown(value)
     if slot is Slot.TIMESTAMP_OR_NULL and value is None:
         return True
-    if slot is Slot.STATUS_OR_NULL and value is None:
+    if slot in (Slot.STATUS_OR_NULL, Slot.TEXT_OR_NULL) and value is None:
         return True
     if not isinstance(value, str):
         return False
     if slot in (Slot.TIMESTAMP, Slot.TIMESTAMP_OR_NULL):
-        return RFC3339_RE.match(value) is not None
+        return _is_timestamp(value)
     if slot in (Slot.STATUS, Slot.STATUS_OR_NULL):
         return value in WORK_UNIT_STATUSES
     if slot is Slot.REPO:
         return REPO_RE.match(value) is not None
     if slot is Slot.SLUG:
         return SLUG_RE.match(value) is not None
-    return True  # Slot.TEXT — any string; the content scan below still applies
+    if slot is Slot.WORK_UNIT_SLUG:
+        return WORK_UNIT_SLUG_RE.match(value) is not None
+    return True  # TEXT / TEXT_OR_NULL — the content scan below still applies
 
 
 def _walk(
@@ -251,7 +291,12 @@ def _walk(
         for key, sub in value.items():
             child = f"{path}.{key}" if path else str(key)
             if key not in shape:
-                out.append(f"{child}: key is not in the build-record allowlist")
+                # Never echo the key itself: an unlisted key's NAME can be the
+                # leak (a hostname, an email used as a map key).
+                parent = f"{path}." if path else ""
+                out.append(
+                    f"{parent}<unlisted key>: key is not in the build-record allowlist"
+                )
                 continue
             _walk(sub, shape[key], child, out, strings)
         return
@@ -274,10 +319,19 @@ def _walk(
         strings.append((where, value))
 
 
+def normalize_for_scan(text: str) -> str:
+    """The form every content check reads: NFKC (folds fullwidth and other
+    compatibility forms to ASCII), lookalike slashes mapped to ``/``, and
+    whitespace around ``/`` removed — so ``acme ∕ secret`` scans as
+    ``acme/secret``."""
+    folded = unicodedata.normalize("NFKC", text).translate(_LOOKALIKE_SLASHES)
+    return _SPACED_SLASH_RE.sub("/", folded)
+
+
 def _repo_tokens(text: str) -> list[str]:
     """Every ``a/b`` pair in ``text``, lowercased (GitHub names are case-blind)."""
     pairs: list[str] = []
-    for run in _PATH_RUN_RE.findall(text):
+    for run in _PATH_RUN_RE.findall(normalize_for_scan(text)):
         segments = [s.strip(".-") for s in run.split("/")]
         for left, right in zip(segments, segments[1:], strict=False):
             if not left or not right or (left.isdigit() and right.isdigit()):
@@ -305,11 +359,12 @@ def build_record_violations(document: Any) -> list[str]:
     )
 
     for where, text in strings:
+        normalized = normalize_for_scan(text)
         if any(token not in public_repos for token in _repo_tokens(text)):
             out.append(f"{where}: names an owner/name not in product.repos")
-        if _UUID_RE.search(text):
+        if _UUID_RE.search(normalized):
             out.append(f"{where}: contains a UUID-shaped identifier")
-        if _EMAIL_RE.search(text):
+        if _EMAIL_RE.search(normalized):
             out.append(f"{where}: contains an email-shaped identity")
 
     prs = document.get("prs")
