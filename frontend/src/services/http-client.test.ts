@@ -785,6 +785,8 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/memory/records",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
+    "https://api.test/api/v1/build-records/products",
+    "https://api.test/api/v1/build-records/my-product/publish",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -821,7 +823,10 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   it.each([
     "https://api.test/api/v1/workflows/0b6c1f1e-1111-4111-8111-111111111111",
     "https://api.test/api/v1/devices/abc",
-  ])("does NOT attach the header on workflow/device CRUD: %s", async (url) => {
+    // The unauthenticated build-record page resolves no tenant; the
+    // `/api/v1/build-records/` prefix must not reach it.
+    "https://api.test/api/v1/public/build-records/my-product",
+  ])("does NOT attach the header on unscoped reads: %s", async (url) => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
     const captured = captureFetchHeaders();
     const client = new HttpClient(

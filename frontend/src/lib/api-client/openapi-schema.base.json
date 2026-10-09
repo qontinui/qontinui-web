@@ -5728,6 +5728,84 @@
         "title": "BridgeAuditLogResponse",
         "type": "object"
       },
+      "BuildRecordProductWrite": {
+        "additionalProperties": false,
+        "description": "Body of ``PUT /products/{slug}`` \u2014 the coord contract's product fields.",
+        "properties": {
+          "is_public": {
+            "default": false,
+            "title": "Is Public",
+            "type": "boolean"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Repos",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "BuildRecordProductWrite",
+        "type": "object"
+      },
+      "BuildRecordPublishResult": {
+        "description": "What ``POST /{slug}/publish`` returns.",
+        "properties": {
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "public_slug",
+          "version",
+          "content_sha256"
+        ],
+        "title": "BuildRecordPublishResult",
+        "type": "object"
+      },
       "BulkAnnotationError": {
         "description": "Schema for bulk operation error",
         "properties": {
@@ -39312,6 +39390,42 @@
         "title": "PromptVersionResponse",
         "type": "object"
       },
+      "PublicBuildRecord": {
+        "description": "The latest frozen version of a published build record.",
+        "properties": {
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "public_slug",
+          "version",
+          "published_at",
+          "content_sha256",
+          "document"
+        ],
+        "title": "PublicBuildRecord",
+        "type": "object"
+      },
       "PushDeviceRegister": {
         "description": "Schema for registering a push device token.",
         "properties": {
@@ -68453,6 +68567,180 @@
         "summary": "Get Presets",
         "tags": [
           "background-removal"
+        ]
+      }
+    },
+    "/api/v1/build-records/products": {
+      "get": {
+        "description": "The tenant's product definitions (``{products: [...]}``), from coord.",
+        "operationId": "api_v1_build_records_products_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Build Record Products Api V1 Build Records Products Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Build Record Products",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/products/{slug}": {
+      "put": {
+        "description": "Create or replace one product definition. Tenant admins only: this is\nthe switch that makes a product publishable (``is_public``).",
+        "operationId": "api_v1_build_records_products_slug_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildRecordProductWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Build Record Product Api V1 Build Records Products  Slug  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Build Record Product",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/{slug}": {
+      "get": {
+        "description": "The live ``build-record/1`` document for one product, from coord.\n\ncoord's 404 ``{\"error\": \"build_record_product_not_found\"}`` passes through\nas a structured detail.",
+        "operationId": "api_v1_build_records_slug_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Build Record Api V1 Build Records  Slug  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Build Record",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/{slug}/publish": {
+      "post": {
+        "description": "Freeze the product's current build record as its next public version.\n\nRefuses (nothing stored) when:\n\n* the product does not exist in the caller's tenant \u2192 404;\n* the product's ``is_public`` is not ``true`` \u2192 409 (D3: nothing is public\n  by default);\n* coord's document fails the D3 allowlist, or names another product \u2192 502\n  (coord sent something it must not; the violations are listed);\n* another tenant already owns this public slug \u2192 409.",
+        "operationId": "api_v1_build_records_slug_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordPublishResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish Build Record",
+        "tags": [
+          "build-records"
         ]
       }
     },
@@ -113397,6 +113685,50 @@
         "summary": "Restore Project Version",
         "tags": [
           "versions"
+        ]
+      }
+    },
+    "/api/v1/public/build-records/{slug}": {
+      "get": {
+        "description": "The latest published snapshot of a product's build record, without\nauthentication.\n\nServes ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,\nwhich refuses a product that is not opted in (``is_public``) and\nre-validates the D3 allowlist before storing. It never proxies to coord,\nso the authed export is never reachable from here. 404 when nothing has\nbeen published under ``slug``.\n\n``content_sha256`` is the SHA-256 of ``document`` serialized with sorted\nkeys and no insignificant whitespace, so a reader can verify it.",
+        "operationId": "api_v1_public_build_records_slug_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBuildRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Public Build Record",
+        "tags": [
+          "public"
         ]
       }
     },
