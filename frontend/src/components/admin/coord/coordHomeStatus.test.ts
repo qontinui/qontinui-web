@@ -141,7 +141,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     const strip = deriveHomeStrip(parseProjectState(body));
     expect(strip.level).toBe("amber");
     expect(strip.headline).toMatch(
-      /^Nothing needs you and nothing is degrading — not read: /
+      /^Nothing needs you and nothing is degrading — part of this view is not read$/
     );
     expect(strip.headline).not.toMatch(/Cannot tell/);
   });
@@ -674,10 +674,24 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
     ["/admin/coord/inbox?q=1", "/admin/coord/inbox?q=1"],
     ["https://evil.example/", null],
     ["//evil.example/", null],
+    ["/\\evil.example/", null],
     ["javascript:alert(1)", null],
     [null, null],
   ])("internalHref(%p) is %p", (raw, want) => {
     expect(internalHref(raw)).toBe(want);
+  });
+
+  it("names the failed poll in the headline even beside coord's always-unread correctness", () => {
+    const body = calmBody();
+    body.correctness = {
+      state: "unknown",
+      reason: "verification_metrics_door_absent",
+    };
+    const strip = deriveHomeStrip(parseProjectState(body), { stale: true });
+    expect(strip.level).toBe("amber");
+    expect(strip.headline).toMatch(
+      /^Cannot tell now — the latest read failed, at the last good read/
+    );
   });
 
   it.each([
