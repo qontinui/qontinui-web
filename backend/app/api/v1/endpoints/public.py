@@ -1,10 +1,12 @@
+import asyncio
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,13 +120,38 @@ def _public_rate_limit_disabled() -> bool:
     return not settings.RATE_LIMIT_ENABLED
 
 
-async def _passes_current_allowlist(snapshot: BuildRecordSnapshot) -> bool:
+#: Re-validations running right now, one shared future per cache key
+#: (single-flight): the first miss scans, every concurrent reader of the same
+#: key awaits that one result.
+_IN_FLIGHT: dict[tuple[str, int, str, int], asyncio.Future[bool]] = {}
+#: Most DISTINCT re-validations allowed in flight at once. Past it a read is
+#: answered 503 + Retry-After instead of queueing behind the scan limiter, so
+#: a herd after an ALLOWLIST_VERSION bump cannot starve publish's scans.
+MAX_REVALIDATIONS_IN_FLIGHT = 8
+REVALIDATION_RETRY_AFTER_SECONDS = 5
+
+
+@dataclass(frozen=True)
+class _SnapshotCopy:
+    """The served fields, copied off the ORM row so the DB session can be
+    released before any (slow) re-validation is awaited."""
+
+    public_slug: str
+    version: int
+    published_at: datetime
+    content_sha256: str
+    document: dict[str, Any]
+    allowlist_version: int
+
+
+async def _passes_current_allowlist(snapshot: _SnapshotCopy) -> bool:
     """Whether a stored snapshot passes the CURRENT allowlist.
 
     A snapshot validated at publish under the current ``ALLOWLIST_VERSION``
     passed already (only passing documents are stored) — no scan. An older
-    one is re-validated once per process, off the event loop under the
-    scan's dedicated limiter, and the verdict cached.
+    one is re-validated once per process (single-flight per cache key), off
+    the event loop under the scan's dedicated limiter, and the verdict
+    cached. A failed scan propagates to every waiter and is not cached.
     """
     if snapshot.allowlist_version == ALLOWLIST_VERSION:
         return True
@@ -138,12 +165,46 @@ async def _passes_current_allowlist(snapshot: BuildRecordSnapshot) -> bool:
     if cached is not None:
         _REVALIDATION_CACHE.move_to_end(key)
         return cached
-    violations = await scan_off_loop(build_record_violations, snapshot.document)
-    passes = not violations
-    _REVALIDATION_CACHE[key] = passes
-    if len(_REVALIDATION_CACHE) > _REVALIDATION_CACHE_SIZE:
-        _REVALIDATION_CACHE.popitem(last=False)
-    return passes
+    pending = _IN_FLIGHT.get(key)
+    if pending is not None:
+        try:
+            return await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if not pending.cancelled() or (task is not None and task.cancelling()):
+                raise
+            # The reader that was running the scan went away (its request was
+            # cancelled); this reader was not — run the check itself.
+            return await _passes_current_allowlist(snapshot)
+    if len(_IN_FLIGHT) >= MAX_REVALIDATIONS_IN_FLIGHT:
+        raise HTTPException(
+            status_code=503,
+            detail="build record re-validation busy; retry shortly",
+            headers={
+                "Retry-After": str(REVALIDATION_RETRY_AFTER_SECONDS),
+                **_NO_STORE,
+            },
+        )
+    future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+    _IN_FLIGHT[key] = future
+    try:
+        violations = await scan_off_loop(build_record_violations, snapshot.document)
+    except asyncio.CancelledError:
+        future.cancel()  # waiters see the cancellation; the next read retries
+        raise
+    except Exception as exc:
+        future.set_exception(exc)
+        future.exception()  # mark retrieved: there may be no waiter
+        raise
+    else:
+        passes = not violations
+        _REVALIDATION_CACHE[key] = passes
+        if len(_REVALIDATION_CACHE) > _REVALIDATION_CACHE_SIZE:
+            _REVALIDATION_CACHE.popitem(last=False)
+        future.set_result(passes)
+        return passes
+    finally:
+        _IN_FLIGHT.pop(key, None)
 
 
 class PublicBuildRecord(BaseModel):
@@ -205,7 +266,22 @@ async def read_public_build_record(
         .order_by(BuildRecordSnapshot.version.desc())
         .limit(1)
     )
-    snapshot = (await db.execute(stmt)).scalar_one_or_none()
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    snapshot = (
+        _SnapshotCopy(
+            public_slug=row.public_slug,
+            version=row.version,
+            published_at=row.published_at,
+            content_sha256=row.content_sha256,
+            document=row.document,
+            allowlist_version=row.allowlist_version,
+        )
+        if row is not None
+        else None
+    )
+    # End the read transaction NOW: the pooled connection goes back before
+    # any re-validation is awaited, so a herd of readers holds no connections.
+    await db.commit()
     if snapshot is not None and not await _passes_current_allowlist(snapshot):
         # Stored under an older, looser allowlist: never serve it.
         logger.warning(

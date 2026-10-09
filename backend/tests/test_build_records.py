@@ -3895,3 +3895,159 @@ class TestPublicationState:
         assert never.json() == {"public_slug": "never-published", **blank}
         # Indistinguishable, and no tenant id anywhere in the body.
         assert str(TENANT_A) not in owned_elsewhere.text
+
+
+# ===========================================================================
+# Fifteenth review — the re-validation herd (rev15/herd.py, hold.py)
+# ===========================================================================
+
+
+async def _seed_old_version(maker: Any, slug: str) -> None:
+    """A committed, live snapshot stored under the PREVIOUS allowlist version
+    — the state of every page right after an ALLOWLIST_VERSION bump."""
+    from app.api.v1.endpoints.build_records import canonical_sha256
+
+    doc = _document(slug)
+    async with maker() as s:
+        s.add(BuildRecordPublicSlug(public_slug=slug, tenant_id=TENANT_A))
+        await s.flush()
+        s.add(
+            BuildRecordSnapshot(
+                tenant_id=TENANT_A,
+                public_slug=slug,
+                version=1,
+                document=doc,
+                content_sha256=canonical_sha256(doc),
+                generated_at=datetime.now(UTC),
+                allowlist_version=ALLOWLIST_VERSION - 1,
+            )
+        )
+        await s.commit()
+
+
+def _slow_scan(monkeypatch: pytest.MonkeyPatch, seconds: float) -> dict[str, int]:
+    from app.api.v1.endpoints import public
+
+    calls = {"n": 0}
+    real = public.build_record_violations
+
+    def slow(document: Any) -> list[str]:
+        calls["n"] += 1
+        time.sleep(seconds)  # runs in the scan worker thread
+        return real(document)
+
+    monkeypatch.setattr(public, "build_record_violations", slow)
+    return calls
+
+
+@pytest.mark.asyncio
+class TestRevalidationHerd:
+    async def test_a_herd_runs_one_scan_and_holds_no_connections(
+        self, committed: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """120 concurrent readers of one stale snapshot, served through a
+        production-shaped POOL of 5 connections: if a reader held its
+        connection while awaiting the scan, the herd could never finish."""
+        from sqlalchemy import event
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from app.api.v1.endpoints import public
+        from app.services.build_record_allowlist import scan_off_loop
+        from tests.conftest import TEST_DATABASE_URL
+
+        slug = "lock-herd"
+        await _seed_old_version(committed, slug)
+        calls = _slow_scan(monkeypatch, 3.0)
+
+        engine = create_async_engine(TEST_DATABASE_URL, pool_size=5, max_overflow=0)
+        live = {"now": 0, "peak": 0}
+
+        def checkout(*_: Any) -> None:
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+
+        def checkin(*_: Any) -> None:
+            live["now"] -= 1
+
+        event.listen(engine.sync_engine.pool, "checkout", checkout)
+        event.listen(engine.sync_engine.pool, "checkin", checkin)
+        try:
+            pooled = async_sessionmaker(engine, expire_on_commit=False)
+            async with _client(_committed_app(pooled, TENANT_A)) as c:
+
+                async def read(i: int) -> int:
+                    r = await c.get(
+                        f"/api/v1/public/build-records/{slug}",
+                        headers={"x-forwarded-for": f"198.51.100.{i % 250}"},
+                    )
+                    return r.status_code
+
+                herd = [asyncio.create_task(read(i)) for i in range(120)]
+                # Let every reader get through its (pooled, 5-wide) DB read
+                # and settle on the scan; the scan itself takes 3 s.
+                for _ in range(25):
+                    await asyncio.sleep(0.1)
+                    if live["now"] == 0 and public._IN_FLIGHT:
+                        break
+                assert public._IN_FLIGHT and not any(t.done() for t in herd)
+                held_while_waiting = live["now"]
+                begun = time.monotonic()
+                assert await scan_off_loop(len, "publish") == len("publish")
+                publish_wait = time.monotonic() - begun
+                codes = await asyncio.wait_for(asyncio.gather(*herd), timeout=30)
+        finally:
+            await engine.dispose()
+
+        assert codes == [200] * 120
+        assert calls["n"] == 1  # single-flight: ONE scan for the whole herd
+        assert held_while_waiting == 0, held_while_waiting
+        assert live["peak"] <= 5
+        assert publish_wait < 0.5, publish_wait  # not queued behind the herd
+
+    async def test_too_many_distinct_revalidations_answer_503(
+        self, committed: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import public
+
+        await _seed_old_version(committed, "lock-busy-a")
+        await _seed_old_version(committed, "lock-busy-b")
+        _slow_scan(monkeypatch, 1.0)
+        monkeypatch.setattr(public, "MAX_REVALIDATIONS_IN_FLIGHT", 1)
+        async with _client(_committed_app(committed, TENANT_A)) as c:
+            first = asyncio.create_task(
+                c.get("/api/v1/public/build-records/lock-busy-a")
+            )
+            await asyncio.sleep(0.3)
+            second = await c.get("/api/v1/public/build-records/lock-busy-b")
+            assert second.status_code == 503
+            assert second.headers["retry-after"] == str(
+                public.REVALIDATION_RETRY_AFTER_SECONDS
+            )
+            assert second.headers["cache-control"] == "no-store"
+            assert (await first).status_code == 200
+
+    async def test_a_failed_scan_reaches_every_waiter_and_is_not_cached(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import public
+
+        def broken(document: Any) -> list[str]:
+            time.sleep(0.2)
+            raise RuntimeError("scanner bug")
+
+        monkeypatch.setattr(public, "build_record_violations", broken)
+        copy_ = public._SnapshotCopy(
+            public_slug="lock-fail",
+            version=1,
+            published_at=datetime.now(UTC),
+            content_sha256="a" * 64,
+            document=_document("lock-fail"),
+            allowlist_version=ALLOWLIST_VERSION - 1,
+        )
+        results = await asyncio.gather(
+            *(public._passes_current_allowlist(copy_) for _ in range(3)),
+            return_exceptions=True,
+        )
+        assert all(isinstance(r, RuntimeError) for r in results)
+        assert public._IN_FLIGHT == {}
+        assert public._REVALIDATION_CACHE == {}
