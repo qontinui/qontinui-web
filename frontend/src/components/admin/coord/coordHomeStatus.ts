@@ -626,7 +626,8 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
 
 /** A link target coord served, kept only when it is an in-app path. */
 export function internalHref(v: string | null): string | null {
-  return v !== null && v.startsWith("/") && !v.startsWith("//") ? v : null;
+  // `//host` and `/\host` both leave the site in a browser.
+  return v !== null && /^\/(?![/\\])/.test(v) ? v : null;
 }
 
 /** A window in seconds as a short label ("24 h", "7 d"); null when unknown. */
@@ -1167,7 +1168,10 @@ export function deriveHomeStrip(
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
   } else if (open !== null && open.length > 0) {
     headline = "Something is degrading";
-  } else if (stale && unread.length === 0) {
+  } else if (stale) {
+    // The failed poll is the cause; name it whatever else is unread (coord
+    // always serves at least `correctness` unread today, so gating this on
+    // `unread.length === 0` made it unreachable). The detail lists the rest.
     headline = "Cannot tell now — the latest read failed";
   } else if (
     !stale &&
@@ -1182,13 +1186,9 @@ export function deriveHomeStrip(
     // verification-metrics door deploys, so a headline that let ANY unread
     // block override this would read "cannot tell" on every calm fleet. The
     // amber floor above still holds — the level is never green over a gap.
+    // The clause stays generic: the detail line names what is not read.
     headline = "Nothing needs you and nothing is degrading";
-    if (attention === "waiting") {
-      headline +=
-        unread.length > 0
-          ? ` — not read: ${unreadPhrase}`
-          : " — some sources are not read";
-    }
+    if (attention === "waiting") headline += " — part of this view is not read";
   } else if (attention === "waiting") {
     headline = "Cannot tell — part of this view is not read";
   } else {
