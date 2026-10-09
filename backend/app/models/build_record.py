@@ -85,6 +85,11 @@ class BuildRecordPublicSlug(Base):
     visibility_unknown_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), default=0
     )
+    #: When the current run of unanswered attempts began; cleared by any
+    #: complete answer. The 24 h attempted ceiling is measured from here.
+    first_unanswered_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class BuildRecordSnapshot(Base):

@@ -2620,7 +2620,7 @@ class TestRev7:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from app.jobs.build_record_reconcile import (
-            VISIBILITY_STALE_AFTER,
+            VISIBILITY_UNREACHED_STALE_AFTER,
             recheck_visibility,
         )
 
@@ -2633,9 +2633,12 @@ class TestRev7:
             tick = await recheck_visibility(async_db_session, budget=8)
             assert tick.retracted == [] and tick.gave_up == []
 
-        # Once it has gone VISIBILITY_STALE_AFTER without a complete answer
-        # (it never had one, and its publish is that old), it is retracted.
-        long_ago = datetime.now(UTC) - VISIBILITY_STALE_AFTER - timedelta(minutes=5)
+        # Never blamed, so the 24 h run ceiling never applies to it; the 72 h
+        # staleness clock does (it never had a complete answer, and its
+        # publish is that old).
+        long_ago = (
+            datetime.now(UTC) - VISIBILITY_UNREACHED_STALE_AFTER - timedelta(minutes=5)
+        )
         await async_db_session.execute(
             update(BuildRecordSnapshot)
             .where(BuildRecordSnapshot.public_slug == "x-a")
@@ -2855,6 +2858,231 @@ class TestRev8:
         tick = await job.recheck_visibility(async_db_session)
         assert tick.capacity_shortfall == {
             "live_repos": 3,
-            "capacity": 0,
+            "throughput_per_hour": 0,
+            "cycle_hours": None,
             "mode": "anonymous",
         }
+
+
+# ===========================================================================
+# Ninth review — regression tests from rev9/t/tests/test_rev9.py
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+class TestRev9:
+    N = 100  # pages, clocks spread over a 26.7 h cycle (rev9's 800 at 30/h)
+
+    @staticmethod
+    async def _seed(
+        client: httpx.AsyncClient, coord: _Coord, db: AsyncSession, n: int
+    ) -> list[str]:
+        """Publish ONE page through the real route, then clone its validated
+        document to ``n`` pages whose clocks are spread evenly over a 26.7 h
+        check cycle (p-0000 stalest) — the steady state rev9 measured."""
+        from app.api.v1.endpoints.build_records import canonical_sha256
+
+        coord.define(TENANT_A, "seed", repos=["tenant-a/seed"])
+        coord.documents[(TENANT_A, "seed")]["prs"][0]["repo"] = "tenant-a/seed"
+        r = await client.post("/api/v1/build-records/seed/publish")
+        assert r.status_code == 201, r.text
+        base = (await db.execute(select(BuildRecordSnapshot))).scalar_one()
+        now = datetime.now(UTC)
+        cycle = timedelta(hours=800 / 30)
+        slugs = []
+        for i in range(n):
+            slug = f"p-{i:04d}"
+            slugs.append(slug)
+            doc = copy.deepcopy(base.document)
+            doc["product"]["slug"] = slug
+            doc["product"]["repos"] = [f"tenant-a/r{i}"]
+            doc["prs"][0]["repo"] = f"tenant-a/r{i}"
+            clock = now - cycle * (1 - i / n)
+            db.add(
+                BuildRecordPublicSlug(
+                    public_slug=slug,
+                    tenant_id=TENANT_A,
+                    last_visibility_check_at=clock,
+                    last_visibility_attempt_at=clock,
+                )
+            )
+            db.add(
+                BuildRecordSnapshot(
+                    tenant_id=TENANT_A,
+                    public_slug=slug,
+                    version=1,
+                    document=doc,
+                    content_sha256=canonical_sha256(doc),
+                    generated_at=base.generated_at,
+                    published_at=now - timedelta(days=10),
+                )
+            )
+        await db.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == "seed")
+            .values(unpublished_at=now)
+        )
+        await db.flush()
+        return slugs
+
+    @staticmethod
+    async def _clear_budget(db: AsyncSession) -> None:
+        from app.models.build_record import GithubRateBudget
+
+        await db.execute(GithubRateBudget.__table__.delete())
+
+    async def test_blips_and_a_one_hour_incident_retract_nothing(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        await self._seed(client_a, coord, async_db_session, self.N)
+        stale: list[str] = []
+
+        def blip(_: str) -> httpx.Response:
+            raise httpx.ConnectError("blip")
+
+        _real_github(monkeypatch, blip)  # (1) one transport blip
+        stale += (await recheck_visibility(async_db_session)).stale
+
+        incident = httpx.Response(503, headers={"x-ratelimit-remaining": "50"})
+        _real_github(monkeypatch, lambda _: incident)  # (2) one 503 tick
+        await self._clear_budget(async_db_session)
+        stale += (await recheck_visibility(async_db_session)).stale
+
+        first = {"name": None}
+
+        def one_502(name: str) -> httpx.Response:  # (3) one blamed 502
+            if first["name"] is None:
+                first["name"] = name
+                return httpx.Response(502)
+            return _public(name)
+
+        _real_github(monkeypatch, one_502)
+        await self._clear_budget(async_db_session)
+        tick = await recheck_visibility(async_db_session)
+        assert len(tick.gave_up) == 1  # blamed, but its run just started
+        stale += tick.stale
+
+        _real_github(monkeypatch, lambda _: incident)  # (4) a 1-hour incident
+        for _ in range(6):
+            await self._clear_budget(async_db_session)
+            stale += (await recheck_visibility(async_db_session)).stale
+        assert stale == []
+
+    async def test_a_blamed_run_older_than_24h_is_retracted(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        slugs = await self._seed(client_a, coord, async_db_session, 4)
+        # p-0000 has been failing to answer for 25 h (its run began then).
+        await async_db_session.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == slugs[0])
+            .values(first_unanswered_attempt_at=datetime.now(UTC) - timedelta(hours=25))
+        )
+
+        def github(name: str) -> httpx.Response:
+            if name == "tenant-a/r0":
+                return httpx.Response(502)
+            return _public(name)
+
+        _real_github(monkeypatch, github)
+        tick = await recheck_visibility(async_db_session)
+        assert tick.gave_up == [slugs[0]]  # blamed: the others answered
+        assert tick.stale == [slugs[0]]
+
+    async def test_an_unblamed_run_older_than_24h_is_not_retracted(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        slugs = await self._seed(client_a, coord, async_db_session, 4)
+        await async_db_session.execute(
+            update(BuildRecordPublicSlug).values(
+                first_unanswered_attempt_at=datetime.now(UTC) - timedelta(hours=25)
+            )
+        )
+        _real_github(monkeypatch, lambda _: httpx.Response(503))
+        tick = await recheck_visibility(async_db_session)
+        assert tick.gave_up == [] and tick.stale == []
+        assert slugs
+
+    async def test_a_complete_answer_clears_the_run(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        slugs = await self._seed(client_a, coord, async_db_session, 2)
+        await async_db_session.execute(
+            update(BuildRecordPublicSlug).values(
+                first_unanswered_attempt_at=datetime.now(UTC) - timedelta(hours=2)
+            )
+        )
+        _real_github(monkeypatch, _public)
+        await recheck_visibility(async_db_session)
+        rows = (
+            (
+                await async_db_session.execute(
+                    select(BuildRecordPublicSlug)
+                    .where(BuildRecordPublicSlug.public_slug.in_(slugs))
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert all(r.first_unanswered_attempt_at is None for r in rows)
+
+    async def test_the_capacity_warning_fires_past_a_24h_cycle(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        await self._seed(client_a, coord, async_db_session, 3)
+        _real_github(monkeypatch, _public)
+        # 3 repos at 1/hour = a 3 h cycle: no warning.
+        monkeypatch.setattr(job, "recheck_throughput_per_hour", lambda **_: 1)
+        assert (
+            await job.recheck_visibility(async_db_session)
+        ).capacity_shortfall is None
+        # Same 3 h cycle against a 2 h warning threshold: the warning fires.
+        monkeypatch.setattr(job, "VISIBILITY_CYCLE_WARN_AFTER", timedelta(hours=2))
+        shortfall = (await job.recheck_visibility(async_db_session)).capacity_shortfall
+        assert shortfall is not None and shortfall["cycle_hours"] == 3.0
+
+    async def test_the_tick_stops_starting_calls_at_its_deadline(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        await self._seed(client_a, coord, async_db_session, 3)
+        asked = _real_github(monkeypatch, _public)
+        monkeypatch.setattr(job, "VISIBILITY_TICK_DEADLINE_SECONDS", -1.0)
+        tick = await job.recheck_visibility(async_db_session)
+        assert tick.stopped == "deadline" and tick.calls == 0 and asked == []
