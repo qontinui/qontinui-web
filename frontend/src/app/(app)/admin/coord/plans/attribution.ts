@@ -69,13 +69,6 @@ function count(v: unknown): number | null {
   return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
 }
 
-/** The HTTP status `httpClient` put in its error message, if any. */
-export function statusOfError(err: unknown): number | null {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  const m = /\sfailed:\s(\d{3})\s-\s/.exec(message);
-  return m ? Number(m[1]) : null;
-}
-
 /** Read coord's body into a reading. Anything unexpected is `unparseable`. */
 export function deriveAttribution(body: unknown): AttributionReading {
   if (!isRecord(body)) {
@@ -246,12 +239,19 @@ export function describeShippedBy(r: AttributionReading): ShippedByDescription {
           notes,
         };
       }
-      const counts = [r.unnamedSessions, r.unverifiedSessions, r.unattributedPrs];
-      if (counts.every((c) => c === 0)) {
+      // `unverifiedSessions === null` is a coord that predates the field, and
+      // such a coord withholds no name — every session it attributes is either
+      // named or counted unnamed. So it cannot hide a session here, and the
+      // two counts it DOES report decide "no cited PR" on their own.
+      if (
+        r.unnamedSessions === 0 &&
+        r.unattributedPrs === 0 &&
+        (r.unverifiedSessions === 0 || r.unverifiedSessions === null)
+      ) {
         return {
           summary: "no cited PR — nothing to attribute",
           unknown: false,
-          notes,
+          notes: notes.filter((n) => !n.startsWith("Whether every attributed session")),
         };
       }
       return {

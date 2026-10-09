@@ -10,8 +10,8 @@ import {
   deriveAttribution,
   describePrRef,
   describeShippedBy,
-  statusOfError,
 } from "./attribution";
+import { httpStatusOfError } from "@/components/console/readFailure";
 
 const LOADED = {
   slug: "s",
@@ -117,11 +117,25 @@ describe("describeShippedBy", () => {
     expect(d.notes.join(" ")).toMatch(/1 attributed session could not be verified/);
   });
 
-  it("an older coord's missing unverified count is said, and blocks 'no cited PR'", () => {
+  it("an older coord (no unverified count) still answers 'no cited PR' from the counts it reports", () => {
     const { unverified_session_count: _drop, ...older } = LOADED;
     const d = describeShippedBy(deriveAttribution({ ...older, shipped_by: [] }));
-    expect(d.unknown).toBe(true);
+    expect(d.summary).toBe("no cited PR — nothing to attribute");
+    expect(d.unknown).toBe(false);
+  });
+
+  it("an older coord's names carry the 'verification not reported' note", () => {
+    const { unverified_session_count: _drop, ...older } = LOADED;
+    const d = describeShippedBy(deriveAttribution(older));
+    expect(d.summary).toBe("plan-foo");
     expect(d.notes.join(" ")).toMatch(/not reported/);
+  });
+
+  it("an unreported unnamed or unattributed count is never 'no cited PR'", () => {
+    const d = describeShippedBy(
+      deriveAttribution({ ...LOADED, shipped_by: [], unattributed_pr_count: null })
+    );
+    expect(d.unknown).toBe(true);
   });
 
   it("unavailable is UNKNOWN with the reason", () => {
@@ -148,9 +162,9 @@ describe("describeShippedBy", () => {
 });
 
 describe("helpers", () => {
-  it("statusOfError reads httpClient's message shape", () => {
-    expect(statusOfError(new Error("GET /x failed: 403 - {}"))).toBe(403);
-    expect(statusOfError(new Error("network down"))).toBeNull();
+  it("httpStatusOfError reads httpClient's message shape", () => {
+    expect(httpStatusOfError(new Error("GET /x failed: 403 - {}"))).toBe(403);
+    expect(httpStatusOfError(new Error("network down"))).toBeNull();
   });
 
   it("describePrRef says an UNKNOWN merge state", () => {

@@ -4295,9 +4295,12 @@ async def get_coord_plan_attribution(
     0d / Phase 7, ``work_unit_attribution.rs``): ``{"slug",
     "attribution_available", "shipped_by": [{"session_name", "pr_refs":
     [{"repo", "pr_number", "merged", "attribution_is_single_session"}]}],
-    "unnamed_session_count", "unattributed_pr_count"}`` — or, when coord cannot
-    tenant-confine the lineage join, ``attribution_available: false`` with an
-    ``unavailable_reason`` and both counts ``null``. Passed through UNMODELLED;
+    "unnamed_session_count", "unverified_session_count",
+    "unattributed_pr_count"}`` — or, when coord cannot tenant-confine the
+    attribution, ``attribution_available: false`` with ``unavailable_reason``,
+    ``unavailable_detail`` and every count ``null``. A coord that predates
+    ``unverified_session_count`` omits it; the console reads that as "not
+    reported", never as zero. Passed through UNMODELLED;
     coord never puts a raw session id on this body, and nothing here adds one.
 
     Operator tier ONLY, mechanically: :func:`get_tenant_id` resolves the

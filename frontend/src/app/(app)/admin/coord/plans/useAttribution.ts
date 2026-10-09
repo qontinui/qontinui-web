@@ -12,11 +12,8 @@
 import { useEffect, useState } from "react";
 import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
-import {
-  deriveAttribution,
-  statusOfError,
-  type AttributionReading,
-} from "./attribution";
+import { httpStatusOfError } from "@/components/console/readFailure";
+import { deriveAttribution, type AttributionReading } from "./attribution";
 
 export function attributionEndpoint(slug: string): string {
   return `/api/v1/operations/plans/${encodeURIComponent(slug)}/attribution`;
@@ -39,7 +36,7 @@ export function useAttribution(slug: string, enabled: boolean): AttributionReadi
         setReading({
           state: "failed",
           reason: e instanceof Error ? e.message : String(e),
-          status: statusOfError(e),
+          status: httpStatusOfError(e),
         });
       });
     return () => {

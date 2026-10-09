@@ -934,7 +934,10 @@ class TestCoordPlanAttribution:
         )
         assert resp.status_code == status_code
 
-    @pytest.mark.parametrize("slug", ["..", ".hidden", "-x", "a%20b"])
+    # Each of these REACHES the route (httpx would normalise a bare ``..``
+    # segment away before sending, so it would test nothing) and is refused
+    # only by the slug pattern.
+    @pytest.mark.parametrize("slug", ["..x", ".hidden", "-x", "a%20b"])
     def test_a_slug_that_could_re_point_the_proxied_path_is_refused(
         self, auth_client: TestClient, slug: str
     ):
@@ -942,22 +945,35 @@ class TestCoordPlanAttribution:
         assert resp.status_code in (404, 422)
         instance.get.assert_not_called()
 
-    def test_a_caller_with_no_operator_identity_never_reaches_coord(self):
-        """The route depends on ``get_tenant_id`` — the operator ``/me``
-        resolution a device or agent JWT cannot pass. Unresolved, it is a 403
-        and coord is never asked."""
-        from fastapi import HTTPException
-
+    def test_a_caller_with_no_bearer_never_reaches_coord(self):
+        """The REAL ``get_tenant_id`` (no override): a request carrying no
+        bearer is refused by the operator-identity resolution before any coord
+        call — the path a device or agent caller without a Cognito token takes.
+        """
         from app.api.v1.endpoints.operations import get_tenant_id
 
         app = _build_test_app()
-
-        def _deny() -> None:
-            raise HTTPException(status_code=403, detail="tenant_not_resolved")
-
-        app.dependency_overrides[get_tenant_id] = _deny
+        del app.dependency_overrides[get_tenant_id]
         resp, instance = self._get(TestClient(app), self._SLUG)
+        assert resp.status_code in (401, 403)
+        instance.get.assert_not_called()
+
+    def test_an_identity_with_no_operator_tenant_is_refused(self):
+        """coord's ``/admin/coord/me`` resolving no tenant for the bearer (what a
+        non-operator token yields) is a 403 here, and the attribution door is
+        never asked."""
+        from app.api.v1.endpoints.operations import get_tenant_id
+
+        app = _build_test_app()
+        del app.dependency_overrides[get_tenant_id]
+        identity = MagicMock(home_tenant_id=None)
+        with patch(
+            "app.api.v1.endpoints.operations.get_coord_identity",
+            AsyncMock(return_value=identity),
+        ):
+            resp, instance = self._get(TestClient(app), self._SLUG)
         assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
         instance.get.assert_not_called()
 
     def test_attribution_depends_on_the_operator_tenant_dependency(self):

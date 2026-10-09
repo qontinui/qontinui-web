@@ -125,7 +125,11 @@ export function PlanShippedBy({ row }: { row: ReconciliationRowData }) {
       <div>
         <span className="text-muted-foreground">Shipped by: </span>
         {reading.state === "loaded" && reading.groups.length > 0 ? (
-          <ul className="inline" data-testid="coord-plan-shipped-by-names">
+          <ul
+            role="list"
+            className="inline"
+            data-testid="coord-plan-shipped-by-names"
+          >
             {reading.groups.map((g, i) => (
               <li key={g.sessionName} className="inline">
                 {i > 0 && ", "}
