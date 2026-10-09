@@ -78,6 +78,15 @@ describe("deriveAttribution", () => {
     });
   });
 
+  it("a PRESENT but malformed count is unparseable, not 'not reported'", () => {
+    expect(
+      deriveAttribution({ ...LOADED, unverified_session_count: -1 }).state
+    ).toBe("unparseable");
+    expect(
+      deriveAttribution({ ...LOADED, unattributed_pr_count: "2" }).state
+    ).toBe("unparseable");
+  });
+
   it.each([null, "x", [], {}, { attribution_available: true }])(
     "an unreadable body is unparseable: %j",
     (b) => {

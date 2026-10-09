@@ -64,9 +64,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** A non-negative integer count, or `null` for anything else (UNKNOWN). */
-function count(v: unknown): number | null {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+/** A count field: a non-negative integer, or `null` when coord sent `null` or
+ *  omitted it (UNKNOWN / an older coord). A PRESENT value of any other shape
+ *  is `"malformed"` — never silently read as "not reported". */
+function count(v: unknown): number | null | "malformed" {
+  if (v === undefined || v === null) return null;
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : "malformed";
 }
 
 /** Read coord's body into a reading. Anything unexpected is `unparseable`. */
@@ -124,12 +127,22 @@ export function deriveAttribution(body: unknown): AttributionReading {
     }
     groups.push({ sessionName: entry.session_name, prs });
   }
+  const unnamedSessions = count(body.unnamed_session_count);
+  const unverifiedSessions = count(body.unverified_session_count);
+  const unattributedPrs = count(body.unattributed_pr_count);
+  if (
+    unnamedSessions === "malformed" ||
+    unverifiedSessions === "malformed" ||
+    unattributedPrs === "malformed"
+  ) {
+    return { state: "unparseable", reason: "a count is not a non-negative integer" };
+  }
   return {
     state: "loaded",
     groups,
-    unnamedSessions: count(body.unnamed_session_count),
-    unverifiedSessions: count(body.unverified_session_count),
-    unattributedPrs: count(body.unattributed_pr_count),
+    unnamedSessions,
+    unverifiedSessions,
+    unattributedPrs,
     singleSessionPerPr,
   };
 }
@@ -203,10 +216,14 @@ export function describeShippedBy(r: AttributionReading): ShippedByDescription {
       };
     case "loaded": {
       const notes: string[] = [];
+      // Only names can be unverified; with none on screen an older coord's
+      // missing count qualifies nothing.
       if (r.unverifiedSessions === null) {
-        notes.push(
-          "Whether every attributed session was verified as this tenant's was not reported by this coord."
-        );
+        if (r.groups.length > 0) {
+          notes.push(
+            "Whether every attributed session was verified as this tenant's was not reported by this coord."
+          );
+        }
       } else if (r.unverifiedSessions > 0) {
         notes.push(
           `${plural(r.unverifiedSessions, "attributed session", "attributed sessions")} could not be verified as this tenant's — name withheld, not guessed.`
@@ -251,7 +268,7 @@ export function describeShippedBy(r: AttributionReading): ShippedByDescription {
         return {
           summary: "no cited PR — nothing to attribute",
           unknown: false,
-          notes: notes.filter((n) => !n.startsWith("Whether every attributed session")),
+          notes,
         };
       }
       return {
