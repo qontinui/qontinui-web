@@ -508,6 +508,13 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_build_record_reconcile() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.build_record_reconcile import reconcile_all
+
+    return await reconcile_all(AsyncSessionLocal)
+
+
 async def _job_journey_edge_retention() -> Any:
     from app.jobs.journey_edge_retention import run_journey_edge_retention
 
@@ -625,6 +632,22 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="devenv_config_history_prune",
             coro=_job_devenv_config_history_prune,
             cron="25 4 * * *",
+        )
+    )
+
+    # Public build records — retract a published snapshot whose coord product
+    # was made private (or deleted) through coord's own door, which web never
+    # sees. Every 10 minutes and at boot: the window a private product's page
+    # stays public is bounded by this cadence. A tenant with no live public
+    # slug costs nothing; one whose coord read is unanswered retracts nothing
+    # (UNKNOWN, not "private"). Plan
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+    service.register(
+        ScheduledTask(
+            name="build_record_reconcile",
+            coro=_job_build_record_reconcile,
+            cron="*/10 * * * *",
+            run_at_boot=True,
         )
     )
 
