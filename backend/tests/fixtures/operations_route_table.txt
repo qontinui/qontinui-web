@@ -134,6 +134,7 @@ GET /api/v1/operations/pr-merge/slo get_pr_merge_slo Any None True tags=operatio
 GET /api/v1/operations/pr-merge/suggestions get_pr_merge_suggestions Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/pr-merge/verdict/{owner}/{name}/{pr_number} get_pr_merge_verdict None None True tags=operations [get_tenant_id]
 GET /api/v1/operations/pr-merge/{repo:path}/stuck-nudges get_pr_merge_stuck_nudges None None True tags=operations [get_tenant_id]
+GET /api/v1/operations/project-state get_project_state Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/releases get_releases Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/releases/{tag} get_release Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/repos list_repos Any None True tags=operations [get_tenant_id]

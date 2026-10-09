@@ -84,9 +84,6 @@ import {
   WAITING_AMBER,
 } from "@/components/console/statusRow";
 
-/** The web proxy of coord's operator route. */
-export const PROJECT_STATE_API = "/api/v1/operations/project-state";
-
 /** Poll cadence — the profile's "the right altitude, not the fastest feed". */
 export const PROJECT_STATE_POLL_MS = 60_000;
 

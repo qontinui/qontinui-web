@@ -23,12 +23,11 @@ import {
   describeCoordPollError,
 } from "@/components/operations/coordPollError";
 import {
-  PROJECT_STATE_API,
   PROJECT_STATE_POLL_MS,
   parseProjectState,
   type ProjectStateView,
 } from "@/components/admin/coord/coordHomeStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchProjectState } from "@/lib/api/operations/projectState";
 
 export interface ProjectStateRead {
   /** The last view that parsed, or null when none ever did. */
@@ -51,10 +50,7 @@ export function useProjectState(): ProjectStateRead {
   const read = useCallback(async () => {
     const seq = issue();
     try {
-      const body = await httpClient.get<unknown>(
-        PROJECT_STATE_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchProjectState(COORD_DASHBOARD_POLL_OPTIONS);
       if (cancelled.current) return;
       const view = parseProjectState(body);
       if (view) {
