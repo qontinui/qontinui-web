@@ -148,7 +148,9 @@ function sample(overrides: Record<string, unknown> = {}) {
 }
 
 function controlCalls() {
-  return httpFetch.mock.calls.filter(([url]) => String(url).includes("/control"));
+  return httpFetch.mock.calls.filter(([url]) =>
+    String(url).includes("/control")
+  );
 }
 
 function res(status: number, body: unknown) {
@@ -167,12 +169,13 @@ let sessionsResponse = res(200, {
   nextCursor: null,
   workAxisColumnsPresent: true,
 });
-let controlResponse: ReturnType<typeof res> | Promise<ReturnType<typeof res>> = res(202, {
-  event_id: "e0e0e0e0-0000-4000-8000-000000000000",
-  session_id: IDLE.sessionId,
-  device_id: DEVICE,
-  action: "finish_and_close",
-});
+let controlResponse: ReturnType<typeof res> | Promise<ReturnType<typeof res>> =
+  res(202, {
+    event_id: "e0e0e0e0-0000-4000-8000-000000000000",
+    session_id: IDLE.sessionId,
+    device_id: DEVICE,
+    action: "finish_and_close",
+  });
 let worktreeCapResponse: ReturnType<typeof res> = res(200, {
   state: "known",
   count: 0,
@@ -239,9 +242,9 @@ describe("/admin/coord/runners", () => {
     expect(strip).toHaveTextContent("2 sessions block a restart");
     // The idle, undeclared session is an author-action row.
     expect(strip).toHaveAttribute("data-health-level", "red");
-    expect(screen.getByTestId("coord-runners-count-blocking")).toHaveTextContent(
-      "blocking 2"
-    );
+    expect(
+      screen.getByTestId("coord-runners-count-blocking")
+    ).toHaveTextContent("blocking 2");
     expect(screen.getByTestId("coord-runners-drain-badge")).toHaveTextContent(
       "not drained"
     );
@@ -250,7 +253,11 @@ describe("/admin/coord/runners", () => {
   it("renders a stale readiness report as UNKNOWN, never its last verdict", async () => {
     samplesResponse = res(
       200,
-      sample({ readiness_safe: true, readiness_state: "stale", readiness_age_secs: 900 })
+      sample({
+        readiness_safe: true,
+        readiness_state: "stale",
+        readiness_age_secs: 900,
+      })
     );
     render(<CoordRunnersPage />);
     const strip = await screen.findByTestId("coord-runners-health");
@@ -296,13 +303,13 @@ describe("/admin/coord/runners", () => {
     );
     render(<CoordRunnersPage />);
     await waitFor(() =>
-      expect(screen.getByTestId("coord-runners-count-blocking")).toHaveTextContent(
-        "blocking UNKNOWN"
-      )
+      expect(
+        screen.getByTestId("coord-runners-count-blocking")
+      ).toHaveTextContent("blocking UNKNOWN")
     );
-    expect(screen.getByTestId("coord-runners-count-finished")).toHaveTextContent(
-      "finished 0"
-    );
+    expect(
+      screen.getByTestId("coord-runners-count-finished")
+    ).toHaveTextContent("finished 0");
   });
 
   it("renders a failed session read as UNKNOWN, not as no sessions", async () => {
@@ -319,20 +326,23 @@ describe("/admin/coord/runners", () => {
   it("offers finish & close on an idle session and not stop at boundary", async () => {
     render(<CoordRunnersPage />);
     const row = await openRow("c1a0de00");
-    expect(within(row).getByTestId("coord-runners-finish-close")).toBeInTheDocument();
+    expect(
+      within(row).getByTestId("coord-runners-finish-close")
+    ).toBeInTheDocument();
     expect(
       within(row).getByTestId("coord-runners-stop-boundary-unavailable")
     ).toHaveTextContent("only steward and looping-agent sessions");
-    expect(within(row).getByTestId("coord-runners-session-history")).toHaveAttribute(
-      "href",
-      `/sessions?device=${DEVICE}`
-    );
+    expect(
+      within(row).getByTestId("coord-runners-session-history")
+    ).toHaveAttribute("href", `/sessions?device=${DEVICE}`);
   });
 
   it("offers stop at boundary on a working steward and not finish & close", async () => {
     render(<CoordRunnersPage />);
     const row = await openRow("5e5e5e5e");
-    expect(within(row).getByTestId("coord-runners-stop-boundary")).toBeInTheDocument();
+    expect(
+      within(row).getByTestId("coord-runners-stop-boundary")
+    ).toBeInTheDocument();
     expect(
       within(row).getByTestId("coord-runners-finish-close-unavailable")
     ).toHaveTextContent("the session is working");
@@ -341,7 +351,9 @@ describe("/admin/coord/runners", () => {
   it("confirms finish & close in a dialog naming the session, then sends it", async () => {
     render(<CoordRunnersPage />);
     const row = await openRow("c1a0de00");
-    await userEvent.click(within(row).getByTestId("coord-runners-finish-close"));
+    await userEvent.click(
+      within(row).getByTestId("coord-runners-finish-close")
+    );
 
     const dialog = await screen.findByTestId("coord-runners-finish-confirm");
     expect(dialog).toHaveTextContent(IDLE.claudeCodeSessionId);
@@ -355,7 +367,9 @@ describe("/admin/coord/runners", () => {
       screen.getByTestId("coord-runners-finish-reason"),
       "rebuilding the runner"
     );
-    await userEvent.click(screen.getByTestId("coord-runners-finish-confirm-confirm"));
+    await userEvent.click(
+      screen.getByTestId("coord-runners-finish-confirm-confirm")
+    );
 
     await waitFor(() =>
       expect(
@@ -365,7 +379,9 @@ describe("/admin/coord/runners", () => {
     const [url, init] = httpFetch.mock.calls.find(([u]) =>
       String(u).includes("/control")
     ) as [string, { method: string; body: string }];
-    expect(url).toContain(`/api/v1/operations/sessions/${IDLE.sessionId}/control`);
+    expect(url).toContain(
+      `/api/v1/operations/sessions/${IDLE.sessionId}/control`
+    );
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({
       action: "finish_and_close",
@@ -380,7 +396,9 @@ describe("/admin/coord/runners", () => {
     controlResponse = res(409, { error: "session_closed" });
     render(<CoordRunnersPage />);
     const row = await openRow("c1a0de00");
-    await userEvent.click(within(row).getByTestId("coord-runners-finish-close"));
+    await userEvent.click(
+      within(row).getByTestId("coord-runners-finish-close")
+    );
     await userEvent.click(
       await screen.findByTestId("coord-runners-finish-confirm-confirm")
     );
@@ -393,7 +411,9 @@ describe("/admin/coord/runners", () => {
     controlResponse = res(404, { detail: { error: "session_not_found" } });
     render(<CoordRunnersPage />);
     const row = await openRow("5e5e5e5e");
-    await userEvent.click(within(row).getByTestId("coord-runners-stop-boundary"));
+    await userEvent.click(
+      within(row).getByTestId("coord-runners-stop-boundary")
+    );
     const error = await within(row).findByTestId("coord-runners-action-error");
     expect(error).toHaveTextContent("no session with this id");
     const [, init] = httpFetch.mock.calls.find(([u]) =>
@@ -405,9 +425,19 @@ describe("/admin/coord/runners", () => {
   it("asks for a device, and reads nothing per machine, until one is chosen", async () => {
     search = "";
     render(<CoordRunnersPage />);
-    expect(await screen.findByTestId("coord-runners-no-device")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-runners-device-picker")).toBeInTheDocument();
-    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(
+      await screen.findByTestId("coord-runners-no-device")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-runners-device-picker")
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        httpFetch.mock.calls.some(([url]) =>
+          String(url).includes("/fleet/health")
+        )
+      ).toBe(true)
+    );
     expect(
       httpFetch.mock.calls.some(
         ([url]) =>
@@ -420,8 +450,12 @@ describe("/admin/coord/runners", () => {
   it("does not send finish & close when the session stops being idle while the dialog is open", async () => {
     render(<CoordRunnersPage />);
     const row = await openRow("c1a0de00");
-    await userEvent.click(within(row).getByTestId("coord-runners-finish-close"));
-    const confirm = await screen.findByTestId("coord-runners-finish-confirm-confirm");
+    await userEvent.click(
+      within(row).getByTestId("coord-runners-finish-close")
+    );
+    const confirm = await screen.findByTestId(
+      "coord-runners-finish-confirm-confirm"
+    );
     expect(confirm).not.toBeDisabled();
 
     // The runner now reports the session busy; the page re-reads underneath
@@ -434,7 +468,9 @@ describe("/admin/coord/runners", () => {
     expect(
       await screen.findByTestId("coord-runners-finish-blocked")
     ).toHaveTextContent("The session is no longer idle — not sent.");
-    expect(screen.getByTestId("coord-runners-finish-confirm-confirm")).toBeDisabled();
+    expect(
+      screen.getByTestId("coord-runners-finish-confirm-confirm")
+    ).toBeDisabled();
     fireEvent.click(screen.getByTestId("coord-runners-finish-confirm-confirm"));
     expect(controlCalls()).toHaveLength(0);
   });

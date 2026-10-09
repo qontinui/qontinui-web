@@ -57,7 +57,7 @@ import {
   RowTime,
   StatusBadge,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import { fetchLandVerifications } from "@/lib/api/operations/coordLands";
 import {
   VerdictChips,
   VerdictDetail,
@@ -80,11 +80,9 @@ export type { LandRowData };
 // When a recent land carries a `correlation_id`, its cascade may have fanned
 // out to sibling repos. The composed restack-verification verdict lives on
 // coord at `/coord/restacks/verifications`; the web backend proxies it at
-// `${API}/lands/verifications?correlation_id=…`. This panel fetches that ONCE
+// `/operations/lands/verifications?correlation_id=…`. This panel fetches that ONCE
 // on first mount (the row is otherwise presentational), using the same
-// `httpClient.get` pattern the lands page uses.
-
-const API = "/api/v1/operations";
+// typed client the lands page uses.
 
 // Wire shapes mirror coord's `/coord/restacks/verifications` response
 // (snake_case). Rendered defensively — `worst_drift_class` / `d3_outcome` /
@@ -123,10 +121,7 @@ function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const qs = new URLSearchParams({ correlation_id: correlationId });
-        const body = await httpClient.get<CrossRepoVerifications>(
-          `${API}/lands/verifications?${qs.toString()}`
-        );
+        const body = await fetchLandVerifications(correlationId);
         if (!cancelled) setData(body);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -203,7 +198,9 @@ function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
                     </Badge>
                   )}
                   {r.d3_outcome && (
-                    <span className="text-muted-foreground">{r.d3_outcome}</span>
+                    <span className="text-muted-foreground">
+                      {r.d3_outcome}
+                    </span>
                   )}
                   {r.verified_at && (
                     <span className="ml-auto">
@@ -397,7 +394,8 @@ export function LandRow({
                   typeof ver.dimensions_predicted === "number" && (
                     <>
                       {" "}
-                      ({ver.dimensions_observed}/{ver.dimensions_predicted} dims)
+                      ({ver.dimensions_observed}/{ver.dimensions_predicted}{" "}
+                      dims)
                     </>
                   )}
               </span>

@@ -52,22 +52,14 @@ import {
 import { MemoryRow } from "@/components/admin/coord/MemoryRow";
 import { deriveMemoryStatus } from "@/components/admin/coord/memoryStatus";
 import type { CoordMemoryRow } from "@/components/admin/coord/memoryStatus";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchMemoryList,
+  type MemoryListResponse,
+} from "@/lib/api/operations/coordMemory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
-
-interface MemoryListResponse {
-  /** Canonical envelope key (matches `qontinui_types::memory::MemoryListResponse`). */
-  items?: CoordMemoryRow[];
-  /** Pre-Phase-6 legacy aliases — coord older than 2026-05-22 returned these. */
-  entries?: CoordMemoryRow[];
-  memories?: CoordMemoryRow[];
-  count?: number;
-  limit?: number;
-}
 
 /** Type → how many rows carry it, over the window actually fetched. */
 function countByType(rows: CoordMemoryRow[]): Map<string, number> {
@@ -169,10 +161,7 @@ export default function CoordMemoryListPage() {
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<MemoryListResponse>(
-        `${API}/memory/list`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchMemoryList(COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       setData(body);
       setError(null);

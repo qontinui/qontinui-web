@@ -168,7 +168,6 @@ import { NotificationRow } from "@/components/admin/coord/NotificationRow";
 import { deriveNotificationsHealth } from "@/components/admin/coord/notificationsHealth";
 import {
   type CoordNotificationRow,
-  type MarkReadResponse,
   type MarkReadSelection,
   type NotificationsResponse,
   MARK_ALL,
@@ -186,10 +185,12 @@ import {
   orderUnreadFirst,
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchNotifications,
+  markNotificationsRead,
+} from "@/lib/api/operations/coordLands";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 /**
  * What a TIMER-driven head read passes: one request (no 5xx retry chain — the
@@ -437,8 +438,8 @@ export default function CoordNotificationsPage() {
       // they were issued rather than by when they happened to come back.
       const scalarSeq = scalarSeqRef.current!.issue();
       try {
-        const body = await httpClient.get<NotificationsResponse>(
-          `${API}/notifications?${buildQuery({ kind, unreadOnly, agentClearancesOnly })}`,
+        const body = await fetchNotifications(
+          buildQuery({ kind, unreadOnly, agentClearancesOnly }),
           polled ? NOTIFICATIONS_POLL_OPTIONS : NOTIFICATIONS_REQUEST_OPTIONS
         );
         if (queryGenRef.current !== gen) return;
@@ -502,13 +503,13 @@ export default function CoordNotificationsPage() {
     const scalarSeq = scalarSeqRef.current!.issue();
     setLoadingMore(true);
     try {
-      const body = await httpClient.get<NotificationsResponse>(
-        `${API}/notifications?${buildQuery({
+      const body = await fetchNotifications(
+        buildQuery({
           kind,
           unreadOnly,
           agentClearancesOnly,
           cursor,
-        })}`,
+        }),
         NOTIFICATIONS_REQUEST_OPTIONS
       );
       if (queryGenRef.current !== gen) return;
@@ -602,8 +603,7 @@ export default function CoordNotificationsPage() {
         // The selection object IS the wire body — `{notification_ids: [...]}`
         // or `{all: true}`, snake_case, never both keys. Coord rejects
         // anything else with a 400 rather than falling back to mark-all.
-        const body = await httpClient.post<MarkReadResponse>(
-          `${API}/notifications/mark-read`,
+        const body = await markNotificationsRead(
           selection,
           NOTIFICATIONS_MARK_READ_OPTIONS
         );

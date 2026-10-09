@@ -24,9 +24,12 @@ import {
   addCognitoGroupUser,
   deleteCognitoGroup,
   fetchCognitoGroupBlastRadius,
+  type CognitoGroupRow,
+  type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { RecordDetail } from "@/components/console";
-import type { CognitoGroupRow, GroupTenantRoleRow } from "../_types";
 import {
   blastRadiusReadCause,
   HOME_GROUP_SUFFIX,
@@ -40,7 +43,6 @@ import {
   historicalSlugTooltip,
   tierLabel,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { CognitoGroupMembers } from "./CognitoGroupMembers";
 import { log } from "../_lib/log";
 
@@ -164,32 +166,40 @@ export function CognitoGroupItem({
     if (!confirmOpen) {
       // Functional so a row that is already idle (every row, at mount) does
       // not re-render over a fresh-but-equal object.
-      setBlastRadius((prev) => (prev.state === "idle" ? prev : { state: "idle" }));
+      setBlastRadius((prev) =>
+        prev.state === "idle" ? prev : { state: "idle" }
+      );
       return;
     }
     let cancelled = false;
     setBlastRadius({ state: "loading" });
     void (async () => {
       try {
-        const res = await fetchCognitoGroupBlastRadius(group.group_name);
-        // A 502 here is the backend's own `mapping_check_unavailable` /
-        // `mapping_check_unreadable` — coord could not say, so neither can
-        // we. Render the CAUSE (`error` + coord's status), not the detail's
-        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
-        // was deleted …"), written for the moment after a click, and in a
-        // preview nothing was attempted.
-        if (!res.ok) throw new Error(await blastRadiusReadCause(res));
-        const verdict = parseBlastRadiusVerdict(await res.json());
+        const verdict = parseBlastRadiusVerdict(
+          await fetchCognitoGroupBlastRadius(group.group_name)
+        );
         if (verdict === null) {
           throw new Error("the blast-radius body is not a verdict");
         }
         if (!cancelled) setBlastRadius({ state: "ok", verdict });
       } catch (err) {
         log.warn("read cognito group blast radius failed", err);
+        // A 502 here is the backend's own `mapping_check_unavailable` /
+        // `mapping_check_unreadable` — coord could not say, so neither can
+        // we. Render the CAUSE (`error` + coord's status), not the detail's
+        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
+        // was deleted …"), written for the moment after a click, and in a
+        // preview nothing was attempted.
+        const status = httpStatusOf(err);
         if (!cancelled) {
           setBlastRadius({
             state: "error",
-            message: err instanceof Error ? err.message : String(err),
+            message:
+              status !== null
+                ? blastRadiusReadCause(httpBodyOf(err) ?? "", status)
+                : err instanceof Error
+                  ? err.message
+                  : String(err),
           });
         }
       }
@@ -219,19 +229,23 @@ export function CognitoGroupItem({
     }
     setAdding(true);
     try {
-      const res = await addCognitoGroupUser(group.group_name, email);
-      if (res.status === 404) {
-        toast.error("No Cognito user with that email; they must sign up first.");
-        return;
-      }
-      if (res.status === 409) {
-        toast.error(
-          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first."
-        );
-        return;
-      }
-      if (!res.ok) {
-        throw new Error(await backendErrorMessage(res));
+      try {
+        await addCognitoGroupUser(group.group_name, email);
+      } catch (err) {
+        const status = httpStatusOf(err);
+        if (status === 404) {
+          toast.error(
+            "No Cognito user with that email; they must sign up first."
+          );
+          return;
+        }
+        if (status === 409) {
+          toast.error(
+            "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first."
+          );
+          return;
+        }
+        throw err;
       }
       toast.success(`Added ${email} to ${group.group_name}`);
       setAddEmail("");
@@ -240,9 +254,7 @@ export function CognitoGroupItem({
       onMembersChanged();
     } catch (err) {
       log.warn("add cognito group user failed", err);
-      toast.error(
-        `Add failed: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Add failed: ${operationsErrorMessage(err)}`);
     } finally {
       setAdding(false);
     }
@@ -255,21 +267,17 @@ export function CognitoGroupItem({
       // deliberately no `allow_mapped` control: when coord maps the group the
       // backend 409s and the fix is to remove the mapping first — that
       // ordering is the guard's whole purpose, and a checkbox would erase it.
-      const res = await deleteCognitoGroup(group.group_name, {
+      await deleteCognitoGroup(group.group_name, {
         allowHomeGroup,
       });
-      if (!res.ok) {
-        throw new Error(await backendErrorMessage(res));
-      }
       toast.success(`Deleted group ${group.group_name}`);
       setConfirmOpen(false);
       onDeleted();
     } catch (err) {
       log.warn("delete cognito group failed", err);
-      toast.error(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
-        { duration: 12_000 }
-      );
+      toast.error(`Delete failed: ${operationsErrorMessage(err)}`, {
+        duration: 12_000,
+      });
       setDeleting(false);
     }
   }, [group.group_name, allowHomeGroup, onDeleted]);
@@ -426,10 +434,10 @@ export function CognitoGroupItem({
             This deletes the group from the <strong>shared</strong> Cognito
             pool. Cognito has no undo — re-creating the group does not restore
             its members, and every tenant keyed off this pool is affected.
-            Members do not lose the roles it grants right away: each person&apos;s
-            token stops carrying the group at their <strong>next login</strong>,
-            so the effect arrives one person at a time, whenever they next sign
-            in.
+            Members do not lose the roles it grants right away: each
+            person&apos;s token stops carrying the group at their{" "}
+            <strong>next login</strong>, so the effect arrives one person at a
+            time, whenever they next sign in.
           </>
         }
         confirmLabel="Delete group"
@@ -465,7 +473,9 @@ export function CognitoGroupItem({
       >
         <p className="font-medium">What this affects</p>
         <ul className="list-disc pl-5 space-y-1">
-          <li data-testid={`cognito-delete-confirm-members-${group.group_name}`}>
+          <li
+            data-testid={`cognito-delete-confirm-members-${group.group_name}`}
+          >
             {membersError
               ? "Member count could not be read — treat it as unknown, not zero."
               : memberCount == null
@@ -492,10 +502,10 @@ export function CognitoGroupItem({
                   the create-then-map orphan warning uses, and for the same
                   reason: what the operator must do outranks why, and only the
                   cause can be long. */}
-              coord&apos;s blast radius could not be read — treat it as
-              unknown, not as &ldquo;none&rdquo;. The delete is still checked
-              server-side and will be refused if coord cannot answer there
-              either. ({blastRadius.message})
+              coord&apos;s blast radius could not be read — treat it as unknown,
+              not as &ldquo;none&rdquo;. The delete is still checked server-side
+              and will be refused if coord cannot answer there either. (
+              {blastRadius.message})
             </li>
           ) : blastRadius.state !== "ok" ? (
             <li
@@ -529,9 +539,8 @@ export function CognitoGroupItem({
                 )}
               </strong>{" "}
               in coord&apos;s group → tenant → role table (
-              {plural(blastRadius.verdict.mapped_total, "mapping")} in all).
-              The backend will refuse this delete until those mappings are
-              removed
+              {plural(blastRadius.verdict.mapped_total, "mapping")} in all). The
+              backend will refuse this delete until those mappings are removed
               {blastRadius.verdict.mapped_own_tenant.length
                 ? " — the ones in your tenant, above"
                 : " — by an administrator of the tenants they are in"}
@@ -589,30 +598,30 @@ export function CognitoGroupItem({
                 />
               }
               actions={
-              <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
-                <div className="space-y-1 flex-1 min-w-[200px]">
-                  <Label htmlFor={`cognito-add-${group.group_name}`}>
-                    Add user by email
-                  </Label>
-                  <Input
-                    id={`cognito-add-${group.group_name}`}
-                    type="email"
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    placeholder="person@example.com"
-                    data-testid={`cognito-add-email-${group.group_name}`}
-                  />
+                <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
+                  <div className="space-y-1 flex-1 min-w-[200px]">
+                    <Label htmlFor={`cognito-add-${group.group_name}`}>
+                      Add user by email
+                    </Label>
+                    <Input
+                      id={`cognito-add-${group.group_name}`}
+                      type="email"
+                      value={addEmail}
+                      onChange={(e) => setAddEmail(e.target.value)}
+                      placeholder="person@example.com"
+                      data-testid={`cognito-add-email-${group.group_name}`}
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={addUser}
+                    disabled={adding}
+                    data-testid={`cognito-add-submit-${group.group_name}`}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={addUser}
-                  disabled={adding}
-                  data-testid={`cognito-add-submit-${group.group_name}`}
-                >
-                  <UserPlus className="h-4 w-4" />
-                  Add
-                </Button>
-              </div>
               }
               raw={
                 <div className="break-all font-mono text-[10px] text-muted-foreground/60">
