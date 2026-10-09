@@ -34,6 +34,8 @@ import {
   needsYouReason,
   parseProjectState,
   unitClassLabel,
+  internalHref,
+  windowLabel,
   type BlockState,
   type HomeBlock,
 } from "./coordHomeStatus";
@@ -122,6 +124,26 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     const body = calmBody();
     delete body.does_not_know;
     expect(deriveHomeStrip(parseProjectState(body)).level).toBe("amber");
+  });
+
+  it("answers 'nothing needs you' on coord's real calm shape (correctness unknown), staying amber", () => {
+    // coord serves correctness as `unknown` and a not_implemented
+    // verification_metrics source on EVERY response until that door deploys.
+    const body = calmBody();
+    body.correctness = {
+      state: "unknown",
+      reason: "verification_metrics_door_absent",
+    };
+    body.does_not_know = [
+      { source: "work_units", state: "read", as_of: "2026-09-30T12:00:00Z" },
+      { source: "verification_metrics", state: "not_implemented" },
+    ];
+    const strip = deriveHomeStrip(parseProjectState(body));
+    expect(strip.level).toBe("amber");
+    expect(strip.headline).toMatch(
+      /^Nothing needs you and nothing is degrading — not read: /
+    );
+    expect(strip.headline).not.toMatch(/Cannot tell/);
   });
 
   it("is amber 'cannot tell' before any read", () => {
@@ -631,5 +653,40 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(initiativeAttributionPhrase(unlinked)).toBe(
       "work attributed to it: not yet attributable"
     );
+  });
+});
+
+describe("round-7 review — blank recommendations, link targets, windows", () => {
+  it("reads a whitespace-only recommendation as none, as coord's shape does", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", recommendation: "   " }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendation).toBeNull();
+    expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it.each([
+    ["/admin/coord/inbox?q=1", "/admin/coord/inbox?q=1"],
+    ["https://evil.example/", null],
+    ["//evil.example/", null],
+    ["javascript:alert(1)", null],
+    [null, null],
+  ])("internalHref(%p) is %p", (raw, want) => {
+    expect(internalHref(raw)).toBe(want);
+  });
+
+  it.each([
+    [86_400, "24 h"],
+    [3600, "1 h"],
+    [7 * 86_400, "7 d"],
+    [null, null],
+    [0, null],
+  ])("windowLabel(%p) is %p", (secs, want) => {
+    expect(windowLabel(secs)).toBe(want);
   });
 });

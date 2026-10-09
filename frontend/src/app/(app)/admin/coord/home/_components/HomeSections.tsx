@@ -56,6 +56,8 @@ import {
   remediationPhrase,
   stallWindowDays,
   unitClassLabel,
+  internalHref,
+  windowLabel,
   type BlockState,
   type CorrectnessView,
   type DegradationView,
@@ -199,6 +201,7 @@ function NeedsYouRow({
   onToggle: () => void;
 }) {
   const hasRecommendation = item.recommendation !== null;
+  const answerHref = internalHref(item.answerAt);
   return (
     <RecordRow
       identity={item.source === "operator_gate" ? "gate" : "question"}
@@ -272,9 +275,9 @@ function NeedsYouRow({
           </div>
         }
         actions={
-          item.answerAt ? (
+          answerHref ? (
             <Link
-              href={item.answerAt}
+              href={answerHref}
               className="text-sm underline underline-offset-2"
               data-testid="coord-home.needs-you.answer"
             >
@@ -438,6 +441,7 @@ function DegradationRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const drillHref = internalHref(d.drill);
   const label =
     kind === "cleared"
       ? "cleared"
@@ -484,12 +488,12 @@ function DegradationRow({
           </div>
         }
         actions={
-          d.drill ? (
+          drillHref ? (
             <Link
-              href={d.drill}
+              href={drillHref}
               className="text-sm underline underline-offset-2"
             >
-              Open {d.drill.replace("/admin/coord/", "")} ↗
+              Open {drillHref.replace("/admin/coord/", "")} ↗
             </Link>
           ) : undefined
         }
@@ -616,7 +620,7 @@ export function DegradingSection({
                 stats={[
                   {
                     key: "cleared",
-                    label: "last 24 h ",
+                    label: `last ${windowLabel(deg.recentlyClearedWindowSecs) ?? "window"} `,
                     // Exact only on a read block: a stale block's rows are
                     // not known to be all of them.
                     value:
@@ -639,7 +643,7 @@ export function DegradingSection({
             ) : cleared.length === 0 ? (
               <p className="m-0 text-sm text-muted-foreground">
                 {deg.state === "read"
-                  ? "Nothing cleared in the last 24 hours."
+                  ? `Nothing cleared in the last ${windowLabel(deg.recentlyClearedWindowSecs) ?? "window"}.`
                   : "None served; this view is incomplete, so there may be some."}
               </p>
             ) : (
@@ -928,10 +932,10 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
 
 export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
   const read = onTrack.state === "read";
-  const window = onTrack.stallWindowSecs;
+  const stallWindow = onTrack.stallWindowSecs;
   const stats: Stat[] = UNIT_CLASSES.map((cls) => ({
     key: cls,
-    label: `${unitClassLabel(cls, window)} `,
+    label: `${unitClassLabel(cls, stallWindow)} `,
     value: read && onTrack.totals ? onTrack.totals[cls] : null,
     tone: "default",
     "data-testid": `coord-home.on-track.total.${cls}`,
@@ -977,7 +981,11 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
               </p>
             )}
           <RecordList
-            items={onTrack.groups ?? []}
+            // coord always serves the unattributed group, even at zero; an
+            // empty one is noise and would mask the "No work units." state.
+            items={(onTrack.groups ?? []).filter(
+              (g) => !(g.kind === "unattributed_repo" && g.rowCount === 0)
+            )}
             itemKey={(g, i) => `${g.kind}:${g.key ?? "none"}:${i}`}
             empty={
               <p className="m-0 text-sm text-muted-foreground">
@@ -989,7 +997,7 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
             renderRow={(g, ctx) => (
               <RepoGroupRow
                 g={g}
-                windowSecs={window}
+                windowSecs={stallWindow}
                 expanded={ctx.expanded}
                 onToggle={ctx.onToggle}
               />
