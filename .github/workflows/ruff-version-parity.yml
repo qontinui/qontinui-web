@@ -3,10 +3,16 @@ name: pre-commit ruff pin == the ruff CI runs
 # THE GATE LOGIC LIVES IN `scripts/ci/check_ruff_version_parity.py`, not here —
 # the shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
 # Phase 5 established for forbid-public-schema, web-boundary-lint,
-# alembic-single-head and gitignore-tracked-files. Three lanes invoke the one
+# alembic-single-head and gitignore-tracked-files. Four lanes invoke the one
 # script:
 #
 #   * this workflow, step "Compare the pre-commit ruff pin against the lockfiles"
+#   * .github/workflows/web-guards.yml, step "ruff-version-parity: Compare the
+#     pre-commit ruff pin against the lockfiles" -- the consolidated one-job
+#     guard lane, running the same command beside this workflow until a later
+#     phase of plan
+#     2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work
+#     deletes this file
 #   * .qontinui/ci.toml, step `ruff-version-parity`
 #   * .pre-commit-config.yaml, hook `ruff-version-parity`
 #
@@ -45,8 +51,9 @@ name: pre-commit ruff pin == the ruff CI runs
 # path-filtered and its filter lists neither `.pre-commit-config.yaml` nor the
 # repo-root `poetry.lock`, so the step could not run on the drift it existed to
 # catch. backend/tests/test_ruff_version_parity_gate.py now pins the roster at
-# these three lanes, so a fourth fails a test instead of falsifying this
-# paragraph in silence.
+# the four lanes above (web-guards.yml is the deliberate fourth: an unfiltered
+# guard job, not a backend-ci.yml step), so a fifth fails a test instead of
+# falsifying this paragraph in silence.
 
 on:
   pull_request:
@@ -63,6 +70,35 @@ on:
       - 'merge-candidate-spec/**'
       - 'merge-candidate-batch/**'
 
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
+
+# PR-SCOPED SUPERSESSION (shared hosted-job cap relief, 2026-10-05). A FIRST-
+# attempt `pull_request` run joins a per-workflow, per-PR group and cancels the
+# run it supersedes there: a `synchronize` cancels the older head's run, and a
+# `reopened` cancels the same-head run it re-does (coord's ci-abandoned
+# recovery is a close+reopen). Every OTHER run -- whichever of push (main,
+# develop, merge-candidate*/** -- coord's candidate CI), schedule,
+# workflow_dispatch and workflow_run this file has, and EVERY re-run (run_attempt > 1) -- gets a
+# group unique to its run id + attempt, so it is never cancelled, never reaped
+# while pending, and never queues behind anything.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here is
+# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
+# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
+# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# RESIDUAL: two pushes seconds apart can have
+# their runs CREATED out of order, so the older head's run cancels the newer
+# head's; the next push (or a close+reopen) heals it.
+# Pattern: qontinui-claude-config#1475.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
+
 jobs:
   ruff-version-parity:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
@@ -71,7 +107,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The script is stdlib-only, but `tomllib` is stdlib only from 3.11, and
       # the runner image's own python3 is not a version this repo chose. Pinning
@@ -79,7 +117,7 @@ jobs:
       # `lint` job broke for every branch when a comment asserting "Python 3.12
       # is pre-installed" went stale under it. Same PYTHON_VERSION as that job.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 

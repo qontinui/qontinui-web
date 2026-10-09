@@ -20,11 +20,15 @@ catch a malformed ``down_revision`` or a downgrade that leaves residue.
 CI provisions a Postgres service container at localhost:5432 (see
 ``.github/workflows/backend-ci.yml`` and ``tests/conftest.py``); locally these
 tests skip unless one is reachable. Point them at a different instance with
-``QONTINUI_TEST_PG=host:port`` — the same override ``conftest.py`` honours.
+``QONTINUI_TEST_PG=host:port``, or at a throwaway database with a full
+``QONTINUI_TEST_PG_DSN`` (e.g. from ``ephemeral-db.sh start pgvector``). Both
+are ``conftest.py``'s overrides: it derives ``DATABASE_URL`` from them at
+import time, and [`admin_database_url`] reads that.
 """
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib.util
 import io
@@ -37,6 +41,7 @@ import traceback
 import uuid
 import warnings
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
@@ -459,6 +464,60 @@ def load_revision_module(path: Path, module_name: str) -> ModuleType:
     return module
 
 
+def _alembic_graph() -> ModuleType:
+    """The head gate's own module, ``scripts/ci/_alembic_graph.py``.
+
+    Imported lazily and by path-on-``sys.path`` because ``scripts/ci`` is not a
+    package of this backend; importing it here rather than in each test keeps
+    the ``sys.path`` edit in one place.
+    """
+    scripts_ci = str(backend_root().parent / "scripts" / "ci")
+    if scripts_ci not in sys.path:
+        sys.path.insert(0, scripts_ci)
+    import _alembic_graph
+
+    return _alembic_graph
+
+
+def declared_parent_revision_ids(source: str) -> list[str] | None:
+    """Every parent a revision file's ``down_revision`` declares, in order.
+
+    Read through THE GATE'S OWN PARSER (``parse_source`` + ``parent_refs``), not
+    a private regex, so a migration test cannot disagree with the lane that
+    actually blocks about what a parent is: the text is masked (a docstring that
+    discusses ``down_revision`` cannot supply one), a trailing ``# ...`` comment
+    is skipped (a paren inside it cannot truncate a wrapped assignment), both
+    quote styles and the formatter-wrapped ``= (\\n"x"\\n)`` form are read, and a
+    merge tuple yields ALL its parents rather than its first. ``None`` when the
+    source declares no ``revision = ...`` at all.
+    """
+    graph = _alembic_graph()
+    parsed = graph.parse_source(source)
+    if parsed is None:
+        return None
+    return graph.parent_refs(parsed[1])
+
+
+def declared_parent_revision_id(source: str, label: str) -> str:
+    """The ONE parent a revision file declares — refusing a merge or a root.
+
+    ``label`` names the file in the failure message. A migration test walks
+    back to this parent and asserts against the "clean" database it finds
+    there, so it needs exactly one place to stop: a merge revision (a tuple)
+    needs its own downgrade target chosen deliberately, never the tuple's first
+    element, and a root revision has no parent to rewind to.
+    """
+    parents = declared_parent_revision_ids(source)
+    assert parents is not None, f"{label} declares no parseable revision id"
+    assert len(parents) == 1, (
+        f"{label} must declare exactly ONE parent so the downgrade walk has one "
+        f"place to stop; the head gate's parser read {parents!r} from its "
+        f"down_revision. A merge revision (a tuple) needs its own downgrade "
+        f"target chosen deliberately, not the tuple's first element."
+    )
+    return parents[0]
+
+
 # A SQL string literal, with `''` as the escaped apostrophe.
 _SQL_LITERAL = re.compile(r"'((?:[^']|'')*)'")
 
@@ -518,3 +577,74 @@ def comment_body_from_source(
     parts = _SQL_LITERAL.findall(source[start:end])
     assert parts, f"no SQL string literals found after {marker!r}"
     return "".join(part.replace("''", "'") for part in parts)
+
+
+@dataclass(frozen=True)
+class UpgradeExecute:
+    """One ``op.execute(...)`` call inside a revision's ``upgrade()``."""
+
+    #: The call's argument, or None when it is not ONE static ``str`` literal.
+    sql: str | None
+    #: True when the call sits inside ``with op.get_context().autocommit_block():``.
+    in_autocommit_block: bool
+
+
+def _is_autocommit_block(item: ast.withitem) -> bool:
+    """``op.get_context().autocommit_block()`` exactly, with no arguments."""
+    call = item.context_expr
+    if not (isinstance(call, ast.Call) and not call.args and not call.keywords):
+        return False
+    method = call.func
+    if not (isinstance(method, ast.Attribute) and method.attr == "autocommit_block"):
+        return False
+    ctx = method.value
+    return (
+        isinstance(ctx, ast.Call)
+        and isinstance(ctx.func, ast.Attribute)
+        and ctx.func.attr == "get_context"
+        and isinstance(ctx.func.value, ast.Name)
+        and ctx.func.value.id == "op"
+    )
+
+
+def upgrade_execute_calls(path: Path) -> list[UpgradeExecute]:
+    """Every ``op.execute(...)`` in ``upgrade()``, in source order, via ``ast``.
+
+    Lets a test run a revision's REAL DDL without a copy that can drift, and
+    check the call shapes coord's migration classifier requires: a static
+    inline literal argument (anything else is reported as ``sql=None``) and,
+    for a CONCURRENTLY build, an enclosing ``autocommit_block``.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    upgrades = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+    ]
+    assert len(upgrades) == 1, f"{path.name} must define exactly one upgrade()"
+
+    calls: list[UpgradeExecute] = []
+
+    def visit(node: ast.AST, in_block: bool) -> None:
+        if isinstance(node, ast.With):
+            in_block = in_block or any(_is_autocommit_block(i) for i in node.items)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "execute"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "op"
+        ):
+            arg = node.args[0] if len(node.args) == 1 and not node.keywords else None
+            sql = (
+                arg.value
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+                else None
+            )
+            calls.append(UpgradeExecute(sql=sql, in_autocommit_block=in_block))
+        for child in ast.iter_child_nodes(node):
+            visit(child, in_block)
+
+    for statement in upgrades[0].body:
+        visit(statement, False)
+    return calls

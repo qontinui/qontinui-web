@@ -29,6 +29,8 @@ Endpoints (mounted under ``/api/v1/memory``):
   expansion of the fuse's head, reported in ``link_arm``.
 * ``POST /graph``                        — bounded outbound traversal of
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
+* ``GET /records/{id}``                  — one record by id in ANY state
+  (live / expired / superseded / tombstoned) — the write-receipt read-back.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
   old row's validity.
 * ``PUT /records/{id}/hold``             — hold the record out of every
@@ -134,7 +136,9 @@ from app.schemas.memory import (
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
+    MemoryRecordByIdResponse,
     MemoryRecordOut,
+    MemoryRecordState,
     MemoryStatsResponse,
     SupersedeRequest,
     SupersedeResponse,
@@ -1088,6 +1092,67 @@ async def list_records(
     )
     return ListRecordsResponse(
         records=records, count=len(records), next_cursor=next_cursor
+    )
+
+
+@router.get("/records/{memory_id}", response_model=MemoryRecordByIdResponse)
+async def get_record_by_id(
+    memory_id: UUID,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> MemoryRecordByIdResponse:
+    """One record by id, tenant-scoped, in WHATEVER state it is in.
+
+    The read-back half of a write receipt: a caller holding a ``memory_id``
+    from ``POST /records`` (or coord's ``coord_memory_record``) resolves it
+    here deterministically, without FTS and without the list surface's
+    live-only, time-windowed filter. Superseded and tombstoned rows are
+    returned, with ``state`` derived from the row's own columns — see
+    :class:`MemoryRecordByIdResponse` for the precedence. A tombstoned
+    row's ``title`` and ``content`` are withheld (``null``).
+
+    404 when the id does not exist OR belongs to another tenant — the two
+    are deliberately indistinguishable. Read-only: does not bump
+    ``access_count``.
+    """
+    row = await store.get_record_by_id(db, principal.tenant_id, memory_id)
+    if row is None:
+        # This detail string is a WIRE CONTRACT: qontinui-coord's
+        # `coord_memory_get` (MEMORY_GET_NOT_FOUND_DETAIL in mcp/tools.rs)
+        # matches it byte for byte to tell "not in this tenant" from any other
+        # 404 (a misrouted base, a gateway). Rewording it here silently moves
+        # every real 404 into coord's errors / tool-error path.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="memory record not found in your tenant",
+        )
+    state: MemoryRecordState
+    if row["is_tombstone"]:
+        state = "tombstoned"
+    elif row["superseded_by"] is not None:
+        state = "superseded"
+    elif row["is_expired"]:
+        state = "expired"
+    else:
+        state = "live"
+    # A tombstone is a deletion: the id, state and validity boundary are
+    # the receipt's answer, the body is not echoed back.
+    withheld = state == "tombstoned"
+    return MemoryRecordByIdResponse(
+        memory_id=row["memory_id"],
+        tenant_id=row["tenant_id"],
+        title=None if withheld else row["title"],
+        content=None if withheld else row["content"],
+        kind=row["kind"],
+        scope=row["scope"],
+        scope_ref=row["scope_ref"],
+        importance=(
+            float(row["importance"]) if row["importance"] is not None else None
+        ),
+        created_at=row["created_at"],
+        state=state,
+        superseded_by=row["superseded_by"],
+        valid_until=row["valid_until"],
     )
 
 

@@ -756,7 +756,7 @@ export function parseMermaidGantt(source: string): GanttParseResult {
 }
 
 /**
- * The parse result as the estimate content endpoint takes it.
+ * The parse result as an estimate content write takes it.
  *
  * Deliberately separate from the parser: the parser answers "what does this
  * chart say", this answers "what would saving it do". Task numbers are

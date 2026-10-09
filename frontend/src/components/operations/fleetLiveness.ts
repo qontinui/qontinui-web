@@ -28,7 +28,7 @@
  *   this, it did not fail to say anything.
  */
 
-import type { FleetHealthDevice } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 /** Traffic-light level, same vocabulary as `console/HealthStrip`. */
 export type FleetLivenessLevel = "green" | "amber" | "red";

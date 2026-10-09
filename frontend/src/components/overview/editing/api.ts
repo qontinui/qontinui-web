@@ -68,6 +68,12 @@ export interface ChangeLogEntry {
   version_after: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  /** The device whose credential made the write, when a device did. Plan
+   *  `2026-10-07-agents-publish-documents-to-the-project-overview` D2. */
+  via_device?: string | null;
+  /** The session the writer REPORTED (`X-Overview-Session`) — a label,
+   *  never proof. */
+  via_session?: string | null;
 }
 
 export interface ChangeLogPage {
@@ -304,6 +310,20 @@ export async function deleteFile<T>(
   if (!response.ok) throw await refusal<T>(response);
 }
 
+/** Delete a milestone, built on `version` (the one on screen). A stale
+ *  version is a {@link VersionConflictError} carrying the server's copy. */
+export async function deleteMilestone<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/milestones/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
 /** A page's versions, newest first. */
 export async function fetchPageVersions<T>(pageId: string): Promise<T> {
   const response = await send(
@@ -401,16 +421,21 @@ export async function createResource<T>(
   return ((await response.json()) as ResourceItem<T>).item;
 }
 
+/** A record's write history, newest first — or, with `recordId` null, the
+ *  whole resource's (every milestone, say). `source` keeps only the writes
+ *  made one way (`api`: agents and scripts). */
 export async function fetchChangeLog(
   resource: string,
-  recordId: string,
-  limit = 20
+  recordId: string | null,
+  options: { limit?: number; source?: ChangeLogEntry["source"] } = {}
 ): Promise<ChangeLogPage> {
+  const { limit = 20, source } = options;
   const response = await send(
     "GET",
     `${OVERVIEW_API}/change-log${query({
       resource,
-      record_id: recordId,
+      ...(recordId === null ? {} : { record_id: recordId }),
+      ...(source ? { source } : {}),
       limit: String(limit),
     })}`
   );

@@ -2,17 +2,15 @@
  * The TWO ANCHORS of the artifact detail — the sharpest piece of logic in the
  * Wave 5 migration, and the one a mechanical check cannot defend.
  *
- * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3
- * Wave 5 converted this route's detail from a modal to expand-in-place (R5).
- * The trap is that `openArtifact(id)` is **not** limited to rows on the current
- * page: `DivergencePanel`'s per-variant "Open" and every `edge-peer-*`
- * provenance click inside the panel pass an id that may be anywhere in the
- * corpus. A modal did not care. Expand-in-place does.
+ * The list lives at `/admin/coord/plan-library/artifacts` (every kind; plan
+ * `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`). Its detail
+ * expands in place (R5). The trap is that `openArtifact(id)` is **not**
+ * limited to rows on the current page: every `edge-peer-*` provenance click
+ * inside the panel passes an id that may be anywhere in the corpus.
  *
  * The obvious refactor — hand `detailId` to `<RecordList expandedKey>` and let
- * it find the row — is ONE LINE, type-checks, keeps every other test in this
- * directory green, and silently makes both of those affordances **do nothing**
- * whenever the artifact is off-page. There is no error, no empty state, no
+ * it find the row — is ONE LINE, type-checks, and silently makes that
+ * affordance **do nothing** whenever the artifact is off-page. There is no error, no empty state, no
  * console warning: the click just stops working.
  *
  * So the invariant is asserted from both sides here:
@@ -29,7 +27,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const get = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -41,10 +45,27 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-/** The panel is stubbed — see the module doc for why. */
+/**
+ * The panel is stubbed — see the module doc for why. Its one button stands in
+ * for an `edge-peer-*` click: it opens an artifact that is NOT on this page.
+ */
 vi.mock("./ArtifactDetailPanel", () => ({
-  ArtifactDetailPanel: ({ artifactId }: { artifactId: string | null }) => (
-    <div data-testid="stub-panel" data-artifact-id={artifactId ?? ""} />
+  ArtifactDetailPanel: ({
+    artifactId,
+    onOpenArtifact,
+  }: {
+    artifactId: string | null;
+    onOpenArtifact: (id: string) => void;
+  }) => (
+    <div data-testid="stub-panel" data-artifact-id={artifactId ?? ""}>
+      <button
+        type="button"
+        data-testid="stub-follow-edge"
+        onClick={() => onOpenArtifact("art-somewhere-else")}
+      >
+        peer
+      </button>
+    </div>
   ),
 }));
 
@@ -53,7 +74,7 @@ import { PlanLibraryList } from "./PlanLibraryList";
 const ON_PAGE = "art-on-page";
 const OFF_PAGE = "art-somewhere-else";
 
-function artifact(id: string) {
+function artifact(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     kind: "plan",
@@ -65,6 +86,14 @@ function artifact(id: string) {
     current_version: 2,
     captured_by: "runner_scan",
     updated_at: "2026-08-19T12:00:00Z",
+    status_currency: {
+      state: "fed_in_step",
+      as_of: "2026-08-19T12:00:00Z",
+      ref_sha: "c0ffee",
+      ref_age_secs: 5,
+      detail: "1 fresh reading(s) of 'qontinui-web' read a fresh ref",
+    },
+    ...overrides,
   };
 }
 
@@ -73,12 +102,18 @@ beforeEach(() => {
   get.mockResolvedValue({ items: [artifact(ON_PAGE)], total: 1 });
 });
 
-async function renderList(openRequest?: { id: string; nonce: number }) {
-  const r = render(<PlanLibraryList openRequest={openRequest ?? null} />);
+async function renderList() {
+  const r = render(<PlanLibraryList />);
   await waitFor(() =>
     expect(screen.getByTestId(`artifact-row-${ON_PAGE}`)).toBeInTheDocument()
   );
   return r;
+}
+
+function openOnPageRow() {
+  const row = screen.getByTestId(`artifact-row-${ON_PAGE}`);
+  fireEvent.click(row.querySelector("button")!);
+  return row;
 }
 
 describe("the artifact detail is anchored in one of two places, never neither", () => {
@@ -87,9 +122,7 @@ describe("the artifact detail is anchored in one of two places, never neither", 
     // Nothing open yet.
     expect(screen.queryByTestId("stub-panel")).toBeNull();
 
-    const row = screen.getByTestId(`artifact-row-${ON_PAGE}`);
-    fireEvent.click(row.querySelector("button")!);
-
+    const row = openOnPageRow();
     const panel = screen.getByTestId("stub-panel");
     expect(panel).toHaveAttribute("data-artifact-id", ON_PAGE);
     // Inside the row, not floating beside it — this is what "expand in place"
@@ -100,54 +133,87 @@ describe("the artifact detail is anchored in one of two places, never neither", 
     expect(screen.queryByTestId("plan-library-pinned-detail")).toBeNull();
   });
 
-  it("pins the panel above the list when the artifact is NOT on this page", async () => {
-    // This is `DivergencePanel`'s "Open" and every `edge-peer-*` click: an id
-    // from anywhere in the corpus, arriving through `openRequest`.
-    await renderList({ id: OFF_PAGE, nonce: 1 });
+  it("pins the panel above the list when a provenance peer is NOT on this page", async () => {
+    await renderList();
+    openOnPageRow();
+    fireEvent.click(screen.getByTestId("stub-follow-edge"));
 
     const pinned = await screen.findByTestId("plan-library-pinned-detail");
     const panel = screen.getByTestId("stub-panel");
     expect(panel).toHaveAttribute("data-artifact-id", OFF_PAGE);
     expect(pinned).toContainElement(panel);
+    // Exactly ONE panel: the anchor moved, it did not duplicate.
+    expect(screen.getAllByTestId("stub-panel")).toHaveLength(1);
 
-    // The row on this page stays collapsed — it is a different artifact.
+    // The row on this page collapsed — it is a different artifact.
     const row = screen.getByTestId(`artifact-row-${ON_PAGE}`);
     expect(row).not.toContainElement(panel);
   });
+});
 
-  it("renders exactly ONE panel in both cases", async () => {
-    const { rerender } = await renderList({ id: OFF_PAGE, nonce: 1 });
-    expect(screen.getAllByTestId("stub-panel")).toHaveLength(1);
-
-    // Ask for the on-page artifact instead; the anchor moves, it does not
-    // duplicate.
-    rerender(<PlanLibraryList openRequest={{ id: ON_PAGE, nonce: 2 }} />);
-    await waitFor(() =>
-      expect(screen.getByTestId("stub-panel")).toHaveAttribute(
-        "data-artifact-id",
-        ON_PAGE
-      )
+describe("every kind is browsable", () => {
+  it("asks for no kind by default and renders a non-plan artifact", async () => {
+    get.mockResolvedValue({
+      items: [artifact(ON_PAGE, { kind: "handoff" })],
+      total: 1,
+    });
+    await renderList();
+    // `/admin/coord/plans` reads kind=plan only; this list must not.
+    expect(String(get.mock.calls[0]?.[0])).not.toContain("kind=");
+    expect(screen.getByTestId(`artifact-row-${ON_PAGE}`)).toHaveTextContent(
+      /handoff/i
     );
-    expect(screen.getAllByTestId("stub-panel")).toHaveLength(1);
-    expect(screen.queryByTestId("plan-library-pinned-detail")).toBeNull();
+  });
+});
+
+describe("every row states the currency of its own status", () => {
+  it("renders the served state, with its detail as the tooltip", async () => {
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "fed_in_step");
+    expect(badge).toHaveTextContent("Fed, in step");
+    expect(badge).toHaveAttribute(
+      "title",
+      "1 fresh reading(s) of 'qontinui-web' read a fresh ref"
+    );
   });
 
-  it("re-opens the same off-page artifact when asked twice (the nonce)", async () => {
-    const { rerender } = await renderList({ id: OFF_PAGE, nonce: 1 });
-    expect(screen.getByTestId("plan-library-pinned-detail")).toBeInTheDocument();
+  it("renders an unserved currency as UNKNOWN, never as nothing", async () => {
+    get.mockResolvedValue({
+      items: [artifact(ON_PAGE, { status_currency: undefined })],
+      total: 1,
+    });
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveTextContent("Currency unknown");
+  });
 
-    // Collapse it the way the operator would.
-    fireEvent.click(screen.getByTestId(`artifact-row-${ON_PAGE}`).querySelector("button")!);
-    fireEvent.click(screen.getByTestId(`artifact-row-${ON_PAGE}`).querySelector("button")!);
-    expect(screen.queryByTestId("plan-library-pinned-detail")).toBeNull();
-
-    // The SAME id again. Without the nonce in the effect's deps this is a
-    // no-op, which is the bug the nonce exists for.
-    rerender(<PlanLibraryList openRequest={{ id: OFF_PAGE, nonce: 2 }} />);
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("plan-library-pinned-detail")
-      ).toBeInTheDocument()
-    );
+  it("renders a state this console does not know as UNKNOWN, not blank", async () => {
+    get.mockResolvedValue({
+      items: [
+        artifact(ON_PAGE, {
+          status_currency: {
+            state: "fed_from_the_future",
+            as_of: null,
+            ref_sha: null,
+            ref_age_secs: null,
+            detail: null,
+          },
+        }),
+      ],
+      total: 1,
+    });
+    await renderList();
+    const badge = within(
+      screen.getByTestId(`artifact-row-${ON_PAGE}`)
+    ).getByTestId("artifact-row-currency");
+    expect(badge).toHaveAttribute("data-state", "unknown");
+    expect(badge).toHaveTextContent("Currency unknown");
+    expect(badge.getAttribute("title")).toContain("fed_from_the_future");
   });
 });

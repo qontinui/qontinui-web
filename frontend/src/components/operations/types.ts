@@ -9,6 +9,11 @@
 
 import type { Runner } from "@qontinui/shared-types";
 import type { DeviceCredentialDark } from "./coordCredentialStatus";
+import type {
+  RunnerCapabilityRecord,
+  RunnerReportsMeta,
+  RunnerWedgeIncident,
+} from "@/lib/api/operations/coordFleet";
 
 export interface ClaudeSessionInfo {
   pid: number;
@@ -159,7 +164,12 @@ export interface SymbolClaimsResponse {
  * (see `CiRepoStrip`, which was `CiStatusPanel` until 2026-09-19), never a
  * backend verdict.
  */
-export type MainCiVerdict = "green" | "red" | "unknown";
+/**
+ * `vacuously_green` is coord's zero-baseline arm: no required check has ever
+ * reported on main, so the "green" is an absence of evidence, not a pass. It
+ * must never render as a measured green.
+ */
+export type MainCiVerdict = "green" | "red" | "unknown" | "vacuously_green";
 
 /**
  * Counts of open-PR check runs for a repo, bucketed by GitHub
@@ -194,10 +204,21 @@ export interface RepoCiRow {
    *  first push to main lands; gates the "Notify when green" action
    *  because the `CiGreen` predicate is SHA-keyed. */
   main_head_sha: string | null;
+  /**
+   * `max(updated_at)` over the `ci_baselines` rows `main_verdict` was read
+   * from (plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 2).
+   * Null/absent when no baseline backs the verdict, or from a coord that
+   * predates the stamp — UNKNOWN freshness either way, never "just now".
+   */
+  main_verdict_observed_at?: string | null;
+  /** Newest `pr_check_runs` row counted; null/absent when none. */
+  pr_checks_observed_at?: string | null;
 }
 
 /** Wire shape returned by `GET /api/v1/operations/ci-status`. */
 export interface CiStatusResponse {
+  /** Coord's compose time; null/absent from a coord predating the stamp. */
+  as_of?: string | null;
   repos: RepoCiRow[];
 }
 
@@ -754,6 +775,24 @@ export type CoordHealthJoin =
        * decision is made.
        */
       credential_dark?: DeviceCredentialDark | null;
+      /**
+       * What only the RUNNER can see — its wedge incidents, its capability
+       * verdicts, and their provenance — carried through verbatim from
+       * coord's fleet-health row (plan
+       * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+       * Phase 5). `null`/absent is UNKNOWN, never "none"; `MachineCard`
+       * renders all three through `resolveRunnerReports`, which is the only
+       * place that decision is made.
+       */
+      wedge_incidents?: RunnerWedgeIncident[] | null;
+      capability?: RunnerCapabilityRecord[] | null;
+      runner_reports?: RunnerReportsMeta | null;
+      /**
+       * The fleet-health BODY's `runner_reports_scrape_up`, copied onto each
+       * row so a row whose reports are `null` can say whether that is coord's
+       * read failing (`false`) rather than the runner's silence.
+       */
+      runner_reports_scrape_up?: boolean;
     }
   | { matched: false };
 

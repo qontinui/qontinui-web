@@ -1756,6 +1756,42 @@ async def get_record(
     return dict(row) if row is not None else None
 
 
+async def get_record_by_id(
+    session: AsyncSession, tenant_id: UUID, memory_id: UUID
+) -> dict[str, Any] | None:
+    """One row by id for the by-id READ, in any state (None cross-tenant).
+
+    Distinct from :func:`get_record` (the supersede path's read) because it
+    also answers "is this row's validity over?" — ``is_expired`` — using
+    the SAME clock-skew-safe effective now as retrieval
+    (:data:`_EFFECTIVE_NOW_ROW_SQL`), so a row the by-id read calls live is
+    exactly a row ``/memory/query`` and ``GET /memory/records`` can return
+    on the validity axis. Read-only: ``access_count`` is not touched.
+    """
+    row = (
+        (
+            await session.execute(
+                text(
+                    f"""
+                SELECT r.memory_id, r.tenant_id, r.scope, r.scope_ref, r.kind,
+                       r.title, r.content, r.importance, r.is_tombstone,
+                       r.superseded_by, r.valid_until, r.created_at,
+                       (r.valid_until IS NOT NULL
+                        AND r.valid_until <= {_EFFECTIVE_NOW_ROW_SQL})
+                           AS is_expired
+                FROM coord.memory_records r
+                WHERE r.tenant_id = :tenant_id AND r.memory_id = :memory_id
+                """
+                ),
+                {"tenant_id": tenant_id, "memory_id": memory_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return dict(row) if row is not None else None
+
+
 async def mark_superseded(
     session: AsyncSession,
     *,

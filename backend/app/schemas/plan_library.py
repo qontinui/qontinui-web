@@ -296,6 +296,53 @@ class CandidateCoordLink(BaseModel):
     unavailable_reason: str | None = None
 
 
+# ─────────────────────── status currency ───────────────────────
+#
+# Plan ``2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-
+# whether-it-is-current``, Phase 1 (design decisions D3/D4). A row's ``status``
+# is whatever its last writer asserted; this block says how far that assertion
+# can be trusted NOW. It is a signal, never a filter (D5).
+
+#: The closed vocabulary. ``unknown`` is a member, and no arm but ``unfed_key``
+#: is reachable by absence — and that one is positive evidence that no reading
+#: covers the row's key.
+#:
+#: * ``fed_in_step`` — a FRESH, applied, ``measured`` scan-root reading for this
+#:   row's ``source_repo`` read a ref it fetched within the runner's window
+#:   (``counts_are_floors: false``). Keyed on the feeder's REF, never on
+#:   ``behind`` — ``behind`` measures how parked the checkout's HEAD is, which
+#:   says nothing about the body the sync read (the plan's 2026-09-29 vet).
+#: * ``fed_stale_ref`` — fresh, applied, ``measured`` readings exist for the
+#:   key, but every one is a floor: the feeder is alive, reading an old ref.
+#: * ``unfed_key`` — no (non-retired) reading names this ``source_repo``.
+#: * ``asserted_once`` — ``captured_by`` is ``agent``/``operator``: a door
+#:   write no feeder maintains.
+#: * ``unknown`` — readings name the key but none is fresh+applied+measured,
+#:   or the scan-root readings could not be read; ``detail`` says which.
+StatusCurrencyState = Literal[
+    "fed_in_step", "fed_stale_ref", "unfed_key", "asserted_once", "unknown"
+]
+
+
+class StatusCurrency(BaseModel):
+    """How current a row's ``status`` can be taken to be — with its evidence.
+
+    ``as_of`` is the newest ``received_at`` among the readings that produced
+    THIS verdict — the in-step readings for ``fed_in_step`` (a floor reading
+    beside them does not move it), the floor readings for ``fed_stale_ref``;
+    the row's ``updated_at`` for ``asserted_once``; null for
+    ``unfed_key``/``unknown``. ``ref_sha``/``ref_age_secs`` are those of the
+    freshest-ref reading among the same set, null otherwise. ``behind`` is
+    deliberately NOT carried: it is not a property of the body.
+    """
+
+    state: StatusCurrencyState
+    as_of: IsoDatetime | None
+    ref_sha: str | None
+    ref_age_secs: int | None
+    detail: str | None
+
+
 # ───────────────────────── responses ─────────────────────────
 
 
@@ -332,6 +379,10 @@ class WorkArtifactSummary(BaseORMSchema):
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
     difficulty_rubric_version: int | None = None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: REQUIRED with no default: a default here would be a healthy-looking
+    #: verdict nobody computed, which is the defect this field exists to close.
+    status_currency: StatusCurrency
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -421,6 +472,10 @@ class DivergentVariant(BaseORMSchema):
     status: str
     current_version: int
     updated_at: IsoDatetime
+    #: How this copy got into the store — ``runner_scan`` / ``agent`` /
+    #: ``operator`` (the row's ``captured_by`` column). ``None`` only if a
+    #: projection ever omits it, and then it is UNKNOWN, not a default.
+    captured_by: str | None = None
 
 
 class DivergentGroup(BaseModel):
@@ -672,6 +727,15 @@ class PlanCandidate(BaseModel):
     difficulty_conceptual: DifficultyLevel | None = None
     difficulty_implementation: DifficultyLevel | None = None
     difficulty_source: DifficultySource | None = None
+    #: The backing artifact's ``sha256(body)`` — what a byte comparison against
+    #: the ref needs without a second read per row. ``None`` on a work-unit-only
+    #: row (there is no body). Required key, no default.
+    content_sha256: str | None
+    #: How current ``status`` can be taken to be — see :class:`StatusCurrency`.
+    #: ``None`` on a work-unit-only row, where ``document_state`` already says
+    #: there is no artifact whose currency could be judged. Required key, no
+    #: default.
+    status_currency: StatusCurrency | None
 
 
 # ─────────────── difficulty map ───────────────
@@ -885,6 +949,57 @@ ReconciliationVerdict = Literal["agree", "disagree", "unknown"]
 AxisCScope = Literal["page"]
 
 
+#: coord's derived ``status_class`` wire vocabulary — five members, exhaustive.
+#: FORWARDED from coord's work-unit list row (``WorkUnitRow::status_class``,
+#: computed by coord's ``work_unit_status_class::classify``) — never derived
+#: web-side, so there is no second copy of coord's word list to drift.
+ReconciliationStatusClass = Literal[
+    "free_known", "attested", "derived", "off_vocabulary", "unset"
+]
+
+#: coord's ``work_unit_custody::Custody`` states, exactly as it emits them.
+ReconciliationCustodyState = Literal["sole", "ambiguous", "unresolved"]
+
+
+class ReconciliationCustody(BaseModel):
+    """Who holds a live session's device, as coord resolved it.
+
+    Forwarded from coord's ``custody`` object (``work_unit_custody.rs``); never
+    derived here.
+
+    * ``sole`` — exactly one live session on the device in this tenant.
+      ``session_name`` is its display name, and ``None`` there means the
+      session has NO name — not that the name is unknown.
+    * ``ambiguous`` — ``live_session_count`` (≥ 2) sessions share the device,
+      so naming any one would be a guess. Render "N sessions".
+    * ``unresolved`` — coord could not establish custody (a failed count, a
+      race, or a session in another tenant). UNKNOWN, never "nobody".
+
+    A custody object coord sent in a state this model does not recognise is
+    dropped to ``None`` on the session row (UNKNOWN) rather than coerced.
+    """
+
+    state: ReconciliationCustodyState
+    session_name: str | None = None
+    live_session_count: int | None = None
+
+
+class ReconciliationLiveSession(BaseModel):
+    """One non-expired ``coord.agent_status`` row naming this unit's slug.
+
+    A session drops out within ``STATUS_TTL`` of its last heartbeat, not when
+    it ends — compare ``expires_at``, never read membership as proof of life.
+    """
+
+    device_id: str
+    correlation_topic: str | None = None
+    updated_at: IsoDatetime | None = None
+    expires_at: IsoDatetime | None = None
+    #: ``None`` when custody was not resolved for this page (not requested, an
+    #: older coord, or a state this model does not recognise) — UNKNOWN.
+    custody: ReconciliationCustody | None = None
+
+
 class ReconciliationAxisA(BaseModel):
     """Axis A — coord's STORED ``work_units.status``.
 
@@ -892,11 +1007,40 @@ class ReconciliationAxisA(BaseModel):
     OPAQUE here as everywhere else in this module: coord accepts an
     off-vocabulary status deliberately (its Free transition tier), so a word in
     no vocabulary reads as OPEN rather than as an error.
+
+    ``status_class`` is that status's derived class (coord's five-member
+    vocabulary), forwarded verbatim from coord's list row. It is ``None``
+    (UNKNOWN) when axis A is unreadable, no unit exists for the stem, coord's
+    row omitted the field or carried a word outside the five, or the row
+    carried no ``status`` string at all — a missing status is never given a
+    confident class.
+
+    ``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness
+    verdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),
+    forwarded from coord's list row. ``None`` is UNKNOWN — never checked, a
+    coord that predates the field, or an unreadable freshness surface — and
+    never "fresh".
+
+    ``live_sessions`` / ``custody_resolved`` are populated only when the
+    request asked for ``include_custody``. ``live_sessions`` is ``None`` when
+    not requested or when coord did not answer the field for this unit
+    (UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord
+    echoed ``resolve_session_names: true`` on every page it read — ``False``
+    means an older coord (or a failed live-session join) on at least one page,
+    and EVERY ``custody`` in the response is then ``None``, including those
+    from pages that did echo, so no row reads as resolved when the read as a
+    whole was not; the ``live_sessions`` rows themselves are kept. ``None``
+    means custody was not requested.
     """
 
     readable: bool
     present: bool
     status: str | None = None
+    status_class: ReconciliationStatusClass | None = None
+    vet_state: str | None = None
+    vet_checked_at: IsoDatetime | None = None
+    live_sessions: list[ReconciliationLiveSession] | None = None
+    custody_resolved: bool | None = None
     unreadable_reason: str | None = None
 
 
@@ -1025,9 +1169,14 @@ class ReconciliationResponse(BaseModel):
 
     items: list[ReconciliationRow]
     #: The whole population's size — the facets' denominator, not ``len(items)``.
+    #: When ``q`` is set this is the FILTERED population, and so are the facets.
     total: int
     offset: int
     limit: int
+    #: The ``q`` filter this page answered, echoed verbatim; ``None`` when the
+    #: request carried none. A consumer reads it to tell a filtered
+    #: denominator from the whole corpus.
+    q: str | None = None
     #: The stable default ordering, named so a consumer can assert it did not
     #: silently become something else. Plan stems are date-prefixed, so slug
     #: order is chronological order, and it is stable across requests in a way

@@ -75,12 +75,20 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens FIVE POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
- * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence, and
+ * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
+ * `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node` Phase 6),
+ * `/fleet/ci-runners` here at coord's own registrar cadence,
  * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
- * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3). Two
+ * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
+ * `/alerts/fault-to-visibility` here at 60 s (plan
+ * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+ * Phase 8 — a trailing-window percentile no other read on the page carries,
+ * which is why the strip's one badge built from it is the single exception to
+ * R1's "derived from data already on the page": the page owns that read, and
+ * the strip still only renders what it was handed). Two
  * polls of ONE route would be two chances to disagree about what the fleet
  * looks like right now; one poll per route is one read per fact, which is the
  * shape this page is built on — worktree-slot occupancy is a fact from a
@@ -122,6 +130,7 @@ import {
   FleetConditionsPanel,
   FleetOverview,
   FleetResourcesSection,
+  FleetRolesSection,
   FleetWorktreeSlotsSection,
   OperatorAuditPanel,
 } from "@/components/operations";
@@ -136,7 +145,12 @@ import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
 import { isActiveTenantCoordAdmin } from "@/lib/coord-admin";
-import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
+import { useFaultToVisibility } from "@/components/operations/useFaultToVisibility";
+import {
+  buildResolvabilityBadge,
+  faultToVisibilityBadge,
+} from "@/components/operations/fleetReadout";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
 // defeats every downstream useMemo keyed on it.
@@ -174,6 +188,10 @@ export default function CoordDevOpsPage() {
   // on. Owned here, one poll, passed down — the machine rows resolve their own
   // row from it rather than fetching per card.
   const ciRunnerMirror = useCiRunnerMirror();
+  // How long faults sat before anyone who can act on them could see them —
+  // the operations ratchet's perceive-stage readout (G1). Owned here, one
+  // poll, like every other read on this page.
+  const faultToVisibility = useFaultToVisibility();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
@@ -321,6 +339,33 @@ export default function CoordDevOpsPage() {
     return badges;
   }, [credentials, deviceStatus.error, deviceStatus.everSeeded, navigate]);
 
+  /**
+   * The operations-ratchet readouts (plan
+   * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+   * Phase 8, exit criteria 2 and 4): fault-to-visibility p90 WITH the share
+   * of episodes whose onset is known, and the share of machines whose running
+   * build coord can name. Both always render — an absent figure reads
+   * "unknown — <reason>", never nothing, because a strip that silently drops
+   * a readout is indistinguishable from one whose readout is fine.
+   */
+  const readoutBadges = useMemo<HealthBadge[]>(
+    () => [
+      faultToVisibilityBadge({
+        data: faultToVisibility.data,
+        loading: faultToVisibility.loading,
+        error: faultToVisibility.error,
+      }),
+      buildResolvabilityBadge(fleet.data, fleet.error),
+    ],
+    [
+      faultToVisibility.data,
+      faultToVisibility.loading,
+      faultToVisibility.error,
+      fleet.data,
+      fleet.error,
+    ]
+  );
+
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
     // than strand its right-hand columns off-screen. Vertical scroll comes
@@ -397,6 +442,9 @@ export default function CoordDevOpsPage() {
           // — an independent axis, because the incident it exists for is a
           // machine that answered every probe with a dead coord credential.
           ...credentialBadges,
+          // Last: not liveness at all, but how fast the fleet SEES its faults
+          // and whether it can name what each machine runs.
+          ...readoutBadges,
         ]}
       />
 
@@ -411,6 +459,27 @@ export default function CoordDevOpsPage() {
         nowMs={nowMs}
         onNavigate={navigate}
       />
+
+      {/* GitHub-hosted CI moved to Dev Ops ▸ CI (plan
+          `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 6): a control
+          belongs with what it governs, and that page owns the pool axis the
+          setting changes. This page is the machine axis, so it keeps a link. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="coord-devops-hosted-ci-link-line"
+      >
+        The GitHub-hosted CI setting, per tenant with per-repo overrides, lives
+        on{" "}
+        <Link
+          href="/admin/coord/ci"
+          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          data-testid="coord-devops-hosted-ci-link"
+        >
+          Dev Ops → CI
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+        .
+      </p>
 
       {/* The join this page is keyed on, stated once, before the list it
           shapes. Rows here come from coord's device registry, and the bridge
@@ -485,6 +554,15 @@ export default function CoordDevOpsPage() {
         deviceStatus={deviceStatus}
         nowMs={nowMs}
       />
+
+      {/* Roles — each machine's standing dispatch role (Workhorse / Bench /
+          CI node), plan `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node`
+          Phase 6. Its own poll of /fleet/dispatch-roles (one route, one poll):
+          coord's role read is its own spine, because it also lists machines
+          assigned by host name that have no device row yet. Directly under
+          the machine list because a role is what explains a machine that
+          takes no sessions while not drained. */}
+      <FleetRolesSection />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine

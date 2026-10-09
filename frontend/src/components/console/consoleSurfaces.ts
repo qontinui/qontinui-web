@@ -212,6 +212,43 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// GitHub-hosted CI on the Dev Ops ▸ CI page — plan
+// `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
+import {
+  HOSTED_CI_ATTENTION_BY_KIND,
+  HOSTED_CI_AUTHOR_GLYPH_KINDS,
+  HOSTED_CI_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
+// Per-repo follow-up dials (agent registry) — plan
+// `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
+import {
+  FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+  FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS,
+  FOLLOWUP_SCOPE_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus";
+// The CI dashboard — plan `2026-10-04-ci-dashboard-in-the-dev-ops-console`
+// Phase 3. One module, two orthogonal tables: a pool's verdict and a repo's.
+import {
+  CI_POOL_ATTENTION_BY_KIND,
+  CI_POOL_AUTHOR_GLYPH_KINDS,
+  CI_POOL_BADGE_CLASS,
+  CI_REPO_ATTENTION_BY_KIND,
+  CI_REPO_AUTHOR_GLYPH_KINDS,
+  CI_REPO_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/ciDashboardStatus";
+import {
+  CAPABILITY_ATTENTION_BY_STATE,
+  CAPABILITY_AUTHOR_GLYPH_KINDS,
+  CAPABILITY_BADGE_CLASS,
+  WEDGE_ATTENTION_BY_STATE,
+  WEDGE_AUTHOR_GLYPH_KINDS,
+  WEDGE_BADGE_CLASS,
+} from "@/components/operations/runnerReportStatus";
+import {
+  DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+  DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS,
+  DOMAIN_COST_VERDICT_BADGE_CLASS,
+} from "@/components/operations/domainCostStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -506,6 +543,40 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
         RUNNER_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- the operations ratchet's readout ------------------------------------
+  // Plan `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+  // Phase 8. Two tables on the Dev Ops machine rows — the runner's own
+  // capability verdicts (`unknown` amber by floor: a record coord aged, or a
+  // state this build has no label for) and its wedge incidents — and the
+  // domain cost verdict on the Overview.
+  {
+    surface: "runner capability (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: CAPABILITY_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: CAPABILITY_BADGE_CLASS,
+      authorGlyphKinds: CAPABILITY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "runner wedge incidents (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: WEDGE_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: WEDGE_BADGE_CLASS,
+      authorGlyphKinds: WEDGE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "domain cost verdict (/overview)",
+    module: "components/operations/domainCostStatus.ts",
+    attentionByKind: DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: DOMAIN_COST_VERDICT_BADGE_CLASS,
+      authorGlyphKinds:
+        DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   // --- the consolidated sessions console ------------------------------------
   {
     surface: "sessions (/sessions)",
@@ -560,6 +631,50 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: SERVICE_BADGE_CLASS,
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
+  {
+    surface: "GitHub-hosted CI (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts",
+    attentionByKind: HOSTED_CI_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: HOSTED_CI_BADGE_CLASS,
+      authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- per-repo follow-up dials (agent registry) -------------------------
+  {
+    // A configured scope (even `none`) is a setting in effect, so calm; only
+    // an unreadable preference is amber — never painted as the `all` default.
+    surface: "post-merge follow-up scope (/admin/coord/agent-registry)",
+    module: "app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus.ts",
+    attentionByKind: FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FOLLOWUP_SCOPE_BADGE_CLASS,
+      authorGlyphKinds: FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the CI dashboard ------------------------------------------------------
+  {
+    // Every non-measured state is amber BY FLOOR and rendered with its
+    // reason, never calm: a pool coord could not measure is the
+    // "0 runners vs UNKNOWN" defect the plan exists to end.
+    surface: "CI pools (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciDashboardStatus.ts",
+    attentionByKind: CI_POOL_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CI_POOL_BADGE_CLASS,
+      authorGlyphKinds: CI_POOL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "CI repos (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciDashboardStatus.ts",
+    attentionByKind: CI_REPO_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CI_REPO_BADGE_CLASS,
+      authorGlyphKinds: CI_REPO_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];

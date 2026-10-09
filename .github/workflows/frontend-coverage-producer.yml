@@ -27,11 +27,28 @@ on:
       - ".github/workflows/frontend-coverage-producer.yml"
   workflow_dispatch:
 
-# Don't pile up producer runs if several main pushes land quickly; the latest
-# head_sha is the one worth mapping.
+# `cancel-in-progress: false`, matching backend-coverage-producer.yml, whose
+# header carries the full argument. In short: a CANCELLED run maps no head at
+# all, and with `false` GitHub still bounds the group at one running + one
+# pending (a third arrival cancels the PENDING run, never the running one), so
+# the in-flight run always finishes and exports while the pending slot always
+# holds the newest head. Superseded runs are cancelled while pending, at zero
+# runner minutes.
+#
+# This used to be `true`, on the reasoning that the suite (~14 min) ran far
+# under the push interval. Measured 2026-09-26 on the last 40 push-on-main
+# runs: median ~16-17 min (creation to completion), p90 ~18 min, and 3 of 40
+# `cancelled` mid-run -- each one a land whose coverage map was thrown away.
+#
+# Plan: 2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work
 concurrency:
   group: frontend-coverage-producer-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
+# that needs more declares its own `permissions:`.
+permissions:
+  contents: read
 
 jobs:
   produce:
@@ -43,7 +60,9 @@ jobs:
 
     steps:
       - name: Checkout qontinui-web
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
       # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
@@ -55,7 +74,7 @@ jobs:
       # Mirror frontend-ci.yml's setup so coverage runs in the same environment
       # the gating lane validates.
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"

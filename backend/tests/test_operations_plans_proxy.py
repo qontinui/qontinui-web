@@ -677,3 +677,165 @@ class TestCoordPlansOverview:
 
         paths = [getattr(r, "path", "") for r in router.routes]
         assert paths.index("/plans/overview") < paths.index("/plans/{slug}")
+
+    @pytest.mark.parametrize("derive_mode", ["shadow", "live"])
+    def test_overview_passes_derive_mode_through(
+        self, auth_client: TestClient, derive_mode: str
+    ):
+        """coord's deployment-wide ``derive_mode`` reaches the console verbatim.
+
+        The proxy is unmodelled, so this pins that it STAYS that way: a model
+        added later that forgot the field would drop the posture the console
+        needs for its "decay detection runs in shadow mode" caveat.
+        """
+        payload = {"row_count": 3, "corpus_complete": True, "derive_mode": derive_mode}
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=payload)
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans/overview")
+        assert resp.json()["derive_mode"] == derive_mode
+
+    def test_an_older_coord_overview_carries_no_derive_mode_key(
+        self, auth_client: TestClient
+    ):
+        """Absent stays ABSENT — never defaulted to ``live`` on the way through."""
+        payload = {"row_count": 3, "corpus_complete": True}
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=payload)
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans/overview")
+        assert "derive_mode" not in resp.json()
+
+
+class TestLiveSessionFlagsOnTheList:
+    """Plan ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` 0c.
+
+    The two flags are forwarded ONLY when given, each pinned on its own — a
+    dropped flag fails silently (coord answers a page with no
+    ``live_sessions``, which the console would read as UNKNOWN forever).
+    """
+
+    @pytest.mark.parametrize(
+        ("query", "key", "expected"),
+        [
+            ("?include_live_sessions=true", "include_live_sessions", "true"),
+            ("?include_live_sessions=false", "include_live_sessions", "false"),
+            ("?resolve_session_names=true", "resolve_session_names", "true"),
+            ("?resolve_session_names=false", "resolve_session_names", "false"),
+        ],
+    )
+    def test_each_flag_is_forwarded(
+        self, auth_client: TestClient, query: str, key: str, expected: str
+    ):
+        _, _, params = _call(auth_client, query)
+        assert params.get(key) == expected
+
+    def test_both_flags_ride_together_and_nothing_else_is_invented(
+        self, auth_client: TestClient
+    ):
+        _, _, params = _call(
+            auth_client, "?include_live_sessions=1&resolve_session_names=yes"
+        )
+        assert params == {
+            "include_live_sessions": "true",
+            "resolve_session_names": "true",
+        }
+
+    def test_absent_flags_are_not_sent(self, auth_client: TestClient):
+        _, _, params = _call(auth_client, "?status=draft")
+        assert "include_live_sessions" not in params
+        assert "resolve_session_names" not in params
+
+    def test_custody_and_the_echo_survive_the_annotation(self, auth_client: TestClient):
+        """The body signals are additive; coord's custody fields pass verbatim."""
+        session = {
+            "device_id": str(uuid4()),
+            "correlation_topic": "t",
+            "intent_globs": None,
+            "updated_at": "2026-10-06T00:00:00Z",
+            "expires_at": "2026-10-06T00:05:00Z",
+            "custody": {"state": "sole", "session_name": "plan-foo"},
+        }
+        payload = {
+            "work_units": [
+                {
+                    "slug": "2026-10-06-custody",
+                    "status": "in_progress",
+                    "live_sessions": [session],
+                }
+            ],
+            "limit": 100,
+            "offset": 0,
+            "resolve_session_names": True,
+        }
+        resp, _, _ = _call(
+            auth_client,
+            "?include_live_sessions=true&resolve_session_names=true",
+            payload,
+        )
+        body = resp.json()
+        assert body["resolve_session_names"] is True
+        assert body["work_units"][0]["live_sessions"] == [session]
+
+
+class TestCoordPlansThroughput:
+    """``GET /operations/plans/throughput`` → coord ``/coord/work-units/throughput``."""
+
+    _BODY = {
+        "since": "2026-09-01T00:00:00Z",
+        "until": "2026-10-06T00:00:00Z",
+        "bucket": "day",
+        "timezone": "UTC",
+        "statuses": ["in_progress", "shipped"],
+        "count": 1,
+        "buckets": [{"day": "2026-09-02", "to_status": "shipped", "count": 4}],
+    }
+
+    def _get(self, auth_client: TestClient, query: str, *, status_code: int = 200):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=status_code, json_data=self._BODY
+            )
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans/throughput{query}")
+        return resp, instance
+
+    def test_since_is_forwarded_and_the_body_passes_through(
+        self, auth_client: TestClient
+    ):
+        resp, instance = self._get(auth_client, "?since=2026-09-01")
+        assert resp.status_code == 200
+        assert resp.json() == self._BODY
+        assert instance.get.call_args.args[0].endswith("/coord/work-units/throughput")
+        assert instance.get.call_args.kwargs["params"] == {"since": "2026-09-01"}
+
+    def test_until_rides_with_since(self, auth_client: TestClient):
+        _, instance = self._get(
+            auth_client, "?since=2026-09-01T00:00:00Z&until=2026-09-15"
+        )
+        assert instance.get.call_args.kwargs["params"] == {
+            "since": "2026-09-01T00:00:00Z",
+            "until": "2026-09-15",
+        }
+
+    @pytest.mark.parametrize("query", ["", "?since=", "?until=2026-09-15"])
+    def test_since_is_required_and_coord_is_never_asked(
+        self, auth_client: TestClient, query: str
+    ):
+        """An unbounded scan is refused HERE, before any coord round trip."""
+        resp, instance = self._get(auth_client, query)
+        assert resp.status_code == 422
+        instance.get.assert_not_called()
+
+    def test_coords_window_rejection_is_forwarded(self, auth_client: TestClient):
+        resp, _ = self._get(auth_client, "?since=1999-01-01", status_code=400)
+        assert resp.status_code == 400
+
+    def test_throughput_is_declared_before_the_slug_route(self):
+        from app.api.v1.endpoints.operations import router
+
+        paths = [getattr(r, "path", "") for r in router.routes]
+        assert paths.index("/plans/throughput") < paths.index("/plans/{slug}")

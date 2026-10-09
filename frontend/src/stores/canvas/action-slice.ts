@@ -9,27 +9,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CanvasStore, ActionSlice, Action, Connection } from "./types";
-
-/**
- * Generate a unique ID for actions
- */
-function generateActionId(): string {
-  return `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Deep clone an action with a new ID
- */
-function cloneAction(
-  action: Action,
-  offset: { x: number; y: number } = { x: 0, y: 0 }
-): Action {
-  return {
-    ...action,
-    id: generateActionId(),
-    position: [action.position[0] + offset.x, action.position[1] + offset.y],
-  };
-}
+import { cloneAction, isValidConnectionType } from "./utils";
 
 export const createActionSlice: StateCreator<
   CanvasStore,
@@ -54,9 +34,18 @@ export const createActionSlice: StateCreator<
 
       const index = state.workflow.actions.findIndex((a) => a.id === actionId);
       if (index !== -1) {
+        const existingAction = state.workflow.actions[index];
+        // Deep merge config to preserve existing properties: callers such as
+        // the property panel send only the config keys they changed.
+        const mergedConfig =
+          updates.config && existingAction
+            ? { ...existingAction.config, ...updates.config }
+            : updates.config || existingAction?.config;
+
         state.workflow.actions[index] = {
-          ...state.workflow.actions[index],
+          ...existingAction,
           ...updates,
+          config: mergedConfig,
         } as Action;
         state.isDirty = true;
       }
@@ -81,15 +70,17 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          (sourceConnections[
-            type as keyof typeof sourceConnections
-          ] as Connection[][]) = (
-            sourceConnections[
-              type as keyof typeof sourceConnections
-            ] as Connection[][]
-          )?.map((outputs: Connection[]) =>
-            outputs.filter((conn: Connection) => conn.action !== actionId)
-          );
+          if (isValidConnectionType(type)) {
+            const outputs = (sourceConnections as Record<string, unknown>)[
+              type
+            ];
+            if (outputs && Array.isArray(outputs)) {
+              (sourceConnections as Record<string, unknown>)[type] =
+                outputs.map((conns: Connection[]) =>
+                  conns.filter((conn: Connection) => conn.action !== actionId)
+                );
+            }
+          }
         }
       }
 
@@ -121,15 +112,17 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          (sourceConnections[
-            type as keyof typeof sourceConnections
-          ] as Connection[][]) = (
-            sourceConnections[
-              type as keyof typeof sourceConnections
-            ] as Connection[][]
-          )?.map((outputs: Connection[]) =>
-            outputs.filter((conn: Connection) => !idsSet.has(conn.action))
-          );
+          if (isValidConnectionType(type)) {
+            const outputs = (sourceConnections as Record<string, unknown>)[
+              type
+            ];
+            if (outputs && Array.isArray(outputs)) {
+              (sourceConnections as Record<string, unknown>)[type] =
+                outputs.map((conns: Connection[]) =>
+                  conns.filter((conn: Connection) => !idsSet.has(conn.action))
+                );
+            }
+          }
         }
       }
 
