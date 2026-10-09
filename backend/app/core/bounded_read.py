@@ -758,8 +758,10 @@ class ScopeFingerprint:
         self, token: str | None, *, surface: str, parameter: str = "cursor"
     ) -> KeysetPosition | None:
         """:meth:`decode` for a route's optional query parameter: ``None`` is
-        the first page, and a malformed token is the typed 400."""
-        if token is None:
+        the first page, and so is the empty string (``?cursor=`` — a form field
+        or client that forwards an unset box), matching coord's grammar; any
+        other malformed token is the typed 400."""
+        if token is None or token.strip() == "":
             return None
         try:
             return self.decode(token)

@@ -33,7 +33,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_10_keyset_walk_indexes"
-_PARENT_REVISION_ID = "coord_devices_ui_thread_01"
+_PARENT_REVISION_ID = "coord_sessions_fleet_idx_01"
 _REVISION_FILENAME = "plan_library_10_keyset_walk_indexes.py"
 _ARTIFACT_INDEX = "ix_work_artifacts_org_created_id"
 _EDGE_INDEX = "ix_work_artifact_edges_open_followups_created_id"

@@ -249,6 +249,12 @@ class TestStrictDecode:
                 fp.decode(_payload_token(fp, **override))
             assert exc.value.reason is reason, override
 
+    def test_an_empty_cursor_param_is_the_first_page(self) -> None:
+        """``?cursor=`` reads as no cursor (coord's grammar); ``decode`` itself
+        stays strict about an empty token."""
+        for token in (None, "", "   "):
+            assert _fp().decode_param(token, surface="GET /x") is None
+
     def test_the_refusal_is_a_typed_400_naming_the_parameter(self) -> None:
         with pytest.raises(HTTPException) as exc:
             _fp().decode_param("garbage!", surface="GET /x")

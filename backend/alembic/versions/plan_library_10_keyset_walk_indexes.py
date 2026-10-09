@@ -1,7 +1,7 @@
 """agent.work_artifacts / work_artifact_edges — keyset walk indexes
 
 Revision ID: plan_library_10_keyset_walk_indexes
-Revises: coord_devices_ui_thread_01
+Revises: coord_sessions_fleet_idx_01
 Create Date: 2026-10-09
 
 Phase 4 of ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``.
@@ -43,7 +43,7 @@ from alembic import op
 revision: str = "plan_library_10_keyset_walk_indexes"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "coord_devices_ui_thread_01"
+down_revision = "coord_sessions_fleet_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
