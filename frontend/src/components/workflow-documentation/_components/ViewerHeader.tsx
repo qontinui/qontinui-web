@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { WorkflowDocumentation } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentation } from "@/services/workflow-documentation";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
