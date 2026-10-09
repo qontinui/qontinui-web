@@ -31,7 +31,7 @@ import { usePathname } from "next/navigation";
 import { Bell, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import { fetchNotifications } from "@/lib/api/operations/coordLands";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
@@ -44,7 +44,7 @@ const log = createLogger("CoordNav");
 /** `?limit=1`: the badge wants the `unread_count` SCALAR, not the page.
  *  Asking for one row keeps a nav-wide 60s poll cheap on every console
  *  page while still carrying the count. */
-const NOTIFICATIONS_API = "/api/v1/operations/notifications?limit=1";
+const NOTIFICATIONS_QUERY = "limit=1";
 /** One poll a minute, deliberately NOT the page-level
  *  `POLL_INTERVAL_MS = 10_000`: the nav badge is a background hint rendered on
  *  every console page, the page poller is the foreground surface. Do not raise
@@ -110,8 +110,8 @@ function useNotificationsBadge(): {
   const fetchCount = useCallback(async () => {
     const seq = issue();
     try {
-      const body = await httpClient.get<{ unread_count?: number }>(
-        NOTIFICATIONS_API,
+      const body = await fetchNotifications(
+        NOTIFICATIONS_QUERY,
         NOTIFICATIONS_REQUEST_OPTIONS
       );
       const unread = body?.unread_count;
@@ -453,7 +453,9 @@ export default function CoordNav() {
         >
           {active.group && (
             <>
-              <span className="text-muted-foreground">{active.group.label}</span>
+              <span className="text-muted-foreground">
+                {active.group.label}
+              </span>
               <span className="opacity-60">·</span>
             </>
           )}

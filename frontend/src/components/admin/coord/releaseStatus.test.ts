@@ -12,7 +12,7 @@ import {
   releaseState,
   type ReleaseState,
 } from "./releaseStatus";
-import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
+import type { ReleaseHistoryEntry } from "@/lib/api/operations/releases";
 
 /**
  * Anti-drift guard for the runner GitHub-Releases drift-state ladder on
@@ -262,12 +262,17 @@ describe("deriveReleaseStatus", () => {
       "2h behind"
     );
     expect(
-      deriveReleaseStatus(entry({ has_setup_exe: false, has_latest_json: true }))
-        .reason
+      deriveReleaseStatus(
+        entry({ has_setup_exe: false, has_latest_json: true })
+      ).reason
     ).toBe("no setup.exe");
     expect(
       deriveReleaseStatus(
-        entry({ has_setup_exe: true, has_latest_json: true, ci_state: "failure" })
+        entry({
+          has_setup_exe: true,
+          has_latest_json: true,
+          ci_state: "failure",
+        })
       ).reason
     ).toBe("CI failure");
   });
@@ -276,9 +281,8 @@ describe("deriveReleaseStatus", () => {
     // `null` is a dark observation; `false` is a measurement. Conflating them
     // would report a missing installer on evidence we do not have.
     expect(
-      deriveReleaseStatus(
-        entry({ has_setup_exe: null, has_latest_json: null })
-      ).reason
+      deriveReleaseStatus(entry({ has_setup_exe: null, has_latest_json: null }))
+        .reason
     ).toBeUndefined();
   });
 });
@@ -300,9 +304,7 @@ describe("lagLabel / releaseIdentity", () => {
       releaseIdentity(entry({ tag: null, version: null, published_tag: "v0" }))
     ).toBe("v0");
     expect(
-      releaseIdentity(
-        entry({ tag: null, version: null, published_tag: null })
-      )
+      releaseIdentity(entry({ tag: null, version: null, published_tag: null }))
     ).toBe("—");
   });
 });

@@ -25,7 +25,25 @@ import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: {
+    // The typed /operations client reads through `httpClient.fetch`; adapt it
+    // back onto the per-verb stubs this file drives.
+    fetch: async (
+      url: string,
+      init: { method?: string; body?: string } = {}
+    ) => {
+      const { method, body, ...options } = init;
+      const value =
+        method === "POST"
+          ? await httpGet(
+              url,
+              body === undefined ? undefined : JSON.parse(body),
+              options
+            )
+          : await httpGet(url, options);
+      return new Response(JSON.stringify(value ?? null), { status: 200 });
+    },
+  },
 }));
 
 import CoordFindingsPage from "./page";

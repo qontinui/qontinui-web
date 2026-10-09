@@ -36,7 +36,7 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
-import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
+import type { ReleaseHistoryEntry } from "@/lib/api/operations/releases";
 
 /** The surface's operational state, normalized from the drift descriptor. */
 export type ReleaseState =

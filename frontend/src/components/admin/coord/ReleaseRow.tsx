@@ -43,7 +43,7 @@ import {
   lagLabel,
   releaseIdentity,
 } from "@/components/admin/coord/releaseStatus";
-import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
+import type { ReleaseHistoryEntry } from "@/lib/api/operations/releases";
 
 /**
  * An asset-presence chip.
@@ -213,7 +213,9 @@ export function ReleaseRow({
                   says so in words. */}
               {entry.assets == null
                 ? "published assets: not observed"
-                : assets.length + " published asset" + (assets.length === 1 ? "" : "s")}
+                : assets.length +
+                  " published asset" +
+                  (assets.length === 1 ? "" : "s")}
             </p>
             {assets.length > 0 ? (
               <ul className="space-y-0.5">
@@ -271,7 +273,9 @@ export function ReleaseRow({
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
             tag: {entry.tag ?? "—"} · version: {entry.version ?? "—"}
-            {entry.published_tag ? ` · published tag: ${entry.published_tag}` : ""}
+            {entry.published_tag
+              ? ` · published tag: ${entry.published_tag}`
+              : ""}
             {entry.repo ? ` · repo: ${entry.repo}` : ""}
             {entry.provenance ? ` · provenance: ${entry.provenance}` : ""}
           </div>
