@@ -33,7 +33,7 @@ import Link from "next/link";
 import { Archive, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { listSessionArtifacts } from "@/components/session-repository/api";
-import { getSessionOutput } from "./api";
+import { getSessionOutput } from "@/lib/api/operations/sessions";
 import {
   archiveHref,
   archivedTranscriptIndicator,
@@ -129,7 +129,9 @@ export function useTranscriptStores(
         why: "no session id is known for this row, so coord's transcript stream cannot be addressed. Unknown, not absent.",
       });
     } else {
-      setLive((prev) => (prev.state === "unprobed" ? { state: "probing" } : prev));
+      setLive((prev) =>
+        prev.state === "unprobed" ? { state: "probing" } : prev
+      );
       void probeLiveTranscript(liveSessionId, {
         read: reader,
         sessionClosed,
@@ -241,7 +243,10 @@ export function TranscriptStoresPanel({
             copy that outlives coord&apos;s 7-day window.
           </p>
           {archived.state === "present" && (
-            <ul className="space-y-0.5" data-testid="session-transcript-archive-links">
+            <ul
+              className="space-y-0.5"
+              data-testid="session-transcript-archive-links"
+            >
               {archived.rows.map((row) => (
                 <li key={row.artifactId} className="text-[11px]">
                   <Link

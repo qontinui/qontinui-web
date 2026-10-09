@@ -1,4 +1,8 @@
-export { SessionsConsole, parseStatusTab, type StatusTab } from "./SessionsConsole";
+export {
+  SessionsConsole,
+  parseStatusTab,
+  type StatusTab,
+} from "./SessionsConsole";
 export { SessionDetail } from "./SessionDetail";
 export { SessionCardView } from "./SessionCardView";
 export { ConsolidatedSessionDetail } from "./ConsolidatedSessionDetail";
@@ -27,4 +31,3 @@ export * from "./sessionConsoleStatus";
 export * from "./sessionKeyResolution";
 export * from "./transcriptStores";
 export * from "./types";
-export * from "./api";

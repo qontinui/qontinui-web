@@ -1,5 +1,5 @@
 /**
- * Tests for the commit-lineage API client (`api.ts`).
+ * Tests for the commit-lineage API client (`lineage.ts`).
  *
  * These exercise the WEB-layer contract only: the helpers call the backend
  * proxy via the shared `httpClient`, unwrap coord's enveloped bodies
@@ -7,9 +7,8 @@
  * empty/missing, pass through the stats body as-is, and throw
  * `CommitsApiError` (carrying the status) on a non-ok response.
  *
- * The `httpClient` is mocked at `@/services/service-factory` and
- * `ApiConfig.API_BASE_URL` is pinned to "" so the asserted URLs are stable —
- * the same mocking pattern as `useCoPilotActivity.test.tsx`.
+ * The `httpClient` is mocked at `@/services/service-factory`; the asserted
+ * URLs are the literal RELATIVE `/api/v1/operations/lineage/...` form.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,9 +17,6 @@ const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
-vi.mock("@/services/api-config", () => ({
-  ApiConfig: { API_BASE_URL: "" },
-}));
 
 import {
   CommitsApiError,
@@ -28,8 +24,8 @@ import {
   getRecentCommits,
   getSessionCommits,
   isSchemaMigrationPending,
-} from "./api";
-import type { LineageRow, LineageStats } from "./types";
+} from "./lineage";
+import type { LineageRow, LineageStats } from "@/components/commits/types";
 
 const BASE = "/api/v1/operations/lineage";
 
@@ -305,5 +301,39 @@ describe("schema_migration_pending detection", () => {
 
     expect(isSchemaMigrationPending(err)).toBe(false);
     expect((err as CommitsApiError).status).toBe(500);
+  });
+});
+
+describe("request options (literal URLs, method, retry policy)", () => {
+  beforeEach(() => fetchMock.mockReset());
+
+  const GROUP = "ops/sess #1";
+  const GROUP_ENCODED = "ops%2Fsess%20%231";
+
+  it("getRecentCommits GETs /lineage/recent?limit=, declared idempotent", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ rows: [] }));
+    await getRecentCommits(7);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/lineage/recent?limit=7",
+      { method: "GET", idempotent: true, signal: undefined },
+    ]);
+  });
+
+  it("getLineageStats GETs /lineage/stats, declared idempotent", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}));
+    await getLineageStats();
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/lineage/stats",
+      { method: "GET", idempotent: true, signal: undefined },
+    ]);
+  });
+
+  it("getSessionCommits GETs the encoded session's commits, declared idempotent", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ commits: [] }));
+    await getSessionCommits(GROUP);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      `/api/v1/operations/lineage/sessions/${GROUP_ENCODED}/commits`,
+      { method: "GET", idempotent: true, signal: undefined },
+    ]);
   });
 });

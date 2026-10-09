@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { stealSession } from "./api";
+import { stealSession } from "@/lib/api/operations/sessions";
 import type { SessionRow } from "./types";
 
 const MIN_REASON_CHARS = 10;

@@ -50,11 +50,17 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Network } from "lucide-react";
-import { getSession } from "./api";
-import { classifyLifecycleError, type LifecycleHalf } from "./sessionKeyResolution";
+import { getSession } from "@/lib/api/operations/sessions";
+import {
+  classifyLifecycleError,
+  type LifecycleHalf,
+} from "./sessionKeyResolution";
 import { SessionCardView } from "./SessionCardView";
 import { SessionDetail } from "./SessionDetail";
-import { TranscriptStoresPanel, useTranscriptStores } from "./TranscriptStoresPanel";
+import {
+  TranscriptStoresPanel,
+  useTranscriptStores,
+} from "./TranscriptStoresPanel";
 import type { HandoffTarget } from "./HandoffModal";
 import type { SessionCard } from "@/services/agent-sessions-api";
 import type { ArtifactLister, OutputReader } from "./transcriptStores";
@@ -101,7 +107,8 @@ export function ConsolidatedSessionDetail({
     setLifecycle({ state: "loading" });
     void (fetchSession ?? getSession)(sessionId, ctrl.signal)
       .then((row) => {
-        if (!ctrl.signal.aborted) setLifecycle({ state: "resolved", value: row });
+        if (!ctrl.signal.aborted)
+          setLifecycle({ state: "resolved", value: row });
       })
       .catch((err: unknown) => {
         if ((err as { name?: string })?.name === "AbortError") return;

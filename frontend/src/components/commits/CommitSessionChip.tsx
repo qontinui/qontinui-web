@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { getSessionCommits } from "./api";
+import { getSessionCommits } from "@/lib/api/operations/lineage";
 import type { LineageRow } from "./types";
 import { commitUrl, formatTs, sessionLabel, shortSha } from "./format";
 

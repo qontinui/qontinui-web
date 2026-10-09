@@ -59,7 +59,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConsolidatedSessionDetail } from "@/components/sessions/ConsolidatedSessionDetail";
-import { getSession } from "@/components/sessions/api";
+import { getSession } from "@/lib/api/operations/sessions";
 import {
   classifyAgentError,
   classifyLifecycleError,
@@ -288,10 +288,9 @@ export default function SessionKeyPage() {
                   className="text-xs text-muted-foreground"
                   data-testid="sessions-detail-ambiguous-key"
                 >
-                  {verdict.cards.length} sessions match this key (newest
-                  first). Session names are not unique, so every match is
-                  rendered — picking one would show you a session you did not
-                  ask for.
+                  {verdict.cards.length} sessions match this key (newest first).
+                  Session names are not unique, so every match is rendered —
+                  picking one would show you a session you did not ask for.
                 </p>
               )}
 

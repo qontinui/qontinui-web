@@ -22,7 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, renderHook, screen } from "@testing-library/react";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import {
   NON_REVALIDATING_EVENT_KINDS,
   REVALIDATE_COALESCE_MS,
@@ -70,7 +70,13 @@ function fakeStream() {
       state.unsubscribed += 1;
     };
   }) as SessionEventSubscriber);
-  return { ...state, subscribe, get self() { return state; } };
+  return {
+    ...state,
+    subscribe,
+    get self() {
+      return state;
+    },
+  };
 }
 
 describe("isRevalidatingEvent — a denylist, and which way it fails", () => {
@@ -253,7 +259,11 @@ function CoordinationHarness({
     subscribe,
   });
   return (
-    <SessionRowExpansion row={ROW} coordination={coordination} stores={NO_STORES} />
+    <SessionRowExpansion
+      row={ROW}
+      coordination={coordination}
+      stores={NO_STORES}
+    />
   );
 }
 
@@ -285,10 +295,15 @@ describe("an open row, refreshed over its own SSE stream", () => {
     const readers = {
       claims: claims as never,
       agents: vi.fn(async () => ({ agents: [], count: 0 })) as never,
-      lineage: vi.fn(async () => ({ session_id: SESSION_ID, actions: [] })) as never,
+      lineage: vi.fn(async () => ({
+        session_id: SESSION_ID,
+        actions: [],
+      })) as never,
     };
 
-    render(<CoordinationHarness subscribe={stream.subscribe} readers={readers} />);
+    render(
+      <CoordinationHarness subscribe={stream.subscribe} readers={readers} />
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -350,16 +365,21 @@ describe("an open row, refreshed over its own SSE stream", () => {
     const readers = {
       claims: claims as never,
       agents: vi.fn(async () => ({ agents: [], count: 0 })) as never,
-      lineage: vi.fn(async () => ({ session_id: SESSION_ID, actions: [] })) as never,
+      lineage: vi.fn(async () => ({
+        session_id: SESSION_ID,
+        actions: [],
+      })) as never,
     };
 
-    render(<CoordinationHarness subscribe={stream.subscribe} readers={readers} />);
+    render(
+      <CoordinationHarness subscribe={stream.subscribe} readers={readers} />
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByTestId("sessions-console-detail-claims")).toHaveTextContent(
-      "frontend/src/**"
-    );
+    expect(
+      screen.getByTestId("sessions-console-detail-claims")
+    ).toHaveTextContent("frontend/src/**");
 
     gone = true;
     act(() => stream.self.emit(event("session_closed")));
@@ -377,7 +397,10 @@ describe("an open row, refreshed over its own SSE stream", () => {
     const readers = {
       claims: vi.fn(async () => ({ claims: [], count: 0 })) as never,
       agents: vi.fn(async () => ({ agents: [], count: 0 })) as never,
-      lineage: vi.fn(async () => ({ session_id: SESSION_ID, actions: [] })) as never,
+      lineage: vi.fn(async () => ({
+        session_id: SESSION_ID,
+        actions: [],
+      })) as never,
     };
     const { unmount } = render(
       <CoordinationHarness subscribe={stream.subscribe} readers={readers} />
