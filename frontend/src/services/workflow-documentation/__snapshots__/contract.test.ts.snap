@@ -77,7 +77,7 @@ exports[`workflow-documentation service contract > CRUD and comments behave as r
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all html 1`] = `
 "# Workflow Documentation
 
-Generated: 2026-01-02T03:04:05.000Z
+Generated: 2026-01-02T03:04:06.000Z
 
 Total Workflows: 1
 
@@ -170,7 +170,7 @@ graph TD
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all markdown 1`] = `
 "# Workflow Documentation
 
-Generated: 2026-01-02T03:04:05.000Z
+Generated: 2026-01-02T03:04:06.000Z
 
 Total Workflows: 1
 
@@ -333,7 +333,7 @@ Last updated: LOCALE(2025-12-15T11:30:00.000Z)"
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > project readme 1`] = `
 "# Workflow Project Documentation
 
-Generated: 2026-01-02T03:04:05.000Z
+Generated: 2026-01-02T03:04:06.000Z
 
 ## Table of Contents
 
@@ -599,7 +599,8 @@ graph TD
     try -.->|error| sub
     get ==>|success| shot
     shot --> filter
-<code></code>\`</p><p><h2>Error Handling</h2></p><p>This workflow includes 1 error handling block(s):</p><p><li><strong>Guard submit</strong>: Catches and handles errors from its try block</li></p><p><h2>Recent Changes</h2></p><p>Last updated: LOCALE(2025-12-15T11:30:00.000Z)</p><p><h2>Action Comments</h2></p><p><li><strong>try</strong>: Falls back to logout</li>
+<code></code>\`</p><p><h2>Error Handling</h2></p><p>This workflow includes 1 error handling block(s):</p><p><li><strong>Guard submit</strong>: Catches and handles errors from its try block</li></p><p><h2>Recent Changes</h2></p><p>Last updated: LOCALE(2025-12-15T11:30:00.000Z)</p><p><h2>Action Comments</h2></p><p><li><strong>click</strong>: Primary submit button</li>
+<li><strong>try</strong>: Falls back to logout</li>
 </p>",
   "html:plain": "<p><h1>Login "Flow"</h1></p><p>
 <h2>Overview</h2></p><p><strong>Name:</strong> Login "Flow"
@@ -848,6 +849,7 @@ Last updated: LOCALE(2025-12-15T11:30:00.000Z)
 
 ## Action Comments
 
+- **click**: Primary submit button
 - **try**: Falls back to logout
 ",
   "markdown:plain": "# Login "Flow"
@@ -1166,6 +1168,7 @@ Last updated: LOCALE(2025-12-15T11:30:00.000Z)
 
 ## Action Comments
 
+- **click**: Primary submit button
 - **try**: Falls back to logout
 ",
   "pdf:plain": "[PDF Export] # Login "Flow"
