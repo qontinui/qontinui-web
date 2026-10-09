@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """No global-state assertion may be ADDED to the backend suite — a per-file ratchet.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/global-state-assertions.yml``, step
     "Count global-state assertions in backend/tests against the allowlist"
+  * ``.github/workflows/web-guards.yml``, step
+    "global-state-assertions: Count global-state assertions in backend/tests against the allowlist"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``global-state-assertions``
   * ``.pre-commit-config.yaml``, hook ``global-state-assertions``
 

@@ -21,6 +21,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.services.coord_service_account import coord_service_account
 
@@ -34,6 +35,7 @@ API_PREFIX = "/api/v1/devices"
 def _build_test_app() -> FastAPI:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.devices import router as devices_router
+    from app.middleware.error_handler import http_exception_handler
 
     test_app = FastAPI()
     mock_user = MagicMock()
@@ -43,6 +45,9 @@ def _build_test_app() -> FastAPI:
     mock_user.is_verified = True
     mock_user.is_superuser = False
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
+    # The production handler, so these tests pin the shape a client actually
+    # receives: it rewrites a dict detail rather than nesting it.
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     test_app.include_router(devices_router, prefix=API_PREFIX)
     return test_app
 
@@ -152,11 +157,17 @@ class TestPairConfirmSendsCoordArmB:
             )
 
         assert resp.status_code == 502, resp.text
-        detail = resp.json()["detail"]
+        detail = resp.json()
         assert detail["coord_status"] == 403
         assert "tenant_membership_required" in detail["coord_body"]
         assert detail["coord_code"] == "tenant_membership_required"
         assert detail["coord_hint"] == "restart pairing"
+        # The handler keeps the fields at the top level and a readable message.
+        assert detail["error"] == "BAD_GATEWAY"
+        assert detail["message"] == (
+            "Coord refused pairing (HTTP 403: tenant_membership_required)."
+        )
+        assert "detail" not in detail
 
     def test_refusal_code_is_parsed_from_the_full_body_not_the_truncated_one(
         self, client: TestClient
@@ -192,7 +203,7 @@ class TestPairConfirmSendsCoordArmB:
             )
 
         assert resp.status_code == 502, resp.text
-        detail = resp.json()["detail"]
+        detail = resp.json()
         assert len(detail["coord_body"]) == 500
         assert detail["coord_code"] == "probe_failed"
         assert detail["coord_hint"] == "restart pairing"
@@ -240,10 +251,12 @@ class TestPairConfirmSendsCoordArmB:
             )
 
         assert resp.status_code == 502, resp.text
-        detail = resp.json()["detail"]
+        detail = resp.json()
         assert detail["coord_code"] == "no_tenant_authorized"
         assert detail["coord_skip_reasons"] == ["not_a_member", "user_not_provisioned"]
-        assert tenant not in str({k: v for k, v in detail.items() if k != "coord_body"})
+        assert tenant not in str(
+            {k: v for k, v in detail.items() if k not in ("coord_body", "timestamp")}
+        )
 
     def test_non_json_refusal_relays_no_code(self, client: TestClient) -> None:
         enabled, gate, token, httpx_client = _patches()
@@ -260,8 +273,13 @@ class TestPairConfirmSendsCoordArmB:
             )
 
         assert resp.status_code == 502, resp.text
-        detail = resp.json()["detail"]
-        assert detail == {"coord_status": 500, "coord_body": "upstream exploded"}
+        detail = resp.json()
+        assert detail["coord_status"] == 500
+        assert detail["coord_body"] == "upstream exploded"
+        assert detail["message"] == "Coord refused pairing (HTTP 500)."
+        assert not any(
+            k in detail for k in ("coord_code", "coord_hint", "coord_skip_reasons")
+        )
 
     def test_unlinked_operator_is_refused_before_any_outbound_call(
         self, client: TestClient
