@@ -261,7 +261,12 @@ describe("useMergePipelineData — merged read", () => {
   it("applies the minimum age after a FAILED read too", async () => {
     // A struggling coord must not be re-asked on every reveal.
     mergedResponse = () =>
-      Promise.resolve({ ok: false, status: 504, json: async () => ({}) });
+      Promise.resolve({
+        ok: false,
+        status: 504,
+        text: async () => "",
+        json: async () => ({}),
+      });
     renderHook(() => useMergePipelineData({ includeMerged: true }));
     await flush();
     expect(mergedCalls).toHaveLength(1);
@@ -398,7 +403,12 @@ describe("useMergePipelineData — merged read", () => {
 
   it("reports why a read failed, and clears it on the next success", async () => {
     mergedResponse = () =>
-      Promise.resolve({ ok: false, status: 504, json: async () => ({}) });
+      Promise.resolve({
+        ok: false,
+        status: 504,
+        text: async () => "",
+        json: async () => ({}),
+      });
     const { result } = renderHook(() =>
       useMergePipelineData({ includeMerged: true })
     );
@@ -433,7 +443,12 @@ describe("useMergePipelineData — merged read", () => {
     expect(result.current.mergedPrs).toHaveLength(1);
 
     mergedResponse = () =>
-      Promise.resolve({ ok: false, status: 504, json: async () => ({}) });
+      Promise.resolve({
+        ok: false,
+        status: 504,
+        text: async () => "",
+        json: async () => ({}),
+      });
     await advance(MERGED_POLL_MS + 1_000);
 
     expect(result.current.mergedPrs).toHaveLength(1);

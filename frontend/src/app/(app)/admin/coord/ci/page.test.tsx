@@ -41,6 +41,22 @@ const httpPut = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...a: unknown[]) => httpGet(...a),
+    // The typed `/operations` client reads through `httpClient.fetch`; answer
+    // it from the same `httpGet` routes, as the Response `httpClient.get`
+    // would have parsed (a rejection `GET <url> failed: <status> - <body>`
+    // becomes that status).
+    fetch: async (...a: unknown[]) => {
+      try {
+        const body = await httpGet(...a);
+        return new Response(JSON.stringify(body), { status: 200 });
+      } catch (e) {
+        const m = /failed: (\d{3}) - ([\s\S]*)$/.exec(
+          e instanceof Error ? e.message : String(e)
+        );
+        if (!m) throw e;
+        return new Response(m[2], { status: Number(m[1]) });
+      }
+    },
     put: (...a: unknown[]) => httpPut(...a),
   },
 }));
@@ -529,7 +545,9 @@ function withHostedCi(opts: { canEdit: boolean }) {
         can_edit: opts.canEdit,
       });
     }
-    return base ? base(url) : Promise.reject(new Error(`unexpected GET ${url}`));
+    return base
+      ? base(url)
+      : Promise.reject(new Error(`unexpected GET ${url}`));
   });
 }
 
@@ -573,7 +591,9 @@ describe("/admin/coord/ci — GitHub-hosted CI (Phase 6)", () => {
           .textContent
       ).toBe("Off")
     );
-    expect(within(panel).getByTestId("github-hosted-ci-tenant-on")).toBeEnabled();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-on")
+    ).toBeEnabled();
     expect(within(panel).queryByTestId("github-hosted-ci-readonly")).toBeNull();
   });
 

@@ -66,20 +66,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  actOnMergeSuggestion,
+  fetchBlastRadiusBlocks,
+  fetchMergeEconomics,
+  fetchMergeQueue,
+  fetchMergeSuggestions,
+  fetchPrMergePrsIncludingMerged,
+  fetchPrMergePrsWithMergedCount,
+  httpStatusLabel,
+} from "@/lib/api/operations/prMergeTrain";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
+import { coordEventsWsUrl } from "./utils";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
 import { normalizeMergeEconomics } from "./mergeEconomics";
 import type {
   BlastRadiusBlock,
-  BlastRadiusBlocksResponse,
   MergeEconomics,
-  PrListResponse,
   PrRow,
   ProposalDetail,
-  QueueResponse,
-  SuggestionListResponse,
   SuggestionRow,
 } from "./mergeTypes";
 
@@ -310,12 +317,7 @@ export function useMergePipelineData(
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/merge/queue`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as QueueResponse | ProposalDetail[];
+      const body = await fetchMergeQueue(COORD_DASHBOARD_POLL_OPTIONS);
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
       if (!cleanedUpRef.current) {
         setProposals(list);
@@ -323,7 +325,7 @@ export function useMergePipelineData(
       }
     } catch (err) {
       if (!cleanedUpRef.current) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(httpStatusLabel(err));
       }
     }
   }, []);
@@ -344,22 +346,10 @@ export function useMergePipelineData(
   // the read that took the API down on 2026-07-21.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
+      const body = await fetchPrMergePrsWithMergedCount(
+        MERGED_LOOKBACK_HOURS,
         COORD_DASHBOARD_POLL_OPTIONS
       );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setPrs([]);
-            setPrsError(null);
-            setPrsLoaded(true);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as PrListResponse | PrRow[];
       const list = Array.isArray(body) ? body : (body.prs ?? []);
       // Absent means UNKNOWN — a coord too old to answer, or one whose count
       // failed and was omitted rather than failing the listing. That resets to
@@ -376,6 +366,14 @@ export function useMergePipelineData(
         setPrsLoaded(true);
       }
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) {
+          setPrs([]);
+          setPrsError(null);
+          setPrsLoaded(true);
+        }
+        return;
+      }
       // Keep the last known-good list. This endpoint is slow enough on a
       // loaded fleet to intermittently 500/504 at the gateway (~30s); wiping
       // to [] on each miss made the whole pipeline blink empty mid-triage,
@@ -387,7 +385,7 @@ export function useMergePipelineData(
       // current, genuinely short pipeline.
       if (!cleanedUpRef.current) {
         setPrs((prev) => prev ?? []);
-        setPrsError(err instanceof Error ? err.message : String(err));
+        setPrsError(httpStatusLabel(err));
       }
     }
   }, []);
@@ -398,8 +396,8 @@ export function useMergePipelineData(
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
+      const body = await fetchPrMergePrsIncludingMerged(
+        MERGED_LOOKBACK_HOURS,
         // No client retry. The client retries every 5xx up to 3 times, and each
         // attempt is a full coord query (14-21s for a 48h window): a coord that
         // is already struggling would be asked the same expensive question four
@@ -407,17 +405,6 @@ export function useMergePipelineData(
         // read is meant to have.
         { maxRetries: 0 }
       );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setMergedPrs([]);
-            setMergedError(null);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as PrListResponse | PrRow[];
       const list = Array.isArray(body) ? body : (body.prs ?? []);
       // Every row this endpoint adds beyond the open list has LANDED —
       // coord's merged query requires `merge_commit_sha IS NOT NULL`, and the
@@ -440,6 +427,13 @@ export function useMergePipelineData(
         setMergedError(null);
       }
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) {
+          setMergedPrs([]);
+          setMergedError(null);
+        }
+        return;
+      }
       // Keep whatever is held, INCLUDING null. Coercing null to [] here made a
       // failed first read look like "nothing landed": the Merged label fell
       // from coord's cheap count to 0. Null keeps that label honest, and it
@@ -448,7 +442,7 @@ export function useMergePipelineData(
       // Kept rows are STALE and a never-loaded set is INCOMPLETE; either way
       // the consumer needs to be told, not left to infer it from an absence.
       if (!cleanedUpRef.current) {
-        setMergedError(err instanceof Error ? err.message : String(err));
+        setMergedError(httpStatusLabel(err));
       }
     }
   }, []);
@@ -462,21 +456,11 @@ export function useMergePipelineData(
   // `{ repos: {...} }` wrapper, or an array of `{ repo, ...economics }`.
   const fetchEconomics = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setEconomicsByRepo({});
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
+      const raw = await fetchMergeEconomics(COORD_DASHBOARD_POLL_OPTIONS);
       // One shared normalizer (`mergeEconomics.ts`): coord's no-repo answer
       // is `{as_of, repos: [ {repo, ...} ]}`, which the inline version here
       // used to key by array INDEX.
-      const map = normalizeMergeEconomics(await res.json()).byRepo;
+      const map = normalizeMergeEconomics(raw).byRepo;
       if (!cleanedUpRef.current) setEconomicsByRepo(map);
     } catch (err) {
       log.warn("fetchEconomics failed", err);
@@ -486,20 +470,7 @@ export function useMergePipelineData(
 
   const fetchSuggestions = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setSuggestions([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | SuggestionListResponse
-        | SuggestionRow[];
+      const body = await fetchMergeSuggestions(COORD_DASHBOARD_POLL_OPTIONS);
       const list = Array.isArray(body) ? body : (body.suggestions ?? []);
       if (!cleanedUpRef.current) setSuggestions(list);
     } catch (err) {
@@ -510,24 +481,7 @@ export function useMergePipelineData(
 
   const fetchGateBlocks = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setGateBlocks([]);
-            setGateTotalBlocks(0);
-            setGateTotalEvals(null);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | BlastRadiusBlocksResponse
-        | BlastRadiusBlock[];
+      const body = await fetchBlastRadiusBlocks(COORD_DASHBOARD_POLL_OPTIONS);
       const list = Array.isArray(body) ? body : (body.blocks ?? []);
       const total = Array.isArray(body)
         ? body.length
@@ -562,22 +516,16 @@ export function useMergePipelineData(
     ) => {
       setSuggestionBusy(alertId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
-          {
-            method: "POST",
-            body: JSON.stringify(body ?? {}),
-          }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn(`suggestion ${action} failed`, res.status, text);
-          if (!cleanedUpRef.current)
-            setError(`Suggestion ${action} failed: HTTP ${res.status}`);
-          return;
-        }
+        await actOnMergeSuggestion(alertId, action, body);
         await fetchSuggestions();
       } catch (err) {
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          log.warn(`suggestion ${action} failed`, status, err);
+          if (!cleanedUpRef.current)
+            setError(`Suggestion ${action} failed: HTTP ${status}`);
+          return;
+        }
         log.warn(`suggestion ${action} threw`, err);
         if (!cleanedUpRef.current)
           setError(err instanceof Error ? err.message : String(err));
