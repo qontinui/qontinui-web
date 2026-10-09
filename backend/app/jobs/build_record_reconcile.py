@@ -584,7 +584,12 @@ def _is_lock_timeout(exc: DBAPIError) -> bool:
 
 
 async def _apply_not_public(
-    db: AsyncSession, slug: str, repo: str, tick: VisibilityTick
+    db: AsyncSession,
+    slug: str,
+    repo: str,
+    tick: VisibilityTick,
+    *,
+    pending: tuple[int, datetime] | None = None,
 ) -> bool:
     """Apply "GitHub says ``repo`` is not public" to ``slug``. Commits.
 
@@ -596,6 +601,11 @@ async def _apply_not_public(
     is no longer published there). Retries once on a lock timeout. Returns
     ``False`` only when both attempts timed out; the caller then persists the
     verdict for the next tick.
+
+    ``pending`` = ``(snapshot_version, observed_at)`` for a DEFERRED verdict:
+    it applies only if that version is still the latest and was published
+    before ``observed_at``. Otherwise a publish since then asked GitHub about
+    every repo itself, so the old verdict is superseded and dropped.
     """
     timeout_ms = int(NOT_PUBLIC_LOCK_TIMEOUT_SECONDS * 1000)
     for _ in range(2):
@@ -616,8 +626,21 @@ async def _apply_not_public(
                 continue
             raise
         if owner is not None and owner.unpublished_at is None:
-            _, current = await latest_version_and_repos(db, slug)
-            if repo.lower() in {r.lower() for r in current}:
+            version, current = await latest_version_and_repos(db, slug)
+            superseded = False
+            if pending is not None:
+                pending_version, observed_at = pending
+                published_at = (
+                    await db.execute(
+                        select(func.max(BuildRecordSnapshot.published_at)).where(
+                            BuildRecordSnapshot.public_slug == slug
+                        )
+                    )
+                ).scalar_one()
+                superseded = version != pending_version or (
+                    published_at is not None and published_at > observed_at
+                )
+            if not superseded and repo.lower() in {r.lower() for r in current}:
                 now = datetime.now(UTC)
                 owner.unpublished_at = now
                 tick.retracted.append(slug)
@@ -627,12 +650,25 @@ async def _apply_not_public(
     return False
 
 
-async def _defer_not_public(db: AsyncSession, slug: str, repo: str) -> None:
-    """Persist a NOT_PUBLIC verdict the tick could not apply. Commits."""
+async def _defer_not_public(
+    db: AsyncSession, slug: str, repo: str, version: int | None
+) -> None:
+    """Persist a NOT_PUBLIC verdict the tick could not apply, with the
+    snapshot version it was about. Commits."""
+    now = datetime.now(UTC)
+    snapshot_version = version if version is not None else 0
     await db.execute(
         pg_insert(BuildRecordPendingNotPublic)
-        .values(public_slug=slug, repo=repo)
-        .on_conflict_do_nothing()
+        .values(
+            public_slug=slug,
+            repo=repo,
+            snapshot_version=snapshot_version,
+            observed_at=now,
+        )
+        .on_conflict_do_update(
+            index_elements=["public_slug", "repo"],
+            set_={"snapshot_version": snapshot_version, "observed_at": now},
+        )
     )
     await db.commit()
 
@@ -644,12 +680,16 @@ async def _apply_pending_not_public(db: AsyncSession, tick: VisibilityTick) -> N
             select(
                 BuildRecordPendingNotPublic.public_slug,
                 BuildRecordPendingNotPublic.repo,
+                BuildRecordPendingNotPublic.snapshot_version,
+                BuildRecordPendingNotPublic.observed_at,
             )
         )
     ).all()
     await db.commit()
-    for slug, repo in pending:
-        if await _apply_not_public(db, slug, repo, tick):
+    for slug, repo, version, observed_at in pending:
+        if await _apply_not_public(
+            db, slug, repo, tick, pending=(version, observed_at)
+        ):
             await db.execute(
                 BuildRecordPendingNotPublic.__table__.delete().where(
                     BuildRecordPendingNotPublic.public_slug == slug,
@@ -722,7 +762,9 @@ async def recheck_visibility(
       ``FOR UPDATE`` with a 5 s ``lock_timeout`` (no holder of that lock does
       network I/O), retracting iff the private repo is in the CURRENT latest
       snapshot; on a second timeout it is persisted
-      (``build_record_pending_not_public``) and applied first next tick.
+      (``build_record_pending_not_public``, with the version it was about) and
+      applied at the very start of the next tick — before the budget check —
+      unless that version has since been replaced or re-published.
     * **Capacity**: when one full check cycle (live repos / throughput) takes
       longer than 24 h, a WARNING is logged and ``capacity_shortfall`` is set.
     * **Deadline**: no new GitHub call starts after
@@ -748,6 +790,10 @@ async def recheck_visibility(
     tick = VisibilityTick()
     started = time.monotonic()
     blamed: set[str] = set()
+
+    # --- Deferred NOT_PUBLIC verdicts first: they need no GitHub call, so
+    # neither a held budget nor anything else in the tick may postpone them.
+    await _apply_pending_not_public(db, tick)
 
     # --- Read phase: a snapshot of the queue, then the transaction ENDS. No
     # row lock (and no open transaction) is held while GitHub is awaited.
@@ -781,7 +827,6 @@ async def recheck_visibility(
         slug: await latest_version_and_repos(db, slug) for slug, _ in queue
     }
     await db.commit()
-    await _apply_pending_not_public(db, tick)
 
     answers = []
     definite = 0  # PUBLIC / NOT_PUBLIC answers this tick
@@ -829,7 +874,7 @@ async def recheck_visibility(
         # CURRENT snapshot under a blocking, time-limited lock, else deferred.
         if outcome == "private" and private_repo is not None:
             if not await _apply_not_public(db, slug, private_repo, tick):
-                await _defer_not_public(db, slug, private_repo)
+                await _defer_not_public(db, slug, private_repo, read_version)
                 tick.deferred.append(slug)
             continue
 

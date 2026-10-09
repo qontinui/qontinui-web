@@ -3511,3 +3511,113 @@ class TestRev11:
             assert (
                 await s.execute(select(BuildRecordPendingNotPublic.public_slug))
             ).scalars().all() == []
+
+
+# ===========================================================================
+# Twelfth review — regression tests from rev12/t/tests/test_rev12.py
+# (inverted)
+# ===========================================================================
+
+
+async def _defer_verdict(
+    rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch, slug: str, repo: str
+) -> None:
+    """Drive the REAL deferral path: a NOT_PUBLIC verdict whose owner-row lock
+    is held by a non-retracting holder through both short attempts."""
+    from app.jobs import build_record_reconcile as job
+    from app.services import github_repo_visibility as gv
+    from app.services.github_repo_visibility import Visibility
+
+    coord.visibility[repo] = Visibility.NOT_PUBLIC
+    monkeypatch.setattr(job, "NOT_PUBLIC_LOCK_TIMEOUT_SECONDS", 0.3)
+    holder = rev11.maker()
+    fake = gv.check_repo
+
+    async def check(r: str, **kw: Any) -> Any:
+        await holder.execute(
+            select(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == slug)
+            .with_for_update()
+        )
+        return await fake(r, **kw)
+
+    monkeypatch.setattr(gv, "check_repo", check)
+    try:
+        tick = await rev11.tick(budget=8)
+    finally:
+        await holder.commit()
+        await holder.close()
+        monkeypatch.setattr(gv, "check_repo", fake)
+    assert tick.deferred == [slug], tick
+
+
+async def _pending(rev11: _Rev11) -> list[str]:
+    from app.models.build_record import BuildRecordPendingNotPublic
+
+    async with rev11.maker() as s:
+        return list(
+            (await s.execute(select(BuildRecordPendingNotPublic.repo))).scalars().all()
+        )
+
+
+@pytest.mark.asyncio
+class TestRev12:
+    async def test_a_held_budget_does_not_postpone_a_deferred_verdict(
+        self, rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.models.build_record import GithubRateBudget
+
+        slug, repo = "lock-r12-reserved", "tenant-a/p0"
+        rev11.define(slug, [repo])
+        await rev11.publish(slug)
+        await _defer_verdict(rev11, coord, monkeypatch, slug, repo)
+
+        # The routine anonymous state for part of every hour: the re-check is
+        # at its reserve and the window has not reset.
+        async with rev11.maker() as s:
+            await s.execute(GithubRateBudget.__table__.delete())
+            s.add(
+                GithubRateBudget(
+                    id=True,
+                    remaining=30,
+                    reset_at=datetime.now(UTC) + timedelta(minutes=50),
+                )
+            )
+            await s.commit()
+        coord.github_calls.clear()
+        tick = await rev11.tick()
+        assert tick.stopped == "budget_reserved" and coord.github_calls == []
+        assert tick.retracted == [slug]
+        assert await rev11.public_status(slug) == 404
+        assert await _pending(rev11) == []
+
+    async def test_a_republish_supersedes_a_deferred_verdict(
+        self, rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.services.github_repo_visibility import Visibility
+
+        slug, repo = "lock-r12-stale", "tenant-a/q0"
+        rev11.define(slug, [repo])
+        await rev11.publish(slug)
+        await _defer_verdict(rev11, coord, monkeypatch, slug, repo)
+
+        # Before the next tick the owner unpublishes and reactivates; the
+        # publish itself asks GitHub, which now says the repo IS public.
+        coord.visibility[repo] = Visibility.PUBLIC
+        async with rev11.maker() as s:
+            async with _client(_build_app(s, TENANT_A)) as c:
+                r = await c.delete(f"/api/v1/build-records/{slug}/publish")
+                assert r.status_code == 200
+        rev11.define(slug, [repo])
+        async with rev11.maker() as s:
+            async with _client(_build_app(s, TENANT_A)) as c:
+                r = await c.post(
+                    f"/api/v1/build-records/{slug}/publish", json={"reactivate": True}
+                )
+        assert r.status_code == 201, r.text
+
+        tick = await rev11.tick(budget=8)
+        assert slug not in tick.retracted
+        assert (await rev11.row(slug)).unpublished_at is None
+        assert await rev11.public_status(slug) == 200
+        assert await _pending(rev11) == []  # superseded, dropped

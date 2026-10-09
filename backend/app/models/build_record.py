@@ -175,6 +175,8 @@ class BuildRecordPendingNotPublic(Base):
 
     public_slug: Mapped[str] = mapped_column(Text, primary_key=True)
     repo: Mapped[str] = mapped_column(Text, primary_key=True)
+    #: The snapshot version the verdict was about.
+    snapshot_version: Mapped[int] = mapped_column(Integer, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
