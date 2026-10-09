@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -29,7 +30,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.build_record import BuildRecordPublicSlug, BuildRecordSnapshot
@@ -87,14 +88,20 @@ def _document(slug: str = SLUG) -> dict[str, Any]:
             }
         ],
         "gates": {"registered": 3, "cleared": 3},
-        "sessions": {"count": None, "unknown_reason": "census door provisional"},
+        "sessions": {
+            "count": None,
+            "unknown_reason": "sessions.count: census_provisional",
+        },
         "wall_clock_secs": 172800,
         "self_corrections": {
             "red_ci_fixed": 1,
             "review_findings_fixed": None,
             "gate_reopens": 0,
         },
-        "unknowns": ["sessions.count: census door provisional"],
+        "unknowns": [
+            "sessions.count: census_provisional",
+            "prs[0].opened_at: not_established",
+        ],
     }
 
 
@@ -201,7 +208,7 @@ class TestAllowlist:
         doc["unknowns"].append({"credential": "x"})
         violations = build_record_violations(doc)
         assert "prs[0].title: expected a scalar, got dict" in violations
-        assert "unknowns[1]: expected a scalar, got dict" in violations
+        assert "unknowns[2]: expected a scalar, got dict" in violations
 
     def test_scalar_in_a_container_slot_is_refused(self) -> None:
         doc = _document()
@@ -225,10 +232,102 @@ class TestAllowlist:
         doc["prs"].append({**doc["prs"][0], "repo": "acme/private-thing"})
         violations = build_record_violations(doc)
         assert violations == [
-            "prs[1].repo: not one of product.repos, so not known public"
+            "prs[1].repo: names an owner/name not in product.repos",
+            "prs[1].repo: not one of product.repos, so not known public",
         ]
         # The refusal names the slot, never the private repo itself.
-        assert "acme/private-thing" not in violations[0]
+        assert not any("acme/private-thing" in v for v in violations)
+
+
+class TestValueSlots:
+    """Per-slot value types and the content scan over every string."""
+
+    @staticmethod
+    def _only(doc: dict[str, Any]) -> list[str]:
+        violations = build_record_violations(doc)
+        assert violations, "the probe was not refused"
+        return violations
+
+    def test_private_repo_in_unknowns(self) -> None:
+        doc = _document()
+        doc["unknowns"].append("acme/secret-repo: excluded_not_known_public")
+        assert any(v.startswith("unknowns[2]:") for v in self._only(doc))
+
+    def test_private_repo_in_product_title(self) -> None:
+        doc = _document()
+        doc["product"]["title"] = "Tokens, ported from acme/secret-repo"
+        assert self._only(doc) == [
+            "product.title: names an owner/name not in product.repos"
+        ]
+
+    def test_private_repo_in_public_pr_title(self) -> None:
+        doc = _document()
+        doc["prs"][0]["title"] = "fix: sync with Acme/Secret-Repo"
+        assert self._only(doc) == [
+            "prs[0].title: names an owner/name not in product.repos"
+        ]
+
+    def test_private_repo_in_work_unit_slug(self) -> None:
+        doc = _document()
+        doc["work_units"][0]["slug"] = "acme/secret-repo"
+        assert self._only(doc) == ["work_units[0].slug: not a valid slug value"]
+
+    def test_email_in_a_count_slot(self) -> None:
+        doc = _document()
+        doc["gates"]["registered"] = "ops@example.com"
+        assert self._only(doc) == ["gates.registered: not a valid count value"]
+
+    def test_device_name_in_unknown_reason(self) -> None:
+        doc = _document()
+        doc["sessions"]["unknown_reason"] = "census unreachable on spaceship-wsl"
+        assert self._only(doc) == [
+            "sessions.unknown_reason: not a valid unknown_or_null value"
+        ]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "owner jane.doe@example.com shipped it",
+            "device 0b6c1f1e-1111-4111-8111-111111111111",
+        ],
+    )
+    def test_identity_shapes_in_a_title(self, text: str) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = text
+        assert len(self._only(doc)) == 1
+
+    @pytest.mark.parametrize(
+        ("path", "value"),
+        [
+            (("gates", "cleared"), True),
+            (("gates", "cleared"), -1),
+            (("wall_clock_secs",), 1.5),
+            (("prs", 0, "number"), "12"),
+            (("work_units", 0, "status"), "done"),
+            (("timeline", 0, "to_status"), None),
+            (("generated_at",), "2026-10-09 12:00"),
+            (("product", "repos", 0), "not-a-repo"),
+            (("unknowns", 0), "sessions.count: because reasons"),
+            (("unknowns", 0), "not.a.path: not_established"),
+        ],
+    )
+    def test_slot_type_is_enforced(self, path: tuple[Any, ...], value: Any) -> None:
+        doc = _document()
+        target: Any = doc
+        for step in path[:-1]:
+            target = target[step]
+        target[path[-1]] = value
+        violations = self._only(doc)
+        assert any("not a valid" in v for v in violations), violations
+
+    def test_nullable_slots_accept_null_and_numeric_pairs_pass(self) -> None:
+        doc = _document()
+        doc["timeline"][0]["from_status"] = None
+        doc["prs"][0]["landed_at"] = None
+        doc["prs"][0]["title"] = (
+            "chore: 2026/10 release, see qontinui/qontinui-design-tokens"
+        )
+        assert build_record_violations(doc) == []
 
 
 # ===========================================================================
@@ -243,6 +342,8 @@ class _Coord:
         self.products: dict[UUID, list[dict[str, Any]]] = {}
         self.documents: dict[tuple[UUID, str], dict[str, Any]] = {}
         self.puts: list[tuple[str, Any, UUID | None]] = []
+        #: Awaited while the document is being "composed" — a race window.
+        self.during_document_fetch: Any = None
 
     async def get(self, path: str, *, tenant_id: UUID | None = None, **_: Any) -> Any:
         assert tenant_id is not None, "every build-record proxy forwards the bearer"
@@ -251,6 +352,8 @@ class _Coord:
         prefix = "/coord/build-records/"
         if path.startswith(prefix):
             key = (tenant_id, path[len(prefix) :])
+            if self.during_document_fetch is not None:
+                await self.during_document_fetch()
             if key not in self.documents:
                 raise HTTPException(
                     status_code=404,
@@ -269,7 +372,13 @@ class _Coord:
         self, tenant_id: UUID, slug: str = SLUG, *, is_public: bool = True
     ) -> None:
         self.products.setdefault(tenant_id, []).append(
-            {"slug": slug, "title": "Design tokens", "is_public": is_public}
+            {
+                "slug": slug,
+                "title": "Design tokens",
+                "is_public": is_public,
+                "tenant_id": str(tenant_id),
+                "repos": ["qontinui/qontinui-design-tokens"],
+            }
         )
         self.documents[(tenant_id, slug)] = _document(slug)
 
@@ -569,7 +678,12 @@ class TestUnpublish:
         await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
 
         coord.documents[(TENANT_A, SLUG)]["gates"]["cleared"] = 7
-        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        refused = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert refused.status_code == 409
+        assert refused.json()["detail"]["error"] == "build_record_retracted"
+        r = await client_a.post(
+            f"/api/v1/build-records/{SLUG}/publish", json={"reactivate": True}
+        )
         assert r.status_code == 201, r.text
         assert r.json()["version"] == 3
 
@@ -606,8 +720,11 @@ class TestUnpublish:
         await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
         await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
 
-        r = await client_b.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_b.post(
+            f"/api/v1/build-records/{SLUG}/publish", json={"reactivate": True}
+        )
         assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "public_slug_owned_by_another_tenant"
         assert (
             await client_b.get(f"/api/v1/public/build-records/{SLUG}")
         ).status_code == 404
@@ -618,3 +735,270 @@ class TestUnpublish:
         r = await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
         assert r.status_code == 404
         assert r.json()["detail"]["error"] == "build_record_not_published"
+
+
+@pytest.mark.asyncio
+class TestPublishGuards:
+    """Review findings 2, 3, 5, 7 and 8."""
+
+    async def test_product_row_of_another_tenant_is_refused(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        coord.products[TENANT_A][0]["tenant_id"] = str(TENANT_B)
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "build_record_tenant_mismatch"
+        assert await _snapshot_count(async_db_session) == 0
+
+    async def test_document_repo_outside_the_definition_is_refused(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        coord.products[TENANT_A][0]["repos"] = ["qontinui/other-repo"]
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 502
+        assert r.json()["detail"]["violations"] == [
+            "product.repos[0]: not in the product definition's repos"
+        ]
+        assert await _snapshot_count(async_db_session) == 0
+
+    async def test_stale_document_is_refused(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        assert (
+            await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        ).status_code == 201
+        coord.documents[(TENANT_A, SLUG)]["generated_at"] = "2026-10-08T12:00:00Z"
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "build_record_stale"
+        assert await _snapshot_count(async_db_session) == 1
+        stored = (
+            await async_db_session.execute(select(BuildRecordSnapshot.generated_at))
+        ).scalar_one()
+        assert stored.isoformat() == "2026-10-09T12:00:00+00:00"
+
+    async def test_retraction_during_the_coord_fetch_wins(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+
+        async def retract_now() -> None:
+            await async_db_session.execute(
+                update(BuildRecordPublicSlug)
+                .where(BuildRecordPublicSlug.public_slug == SLUG)
+                .values(unpublished_at=func.now())
+            )
+
+        coord.during_document_fetch = retract_now
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "build_record_retraction_changed"
+        coord.during_document_fetch = None
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 404
+        assert await _snapshot_count(async_db_session) == 1
+
+    async def test_put_private_retracts_the_published_snapshot(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_a.put(
+            f"/api/v1/build-records/products/{SLUG}",
+            json={"title": "Design tokens", "is_public": False},
+        )
+        assert r.status_code == 200, r.text
+        assert r.headers["X-Build-Record-Retracted"] == "true"
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 404
+
+    async def test_put_private_leaves_another_tenants_slug_alone(
+        self,
+        client_a: httpx.AsyncClient,
+        client_b: httpx.AsyncClient,
+        coord: _Coord,
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        r = await client_b.put(
+            f"/api/v1/build-records/products/{SLUG}",
+            json={"title": "Mine", "is_public": False},
+        )
+        assert r.status_code == 200
+        assert r.headers["X-Build-Record-Retracted"] == "false"
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 200
+
+    async def test_public_answers_are_no_store(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        missing = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert missing.status_code == 404
+        assert missing.headers["cache-control"] == "no-store"
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        found = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert found.status_code == 200
+        assert found.headers["cache-control"] == "no-store"
+
+    async def test_stored_document_failing_the_current_allowlist_is_404(
+        self, client_a: httpx.AsyncClient, async_db_session
+    ) -> None:
+        doc = _document()
+        doc["sessions"]["unknown_reason"] = "free text from an older allowlist"
+        async_db_session.add(
+            BuildRecordPublicSlug(public_slug=SLUG, tenant_id=TENANT_A)
+        )
+        await async_db_session.flush()
+        async_db_session.add(
+            BuildRecordSnapshot(
+                tenant_id=TENANT_A,
+                public_slug=SLUG,
+                version=1,
+                document=doc,
+                content_sha256="0" * 64,
+                generated_at=datetime(2026, 10, 9, tzinfo=UTC),
+            )
+        )
+        await async_db_session.flush()
+        r = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert r.status_code == 404
+
+
+# ===========================================================================
+# Layer 3 — the REAL application (app.main.app): auth is not overridden
+# ===========================================================================
+
+
+@pytest_asyncio.fixture()
+async def real_app(async_db_session: AsyncSession):
+    """``app.main.app`` with only the database bound to the test session."""
+    from app.api.deps import get_async_db
+    from app.main import app
+
+    async def _db_override():
+        yield async_db_session
+
+    app.dependency_overrides[get_async_db] = _db_override
+    try:
+        yield app
+    finally:
+        app.dependency_overrides.pop(get_async_db, None)
+
+
+def _identity(*, admin: bool) -> Any:
+    from app.services.coord_identity import CoordIdentity, CoordTenant
+
+    roles = ("admin",) if admin else ("operator",)
+    return CoordIdentity(
+        operator_id=None,
+        home_tenant_id=TENANT_A,
+        email=None,
+        roles=roles,
+        tenants=(CoordTenant(tenant_id=TENANT_A, slug="a", roles=roles),),
+        is_admin=admin,
+    )
+
+
+@pytest.fixture()
+def signed_in_user(real_app: FastAPI) -> Iterator[None]:
+    """A signed-in, non-superuser web user — the session, NOT the coord gate."""
+    from app.auth.config import current_active_user
+    from app.models.user import User
+
+    user = User(email="builder@example.com", is_active=True, is_superuser=False)
+    real_app.dependency_overrides[current_active_user] = lambda: user
+    yield
+    real_app.dependency_overrides.pop(current_active_user, None)
+
+
+@pytest.mark.asyncio
+class TestRealApp:
+    async def test_anonymous_public_read_200_and_404(
+        self, real_app: FastAPI, async_db_session
+    ) -> None:
+        async with _client(real_app) as anon:
+            missing = await anon.get(f"/api/v1/public/build-records/{SLUG}")
+            assert missing.status_code == 404
+
+            doc = _document()
+            async_db_session.add(
+                BuildRecordPublicSlug(public_slug=SLUG, tenant_id=TENANT_A)
+            )
+            await async_db_session.flush()
+            async_db_session.add(
+                BuildRecordSnapshot(
+                    tenant_id=TENANT_A,
+                    public_slug=SLUG,
+                    version=1,
+                    document=doc,
+                    content_sha256=hashlib.sha256(
+                        json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest(),
+                    generated_at=datetime(2026, 10, 9, 12, tzinfo=UTC),
+                )
+            )
+            await async_db_session.flush()
+            found = await anon.get(f"/api/v1/public/build-records/{SLUG}")
+            assert found.status_code == 200, found.text
+            assert found.json()["version"] == 1
+
+    async def test_anonymous_publish_is_401(
+        self, real_app: FastAPI, async_db_session
+    ) -> None:
+        async with _client(real_app) as anon:
+            r = await anon.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 401
+        assert await _snapshot_count(async_db_session) == 0
+
+    async def test_non_admin_publish_is_403(
+        self,
+        real_app: FastAPI,
+        signed_in_user: None,
+        monkeypatch: pytest.MonkeyPatch,
+        async_db_session,
+    ) -> None:
+        from app.api.v1.endpoints import operations
+
+        async def fake_identity(request: Any) -> Any:
+            return _identity(admin=False)
+
+        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        async with _client(real_app) as c:
+            r = await c.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 403
+        assert await _snapshot_count(async_db_session) == 0
+
+    async def test_coord_connect_error_is_502_and_stores_nothing(
+        self,
+        real_app: FastAPI,
+        signed_in_user: None,
+        monkeypatch: pytest.MonkeyPatch,
+        async_db_session,
+    ) -> None:
+        from app.api.v1.endpoints import operations
+
+        async def fake_identity(request: Any) -> Any:
+            return _identity(admin=True)
+
+        async def refused(self: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        monkeypatch.setattr(httpx.AsyncClient, "get", refused)
+        async with _client(real_app) as c:
+            r = await c.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 502
+        assert await _snapshot_count(async_db_session) == 0
+        assert (
+            await async_db_session.execute(
+                select(func.count()).select_from(BuildRecordPublicSlug)
+            )
+        ).scalar_one() == 0
