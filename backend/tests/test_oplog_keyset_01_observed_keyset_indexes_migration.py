@@ -55,7 +55,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "oplog_keyset_01"
-_PARENT_REVISION_ID = "cinode_04_runner_requires_windows"
+_PARENT_REVISION_ID = "plan_library_10_keyset_walk_indexes"
 
 _COMMITS_INDEX = "idx_commit_observations_observed_keyset"
 _FS_INDEX = "idx_fs_observations_observed_keyset"
