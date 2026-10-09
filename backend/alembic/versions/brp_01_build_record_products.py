@@ -41,6 +41,10 @@ This revision lands BEFORE the coord reader (served policy
 ``require_table`` / ``schema_read_contract`` gate would otherwise refuse the
 read. Additive only — a new table, nothing existing is altered.
 
+A plain ``CREATE TABLE`` (no ``IF NOT EXISTS``): a pre-existing table of this
+name would be an unknown shape, and the migration should fail loudly rather
+than adopt it.
+
 Hand-authored, never ``--autogenerate``d.
 """
 
@@ -58,7 +62,7 @@ def upgrade() -> None:
     """Create ``coord.build_record_products``."""
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS coord.build_record_products (
+        CREATE TABLE coord.build_record_products (
             id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id     UUID NOT NULL,
             slug          TEXT NOT NULL,

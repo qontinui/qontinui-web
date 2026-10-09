@@ -25,7 +25,9 @@ not of any one snapshot row:
   second tenant cannot claim it even under a race.
 * ``web.build_record_snapshots`` — the contract's table: ``id``,
   ``public_slug``, ``version``, ``document``, ``content_sha256``,
-  ``published_at``, ``tenant_id``, and ``unique (public_slug, version)``. Its
+  ``published_at``, ``tenant_id``, and ``unique (public_slug, version)``,
+  plus ``generated_at`` (coord's timestamp for the frozen document, so an
+  older document can never be published over a newer one). Its
   composite FK ``(public_slug, tenant_id)`` → the owner row makes "every
   version of a slug belongs to the tenant that owns it" a catalog guarantee
   rather than an application convention.
@@ -91,6 +93,9 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("document", postgresql.JSONB(), nullable=False),
         sa.Column("content_sha256", sa.Text(), nullable=False),
+        # coord's ``generated_at`` for the frozen document: a publish whose
+        # document is OLDER than the latest snapshot's is refused as stale.
+        sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "published_at",
             sa.DateTime(timezone=True),
