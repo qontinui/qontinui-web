@@ -373,7 +373,7 @@ async def discover_ui_bridge_states(
     manager = await get_runner_websocket_manager(redis)
 
     runner = await resolve_runner_for_request(
-        runner_id, current_user, db, manager, _UI_BRIDGE_DISCOVER_ENDPOINT
+        runner_id, current_user.id, db, manager, _UI_BRIDGE_DISCOVER_ENDPOINT
     )
 
     request_id = uuid4()

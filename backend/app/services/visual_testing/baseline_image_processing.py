@@ -29,8 +29,7 @@ from app.config.redis_config import get_redis
 from app.services.object_storage import object_storage
 from app.services.runner import (
     dispatch_or_http_error,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    resolve_runner_for_request,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -40,7 +39,7 @@ logger = structlog.get_logger(__name__)
 BASELINE_STORAGE_PREFIX = "visual-baselines"
 THUMBNAIL_SIZE = (200, 200)
 
-# Endpoint identifier surfaced inside ``runner_bridge_503_no_runner`` when
+# Endpoint identifier surfaced inside ``device_bridge_503_no_device`` when
 # this code path falls back to the no-runner envelope. The actual HTTP
 # route varies (baselines/from-upload, baselines/from-screenshot, ...);
 # this identifier is the SERVICE-LEVEL key so frontends know which
@@ -75,7 +74,7 @@ class BaselineImageProcessing:
         """Compute perceptual hash for an image via the runner WS bridge.
 
         Picks the user's most-recently-heartbeat-active connected runner
-        (via :func:`pick_active_runner_for_user`) and dispatches the
+        (via :func:`resolve_runner_for_request`) and dispatches the
         ``vision.compute_perceptual_hash`` command with the image
         base64-encoded. Returns the hex perceptual-hash string on
         success or ``None`` when the runner reports
@@ -84,7 +83,7 @@ class BaselineImageProcessing:
 
         Raises:
             HTTPException(503): no connected runner for the user
-                (via :func:`runner_bridge_503_no_runner`).
+                (via :func:`device_bridge_503_no_device`).
             HTTPException(504): runner accepted the command but did
                 not respond within ``_HASH_TIMEOUT_S``.
             HTTPException(500): runner replied with a
@@ -94,9 +93,9 @@ class BaselineImageProcessing:
         redis = await get_redis()
         manager = await get_runner_websocket_manager(redis)
 
-        runner = await pick_active_runner_for_user(user_id, db, manager.registry)
-        if runner is None:
-            raise runner_bridge_503_no_runner(_PERCEPTUAL_HASH_ENDPOINT)
+        runner = await resolve_runner_for_request(
+            None, user_id, db, manager, _PERCEPTUAL_HASH_ENDPOINT
+        )
 
         request_id = uuid4()
         image_b64 = base64.b64encode(image_bytes).decode("ascii")

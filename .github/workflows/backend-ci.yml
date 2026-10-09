@@ -42,6 +42,15 @@ on:
       # the frontend entries above and the nightly note below describe; the
       # repo already applies this fix in web-boundary-lint.yml.
       - 'scripts/ci/**'
+      # The consolidated guard job (plan
+      # 2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work).
+      # The gate_lane_roster tests (tests/test_*_gate.py,
+      # tests/test_coord_column_drop_guard.py) and
+      # tests/test_ruff_version_parity_gate.py read its `run:` steps as a lane
+      # of every scripts/ci/ gate it invokes. Without this entry a PR that
+      # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
+      # the roster tests that exist to catch exactly that.
+      - '.github/workflows/web-guards.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -90,6 +99,8 @@ on:
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
       - 'scripts/ci/**'
+      # See the pull_request filter above (gate lane rosters).
+      - '.github/workflows/web-guards.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
@@ -616,7 +627,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
@@ -867,6 +877,18 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
+        # `continue-on-error`, not only `fail_ci_if_error: false` below: that
+        # input covers an UPLOAD the uploader reports as failed, but NOT the
+        # action crashing before it uploads. Measured on the 2026-10-05 nightly
+        # (run 37280089560): Codecov's endpoint refused the TLS handshake
+        # (`write EPROTO ... SSL alert number 40`), the action threw, and all
+        # six shards concluded `failure` with every test passing -- which reds
+        # the `Run Tests` aggregate and turns the `shard-headroom` alarm to
+        # `unknown` (a failed shard is not a measurement). This upload is
+        # coverage telemetry, never a verdict on the suite, so it must not be
+        # able to fail the job. Pinned by
+        # backend/tests/test_codecov_upload_cannot_red_a_shard.py.
+        continue-on-error: true
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./backend/coverage.xml
@@ -874,8 +896,8 @@ jobs:
           # the flag stays `backend` and the union is the suite's coverage. The
           # NAME is shard-scoped so the six uploads are distinguishable in
           # Codecov's own UI rather than six rows called the same thing.
-          # `fail_ci_if_error: false` (below, unchanged) is why a merge surprise
-          # here cannot red the lane -- confirm the delta on the first run.
+          # `fail_ci_if_error: false` (below), together with `continue-on-error`
+          # above, is why a merge surprise here cannot red the lane.
           flags: backend
           name: backend-coverage-shard-${{ matrix.shard }}
           fail_ci_if_error: false

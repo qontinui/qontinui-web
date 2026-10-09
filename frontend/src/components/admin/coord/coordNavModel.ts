@@ -46,6 +46,7 @@ import {
   CornerDownRight,
   Cpu,
   FileText,
+  Files,
   Gauge,
   Gavel,
   GitBranch,
@@ -67,6 +68,7 @@ import {
   Package,
   Plug,
   Puzzle,
+  RotateCcw,
   Rocket,
   Scale,
   ScrollText,
@@ -218,14 +220,27 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-work-units",
       },
       {
-        // Sits beside Plans deliberately: Plans is coord's work units, this is
-        // the prompt/plan CORPUS those units are authored from. Distinct path
-        // (not /plans/library) so the Plans item's startsWith active-match
-        // doesn't double-highlight — same reasoning as the Onboarding pair.
-        href: "/admin/coord/plan-library",
-        label: "Plan Library",
+        // The plan library's two policy dials (`plan_capture`,
+        // `citation_scope_backfill_write`). Its browsing page folded into
+        // Plans (plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`
+        // Phase 1) and `/admin/coord/plan-library` now redirects there, so the
+        // leaf names the one page the old route still owns. Distinct path (not
+        // /plans/settings) so the Plans item's startsWith active-match doesn't
+        // double-highlight — same reasoning as the Onboarding pair.
+        href: "/admin/coord/plan-library/settings",
+        label: "Plan Library Settings",
         icon: Library,
         testId: "coord-nav-plan-library",
+      },
+      {
+        // Every captured artifact KIND — prompts, findings reports, handoffs
+        // and the rest. Plans reads `kind = 'plan'` only, so without this leaf
+        // the other kinds would have no browsable surface at all. Sibling
+        // path of the settings page; neither prefixes the other.
+        href: "/admin/coord/plan-library/artifacts",
+        label: "Artifact Library",
+        icon: Files,
+        testId: "coord-nav-plan-library-artifacts",
       },
       // Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store`.
       // Three purpose-built plan-library joins had shipped with tests, an
@@ -280,6 +295,15 @@ export const GROUPS: NavGroup[] = [
         label: "Agents",
         icon: ScrollText,
         testId: "coord-nav-agents",
+      },
+      {
+        // Closed sessions whose work was never declared finished, fleet-wide,
+        // with Resume / Dismiss and the tenant's automatic-resume switch. Plan
+        // `2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed`.
+        href: "/admin/coord/unfinished",
+        label: "Unfinished Sessions",
+        icon: RotateCcw,
+        testId: "coord-nav-unfinished",
       },
       {
         // Sits beside Agents deliberately: Agents is the per-agent registry,
@@ -624,9 +648,12 @@ export const GROUPS: NavGroup[] = [
         // Per-tenant switches: transcript sync (the session-output ingest
         // consent gate coord enforces; plan
         // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
-        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
-        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
+        // and the `account_selection_mode` dial runners force-apply unless the
+        // machine is pinned (plan
+        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

@@ -59,10 +59,7 @@ from app.models.user import User
 from app.services.recording_pipeline_subscriber import (
     spawn_recording_pipeline_subscriber,
 )
-from app.services.runner import (
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
-)
+from app.services.runner import resolve_runner_for_request
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
@@ -170,9 +167,9 @@ async def _resolve_runner(
     """Pick the user's connected runner or raise 503."""
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
-    runner = await pick_active_runner_for_user(current_user.id, db, manager.registry)
-    if runner is None:
-        raise runner_bridge_503_no_runner(endpoint)
+    runner = await resolve_runner_for_request(
+        None, current_user.id, db, manager, endpoint
+    )
     return runner, manager
 
 

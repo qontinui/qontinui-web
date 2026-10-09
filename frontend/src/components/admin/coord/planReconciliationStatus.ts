@@ -90,10 +90,63 @@ export type ReconciliationVerdict = "agree" | "disagree" | "unknown";
 /** Whether coord's work-unit list — the population's axis-A arm — was read. */
 export type WorkUnitPopulationState = "included" | "unavailable";
 
+/**
+ * coord's derived `status_class` over the stored status — five members,
+ * exhaustive (`backend/app/schemas/plan_library.py`
+ * `ReconciliationStatusClass`). `null` on the wire means axis A is unreadable
+ * or no unit exists for the stem; ABSENT means a backend that predates the
+ * field. Both read UNKNOWN, never as a class.
+ */
+export type ReconciliationStatusClass =
+  | "free_known"
+  | "attested"
+  | "derived"
+  | "off_vocabulary"
+  | "unset";
+
+/** coord's `work_unit_custody::Custody` states, exactly as it emits them. */
+export type ReconciliationCustodyState = "sole" | "ambiguous" | "unresolved";
+
+/**
+ * Who holds a live session's device, as coord resolved it. `session_name:
+ * null` on `sole` means the session has NO name — not that it is unknown.
+ */
+export interface ReconciliationCustody {
+  state: ReconciliationCustodyState;
+  session_name?: string | null;
+  live_session_count?: number | null;
+}
+
+/**
+ * One non-expired `coord.agent_status` row naming the unit's slug. `custody:
+ * null` is UNKNOWN (not requested, an older coord, or an unrecognised state).
+ */
+export interface ReconciliationLiveSession {
+  device_id: string;
+  correlation_topic?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+  custody?: ReconciliationCustody | null;
+}
+
 export interface ReconciliationAxisA {
   readable: boolean;
   present: boolean;
   status?: string | null;
+  /** See {@link ReconciliationStatusClass}. Absent = older backend. */
+  status_class?: ReconciliationStatusClass | null;
+  /** coord's vet-freshness verdict (`fresh` / `moved` / `gone` / `none`).
+   *  `null` or absent is UNKNOWN — never "fresh". */
+  vet_state?: string | null;
+  vet_checked_at?: string | null;
+  /** Populated only under `include_custody=true`. `null`/absent is UNKNOWN;
+   *  `[]` is a real zero. */
+  live_sessions?: ReconciliationLiveSession[] | null;
+  /** Did coord echo `resolve_session_names: true` on every page? `false` =
+   *  coord did not resolve names (older coord or a failed join), and every
+   *  `custody` is then null; `null`/absent = custody not asked for on this
+   *  read, or a backend that does not report it. */
+  custody_resolved?: boolean | null;
   unreadable_reason?: string | null;
 }
 
@@ -163,6 +216,12 @@ export interface ReconciliationResponse {
   axis_c_scope?: string;
   axis_c_computed_count?: number;
   facets?: ReconciliationFacets;
+  /**
+   * The search the route actually applied, echoed. ABSENT on a backend that
+   * predates server-side search — which then ignored a sent `q`, so the rows
+   * are NOT filtered by it. `null` means no search was applied.
+   */
+  q?: string | null;
 }
 
 // ---------------------------------------------------------------------------

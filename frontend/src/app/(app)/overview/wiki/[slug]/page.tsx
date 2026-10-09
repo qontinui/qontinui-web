@@ -9,9 +9,10 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { LoadFailure } from "@/components/overview/LoadFailure";
+import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { useFocusAfterRender } from "@/components/overview/editing/focus";
 import { useCanEdit } from "@/components/overview/editing/permissions";
-import { formatRelativeTime } from "@/lib/time-utils";
+import { DocumentProvenanceLine } from "../../_components/DocumentProvenance";
 import { NewPageForm } from "../../_components/NewPageForm";
 import { PageBody, useWikiLinkOptions } from "../../_components/PageBody";
 import { TitleEditor } from "../../_components/TitleEditor";
@@ -167,16 +168,25 @@ function WikiPageView() {
                 )}
               </div>
             )}
-            <p className="mt-1 text-sm text-muted-foreground">
-              Edited {formatRelativeTime(state.page.updated_at)}
-              {state.page.updated_by ? ` by ${state.page.updated_by}` : ""}
-              {canEdit && (
-                <>
-                  {" · "}Link to it with{" "}
-                  <code className="text-xs">[[{state.page.slug}]]</code>
-                </>
-              )}
-            </p>
+            {canEdit && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Link to it with{" "}
+                <code className="text-xs">[[{state.page.slug}]]</code>
+              </p>
+            )}
+            {/* Who edited it last, and the write history — filterable to
+                the writes agents made through the API. */}
+            <ChangeLogPanel
+              resource="pages"
+              recordId={state.page.id}
+              updatedBy={state.page.updated_by}
+              updatedAt={state.page.updated_at}
+              uiBridgeId="overview.wiki-page.history-log"
+            />
+            <DocumentProvenanceLine
+              page={state.page}
+              uiBridgeId="overview.wiki-page.provenance"
+            />
           </header>
           <PageBody
             page={state.page}

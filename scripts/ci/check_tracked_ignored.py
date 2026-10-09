@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """No tracked file may be matched by the repo's own ignore rules.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/gitignore-tracked-files.yml``, step
     "Scan for tracked-but-ignored files"
+  * ``.github/workflows/web-guards.yml``, step
+    "gitignore-tracked-files: Scan for tracked-but-ignored files"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``gitignore-tracked-files``
   * ``.pre-commit-config.yaml``, hook ``gitignore-tracked-files`` — catches
     it before the push, since a commit is what creates this state.
