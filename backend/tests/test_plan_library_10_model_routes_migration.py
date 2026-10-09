@@ -40,7 +40,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_10_model_routes"
-_PARENT_REVISION_ID = "prbody_citation_01"
+_PARENT_REVISION_ID = "coord_sessions_fleet_idx_01"
 _REVISION_FILENAME = "plan_library_10_model_routes.py"
 _TABLE = "plan_difficulty_model_routes"
 
