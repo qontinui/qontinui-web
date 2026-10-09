@@ -21,22 +21,18 @@ import {
   fetchCognitoGroupUsers,
   fetchGroupTenantRoles,
   type CognitoGroupCreate,
+  type CognitoGroupRow,
+  type CognitoGroupUserRow,
+  type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { CollapsiblePanel } from "@/components/console";
-import type {
-  CognitoGroupRow,
-  CognitoGroupsResponse,
-  CognitoGroupUserRow,
-  CognitoGroupUsersResponse,
-  GroupTenantRoleRow,
-  GroupTenantRolesResponse,
-} from "../_types";
 import {
   groupNameProblem,
   requireRows,
   suggestGroupName,
 } from "../_lib/groupName";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { GroupNameHint } from "./GroupNameHint";
 import { CognitoGroupItem } from "./CognitoGroupItem";
 import { log } from "../_lib/log";
@@ -116,9 +112,7 @@ export function CognitoGroupsSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchCognitoGroups();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as CognitoGroupsResponse;
+      const json = await fetchCognitoGroups();
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
       // not the list is UNKNOWN, not "no groups". `?? []` would render "No
       // Cognito groups yet." for a pool that may be full of them, and a
@@ -126,7 +120,7 @@ export function CognitoGroupsSection({
       setGroups(requireRows<CognitoGroupRow>(json?.groups, "cognito groups"));
     } catch (err) {
       log.warn("load cognito groups failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -146,9 +140,7 @@ export function CognitoGroupsSection({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetchGroupTenantRoles();
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
-        const json = (await res.json()) as GroupTenantRolesResponse;
+        const json = await fetchGroupTenantRoles();
         // A successful STATUS is not a successful READ. `group_tenant_roles`
         // is declared non-optional, so a `?? []` here is dead per the types
         // and live at runtime — and what it would fabricate is precisely the
@@ -199,9 +191,7 @@ export function CognitoGroupsSection({
       await Promise.all(
         groups.map(async (g) => {
           try {
-            const res = await fetchCognitoGroupUsers(g.group_name);
-            if (!res.ok) throw new Error(await backendErrorMessage(res));
-            const json = (await res.json()) as CognitoGroupUsersResponse;
+            const json = await fetchCognitoGroupUsers(g.group_name);
             // `memberErrors` is the mechanism #1111 held up as the model — a
             // failed probe becomes "members unknown" rather than a count. But
             // it is reached only from this `catch`, so a malformed 200 walked
@@ -249,15 +239,14 @@ export function CognitoGroupsSection({
     try {
       const body: CognitoGroupCreate = { group_name };
       if (newDescription.trim()) body.description = newDescription.trim();
-      const res = await createCognitoGroup(body);
-      if (res.status === 409) {
-        toast.error(`A Cognito group named "${group_name}" already exists.`);
-        return;
-      }
-      if (!res.ok) {
-        // One prefix, not two — the `catch` below adds "Create failed:", and
-        // the backend's 400 already names the reason.
-        throw new Error(await backendErrorMessage(res));
+      try {
+        await createCognitoGroup(body);
+      } catch (err) {
+        if (httpStatusOf(err) === 409) {
+          toast.error(`A Cognito group named "${group_name}" already exists.`);
+          return;
+        }
+        throw err;
       }
       toast.success(`Created group ${group_name}`);
       setNewName("");
@@ -265,9 +254,9 @@ export function CognitoGroupsSection({
       await load();
     } catch (err) {
       log.warn("create cognito group failed", err);
-      toast.error(
-        `Create failed: ${err instanceof Error ? err.message : String(err)}`
-      );
+      // One prefix, not two — "Create failed:" here, and the backend's 400
+      // already names the reason.
+      toast.error(`Create failed: ${operationsErrorMessage(err)}`);
     } finally {
       setCreating(false);
     }
@@ -277,153 +266,157 @@ export function CognitoGroupsSection({
     // R7 — the identity-provider surface: the least-often-read section on the
     // page and, at a table plus a create form, one of the tallest.
     <div data-testid="coord-members-cognito-groups">
-    <CollapsiblePanel
-      title="Cognito Groups"
-      icon={<KeyRound className="h-4 w-4" />}
-      titleAs="h2"
-      defaultOpen={false}
-      storageKey="coord-members-cognito-groups"
-      summary={(
-        <Badge
-          variant="outline"
-          className={`font-mono text-[11px]${
-            error ? " text-amber-600 dark:text-amber-400" : ""
-          }`}
-          data-testid="coord-cognito-groups-summary"
-        >
-          <span className="font-normal text-muted-foreground">groups&nbsp;</span>
-          {/* A failed read must not print `groups 0` on a collapsed panel —
+      <CollapsiblePanel
+        title="Cognito Groups"
+        icon={<KeyRound className="h-4 w-4" />}
+        titleAs="h2"
+        defaultOpen={false}
+        storageKey="coord-members-cognito-groups"
+        summary={
+          <Badge
+            variant="outline"
+            className={`font-mono text-[11px]${
+              error ? " text-amber-600 dark:text-amber-400" : ""
+            }`}
+            data-testid="coord-cognito-groups-summary"
+          >
+            <span className="font-normal text-muted-foreground">
+              groups&nbsp;
+            </span>
+            {/* A failed read must not print `groups 0` on a collapsed panel —
               see the mappings badge above. This is the section that carries
               the pool-wide Delete, so "there is nothing here" is the last
               thing it should assert on a read that never landed. */}
-          {loading ? "–" : error ? "unknown" : groups.length}
-        </Badge>
-      )}
-      contentClassName="space-y-4"
-    >
-      <>
-        {/* Mounts only while the panel is open — that is the signal the
+            {loading ? "–" : error ? "unknown" : groups.length}
+          </Badge>
+        }
+        contentClassName="space-y-4"
+      >
+        <>
+          {/* Mounts only while the panel is open — that is the signal the
             blast-radius probes wait on. */}
-        <MountedOnce onMount={markPanelOpened} />
-        {!isSuperuser ? (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="cognito-groups-superuser-required"
-          >
-            Cognito group management requires staff/superuser access.
-          </p>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">
-              Bind a group to a tenant+role above, create the matching Cognito
-              group here, then add members by email — no AWS console needed.
+          <MountedOnce onMount={markPanelOpened} />
+          {!isSuperuser ? (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="cognito-groups-superuser-required"
+            >
+              Cognito group management requires staff/superuser access.
             </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Bind a group to a tenant+role above, create the matching Cognito
+                group here, then add members by email — no AWS console needed.
+              </p>
 
-            {/* Existing groups */}
-            {loading ? (
-              <div className="space-y-2">
-                <Skeleton className="h-8 w-full" />
-                <Skeleton className="h-8 w-full" />
-              </div>
-            ) : error ? (
-              <p className="text-sm text-destructive flex items-center gap-1.5">
-                <AlertTriangle className="h-4 w-4" /> {error}
-              </p>
-            ) : groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No Cognito groups yet.
-              </p>
-            ) : (
-              <Table data-testid="coord-cognito-groups-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {groups.map((g) => (
-                    <CognitoGroupItem
-                      key={g.group_name}
-                      group={g}
-                      mappings={
-                        mappings === null
-                          ? null
-                          : mappings.filter((m) => m.group_id === g.group_name)
+              {/* Existing groups */}
+              {loading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : error ? (
+                <p className="text-sm text-destructive flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4" /> {error}
+                </p>
+              ) : groups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No Cognito groups yet.
+                </p>
+              ) : (
+                <Table data-testid="coord-cognito-groups-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((g) => (
+                      <CognitoGroupItem
+                        key={g.group_name}
+                        group={g}
+                        mappings={
+                          mappings === null
+                            ? null
+                            : mappings.filter(
+                                (m) => m.group_id === g.group_name
+                              )
+                        }
+                        mappingsError={mappingsError}
+                        memberCount={
+                          memberErrors[g.group_name]
+                            ? undefined
+                            : (memberCounts[g.group_name] ?? null)
+                        }
+                        membersError={memberErrors[g.group_name] === true}
+                        onDeleted={load}
+                        onMembersChanged={refreshBlastRadius}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              {/* Create-group form */}
+              <div className="border-t border-border pt-4 space-y-3">
+                <p className="text-sm font-medium">Create group</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="cognito-new-name">Group name</Label>
+                    <Input
+                      id="cognito-new-name"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="e.g. qontinui-admins"
+                      aria-invalid={newNameProblem !== null}
+                      // Only while the hint is rendered — see the mapping form's
+                      // Group ID input above.
+                      aria-describedby={
+                        newNameProblem !== null
+                          ? "cognito-new-name-problem"
+                          : undefined
                       }
-                      mappingsError={mappingsError}
-                      memberCount={
-                        memberErrors[g.group_name]
-                          ? undefined
-                          : (memberCounts[g.group_name] ?? null)
-                      }
-                      membersError={memberErrors[g.group_name] === true}
-                      onDeleted={load}
-                      onMembersChanged={refreshBlastRadius}
+                      data-testid="cognito-new-name"
                     />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-
-            {/* Create-group form */}
-            <div className="border-t border-border pt-4 space-y-3">
-              <p className="text-sm font-medium">Create group</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="cognito-new-name">Group name</Label>
-                  <Input
-                    id="cognito-new-name"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="e.g. qontinui-admins"
-                    aria-invalid={newNameProblem !== null}
-                    // Only while the hint is rendered — see the mapping form's
-                    // Group ID input above.
-                    aria-describedby={
-                      newNameProblem !== null
-                        ? "cognito-new-name-problem"
-                        : undefined
-                    }
-                    data-testid="cognito-new-name"
-                  />
-                  <GroupNameHint
-                    problem={newNameProblem}
-                    suggestion={newNameSuggestion}
-                    onAccept={setNewName}
-                    testId="cognito-new-name-problem"
-                  />
+                    <GroupNameHint
+                      problem={newNameProblem}
+                      suggestion={newNameSuggestion}
+                      onAccept={setNewName}
+                      testId="cognito-new-name-problem"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="cognito-new-description">
+                      Description (optional)
+                    </Label>
+                    <Input
+                      id="cognito-new-description"
+                      value={newDescription}
+                      onChange={(e) => setNewDescription(e.target.value)}
+                      placeholder="What this group is for"
+                      data-testid="cognito-new-description"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="cognito-new-description">
-                    Description (optional)
-                  </Label>
-                  <Input
-                    id="cognito-new-description"
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="What this group is for"
-                    data-testid="cognito-new-description"
-                  />
+                <div className="flex justify-end">
+                  <Button
+                    onClick={createGroup}
+                    disabled={creating || newNameProblem !== null}
+                    data-testid="cognito-create-submit"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create group
+                  </Button>
                 </div>
               </div>
-              <div className="flex justify-end">
-                <Button
-                  onClick={createGroup}
-                  disabled={creating || newNameProblem !== null}
-                  data-testid="cognito-create-submit"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create group
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-      </>
-    </CollapsiblePanel>
+            </>
+          )}
+        </>
+      </CollapsiblePanel>
     </div>
   );
 }

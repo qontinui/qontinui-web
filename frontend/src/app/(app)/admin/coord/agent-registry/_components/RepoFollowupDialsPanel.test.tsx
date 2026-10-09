@@ -26,7 +26,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-vi.mock("@/components/sessions/api", () => ({
+vi.mock("@/lib/api/operations/sessions", () => ({
   listRegisteredRepos: (...a: unknown[]) => listRepos(...a),
 }));
 

@@ -45,7 +45,7 @@ import {
   getSessionAgentStatus,
   getSessionClaims,
   getSessionLineage,
-} from "./api";
+} from "@/lib/api/operations/sessions";
 import { LineageTimeline } from "./LineageTimeline";
 import {
   useSessionEventRevalidation,
@@ -119,8 +119,11 @@ export function useSessionCoordination(
     lineage: IDLE,
   });
 
-  const { claims: readClaims, agents: readAgents, lineage: readLineage } =
-    readers;
+  const {
+    claims: readClaims,
+    agents: readAgents,
+    lineage: readLineage,
+  } = readers;
 
   /**
    * Issue all three reads once. `refresh` is `false` for the read that opens
@@ -174,7 +177,10 @@ export function useSessionCoordination(
         readLineage ?? getSessionLineage,
         (r) => r.actions ?? [],
         (lineage) =>
-          setState((prev) => ({ ...prev, lineage: fold(prev.lineage, lineage) }))
+          setState((prev) => ({
+            ...prev,
+            lineage: fold(prev.lineage, lineage),
+          }))
       );
 
       return ctrl;
@@ -232,7 +238,10 @@ export function SessionRowExpansion({
       data-testid="sessions-console-detail"
       why={<p className="text-muted-foreground">{rowClassExplanation(row)}</p>}
       problems={
-        <div className="space-y-2" data-testid="sessions-console-detail-coordination">
+        <div
+          className="space-y-2"
+          data-testid="sessions-console-detail-coordination"
+        >
           <p className="text-xs font-medium text-muted-foreground">
             Coordination — claims and agent status
           </p>
@@ -317,7 +326,10 @@ export function SessionRowExpansion({
         </div>
       }
       history={
-        <div className="space-y-2" data-testid="sessions-console-detail-lineage">
+        <div
+          className="space-y-2"
+          data-testid="sessions-console-detail-lineage"
+        >
           <p className="text-xs font-medium text-muted-foreground">
             Lineage — worktrees, claims, builds, merges
           </p>

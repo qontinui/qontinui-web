@@ -25,10 +25,10 @@ import userEvent from "@testing-library/user-event";
 const renameTenantMock = vi.fn();
 const refreshMock = vi.fn();
 
-vi.mock("@/components/sessions/api", async () => {
+vi.mock("@/lib/api/operations/sessions", async () => {
   const actual = await vi.importActual<
-    typeof import("@/components/sessions/api")
-  >("@/components/sessions/api");
+    typeof import("@/lib/api/operations/sessions")
+  >("@/lib/api/operations/sessions");
   return {
     ...actual,
     renameTenant: (...args: unknown[]) => renameTenantMock(...args),
@@ -75,7 +75,7 @@ import {
 import {
   parseTenantRenameError,
   TenantRenameError,
-} from "@/components/sessions/api";
+} from "@/lib/api/operations/sessions";
 
 const TENANT = {
   id: "22222222-2222-2222-2222-222222222222",

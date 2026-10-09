@@ -13,7 +13,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 
 const listTenantsMock = vi.fn();
 
-vi.mock("@/components/sessions/api", () => ({
+vi.mock("@/lib/api/operations/sessions", () => ({
   listTenants: (...args: unknown[]) => listTenantsMock(...args),
 }));
 

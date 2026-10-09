@@ -67,7 +67,7 @@ import {
   listRegisteredRepos,
   findRegisteredRepo,
   registeredRepoSlugs,
-} from "./api";
+} from "@/lib/api/operations/sessions";
 import { LineageTimeline } from "./LineageTimeline";
 import {
   isRevalidatingEvent,

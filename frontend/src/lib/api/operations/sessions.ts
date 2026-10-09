@@ -1,22 +1,33 @@
-// ============================================================================
-// Sessions panel — API client
-//
-// Thin wrapper around the web-backend session proxy
-// (`/api/v1/operations/sessions*`). Centralizes URL building, fetch
-// options (credentials, error mapping), and SSE subscription so
-// `page.tsx` stays declarative.
-//
-// All requests are routed through the shared `httpClient` (from
-// `@/services/service-factory`) which automatically attaches the
-// Bearer token, handles 401-refresh, and adds CSRF headers. SSE
-// streams use `httpClient.getAuthToken()` to build auth headers
-// manually (httpClient.fetch's internal AbortController would
-// conflict with the caller's long-lived signal).
-// ============================================================================
+/**
+ * `/operations/sessions*`, `/operations/tenants*` and `/operations/repos` —
+ * the Sessions console's client, plus the SSE subscriptions.
+ *
+ * Part of the typed `/operations` client (plan
+ * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`
+ * D5, Phase 7). Moved here from `components/sessions/api.ts`; each function
+ * mirrors a handler in `backend/app/api/v1/endpoints/operations/__init__.py`
+ * (`list_sessions`, `get_session`, `get_session_output`, `close_session`,
+ * `steal_session`, `handoff_session`, `get_session_restore_record`,
+ * `get_session_claims`, `get_session_agent_status`, `get_session_lineage`,
+ * `list_tenants`, `create_tenant`, `rename_tenant`, `list_repos`,
+ * `get_sessions_fleet`, `post_session_control`).
+ *
+ * Every request calls `httpClient.fetch` directly with its URL inline over
+ * `OPERATIONS_BASE` (same-origin), which attaches the Bearer token, handles
+ * 401-refresh and adds CSRF headers, and parses through `readJson`. A
+ * non-2xx is re-thrown as the module's own error class so callers keep their
+ * `.status`. SSE streams cannot go through `httpClient.fetch` (its internal
+ * AbortController would conflict with the caller's long-lived signal), so
+ * they use a bare `fetch` with `httpClient.getAuthToken()` and keep the
+ * ABSOLUTE `ApiConfig.API_BASE_URL` base they always had: a streaming body
+ * must reach the backend directly, not through the Vercel rewrite.
+ */
 
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import type { ConsolidatedSessionsResponse } from "@/components/sessions/sessionConsoleStatus";
+import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../operations/utils";
-import type { ConsolidatedSessionsResponse } from "./sessionConsoleStatus";
+import { OPERATIONS_BASE, readJson } from "./base";
 import type {
   AgentStatusResponse,
   LineageResponse,
@@ -35,7 +46,7 @@ import type {
   TenantListResponse,
   TenantRenameRequest,
   TenantRenameResponse,
-} from "./types";
+} from "@/components/sessions/types";
 
 export type ListSessionsScope = "active" | "all";
 
@@ -65,13 +76,14 @@ export async function listSessions(
   if (opts.since) params.set("since", opts.since);
 
   const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions${qs ? `?${qs}` : ""}`;
+  const url = `${OPERATIONS_BASE}/sessions${qs ? `?${qs}` : ""}`;
 
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionListResponse;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal: opts.signal,
+  });
+  return readSessionsJson<SessionListResponse>(res, "GET", url);
 }
 
 /**
@@ -111,33 +123,33 @@ export async function listConsolidatedSessions(
   if (opts.status) params.set("status", opts.status);
   if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
 
-  const url = `${OPERATIONS_API}/sessions?${params.toString()}`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
-    // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
-    // can recover a status from. The older helpers in this file stop at the
-    // status, so a 404 through them is indistinguishable from a dead socket;
-    // this path does not inherit that.
-    const body = await res.text().catch(() => "");
-    throw new SessionsApiError(
-      `GET ${url} failed: ${res.status} - ${body}`,
-      res.status
-    );
-  }
-  return (await res.json()) as ConsolidatedSessionsResponse;
+  const url = `${OPERATIONS_BASE}/sessions?${params.toString()}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal: opts.signal,
+  });
+  // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
+  // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
+  // can recover a status from. The older helpers in this file stop at the
+  // status, so a 404 through them is indistinguishable from a dead socket;
+  // this path does not inherit that.
+  return readSessionsJson<ConsolidatedSessionsResponse>(res, "GET", url, {
+    withBody: true,
+  });
 }
 
 export async function getSession(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionRow;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<SessionRow>(res, "GET", url);
 }
 
 export type OutputTier = "warm" | "cold";
@@ -177,26 +189,24 @@ export async function getSessionOutput(
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
 
   const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/output${
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/output${
     qs ? `?${qs}` : ""
   }`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as OutputHistoryResponse;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal: opts.signal,
+  });
+  return readSessionsJson<OutputHistoryResponse>(res, "GET", url);
 }
 
 export async function closeSession(id: string): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { method: "DELETE" });
-  if (!res.ok) {
-    throw new SessionsApiError(
-      `DELETE ${url} failed: ${res.status}`,
-      res.status
-    );
-  }
-  return (await res.json()) as SessionRow;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    idempotent: true,
+  });
+  return readSessionsJson<SessionRow>(res, "DELETE", url);
 }
 
 export interface StealSessionRequest {
@@ -215,16 +225,14 @@ export async function stealSession(
   id: string,
   body: StealSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/steal`;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/steal`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    idempotent: false,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
-  if (!res.ok) {
-    throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
-  }
-  return await res.json();
+  return readSessionsJson<unknown>(res, "POST", url);
 }
 
 export interface HandoffSessionRequest {
@@ -248,16 +256,14 @@ export async function handoffSession(
   id: string,
   body: HandoffSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/handoff`;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/handoff`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    idempotent: false,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
-  if (!res.ok) {
-    throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
-  }
-  return await res.json();
+  return readSessionsJson<unknown>(res, "POST", url);
 }
 
 /**
@@ -271,36 +277,39 @@ export async function getSessionRestoreRecord(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRestoreRecordResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/restore-record`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionRestoreRecordResponse;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/restore-record`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<SessionRestoreRecordResponse>(res, "GET", url);
 }
 
 export async function getSessionClaims(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<SessionClaimsResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/claims`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionClaimsResponse;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/claims`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<SessionClaimsResponse>(res, "GET", url);
 }
 
 export async function getSessionAgentStatus(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<AgentStatusResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as AgentStatusResponse;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<AgentStatusResponse>(res, "GET", url);
 }
 
 /**
@@ -314,23 +323,25 @@ export async function getSessionLineage(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<LineageResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/lineage`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as LineageResponse;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/lineage`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<LineageResponse>(res, "GET", url);
 }
 
 export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as TenantListResponse;
+  const url = `${OPERATIONS_BASE}/tenants`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<TenantListResponse>(res, "GET", url);
 }
 
 /**
@@ -654,18 +665,24 @@ export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
 export async function createTenant(
   body: TenantCreateRequest
 ): Promise<TenantCreateResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
+  const url = `${OPERATIONS_BASE}/tenants`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, detail, ...fields } = parseTenantCreateError(raw);
-    throw new TenantCreateError(res.status, code, detail, fields);
+  try {
+    return await readJson<TenantCreateResponse>(res, `POST ${url}`);
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
+    const { code, detail, ...fields } = parseTenantCreateError(
+      httpBodyOf(err) ?? ""
+    );
+    throw new TenantCreateError(status, code, detail, fields);
   }
-  return (await res.json()) as TenantCreateResponse;
 }
 
 /**
@@ -684,10 +701,11 @@ export async function renameTenant(
   tenantId: string,
   body: TenantRenameRequest
 ): Promise<TenantRenameResponse> {
-  const url = `${OPERATIONS_API}/tenants/${encodeURIComponent(tenantId)}`;
+  const url = `${OPERATIONS_BASE}/tenants/${encodeURIComponent(tenantId)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify(body),
+    idempotent: false,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
     // Longer than the default 60s ceiling, on purpose. A rename that changes
     // the slug is followed on the backend by the home-group migration, which
@@ -698,12 +716,16 @@ export async function renameTenant(
     // above the backend's own so the report wins that race.
     timeoutMs: 120_000,
   });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, reason, detail, slug, envelopeCode } =
-      parseTenantRenameError(raw);
+  try {
+    return await readJson<TenantRenameResponse>(res, `PATCH ${url}`);
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
+    const { code, reason, detail, slug, envelopeCode } = parseTenantRenameError(
+      httpBodyOf(err) ?? ""
+    );
     throw new TenantRenameError(
-      res.status,
+      status,
       code,
       reason,
       detail,
@@ -711,7 +733,6 @@ export async function renameTenant(
       envelopeCode
     );
   }
-  return (await res.json()) as TenantRenameResponse;
 }
 
 // ---- Registered repos (module-level cache) --------------------------------
@@ -719,6 +740,19 @@ export async function renameTenant(
 let _repoCache: { repos: RegisteredRepo[]; fetchedAt: number } | null = null;
 let _repoInflight: Promise<RegisteredRepo[]> | null = null;
 const REPO_CACHE_TTL_MS = 30_000;
+
+/** `GET /repos` — the registered repos, uncached (`list_repos`). */
+export async function fetchRegisteredRepos(
+  signal?: AbortSignal
+): Promise<RegisteredReposResponse> {
+  const url = `${OPERATIONS_BASE}/repos`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    signal,
+  });
+  return readSessionsJson<RegisteredReposResponse>(res, "GET", url);
+}
 
 export async function listRegisteredRepos(
   signal?: AbortSignal
@@ -730,15 +764,7 @@ export async function listRegisteredRepos(
 
   _repoInflight = (async () => {
     try {
-      const url = `${OPERATIONS_API}/repos`;
-      const res = await httpClient.fetch(url, { signal });
-      if (!res.ok) {
-        throw new SessionsApiError(
-          `GET ${url} failed: ${res.status}`,
-          res.status
-        );
-      }
-      const data = (await res.json()) as RegisteredReposResponse;
+      const data = await fetchRegisteredRepos(signal);
       const repos = data.repos ?? [];
       _repoCache = { repos, fetchedAt: Date.now() };
       return repos;
@@ -762,6 +788,9 @@ export function findRegisteredRepo(
 }
 
 // ---- SSE subscription ---------------------------------------------------
+
+/** Absolute on purpose — see the module comment. */
+const SSE_BASE = `${ApiConfig.API_BASE_URL}${OPERATIONS_BASE}`;
 
 /**
  * Subscribe to the per-session event stream. Returns an
@@ -790,9 +819,7 @@ export function subscribeSessionEvents(
   handlers: SessionEventStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
-    sessionId
-  )}/events`;
+  const url = `${SSE_BASE}/sessions/${encodeURIComponent(sessionId)}/events`;
 
   void (async () => {
     try {
@@ -806,6 +833,9 @@ export function subscribeSessionEvents(
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      // SSE: httpClient.fetch owns an AbortController that would cancel the
+      // long-lived stream; the Bearer token is attached by hand above.
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
@@ -923,9 +953,7 @@ export function subscribeSessionOutput(
   handlers: SessionOutputStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
-    sessionId
-  )}/events`;
+  const url = `${SSE_BASE}/sessions/${encodeURIComponent(sessionId)}/events`;
 
   void (async () => {
     try {
@@ -938,6 +966,9 @@ export function subscribeSessionOutput(
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      // SSE: httpClient.fetch owns an AbortController that would cancel the
+      // long-lived stream; the Bearer token is attached by hand above.
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
@@ -1020,4 +1051,82 @@ export class SessionsApiError extends Error {
     this.status = status;
     this.name = "SessionsApiError";
   }
+}
+
+/**
+ * Parse a response through `readJson`, re-throwing a status rejection as a
+ * {@link SessionsApiError}. The message keeps this module's historic
+ * `<METHOD> <url> failed: <status>` wording (no body) unless `withBody`, which
+ * keeps `readJson`'s `... - <body>` tail. Anything that is not a status
+ * rejection (a network error, a malformed 2xx body) is re-thrown unchanged.
+ * Takes the `Response`, never the URL, so it is not a fetch wrapper.
+ */
+async function readSessionsJson<T>(
+  res: Response,
+  method: string,
+  url: string,
+  { withBody = false }: { withBody?: boolean } = {}
+): Promise<T> {
+  try {
+    return await readJson<T>(res, `${method} ${url}`);
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
+    throw new SessionsApiError(
+      withBody && err instanceof Error
+        ? err.message
+        : `${method} ${url} failed: ${status}`,
+      status
+    );
+  }
+}
+
+// ---- Runner wind-down (`/admin/coord/runners`) ---------------------------
+
+/**
+ * `GET /sessions/fleet?device_id=&limit=` — one device's session census
+ * (`get_sessions_fleet`, proxying coord's `/coord/sessions/fleet`), parsed.
+ *
+ * A dashboard poll: `maxRetries: 0`, because the next tick is the retry. A
+ * non-2xx rejects with `GET <url> failed: <status> - <body>` (read the status
+ * back with `httpStatusOf`).
+ */
+export async function fetchDeviceFleetSessions(
+  deviceId: string,
+  limit: number
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/sessions/fleet?device_id=${encodeURIComponent(
+    deviceId
+  )}&limit=${limit}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** The body of `POST /sessions/{session_id}/control`. */
+export interface SessionControlBody {
+  action: string;
+  reason?: string;
+}
+
+/**
+ * `POST /sessions/{session_id}/control` — drain / un-drain / stop
+ * (`post_session_control`). Resolves the parsed body, or `null` for a 2xx
+ * whose body will not parse (the request was still recorded). A non-2xx
+ * rejects with `POST <url> failed: <status> - <body>`.
+ */
+export async function postSessionControlRequest(
+  sessionId: string,
+  body: SessionControlBody
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/control`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }

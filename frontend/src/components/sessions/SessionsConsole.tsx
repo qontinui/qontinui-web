@@ -86,7 +86,7 @@ import {
   type Stat,
 } from "@/components/console";
 import { Button } from "@/components/ui/button";
-import { listConsolidatedSessions } from "./api";
+import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
@@ -165,7 +165,9 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
  * Phase 3's `/admin/agent-sessions?live=true` → `/sessions?status=live` 308 is
  * what puts a value here today.
  */
-export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
+export function parseStatusTab(
+  raw: string | null | undefined
+): StatusTab | null {
   return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
 }
 
@@ -282,7 +284,10 @@ export function SessionsConsole({
   deviceRef.current = initialDevice;
 
   useEffect(() => {
-    const id = window.setTimeout(() => setAppliedQuery(query.trim()), QUERY_DEBOUNCE_MS);
+    const id = window.setTimeout(
+      () => setAppliedQuery(query.trim()),
+      QUERY_DEBOUNCE_MS
+    );
     return () => window.clearTimeout(id);
   }, [query]);
 
@@ -303,7 +308,9 @@ export function SessionsConsole({
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setReadFailed(true);
-        setError(err instanceof Error ? err.message : "failed to load sessions");
+        setError(
+          err instanceof Error ? err.message : "failed to load sessions"
+        );
       }
     },
     [doFetch, appliedQuery, status]
@@ -388,9 +395,9 @@ export function SessionsConsole({
   );
   const machineOptions = useMemo(
     () =>
-      facetOptions(rows, (r) =>
-        r.device_id ? String(r.device_id) : null
-      ).map((o) => ({ ...o, label: machineLabel(o.value) ?? o.value })),
+      facetOptions(rows, (r) => (r.device_id ? String(r.device_id) : null)).map(
+        (o) => ({ ...o, label: machineLabel(o.value) ?? o.value })
+      ),
     [rows, machineLabel]
   );
 
@@ -542,10 +549,7 @@ export function SessionsConsole({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatCluster
-          stats={stats}
-          data-testid="sessions-console-stats"
-        />
+        <StatCluster stats={stats} data-testid="sessions-console-stats" />
         <Button
           size="sm"
           variant="ghost"
@@ -636,10 +640,7 @@ export function SessionsConsole({
             filtered={
               status !== "all" ||
               appliedQuery !== "" ||
-              kinds.length +
-                providers.length +
-                machines.length +
-                work.length >
+              kinds.length + providers.length + machines.length + work.length >
                 0
             }
           />
@@ -831,10 +832,7 @@ function SessionConsoleRow({
           <StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />
           {workStatus && (
             <span data-testid="sessions-console-row-work">
-              <StatusBadge
-                status={workStatus}
-                palette={SESSION_WORK_PALETTE}
-              />
+              <StatusBadge status={workStatus} palette={SESSION_WORK_PALETTE} />
             </span>
           )}
         </span>
@@ -899,7 +897,9 @@ function EmptyState({
       data-testid="sessions-console-empty"
     >
       <p className="font-medium">
-        {filtered ? "No sessions match this filter" : "No sessions on the fleet"}
+        {filtered
+          ? "No sessions match this filter"
+          : "No sessions on the fleet"}
       </p>
       <p className="text-xs mt-1 max-w-md mx-auto">
         {filtered

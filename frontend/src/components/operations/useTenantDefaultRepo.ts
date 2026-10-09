@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listRegisteredRepos } from "@/components/sessions/api";
+import { listRegisteredRepos } from "@/lib/api/operations/sessions";
 
 export interface UseTenantDefaultRepoResult {
   /**

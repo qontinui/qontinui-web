@@ -7,7 +7,7 @@
  * serves a different router (`/api/v1/fleet`).
  *
  * `GET /fleet/health` is coord's device liveness read
- * (`backend/app/api/v1/endpoints/operations.py` `get_fleet_health`, proxying coord's
+ * (`backend/app/api/v1/endpoints/operations/__init__.py` `get_fleet_health`, proxying coord's
  * `/coord/fleet/health`, `fleet_health.rs`). {@link fetchFleetHealth} is the
  * ONE reader of it in the web app: `useFleetHealth`, `useFleetAlarmBadge`,
  * the conditions runner hint and the spawn modal's device roster all call it,
@@ -35,7 +35,7 @@
 import type { DeviceCredentialDark } from "@/components/operations/coordCredentialStatus";
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_BASE } from "./base";
+import { OPERATIONS_BASE, readJson } from "./base";
 
 export interface FleetHealthDevice {
   device_id: string;
@@ -348,20 +348,25 @@ export interface FleetHealthPayload {
 }
 
 /**
- * `GET /fleet/health` — parsed.
+ * `GET /fleet/health` (`operations/__init__.py` `get_fleet_health`) — parsed.
  *
- * Returns the parsed body and rejects with `httpClient.get`'s own error
- * (`GET <url> failed: <status> - <body>`), which is the shape every caller
- * already reads: `describeCoordPollError` and `httpStatusOf` parse exactly
- * that message. `options` carries the caller's retry budget — the dashboard
- * polls pass `COORD_DASHBOARD_POLL_OPTIONS` (one request; the next tick is
- * the retry). The read is declared `idempotent` regardless.
+ * Same-origin over {@link OPERATIONS_BASE} through `httpClient.fetch`, with
+ * the init `httpClient.get` used to send (`{...options, method: "GET"}`, the
+ * read declared `idempotent`). A non-2xx rejects through `readJson` with
+ * `GET /api/v1/operations/fleet/health failed: <status> - <body>` — the shape
+ * every caller already reads: `describeCoordPollError` and `httpStatusOf`
+ * parse exactly that message. `options` carries the caller's retry budget —
+ * the dashboard polls pass `COORD_DASHBOARD_POLL_OPTIONS` (one request; the
+ * next tick is the retry).
  */
-export function fetchFleetHealth(
+export async function fetchFleetHealth(
   options: HttpOptions = {}
 ): Promise<FleetHealthPayload> {
-  return httpClient.get<FleetHealthPayload>(`${OPERATIONS_BASE}/fleet/health`, {
+  const url = `${OPERATIONS_BASE}/fleet/health`;
+  const res = await httpClient.fetch(url, {
     ...options,
+    method: "GET",
     idempotent: true,
   });
+  return readJson<FleetHealthPayload>(res, `GET ${url}`);
 }

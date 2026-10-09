@@ -29,7 +29,7 @@ import {
   getSessionOutput,
   SessionsApiError,
   subscribeSessionOutput,
-} from "./api";
+} from "@/lib/api/operations/sessions";
 import { chunkStream, type OutputChunkFrame, type OutputStream } from "./types";
 import { capTail, decodeBase64Bytes, stripAnsi } from "./output-text";
 

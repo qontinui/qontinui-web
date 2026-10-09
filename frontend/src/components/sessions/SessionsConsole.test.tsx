@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import { SessionsConsole, parseStatusTab } from "./SessionsConsole";
 import type {
   ConsolidatedSessionRow,
@@ -73,7 +73,12 @@ function envelope(
     scope: "all",
     shape: "consolidated",
     sessions,
-    row_class_counts: { linked: 0, lifecycle_only: 0, agent_only: 0, unknown: 0 },
+    row_class_counts: {
+      linked: 0,
+      lifecycle_only: 0,
+      agent_only: 0,
+      unknown: 0,
+    },
     agent_half: { read: "ok" },
     ...over,
   };
@@ -147,7 +152,9 @@ describe("D1 — the three row classes", () => {
   it("renders one line per session for linked, lifecycle_only and agent_only", async () => {
     mount(envelope([LINKED, LIFECYCLE_ONLY, AGENT_ONLY]));
     await waitFor(async () =>
-      expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(3)
+      expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(
+        3
+      )
     );
   });
 
@@ -176,10 +183,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/none|no transcript|0/i);
     // And the dash says WHICH unknown it is: not applicable, not missing.
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("not applicable")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("not applicable"));
   });
 
   it("an agent_only row renders – for heartbeat/state, not false / 0 / closed", async () => {
@@ -188,10 +194,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     const cell = within(row).getByTestId("sessions-console-row-heartbeat");
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/closed|false|^0$/i);
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("NOT closed")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("NOT closed"));
     // The status badge must not read "closed" either.
     expect(row.textContent).not.toMatch(/\bclosed\b/);
   });
@@ -227,7 +232,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     await userEvent.click(within(row).getByRole("button"));
     const detail = await screen.findByTestId("sessions-console-detail");
     expect(detail).toHaveTextContent("agent_only");
-    expect(detail).toHaveTextContent(/heartbeat and lifecycle state are unknown/i);
+    expect(detail).toHaveTextContent(
+      /heartbeat and lifecycle state are unknown/i
+    );
   });
 });
 
@@ -257,7 +264,9 @@ describe("the read axis vs the join axis", () => {
         agent_half: { read: "failed", detail: "502: coord is not reachable" },
       })
     );
-    expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(1);
+    expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(
+      1
+    );
     const health = screen.getByTestId("sessions-console-health");
     expect(health).toHaveTextContent(/agent half did not answer/i);
     expect(health).toHaveAttribute("data-health-level", "amber");
@@ -309,9 +318,7 @@ describe("the facets", () => {
       "aria-pressed",
       "true"
     );
-    expect(
-      within(kind).queryByTestId("sessions-console-kind-any")
-    ).toBeNull();
+    expect(within(kind).queryByTestId("sessions-console-kind-any")).toBeNull();
   });
 
   it("selecting a kind narrows the list, and deselecting widens it back", async () => {
@@ -463,9 +470,7 @@ describe("the finished marker on a row", () => {
   it("paints NO marker on a row that never reported a work status", async () => {
     mount(envelope([LINKED]));
     const row = await rowFor(LINKED.id);
-    expect(
-      within(row).queryByTestId("sessions-console-row-work")
-    ).toBeNull();
+    expect(within(row).queryByTestId("sessions-console-row-work")).toBeNull();
     // And nothing fabricates the opposite claim either.
     expect(row.textContent).not.toMatch(/unfinished/i);
   });
@@ -585,7 +590,9 @@ describe("D3 — the expansion", () => {
     // The claims read ANSWERED with an empty list — that is data.
     const claims = await screen.findByTestId("sessions-console-detail-claims");
     await waitFor(() =>
-      expect(claims).toHaveTextContent(/coord answered: this session holds no claims/i)
+      expect(claims).toHaveTextContent(
+        /coord answered: this session holds no claims/i
+      )
     );
     // The agent-status read did NOT land — that is a dash and a sentence.
     const agents = screen.getByTestId("sessions-console-detail-agent-status");
@@ -615,10 +622,9 @@ describe("the two transcript stores", () => {
     const cell = within(row).getByTestId("sessions-console-row-transcript");
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/closed|false|^0$/i);
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("not probed")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("not probed"));
   });
 
   it("reports the coord tier once the row is opened", async () => {
