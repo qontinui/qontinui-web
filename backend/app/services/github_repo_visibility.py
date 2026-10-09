@@ -29,6 +29,7 @@ explicit timeout convention as ``endpoints/releases.py`` and
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
@@ -61,13 +62,24 @@ class Visibility(Enum):
     UNKNOWN = "unknown"
 
 
-async def repo_visibility(
+@dataclass(frozen=True)
+class VisibilityAnswer:
+    """One anonymous GitHub read: the verdict plus GitHub's rate-limit signal."""
+
+    visibility: Visibility
+    #: ``X-RateLimit-Remaining`` as GitHub sent it; ``None`` when absent.
+    rate_limit_remaining: int | None = None
+    #: True on a 403/429 — the caller must stop asking this window.
+    rate_limited: bool = False
+
+
+async def check_repo(
     repo: str, *, client: httpx.AsyncClient | None = None
-) -> Visibility:
+) -> VisibilityAnswer:
     """Anonymously ask GitHub whether ``owner/name`` is public.
 
-    ``client`` is a seam for tests (an ``httpx.MockTransport``); production
-    builds a fresh client with no auth headers.
+    ``client`` is a seam for tests; production builds its client through
+    :func:`_client_factory` (no auth headers).
     """
     url = f"{GITHUB_API}/repos/{repo}"
     try:
@@ -78,22 +90,36 @@ async def repo_visibility(
                 resp = await owned.get(url, headers=_HEADERS)
     except httpx.HTTPError as exc:
         logger.warning("github_visibility_unreachable", exc_type=type(exc).__name__)
-        return Visibility.UNKNOWN
+        return VisibilityAnswer(Visibility.UNKNOWN)
 
+    remaining_raw = resp.headers.get("x-ratelimit-remaining")
+    remaining = int(remaining_raw) if (remaining_raw or "").isdigit() else None
+    if resp.status_code in (403, 429):
+        logger.warning("github_visibility_rate_limited", status=resp.status_code)
+        return VisibilityAnswer(Visibility.UNKNOWN, remaining, rate_limited=True)
     if resp.status_code == 404:
-        return Visibility.NOT_PUBLIC
+        return VisibilityAnswer(Visibility.NOT_PUBLIC, remaining)
     if resp.status_code != 200:
         logger.warning("github_visibility_unanswered", status=resp.status_code)
-        return Visibility.UNKNOWN
+        return VisibilityAnswer(Visibility.UNKNOWN, remaining)
     try:
         body = resp.json()
     except ValueError:
-        return Visibility.UNKNOWN
+        return VisibilityAnswer(Visibility.UNKNOWN, remaining)
     if not isinstance(body, dict):
-        return Visibility.UNKNOWN
-    if body.get("private") is not False:
-        return Visibility.NOT_PUBLIC
+        return VisibilityAnswer(Visibility.UNKNOWN, remaining)
     full_name = body.get("full_name")
-    if not isinstance(full_name, str) or full_name.lower() != repo.lower():
-        return Visibility.NOT_PUBLIC
-    return Visibility.PUBLIC
+    if (
+        body.get("private") is not False
+        or not isinstance(full_name, str)
+        or full_name.lower() != repo.lower()
+    ):
+        return VisibilityAnswer(Visibility.NOT_PUBLIC, remaining)
+    return VisibilityAnswer(Visibility.PUBLIC, remaining)
+
+
+async def repo_visibility(
+    repo: str, *, client: httpx.AsyncClient | None = None
+) -> Visibility:
+    """:func:`check_repo`'s verdict alone."""
+    return (await check_repo(repo, client=client)).visibility

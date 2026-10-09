@@ -63,10 +63,15 @@ class BuildRecordPublicSlug(Base):
         DateTime(timezone=True), nullable=True
     )
     #: When the scheduled reconcile last asked GitHub whether this page's repos
-    #: are still public (revision ``brs_03_build_record_visibility_check``);
-    #: the oldest-checked-first cursor that bounds GitHub calls per tick.
+    #: are still public, set only when every repo got a definite answer
+    #: (revision ``brs_03_build_record_visibility_check``).
     last_visibility_check_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    #: How many of the slug's (sorted) repos the current check pass has
+    #: already answered — a slug wider than one tick's budget spans ticks.
+    visibility_check_offset: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
     )
 
 
