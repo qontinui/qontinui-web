@@ -37,9 +37,9 @@ Real throughput is :func:`recheck_throughput_per_hour`: ~30 repos/hour
 (~720/day) anonymous, 480/hour with the token. It stops the tick only on a
 transport error or a rate-limit signal; any other unanswered repo gives up
 that slug for the tick and moves it to the back; six blamed give-ups retract
-it. NOT_PUBLIC retracts. A staleness sweep retracts a page with no complete
-answer past 24 h (if attempted) or 72 h (if never reached), and the tick
-warns when the live repos exceed what can be checked in 72 h.
+it. NOT_PUBLIC retracts. A staleness sweep retracts a blamed page whose run
+of unanswered attempts is older than 24 h, and any page with no complete
+answer for 72 h; the tick warns when one full check cycle exceeds 24 h.
 
 Retraction only sets ``unpublished_at``; snapshots are kept, and
 ``POST /{slug}/publish`` with ``reactivate`` undoes it.
@@ -89,15 +89,24 @@ GITHUB_LIMIT_ANONYMOUS = 60
 GITHUB_LIMIT_TOKEN = 5000
 #: Consecutive give-ups on an unanswerable repo before the page is retracted.
 VISIBILITY_UNKNOWN_RETRACT_AFTER = 6
-#: The staleness clock of a page is the later of its last complete answer
-#: and its latest publish (a publish checks every repo itself). A page the
-#: tick ATTEMPTED and could not answer is retracted once that clock is older
-#: than this…
+#: A page BLAMED for an unanswered attempt (given up while GitHub answered
+#: other pages in the same tick) is retracted once its current run of
+#: unanswered attempts — measured from ``first_unanswered_attempt_at``, NOT
+#: from its last answer — is older than this. An unblamed attempt (GitHub was
+#: answering nobody) or a tick-stopping one (rate limit, transport) never
+#: triggers it.
 VISIBILITY_STALE_AFTER = timedelta(hours=24)
-#: …and a page the tick never reached (budget, rate limit, a pause of the
-#: task) only once it is older than this longer ceiling — so a pause or an
-#: outage shorter than this never retracts a page GitHub would call public.
+#: Every live page, whatever happened, is retracted once its staleness clock
+#: (later of its last complete answer and its latest publish — a publish
+#: checks every repo itself) is older than this.
 VISIBILITY_UNREACHED_STALE_AFTER = timedelta(hours=72)
+#: The capacity warning fires when one full check cycle (live repos /
+#: throughput) takes longer than this.
+VISIBILITY_CYCLE_WARN_AFTER = timedelta(hours=24)
+#: Stop starting GitHub calls this long into a tick, so a token-mode tick
+#: (up to 80 sequential calls) records, sweeps and commits well inside the
+#: task's 300 s timeout instead of being cancelled with nothing saved.
+VISIBILITY_TICK_DEADLINE_SECONDS = 240.0
 
 
 def recheck_throughput_per_hour(*, token: bool) -> int:
@@ -399,9 +408,9 @@ class VisibilityTick:
     credential_error: bool = False
     #: Retracted by the staleness sweep (also listed in ``retracted``).
     stale: list[str] = field(default_factory=list)
-    #: Set when the live repos exceed what the re-check can check within
-    #: :data:`VISIBILITY_UNREACHED_STALE_AFTER` at the current throughput:
-    #: ``{"live_repos", "capacity", "mode"}``. Pages WILL start retracting.
+    #: Set when one full check cycle (live repos / throughput) exceeds
+    #: :data:`VISIBILITY_CYCLE_WARN_AFTER`:
+    #: ``{"live_repos", "throughput_per_hour", "cycle_hours", "mode"}``.
     capacity_shortfall: dict[str, Any] | None = None
     #: Why the tick stopped early, or ``None`` when the budget or list ran out.
     stopped: str | None = None
@@ -419,16 +428,17 @@ def _latest_publish_subquery() -> Any:
 
 
 async def _retract_stale(
-    db: AsyncSession, tick: VisibilityTick, attempted_unanswered: set[str]
+    db: AsyncSession, tick: VisibilityTick, blamed: set[str]
 ) -> None:
     """The staleness sweep. Runs after the tick's checks; no commit.
 
-    * A page the tick ATTEMPTED and got no complete answer for (given up, or
-      the tick stopped on it) is retracted when its staleness clock is older
-      than :data:`VISIBILITY_STALE_AFTER`.
-    * Any other live page — including one the tick never reached — only when
-      older than :data:`VISIBILITY_UNREACHED_STALE_AFTER`.
-    * A page answered this tick has a fresh clock and is never stale.
+    * A page BLAMED this tick is retracted when its current run of unanswered
+      attempts began more than :data:`VISIBILITY_STALE_AFTER` ago
+      (``first_unanswered_attempt_at``).
+    * Any live page is retracted when its staleness clock (last complete
+      answer, latest publish) is older than
+      :data:`VISIBILITY_UNREACHED_STALE_AFTER`.
+    * A page answered this tick has a fresh clock and a cleared run.
     """
     now = datetime.now(UTC)
     latest = _latest_publish_subquery()
@@ -444,12 +454,14 @@ async def _retract_stale(
     for owner, published_at in rows:
         moments = [m for m in (owner.last_visibility_check_at, published_at) if m]
         clock = max(moments) if moments else None
-        ceiling = (
-            VISIBILITY_STALE_AFTER
-            if owner.public_slug in attempted_unanswered
-            else VISIBILITY_UNREACHED_STALE_AFTER
+        run_start = owner.first_unanswered_attempt_at
+        unanswerable_too_long = (
+            owner.public_slug in blamed
+            and run_start is not None
+            and run_start < now - VISIBILITY_STALE_AFTER
         )
-        if clock is not None and clock >= now - ceiling:
+        too_old = clock is None or clock < now - VISIBILITY_UNREACHED_STALE_AFTER
+        if not (unanswerable_too_long or too_old):
             continue
         if await retract_live(db, owner.public_slug, owner.tenant_id):
             tick.retracted.append(owner.public_slug)
@@ -484,27 +496,29 @@ async def _check_capacity(db: AsyncSession, tick: VisibilityTick, token: bool) -
             .where(BuildRecordPublicSlug.unpublished_at.is_(None))
         )
     ).scalar_one()
-    hours = VISIBILITY_UNREACHED_STALE_AFTER.total_seconds() / 3600
-    capacity = int(recheck_throughput_per_hour(token=token) * hours)
-    if int(live_repos) > capacity:
+    throughput = recheck_throughput_per_hour(token=token)
+    cycle_hours = int(live_repos) / throughput if throughput > 0 else float("inf")
+    if cycle_hours > VISIBILITY_CYCLE_WARN_AFTER.total_seconds() / 3600:
         mode = "token" if token else "anonymous"
         tick.capacity_shortfall = {
             "live_repos": int(live_repos),
-            "capacity": capacity,
+            "throughput_per_hour": throughput,
+            "cycle_hours": round(cycle_hours, 1) if throughput > 0 else None,
             "mode": mode,
         }
         logger.warning(
             "build_record_visibility_capacity_short",
             live_repos=int(live_repos),
-            capacity_per_72h=capacity,
+            throughput_per_hour=throughput,
+            cycle_hours=tick.capacity_shortfall["cycle_hours"],
             mode=mode,
             note=(
-                "more live repos than the re-check can check within 72 h; "
-                "pages it cannot reach will be retracted as stale. Set "
+                "one check cycle over all live repos takes longer than 24 h; "
+                "past 72 h unreached pages are retracted as stale. Set "
                 "GITHUB_VISIBILITY_TOKEN (operator resource) to raise throughput."
                 if not token
-                else "more live repos than the re-check can check within 72 h "
-                "even with the operator token; pages will be retracted as stale."
+                else "one check cycle takes longer than 24 h even with the "
+                "operator token; past 72 h unreached pages are retracted."
             ),
         )
 
@@ -514,6 +528,7 @@ def _mark_complete(
 ) -> None:
     owner.visibility_check_offset = 0
     owner.visibility_unknown_attempts = 0
+    owner.first_unanswered_attempt_at = None
     owner.last_visibility_attempt_at = now
     owner.last_visibility_check_at = now
     tick.completed.append(owner.public_slug)
@@ -553,13 +568,17 @@ async def recheck_visibility(
       GitHub that is down, the tick stops, and no slug is counted.
     * A tick-stopping answer still stamps that slug's attempt time, so no slug
       can hold the head of the queue.
-    * **Staleness sweep** at the end (:func:`_retract_stale`): a page attempted
-      this tick without a complete answer is retracted past 24 h; any other
-      page only past 72 h. A pause or outage shorter than that retracts
-      nothing GitHub would call public, and an unanswerable page never lives
-      forever.
-    * **Capacity**: when the live repos exceed what this mode can check in
-      72 h, a WARNING is logged and ``capacity_shortfall`` is set.
+    * **Staleness sweep** at the end (:func:`_retract_stale`): a page BLAMED
+      this tick is retracted once its current run of unanswered attempts
+      (``first_unanswered_attempt_at``) is older than 24 h — never on an
+      unblamed or tick-stopping attempt, and never measured from its last
+      answer, so a blip late in a long cycle does not retract it. Every live
+      page is retracted once its staleness clock passes 72 h.
+    * **Capacity**: when one full check cycle (live repos / throughput) takes
+      longer than 24 h, a WARNING is logged and ``capacity_shortfall`` is set.
+    * **Deadline**: no new GitHub call starts after
+      :data:`VISIBILITY_TICK_DEADLINE_SECONDS`; the tick then records, sweeps
+      and commits (``stopped == "deadline"``).
     * A rejected operator token (401) is retried anonymously by
       ``check_repo`` and logged at ERROR here.
     * ``last_visibility_check_at`` advances only on a COMPLETE definite answer.
@@ -578,11 +597,12 @@ async def recheck_visibility(
             else VISIBILITY_CALLS_PER_TICK_ANONYMOUS
         )
     tick = VisibilityTick()
+    started = time.monotonic()
     await _check_capacity(db, tick, token)
-    attempted_unanswered: set[str] = set()
+    blamed: set[str] = set()
     if await github_rate_budget.reserved(db, reserve):
         tick.stopped = "budget_reserved"
-        await _retract_stale(db, tick, attempted_unanswered)
+        await _retract_stale(db, tick, blamed)
         await db.commit()
         return tick
 
@@ -622,6 +642,9 @@ async def recheck_visibility(
             offset = 0
         outcome = "pending"  # → complete | private | gave_up
         while offset < len(repos) and tick.calls < budget:
+            if time.monotonic() - started > VISIBILITY_TICK_DEADLINE_SECONDS:
+                tick.stopped = "deadline"
+                break
             answer = await check_repo(repos[offset])
             answers.append(answer)
             tick.calls += answer.http_requests
@@ -648,7 +671,9 @@ async def recheck_visibility(
         if outcome == "gave_up" or (
             outcome == "pending" and tick.stopped in ("rate_limited", "transport")
         ):
-            attempted_unanswered.add(slug)
+            # An unanswered attempt: start (or continue) this page's run.
+            if owner.first_unanswered_attempt_at is None:
+                owner.first_unanswered_attempt_at = now
         if outcome == "gave_up":
             # Behind the others either way; whether it is BLAMED is decided
             # once the tick knows if GitHub answered anyone at all.
@@ -666,7 +691,7 @@ async def recheck_visibility(
             _mark_complete(owner, now, tick)
         else:  # pending: out of budget, or the tick stopped mid-slug
             owner.visibility_check_offset = offset  # resume here next time
-            if tick.stopped is not None:
+            if tick.stopped is not None and tick.stopped != "deadline":
                 # The tick-stopping answer is not this slug's fault, but it
                 # must not let the slug hold the head of the queue either.
                 owner.last_visibility_attempt_at = now
@@ -675,6 +700,7 @@ async def recheck_visibility(
         for owner in unanswered:
             owner.visibility_unknown_attempts += 1
             tick.gave_up.append(owner.public_slug)
+            blamed.add(owner.public_slug)
             if owner.visibility_unknown_attempts >= VISIBILITY_UNKNOWN_RETRACT_AFTER:
                 if await retract_live(db, owner.public_slug, owner.tenant_id):
                     tick.retracted.append(owner.public_slug)
@@ -687,7 +713,7 @@ async def recheck_visibility(
             note="GITHUB_VISIBILITY_TOKEN rejected; this tick ran anonymously",
         )
     await github_rate_budget.record(db, answers)
-    await _retract_stale(db, tick, attempted_unanswered)
+    await _retract_stale(db, tick, blamed)
     await db.commit()
     if tick.retracted:
         logger.info("build_record_visibility_retracted", slugs=tick.retracted)
