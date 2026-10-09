@@ -1,7 +1,7 @@
 """agent.plan_difficulty_model_routes — the operator's model family per difficulty
 
 Revision ID: plan_library_10_model_routes
-Revises: prbody_citation_01
+Revises: coord_sessions_fleet_idx_01
 Create Date: 2026-10-08
 
 Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
@@ -55,7 +55,7 @@ from alembic import op
 revision: str = "plan_library_10_model_routes"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "prbody_citation_01"
+down_revision = "coord_sessions_fleet_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
