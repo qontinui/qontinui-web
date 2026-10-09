@@ -12,7 +12,7 @@ each LIVE public page is still public, and retracts a page whose repo went
 private. GitHub reads are rate-limited (60/hour anonymous per egress IP), so
 each tick spends a hard budget of calls, counted in repos.
 
-Four columns on ``web.build_record_public_slugs`` hold the per-slug cursor:
+Five columns on ``web.build_record_public_slugs`` hold the per-slug cursor:
 
 * ``last_visibility_attempt_at`` — when the re-check last FINISHED with this
   slug, whatever the outcome (a complete answer, or giving up on an
@@ -25,6 +25,10 @@ Four columns on ``web.build_record_public_slugs`` hold the per-slug cursor:
   pass, so a slug wider than one tick's budget resumes instead of restarting.
 * ``visibility_unknown_attempts`` — consecutive give-ups; at 6 the page is
   retracted (a repo that stays unanswerable is not KNOWN public).
+* ``first_unanswered_attempt_at`` — when the CURRENT run of unanswered
+  attempts began (cleared by any complete answer). The 24 h "attempted and
+  unanswerable" ceiling is measured from here, not from the last answer, so a
+  single blip on a page late in a long check cycle does not retract it.
 
 And one singleton row, ``web.github_rate_budget``, holds the last
 ``X-RateLimit-Remaining`` / ``X-RateLimit-Reset`` GitHub reported to either the
@@ -58,7 +62,7 @@ _SLUGS = "build_record_public_slugs"
 
 
 def upgrade() -> None:
-    """Add the four cursor columns and the rate-budget singleton."""
+    """Add the five cursor columns and the rate-budget singleton."""
     op.add_column(
         _SLUGS,
         sa.Column(
@@ -93,6 +97,13 @@ def upgrade() -> None:
         ),
         schema="web",
     )
+    op.add_column(
+        _SLUGS,
+        sa.Column(
+            "first_unanswered_attempt_at", sa.DateTime(timezone=True), nullable=True
+        ),
+        schema="web",
+    )
     op.create_table(
         "github_rate_budget",
         sa.Column("id", sa.Boolean(), primary_key=True, server_default=sa.text("true")),
@@ -113,6 +124,7 @@ def downgrade() -> None:
     """Drop the singleton and the cursor columns."""
     op.drop_table("github_rate_budget", schema="web")
     for column in (
+        "first_unanswered_attempt_at",
         "visibility_unknown_attempts",
         "visibility_check_offset",
         "last_visibility_check_at",
