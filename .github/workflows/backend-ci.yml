@@ -198,7 +198,11 @@ jobs:
     # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
     name: Lint & Format Check
-    # ubuntu-latest, NOT [self-hosted, qontinui].
+    # ubuntu-latest, NOT [self-hosted, public-pool]. (The `qontinui` label is
+    # not an option at all: this repo is PUBLIC, and qontinui-claude-config's
+    # scripts/lint-public-repo-runner-exposure.py refuses `qontinui` on a
+    # public repo -- a public job's only self-hosted target is `public-pool`,
+    # run as a separate unix user from private-repo jobs.)
     #
     # This job was pinned to the self-hosted pool because those runners had
     # Python 3.12 pre-installed plus a persistent pip cache, which avoided the
@@ -221,9 +225,10 @@ jobs:
     # and was green on the run where this job broke. So this restores a
     # configuration already proven in this file rather than inventing one.
     #
-    # Re-pinning to [self-hosted, qontinui] is fine once the pool image ships a
-    # 3.12 that setup-python can resolve (or once the runner tool cache is
-    # seeded with one). Re-verify against a real run before doing so; the
+    # Re-pinning to [self-hosted, public-pool] (never `qontinui`, which the
+    # public-repo runner-exposure lint refuses here) is fine once the pool
+    # image ships a 3.12 that setup-python can resolve (or once the runner
+    # tool cache is seeded with one). Re-verify against a real run before doing so; the
     # comment that used to live here asserted "pre-installed" as a standing
     # fact, and that assertion is exactly what went stale.
     runs-on: ubuntu-latest
@@ -246,7 +251,9 @@ jobs:
       # workspace is fresh per run and the clones cannot be stale. It is kept
       # deliberately: it costs nothing on a clean runner and is what makes the
       # step correct again the moment this job is re-pinned to the self-hosted
-      # pool, which DOES reuse $GITHUB_WORKSPACE/.. between runs.
+      # pool ([self-hosted, public-pool] -- `qontinui` is refused on this public
+      # repo by the public-repo runner-exposure lint), which DOES reuse
+      # $GITHUB_WORKSPACE/.. between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
