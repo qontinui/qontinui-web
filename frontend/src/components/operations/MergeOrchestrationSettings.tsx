@@ -69,15 +69,28 @@ export function MergeOrchestrationSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    // All three reads are settled before any is judged, so the page words a
-    // refusal exactly as it did when it checked raw responses in order:
-    // `settings: HTTP <status>`, then `repos: HTTP <status>`. A rejection
-    // that is not a status (network, unparseable body) is its own message.
+    // The page used to be one `Promise.all` over three raw fetches, then check
+    // statuses, then parse bodies. The typed reads parse as they go, so all
+    // three are SETTLED first and judged in that same order:
+    //   1. a read that never got an answer (a network failure) rejects the
+    //      whole batch, the first of settings, repos, slo — only the
+    //      top-level error is set and profile/repos stay unset;
+    //   2. otherwise a refused settings, then a refused repos, is worded
+    //      `settings: HTTP <status>` / `repos: HTTP <status>`, before any body
+    //      is looked at;
+    //   3. only then are bodies used: an unparseable settings or repos body is
+    //      its own error, and state is set from the two that parsed.
+    // The SLO read is best-effort: a refusal is only logged.
     const settle = <T,>(read: Promise<T>) =>
       read.then(
         (body) => ({ ok: true as const, body }),
         (err: unknown) => ({ ok: false as const, err })
       );
+    // A body that arrived 2xx but did not parse. `readJson` surfaces it as
+    // the `SyntaxError` of `res.json()`; it is not a missing answer.
+    const isBodyFailure = (err: unknown) => err instanceof SyntaxError;
+    const isNoAnswer = (err: unknown) =>
+      httpStatusOf(err) === null && !isBodyFailure(err);
     const refusal = (label: string, err: unknown): unknown => {
       const status = httpStatusOf(err);
       return status === null ? err : new Error(`${label}: HTTP ${status}`);
@@ -88,8 +101,17 @@ export function MergeOrchestrationSettings() {
       settle(fetchMergeSlo()),
     ])
       .then(([s, r, sl]) => {
-        if (!s.ok) throw refusal("settings", s.err);
-        if (!r.ok) throw refusal("repos", r.err);
+        for (const read of [s, r, sl]) {
+          if (!read.ok && isNoAnswer(read.err)) throw read.err;
+        }
+        if (!s.ok && httpStatusOf(s.err) !== null) {
+          throw refusal("settings", s.err);
+        }
+        if (!r.ok && httpStatusOf(r.err) !== null) {
+          throw refusal("repos", r.err);
+        }
+        if (!s.ok) throw s.err;
+        if (!r.ok) throw r.err;
         if (cancelled) return;
         setProfile(s.body.profile);
         setRepos(r.body.repos);
@@ -97,10 +119,8 @@ export function MergeOrchestrationSettings() {
         if (sl.ok) {
           setSlo(sl.body);
         } else if (httpStatusOf(sl.err) !== null) {
-          // SLO is best-effort — a refusal (e.g. coord down) shouldn't
-          // block the rest of the page from rendering. Log but don't
-          // propagate to top-level error banner — the SLO card surfaces its
-          // own loading state.
+          // Log but don't propagate to top-level error banner — the
+          // SLO card surfaces its own loading state.
           log.warn("slo fetch failed", httpBodyOf(sl.err) ?? "?");
         } else {
           throw sl.err;

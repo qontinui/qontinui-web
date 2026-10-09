@@ -19,6 +19,10 @@
  * The wire types below are hand-written, and each names the backend handler
  * it mirrors in `backend/app/api/v1/endpoints/operations/__init__.py`.
  *
+ * Writes whose result no caller reads resolve `null` for a 2xx whose body does
+ * not parse (a 204 included): the 2xx is the fact that the change landed, and
+ * failing it would invite a repeat of a write that already happened.
+ *
  * A shared `request(path)` helper underneath would make every call site a
  * wrapper-of-a-wrapper, which `route-walker.test.ts` cannot resolve.
  */
@@ -176,7 +180,7 @@ export async function fetchGroupTenantRoles(): Promise<GroupTenantRolesResponse>
  */
 export async function createGroupTenantRole(
   mapping: GroupTenantRoleCreate
-): Promise<GroupTenantRoleEcho> {
+): Promise<GroupTenantRoleEcho | null> {
   const url = `${OPERATIONS_BASE}/coord/group-tenant-roles`;
   const res = await httpClient.fetch(url, {
     method: "POST",
@@ -190,7 +194,9 @@ export async function createGroupTenantRole(
     }),
     idempotent: false,
   });
-  return readJson<GroupTenantRoleEcho>(res, `POST ${url}`);
+  return readJson<GroupTenantRoleEcho>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
@@ -199,7 +205,7 @@ export async function createGroupTenantRole(
  */
 export async function deleteGroupTenantRole(
   mapping: GroupTenantRoleKey
-): Promise<GroupTenantRoleDeleteResponse> {
+): Promise<GroupTenantRoleDeleteResponse | null> {
   const url = `${OPERATIONS_BASE}/coord/group-tenant-roles`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
@@ -210,7 +216,9 @@ export async function deleteGroupTenantRole(
     }),
     idempotent: true,
   });
-  return readJson<GroupTenantRoleDeleteResponse>(res, `DELETE ${url}`);
+  return readJson<GroupTenantRoleDeleteResponse>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /** `GET /coord/cognito/groups` — every group in the user pool. */
@@ -227,7 +235,7 @@ export async function fetchCognitoGroups(): Promise<CognitoGroupsResponse> {
  */
 export async function createCognitoGroup(
   group: CognitoGroupCreate
-): Promise<CognitoGroupRow> {
+): Promise<CognitoGroupRow | null> {
   const url = `${OPERATIONS_BASE}/coord/cognito/groups`;
   const res = await httpClient.fetch(url, {
     method: "POST",
@@ -239,7 +247,7 @@ export async function createCognitoGroup(
     }),
     idempotent: false,
   });
-  return readJson<CognitoGroupRow>(res, `POST ${url}`);
+  return readJson<CognitoGroupRow>(res, `POST ${url}`, { unparseable: "null" });
 }
 
 /**
@@ -252,7 +260,7 @@ export async function createCognitoGroup(
 export async function deleteCognitoGroup(
   groupName: string,
   { allowHomeGroup }: { allowHomeGroup: boolean }
-): Promise<CognitoGroupWriteResponse> {
+): Promise<CognitoGroupWriteResponse | null> {
   const query = allowHomeGroup ? "?allow_home_group=true" : "";
   const url = `${OPERATIONS_BASE}/coord/cognito/groups/${encodeURIComponent(
     groupName
@@ -261,7 +269,9 @@ export async function deleteCognitoGroup(
     method: "DELETE",
     idempotent: true,
   });
-  return readJson<CognitoGroupWriteResponse>(res, `DELETE ${url}`);
+  return readJson<CognitoGroupWriteResponse>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
@@ -296,7 +306,7 @@ export async function fetchCognitoGroupUsers(
 export async function addCognitoGroupUser(
   groupName: string,
   email: string
-): Promise<CognitoGroupWriteResponse> {
+): Promise<CognitoGroupWriteResponse | null> {
   const url = `${OPERATIONS_BASE}/coord/cognito/groups/${encodeURIComponent(
     groupName
   )}/users`;
@@ -305,7 +315,9 @@ export async function addCognitoGroupUser(
     body: JSON.stringify({ email }),
     idempotent: false,
   });
-  return readJson<CognitoGroupWriteResponse>(res, `POST ${url}`);
+  return readJson<CognitoGroupWriteResponse>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
@@ -315,7 +327,7 @@ export async function addCognitoGroupUser(
 export async function removeCognitoGroupUser(
   groupName: string,
   email: string
-): Promise<CognitoGroupWriteResponse> {
+): Promise<CognitoGroupWriteResponse | null> {
   const url = `${OPERATIONS_BASE}/coord/cognito/groups/${encodeURIComponent(
     groupName
   )}/users`;
@@ -324,5 +336,7 @@ export async function removeCognitoGroupUser(
     body: JSON.stringify({ email }),
     idempotent: true,
   });
-  return readJson<CognitoGroupWriteResponse>(res, `DELETE ${url}`);
+  return readJson<CognitoGroupWriteResponse>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }

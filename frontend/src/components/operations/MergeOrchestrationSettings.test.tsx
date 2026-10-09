@@ -1373,6 +1373,23 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     expect(input("repo-confidence").value).toBe("0.9");
   });
 
+  it("shows a network failure on the merge-enabled write unwrapped, not as 'merge-enabled: …'", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    fireEvent.change(input("repo-merge-enabled"), {
+      target: { value: "false" },
+    });
+    await clickSaveAndSettle();
+    expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.queryByText(/merge-enabled: /)).toBeNull();
+  });
+
   it("keeps the edits dirty when the PATCH fails", async () => {
     let patches = 0;
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
@@ -1824,6 +1841,40 @@ describe("<MergeOrchestrationSettings> top-level read errors", () => {
     });
     render(<MergeOrchestrationSettings />);
     expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+  });
+
+  it("leaves profile and repos unset when only the SLO read fails on the network", async () => {
+    answerReads({
+      settings: () => Promise.resolve(routeGet("/pr-merge/settings", {})),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.reject(new TypeError("slo down")),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("slo down")).toBeInTheDocument();
+    // Skeleton state, as when the old Promise.all rejected: nothing was set.
+    expect(screen.queryByTestId("settings-auto-fix-red-main")).toBeNull();
+  });
+
+  it("shows the network error when settings is refused and the SLO read never answered", async () => {
+    answerReads({
+      settings: () => Promise.resolve(new Response("a", { status: 500 })),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.reject(new TypeError("slo down")),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("slo down")).toBeInTheDocument();
+    expect(screen.queryByText("settings: HTTP 500")).toBeNull();
+  });
+
+  it("checks every status before any body: an unparseable settings body with repos refused says repos", async () => {
+    answerReads({
+      settings: () =>
+        Promise.resolve(new Response("not json", { status: 200 })),
+      repos: () => Promise.resolve(new Response("b", { status: 502 })),
+      slo: () => Promise.resolve(jsonResponse({})),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("repos: HTTP 502")).toBeInTheDocument();
   });
 
   it("raises an SLO network failure to the top-level error, but not an SLO refusal", async () => {
