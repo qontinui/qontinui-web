@@ -352,10 +352,26 @@ class VisibilityTick:
     calls: int = 0
     retracted: list[str] = field(default_factory=list)
     completed: list[str] = field(default_factory=list)
-    #: Slugs given up on this tick (an unanswerable repo) — moved to the back.
+    #: Slugs given up on AND blamed (another slug got a definite answer this
+    #: tick, so GitHub was answering) — counted toward retraction.
     gave_up: list[str] = field(default_factory=list)
+    #: Slugs given up on in a tick where NOTHING got a definite answer — a
+    #: GitHub-wide outage is not the slugs' fault; moved back, not counted.
+    unblamed: list[str] = field(default_factory=list)
+    #: The operator token was rejected (401); the tick fell back to anonymous.
+    credential_error: bool = False
     #: Why the tick stopped early, or ``None`` when the budget or list ran out.
     stopped: str | None = None
+
+
+def _mark_complete(
+    owner: BuildRecordPublicSlug, now: datetime, tick: VisibilityTick
+) -> None:
+    owner.visibility_check_offset = 0
+    owner.visibility_unknown_attempts = 0
+    owner.last_visibility_attempt_at = now
+    owner.last_visibility_check_at = now
+    tick.completed.append(owner.public_slug)
 
 
 async def recheck_visibility(
@@ -378,9 +394,15 @@ async def recheck_visibility(
       band above the publish reserve free for publishes). Also refuses to start
       while the persisted budget is already at the reserve.
     * **Any other UNKNOWN** (a 5xx, an unparseable body) gives up THAT slug for
-      this tick: its attempt time moves it behind the others, and after
-      :data:`VISIBILITY_UNKNOWN_RETRACT_AFTER` consecutive give-ups the page is
-      retracted — a repo that stays unanswerable is not known public.
+      this tick and moves it behind the others. It is BLAMED (counted) only
+      when some other slug got a definite answer in the same tick; after
+      :data:`VISIBILITY_UNKNOWN_RETRACT_AFTER` consecutive blamed give-ups the
+      page is retracted. When nothing in the tick got a definite answer, it is
+      GitHub that is down, the tick stops, and no slug is counted.
+    * A tick-stopping answer still stamps that slug's attempt time, so no slug
+      can hold the head of the queue.
+    * A rejected operator token (401) is retried anonymously by
+      ``check_repo`` and logged at ERROR here.
     * ``last_visibility_check_at`` advances only on a COMPLETE definite answer.
 
     Commits.
@@ -409,6 +431,8 @@ async def recheck_visibility(
         .all()
     )
     answers = []
+    definite = 0  # PUBLIC / NOT_PUBLIC answers this tick
+    unanswered: list[BuildRecordPublicSlug] = []  # gave up on, blame decided below
     for owner in owners:
         if tick.calls >= budget or tick.stopped is not None:
             break
@@ -421,13 +445,15 @@ async def recheck_visibility(
         while offset < len(repos) and tick.calls < budget:
             answer = await check_repo(repos[offset])
             answers.append(answer)
-            tick.calls += 1
+            tick.calls += answer.http_requests
+            tick.credential_error = tick.credential_error or answer.credential_error
             if answer.transport_error or answer.rate_limited:
                 tick.stopped = "rate_limited" if answer.rate_limited else "transport"
                 break
             if answer.visibility is Visibility.UNKNOWN:
                 outcome = "gave_up"
                 break
+            definite += 1
             if answer.visibility is Visibility.NOT_PUBLIC:
                 outcome = "private"
                 break
@@ -441,23 +467,42 @@ async def recheck_visibility(
 
         now = datetime.now(UTC)
         if outcome == "gave_up":
-            owner.visibility_unknown_attempts += 1
+            # Behind the others either way; whether it is BLAMED is decided
+            # once the tick knows if GitHub answered anyone at all.
+            owner.visibility_check_offset = offset
             owner.last_visibility_attempt_at = now
-            tick.gave_up.append(slug)
-            if owner.visibility_unknown_attempts >= VISIBILITY_UNKNOWN_RETRACT_AFTER:
-                outcome = "private"
-        if outcome == "private":
+            unanswered.append(owner)
+            if definite == 0 and len(unanswered) >= 2:
+                # Nothing answered this tick: that is GitHub, not the slugs.
+                tick.stopped = "github_unanswering"
+        elif outcome == "private":
             if await retract_live(db, slug, tenant_id):
                 tick.retracted.append(slug)
-            outcome = "complete"
-        if outcome == "complete":
-            owner.visibility_check_offset = 0
-            owner.visibility_unknown_attempts = 0
-            owner.last_visibility_attempt_at = now
-            owner.last_visibility_check_at = now
-            tick.completed.append(slug)
-        elif outcome == "pending":
-            owner.visibility_check_offset = offset  # resume here next tick
+            _mark_complete(owner, now, tick)
+        elif outcome == "complete":
+            _mark_complete(owner, now, tick)
+        else:  # pending: out of budget, or the tick stopped mid-slug
+            owner.visibility_check_offset = offset  # resume here next time
+            if tick.stopped is not None:
+                # The tick-stopping answer is not this slug's fault, but it
+                # must not let the slug hold the head of the queue either.
+                owner.last_visibility_attempt_at = now
+
+    if definite > 0:
+        for owner in unanswered:
+            owner.visibility_unknown_attempts += 1
+            tick.gave_up.append(owner.public_slug)
+            if owner.visibility_unknown_attempts >= VISIBILITY_UNKNOWN_RETRACT_AFTER:
+                if await retract_live(db, owner.public_slug, owner.tenant_id):
+                    tick.retracted.append(owner.public_slug)
+                _mark_complete(owner, datetime.now(UTC), tick)
+    else:
+        tick.unblamed = [o.public_slug for o in unanswered]
+    if tick.credential_error:
+        logger.error(
+            "build_record_visibility_token_dead",
+            note="GITHUB_VISIBILITY_TOKEN rejected; this tick ran anonymously",
+        )
     await github_rate_budget.record(db, answers)
     await db.commit()
     if tick.retracted:
@@ -476,6 +521,8 @@ async def recheck_visibility_all(
         "retracted": len(tick.retracted),
         "completed": len(tick.completed),
         "gave_up": len(tick.gave_up),
+        "unblamed": len(tick.unblamed),
+        "credential_error": tick.credential_error,
         "stopped": tick.stopped,
     }
     logger.info("build_record_visibility_recheck_completed", **totals)
