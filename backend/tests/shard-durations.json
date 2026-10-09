@@ -330,6 +330,7 @@
   "tests/test_user_deactivation_coord_revoke.py": 0.8,
   "tests/test_userread_email_tolerant.py": 0.0,
   "tests/test_users_me_privilege_escalation.py": 21.2,
+  "tests/test_verified_adv_01_coord_verified_advances_migration.py": 15.0,
   "tests/test_web_boundary_gate.py": 0.8,
   "tests/test_wf_resume_fingerprint_01_migration.py": 28.9,
   "tests/test_worker_hb_body_started_01_migration.py": 16.6,
