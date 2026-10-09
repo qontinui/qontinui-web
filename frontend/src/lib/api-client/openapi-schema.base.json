@@ -68715,7 +68715,7 @@
     },
     "/api/v1/build-records/reconcile": {
       "post": {
-        "description": "Retract every live public build record of this tenant whose coord\nproduct is gone, private or another tenant's \u2014 now, with the caller's own\ncoord credential. The same reconcile also runs on the in-process scheduler\nevery 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for\nthe launch kit and the operator notice, which should not wait for a tick.\n\nA coord read that fails is a refusal (coord's status), never an empty\nlisting \u2014 an unanswered question retracts nothing.",
+        "description": "Retract every live public build record of this tenant whose coord\nproduct is gone, private or another tenant's \u2014 now, with the caller's own\ncoord credential \u2014 and then whose repos GitHub no longer reports public\n(the same bounded, oldest-checked-first re-check the scheduler runs). The same reconcile also runs on the in-process scheduler\nevery 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for\nthe launch kit and the operator notice, which should not wait for a tick.\n\nA coord read that fails is a refusal (coord's status), never an empty\nlisting \u2014 an unanswered question retracts nothing.",
         "operationId": "api_v1_build_records_reconcile_post",
         "responses": {
           "200": {
