@@ -1,0 +1,151 @@
+{
+  "_comment": [
+    "Cursor tokens MINTED BY RUST: qontinui-types (qontinui-schemas/rust) page.rs,",
+    "CursorScope::<K>::new()...finish().encode(KeysetPosition), at qontinui-schemas a4b0ac7a.",
+    "Never edit by hand: a Python-produced value here would make the cross-language",
+    "test compare Python with itself. Regenerate with a throwaway binary that depends",
+    "on qontinui-types by path and prints these cases (scope entries are the builder",
+    "calls, in order; 'type' names the CursorScope method)."
+  ],
+  "minted_by": "qontinui-types 4.4.0 page.rs @ qontinui-schemas a4b0ac7a",
+  "cases": [
+    {
+      "fingerprint": "c1f0bb780afe80db9fe588b156b538caa565d47e0ecf02e2bca052155a97243f",
+      "name": "empty_scope",
+      "position": {
+        "at": "2025-09-27T19:06:40.123456Z",
+        "at_micros": 1759000000123456,
+        "id": "00000000-0000-4000-8000-000000000001"
+      },
+      "scope": [],
+      "sort_key": "agent.work_artifacts:created_at,id",
+      "token": "eyJ2IjoxLCJzIjoiYWdlbnQud29ya19hcnRpZmFjdHM6Y3JlYXRlZF9hdCxpZCIsImsiOjE3NTkwMDAwMDAxMjM0NTYsImkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJmIjoiYzFmMGJiNzgwYWZlODBkYjlmZTU4OGIxNTZiNTM4Y2FhNTY1ZDQ3ZTBlY2YwMmUyYmNhMDUyMTU1YTk3MjQzZiJ9"
+    },
+    {
+      "fingerprint": "92cd3b3c363edacd8c20d1d64ccde2e7f630e4e360fddba7868a2fd19e636e7b",
+      "name": "every_value_type",
+      "position": {
+        "at": "2025-09-27T19:06:40.000001Z",
+        "at_micros": 1759000000000001,
+        "id": "ffffffff-ffff-4fff-bfff-ffffffffffff"
+      },
+      "scope": [
+        {
+          "name": "tenant",
+          "type": "uuid",
+          "value": "6f1c2a9e-3b4d-4e5f-8a7b-0c1d2e3f4a5b"
+        },
+        {
+          "name": "org",
+          "type": "opt_uuid",
+          "value": null
+        },
+        {
+          "name": "kind",
+          "type": "opt_str",
+          "value": "plan"
+        },
+        {
+          "name": "status",
+          "type": "opt_str",
+          "value": null
+        },
+        {
+          "name": "q",
+          "type": "opt_str",
+          "value": ""
+        },
+        {
+          "name": "title",
+          "type": "opt_str",
+          "value": "bounded read — ünïcode ✓"
+        },
+        {
+          "name": "include_coord",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "archived",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "mode",
+          "type": "i64",
+          "value": -42
+        },
+        {
+          "name": "big",
+          "type": "i64",
+          "value": 9223372036854775807
+        },
+        {
+          "name": "repos",
+          "type": "str_set",
+          "value": [
+            "zeta",
+            "alpha",
+            "zeta",
+            "Beta"
+          ]
+        },
+        {
+          "name": "none",
+          "type": "str_set",
+          "value": []
+        }
+      ],
+      "sort_key": "agent.work_artifacts:created_at,id",
+      "token": "eyJ2IjoxLCJzIjoiYWdlbnQud29ya19hcnRpZmFjdHM6Y3JlYXRlZF9hdCxpZCIsImsiOjE3NTkwMDAwMDAwMDAwMDEsImkiOiJmZmZmZmZmZi1mZmZmLTRmZmYtYmZmZi1mZmZmZmZmZmZmZmYiLCJmIjoiOTJjZDNiM2MzNjNlZGFjZDhjMjBkMWQ2NGNjZGUyZTdmNjMwZTRlMzYwZmRkYmE3ODY4YTJmZDE5ZTYzNmU3YiJ9"
+    },
+    {
+      "fingerprint": "0a0b0ecf5d3026c03697648e7c2f2135db435ea73008aeecdb48258e52aef877",
+      "name": "pre_epoch_position",
+      "position": {
+        "at": "1930-11-18T00:28:29.876543Z",
+        "at_micros": -1234567890123457,
+        "id": "12345678-9abc-4def-8123-456789abcdef"
+      },
+      "scope": [
+        {
+          "name": "org",
+          "type": "opt_uuid",
+          "value": "6f1c2a9e-3b4d-4e5f-8a7b-0c1d2e3f4a5b"
+        }
+      ],
+      "sort_key": "agent.work_artifacts:created_at,id",
+      "token": "eyJ2IjoxLCJzIjoiYWdlbnQud29ya19hcnRpZmFjdHM6Y3JlYXRlZF9hdCxpZCIsImsiOi0xMjM0NTY3ODkwMTIzNDU3LCJpIjoiMTIzNDU2NzgtOWFiYy00ZGVmLTgxMjMtNDU2Nzg5YWJjZGVmIiwiZiI6IjBhMGIwZWNmNWQzMDI2YzAzNjk3NjQ4ZTdjMmYyMTM1ZGI0MzVlYTczMDA4YWVlY2RiNDgyNThlNTJhZWY4NzcifQ"
+    },
+    {
+      "fingerprint": "38c770c0b00c8e37b9bbb342fcffa6bbe4762ed38fd00b1e62e075a0e497ddd2",
+      "name": "year_9999_position",
+      "position": {
+        "at": "9999-12-31T23:59:59.999999Z",
+        "at_micros": 253402300799999999,
+        "id": "00000000-0000-0000-0000-000000000000"
+      },
+      "scope": [
+        {
+          "name": "since",
+          "type": "opt_str",
+          "value": "2026-09-05T00:00:00.000000Z"
+        }
+      ],
+      "sort_key": "agent.work_artifacts:created_at,id",
+      "token": "eyJ2IjoxLCJzIjoiYWdlbnQud29ya19hcnRpZmFjdHM6Y3JlYXRlZF9hdCxpZCIsImsiOjI1MzQwMjMwMDc5OTk5OTk5OSwiaSI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCIsImYiOiIzOGM3NzBjMGIwMGM4ZTM3YjliYmIzNDJmY2ZmYTZiYmU0NzYyZWQzOGZkMDBiMWU2MmUwNzVhMGU0OTdkZGQyIn0"
+    },
+    {
+      "fingerprint": "3378e6a388aecd14c8b92d8fc679b0029b0aed4664e1f1f8302a138312a39145",
+      "name": "other_sort_key",
+      "position": {
+        "at": "1970-01-01T00:00:00.000000Z",
+        "at_micros": 0,
+        "id": "a0b1c2d3-e4f5-4a6b-8c7d-8e9fa0b1c2d3"
+      },
+      "scope": [],
+      "sort_key": "coord.findings:created_at,finding_id",
+      "token": "eyJ2IjoxLCJzIjoiY29vcmQuZmluZGluZ3M6Y3JlYXRlZF9hdCxmaW5kaW5nX2lkIiwiayI6MCwiaSI6ImEwYjFjMmQzLWU0ZjUtNGE2Yi04YzdkLThlOWZhMGIxYzJkMyIsImYiOiIzMzc4ZTZhMzg4YWVjZDE0YzhiOTJkOGZjNjc5YjAwMjliMGFlZDQ2NjRlMWYxZjgzMDJhMTM4MzEyYTM5MTQ1In0"
+    }
+  ]
+}

@@ -199,7 +199,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   return (
     <CollapsiblePanel
       data-testid="github-hosted-ci-panel"
-      storageKey="devops:github-hosted-ci"
+      storageKey="coord-ci-github-hosted-ci-open"
       defaultOpen
       icon={<Cloud className="h-4 w-4" />}
       title={LABEL}

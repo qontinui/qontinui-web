@@ -959,6 +959,7 @@ async def _proxy_coord_get(
     forward_bearer: bool = False,
     headers: dict[str, str] | None = None,
     timeout: httpx.Timeout | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -1013,6 +1014,17 @@ async def _proxy_coord_get(
     recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
     keeps the 5s fail-fast for every other proxy: coord answering a small JSON
     read slower than that means something is wrong, and that is worth surfacing.
+
+    ``structured_errors`` — when True, a coord ≥400 body that parses to a JSON
+    OBJECT becomes the ``HTTPException.detail`` verbatim (via
+    :func:`_coord_error_detail`) instead of ``resp.text``, so coord's typed
+    refusal (``{"error": "repo_not_in_caller_tenant", "repo": …}``) reaches the
+    browser as structured fields rather than an escaped string. Opt-in per
+    route for the same reason as ``_proxy_coord_post``'s flag of the same name:
+    a dict detail changes the production error envelope
+    (``http_exception_handler`` splices it to the top level), which is a
+    contract change for every caller that renders ``detail`` as a string.
+    Default False keeps ``detail=resp.text`` exactly.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -1036,7 +1048,10 @@ async def _proxy_coord_get(
                 detail="timeout waiting for coord",
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     return resp.json()
 
 
@@ -1341,6 +1356,7 @@ async def _proxy_coord_write(
     body: Any,
     *,
     headers: dict[str, str] | None,
+    structured_errors: bool = False,
 ) -> Any:
     """Send one PATCH/PUT to coord and say honestly what came back.
 
@@ -1356,7 +1372,9 @@ async def _proxy_coord_write(
       the response), or a 2xx whose body is PRESENT but not JSON → **504**:
       coord may well have committed, and only a re-read can tell. Each is
       logged, because a 504 the operator retries is otherwise invisible.
-    * a coord ≥400 → coord's own status with ``detail=resp.text``.
+    * a coord ≥400 → coord's own status with ``detail=resp.text`` — or, with
+      ``structured_errors``, coord's typed JSON refusal object verbatim (same
+      opt-in contract as ``_proxy_coord_post``'s flag of the same name).
     * a 204, or any 2xx with an empty body → ``None``: a success that carries
       nothing to return is still a success.
     """
@@ -1387,7 +1405,10 @@ async def _proxy_coord_write(
                 ),
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     if resp.status_code == 204 or not resp.content:
         return None
     try:
@@ -1444,6 +1465,7 @@ async def _proxy_coord_put(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a PUT request to coord. Returns the JSON body (``None`` for an
     empty 2xx).
@@ -1454,7 +1476,9 @@ async def _proxy_coord_put(
     coord expects a full-replacement PUT rather than a partial PATCH.
     """
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    return await _proxy_coord_write("put", path, body, headers=headers)
+    return await _proxy_coord_write(
+        "put", path, body, headers=headers, structured_errors=structured_errors
+    )
 
 
 @router.get("/pr-merge/settings")
@@ -1822,15 +1846,20 @@ async def get_pr_merge_graph(
     + the `@xyflow/react` workspace dep already present in
     ``frontend/package.json``.
 
-    Cross-tenant edges are never traversed coord-side; the
-    ``X-Qontinui-Tenant-Id`` header injected here is what enforces
-    scoping. Two tenants viewing the same repo see disjoint graphs
-    in the v1 one-repo-one-tenant model.
+    Tenant scoping is coord's: it resolves the tenant from the caller's
+    forwarded credential (``tenant_id`` here only triggers bearer
+    forwarding — the legacy ``X-Qontinui-Tenant-Id`` header is retired), never
+    traverses a cross-tenant edge, and answers ``404 {"error":
+    "repo_not_in_caller_tenant", "caller_tenant_id": …, "repo": …}`` for a
+    repo that tenant does not own. ``structured_errors=True`` keeps that
+    refusal a JSON object end to end so the graph can render a readable
+    sentence instead of an escaped string.
     """
     return await _proxy_coord_get(
         "/pr-merge/graph",
         params={"repo": repo, "pr": pr},
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -3810,6 +3839,8 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
+# - GET    /operations/fleet/dispatch-roles              — machine dispatch roles
+# - PUT    /operations/fleet/dispatch-role               — set one (admin)
 # - GET    /operations/fleet/worktree-cap                — per-device worktree caps
 # - POST   /operations/fleet/worktree-cap                — set one (admin)
 # - POST   /operations/fleet/worktree-cap/clear          — remove one (admin)
@@ -5037,6 +5068,145 @@ async def post_fleet_undrain(
     return await _proxy_coord_post(
         "/coord/fleet/undrain",
         {"device_id": str(body.device_id), "reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+# ---- Machine dispatch roles (plan 2026-10-02 fleet machine roles, Phase 6) --
+#
+# The operator door for a machine's standing DISPATCH ROLE — which kind of work
+# coord may send it (§D1): ``workhorse`` (CI + agent sessions), ``bench``
+# (nothing) or ``ci_node`` (CI only). Same three shapes as the drain pair above,
+# and the same auth path: the read rides ``get_tenant_id`` (bearer forwarded so
+# coord scopes it), the write rides ``require_coord_tenant_admin`` and coord
+# re-checks with its own operator-only gate (§D9). A role is NOT a drain: it is
+# a standing fact with no expiry, and the two compose (§D2) — coord serves each
+# lane's state with WHICH of the two closed it, and this hop forwards that
+# untouched.
+#
+# Wire facts encoded ONCE here:
+#
+# 1. The write body is CLOSED and assembled here, never forwarded verbatim.
+#    Exactly one of ``device_id`` / ``ci_host_name`` names the machine (the
+#    table's own one-key CHECK, ``mdroles_01``), and there is no ``set_by``:
+#    coord stamps the author from its authenticated operator context.
+# 2. Coord's guards come back as typed refusals — ``last_open_lane`` (the
+#    change would leave no machine with that lane open; ``force: true`` lifts
+#    it, audited) and ``no_agent_host`` (``workhorse`` on a host with no
+#    runner to place a session on, §D4). They pass through STRUCTURED, with
+#    coord's own status, so the console renders a sentence and offers Force
+#    only for the refusal that admits it — never a raw error string.
+
+#: The three roles the table's CHECK admits (``mdroles_01``). Pinned here so a
+#: typo is a local 422 rather than a coord round trip.
+DispatchRoleName = Literal["workhorse", "bench", "ci_node"]
+
+#: The character class ``mdroles_01`` CHECKs ``ci_host_name`` against: printable
+#: ASCII with no whitespace. Mirrored so a pasted name with a trailing newline is
+#: a legible local 422, not a Postgres constraint name echoed back from coord.
+_CI_HOST_NAME_RE = re.compile(r"^[\x21-\x7e]+$")
+
+
+class DispatchRoleRequestBody(BaseModel):
+    """Closed body for ``PUT /operations/fleet/dispatch-role``.
+
+    ``extra="forbid"`` keeps a client-asserted author (``set_by``,
+    ``updated_by``) off the wire, and keeps the body exactly the shape coord
+    declares.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID | None = None
+    ci_host_name: str | None = Field(default=None, min_length=1, max_length=255)
+    dispatch_role: DispatchRoleName
+    reason: str = Field(..., min_length=1, max_length=2000)
+    #: Lifts coord's ``last_open_lane`` guard, and nothing else. Coord audits a
+    #: forced change; it never lifts ``no_agent_host``, which is a fact about
+    #: the machine rather than a judgement about the fleet.
+    force: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+    @field_validator("ci_host_name")
+    @classmethod
+    def _host_name_is_printable_ascii(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not _CI_HOST_NAME_RE.fullmatch(v):
+            raise ValueError(
+                "ci_host_name must be printable ASCII with no whitespace "
+                "(the GitHub runner host name, e.g. dell-2020)"
+            )
+        # Coord names a CI host by the BARE runner name — its registrar strips
+        # `gh-runner-` (`host_of_hostname`) — so a row keyed on the prefixed
+        # spelling would never attach to a registration.
+        if v.lower().startswith("gh-runner-"):
+            raise ValueError(
+                "ci_host_name is the runner name without the gh-runner- prefix "
+                f"(e.g. {v[len('gh-runner-') :]})"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _exactly_one_machine_key(self) -> "DispatchRoleRequestBody":
+        if (self.device_id is None) == (self.ci_host_name is None):
+            raise ValueError(
+                "name the machine by exactly one of device_id or ci_host_name"
+            )
+        return self
+
+
+@router.get("/fleet/dispatch-roles")
+async def get_fleet_dispatch_roles(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Every machine of the caller's tenant with its dispatch role.
+
+    Proxies coord's ``GET /coord/fleet/dispatch-roles`` with the body passed
+    through untouched (no ``response_model``): role or ``unassigned``, the RAM
+    suggestion for an unassigned machine, and each lane's state with role and
+    drain kept apart.
+
+    A 404 (coord predates the route), a 502/504, or an unrecognised body is
+    UNKNOWN to the browser — never "every machine is unassigned", which would
+    read as "every machine is a workhorse" (``[policy:
+    unknown-must-not-render-as-a-default]``). The status is what lets it tell.
+    """
+    return await _proxy_coord_get("/coord/fleet/dispatch-roles", tenant_id=tenant_id)
+
+
+@router.put("/fleet/dispatch-role")
+async def put_fleet_dispatch_role(
+    body: DispatchRoleRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set one machine's dispatch role (operator-only).
+
+    Affects NEW dispatch only: sessions and CI jobs already placed on the
+    machine run to their end (§D9). The GitHub-label (Phase 4) and CI-node
+    switch (Phase 5) effects are coord's and web's later phases — nothing on
+    this path claims them.
+    """
+    wire: dict[str, Any] = {
+        "dispatch_role": body.dispatch_role,
+        "reason": body.reason,
+        "force": body.force,
+    }
+    if body.device_id is not None:
+        wire["device_id"] = str(body.device_id)
+    else:
+        wire["ci_host_name"] = body.ci_host_name
+    return await _proxy_coord_put(
+        "/coord/fleet/dispatch-role",
+        wire,
         tenant_id=tenant_id,
         structured_errors=True,
     )
@@ -7745,7 +7915,7 @@ async def websocket_coord_events(
 
         async def send_keepalive() -> None:
             # Runs for the life of the bridge, independent of upstream
-            # traffic — an idle `strategy`/`claims` subscription can go
+            # traffic — an idle `claims` subscription can go
             # minutes between real frames, and that idle gap is exactly when
             # a proxy on the browser<->backend leg times the socket out
             # (finding 67329129). Ends only via cancellation (the other pump
@@ -10494,6 +10664,216 @@ async def patch_tenant_transcript_sync(
     readback_error = "coord accepted the write but did not return the policy it re-read"
     logger.warning("tenant_policy.readback_failed", detail=readback_error)
     return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
+
+
+# ---- Unfinished sessions + auto-resume toggle proxy ---------------------
+#
+# Plan ``2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed``
+# Phase 7. The console's door onto coord's fleet-wide "closed but never
+# finished" census (``GET /coord/sessions/unfinished``), its dismiss door
+# (``POST /coord/sessions/unfinished/:claude_session_id/finish``), the existing
+# respawn door (``POST /sessions/:id/respawn``) and the tenant's
+# ``resume_unfinished_enabled`` flag.
+#
+# Paths are ``/unfinished-sessions...`` rather than ``/sessions/unfinished`` so
+# they cannot be shadowed by ``GET /sessions/{session_id}`` (declared earlier,
+# UUID-typed: ``unfinished`` would 422 there).
+#
+# Honesty rules this encodes once:
+#
+# 1. Coord answers ``{"state": "unknown", "sessions": null}`` when it cannot
+#    read the census. That is passed through as UNKNOWN. A malformed answer is
+#    ALSO unknown -- never coerced to an empty list ("nothing unfinished").
+# 2. ``resume_unfinished_enabled`` is ``None`` unless coord reported a JSON
+#    boolean. A coord that predates the flag therefore reads UNKNOWN, never ON.
+
+
+class UnfinishedSessionsView(BaseModel):
+    """Coord's unfinished-sessions census, normalised to a closed state set."""
+
+    #: ``ok`` | ``unknown``. Anything else coord might say is ``unknown``.
+    state: Literal["ok", "unknown"]
+    #: Set when ``state == "unknown"`` (coord's own reason, or ours).
+    reason: str | None = None
+    detail: str | None = None
+    #: ``None`` iff ``state == "unknown"`` -- never an empty list standing in
+    #: for "could not read".
+    sessions: list[dict[str, Any]] | None = None
+    truncated: bool = False
+
+
+def _unfinished_view(payload: Any) -> UnfinishedSessionsView:
+    body = payload if isinstance(payload, dict) else None
+    if body is None:
+        return UnfinishedSessionsView(
+            state="unknown", reason="malformed_response", sessions=None
+        )
+    sessions = body.get("sessions")
+    if body.get("state") == "ok" and isinstance(sessions, list):
+        return UnfinishedSessionsView(
+            state="ok",
+            sessions=[r for r in sessions if isinstance(r, dict)],
+            truncated=body.get("truncated") is True,
+        )
+    reason = body.get("reason")
+    detail = body.get("detail")
+    return UnfinishedSessionsView(
+        state="unknown",
+        reason=reason if isinstance(reason, str) else "malformed_response",
+        detail=detail if isinstance(detail, str) else None,
+        sessions=None,
+    )
+
+
+@router.get("/unfinished-sessions", response_model=UnfinishedSessionsView)
+async def get_unfinished_sessions(
+    device_id: UUID | None = None,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> UnfinishedSessionsView:
+    """Closed sessions whose work was never declared finished, fleet-wide."""
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if limit is not None:
+        params["limit"] = limit
+    payload = await _proxy_coord_get(
+        "/coord/sessions/unfinished", params=params or None, tenant_id=tenant_id
+    )
+    return _unfinished_view(payload)
+
+
+@router.post("/unfinished-sessions/{claude_session_id}/dismiss")
+async def post_dismiss_unfinished_session(
+    claude_session_id: UUID,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Dismiss an unfinished session: coord's finish door with reason
+    ``dismissed``. Coord's typed refusals (404 no such session, 400) pass
+    through verbatim."""
+    return await _proxy_coord_post(
+        f"/coord/sessions/unfinished/{claude_session_id}/finish",
+        {"reason": "dismissed"},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+class UnfinishedResumeBody(BaseModel):
+    """Where to resume. The row's own device and account label by default."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_device_id: UUID
+    account: str | None = Field(default=None, max_length=200)
+
+    @field_validator("account")
+    @classmethod
+    def _blank_account_is_absent(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
+
+@router.post("/unfinished-sessions/{coord_session_id}/resume")
+async def post_resume_unfinished_session(
+    coord_session_id: UUID,
+    body: UnfinishedResumeBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Resume a closed session: coord's respawn door. Coord answers 202 with the
+    recorded request, echoed verbatim; refusals (404, drained-device 409, 400
+    bad account pin) pass through typed."""
+    wire: dict[str, Any] = {"target_device_id": str(body.target_device_id)}
+    if body.account is not None:
+        wire["account"] = body.account
+    coord_body, status_code = await _proxy_coord_post(
+        f"/sessions/{coord_session_id}/respawn",
+        wire,
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+        non_json_success_as_empty=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
+class TenantResumeUnfinishedView(BaseModel):
+    """The tenant's automatic-resume consent, as coord resolves it."""
+
+    #: ``None`` unless coord reported a boolean: UNKNOWN, never ON.
+    resume_unfinished_enabled: bool | None
+    can_edit: bool
+
+
+class TenantResumeUnfinishedPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resume_unfinished_enabled: bool
+
+
+class TenantResumeUnfinishedWriteResult(BaseModel):
+    written: bool
+    effective: TenantResumeUnfinishedView | None = None
+    readback_error: str | None = None
+
+
+def _resume_unfinished_view(
+    payload: Any, *, can_edit: bool
+) -> TenantResumeUnfinishedView:
+    body = payload if isinstance(payload, dict) else {}
+    enabled = body.get("resume_unfinished_enabled")
+    return TenantResumeUnfinishedView(
+        resume_unfinished_enabled=enabled if isinstance(enabled, bool) else None,
+        can_edit=can_edit,
+    )
+
+
+@router.get(
+    "/tenant-policy/resume-unfinished", response_model=TenantResumeUnfinishedView
+)
+async def get_tenant_resume_unfinished(
+    request: Request,
+    home_tenant_id: UUID = Depends(get_tenant_id),
+) -> TenantResumeUnfinishedView:
+    """Read the tenant's automatic-resume flag (effective tenant, as for
+    ``transcript-sync`` -- see wire fact 1 above)."""
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    effective = _effective_tenant_id(identity, active) or home_tenant_id
+    payload = await _proxy_coord_get(
+        "/tenant-policy",
+        params={"tenant_id": str(effective)},
+        tenant_id=effective,
+    )
+    can_edit = "admin" in _effective_tenant_roles(identity, active)
+    return _resume_unfinished_view(payload, can_edit=can_edit)
+
+
+@router.patch(
+    "/tenant-policy/resume-unfinished",
+    response_model=TenantResumeUnfinishedWriteResult,
+)
+async def patch_tenant_resume_unfinished(
+    body: TenantResumeUnfinishedPatch,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> TenantResumeUnfinishedWriteResult:
+    """Turn automatic resume on or off for the caller's effective tenant."""
+    answer = await _proxy_coord_patch(
+        "/tenant-policy", body.model_dump(), tenant_id=tenant_id
+    )
+    if isinstance(answer, dict) and isinstance(
+        answer.get("resume_unfinished_enabled"), bool
+    ):
+        return TenantResumeUnfinishedWriteResult(
+            written=True, effective=_resume_unfinished_view(answer, can_edit=True)
+        )
+    readback_error = "coord accepted the write but did not return the policy it re-read"
+    logger.warning("tenant_policy.resume_readback_failed", detail=readback_error)
+    return TenantResumeUnfinishedWriteResult(
+        written=True, readback_error=readback_error
+    )
 
 
 # ---- Priority-sets + composition-rules CRUD proxy -----------------------

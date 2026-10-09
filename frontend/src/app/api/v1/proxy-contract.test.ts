@@ -5,6 +5,7 @@
  * 500 body when the upstream call fails. A handler passing the wrong option
  * to `proxyToBackend` turns this red.
  */
+import { readdirSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, type NextResponse } from "next/server";
 
@@ -77,7 +78,6 @@ const CONTRACT: [
   [runs, "GET", "execution/runs", "detail", "reencoded", "none", "detail"],
   [runs, "POST", "execution/runs", "detail", "drop", "json", "detail"],
   [run, "GET", "execution/runs/3", "detail", "drop", "none", "detail"],
-  [run, "PUT", "execution/runs/3", "detail", "drop", "json", "detail"],
   [run, "DELETE", "execution/runs/3", "detail", "drop", "none", "detail"],
   [runTree, "GET", "execution/runs/3/tree", "detail", "drop", "none", "detail"],
   [
@@ -171,15 +171,6 @@ const CONTRACT: [
     "details",
   ],
   [
-    streaming,
-    "POST",
-    "users/me/automation-streaming",
-    "error",
-    "drop",
-    "json",
-    { error: PROXY },
-  ],
-  [
     streamingReset,
     "POST",
     "users/me/automation-streaming/reset-limit",
@@ -217,7 +208,8 @@ function call(
   path: string,
   handler: Handler,
   query = "",
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  params: Record<string, string> = PARAMS
 ) {
   const takesBody = verb === "POST" || verb === "PUT" || verb === "PATCH";
   return handler(
@@ -226,7 +218,7 @@ function call(
       body: takesBody ? RAW_BODY : undefined,
       headers,
     }),
-    { params: Promise.resolve(PARAMS) }
+    { params: Promise.resolve(params) }
   );
 }
 
@@ -337,54 +329,129 @@ describe("/api/v1 proxy handlers keep their pre-migration contract", () => {
     });
   }
 
-  // Two handlers pick the backend path from the request URL rather than the
-  // route alone — both carried over verbatim from the pre-migration handlers
-  // (`execution/runs/[runId]` PUT, `users/me/automation-streaming` POST).
-  describe("request-URL-dependent backend paths", () => {
-    async function forwardedUrl(
+  // A param is one path segment: whatever the caller puts in it must not move
+  // the forwarded request to another backend route (the caller's token rides
+  // along). Each handler encodes its params; `proxyToBackend` refuses a path
+  // the URL parser would still rewrite (`.` / `..` survive encoding) or one
+  // carrying an encoded `/` (the backend decodes before routing). The
+  // encoding is pinned on its own by "x/y" (refused only once encoded) and
+  // "a b" (forwarded only once encoded), since the guard alone also refuses
+  // a raw "../x".
+  describe("path params stay inside their segment", () => {
+    // Hand list: route directory (relative to this file) -> module. Asserted
+    // equal to the dynamic-segment route files on disk, so a new handler that
+    // is missing here reds.
+    const DYNAMIC: [string, Record<string, unknown>][] = [
+      ["ai-tasks/[id]", aiTask],
+      ["ai-tasks/[id]/findings/[findingId]", aiTaskFinding],
+      ["execution/runs/[runId]", run],
+      ["execution/runs/[runId]/tree", runTree],
+      ["execution/runs/[runId]/tree-events", runTreeEvents],
+      ["projects/[projectId]/extractions", extractions],
+      ["projects/[projectId]/rag/dashboard", ragDashboard],
+      ["projects/[projectId]/rag/embeddings", ragEmbeddings],
+      ["projects/[projectId]/rag/jobs", ragJobs],
+      ["projects/[projectId]/rag/search", ragSearch],
+      ["projects/[projectId]/rag/states", ragStates],
+    ];
+    const routeOf = new Map(DYNAMIC.map(([route, mod]) => [mod, route]));
+    const EVERY = (value: string) =>
+      Object.fromEntries(Object.keys(PARAMS).map((k) => [k, value]));
+
+    /** `route` with every `[param]` segment replaced by `value`. */
+    function fill(route: string, value: string) {
+      return route
+        .split("/")
+        .map((seg) => (/^\[[^\]]+\]$/.test(seg) ? value : seg))
+        .join("/");
+    }
+
+    // Every CONTRACT row of a dynamic module, with the 400 body key the
+    // handler answers its own refusals with.
+    const rows: [Verb, string, Handler, string, string][] = CONTRACT.filter(
+      ([mod]) => routeOf.has(mod)
+    ).map(([mod, verb, path, auth]) => [
+      verb,
+      path,
+      mod[verb] as Handler,
+      routeOf.get(mod)!,
+      auth === "error" ? "error" : "detail",
+    ]);
+
+    it("the hand list is every dynamic-segment route file on disk", () => {
+      const onDisk = (readdirSync(__dirname, { recursive: true }) as string[])
+        .map((f) => f.split("\\").join("/"))
+        .filter((f) => f.includes("[") && /(^|\/)route\.ts$/.test(f))
+        .map((f) => f.replace(/\/route\.ts$/, ""))
+        .sort();
+      expect(onDisk).toEqual(DYNAMIC.map(([route]) => route).sort());
+    });
+
+    it("covers every verb of the 11 dynamic-segment modules", () => {
+      const covered = new Set(
+        rows.map(([verb, , , route]) => `${verb} ${route}`)
+      );
+      for (const [route, mod] of DYNAMIC) {
+        for (const v of [
+          "GET",
+          "HEAD",
+          "OPTIONS",
+          "POST",
+          "PUT",
+          "PATCH",
+          "DELETE",
+        ] as const) {
+          if (typeof mod[v] === "function") {
+            expect(covered, `${v} ${route}`).toContain(`${v} ${route}`);
+          }
+        }
+      }
+    });
+
+    async function expectRefused(
       verb: Verb,
       path: string,
       handler: Handler,
-      query = ""
+      key: string,
+      params: Record<string, string>
     ) {
       cookieToken = "t";
       const f = stubFetch(ok);
-      await call(verb, path, handler, query);
-      expect(f).toHaveBeenCalledOnce();
-      return f.mock.calls[0]![0] as unknown as string;
+      const res = await call(verb, path, handler, "", {}, params);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ [key]: "Invalid path parameter" });
+      expect(f).not.toHaveBeenCalled();
     }
 
-    it("runs/[runId] PUT on a /complete URL forwards to .../complete", async () => {
-      expect(
-        await forwardedUrl(
-          "PUT",
-          "execution/runs/3/complete",
-          run.PUT as Handler
-        )
-      ).toBe("http://backend.test/api/v1/execution/runs/3/complete");
-    });
+    for (const [verb, path, handler, route, key] of rows) {
+      it(`${verb} /api/v1/${path}: "a b" is forwarded as one encoded segment`, async () => {
+        // The request URL keeps the row's own segments; only params differ.
+        expect(path.split("/")).toHaveLength(route.split("/").length);
+        cookieToken = "t";
+        const f = stubFetch(ok);
+        await call(verb, path, handler, "", {}, EVERY("a b"));
+        expect(f).toHaveBeenCalledOnce();
+        const url = f.mock.calls[0]![0] as unknown as string;
+        expect(new URL(url).pathname).toBe(`/api/v1/${fill(route, "a%20b")}`);
+      });
 
-    it("runs/[runId] PUT on the bare URL forwards to the run itself", async () => {
-      expect(
-        await forwardedUrl("PUT", "execution/runs/3", run.PUT as Handler)
-      ).toBe("http://backend.test/api/v1/execution/runs/3");
-    });
+      it.each(["x/y", "../x", ".."])(
+        `${verb} /api/v1/${path}: %j never leaves its segment (400 {${key}}, no fetch)`,
+        async (value) => {
+          await expectRefused(verb, path, handler, key, EVERY(value));
+        }
+      );
+    }
 
-    it.each([
-      ["/toggle", "/toggle"],
-      ["/reset-limit", "/reset-limit"],
-      ["", ""],
-    ])(
-      "automation-streaming POST with %j in the URL forwards to ...%s",
-      async (marker, suffix) => {
-        const url = await forwardedUrl(
-          "POST",
-          "users/me/automation-streaming",
-          streaming.POST as Handler,
-          marker ? `?op=${marker}` : ""
-        );
-        expect(url).toBe(
-          `http://backend.test/api/v1/users/me/automation-streaming${suffix}`
+    it.each(["x/y", "../x", ".."])(
+      "PATCH ai-tasks/[id]/findings/[findingId]: a bad findingId %j alone is refused",
+      async (findingId) => {
+        await expectRefused(
+          "PATCH",
+          "ai-tasks/1/findings/2",
+          aiTaskFinding.PATCH as Handler,
+          "detail",
+          { ...PARAMS, findingId }
         );
       }
     );

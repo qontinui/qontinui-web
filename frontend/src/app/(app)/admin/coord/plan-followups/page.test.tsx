@@ -59,7 +59,9 @@ function response(
     ],
     count: 1,
     total: 9,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 50,
     ordering: "oldest_first",
     ...over,
@@ -78,7 +80,8 @@ describe("/admin/coord/plan-followups consumes /plan-library/followups", () => {
     await screen.findByTestId("coord-followup");
     const url = String(get.mock.calls[0]?.[0]);
     expect(url).toContain("/api/v1/plan-library/followups");
-    expect(url).toContain("offset=0");
+    expect(url).not.toContain("offset=");
+    expect(url).not.toContain("cursor=");
     expect(url).toContain("limit=50");
   });
 

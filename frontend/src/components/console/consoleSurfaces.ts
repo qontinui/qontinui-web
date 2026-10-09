@@ -212,13 +212,13 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
-// GitHub-hosted CI on the Dev Ops page — plan
+// GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
   HOSTED_CI_ATTENTION_BY_KIND,
   HOSTED_CI_AUTHOR_GLYPH_KINDS,
   HOSTED_CI_BADGE_CLASS,
-} from "@/app/(app)/admin/coord/devops/_lib/hostedCiStatus";
+} from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -635,8 +635,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
   {
-    surface: "GitHub-hosted CI (/admin/coord/devops)",
-    module: "app/(app)/admin/coord/devops/_lib/hostedCiStatus.ts",
+    surface: "GitHub-hosted CI (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts",
     attentionByKind: HOSTED_CI_ATTENTION_BY_KIND,
     palette: {
       badgeClass: HOSTED_CI_BADGE_CLASS,
