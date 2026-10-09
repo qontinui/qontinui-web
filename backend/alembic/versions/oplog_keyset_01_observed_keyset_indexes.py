@@ -1,7 +1,7 @@
 """coord.commit_observations + coord.fs_observations — keyset indexes for the oplog page reads
 
 Revision ID: oplog_keyset_01
-Revises: coord_devices_ui_thread_01
+Revises: cinode_04_runner_requires_windows
 Create Date: 2026-10-09
 
 Phase 5 of plan
@@ -73,8 +73,8 @@ page and cursor page), the keyset resume across an ``observed_at`` tie, and the
 downgrade.
 
 ``down_revision`` chains off the live alembic head at authoring time
-(``coord_devices_ui_thread_01``, the single head ``ScriptDirectory.get_heads()``
-reports on ``754110909``).
+(``cinode_04_runner_requires_windows``, the single head ``ScriptDirectory.get_heads()``
+reports on ``d0cebf581``).
 """
 
 from collections.abc import Sequence
@@ -83,7 +83,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "oplog_keyset_01"
-down_revision: str | Sequence[str] | None = "coord_devices_ui_thread_01"
+down_revision: str | Sequence[str] | None = "cinode_04_runner_requires_windows"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
