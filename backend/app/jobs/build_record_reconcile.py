@@ -47,13 +47,13 @@ import asyncio
 import random
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import httpx
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.build_record import BuildRecordPublicSlug, BuildRecordSnapshot
@@ -80,6 +80,12 @@ TENANT_PHASE_DEADLINE_SECONDS = 300.0
 VISIBILITY_CALLS_PER_TICK = 8
 #: Consecutive give-ups on an unanswerable repo before the page is retracted.
 VISIBILITY_UNKNOWN_RETRACT_AFTER = 6
+#: A live page with no complete visibility answer for this long is retracted,
+#: whatever the reason (a lone unanswerable repo, a long outage, a budget too
+#: small for the number of live repos). The clock starts at the later of the
+#: last complete answer and the latest publish (which itself checked every
+#: repo).
+VISIBILITY_STALE_AFTER = timedelta(hours=24)
 
 
 @dataclass
@@ -360,8 +366,43 @@ class VisibilityTick:
     unblamed: list[str] = field(default_factory=list)
     #: The operator token was rejected (401); the tick fell back to anonymous.
     credential_error: bool = False
+    #: Retracted because no complete answer arrived within
+    #: :data:`VISIBILITY_STALE_AFTER` (also listed in ``retracted``).
+    stale: list[str] = field(default_factory=list)
     #: Why the tick stopped early, or ``None`` when the budget or list ran out.
     stopped: str | None = None
+
+
+async def _retract_stale(db: AsyncSession, tick: VisibilityTick) -> None:
+    """Retract every live page with no complete answer within
+    :data:`VISIBILITY_STALE_AFTER` (see there). Runs after the tick's checks,
+    so a slug answered this tick is never stale. No commit."""
+    cutoff = datetime.now(UTC) - VISIBILITY_STALE_AFTER
+    latest_publish = (
+        select(
+            BuildRecordSnapshot.public_slug,
+            func.max(BuildRecordSnapshot.published_at).label("published_at"),
+        )
+        .group_by(BuildRecordSnapshot.public_slug)
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(BuildRecordPublicSlug, latest_publish.c.published_at)
+            .outerjoin(
+                latest_publish,
+                latest_publish.c.public_slug == BuildRecordPublicSlug.public_slug,
+            )
+            .where(BuildRecordPublicSlug.unpublished_at.is_(None))
+        )
+    ).all()
+    for owner, published_at in rows:
+        moments = [m for m in (owner.last_visibility_check_at, published_at) if m]
+        if moments and max(moments) >= cutoff:
+            continue
+        if await retract_live(db, owner.public_slug, owner.tenant_id):
+            tick.retracted.append(owner.public_slug)
+            tick.stale.append(owner.public_slug)
 
 
 def _mark_complete(
@@ -401,6 +442,9 @@ async def recheck_visibility(
       GitHub that is down, the tick stops, and no slug is counted.
     * A tick-stopping answer still stamps that slug's attempt time, so no slug
       can hold the head of the queue.
+    * Whatever happened, a live page with no complete answer for
+      :data:`VISIBILITY_STALE_AFTER` is retracted at the end of the tick — the
+      per-tick outage exemption never lets an unanswerable page live forever.
     * A rejected operator token (401) is retried anonymously by
       ``check_repo`` and logged at ERROR here.
     * ``last_visibility_check_at`` advances only on a COMPLETE definite answer.
@@ -414,6 +458,8 @@ async def recheck_visibility(
     tick = VisibilityTick()
     if await github_rate_budget.reserved(db, reserve):
         tick.stopped = "budget_reserved"
+        await _retract_stale(db, tick)
+        await db.commit()
         return tick
 
     owners = (
@@ -504,6 +550,7 @@ async def recheck_visibility(
             note="GITHUB_VISIBILITY_TOKEN rejected; this tick ran anonymously",
         )
     await github_rate_budget.record(db, answers)
+    await _retract_stale(db, tick)
     await db.commit()
     if tick.retracted:
         logger.info("build_record_visibility_retracted", slugs=tick.retracted)
@@ -522,6 +569,7 @@ async def recheck_visibility_all(
         "completed": len(tick.completed),
         "gave_up": len(tick.gave_up),
         "unblamed": len(tick.unblamed),
+        "stale": len(tick.stale),
         "credential_error": tick.credential_error,
         "stopped": tick.stopped,
     }

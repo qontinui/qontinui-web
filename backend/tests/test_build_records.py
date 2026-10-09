@@ -2526,3 +2526,146 @@ class TestConfusables:
         from app.services.build_record_allowlist import names_token
 
         assert names_token("sync \u0455ecret-billing schema", "secret-billing")
+
+
+# ===========================================================================
+# Seventh review — regression tests from rev7/t/tests/test_rev7.py
+# ===========================================================================
+
+
+def _secondary_limit() -> httpx.Response:
+    """GitHub's SECONDARY rate limit: a 403 with budget remaining, no
+    Retry-After, only a message."""
+    return httpx.Response(
+        403,
+        headers={"x-ratelimit-remaining": "4321", "x-ratelimit-reset": "9999999999"},
+        json={
+            "message": (
+                "You have exceeded a secondary rate limit. Please wait a few "
+                "minutes before you try again."
+            ),
+            "documentation_url": (
+                "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api"
+                "#about-secondary-rate-limits"
+            ),
+        },
+    )
+
+
+@pytest.mark.asyncio
+class TestRev7:
+    @staticmethod
+    async def _publish(client: httpx.AsyncClient, coord: _Coord, slug: str, repo: str):
+        coord.define(TENANT_A, slug, repos=[repo])
+        coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repo
+        r = await client.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    async def test_secondary_rate_limit_403_retracts_nothing(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for slug in ("s-1", "s-2", "s-3", "s-4", "s-5"):
+            await self._publish(client_a, coord, slug, f"tenant-a/{slug}")
+        _real_github(monkeypatch, lambda _: _secondary_limit())
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.retracted == []
+        assert tick.stopped == "rate_limited"
+        assert tick.calls == 1
+        assert (
+            await client_a.get("/api/v1/public/build-records/s-1")
+        ).status_code == 200
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ({"message": "Repository access blocked"}, "not_public"),
+            ({"message": "x", "block": {"reason": "tos"}}, "not_public"),
+            ({"message": "API rate limit exceeded for 1.2.3.4."}, "rate_limited"),
+            ({"message": "Resource not accessible"}, "rate_limited"),
+            (None, "rate_limited"),  # no JSON body at all
+        ],
+    )
+    async def test_a_403_is_classified_by_its_body(
+        self, body: Any, expected: str
+    ) -> None:
+        from app.services.github_repo_visibility import Visibility, check_repo
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            if body is None:
+                return httpx.Response(403, text="forbidden")
+            return httpx.Response(
+                403, headers={"x-ratelimit-remaining": "50"}, json=body
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            answer = await check_repo("acme/thing", client=c)
+        if expected == "not_public":
+            assert answer.visibility is Visibility.NOT_PUBLIC
+            assert not answer.rate_limited
+        else:
+            assert answer.visibility is Visibility.UNKNOWN
+            assert answer.rate_limited
+
+    async def test_a_lone_unanswerable_slug_is_retracted_once_stale(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import (
+            VISIBILITY_STALE_AFTER,
+            recheck_visibility,
+        )
+
+        await self._publish(client_a, coord, "x-a", "tenant-a/flaky")
+        _real_github(
+            monkeypatch, lambda _: httpx.Response(502, json={"message": "Server Error"})
+        )
+        # Alone, it is never BLAMED (nothing else answers) — rev7's finding.
+        for _ in range(10):
+            tick = await recheck_visibility(async_db_session, budget=8)
+            assert tick.retracted == [] and tick.gave_up == []
+
+        # Once it has gone VISIBILITY_STALE_AFTER without a complete answer
+        # (it never had one, and its publish is that old), it is retracted.
+        long_ago = datetime.now(UTC) - VISIBILITY_STALE_AFTER - timedelta(minutes=5)
+        await async_db_session.execute(
+            update(BuildRecordSnapshot)
+            .where(BuildRecordSnapshot.public_slug == "x-a")
+            .values(published_at=long_ago)
+        )
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.retracted == ["x-a"] and tick.stale == ["x-a"]
+        assert (
+            await client_a.get("/api/v1/public/build-records/x-a")
+        ).status_code == 404
+
+    async def test_a_recent_complete_answer_keeps_an_old_publish_live(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import (
+            VISIBILITY_STALE_AFTER,
+            recheck_visibility,
+        )
+
+        await self._publish(client_a, coord, "old-but-checked", "tenant-a/fine")
+        long_ago = datetime.now(UTC) - VISIBILITY_STALE_AFTER - timedelta(hours=1)
+        await async_db_session.execute(
+            update(BuildRecordSnapshot)
+            .where(BuildRecordSnapshot.public_slug == "old-but-checked")
+            .values(published_at=long_ago)
+        )
+        _real_github(monkeypatch, _public)
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.retracted == [] and tick.completed == ["old-but-checked"]

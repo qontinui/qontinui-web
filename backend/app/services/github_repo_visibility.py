@@ -25,15 +25,16 @@ Three answers, never two (served policy ``verification-and-evidence``
 * :attr:`Visibility.PUBLIC` — 200, ``"private": false``, matching
   ``full_name``;
 * :attr:`Visibility.NOT_PUBLIC` — 404; 451 (unavailable for legal reasons);
-  a 403 WITHOUT rate-limit signals (GitHub's "Repository access blocked");
+  a 403 whose body identifies a BLOCKED repository (a ``block`` object, or
+  "Repository access blocked");
   a redirect (301/302/307/308 — GitHub answers a RENAMED or transferred repo
   with a redirect, which ``httpx`` does not follow, so a moved repo's old name
   is refused rather than left unanswered); or 200 with ``"private"`` not
   ``false`` or a different ``full_name``;
 * :attr:`Visibility.UNKNOWN` — a transport error (``transport_error``), a
-  rate limit (``rate_limited``: any 429, or a 403 with
-  ``X-RateLimit-Remaining: 0`` or ``Retry-After``), a 5xx or other status,
-  an unparseable body.
+  rate limit (``rate_limited``: every 429, and every 403 that is not a
+  blocked repository — primary and secondary limits alike), a 5xx or other
+  status, an unparseable body.
 
 A 401 with the operator token set means the token is dead: logged at ERROR,
 retried anonymously, flagged ``credential_error``.
@@ -141,19 +142,38 @@ async def _get(
         return await owned.get(url, headers=_headers(token))
 
 
-def _is_rate_limit(resp: httpx.Response) -> bool:
-    """A 429 always; a 403 ONLY with GitHub's rate-limit signals.
+def _is_blocked(resp: httpx.Response) -> bool:
+    """A 403 for a repository GitHub has BLOCKED (TOS, DMCA): a JSON body with
+    a ``block`` object, or the message "Repository access blocked". That is a
+    definite "not publishable" — the ONLY 403 that is."""
+    if resp.status_code != 403:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    message = body.get("message")
+    return isinstance(body.get("block"), dict) or (
+        isinstance(message, str) and "repository access blocked" in message.lower()
+    )
 
-    GitHub also answers 403 for a repository it has BLOCKED (TOS, DMCA) while
-    plenty of budget remains — that is a definite "not publishable", and
-    reading it as a rate limit stopped every tick at that repo forever.
+
+def _is_rate_limit(resp: httpx.Response) -> bool:
+    """Every 429, and every 403 that is NOT a blocked repository.
+
+    GitHub's 403s are mostly rate limits, and not all of them say so in the
+    headers: a SECONDARY rate limit arrives with budget remaining and no
+    ``Retry-After``, only a message. Reading such a 403 as "not public" would
+    retract every page the tick touched, so a 403 is a rate limit unless its
+    body positively identifies a blocked repository (:func:`_is_blocked`).
+    Fail-closed in the other direction too: a blocked repo misread as a rate
+    limit would only stop the tick, never publish anything.
     """
     if resp.status_code == 429:
         return True
-    return resp.status_code == 403 and (
-        resp.headers.get("x-ratelimit-remaining") == "0"
-        or "retry-after" in resp.headers
-    )
+    return resp.status_code == 403 and not _is_blocked(resp)
 
 
 async def check_repo(
@@ -212,7 +232,7 @@ async def check_repo(
     if _is_rate_limit(resp):
         logger.warning("github_visibility_rate_limited", status=resp.status_code)
         return answer(Visibility.UNKNOWN, rate_limited=True)
-    if resp.status_code in _NOT_PUBLIC_STATUSES or resp.status_code == 403:
+    if resp.status_code in _NOT_PUBLIC_STATUSES or _is_blocked(resp):
         return answer(Visibility.NOT_PUBLIC)
     if resp.status_code != 200:
         logger.warning("github_visibility_unanswered", status=resp.status_code)
