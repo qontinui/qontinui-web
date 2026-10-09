@@ -77,7 +77,7 @@ exports[`workflow-documentation service contract > CRUD and comments behave as r
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all html 1`] = `
 "# Workflow Documentation
 
-Generated: 2026-01-02T03:04:06.000Z
+Generated: 2026-01-02T03:04:05.000Z
 
 Total Workflows: 1
 
@@ -170,7 +170,7 @@ graph TD
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > export all markdown 1`] = `
 "# Workflow Documentation
 
-Generated: 2026-01-02T03:04:06.000Z
+Generated: 2026-01-02T03:04:05.000Z
 
 Total Workflows: 1
 
@@ -333,7 +333,7 @@ Last updated: LOCALE(2025-12-15T11:30:00.000Z)"
 exports[`workflow-documentation service contract > exports every ExportOptions format with every option combination > project readme 1`] = `
 "# Workflow Project Documentation
 
-Generated: 2026-01-02T03:04:06.000Z
+Generated: 2026-01-02T03:04:05.000Z
 
 ## Table of Contents
 
