@@ -4,10 +4,15 @@
  * Written against the former single-file monolith first (commit dad4e634b)
  * and then re-pointed, unchanged, at the split `@/services/workflow-documentation`
  * barrel: the committed snapshots are the behaviour-preservation proof that
- * the split carries the same contract (plan
+ * the split carries the same return values, exports and stored bytes (plan
  * 2026-10-04-web-frontend-half-finished-refactors-shadow-their-live-modules,
  * Phase 4). Do not update these snapshots to make a refactor pass — a diff
  * here is a behaviour change.
+ *
+ * Known, deliberate difference the snapshots do not cover: storage failures
+ * are logged through the structured logger, so the console line gains a
+ * "[WorkflowDocumentation]" prefix. The failure test below asserts the
+ * message substance and the error object, not the exact line.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -179,6 +184,10 @@ describe("workflow-documentation service contract", () => {
       tags: ["auth", "generated"],
     });
     svc.addActionComment(wf.id, "click", "Primary submit button");
+    // Comment ids derive from Date.now() and Math.random(), both pinned: move
+    // the clock so the second comment gets its own id instead of overwriting
+    // the first, or the snapshot only ever sees one comment.
+    vi.setSystemTime(new Date(FIXED_NOW.getTime() + 1000));
     svc.addActionComment(wf.id, "try", "Falls back to logout");
 
     const formats: ExportOptions["format"][] = ["markdown", "html", "pdf"];
@@ -264,6 +273,40 @@ describe("workflow-documentation service contract", () => {
     expect(svc.deleteDocumentation("wf")).toBe(false);
     expect(svc.getAllActionComments("wf")).toEqual([]);
     expect(svc.getDocumentationHistory("wf")).toEqual([]);
+  });
+
+  it("swallows storage failures, keeps in-memory state, and logs the error", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Save path: setItem throws (quota exceeded, Safari private mode).
+    const quota = new Error("QuotaExceededError");
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw quota;
+      });
+    const svc = freshService();
+    const doc = svc.createDocumentation("wf", "body");
+    expect(doc.content).toBe("body");
+    expect(svc.getDocumentation("wf")?.content).toBe("body");
+    const saveCall = errorSpy.mock.calls.find((c) =>
+      String(c[0]).includes("Failed to save documentation to storage")
+    );
+    expect(saveCall, "save failure is logged").toBeDefined();
+    expect(saveCall!.at(-1)).toBe(quota);
+    setItem.mockRestore();
+
+    // Load path: a corrupt stored value leaves the service empty, not broken.
+    localStorage.setItem("workflow-documentation", "{not json");
+    errorSpy.mockClear();
+    const reloaded = freshService();
+    expect(reloaded.getDocumentation("wf")).toBeNull();
+    expect(
+      errorSpy.mock.calls.some((c) =>
+        String(c[0]).includes("Failed to load documentation from storage")
+      ),
+      "load failure is logged"
+    ).toBe(true);
   });
 
   it("round-trips through localStorage under the same three keys", () => {
