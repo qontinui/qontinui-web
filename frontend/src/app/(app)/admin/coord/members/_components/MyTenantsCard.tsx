@@ -5,13 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Building2 } from "lucide-react";
-import { fetchMyTenants } from "@/lib/api/operations/coordMembers";
+import {
+  fetchMyTenants,
+  type MyTenantsResponse,
+  type TenantRoleEntry,
+} from "@/lib/api/operations/coordMembers";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import {
   CoordProjectRenameDialog,
   type RenameTarget,
 } from "@/components/admin/coord/CoordProjectRenameDialog";
-import type { MyTenantsResponse, TenantRoleEntry } from "../_types";
 import { requireRows } from "../_lib/groupName";
 import {
   homeTenantName,
@@ -19,7 +23,6 @@ import {
   tierLabel,
   tenantName,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
@@ -45,9 +48,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchMyTenants();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as MyTenantsResponse | null;
+      const json = await fetchMyTenants();
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
       // leaves `data` null while `loading` and `error` are both false, and the
@@ -87,7 +88,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
       setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
