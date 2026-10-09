@@ -55,6 +55,12 @@ class BuildRecordPublicSlug(Base):
     claimed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+    #: Set by the D7 unpublish (revision ``brs_02_build_record_unpublish``):
+    #: the public reader 404s while it is set; a later publish clears it.
+    #: Snapshot rows are kept either way, and the tenant keeps the slug.
+    unpublished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class BuildRecordSnapshot(Base):

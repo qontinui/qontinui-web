@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import not_found_error
-from app.models.build_record import BUILD_RECORD_SLUG_PATTERN, BuildRecordSnapshot
+from app.models.build_record import (
+    BUILD_RECORD_SLUG_PATTERN,
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+)
 from app.models.project import Project as ProjectModel
 from app.schemas.project import Project
 
@@ -107,14 +111,23 @@ async def read_public_build_record(
     which refuses a product that is not opted in (``is_public``) and
     re-validates the D3 allowlist before storing. It never proxies to coord,
     so the authed export is never reachable from here. 404 when nothing has
-    been published under ``slug``.
+    been published under ``slug``, or when its owner has unpublished it
+    (``DELETE /api/v1/build-records/{slug}/publish``).
 
     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
     keys and no insignificant whitespace, so a reader can verify it.
     """
     stmt = (
         select(BuildRecordSnapshot)
-        .where(BuildRecordSnapshot.public_slug == slug)
+        .join(
+            BuildRecordPublicSlug,
+            BuildRecordPublicSlug.public_slug == BuildRecordSnapshot.public_slug,
+        )
+        .where(
+            BuildRecordSnapshot.public_slug == slug,
+            # Retracted by the D7 unpublish: 404 at once, history kept.
+            BuildRecordPublicSlug.unpublished_at.is_(None),
+        )
         .order_by(BuildRecordSnapshot.version.desc())
         .limit(1)
     )

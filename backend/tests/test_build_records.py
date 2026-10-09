@@ -526,3 +526,95 @@ class TestProxies:
         r = await client_a.put(f"/api/v1/build-records/products/{slug}", json=body)
         assert r.status_code == 422
         assert coord.puts == []
+
+
+@pytest.mark.asyncio
+class TestUnpublish:
+    """D7's one-step unpublish: ``DELETE /{slug}/publish``."""
+
+    async def test_retract_then_public_404_and_history_kept(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        assert (
+            await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        ).status_code == 201
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 200
+
+        r = await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["public_slug"] == SLUG
+        assert body["latest_version"] == 1
+        assert body["unpublished_at"]
+
+        gone = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert gone.status_code == 404
+        # History kept: the snapshot row survives the retraction.
+        assert await _snapshot_count(async_db_session) == 1
+
+        # Idempotent: a second unpublish keeps the first retraction time.
+        again = await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+        assert again.status_code == 200
+        assert again.json()["unpublished_at"] == body["unpublished_at"]
+
+    async def test_republish_reactivates_as_next_version(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+
+        coord.documents[(TENANT_A, SLUG)]["gates"]["cleared"] = 7
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 201, r.text
+        assert r.json()["version"] == 3
+
+        served = await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        assert served.status_code == 200
+        assert served.json()["version"] == 3
+        assert served.json()["document"]["gates"]["cleared"] == 7
+        assert await _snapshot_count(async_db_session) == 3
+
+    async def test_other_tenant_is_refused_and_slug_stays_live(
+        self,
+        client_a: httpx.AsyncClient,
+        client_b: httpx.AsyncClient,
+        coord: _Coord,
+    ) -> None:
+        coord.define(TENANT_A)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+
+        r = await client_b.delete(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "public_slug_owned_by_another_tenant"
+        assert (
+            await client_a.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 200
+
+    async def test_retracted_slug_is_not_freed_for_another_tenant(
+        self,
+        client_a: httpx.AsyncClient,
+        client_b: httpx.AsyncClient,
+        coord: _Coord,
+    ) -> None:
+        coord.define(TENANT_A)
+        coord.define(TENANT_B)
+        await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+
+        r = await client_b.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert (
+            await client_b.get(f"/api/v1/public/build-records/{SLUG}")
+        ).status_code == 404
+
+    async def test_unpublish_404s_a_never_published_slug(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        r = await client_a.delete(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 404
+        assert r.json()["detail"]["error"] == "build_record_not_published"
