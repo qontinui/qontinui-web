@@ -45,9 +45,6 @@ from app.services.build_record_allowlist import (
 from app.services.github_repo_visibility import (
     check_repo as _REAL_CHECK_REPO,
 )
-from app.services.github_repo_visibility import (
-    repo_visibility as _REAL_REPO_VISIBILITY,
-)
 
 TENANT_A = UUID("aaaaaaaa-0000-4000-8000-0000000000b1")
 TENANT_B = UUID("bbbbbbbb-0000-4000-8000-0000000000b2")
@@ -424,26 +421,24 @@ def coord(monkeypatch: pytest.MonkeyPatch) -> _Coord:
     stub = _Coord()
     #: What GitHub answers per repo; anything unlisted is PUBLIC.
     stub.visibility: dict[str, Visibility] = {}  # type: ignore[misc]
-
-    async def visibility(repo: str, **_: Any) -> Visibility:
-        return stub.visibility.get(repo, Visibility.PUBLIC)
-
-    monkeypatch.setattr(build_records, "_proxy_coord_get", stub.get)
-    monkeypatch.setattr(build_records, "_proxy_coord_put", stub.put)
-    monkeypatch.setattr(build_records, "repo_visibility", visibility)
-    # The scheduled re-check imports check_repo from the service module.
-    monkeypatch.setattr(github_repo_visibility, "repo_visibility", visibility)
     #: X-RateLimit-Remaining the fake GitHub reports (None = header absent).
     stub.rate_remaining: int | None = None  # type: ignore[misc]
     stub.github_calls: list[str] = []  # type: ignore[misc]
+    #: Full answers that override ``visibility`` (transport / rate-limit flags).
+    stub.answers: dict[str, Any] = {}  # type: ignore[misc]
 
     async def check(repo: str, **_: Any) -> Any:
         stub.github_calls.append(repo)
+        if repo in stub.answers:
+            return stub.answers[repo]
         verdict = stub.visibility.get(repo, Visibility.PUBLIC)
-        return github_repo_visibility.VisibilityAnswer(
-            verdict, stub.rate_remaining, rate_limited=False
-        )
+        return github_repo_visibility.VisibilityAnswer(verdict, stub.rate_remaining)
 
+    monkeypatch.setattr(build_records, "_proxy_coord_get", stub.get)
+    monkeypatch.setattr(build_records, "_proxy_coord_put", stub.put)
+    # Publish calls build_records.check_repo; the scheduled re-check imports
+    # check_repo from the service module at call time.
+    monkeypatch.setattr(build_records, "check_repo", check)
     monkeypatch.setattr(github_repo_visibility, "check_repo", check)
     return stub
 
@@ -1646,9 +1641,9 @@ class TestThirdReview:
             name = request.url.path.removeprefix("/repos/")
             return httpx.Response(200, json={**github, "full_name": name})
 
-        # The fixture faked repo_visibility in both modules; put the REAL one
+        # The fixture faked check_repo in both modules; put the REAL one
         # (captured at import, before any patch) back on the route's module.
-        monkeypatch.setattr(build_records, "repo_visibility", _REAL_REPO_VISIBILITY)
+        monkeypatch.setattr(build_records, "check_repo", _REAL_CHECK_REPO)
         monkeypatch.setattr(github_repo_visibility, "check_repo", _REAL_CHECK_REPO)
         monkeypatch.setattr(
             github_repo_visibility,
@@ -1914,7 +1909,29 @@ class TestVisibilityTick:
         assert owner.visibility_check_offset == 0
         assert owner.last_visibility_check_at is not None
 
-    async def test_unknown_stops_the_tick_without_advancing(
+    async def test_transport_error_stops_the_tick_without_advancing(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services.github_repo_visibility import Visibility, VisibilityAnswer
+
+        for slug in ("vis-a", "vis-b"):
+            await self._publish(client_a, coord, slug)
+        coord.answers["qontinui/qontinui-design-tokens"] = VisibilityAnswer(
+            Visibility.UNKNOWN, transport_error=True
+        )
+        coord.github_calls.clear()
+
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.calls == 1
+        assert tick.stopped == "transport"
+        assert tick.completed == [] and tick.retracted == [] and tick.gave_up == []
+        owner = await self._owner(async_db_session, "vis-a")
+        assert owner.last_visibility_attempt_at is None  # not the slug's fault
+        assert owner.visibility_unknown_attempts == 0
+        assert owner.unpublished_at is None
+
+    async def test_other_unknown_gives_up_the_slug_and_moves_on(
         self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
     ) -> None:
         from app.jobs.build_record_reconcile import recheck_visibility
@@ -1923,13 +1940,13 @@ class TestVisibilityTick:
         for slug in ("vis-a", "vis-b"):
             await self._publish(client_a, coord, slug)
         coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.UNKNOWN
-        coord.github_calls.clear()
 
         tick = await recheck_visibility(async_db_session, budget=8)
-        assert tick.calls == 1
-        assert tick.stopped == "unanswered"
-        assert tick.completed == [] and tick.retracted == []
+        assert tick.stopped is None
+        assert tick.gave_up == ["vis-a", "vis-b"]
         owner = await self._owner(async_db_session, "vis-a")
+        assert owner.visibility_unknown_attempts == 1
+        assert owner.last_visibility_attempt_at is not None
         assert owner.last_visibility_check_at is None
         assert owner.unpublished_at is None
 
@@ -2048,3 +2065,281 @@ class TestListProductsThroughTheRealProxy:
         monkeypatch.setattr(job, "_service_bearer", bearer)
         monkeypatch.setattr(httpx, "AsyncClient", fake_client)
         assert await job._reconcile_one_tenant(committed, TENANT_A) == 0
+
+
+# ===========================================================================
+# Fifth review — regression tests from the reviewer's rev/wedge.py and
+# rev/bypass.py, and the shared GitHub budget
+# ===========================================================================
+
+
+def _bypass_doc(title: str) -> dict[str, Any]:
+    """rev/bypass.py's document: one public repo, the probe in a PR title."""
+    doc = _document()
+    doc["product"]["repos"] = ["acme/public-app"]
+    doc["prs"] = [{**doc["prs"][0], "repo": "acme/public-app", "title": title}]
+    return doc
+
+
+class TestBypassRegression:
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "port fix from acme/​secret-billing",  # ZWSP (Cf)
+            "port fix from acme/͏secret-billing",  # CGJ (Mn, ignorable)
+            "port fix from acme/️secret-billing",  # VS16 (Mn, ignorable)
+            "port fix from acme/᠋secret-billing",  # Mongolian FVS1
+            "port fix from acme/⁥secret-billing",  # unassigned (Cn)
+            "port fix from acme/\U000e0100secret-billing",  # tag-range VS
+            "port fix from acme/ㅤsecret-billing",  # Hangul filler (Lo)
+            "port fix from acme⟋secret-billing",  # rising diagonal
+            "port fix from acme⫽secret-billing",  # double solidus
+            "port fix from acmeノsecret-billing",  # katakana NO
+            "port fix from acmeﾉsecret-billing",  # halfwidth katakana NO
+            "port fix from acme丿secret-billing",  # CJK stroke
+            "port fix from acme⼃secret-billing",  # Kangxi radical
+            "port fix from acme · secret-billing",  # infix Po
+            "port fix from acme∣secret-billing",  # infix Sm (divides)
+            "port fix from acme/secrét-billing",  # combining acute
+            "port fix from acme/secret-billing",  # private use (Co)
+            "reported by jane͏@corp",
+            "device 0f8fad5b-️d9cb-469f-a165-70867728950e",
+            "id 0f8fad5bd9cb469fa165͏70867728950e",
+        ],
+    )
+    def test_probe_is_refused(self, title: str) -> None:
+        assert build_record_violations(_bypass_doc(title)), repr(title)
+
+    def test_plain_public_title_still_passes(self) -> None:
+        assert build_record_violations(_bypass_doc("fix: the public app")) == []
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "sync secret-billing schema",
+            "sync secret͏-billing schema",
+            "sync se️cret-billing schema",
+            "sync secrét-billing schema",
+            "sync SECRET-BILLING schema",
+        ],
+    )
+    def test_excluded_name_is_found_in_the_stripped_form(self, text: str) -> None:
+        from app.services.build_record_allowlist import names_token
+
+        assert names_token(text, "secret-billing")
+
+    def test_excluded_name_is_token_bounded(self) -> None:
+        from app.services.build_record_allowlist import names_token
+
+        assert not names_token("sync secret-billings schema", "secret-billing")
+
+
+def _real_github(monkeypatch: pytest.MonkeyPatch, answer: Any) -> list[str]:
+    """Put the REAL check_repo back on both modules, behind a MockTransport
+    whose per-repo answer is ``answer(name) -> httpx.Response``."""
+    from app.api.v1.endpoints import build_records
+    from app.services import github_repo_visibility
+
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.path.removeprefix("/repos/")
+        asked.append(name)
+        return answer(name)
+
+    monkeypatch.setattr(build_records, "check_repo", _REAL_CHECK_REPO)
+    monkeypatch.setattr(github_repo_visibility, "check_repo", _REAL_CHECK_REPO)
+    monkeypatch.setattr(
+        github_repo_visibility,
+        "_client_factory",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    return asked
+
+
+def _public(name: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        headers={"x-ratelimit-remaining": "4000"},
+        json={"private": False, "full_name": name},
+    )
+
+
+@pytest.mark.asyncio
+class TestWedgeRegression:
+    """rev/wedge.py: a 301 (renamed) repo used to wedge the re-check forever."""
+
+    @staticmethod
+    async def _publish(client: httpx.AsyncClient, coord: _Coord, slug: str, repo: str):
+        coord.define(TENANT_A, slug, repos=[repo])
+        coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repo
+        r = await client.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    async def test_redirected_repo_is_not_public_and_never_wedges(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        await self._publish(client_a, coord, "a-renamed", "tenant-a/old-name")
+        await self._publish(client_a, coord, "b-private", "tenant-b/now-private")
+        await self._publish(client_a, coord, "c-other", "tenant-c/fine")
+
+        def github(name: str) -> httpx.Response:
+            if name == "tenant-a/old-name":
+                return httpx.Response(
+                    301,
+                    headers={"location": "https://api.github.com/repositories/1"},
+                    json={"message": "Moved Permanently"},
+                )
+            if name == "tenant-b/now-private":
+                return httpx.Response(404, json={"message": "Not Found"})
+            return _public(name)
+
+        _real_github(monkeypatch, github)
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.stopped is None
+        assert sorted(tick.retracted) == ["a-renamed", "b-private"]
+        assert "c-other" in tick.completed
+
+    async def test_an_unanswerable_slug_ahead_does_not_starve_the_rest(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import (
+            VISIBILITY_UNKNOWN_RETRACT_AFTER,
+            recheck_visibility,
+        )
+
+        await self._publish(client_a, coord, "a-flaky", "tenant-a/flaky")
+        await self._publish(client_a, coord, "b-private", "tenant-b/now-private")
+
+        def github(name: str) -> httpx.Response:
+            if name == "tenant-a/flaky":
+                return httpx.Response(502, text="bad gateway")
+            if name == "tenant-b/now-private":
+                return httpx.Response(404, json={"message": "Not Found"})
+            return _public(name)
+
+        _real_github(monkeypatch, github)
+        # Budget 1: the flaky slug is first (alphabetical, never attempted).
+        first = await recheck_visibility(async_db_session, budget=1)
+        assert first.gave_up == ["a-flaky"] and first.retracted == []
+        second = await recheck_visibility(async_db_session, budget=1)
+        assert second.retracted == ["b-private"]  # moved past the flaky one
+
+        # And the flaky one is retracted after K consecutive give-ups.
+        retracted: list[str] = []
+        for _ in range(VISIBILITY_UNKNOWN_RETRACT_AFTER - 1):
+            retracted += (
+                await recheck_visibility(async_db_session, budget=1)
+            ).retracted
+        assert retracted == ["a-flaky"]
+
+    @pytest.mark.parametrize("status", [301, 302, 307, 308, 451])
+    async def test_redirect_and_451_statuses_are_not_public(self, status: int) -> None:
+        from app.services.github_repo_visibility import Visibility, check_repo
+
+        transport = httpx.MockTransport(lambda _: httpx.Response(status))
+        async with httpx.AsyncClient(transport=transport) as c:
+            answer = await check_repo("qontinui/tokens", client=c)
+        assert answer.visibility is Visibility.NOT_PUBLIC
+
+
+@pytest.mark.asyncio
+class TestGithubBudget:
+    async def _set_budget(self, db: AsyncSession, remaining: int, reset: Any) -> None:
+        from app.services import github_rate_budget
+        from app.services.github_repo_visibility import Visibility, VisibilityAnswer
+
+        await github_rate_budget.record(
+            db, [VisibilityAnswer(Visibility.PUBLIC, remaining, reset)]
+        )
+        await db.flush()
+
+    async def test_publish_refuses_while_the_budget_is_at_the_reserve(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        await self._set_budget(
+            async_db_session, 20, datetime.now(UTC) + timedelta(minutes=30)
+        )
+        coord.github_calls.clear()
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 502
+        assert r.json()["error"] == "build_record_repo_visibility_budget_reserved"
+        assert coord.github_calls == []  # refused before asking
+
+    async def test_a_reset_window_reserves_nothing(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        coord.define(TENANT_A)
+        await self._set_budget(
+            async_db_session, 0, datetime.now(UTC) - timedelta(minutes=1)
+        )
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 201, r.text
+
+    async def test_publish_records_the_reading_and_the_recheck_respects_it(
+        self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.models.build_record import GithubRateBudget
+
+        coord.define(TENANT_A)
+        coord.rate_remaining = 25  # above publish's reserve, at the re-check's
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 201, r.text
+        row = (await async_db_session.execute(select(GithubRateBudget))).scalar_one()
+        assert row.remaining == 25
+        coord.github_calls.clear()
+        tick = await recheck_visibility(async_db_session)
+        assert tick.stopped == "budget_reserved" and coord.github_calls == []
+
+    async def test_more_than_fifty_repos_is_refused(
+        self, client_a: httpx.AsyncClient, coord: _Coord
+    ) -> None:
+        repos = [f"qontinui/repo-{i:02d}" for i in range(51)]
+        coord.define(TENANT_A, repos=repos)
+        coord.documents[(TENANT_A, SLUG)]["prs"][0]["repo"] = repos[0]
+        coord.github_calls.clear()
+        r = await client_a.post(f"/api/v1/build-records/{SLUG}/publish")
+        assert r.status_code == 409
+        assert r.json()["error"] == "build_record_too_many_repos"
+        assert coord.github_calls == []
+
+    async def test_the_operator_token_is_sent_when_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.core.config import settings
+        from app.services.github_repo_visibility import Visibility, check_repo
+
+        seen: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers.get("authorization"))
+            return httpx.Response(
+                200,
+                headers={
+                    "x-ratelimit-remaining": "4999",
+                    "x-ratelimit-reset": "2000000000",
+                },
+                json={"private": False, "full_name": "qontinui/tokens"},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            assert (await check_repo("qontinui/tokens", client=c)).visibility is (
+                Visibility.PUBLIC
+            )
+            monkeypatch.setattr(settings, "GITHUB_VISIBILITY_TOKEN", "github_pat_x")
+            answer = await check_repo("qontinui/tokens", client=c)
+        assert seen == [None, "Bearer github_pat_x"]
+        assert answer.rate_limit_remaining == 4999
+        assert answer.rate_limit_reset is not None
