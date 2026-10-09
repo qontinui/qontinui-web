@@ -141,7 +141,7 @@ async def test_resolve_explicit_foreign_runner_is_404_even_when_connected(
 
     with pytest.raises(HTTPException) as exc:
         await resolve_runner_for_request(
-            theirs.id, user, AsyncMock(), manager, ENDPOINT
+            theirs.id, user.id, AsyncMock(), manager, ENDPOINT
         )
 
     assert exc.value.status_code == 404
@@ -157,7 +157,7 @@ async def test_resolve_explicit_registered_runner_is_used(
     manager = _manager(connected={str(mine.id)})
 
     picked = await resolve_runner_for_request(
-        mine.id, user, AsyncMock(), manager, ENDPOINT
+        mine.id, user.id, AsyncMock(), manager, ENDPOINT
     )
 
     assert picked is mine
@@ -176,7 +176,7 @@ async def test_resolve_explicit_disconnected_runner_is_503_with_callers_endpoint
     db = _db_listing([mine_on])
 
     with pytest.raises(HTTPException) as exc:
-        await resolve_runner_for_request(mine_off.id, user, db, manager, ENDPOINT)
+        await resolve_runner_for_request(mine_off.id, user.id, db, manager, ENDPOINT)
 
     assert exc.value.status_code == 503
     assert exc.value.detail["error"] == "no_runner_connected"
@@ -191,7 +191,7 @@ async def test_resolve_auto_picks_the_live_runner() -> None:
     manager = _manager(connected={str(online.id)})
 
     picked = await resolve_runner_for_request(
-        None, user, _db_listing([offline, online]), manager, ENDPOINT
+        None, user.id, _db_listing([offline, online]), manager, ENDPOINT
     )
 
     assert picked is online
@@ -203,7 +203,7 @@ async def test_resolve_auto_pick_with_none_live_is_503_with_callers_endpoint() -
 
     with pytest.raises(HTTPException) as exc:
         await resolve_runner_for_request(
-            None, user, _db_listing([_runner(user_id=user.id)]), manager, ENDPOINT
+            None, user.id, _db_listing([_runner(user_id=user.id)]), manager, ENDPOINT
         )
 
     assert exc.value.status_code == 503

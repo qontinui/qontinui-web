@@ -9,9 +9,10 @@ name: forbid public.* schema regressions
 # this workflow used to carry a multi-line `run:` block of pipes, arrays and
 # `$(...)`, which the runner-as-CI-node lane (.qontinui/ci.toml, argv-only,
 # deliberately shell-free) could not mirror — so the manifest header recorded
-# it as inexpressible. Two lanes now invoke the one script:
+# it as inexpressible. Three lanes now invoke the one script:
 #
 #   * this workflow, step "Scan for forbidden public.* references"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `forbid-public-schema`
 #
 # The match pattern, the exclusion pathspecs and their reasons, and the

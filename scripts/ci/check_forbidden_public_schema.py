@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 r"""Forbid ``public.*`` schema regressions.
 
-THE single home of this gate's logic. Two lanes invoke this one script:
+THE single home of this gate's logic. Three lanes invoke this one script:
 
   * ``.github/workflows/forbid-public-schema.yml``, step
     "Scan for forbidden public.* references"
+  * ``.github/workflows/web-guards.yml``, step
+    "forbid-public-schema: Scan for forbidden public.* references"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``forbid-public-schema``
 
 Phase 7 deliverable of the migration consolidation

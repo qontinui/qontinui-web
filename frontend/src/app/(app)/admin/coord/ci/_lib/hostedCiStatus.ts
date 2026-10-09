@@ -1,5 +1,5 @@
 /**
- * GitHub-hosted CI on the Dev Ops page — the wire shapes coord's hosted-CI read
+ * GitHub-hosted CI on the Dev Ops ▸ CI page — the wire shapes coord's hosted-CI read
  * serves, and every PURE derivation the panel renders from (R8: no internal
  * vocabulary on a primary surface, and the derivation lives here, not in JSX).
  *

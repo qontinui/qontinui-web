@@ -16,6 +16,9 @@
  * 4. **A pool row expands in place** to its per-repo members.
  * 5. **The machines line links to the Overview** (D1: the machine axis stays
  *    there).
+ * 6. **The GitHub-hosted CI panel mounts here, directly under the strip**
+ *    (Phase 6), and its writes stay gated on admin IN THE ACTIVE TENANT even
+ *    though the page itself is member-visible.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,8 +37,37 @@ vi.mock("next/navigation", () => ({
 }));
 
 const httpGet = vi.fn();
+const httpPut = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...a: unknown[]) => httpGet(...a) },
+  httpClient: {
+    get: (...a: unknown[]) => httpGet(...a),
+    put: (...a: unknown[]) => httpPut(...a),
+  },
+}));
+
+// The hosted-CI panel's writes are offered to an admin of the ACTIVE tenant
+// only (`isActiveTenantCoordAdmin`), so the page reads both contexts.
+const authState = {
+  user: { is_superuser: false, coord_is_admin: false },
+};
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: false, user: authState.user }),
+}));
+const tenantState: {
+  tenants: { id: string; slug: string; name: string; roles?: string[] }[];
+  activeTenantId: string | null;
+} = {
+  tenants: [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }],
+  activeTenantId: "t-a",
+};
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({
+    tenants: tenantState.tenants,
+    activeTenantId: tenantState.activeTenantId,
+  }),
+}));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
 const ciStream = vi.fn();
@@ -152,6 +184,10 @@ function route(overview: unknown | Error) {
 
 beforeEach(() => {
   httpGet.mockReset();
+  httpPut.mockReset();
+  authState.user = { is_superuser: false, coord_is_admin: false };
+  tenantState.tenants = [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }];
+  tenantState.activeTenantId = "t-a";
   ciStream.mockReturnValue({
     byRepo: new Map([[WEB, CI_ROW]]),
     connected: true,
@@ -456,5 +492,119 @@ describe("/admin/coord/ci", () => {
     render(<CoordCiPage />);
     const link = await screen.findByTestId("ci-machines-link");
     expect(link.getAttribute("href")).toBe("/admin/coord/devops");
+  });
+});
+
+/** Layer the hosted-CI reads over `route()`'s overview + economics routes. */
+function withHostedCi(opts: { canEdit: boolean }) {
+  const base = httpGet.getMockImplementation();
+  httpGet.mockImplementation((url: string) => {
+    if (url.includes("/fleet-policy")) {
+      return Promise.resolve({
+        domain: "github_hosted_ci",
+        effective_level: "off",
+        master_enabled: true,
+        resolved_scope: "tenant",
+        can_edit: opts.canEdit,
+        keys_not_shown: [],
+        keys_not_shown_source: null,
+      });
+    }
+    if (url.includes("/ci-hosting")) {
+      return Promise.resolve({
+        domain: "github_hosted_ci",
+        tenant_default: {
+          level: "off",
+          resolved_scope: "tenant",
+          unknown_reason: null,
+        },
+        repos: [
+          {
+            repo: WEB,
+            level: "off",
+            resolved_scope: "tenant",
+            unknown_reason: null,
+          },
+        ],
+        can_edit: opts.canEdit,
+      });
+    }
+    return base ? base(url) : Promise.reject(new Error(`unexpected GET ${url}`));
+  });
+}
+
+describe("/admin/coord/ci — GitHub-hosted CI (Phase 6)", () => {
+  it("mounts the panel directly under the strip; a coord without the read renders it UNKNOWN", async () => {
+    // `route()` rejects every hosted-CI route — a build that serves neither the
+    // hosted-CI read nor the dial yet.
+    route(overviewBody([measuredPool()]));
+    render(<CoordCiPage />);
+
+    const panel = await screen.findByTestId("github-hosted-ci-panel");
+    expect(
+      await within(panel).findByTestId("github-hosted-ci-repos-error")
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-effective").textContent
+    ).toBe("–");
+    // Order: strip, then the panel, then the Pools panel.
+    const page = screen.getByTestId("ci-page");
+    const order = Array.from(
+      page.querySelectorAll(
+        "[data-testid='ci-health-strip'], [data-testid='github-hosted-ci-panel'], [data-testid='ci-pools-panel']"
+      )
+    ).map((el) => el.getAttribute("data-testid"));
+    expect(order).toEqual([
+      "ci-health-strip",
+      "github-hosted-ci-panel",
+      "ci-pools-panel",
+    ]);
+  });
+
+  it("an admin of the active tenant gets the tenant write controls", async () => {
+    route(overviewBody([measuredPool()]));
+    withHostedCi({ canEdit: true });
+    render(<CoordCiPage />);
+
+    const panel = await screen.findByTestId("github-hosted-ci-panel");
+    await waitFor(() =>
+      expect(
+        within(panel).getByTestId("github-hosted-ci-tenant-effective")
+          .textContent
+      ).toBe("Off")
+    );
+    expect(within(panel).getByTestId("github-hosted-ci-tenant-on")).toBeEnabled();
+    expect(within(panel).queryByTestId("github-hosted-ci-readonly")).toBeNull();
+  });
+
+  it("a member of the active tenant sees the setting read-only, even when the backend says can_edit", async () => {
+    tenantState.tenants = [
+      { id: "t-a", slug: "a", name: "A", roles: ["member"] },
+      // Admin of ANOTHER tenant must not leak into this one: the union flag is
+      // TRUE here, so a page gated on `coord_is_admin` (the cross-tenant
+      // union) instead of the active tenant's roles would offer the write.
+      { id: "t-b", slug: "b", name: "B", roles: ["admin"] },
+    ];
+    authState.user = { is_superuser: false, coord_is_admin: true };
+    route(overviewBody([measuredPool()]));
+    withHostedCi({ canEdit: true });
+    render(<CoordCiPage />);
+
+    const panel = await screen.findByTestId("github-hosted-ci-panel");
+    await waitFor(() =>
+      expect(
+        within(panel).getByTestId("github-hosted-ci-tenant-effective")
+          .textContent
+      ).toBe("Off")
+    );
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-on")
+    ).toBeDisabled();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-off")
+    ).toBeDisabled();
+    expect(
+      await within(panel).findByTestId("github-hosted-ci-readonly")
+    ).toBeInTheDocument();
   });
 });

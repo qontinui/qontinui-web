@@ -684,16 +684,46 @@ describe("humanizeDeferralReason", () => {
     );
   });
 
-  it("expands the other three producer constructors", () => {
+  it("expands the memory-pressure grammar, in either comparison spelling", () => {
+    const gib = 1024 ** 3;
+    const expected =
+      "the machine was low on memory (warn) — 1.00 GiB free against a floor of 3.00 GiB";
+    expect(humanizeDeferralReason(`commit_pressure:warn:${gib}_under_${3 * gib}`)).toBe(
+      expected
+    );
+    expect(humanizeDeferralReason(`commit_pressure:warn:${gib}_over_${3 * gib}`)).toBe(
+      expected
+    );
+  });
+
+  it("expands the other producer constructors", () => {
     expect(humanizeDeferralReason("at_cap:4")).toContain(
       "continuation cap of 4"
     );
+    expect(humanizeDeferralReason("at_cap:4")).toContain("newer runner builds no longer have");
     expect(humanizeDeferralReason("duplicate_anchor:term-9f")).toContain(
       "terminal term-9f"
     );
     expect(humanizeDeferralReason("spawn_authorization_deny")).toContain(
       "agent registry refused the spawn (deny)"
     );
+  });
+
+  it("reads duplicate_anchor:reserved as a reservation, not as a terminal named 'reserved'", () => {
+    const text = humanizeDeferralReason("duplicate_anchor:reserved");
+    expect(text).toContain("this anchor was already reserved");
+    expect(text).not.toContain("terminal reserved");
+  });
+
+  it("expands both device_drain classes the runner writes", () => {
+    expect(humanizeDeferralReason("device_drain:drained")).toContain(
+      "found this device drained by coord"
+    );
+    expect(humanizeDeferralReason("device_drain:unknown")).toContain(
+      "could not establish this device's coord drain state"
+    );
+    // A class the producer never writes is not guessed at.
+    expect(humanizeDeferralReason("device_drain:clear")).toBe("device_drain:clear");
   });
 
   it("returns an unrecognised reason verbatim rather than blanking it", () => {
