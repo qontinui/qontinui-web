@@ -140,3 +140,26 @@ describe("coordMembers", () => {
     expect(httpStatusOf(err)).toBe(409);
   });
 });
+
+describe("coordMembers writes whose result is discarded", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it.each([
+    ["grantMemberRole", () => grantMemberRole("op-1", "admin")],
+    ["revokeMemberRole", () => revokeMemberRole("op-1", "admin")],
+  ])(
+    "%s treats a 204 or an unparseable 2xx as success, not a failure",
+    async (_name, call) => {
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(
+        new Response("not json", { status: 200 })
+      );
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(new Response("no", { status: 500 }));
+      await expect(call()).rejects.toThrow(/failed: 500/);
+    }
+  );
+});

@@ -65,7 +65,7 @@ describe("prMerge", () => {
     expect(httpStatusOf(err)).toBe(403);
   });
 
-  it("patchTenantSettings PATCHes the body in a fixed key order, never re-sent on a 5xx", async () => {
+  it("patchTenantSettings PATCHes the body as the caller built it, never re-sent on a 5xx", async () => {
     fetchMock.mockResolvedValueOnce(answer({ tenant_id: "t-1" }));
     await patchTenantSettings(TENANT_PATCH);
     expect(fetchMock.mock.calls[0]).toEqual([
@@ -199,4 +199,30 @@ describe("prMerge", () => {
     );
     expect(httpStatusOf(err)).toBe(503);
   });
+});
+
+describe("prMerge writes whose result is discarded", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it.each([
+    [
+      "setMergeEnabled",
+      () => setMergeEnabled({ scope: "tenant", enabled: true, reason: "r" }),
+    ],
+    ["fireKillSwitch", () => fireKillSwitch({ scope: "tenant", reason: "r" })],
+  ])(
+    "%s treats a 204 or an unparseable 2xx as success, not a failure",
+    async (_name, call) => {
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(
+        new Response("not json", { status: 200 })
+      );
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(new Response("no", { status: 500 }));
+      await expect(call()).rejects.toThrow(/failed: 500/);
+    }
+  );
 });

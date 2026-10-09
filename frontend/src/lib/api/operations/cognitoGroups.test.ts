@@ -221,3 +221,48 @@ describe("cognitoGroups", () => {
     ]);
   });
 });
+
+describe("cognitoGroups writes whose result is discarded", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  const mapping = {
+    group_id: "g",
+    tenant_slug: "t",
+    role: "admin",
+    auto_create_tenant: false,
+  };
+
+  it.each([
+    ["createGroupTenantRole", () => createGroupTenantRole(mapping)],
+    [
+      "deleteGroupTenantRole",
+      () =>
+        deleteGroupTenantRole({
+          group_id: "g",
+          tenant_slug: "t",
+          role: "admin",
+        }),
+    ],
+    ["createCognitoGroup", () => createCognitoGroup({ group_name: "g" })],
+    [
+      "deleteCognitoGroup",
+      () => deleteCognitoGroup("g", { allowHomeGroup: false }),
+    ],
+    ["addCognitoGroupUser", () => addCognitoGroupUser("g", "a@b.c")],
+    ["removeCognitoGroupUser", () => removeCognitoGroupUser("g", "a@b.c")],
+  ])(
+    "%s treats a 204 or an unparseable 2xx as success, not a failure",
+    async (_name, call) => {
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(
+        new Response("not json", { status: 200 })
+      );
+      await expect(call()).resolves.toBeNull();
+      fetchMock.mockResolvedValueOnce(new Response("no", { status: 500 }));
+      await expect(call()).rejects.toThrow(/failed: 500/);
+    }
+  );
+});

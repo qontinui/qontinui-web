@@ -16,6 +16,10 @@
  * coord's `pr_merge` routes). Only the settings-page routes live here; the
  * merge pipeline and train routes are a later Phase 7 batch.
  *
+ * Writes whose result no caller reads resolve `null` for a 2xx whose body does
+ * not parse (a 204 included): the 2xx is the fact that the change landed, and
+ * failing it would invite a repeat of a write that already happened.
+ *
  * A shared `request(path)` helper underneath would make every call site a
  * wrapper-of-a-wrapper, which `route-walker.test.ts` cannot resolve.
  */
@@ -331,7 +335,7 @@ export async function patchRepoProfile(
  */
 export async function setMergeEnabled(
   write: MergeEnabledWrite
-): Promise<MergeEnabledResponse> {
+): Promise<MergeEnabledResponse | null> {
   const url = `${OPERATIONS_BASE}/pr-merge/merge-enabled`;
   const res = await httpClient.fetch(url, {
     method: "POST",
@@ -342,7 +346,9 @@ export async function setMergeEnabled(
     }),
     idempotent: false,
   });
-  return readJson<MergeEnabledResponse>(res, `POST ${url}`);
+  return readJson<MergeEnabledResponse>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
@@ -352,12 +358,14 @@ export async function setMergeEnabled(
  */
 export async function fireKillSwitch(
   write: KillSwitchWrite
-): Promise<MergeEnabledResponse> {
+): Promise<MergeEnabledResponse | null> {
   const url = `${OPERATIONS_BASE}/pr-merge/kill-switch`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ scope: write.scope, reason: write.reason }),
     idempotent: false,
   });
-  return readJson<MergeEnabledResponse>(res, `POST ${url}`);
+  return readJson<MergeEnabledResponse>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }

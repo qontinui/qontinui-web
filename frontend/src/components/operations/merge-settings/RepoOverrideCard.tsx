@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   fetchRepoProfile,
   patchRepoProfile,
@@ -337,6 +338,9 @@ export function RepoOverrideCard({
             reason: "dashboard: per-repo override save",
           });
         } catch (err) {
+          // Only a status answer is the write REFUSED; a request that never
+          // landed reaches the outer `catch` as it is.
+          if (httpStatusOf(err) === null) throw err;
           throw new Error(
             `merge-enabled: ${httpFailureText(err, { withBody: true })}`
           );

@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
  * Phase 7).
  *
  * Every file under `frontend/src` that still hand-types an `/operations` URL —
- * a non-comment `/api/v1/operations` literal, or an import of the absolute
- * `OPERATIONS_API` — is a file not yet moved onto `lib/api/operations/`. The
+ * a non-comment `/api/v1/operations` literal, an import of the absolute
+ * `OPERATIONS_API`, or a use of `OPERATIONS_BASE` outside the client — is a file not yet moved onto `lib/api/operations/`. The
  * count may only fall: each migration PR lowers `PINNED_COUNT` to what it
  * leaves, and a change that adds a hand-typed URL somewhere new goes red.
  *
@@ -30,7 +30,7 @@ const EXCLUDED_FILES = new Set([
   "lib/api/route-walker.ts",
 ]);
 
-const NEEDLE = /OPERATIONS_API|\/api\/v1\/operations/;
+const NEEDLE = /OPERATIONS_API|OPERATIONS_BASE|\/api\/v1\/operations/;
 
 function isTestOrExcluded(rel: string): boolean {
   return (
