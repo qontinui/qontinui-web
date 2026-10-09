@@ -39,7 +39,14 @@ repo's own precedents (``project.scheduler_settings`` ``CHECK (id = 1)``,
 ``coordinator_leader_singleton`` ``CHECK (id = TRUE)``); there is no generic
 key/value settings table to put it in.
 
-Why the database and not process memory, for both: the backend redeploys more
+And ``web.build_record_pending_not_public`` — (slug, repo) pairs GitHub
+answered NOT_PUBLIC for but whose retraction could not take the owner row
+lock in time. The next tick applies them before anything else, so a
+"not public" verdict is deferred, never dropped. No FK to the owner table on
+purpose: inserting a child row takes a KEY SHARE lock on the parent, which
+would wait on exactly the lock holder that made the deferral necessary.
+
+Why the database and not process memory, for all of these: the backend redeploys more
 often than hourly and runs more than one replica. An in-memory cursor would
 restart after every deploy and differ per replica, and an in-memory budget
 would be invisible to the replica serving the next publish.
@@ -62,7 +69,7 @@ _SLUGS = "build_record_public_slugs"
 
 
 def upgrade() -> None:
-    """Add the five cursor columns and the rate-budget singleton."""
+    """Add the cursor columns, the rate-budget singleton, the pending table."""
     op.add_column(
         _SLUGS,
         sa.Column(
@@ -118,10 +125,23 @@ def upgrade() -> None:
         sa.CheckConstraint("id", name="ck_github_rate_budget_singleton"),
         schema="web",
     )
+    op.create_table(
+        "build_record_pending_not_public",
+        sa.Column("public_slug", sa.Text(), primary_key=True),
+        sa.Column("repo", sa.Text(), primary_key=True),
+        sa.Column(
+            "observed_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        schema="web",
+    )
 
 
 def downgrade() -> None:
-    """Drop the singleton and the cursor columns."""
+    """Drop the pending-verdict table, the singleton and the cursor columns."""
+    op.drop_table("build_record_pending_not_public", schema="web")
     op.drop_table("github_rate_budget", schema="web")
     for column in (
         "first_unanswered_attempt_at",

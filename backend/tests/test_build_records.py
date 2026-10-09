@@ -3331,3 +3331,183 @@ async def test_a_slow_tick_never_blocks_an_unpublish(
             )
             await s.execute(GithubRateBudget.__table__.delete())
             await s.commit()
+
+
+# ===========================================================================
+# Eleventh review — regression tests from rev11/t/tests/test_rev11.py
+# (inverted). Real committed sessions: the races are between transactions.
+# ===========================================================================
+
+
+class _Rev11:
+    def __init__(self, maker: Any, coord: _Coord) -> None:
+        self.maker = maker
+        self.coord = coord
+
+    def define(self, slug: str, repos: list[str]) -> None:
+        self.coord.products[TENANT_A] = [
+            p for p in self.coord.products.get(TENANT_A, []) if p["slug"] != slug
+        ]
+        self.coord.define(TENANT_A, slug, repos=repos)
+        self.coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repos[0]
+
+    async def publish(self, slug: str) -> None:
+        async with self.maker() as s:
+            async with _client(_build_app(s, TENANT_A)) as c:
+                r = await c.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    async def public_status(self, slug: str) -> int:
+        async with self.maker() as s:
+            async with _client(_build_app(s, TENANT_A)) as c:
+                return (await c.get(f"/api/v1/public/build-records/{slug}")).status_code
+
+    async def row(self, slug: str) -> BuildRecordPublicSlug:
+        async with self.maker() as s:
+            return (
+                await s.execute(
+                    select(BuildRecordPublicSlug).where(
+                        BuildRecordPublicSlug.public_slug == slug
+                    )
+                )
+            ).scalar_one()
+
+    async def tick(self, **kwargs: Any) -> Any:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        async with self.maker() as s:
+            return await recheck_visibility(s, **kwargs)
+
+
+@pytest_asyncio.fixture()
+async def rev11(committed: Any, coord: _Coord):
+    from app.models.build_record import BuildRecordPendingNotPublic, GithubRateBudget
+
+    async with committed() as s:
+        await s.execute(GithubRateBudget.__table__.delete())
+        await s.commit()
+    yield _Rev11(committed, coord)
+    async with committed() as s:
+        await s.execute(
+            BuildRecordPendingNotPublic.__table__.delete().where(
+                BuildRecordPendingNotPublic.public_slug.like("lock-%")
+            )
+        )
+        await s.execute(GithubRateBudget.__table__.delete())
+        await s.commit()
+
+
+@pytest.mark.asyncio
+class TestRev11:
+    async def test_a_republish_mid_tick_does_not_inherit_the_old_offset(
+        self, rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.services import github_repo_visibility as gv
+        from app.services.github_repo_visibility import Visibility
+
+        slug = "lock-rv-offset"
+        rev11.define(slug, [f"tenant-a/k{i}" for i in range(10)])
+        await rev11.publish(slug)  # v1 = k0..k9
+        fake = gv.check_repo
+        seen = {"n": 0}
+
+        async def check(repo: str, **kw: Any) -> Any:
+            if repo.startswith("tenant-a/k"):
+                seen["n"] += 1
+                if seen["n"] == 2:  # the owner publishes v2 mid-tick
+                    rev11.define(slug, [f"tenant-a/a{i}" for i in range(10)])
+                    await rev11.publish(slug)
+            return await fake(repo, **kw)
+
+        monkeypatch.setattr(gv, "check_repo", check)
+        await rev11.tick(budget=4)
+        assert (await rev11.row(slug)).visibility_check_offset == 0  # v2's reset kept
+
+        # a0 goes private after v2's publish confirmed it: the next tick must
+        # start v2 from its first repo, so a0 is asked and the page retracted.
+        monkeypatch.setattr(gv, "check_repo", fake)
+        coord.visibility["tenant-a/a0"] = Visibility.NOT_PUBLIC
+        coord.github_calls.clear()
+        tick = await rev11.tick(budget=80)
+        assert "tenant-a/a0" in coord.github_calls
+        assert tick.retracted == [slug]
+        assert await rev11.public_status(slug) == 404
+
+    async def test_an_old_versions_private_repo_does_not_retract_the_new_version(
+        self, rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.services import github_repo_visibility as gv
+        from app.services.github_repo_visibility import Visibility
+
+        slug = "lock-rv-wrong"
+        rev11.define(slug, ["tenant-a/k0", "tenant-a/k1"])
+        await rev11.publish(slug)  # v1 = k0, k1
+        fake = gv.check_repo
+        fired = {"done": False}
+
+        async def check(repo: str, **kw: Any) -> Any:
+            if repo == "tenant-a/k1" and not fired["done"]:
+                fired["done"] = True
+                # The owner drops k1 and publishes v2 (= a0 only) while the
+                # tick waits on GitHub for k1, which is now private.
+                rev11.define(slug, ["tenant-a/a0"])
+                await rev11.publish(slug)
+                coord.visibility["tenant-a/k1"] = Visibility.NOT_PUBLIC
+            return await fake(repo, **kw)
+
+        monkeypatch.setattr(gv, "check_repo", check)
+        tick = await rev11.tick(budget=8)
+        assert tick.retracted == []
+        assert (await rev11.row(slug)).unpublished_at is None
+        assert await rev11.public_status(slug) == 200
+
+    async def test_a_not_public_verdict_blocked_by_a_lock_is_deferred_not_dropped(
+        self, rev11: _Rev11, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+        from app.models.build_record import BuildRecordPendingNotPublic
+        from app.services import github_repo_visibility as gv
+        from app.services.github_repo_visibility import Visibility
+
+        slug = "lock-rv-skip"
+        rev11.define(slug, ["tenant-a/p0"])
+        await rev11.publish(slug)
+        coord.visibility["tenant-a/p0"] = Visibility.NOT_PUBLIC
+        monkeypatch.setattr(job, "NOT_PUBLIC_LOCK_TIMEOUT_SECONDS", 0.3)
+        holder = rev11.maker()
+        fake = gv.check_repo
+
+        async def check(repo: str, **kw: Any) -> Any:
+            # A non-retracting holder of the owner row lock (publish's own
+            # _store_next_version takes exactly this lock).
+            await holder.execute(
+                select(BuildRecordPublicSlug)
+                .where(BuildRecordPublicSlug.public_slug == slug)
+                .with_for_update()
+            )
+            return await fake(repo, **kw)
+
+        monkeypatch.setattr(gv, "check_repo", check)
+        try:
+            tick = await rev11.tick(budget=8)
+        finally:
+            await holder.commit()
+            await holder.close()
+        assert tick.retracted == [] and tick.deferred == [slug]
+        async with rev11.maker() as s:
+            pending = (
+                (await s.execute(select(BuildRecordPendingNotPublic.public_slug)))
+                .scalars()
+                .all()
+            )
+        assert pending == [slug]
+
+        # The lock is released: the next tick applies the deferred verdict first.
+        monkeypatch.setattr(gv, "check_repo", fake)
+        tick = await rev11.tick(budget=8)
+        assert slug in tick.retracted
+        assert await rev11.public_status(slug) == 404
+        async with rev11.maker() as s:
+            assert (
+                await s.execute(select(BuildRecordPendingNotPublic.public_slug))
+            ).scalars().all() == []

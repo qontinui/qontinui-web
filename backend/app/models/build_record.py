@@ -162,3 +162,19 @@ class GithubRateBudget(Base):
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+
+
+class BuildRecordPendingNotPublic(Base):
+    """A NOT_PUBLIC verdict whose retraction could not take the owner row
+    lock in time; applied first by the next visibility tick. No FK to the
+    owner on purpose (see revision ``brs_03_build_record_visibility_check``).
+    """
+
+    __tablename__ = "build_record_pending_not_public"
+    __table_args__ = ({"schema": "web"},)
+
+    public_slug: Mapped[str] = mapped_column(Text, primary_key=True)
+    repo: Mapped[str] = mapped_column(Text, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

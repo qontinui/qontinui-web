@@ -24,6 +24,7 @@ from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.bridge_audit_log import BridgeAuditLog
 from app.models.build_record import (
+    BuildRecordPendingNotPublic,
     BuildRecordPublicSlug,
     BuildRecordSnapshot,
     GithubRateBudget,
@@ -314,6 +315,7 @@ __all__ = [
     # 2026-10-09-factory-built-product-portfolio-and-launch-kit
     "BuildRecordPublicSlug",
     "BuildRecordSnapshot",
+    "BuildRecordPendingNotPublic",
     "GithubRateBudget",
     # Analytics
     "AnalyticsEvent",
