@@ -21,7 +21,6 @@ The Workflow Documentation Service automatically generates comprehensive documen
 - Markdown-based documentation
 - Customizable templates
 - Multiple export formats (Markdown, HTML, PDF)
-- Version documentation with workflow
 - Include diagrams and screenshots
 
 ## Generating Documentation
@@ -403,25 +402,6 @@ const visualDocs = `
 `;
 ```
 
-### Version Documentation
-
-```typescript
-// Document each version
-workflowVersionControl.saveVersion(
-  workflow.id,
-  branchId,
-  workflow,
-  'Updated login flow',
-  author
-);
-
-// Generate documentation for this version
-const versionDocs = workflowDocumentationService.generateDocumentation(workflow);
-
-// Store with version
-workflowVersionControl.attachDocumentation(versionId, versionDocs);
-```
-
 ## Advanced Features
 
 ### Multi-Language Support
@@ -453,5 +433,4 @@ const interactiveDocs = workflowDocumentationService.generateInteractive(workflo
 ## See Also
 
 - [Organization Guide](./organization.md) - Organize documentation
-- [Version Control](./version-control.md) - Version documentation
 - [Best Practices](./best-practices.md) - Documentation best practices
