@@ -3621,3 +3621,80 @@ class TestRev12:
         assert (await rev11.row(slug)).unpublished_at is None
         assert await rev11.public_status(slug) == 200
         assert await _pending(rev11) == []  # superseded, dropped
+
+
+# ===========================================================================
+# Thirteenth review — ReDoS (rev13/redos*.py)
+# ===========================================================================
+
+
+class TestRedos:
+    def test_a_huge_title_is_refused_fast(self) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = "Ship it" + " " * 100_000 + "now"
+        started = time.perf_counter()
+        violations = build_record_violations(doc)
+        elapsed = time.perf_counter() - started
+        assert violations == ["work_units[0].title: longer than 512 characters"]
+        assert elapsed < 0.05, elapsed
+
+    def test_an_oversized_document_is_refused_unwalked(self) -> None:
+        doc = _document()
+        doc["unknowns"] = ["sessions.count: not_established"] * 40_000  # > 1 MiB
+        started = time.perf_counter()
+        violations = build_record_violations(doc)
+        assert violations == ["<root>: larger than 1048576 bytes serialized"]
+        assert time.perf_counter() - started < 0.5
+
+    def test_a_512_character_title_is_still_scanned(self) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = "x" * 500 + " acme/secret"
+        assert build_record_violations(doc) == [
+            "work_units[0].title: names an owner/name not in product.repos"
+        ]
+
+    @pytest.mark.parametrize(
+        ("pattern", "text", "full"),
+        [
+            ("_SPACED_SLASH_RE", " " * 40_000 + "x", False),
+            ("_SPACED_SLASH_RE", "a" + " " * 40_000, False),
+            ("_EMAIL_RE", "a." * 20_000, False),
+            ("_EMAIL_RE", "a" * 40_000, False),
+            ("_INFIX_SYMBOL_RE", "a" + " " * 40_000 + "b", False),
+            ("_INFIX_SYMBOL_RE", "a" + " " * 20_000 + "·" + " " * 20_000, False),
+            ("_UUID_RE", "a" * 40_000, False),
+            ("_UUID_RE", "0123456789abcdef-" * 2_400, False),
+            ("_PATH_RUN_RE", "a." * 20_000, False),
+            ("_INDEX_RE", "[" + "1" * 40_000, False),
+            ("_UNKNOWN_RE", "a" * 40_000, True),
+            ("_UNKNOWN_RE", "a" * 40_000 + ": " + "b" * 40_000 + "!", True),
+            ("SLUG_RE", "a" * 40_000, True),
+            ("WORK_UNIT_SLUG_RE", "a" * 40_000, True),
+            ("REPO_RE", "a" * 40_000, True),
+            ("RFC3339_RE", "2026-10-09T00:00:00." + "1" * 40_000, True),
+        ],
+    )
+    def test_every_regex_stays_linear_on_adversarial_input(
+        self, pattern: str, text: str, full: bool
+    ) -> None:
+        """A quadratic pattern takes seconds on 40k characters; linear ones
+        take well under a millisecond per thousand."""
+        from app.services import build_record_allowlist as allowlist
+
+        compiled = getattr(allowlist, pattern)
+        started = time.perf_counter()
+        if full:
+            compiled.fullmatch(text)
+        else:
+            list(compiled.finditer(text))
+        assert time.perf_counter() - started < 0.05, pattern
+
+    def test_normalisation_and_names_token_stay_fast_at_the_cap(self) -> None:
+        from app.services.build_record_allowlist import names_token, normalize_for_scan
+
+        text = " " * 511 + "/"
+        started = time.perf_counter()
+        for _ in range(100):
+            normalize_for_scan(text)
+            names_token(text, "secret-engine")
+        assert time.perf_counter() - started < 0.5
