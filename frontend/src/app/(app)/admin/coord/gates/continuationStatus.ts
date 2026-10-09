@@ -330,7 +330,8 @@ function gib(bytes: string | undefined): string {
  * | `thread_pressure:<severity>:<observed>_over_<limit>` | the machine is out of OS threads |
  * | `commit_pressure:<severity>:<observed>_under_<limit>` | the machine is short of free memory (bytes) |
  * | `duplicate_anchor:<terminal_id>` | a live session already owns the anchor |
- * | `device_drain:<class>` | coord holds the device drained |
+ * | `duplicate_anchor:reserved` | a permit holder reserved the anchor (an in-flight dispatch, or a session mid-account-migration) |
+ * | `device_drain:drained` \| `device_drain:unknown` | the runner found the device drained \| could not establish the drain state (documented on `drain_stamp_reason`, not in the table) |
  * | `spawn_authorization_<label>` | the agent registry refused the spawn |
  * | `at_cap:<cap>` | the runner's fixed continuation cap (retired in newer builds) |
  *
@@ -374,9 +375,23 @@ export function humanizeDeferralReason(raw: string | null | undefined): string |
     return `the runner was already at its continuation cap of ${cap[1]} (a fixed cap that newer runner builds no longer have)`;
   }
 
+  // `reserved` is the producer's literal for a permit holder, not a terminal id.
+  if (reason === "duplicate_anchor:reserved") {
+    return "this anchor was already reserved — by a dispatch that had not yet spawned, or by a session mid-account-migration (the runner does not say which)";
+  }
+
   const anchor = /^duplicate_anchor:(.+)$/.exec(reason);
   if (anchor) {
     return `a live session already owned this anchor (terminal ${anchor[1]})`;
+  }
+
+  // Only the two classes the producer writes; any other class falls through
+  // verbatim rather than being worded as a state the runner never reported.
+  if (reason === "device_drain:drained") {
+    return "the runner found this device drained by coord, so it deferred the autonomous spawn until the drain lifts";
+  }
+  if (reason === "device_drain:unknown") {
+    return "the runner could not establish this device's coord drain state, so it deferred the autonomous spawn";
   }
 
   const authz = /^spawn_authorization_(.+)$/.exec(reason);

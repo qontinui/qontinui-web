@@ -75,6 +75,23 @@ describe("UnfinishedSessionsPage", () => {
     expect(screen.getByTestId("unfinished-health").textContent).toMatch(
       /UNKNOWN/
     );
+    expect(screen.queryByTestId("unfinished-unknown-detail")).toBeNull();
+  });
+
+  it("shows coord's own detail beside an UNKNOWN reason", async () => {
+    route({
+      state: "unknown",
+      reason: "candidate_query_failed",
+      detail: "db error: relation does not exist",
+      sessions: null,
+      truncated: false,
+    });
+    render(<UnfinishedSessionsPage />);
+    const msg = await screen.findByTestId("unfinished-unknown");
+    expect(msg.textContent).toMatch(/query for closed sessions failed/);
+    expect(
+      screen.getByTestId("unfinished-unknown-detail").textContent
+    ).toMatch(/relation does not exist/);
   });
 
   it("says empty only for a read that was ok and had no rows", async () => {
@@ -87,6 +104,22 @@ describe("UnfinishedSessionsPage", () => {
     });
     render(<UnfinishedSessionsPage />);
     await screen.findByTestId("unfinished-empty");
+  });
+
+  it("an unrecorded last-acted time reads unknown, not never", async () => {
+    route({
+      state: "ok",
+      reason: null,
+      detail: null,
+      sessions: [ROW],
+      truncated: false,
+    });
+    render(<UnfinishedSessionsPage />);
+    const row = await screen.findByTestId("unfinished-row");
+    fireEvent.click(row.querySelector("button") ?? row);
+    const detail = await screen.findByTestId("unfinished-detail");
+    expect(detail.textContent).toMatch(/Last acted:\s*unknown/);
+    expect(detail.textContent).toMatch(/working_dir unknown/);
   });
 
   it("a failed first read is unknown, not none", async () => {
