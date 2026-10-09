@@ -1,7 +1,7 @@
 """coord.verified_advances — the ledger behind each repo's ``verified`` branch
 
 Revision ID: verified_adv_01_coord_verified_advances
-Revises: coord_smckpt_01_success_metric_checkpoint_results
+Revises: coord_sessions_fleet_idx_01
 Create Date: 2026-10-07
 
 Phase 1.1 of plan
@@ -85,7 +85,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "verified_adv_01_coord_verified_advances"
 down_revision: str | Sequence[str] | None = (
-    "coord_smckpt_01_success_metric_checkpoint_results"
+    "coord_sessions_fleet_idx_01"
 )
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
