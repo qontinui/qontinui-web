@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  TRANSCRIPT_SYNC_API,
-  type TranscriptSyncView,
-  type TranscriptSyncWriteResult,
-} from "../types";
+  fetchTranscriptSync,
+  patchTranscriptSync,
+} from "@/lib/api/operations/coordSettings";
+import type { TranscriptSyncView } from "../types";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -42,8 +41,7 @@ export function useTranscriptSyncPolicy() {
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view =
-        await httpClient.get<TranscriptSyncView>(TRANSCRIPT_SYNC_API);
+      const view = await fetchTranscriptSync();
       if (generation !== writeGeneration.current) return;
       setPolicy(view);
       setError(null);
@@ -72,10 +70,7 @@ export function useTranscriptSyncPolicy() {
     async (enabled: boolean): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.patch<TranscriptSyncWriteResult>(
-          TRANSCRIPT_SYNC_API,
-          { transcript_sync_enabled: enabled }
-        );
+        const result = await patchTranscriptSync(enabled);
         supersedeReads();
         if (result.effective) {
           setPolicy(result.effective);

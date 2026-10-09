@@ -3,18 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createReadSequence, type ReadSequence } from "@/components/console";
-import { listRegisteredRepos } from "@/components/sessions/api";
-import { httpClient } from "@/services/service-factory";
+import { listRegisteredRepos } from "@/lib/api/operations/sessions";
 import {
-  CONTINUATION_DELIVERY_API,
+  fetchContinuationDeliveryMode,
+  fetchPostMergeFollowupScope,
+  putContinuationDeliveryMode,
+  putPostMergeFollowupScope,
+} from "@/lib/api/operations/coordSettings";
+import {
   EMPTY_READING,
-  POST_MERGE_SCOPE_API,
-  type ContinuationDeliveryModeView,
-  type ContinuationDeliveryModeWriteResult,
   type DeliveryMode,
   type FollowupScope,
-  type PostMergeFollowupScopeView,
-  type PostMergeFollowupScopeWriteResult,
   type RepoDialReading,
 } from "../_lib/repoFollowupStatus";
 
@@ -164,9 +163,7 @@ export function useRepoFollowupDials() {
     async (repo: string) => {
       const ticket = book(repo, "scope").seq.issue();
       try {
-        const view = await httpClient.get<PostMergeFollowupScopeView>(
-          `${POST_MERGE_SCOPE_API}?repo=${encodeURIComponent(repo)}`
-        );
+        const view = await fetchPostMergeFollowupScope(repo);
         settleRead(repo, "scope", ticket, { value: view });
       } catch (err) {
         settleRead(repo, "scope", ticket, {
@@ -181,9 +178,7 @@ export function useRepoFollowupDials() {
     async (repo: string) => {
       const ticket = book(repo, "delivery").seq.issue();
       try {
-        const view = await httpClient.get<ContinuationDeliveryModeView>(
-          `${CONTINUATION_DELIVERY_API}?repo=${encodeURIComponent(repo)}`
-        );
+        const view = await fetchContinuationDeliveryMode(repo);
         settleRead(repo, "delivery", ticket, { value: view });
       } catch (err) {
         settleRead(repo, "delivery", ticket, {
@@ -277,10 +272,7 @@ export function useRepoFollowupDials() {
       setSaving(key);
       clearWriteError(key);
       try {
-        const result = await httpClient.put<PostMergeFollowupScopeWriteResult>(
-          POST_MERGE_SCOPE_API,
-          body
-        );
+        const result = await putPostMergeFollowupScope(body);
         // Ticket taken when the PUT RESOLVES, not when it starts: coord ran
         // the read-back after committing, so every refresh issued before this
         // point may carry the pre-write value and must order BEFORE it.
@@ -321,11 +313,7 @@ export function useRepoFollowupDials() {
       setSaving(key);
       clearWriteError(key);
       try {
-        const result =
-          await httpClient.put<ContinuationDeliveryModeWriteResult>(
-            CONTINUATION_DELIVERY_API,
-            { repo, mode }
-          );
+        const result = await putContinuationDeliveryMode(repo, mode);
         const ticket = book(repo, "delivery").seq.issue();
         settleWrite(
           repo,

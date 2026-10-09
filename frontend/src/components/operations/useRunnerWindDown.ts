@@ -20,9 +20,12 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchDeviceResourceSamples } from "@/lib/api/operations/coordRunnerWindDown";
+import {
+  fetchDeviceFleetSessions,
+  postSessionControlRequest,
+} from "@/lib/api/operations/sessions";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   describeControlError,
@@ -39,24 +42,6 @@ export const RUNNER_POLL_MS = 15_000;
 
 /** Coord's `MAX_LIMIT` on the census. Coord clamps; `nextCursor` says the rest. */
 export const FLEET_SESSIONS_LIMIT = 500;
-
-export function deviceReadinessUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/fleet/resource-samples?device_id=` +
-    `${encodeURIComponent(deviceId)}&history=false`
-  );
-}
-
-export function deviceFleetSessionsUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/sessions/fleet?device_id=` +
-    `${encodeURIComponent(deviceId)}&limit=${FLEET_SESSIONS_LIMIT}`
-  );
-}
-
-export function sessionControlUrl(sessionId: string): string {
-  return `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/control`;
-}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -121,20 +106,20 @@ const SESSIONS_LOADING: FleetSessionsRead = { kind: "loading" };
 
 async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
   try {
-    const res = await httpClient.fetch(
-      deviceReadinessUrl(deviceId),
-      COORD_DASHBOARD_POLL_OPTIONS
+    return resolveReadiness(
+      await fetchDeviceResourceSamples(deviceId),
+      deviceId
     );
-    if (!res.ok) {
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
       return {
         kind: "read_failed",
         reason:
-          `the resource-sample read returned HTTP ${res.status}, so nothing ` +
+          `the resource-sample read returned HTTP ${status}, so nothing ` +
           "is known about this runner's readiness",
       };
     }
-    return resolveReadiness(await res.json(), deviceId);
-  } catch (err) {
     return {
       kind: "read_failed",
       reason: `the resource-sample read failed — ${errorText(err)}`,
@@ -151,20 +136,9 @@ async function loadFleetSessions(
       ? { ...previous, refreshError: reason }
       : { kind: "failed", reason };
   try {
-    const res = await httpClient.fetch(
-      deviceFleetSessionsUrl(deviceId),
-      COORD_DASHBOARD_POLL_OPTIONS
+    const parsed = parseFleetSessions(
+      await fetchDeviceFleetSessions(deviceId, FLEET_SESSIONS_LIMIT)
     );
-    if (res.status === 404) {
-      return fail(
-        "coord serves no per-device session census on this deployment " +
-          "(GET /coord/sessions/fleet answered 404)"
-      );
-    }
-    if (!res.ok) {
-      return fail(`the session census returned HTTP ${res.status}`);
-    }
-    const parsed = parseFleetSessions(await res.json());
     if (!parsed.ok) return fail(parsed.reason);
     return {
       kind: "ok",
@@ -174,6 +148,16 @@ async function loadFleetSessions(
       refreshError: null,
     };
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === 404) {
+      return fail(
+        "coord serves no per-device session census on this deployment " +
+          "(GET /coord/sessions/fleet answered 404)"
+      );
+    }
+    if (status !== null) {
+      return fail(`the session census returned HTTP ${status}`);
+    }
     return fail(`the session census could not be read — ${errorText(err)}`);
   }
 }
@@ -219,30 +203,24 @@ export async function postSessionControl(input: {
   const reason = input.reason?.trim();
   if (reason) body.reason = reason;
   try {
-    const res = await httpClient.fetch(sessionControlUrl(input.sessionId), {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      const described = describeControlError(res.status, text);
-      return { ok: false, status: res.status, ...described };
-    }
+    // A 202 whose body will not parse resolves `null`: it still recorded the
+    // request.
+    const parsed = await postSessionControlRequest(input.sessionId, body);
     let eventId: string | null = null;
-    try {
-      const parsed: unknown = await res.json();
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        typeof (parsed as { event_id?: unknown }).event_id === "string"
-      ) {
-        eventId = (parsed as { event_id: string }).event_id;
-      }
-    } catch {
-      // A 202 whose body will not parse still recorded the request.
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { event_id?: unknown }).event_id === "string"
+    ) {
+      eventId = (parsed as { event_id: string }).event_id;
     }
     return { ok: true, eventId };
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      const described = describeControlError(status, httpBodyOf(err) ?? "");
+      return { ok: false, status, ...described };
+    }
     return {
       ok: false,
       status: null,

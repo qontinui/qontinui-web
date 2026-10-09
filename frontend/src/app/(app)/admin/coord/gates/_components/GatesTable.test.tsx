@@ -24,7 +24,7 @@ vi.mock("./ShadowReap", () => ({ ShadowReapEvidence: () => null }));
 
 import { GatesTable } from "./GatesTable";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
   return {
@@ -187,7 +187,7 @@ describe("GatesTable search + gate-id", () => {
           gate({ gate_id: "22222222-2222-2222-2222-222222222222" }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     const chips = screen.getAllByTestId("gates-archived");
     expect(chips).toHaveLength(1);
@@ -216,7 +216,7 @@ describe("GatesTable search + gate-id", () => {
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     expect(screen.getAllByText(/not re-evaluated/)).toHaveLength(1);
   });
@@ -247,11 +247,11 @@ describe("GatesTable search + gate-id", () => {
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     expect(screen.getAllByTestId("gates-snoozed")).toHaveLength(1);
     expect(
-      screen.getAllByTestId("gates-snooze-inactive").map((b) => b.textContent),
+      screen.getAllByTestId("gates-snooze-inactive").map((b) => b.textContent)
     ).toEqual(["snooze ended", "snooze ?"]);
   });
 
@@ -260,16 +260,16 @@ describe("GatesTable search + gate-id", () => {
       <GatesTable
         gates={[gate({ gate_class: "security-surface" })]}
         onActed={() => {}}
-      />,
+      />
     );
-    expect(
-      screen.getByTestId("gates-gate-class").textContent,
-    ).toBe("security-surface");
+    expect(screen.getByTestId("gates-gate-class").textContent).toBe(
+      "security-surface"
+    );
   });
 
   it("renders a withdrawn verdict with its own label and NO red", () => {
     render(
-      <GatesTable gates={[gate({ verdict: "withdrawn" })]} onActed={() => {}} />,
+      <GatesTable gates={[gate({ verdict: "withdrawn" })]} onActed={() => {}} />
     );
     // Scope to the row — the verdict filter <option> also says "withdrawn".
     const row = screen.getByTestId("gates-table-row");
@@ -302,12 +302,12 @@ describe("GatesTable search + gate-id", () => {
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe("attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b");
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b"
+    );
   });
 
   // -- clearance-rule BAND (plan 2026-08-10-agent-gate-management P3) -------
@@ -361,12 +361,12 @@ describe("GatesTable search + gate-id", () => {
         gates={[clearedUnderRule()]}
         onActed={() => {}}
         clearanceRules={[clearanceRule(false)]}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe("attested under tenant rule 9e8d7c6b");
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "attested under tenant rule 9e8d7c6b"
+    );
   });
 
   it("…and system when the SAME rule id is a built-in in that set", async () => {
@@ -376,12 +376,12 @@ describe("GatesTable search + gate-id", () => {
         gates={[clearedUnderRule()]}
         onActed={() => {}}
         clearanceRules={[clearanceRule(true)]}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe("attested under system default rule 9e8d7c6b");
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "attested under system default rule 9e8d7c6b"
+    );
   });
 
   it("says 'band unknown' when the loaded rule set no longer has the rule", async () => {
@@ -391,12 +391,12 @@ describe("GatesTable search + gate-id", () => {
         gates={[clearedUnderRule()]}
         onActed={() => {}}
         clearanceRules={[]}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe("attested under rule 9e8d7c6b (band unknown)");
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "attested under rule 9e8d7c6b (band unknown)"
+    );
   });
 
   it("says no clearance rule matched when an agent door cleared with no rule", async () => {
@@ -412,13 +412,11 @@ describe("GatesTable search + gate-id", () => {
         ]}
         onActed={() => {}}
         clearanceRules={[]}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe(
-      "attested by 1b2c3d4e — no clearance rule matched (audience default)",
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "attested by 1b2c3d4e — no clearance rule matched (audience default)"
     );
   });
 
@@ -429,12 +427,12 @@ describe("GatesTable search + gate-id", () => {
         gates={[gate({ verdict: "cleared", cleared_via: "operator_route" })]}
         onActed={() => {}}
         clearanceRules={[]}
-      />,
+      />
     );
     await expandFirstRow(user);
-    expect(
-      screen.getByTestId("gates-clearance-provenance").textContent,
-    ).toBe("cleared by operator");
+    expect(screen.getByTestId("gates-clearance-provenance").textContent).toBe(
+      "cleared by operator"
+    );
   });
 
   it("the copy button writes the FULL gate id to the clipboard", async () => {
@@ -449,7 +447,7 @@ describe("GatesTable search + gate-id", () => {
     render(<GatesTable gates={[GATES[0]]} onActed={() => {}} />);
     await user.click(screen.getByTestId("gates-gate-id-copy"));
     expect(writeText).toHaveBeenCalledWith(
-      "2aeadf7c-1111-2222-3333-444455556666",
+      "2aeadf7c-1111-2222-3333-444455556666"
     );
   });
 });
@@ -517,7 +515,7 @@ describe("GatesTable — continuation column", () => {
 
   it("renders a spawn_failed row differently from a spawned one and a silent one", () => {
     render(
-      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />
     );
     expect(kinds()).toEqual(["spawn_failed", "spawned", "consumed_silent"]);
     // ...and none of the three is the success reading.
@@ -526,7 +524,7 @@ describe("GatesTable — continuation column", () => {
 
   it("marks the spawn failure red with the ✕, and the two unknowns amber without it", () => {
     render(
-      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />
     );
     const badges = screen
       .getAllByTestId("gates-continuation")
@@ -542,14 +540,14 @@ describe("GatesTable — continuation column", () => {
   it("says none — never a blank cell — when no continuation is attached", () => {
     render(<GatesTable gates={[gate()]} onActed={() => {}} />);
     expect(screen.getByTestId("gates-continuation-none").textContent).toBe(
-      "none",
+      "none"
     );
     expect(screen.queryByTestId("gates-continuation")).toBeNull();
   });
 
   it("distinguishes 58 deferrals from 1, and escalates only the former", () => {
     render(
-      <GatesTable gates={[DEFERRED_58, DEFERRED_ONCE]} onActed={() => {}} />,
+      <GatesTable gates={[DEFERRED_58, DEFERRED_ONCE]} onActed={() => {}} />
     );
     expect(kinds()).toEqual(["deferral_stuck", "deferred"]);
     const labels = screen
@@ -567,25 +565,25 @@ describe("GatesTable — continuation column", () => {
             title: "Ran, eventually",
             continuation_spawn: { target_device_id: "abcdef1234567890" },
             continuation_dispatched_at: new Date(
-              Date.now() - 86_400_000,
+              Date.now() - 86_400_000
             ).toISOString(),
             continuation_deferred_at: new Date(
-              Date.now() - 40_000_000,
+              Date.now() - 40_000_000
             ).toISOString(),
             continuation_deferred_reason: "at_cap:4",
             continuation_deferred_count: 12,
             continuation_consumed_at: new Date(
-              Date.now() - 30_000_000,
+              Date.now() - 30_000_000
             ).toISOString(),
             continuation_consumed_outcome: "work_completed",
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     expect(kinds()).toEqual(["work_completed"]);
     expect(
-      screen.getByTestId("gates-continuation-deferral-chip").textContent,
+      screen.getByTestId("gates-continuation-deferral-chip").textContent
     ).toBe("after 12 deferrals");
   });
 
@@ -603,7 +601,7 @@ describe("GatesTable — continuation column", () => {
         "deferral_abandoned",
         {
           continuation_deferred_at: new Date(
-            Date.now() - 20_000_000,
+            Date.now() - 20_000_000
           ).toISOString(),
           continuation_deferred_count: 2,
         },
@@ -624,18 +622,18 @@ describe("GatesTable — continuation column", () => {
               continuation_spawn: { target_device_id: "abcdef1234567890" },
               continuation_dispatched_at: dispatched,
               continuation_deferred_at: new Date(
-                Date.now() - 600_000,
+                Date.now() - 600_000
               ).toISOString(),
               continuation_deferred_reason: "at_cap:4",
               ...over,
             }),
           ]}
           onActed={() => {}}
-        />,
+        />
       );
       expect(kinds()).toEqual([expected]);
       expect(
-        screen.queryByTestId("gates-continuation-deferral-chip"),
+        screen.queryByTestId("gates-continuation-deferral-chip")
       ).toBeNull();
       unmount();
     }
@@ -650,20 +648,22 @@ describe("GatesTable — continuation column", () => {
         gates={[
           gate({
             continuation_spawn: { target_device_id: "abcdef1234567890" },
-            continuation_dispatched_at: new Date(Date.now() - 3_000).toISOString(),
+            continuation_dispatched_at: new Date(
+              Date.now() - 3_000
+            ).toISOString(),
             continuation_deferred_at: new Date(
-              Date.now() - 240_000_000,
+              Date.now() - 240_000_000
             ).toISOString(),
             continuation_deferred_reason: "at_cap:4",
             continuation_deferred_count: 3,
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     expect(kinds()).toEqual(["dispatched"]);
     expect(
-      screen.getByTestId("gates-continuation-deferral-chip").textContent,
+      screen.getByTestId("gates-continuation-deferral-chip").textContent
     ).toBe("after 3 deferrals");
   });
 
@@ -672,18 +672,18 @@ describe("GatesTable — continuation column", () => {
       <GatesTable
         gates={[SPAWN_FAILED, SPAWNED, SILENT, DEFERRED_58, DEFERRED_ONCE]}
         onActed={() => {}}
-      />,
+      />
     );
     // spawn_failed + deferral_stuck are the author kinds here.
     expect(screen.getByTestId("continuation-attention-value").textContent).toBe(
-      "continuations needing attention 2",
+      "continuations needing attention 2"
     );
     // spawned + consumed_silent.
     expect(screen.getByTestId("continuation-unknown-value").textContent).toBe(
-      "outcome unknown 2",
+      "outcome unknown 2"
     );
     expect(screen.getByTestId("continuation-deferred-value").textContent).toBe(
-      "ever deferred 2",
+      "ever deferred 2"
     );
   });
 
@@ -698,11 +698,11 @@ describe("GatesTable — continuation column", () => {
       <GatesTable
         gates={[SPAWN_FAILED, SPAWNED, SILENT, DEFERRED_ONCE]}
         onActed={() => {}}
-      />,
+      />
     );
     await user.selectOptions(
       screen.getByTestId("gates-filter-continuation"),
-      "attention",
+      "attention"
     );
     expect(kinds()).toEqual(["spawn_failed"]);
   });
@@ -713,11 +713,11 @@ describe("GatesTable — continuation column", () => {
       <GatesTable
         gates={[SPAWN_FAILED, DEFERRED_58, DEFERRED_ONCE]}
         onActed={() => {}}
-      />,
+      />
     );
     await user.selectOptions(
       screen.getByTestId("gates-filter-continuation"),
-      "deferred",
+      "deferred"
     );
     expect(kinds()).toEqual(["deferral_stuck", "deferred"]);
   });
@@ -725,7 +725,7 @@ describe("GatesTable — continuation column", () => {
   it("finds a gate by pasting the outcome coord recorded", async () => {
     const user = userEvent.setup();
     render(
-      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />
     );
     await user.type(screen.getByTestId("gates-search"), "no Tauri AppHandle");
     expect(screen.getAllByTestId("gates-table-row")).toHaveLength(1);
@@ -736,14 +736,16 @@ describe("GatesTable — continuation column", () => {
     const user = userEvent.setup();
     render(<GatesTable gates={[DEFERRED_58]} onActed={() => {}} />);
     await user.click(screen.getAllByTestId("gates-table-row")[0]);
-    const problem = screen.getByTestId("gates-continuation-problem").textContent;
+    const problem = screen.getByTestId(
+      "gates-continuation-problem"
+    ).textContent;
     expect(problem).toContain("deferred ×58");
     expect(problem).toContain("out of OS threads (critical)");
     expect(problem).toContain("540 observed against a limit of 400");
     expect(problem).toContain("Dispatch pushed back 58 times");
     // The timeline reports the stamps rather than inventing a liveness claim.
     expect(
-      screen.getByTestId("gates-continuation-timeline").textContent,
+      screen.getByTestId("gates-continuation-timeline").textContent
     ).toContain("last deferred");
   });
 
@@ -768,11 +770,11 @@ describe("GatesTable — continuation column", () => {
           }),
         ]}
         onActed={() => {}}
-      />,
+      />
     );
     await user.click(screen.getAllByTestId("gates-table-row")[0]);
     expect(
-      screen.getByTestId("gates-continuation-intent").textContent,
+      screen.getByTestId("gates-continuation-intent").textContent
     ).toContain("Clearing opens a visible terminal session on abcdef12");
   });
 

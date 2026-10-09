@@ -13,14 +13,19 @@ const httpGet = vi.fn();
 const httpPut = vi.fn();
 const listRepos = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...a: unknown[]) => httpGet(...a),
-    put: (...a: unknown[]) => httpPut(...a),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...a: unknown[]) => httpGet(...a),
+        put: (...a: unknown[]) => httpPut(...a),
+      }),
+    },
+  };
+});
 
-vi.mock("@/components/sessions/api", () => ({
+vi.mock("@/lib/api/operations/sessions", () => ({
   listRegisteredRepos: (...a: unknown[]) => listRepos(...a),
 }));
 

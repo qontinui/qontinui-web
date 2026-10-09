@@ -28,7 +28,7 @@ import {
   listSessions,
   SessionsApiError,
   stealSession,
-} from "./api";
+} from "@/lib/api/operations/sessions";
 
 /**
  * Backoff budget for a 5xx arm.

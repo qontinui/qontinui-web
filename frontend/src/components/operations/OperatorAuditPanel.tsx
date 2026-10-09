@@ -54,7 +54,7 @@ import {
 } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { httpClient } from "@/services/service-factory";
+import { fetchOperatorAudit } from "@/lib/api/operations/coordSettings";
 import {
   AUDIT_FILTERS,
   DEFAULT_AUDIT_FILTER_ID,
@@ -68,9 +68,6 @@ import {
   type AuditRead,
   type AuditRow,
 } from "./operatorAudit";
-
-/** The relative form, like `OPERATIONS_BASE` (`@/lib/api/operations/base`). */
-export const OPERATOR_AUDIT_API = "/api/v1/operations/coord/audit/recent";
 
 /** Enough to reach back through an incident without scanning the table. */
 const AUDIT_LIMIT = 100;
@@ -275,14 +272,13 @@ export function OperatorAuditPanel() {
     if (!isCoordAdmin) return;
     const seq = ++requestSeq.current;
     setRead({ state: "loading" });
-    const params = new URLSearchParams({ limit: String(AUDIT_LIMIT) });
-    if (filter.action) params.set("action", filter.action);
-    if (filter.via) params.set("via", filter.via);
-    if (resourceKeyFilter) params.set("resource_key", resourceKeyFilter);
     try {
-      const body = await httpClient.get<unknown>(
-        `${OPERATOR_AUDIT_API}?${params.toString()}`
-      );
+      const body = await fetchOperatorAudit({
+        limit: AUDIT_LIMIT,
+        action: filter.action || undefined,
+        via: filter.via || undefined,
+        resource_key: resourceKeyFilter || undefined,
+      });
       if (seq !== requestSeq.current) return;
       setRead(parseAuditPayload(body));
     } catch (err) {

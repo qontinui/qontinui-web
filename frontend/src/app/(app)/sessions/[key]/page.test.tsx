@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import { AgentSessionsApiError } from "@/services/agent-sessions-api";
-import { SessionsApiError } from "@/components/sessions/api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionCard } from "@/services/agent-sessions-api";
 
 let mockKey = "brave-otter";
@@ -39,9 +39,8 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
 
 const resolveAgentSession = vi.fn();
 vi.mock("@/services/agent-sessions-api", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/services/agent-sessions-api")
-  >();
+  const actual =
+    await importOriginal<typeof import("@/services/agent-sessions-api")>();
   return {
     ...actual,
     resolveAgentSession: (key: string) => resolveAgentSession(key),
@@ -49,10 +48,9 @@ vi.mock("@/services/agent-sessions-api", async (importOriginal) => {
 });
 
 const getSession = vi.fn();
-vi.mock("@/components/sessions/api", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/components/sessions/api")
-  >();
+vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     getSession: (id: string, signal?: AbortSignal) => getSession(id, signal),
@@ -155,7 +153,10 @@ describe("both id spaces", () => {
   });
 
   it("asks BOTH halves — neither is a fallback for the other", async () => {
-    resolveAgentSession.mockResolvedValue({ resolved: [card("s-1")], count: 1 });
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-1")],
+      count: 1,
+    });
     getSession.mockResolvedValue({ id: "s-1", state: "active" });
 
     render(<SessionKeyPage />);
@@ -189,7 +190,9 @@ describe("D2 — a failed read is not an absence", () => {
     // the words "does not exist" — inside the sentence that REFUSES the
     // claim — so a keyword ban would fail the honest string.)
     expect(unknown.textContent).not.toMatch(/No session matches this key/i);
-    expect(unknown.textContent).toMatch(/not a finding that the session does not exist/i);
+    expect(unknown.textContent).toMatch(
+      /not a finding that the session does not exist/i
+    );
     expect(screen.queryByTestId("sessions-detail-not-found")).toBeNull();
   });
 });
@@ -210,7 +213,10 @@ describe("trap 8 — /sessions/repository is a route, not a key", () => {
 
 describe("the frozen testid", () => {
   it("carries sessions.detail-page forward verbatim", async () => {
-    resolveAgentSession.mockResolvedValue({ resolved: [card("s-1")], count: 1 });
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-1")],
+      count: 1,
+    });
     getSession.mockRejectedValue(NOT_FOUND_LIFECYCLE);
 
     const { container } = render(<SessionKeyPage />);

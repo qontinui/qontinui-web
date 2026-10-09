@@ -89,7 +89,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createTenant, TenantCreateError } from "@/components/sessions/api";
+import { createTenant, TenantCreateError } from "@/lib/api/operations/sessions";
 import type { TenantCreateResponse } from "@/components/sessions/types";
 import { useTenant } from "@/contexts/tenant-context";
 import {

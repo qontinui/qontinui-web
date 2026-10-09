@@ -23,7 +23,7 @@ import {
   INERT,
   UNKNOWN_AMBER,
 } from "@/components/console/statusRow";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   DECISION_POLICY_MODES,
   parseAutonomyLevel,
@@ -69,7 +69,8 @@ export const DECISION_POLICY_ATTENTION_BY_KIND: Record<
 
 export const DECISION_POLICY_CLASS: Record<DecisionPolicyKind, string> = {
   // Calm and explicitly provisional — the row exists, and it decides nothing.
-  escalating: "bg-transparent text-muted-foreground border-border border-dashed",
+  escalating:
+    "bg-transparent text-muted-foreground border-border border-dashed",
   framing: "bg-sky-500/10 text-sky-300 border-sky-500/25",
   acting: "bg-green-500/5 text-green-300 border-green-500/25",
   disabled: "bg-transparent text-muted-foreground border-border border-dashed",

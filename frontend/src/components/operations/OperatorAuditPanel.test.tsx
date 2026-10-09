@@ -8,13 +8,17 @@ import {
 } from "@testing-library/react";
 
 const getMock = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(),
-    fetch: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        post: vi.fn(),
+      }),
+    },
+  };
+});
 
 // The feed is admin-gated; hoisted so a test can flip it per case.
 const authState = vi.hoisted(() => ({

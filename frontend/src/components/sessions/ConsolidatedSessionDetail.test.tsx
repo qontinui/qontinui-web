@@ -18,7 +18,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionCard } from "@/services/agent-sessions-api";
 import type { SessionRow } from "./types";
 
@@ -32,8 +32,9 @@ vi.mock("@/services/devenv-api", () => ({
   listMachines: vi.fn(async () => []),
 }));
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
+vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     // The panes fetch on mount. None of them is what this file is about.
@@ -126,9 +127,10 @@ describe("D5 — nine sections, both halves, one page", () => {
     // The half `/sessions/[id]` never had.
     expect(await screen.findByTestId("twin-session-card")).toBeInTheDocument();
     // The half `/environments/sessions/[key]` never had.
-    expect(
-      await screen.findByTestId("stub-session-detail")
-    ).toHaveAttribute("data-session-id", "agent-1");
+    expect(await screen.findByTestId("stub-session-detail")).toHaveAttribute(
+      "data-session-id",
+      "agent-1"
+    );
   });
 
   it("carries the frozen testids forward VERBATIM (trap 5)", async () => {
@@ -151,12 +153,12 @@ describe("D5 — nine sections, both halves, one page", () => {
   it("shows BOTH transcript stores beside each other, labelled", async () => {
     mount();
     const stores = await screen.findByTestId("session-transcript-stores");
-    expect(
-      screen.getByTestId("session-transcript-live")
-    ).toHaveTextContent(/coord/i);
-    expect(
-      screen.getByTestId("session-transcript-archive")
-    ).toHaveTextContent(/Permanent/i);
+    expect(screen.getByTestId("session-transcript-live")).toHaveTextContent(
+      /coord/i
+    );
+    expect(screen.getByTestId("session-transcript-archive")).toHaveTextContent(
+      /Permanent/i
+    );
     expect(stores).toHaveTextContent(/7 days/i);
   });
 

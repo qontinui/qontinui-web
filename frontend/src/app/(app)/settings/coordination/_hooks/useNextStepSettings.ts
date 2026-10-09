@@ -2,39 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
-
-export type AutonomyLevel = "always_escalate" | "guidance_only" | "auto_decide";
-
-export interface NextStepDomain {
-  decision_domain: string;
-  label: string;
-  description: string;
-  autonomy_level: AutonomyLevel;
-  default_autonomy_level: AutonomyLevel;
-  mode: string;
-  resolved_from: "system" | "tenant" | "repo";
-  /**
-   * Where `autonomy_level` came from. `code_fallback` means NO policy row
-   * matched: the level is coord's labelled built-in default, and the real
-   * resolver escalates until a row exists. Absent on an older coord.
-   */
-  autonomy_level_source?: "policy_row" | "code_fallback";
-  requires_master: boolean;
-  effective: boolean;
-  /**
-   * coord's three-valued verdict. `effective` is only its `effective` arm, so a
-   * domain with an unobserved conjunct (pr_fix) reads `effective: false` even
-   * when nothing visible is off — `unknown` is how coord says so.
-   */
-  effective_state?: "effective" | "not_effective" | "unknown";
-}
-
-export interface NextStepSettings {
-  master_enabled: boolean;
-  can_edit: boolean;
-  domains: NextStepDomain[];
-}
+import {
+  fetchNextStepSettings,
+  putNextStepSettings,
+  type AutonomyLevel,
+  type NextStepSettings,
+} from "@/lib/api/operations/coordSettings";
 
 interface DraftMap {
   [decision_domain: string]: AutonomyLevel;
@@ -115,9 +88,7 @@ export function useNextStepSettings(): UseNextStepSettingsReturn {
       setLoading(true);
       setError(null);
       try {
-        const data = await httpClient.get<NextStepSettings>(
-          "/api/v1/operations/coord/next-step-settings"
-        );
+        const data = await fetchNextStepSettings();
         if (!cancelled) {
           setSettings(data);
           setDraft(buildDraftFromSettings(data));
@@ -190,10 +161,7 @@ export function useNextStepSettings(): UseNextStepSettingsReturn {
     setSaving(true);
     setError(null);
     try {
-      const updated = await httpClient.put<NextStepSettings>(
-        "/api/v1/operations/coord/next-step-settings",
-        { domains: changedDomains }
-      );
+      const updated = await putNextStepSettings(changedDomains);
       setSettings(updated);
       setDraft(buildDraftFromSettings(updated));
       setTouched(new Set());

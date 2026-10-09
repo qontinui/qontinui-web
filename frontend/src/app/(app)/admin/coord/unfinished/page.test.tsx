@@ -9,19 +9,27 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 const getMock = vi.fn();
 const postMock = vi.fn();
 const patchMock = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...a: unknown[]) => getMock(...a),
-    post: (...a: unknown[]) => postMock(...a),
-    patch: (...a: unknown[]) => patchMock(...a),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...a) => getMock(...a),
+        post: (...a) => postMock(...a),
+        patch: (...a) => patchMock(...a),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 import UnfinishedSessionsPage from "./page";
-import { RESUME_UNFINISHED_API, UNFINISHED_API } from "./types";
+
+const UNFINISHED_API = "/api/v1/operations/unfinished-sessions";
+const RESUME_UNFINISHED_API =
+  "/api/v1/operations/tenant-policy/resume-unfinished";
 
 const ROW = {
   claude_session_id: "11111111-1111-1111-1111-111111111111",

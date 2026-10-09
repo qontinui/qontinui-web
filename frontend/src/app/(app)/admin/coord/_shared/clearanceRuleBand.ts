@@ -26,7 +26,7 @@
  */
 
 import { isGateClearanceRow, ruleBand } from "../gate-clearance/gateClearance";
-import type { CoordPolicyRow } from "./coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 export type ClearanceRuleBand = "tenant" | "system" | "unknown";
 

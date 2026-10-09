@@ -32,11 +32,10 @@ import userEvent from "@testing-library/user-event";
 
 const createTenantMock = vi.fn();
 
-vi.mock("@/components/sessions/api", async () => {
-  const actual =
-    await vi.importActual<typeof import("@/components/sessions/api")>(
-      "@/components/sessions/api"
-    );
+vi.mock("@/lib/api/operations/sessions", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/api/operations/sessions")
+  >("@/lib/api/operations/sessions");
   return {
     ...actual,
     createTenant: (...args: unknown[]) => createTenantMock(...args),
@@ -51,7 +50,7 @@ import { CoordProjectCreateDialog } from "./CoordProjectCreateDialog";
 import {
   parseTenantCreateError,
   TenantCreateError,
-} from "@/components/sessions/api";
+} from "@/lib/api/operations/sessions";
 
 /** The machine constraint that must never reach the operator's eyes. */
 const RAW_CONSTRAINT = "[a-z0-9]";

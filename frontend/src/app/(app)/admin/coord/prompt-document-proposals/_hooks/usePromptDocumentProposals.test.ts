@@ -27,14 +27,19 @@ const postMock = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    post: (...args: unknown[]) => postMock(...args),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args: unknown[]) => getMock(...args),
+        patch: (...args: unknown[]) => patchMock(...args),
+        post: (...args: unknown[]) => postMock(...args),
+        delete: vi.fn(),
+      }),
+    },
+  };
+});
 // Arrow indirection, not a direct reference: `vi.mock` factories are hoisted
 // above these consts, so naming them eagerly is a TDZ error.
 vi.mock("sonner", () => ({
@@ -318,7 +323,8 @@ describe("usePromptDocumentProposals — the landed-write diff", () => {
   it("diffs v1 against the empty document without a second fetch", async () => {
     const first = { ...HEAD_WRITE, version_number: 1, current_version: 1 };
     getMock.mockImplementation((url: string) => {
-      if (url.endsWith("/versions/1")) return Promise.resolve({ body: "first" });
+      if (url.endsWith("/versions/1"))
+        return Promise.resolve({ body: "first" });
       return routeInitial({})(url);
     });
 

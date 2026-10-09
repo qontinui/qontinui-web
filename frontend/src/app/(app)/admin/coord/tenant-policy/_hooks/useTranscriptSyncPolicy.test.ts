@@ -13,21 +13,24 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 const getMock = vi.fn();
 const patchMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    put: vi.fn(),
-    post: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { fetchFromVerbs } = await import("@/test/fetch-from-verbs");
+  return {
+    httpClient: {
+      fetch: fetchFromVerbs({
+        get: (...args) => getMock(...args),
+        patch: (...args) => patchMock(...args),
+      }),
+    },
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 import { useTranscriptSyncPolicy } from "./useTranscriptSyncPolicy";
-import { TRANSCRIPT_SYNC_API } from "../types";
+
+const TRANSCRIPT_SYNC_API = "/api/v1/operations/tenant-policy/transcript-sync";
 
 const view = (enabled: boolean | null) => ({
   transcript_sync_enabled: enabled,
