@@ -3,7 +3,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.models.build_record import (
 )
 from app.models.project import Project as ProjectModel
 from app.schemas.project import Project
+from app.services.build_record_allowlist import build_record_violations
 
 logger = structlog.get_logger(__name__)
 
@@ -88,6 +89,10 @@ async def read_public_project(
     return Project.model_validate(project)
 
 
+#: A retraction must take effect at once, so no cache may hold a copy.
+_NO_STORE = {"Cache-Control": "no-store"}
+
+
 class PublicBuildRecord(BaseModel):
     """The latest frozen version of a published build record."""
 
@@ -101,6 +106,7 @@ class PublicBuildRecord(BaseModel):
 @router.get("/build-records/{slug}", response_model=PublicBuildRecord)
 async def read_public_build_record(
     slug: Annotated[str, Path(pattern=BUILD_RECORD_SLUG_PATTERN)],
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
@@ -113,6 +119,10 @@ async def read_public_build_record(
     so the authed export is never reachable from here. 404 when nothing has
     been published under ``slug``, or when its owner has unpublished it
     (``DELETE /api/v1/build-records/{slug}/publish``).
+
+    The stored document is re-validated against the CURRENT allowlist on every
+    read and 404s if it fails, and every answer carries ``Cache-Control:
+    no-store`` so an unpublish is not outlived by a cached copy.
 
     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
     keys and no insignificant whitespace, so a reader can verify it.
@@ -132,11 +142,22 @@ async def read_public_build_record(
         .limit(1)
     )
     snapshot = (await db.execute(stmt)).scalar_one_or_none()
+    if snapshot is not None and build_record_violations(snapshot.document):
+        # Stored under an older, looser allowlist: never serve it.
+        logger.warning(
+            "public_build_record_fails_current_allowlist",
+            slug=slug,
+            version=snapshot.version,
+        )
+        snapshot = None
     if snapshot is None:
-        raise not_found_error(
+        not_found = not_found_error(
             "Public build record not found",
             ErrorCode.RESOURCE_NOT_FOUND,
         )
+        not_found.headers = _NO_STORE
+        raise not_found
+    response.headers.update(_NO_STORE)
     return PublicBuildRecord(
         public_slug=snapshot.public_slug,
         version=snapshot.version,

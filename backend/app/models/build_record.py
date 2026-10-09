@@ -56,7 +56,8 @@ class BuildRecordPublicSlug(Base):
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
     #: Set by the D7 unpublish (revision ``brs_02_build_record_unpublish``):
-    #: the public reader 404s while it is set; a later publish clears it.
+    #: the public reader 404s while it is set; a publish with ``reactivate``
+    #: clears it.
     #: Snapshot rows are kept either way, and the tenant keeps the slug.
     unpublished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -100,6 +101,10 @@ class BuildRecordSnapshot(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     document: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    #: coord's ``generated_at`` for this document (stale-publish guard).
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

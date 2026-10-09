@@ -17,10 +17,13 @@ row rather than on any snapshot:
   snapshot row is KEPT as history, and the owning tenant keeps the slug (a
   retraction never frees it for another tenant to claim).
 
-A later publish clears the column and appends the next version, so
-re-activation is the ordinary publish path.
+A later publish with ``reactivate: true`` clears the column and appends the
+next version; without it, publishing a retracted slug is refused, so a
+retraction is never undone by accident.
 
-Additive only: one nullable column, no backfill (every existing slug is live).
+Upgrade is additive: one nullable column, no backfill (every existing slug
+is live). Downgrade deletes the retracted records first — see
+:func:`downgrade`.
 Hand-authored, never ``--autogenerate``d.
 """
 
@@ -46,5 +49,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the retraction timestamp (retracted slugs become live again)."""
+    """Delete every retracted record, then drop the retraction timestamp.
+
+    Without the column a retracted slug would read as live, so dropping it
+    alone would RE-PUBLISH everything an owner had retracted. The retracted
+    slugs' snapshots and ownership rows are deleted first instead: losing
+    retracted history is recoverable (re-publish from coord), resurrecting a
+    public page its owner took down is not.
+    """
+    op.execute(
+        "DELETE FROM web.build_record_snapshots WHERE public_slug IN ("
+        "SELECT public_slug FROM web.build_record_public_slugs "
+        "WHERE unpublished_at IS NOT NULL)"
+    )
+    op.execute(
+        "DELETE FROM web.build_record_public_slugs WHERE unpublished_at IS NOT NULL"
+    )
     op.drop_column("build_record_public_slugs", "unpublished_at", schema="web")
