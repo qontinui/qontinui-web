@@ -17,9 +17,8 @@ Enterprise-grade features for creating, managing, and optimizing automation work
 - **[Dependencies](./workflow-builder/dependencies.md)** - Analyze workflow relationships and detect circular dependencies
 - **[Reusable Components](./workflow-builder/components.md)** - Create modular, parameterized workflow components
 - **[Testing Framework](./workflow-builder/testing.md)** - Comprehensive testing with assertions and test suites
-- **[Analytics & Metrics](./workflow-builder/analytics.md)** - Track performance metrics and identify bottlenecks
+- **[Analytics & Metrics](./workflow-builder/analytics.md)** - Track execution metrics and analyze workflow complexity
 - **[Documentation System](./workflow-builder/documentation.md)** - Auto-generate and maintain workflow documentation
-- **[Version Control](./workflow-builder/version-control.md)** - Git-like branches, versions, tags, and merging
 
 #### 2. State Machine (Images, States & Transitions)
 
@@ -215,7 +214,7 @@ Technical reference for developers.
 
 1. **Testing Framework**: [Testing Guide](./workflow-builder/testing.md)
 2. **Validation**: [Transition Validation](./transitions/validation.md)
-3. **Analytics**: [Performance & Metrics](./workflow-builder/analytics.md)
+3. **Analytics**: [Metrics & Complexity](./workflow-builder/analytics.md)
 
 ## Collaboration & Team Features
 
@@ -292,9 +291,8 @@ docs/
     ├── dependencies.md           # Dependency analysis
     ├── components.md             # Reusable components
     ├── testing.md                # Testing framework
-    ├── analytics.md              # Analytics and performance
+    ├── analytics.md              # Analytics and complexity
     ├── documentation.md          # Documentation system
-    ├── version-control.md        # Version control
     ├── api-reference.md          # Complete API reference
     ├── data-models.md            # Type definitions
     ├── migration-guide.md        # Migration from legacy
@@ -327,7 +325,7 @@ docs/
 ### QA Engineers
 - [Testing Guide](./workflow-builder/testing.md) - Test framework
 - [Validation](./transitions/validation.md) - State validation
-- [Analytics](./workflow-builder/analytics.md) - Performance metrics
+- [Analytics](./workflow-builder/analytics.md) - Execution metrics
 - [Comments & Reviews](./collaboration/comments-and-reviews.md) - Review workflow
 
 ### Project Managers

@@ -81,18 +81,32 @@ export function ProjectEditor({ project }: ProjectEditorProps) {
 
 ```tsx
 import React from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjects } from "@/hooks/use-projects";
-import { getPermissionLabel, hasPermission } from "@/lib/permissions";
+import type { User } from "@/lib/schemas";
+import {
+  getPermissionLabel,
+  getPermissionLevel,
+  hasPermission,
+} from "@/lib/permissions";
 
 export function ProjectList() {
+  const { user: currentUser } = useAuth();
   const { data: projects, isLoading } = useProjects();
 
   if (isLoading) return <LoadingSpinner />;
 
+  // getPermissionLevel takes the schema User from @/lib/schemas; useAuth
+  // returns the @/types/auth-types User, so narrow it the way
+  // useProjectPermissions does.
+  const user = currentUser as User | null;
+
   return (
     <div className="project-list">
       {projects?.map((project) => {
-        const level = project.permission_level || "view";
+        // "owner" when project.owner_id matches the user, otherwise the
+        // project's permission_level, otherwise "none" (also "none" signed out)
+        const level = getPermissionLevel(project, user);
         return (
           <div key={project.id} className="project-card">
             <h3>{project.name}</h3>
@@ -105,7 +119,7 @@ export function ProjectList() {
 
             {/* Show actions based on permission */}
             <div className="actions">
-              <button>View</button>
+              {hasPermission("view", level) && <button>View</button>}
 
               {hasPermission("edit", level) && <button>Edit</button>}
 

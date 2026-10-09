@@ -20,7 +20,7 @@ The Workflow Components Service enables you to create reusable workflow fragment
 
 - Create reusable workflow components
 - Parameterize components with inputs/outputs
-- Version control for components
+- Component versioning
 - Built-in component library
 - Component sharing and export
 - Parameter validation
@@ -788,6 +788,5 @@ try {
 ## See Also
 
 - [Testing Guide](./testing.md) - Test your components
-- [Version Control](./version-control.md) - Version your components
 - [Best Practices](./best-practices.md) - Component design patterns
 - [API Reference](./api-reference.md) - Complete API documentation
