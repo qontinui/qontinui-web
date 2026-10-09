@@ -63,7 +63,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_sessions_fleet_idx_01"
-_PARENT_REVISION_ID = "cinode_02_required_capabilities"
+_PARENT_REVISION_ID = "cinode_04_runner_requires_windows"
 
 _INDEX_NAME = "coord_sessions_tenant_started_idx"
 _KEY_FRAGMENT = "(tenant_id, started_at DESC, id DESC)"
