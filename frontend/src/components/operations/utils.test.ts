@@ -3,6 +3,8 @@ import {
   ciStatusWsUrl,
   coordEventsWsUrl,
   deviceStatusWsUrl,
+} from "@/lib/api/operations/ws";
+import {
   extractSymbol,
   formatBytes,
   percentFree,
@@ -317,7 +319,7 @@ describe("readingAgeMs", () => {
 });
 
 describe("operations WS URL builders", () => {
-  // All three bridges derive from OPERATIONS_API (http[s]:// → ws[s]://) and
+  // All three bridges derive from the absolute API origin (http[s]:// → ws[s]://) and
   // carry the session token as `token=`; the coord-events bridge adds the
   // fixed subscription name that coord's closed set resolves server-side.
   const wsBase = (url: string) => url.replace(/\?.*$/, "");

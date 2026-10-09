@@ -2,14 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  SYMBOL_CLAIMS_API,
-  SYMBOL_CLAIMS_POLL_MS,
-  SYMBOL_CLAIMS_TOP_N,
-} from "./utils";
+import { getSymbolClaims } from "@/lib/api/operations/coordStreams";
+import { SYMBOL_CLAIMS_POLL_MS, SYMBOL_CLAIMS_TOP_N } from "./utils";
 import type { SymbolClaim, SymbolClaimsResponse } from "./types";
 
 const log = createLogger("SymbolClaimsStream");
@@ -79,10 +75,7 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        SYMBOL_CLAIMS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const resp = await getSymbolClaims(COORD_DASHBOARD_POLL_OPTIONS);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }

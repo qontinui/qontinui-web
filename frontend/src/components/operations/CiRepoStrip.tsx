@@ -57,8 +57,7 @@ import {
   GitPullRequest,
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { CI_STATUS_NOTIFY_API } from "./utils";
+import { postCiStatusNotifyWhenGreen } from "@/lib/api/operations/coordStreams";
 import { useCiStatusStream } from "./useCiStatusStream";
 import type { NotifyWhenGreenResponse, RepoCiRow } from "./types";
 
@@ -302,12 +301,9 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
     if (!row.main_head_sha) return;
     setArm({ kind: "arming" });
     try {
-      const res = await httpClient.fetch(CI_STATUS_NOTIFY_API, {
-        method: "POST",
-        body: JSON.stringify({
-          repo: row.repo,
-          head_sha: row.main_head_sha,
-        }),
+      const res = await postCiStatusNotifyWhenGreen({
+        repo: row.repo,
+        head_sha: row.main_head_sha,
       });
       if (!res.ok) {
         const text = await res.text();
@@ -521,9 +517,7 @@ export function CiRepoStrip() {
           data-testid="ci-repo-strip-empty"
           data-seeded={String(seeded)}
         >
-          {seeded
-            ? "No repos registered for this tenant."
-            : "Loading repo CI…"}
+          {seeded ? "No repos registered for this tenant." : "Loading repo CI…"}
         </p>
       ) : (
         <div className="space-y-1">

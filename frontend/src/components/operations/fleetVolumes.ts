@@ -511,7 +511,7 @@ export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
 // Per-device sibling — `GET /operations/devices/{device_id}/volumes`
 //
 // Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 2 step 4.
-// Phase 1 shipped the route and `deviceVolumesUrl()` with NO caller; the Disk
+// Phase 1 shipped the route and `getDeviceVolumes()` with NO caller; the Disk
 // section of `/settings/storage` is the first consumer.
 //
 // This needs its OWN parser rather than reusing `parseFleetVolumes`. The

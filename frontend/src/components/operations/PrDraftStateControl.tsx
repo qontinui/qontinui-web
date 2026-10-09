@@ -69,9 +69,8 @@ import { PenLine, Send } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-import { prDraftStateUrl } from "./utils";
+import { postPrDraftState } from "@/lib/api/operations/coordStreams";
 
 const log = createLogger("PrDraftStateControl");
 
@@ -172,9 +171,11 @@ export function PrDraftStateControl({
       const [ownerName, repoName] = owner;
       setBusy(true);
       try {
-        const res = await httpClient.fetch(
-          prDraftStateUrl(ownerName, repoName, prNumber),
-          { method: "POST", body: JSON.stringify({ draft }) }
+        const res = await postPrDraftState(
+          ownerName,
+          repoName,
+          prNumber,
+          draft
         );
         if (!res.ok) {
           const text = await res.text();
@@ -274,10 +275,10 @@ export function PrDraftStateControl({
             </AlertDialogTitle>
             <AlertDialogDescription>
               coord has already cut a merge proposal for {repoShort}#{prNumber},
-              and converting the PR to draft does <strong>not</strong> cancel
-              it — its CI keeps running, and a proposal already landing may
-              still push. Drafting only keeps coord from cutting a{" "}
-              <em>new</em> proposal later.
+              and converting the PR to draft does <strong>not</strong> cancel it
+              — its CI keeps running, and a proposal already landing may still
+              push. Drafting only keeps coord from cutting a <em>new</em>{" "}
+              proposal later.
               <br />
               <br />
               To actually stop the in-flight attempt, cancel the proposal from
@@ -290,7 +291,10 @@ export function PrDraftStateControl({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={busy} onClick={() => void submit(true)}>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void submit(true)}
+            >
               Convert to draft anyway
             </AlertDialogAction>
           </AlertDialogFooter>

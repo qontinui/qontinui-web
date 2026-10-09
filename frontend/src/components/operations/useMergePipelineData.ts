@@ -78,7 +78,7 @@ import {
   httpStatusLabel,
 } from "@/lib/api/operations/prMergeTrain";
 import { httpClient } from "@/services/service-factory";
-import { coordEventsWsUrl } from "./utils";
+import { coordEventsWsUrl } from "@/lib/api/operations/ws";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
 import { normalizeMergeEconomics } from "./mergeEconomics";

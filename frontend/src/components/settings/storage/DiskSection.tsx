@@ -10,7 +10,7 @@
  * independently:
  *
  * 1. **Free space** — Phase 1's per-device route
- *    (`GET /operations/devices/{id}/volumes`, via `deviceVolumesUrl()`), read
+ *    (`GET /operations/devices/{id}/volumes`, via `getDeviceVolumes()`), read
  *    through the backend proxy. This section is that route's first consumer;
  *    Phase 1 shipped it deliberately unwired.
  * 2. **Reclaim candidates** — the runner's own survey
@@ -52,7 +52,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import { getDeviceVolumes } from "@/lib/api/operations/coordStreams";
 import {
   runnerFetch,
   RunnerApiError,
@@ -60,7 +60,6 @@ import {
   useRunnerTarget,
 } from "@/lib/runner-api";
 import {
-  deviceVolumesUrl,
   formatBytes,
   percentFree,
   readingAgeMs,
@@ -298,7 +297,7 @@ function ClassBadge({ verb }: { verb: DiskClassTotals["verb"] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Free space (Phase 1 data path — deviceVolumesUrl's first consumer)
+// Free space (Phase 1 data path — getDeviceVolumes's first consumer)
 // ---------------------------------------------------------------------------
 
 function FreeSpaceBlock({
@@ -899,10 +898,10 @@ export function DiskSection() {
       setVolumes(next);
       setVolumesInFlight(false);
     };
-    const url = deviceVolumesUrl(id);
+    const url = `GET /operations/devices/${id}/volumes`;
     let response: Response;
     try {
-      response = await httpClient.fetch(url);
+      response = await getDeviceVolumes(id);
     } catch (err) {
       settle({
         state: "unavailable",

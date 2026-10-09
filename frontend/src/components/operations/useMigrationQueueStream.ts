@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import { MIGRATIONS_QUEUE_POLL_MS, migrationsQueueUrl } from "./utils";
+import { getMigrationsQueue } from "@/lib/api/operations/coordStreams";
+import { MIGRATIONS_QUEUE_POLL_MS } from "./utils";
 import type { MigrationQueueResponse, MigrationReservation } from "./types";
 
 const log = createLogger("MigrationQueueStream");
@@ -64,8 +64,8 @@ export function useMigrationQueueStream(
       return;
     }
     try {
-      const resp = await httpClient.fetch(
-        migrationsQueueUrl(requested),
+      const resp = await getMigrationsQueue(
+        requested,
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!resp.ok) {

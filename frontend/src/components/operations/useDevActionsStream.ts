@@ -2,14 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  DEV_ACTIONS_API,
-  DEV_ACTIONS_LIMIT,
-  DEV_ACTIONS_POLL_MS,
-} from "./utils";
+import { getRecentDevActions } from "@/lib/api/operations/coordStreams";
+import { DEV_ACTIONS_LIMIT, DEV_ACTIONS_POLL_MS } from "./utils";
 import type { DevAction, DevActionsResponse } from "./types";
 
 const log = createLogger("DevActionsStream");
@@ -56,8 +52,8 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`,
+      const resp = await getRecentDevActions(
+        DEV_ACTIONS_LIMIT,
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!resp.ok) {

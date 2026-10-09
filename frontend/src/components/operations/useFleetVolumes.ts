@@ -28,8 +28,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { FLEET_VOLUMES_API } from "./utils";
+import { getFleetVolumes } from "@/lib/api/operations/coordStreams";
 import {
   VOLUMES_NOT_YET_READ,
   volumesFetchFromFailure,
@@ -44,14 +43,11 @@ import { useSingleFlightPoll } from "./useSingleFlightPoll";
 export async function readFleetVolumes(): Promise<VolumesFetch> {
   let res: Response;
   try {
-    res = await httpClient.fetch(
-      FLEET_VOLUMES_API,
-      COORD_DASHBOARD_POLL_OPTIONS
-    );
+    res = await getFleetVolumes(COORD_DASHBOARD_POLL_OPTIONS);
   } catch (err) {
     return {
       state: "unavailable",
-      reason: `Request to ${FLEET_VOLUMES_API} failed: ${
+      reason: `Request to GET /operations/fleet/volumes failed: ${
         (err as Error)?.message ?? "unknown error"
       }`,
     };

@@ -14,8 +14,8 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { devActionDetailUrl, relativeTime } from "./utils";
+import { getDevActionDetail } from "@/lib/api/operations/coordStreams";
+import { relativeTime } from "./utils";
 import { useDevActionsStream } from "./useDevActionsStream";
 import { CollapsiblePanel } from "@/components/console";
 import type {
@@ -231,7 +231,7 @@ function DevActionRow({ action }: { action: DevAction }) {
   const loadOutcomes = useCallback(async () => {
     setOutcomeState({ loading: true, outcomes: null, error: null });
     try {
-      const resp = await httpClient.fetch(devActionDetailUrl(action.action_id));
+      const resp = await getDevActionDetail(action.action_id);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }

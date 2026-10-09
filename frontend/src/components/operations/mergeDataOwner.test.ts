@@ -128,7 +128,7 @@ describe("MergeTrain.tsx is presentation-only", () => {
     // so the header comment may keep describing the copy that was removed.
     expect(source).not.toContain("httpClient.fetch(");
     expect(source).not.toContain("new WebSocket(");
-    expect(source).not.toContain("${OPERATIONS_API}");
+    expect(source).not.toContain("/api/v1/operations");
   });
 
   it("holds no data state or effects", () => {

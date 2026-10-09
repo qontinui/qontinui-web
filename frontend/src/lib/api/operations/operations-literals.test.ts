@@ -3,12 +3,12 @@
  * `/api/v1/operations` URL by hand or import `OPERATIONS_API`.
  *
  * Plan `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`
- * Phase 7. `known-operations-literal-files.txt` lists the files that still do,
- * one repo-relative path (under `src/`) per line. The list can only shrink:
- * a file that gains a literal or an `OPERATIONS_API` import and is not listed
- * reds the first test, and a listed file that no longer has one reds the
- * second, so the PR that migrates a file must delete its line. The goal is an
- * empty list.
+ * Phase 7. `known-operations-literal-files.txt` is the baseline of files that
+ * still did; it is now EMPTY, so this test is a permanent guard: any file
+ * outside `lib/api/operations` that gains a literal or an `OPERATIONS_API`
+ * import reds the first test. (The baseline file stays, zero lines, so a
+ * regression that must be pinned has a place to be listed; the second test
+ * reds a listed file that no longer has a marker.)
  *
  * Comment-only mentions do not count, and neither do the two files that name
  * the prefix for reasons that are not a call: `services/http-client.ts` (the

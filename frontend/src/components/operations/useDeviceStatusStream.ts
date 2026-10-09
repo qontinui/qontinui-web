@@ -5,11 +5,9 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  DEVICE_STATUS_API,
-  DEVICE_STATUS_POLL_FALLBACK_MS,
-  deviceStatusWsUrl,
-} from "./utils";
+import { getDeviceStatus } from "@/lib/api/operations/coordStreams";
+import { deviceStatusWsUrl } from "@/lib/api/operations/ws";
+import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
 import type { DeviceStatus, DeviceStatusResponse } from "./types";
 import {
   indexDeviceStatusRows,
@@ -251,7 +249,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
       // a failed read is re-read by the next poll or the seed retry, never
       // by `httpClient`'s 5xx backoff chain.
-      const resp = await httpClient.fetch(DEVICE_STATUS_API, {
+      const resp = await getDeviceStatus({
         ...COORD_DASHBOARD_POLL_OPTIONS,
         signal: request.controller.signal,
       });

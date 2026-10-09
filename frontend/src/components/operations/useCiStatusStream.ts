@@ -5,11 +5,9 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  CI_STATUS_API,
-  CI_STATUS_POLL_FALLBACK_MS,
-  ciStatusWsUrl,
-} from "./utils";
+import { getCiStatus } from "@/lib/api/operations/coordStreams";
+import { ciStatusWsUrl } from "@/lib/api/operations/ws";
+import { CI_STATUS_POLL_FALLBACK_MS } from "./utils";
 import type { CiStatusResponse, RepoCiRow } from "./types";
 
 const log = createLogger("CiStatusStream");
@@ -97,10 +95,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
 
   const seedFromRest = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        CI_STATUS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const resp = await getCiStatus(COORD_DASHBOARD_POLL_OPTIONS);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
