@@ -182,7 +182,10 @@ export type WalkOutcome =
       total: number | null;
     } & WalkCommon);
 
-export type GetJson = <T>(url: string) => Promise<T>;
+/** Reads ONE page of the work-unit list for the given query. */
+export type FetchPlansPage = (
+  query: URLSearchParams
+) => Promise<PlansListResponse>;
 
 function rowsOf(body: PlansListResponse | null | undefined): CoordPlanRow[] {
   return body?.work_units ?? body?.plans ?? [];
@@ -227,13 +230,12 @@ function cursorKey(cursor: WalkCursor): string {
  * failure on any later page is kept as `partial`.
  */
 export async function walkWorkUnits(
-  get: GetJson,
-  url: string,
+  fetchPage: FetchPlansPage,
   baseParams: URLSearchParams,
   order: ServerOrder,
   stillCurrent: () => boolean
 ): Promise<WalkOutcome | null> {
-  const pageUrl = (cursor: WalkCursor | null) => {
+  const pageQuery = (cursor: WalkCursor | null) => {
     const qs = new URLSearchParams(baseParams);
     qs.set("limit", String(WALK_PAGE_LIMIT));
     qs.set("order", order);
@@ -245,10 +247,10 @@ export async function walkWorkUnits(
       }
       qs.set("after_slug", cursor.after_slug);
     }
-    return `${url}?${qs.toString()}`;
+    return qs;
   };
 
-  const first = await get<PlansListResponse>(pageUrl(null));
+  const first = await fetchPage(pageQuery(null));
   const firstRows = rowsOf(first);
   // One block per page read, folded at every exit — see `WalkCommon`.
   const signals: Array<PlanBodySignalBlock | undefined> = [first?.body_signal];
@@ -291,7 +293,7 @@ export async function walkWorkUnits(
     visited.add(cursorKey(cursor));
     let body: PlansListResponse;
     try {
-      body = await get<PlansListResponse>(pageUrl(cursor));
+      body = await fetchPage(pageQuery(cursor));
     } catch (e) {
       if (!stillCurrent()) return null;
       return {

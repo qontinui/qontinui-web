@@ -77,11 +77,10 @@ import { deriveAgentLogHealth } from "@/components/admin/coord/agentLogHealth";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
+import { fetchAgentLogsByAgent } from "@/lib/api/operations/agents";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const FETCH_LIMIT = 500;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -153,8 +152,9 @@ export default function CoordAgentLogPage() {
           ).toISOString();
           qs.set("since", sinceIso);
         }
-        const body = await httpClient.get<unknown>(
-          `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`,
+        const body = await fetchAgentLogsByAgent(
+          agentId,
+          qs,
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;

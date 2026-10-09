@@ -39,9 +39,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (url: string) => get(url),
+    fetch: (url: string, init?: RequestInit) => fetchViaGetPost(url, init, get),
     post: vi.fn(),
     patch: vi.fn(),
   },

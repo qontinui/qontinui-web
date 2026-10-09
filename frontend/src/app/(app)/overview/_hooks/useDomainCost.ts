@@ -17,15 +17,16 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchDomainCost } from "@/lib/api/operations/coordPlans";
 import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { isDomainCostPayload, type DomainCostPayload } from "../_lib/domainCost";
-
-export const DOMAIN_COST_API = "/api/v1/operations/domain-cost";
+import {
+  isDomainCostPayload,
+  type DomainCostPayload,
+} from "../_lib/domainCost";
 
 /**
  * Poll cadence. The ledger moves when a work unit ships, not second to
@@ -70,10 +71,7 @@ export function useDomainCost(
     async (isCurrent: () => boolean) => {
       if (hold) return;
       try {
-        const body = await httpClient.get<unknown>(
-          DOMAIN_COST_API,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchDomainCost(COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
         if (!isDomainCostPayload(body)) {
           setError("coord answered without a domain cost ledger");
@@ -85,7 +83,8 @@ export function useDomainCost(
         if (!isCurrent()) return;
         setError(
           describeCoordPollError(e, {
-            routeUnavailableText: "coord does not serve the domain cost ledger yet",
+            routeUnavailableText:
+              "coord does not serve the domain cost ledger yet",
           })
         );
       } finally {

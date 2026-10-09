@@ -83,15 +83,17 @@ import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchPlans } from "@/lib/api/operations/coordPlans";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
   derivePlansHealth,
   SHEPHERD_SLUG_PREFIX,
 } from "../work-units/plansHealth";
-import { WALK_PAGE_LIMIT } from "../work-units/planWalk";
+import {
+  WALK_PAGE_LIMIT,
+  type PlansListResponse,
+} from "../work-units/planWalk";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
 
 /**
@@ -124,13 +126,6 @@ const STATUS_FILTERS = [
   { value: "in_progress", label: "In progress" },
   { value: "blocked", label: "Blocked" },
 ];
-
-interface PlansListResponse {
-  // `/operations/plans` now proxies coord work-units (envelope
-  // `{work_units: [...]}`); `plans` kept for cutover tolerance.
-  work_units?: CoordPlanRow[];
-  plans?: CoordPlanRow[];
-}
 
 export default function CoordSpawnPage() {
   const [status, setStatus] = useState("in_progress");
@@ -168,11 +163,7 @@ export default function CoordSpawnPage() {
       qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
       // Explicit, so that a full page means something — see `SPAWN_PAGE_LIMIT`.
       qs.set("limit", String(SPAWN_PAGE_LIMIT));
-      const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      const body = await httpClient.get<PlansListResponse>(
-        `${API}/plans${suffix}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchPlans(qs, COORD_DASHBOARD_POLL_OPTIONS);
       if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);
       setError(null);

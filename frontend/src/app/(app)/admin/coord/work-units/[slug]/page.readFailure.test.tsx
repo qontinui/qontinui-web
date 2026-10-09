@@ -22,9 +22,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
 const httpPost = vi.fn();
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
+    fetch: (url: string, init?: RequestInit) =>
+      fetchViaGetPost(url, init, httpGet, httpPost),
     post: (...args: unknown[]) => httpPost(...args),
   },
 }));

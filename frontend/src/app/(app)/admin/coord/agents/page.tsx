@@ -54,11 +54,10 @@ import { DevActionsTile } from "@/components/operations";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
+import { fetchRecentAgentLogs } from "@/lib/api/operations/agents";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const RECENT_LIMIT = 200;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -163,10 +162,7 @@ export default function CoordAgentsRecentPage() {
     try {
       const qs = new URLSearchParams();
       qs.set("limit", String(RECENT_LIMIT));
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-logs/recent?${qs.toString()}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchRecentAgentLogs(qs, COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       // Tolerate bare list shape too.
       const normalized: RecentResponse = Array.isArray(body)

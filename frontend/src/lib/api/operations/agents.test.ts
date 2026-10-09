@@ -18,7 +18,12 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const { fetchClaudeAccounts, spawnAgent } = await import("./agents");
+const {
+  fetchAgentLogsByAgent,
+  fetchClaudeAccounts,
+  fetchRecentAgentLogs,
+  spawnAgent,
+} = await import("./agents");
 
 describe("agents", () => {
   afterEach(() => {
@@ -74,5 +79,28 @@ describe("agents", () => {
     const res = new Response("not json", { status: 200 });
     fetchMock.mockResolvedValueOnce(res);
     await expect(spawnAgent({})).resolves.toBe(res);
+  });
+
+  it("fetchRecentAgentLogs GETs /agent-logs/recent with the query", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
+    await fetchRecentAgentLogs(new URLSearchParams({ limit: "200" }), {
+      maxRetries: 0,
+    });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/agent-logs/recent?limit=200",
+      { maxRetries: 0, method: "GET", idempotent: true },
+    ]);
+  });
+
+  it("fetchAgentLogsByAgent GETs /agent-logs/by-agent/{agent_id} with the id encoded", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
+    await fetchAgentLogsByAgent(
+      "a/b #1",
+      new URLSearchParams({ limit: "500" })
+    );
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/agent-logs/by-agent/a%2Fb%20%231?limit=500",
+      { method: "GET", idempotent: true },
+    ]);
   });
 });

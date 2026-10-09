@@ -29,9 +29,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const get = vi.fn();
 const post = vi.fn();
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    fetch: (url: string, init?: RequestInit) =>
+      fetchViaGetPost(url, init, get, post),
     post: (...args: unknown[]) => post(...args),
   },
 }));
@@ -198,9 +201,7 @@ describe("over-correction guards — coord ANSWERING is still real information",
     await waitFor(() => {
       expect(screen.getByTestId("coord-question-meta")).toBeInTheDocument();
     });
-    expect(
-      screen.getByText("Bump or pin the dependency?")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Bump or pin the dependency?")).toBeInTheDocument();
     expect(
       screen.getByTestId("coord-question-response-textarea")
     ).toBeInTheDocument();
@@ -317,12 +318,13 @@ describe("the guards a stale read must not get past", () => {
     // "Question q-B could not be read … is unknown". A definite unknown-claim
     // off a read that has not failed: this PR's own defect, inverted.
     let releaseA: (v: unknown) => void = () => {};
-    get.mockImplementation((url: string) =>
-      url.includes("q-A")
-        ? new Promise((resolve) => {
-            releaseA = resolve;
-          })
-        : new Promise(() => {}) // B never settles
+    get.mockImplementation(
+      (url: string) =>
+        url.includes("q-A")
+          ? new Promise((resolve) => {
+              releaseA = resolve;
+            })
+          : new Promise(() => {}) // B never settles
     );
 
     routeId = "q-A";
@@ -352,12 +354,13 @@ describe("the guards a stale read must not get past", () => {
     // so A's failure paints a red "Failed to load" over B's skeleton, about a
     // read that has been superseded and is no longer on screen.
     let rejectA: (e: unknown) => void = () => {};
-    get.mockImplementation((url: string) =>
-      url.includes("q-A")
-        ? new Promise((_r, reject) => {
-            rejectA = reject;
-          })
-        : new Promise(() => {}) // B never settles
+    get.mockImplementation(
+      (url: string) =>
+        url.includes("q-A")
+          ? new Promise((_r, reject) => {
+              rejectA = reject;
+            })
+          : new Promise(() => {}) // B never settles
     );
 
     routeId = "q-A";
@@ -746,8 +749,9 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     render(<CoordQuestionDetailPage />);
 
     await waitFor(() => expect(decisionButtons()).toHaveLength(2));
-    expect(decisionButtons().map((b) => b.getAttribute("data-decision-value")))
-      .toEqual(["met", "not_met"]);
+    expect(
+      decisionButtons().map((b) => b.getAttribute("data-decision-value"))
+    ).toEqual(["met", "not_met"]);
     // No free-text composer and no seed-the-composer option cards.
     expect(
       screen.queryByTestId("coord-question-response-textarea")
@@ -759,9 +763,9 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     expect(
       screen.getByTestId("coord-question-effect-link").getAttribute("href")
     ).toBe("/admin/coord/gates?gate=gate-7");
-    expect(screen.getByTestId("coord-question-effect-detail")).toHaveTextContent(
-      "wu-42 · Phase 2"
-    );
+    expect(
+      screen.getByTestId("coord-question-effect-detail")
+    ).toHaveTextContent("wu-42 · Phase 2");
 
     // `met` clears the gate and fires its continuation — confirm first.
     fireEvent.click(decisionButtons()[0]);
@@ -852,7 +856,9 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
     expect(dialog).toHaveTextContent(/Approve and apply/);
 
-    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-confirm"));
+    fireEvent.click(
+      screen.getByTestId("coord-question-approve-confirm-confirm")
+    );
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith(
         "/api/v1/operations/agent-questions/q-1/respond",
@@ -868,7 +874,9 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     await waitFor(() => expect(decisionButtons()).toHaveLength(2));
     fireEvent.click(decisionButtons()[0]);
     await screen.findByTestId("coord-question-approve-confirm");
-    fireEvent.click(screen.getByTestId("coord-question-approve-confirm-cancel"));
+    fireEvent.click(
+      screen.getByTestId("coord-question-approve-confirm-cancel")
+    );
     await waitFor(() =>
       expect(
         screen.queryByTestId("coord-question-approve-confirm")
@@ -973,7 +981,9 @@ describe("a decision-effect row is answered with the effect's own values", () =>
       const textarea = await screen.findByTestId(
         "coord-question-response-textarea"
       );
-      expect(screen.getByTestId("coord-question-effect-mismatch")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("coord-question-effect-mismatch")
+      ).toBeInTheDocument();
       fireEvent.change(textarea, { target: { value: typed } });
       fireEvent.click(screen.getByTestId("coord-question-submit"));
 
@@ -1030,7 +1040,10 @@ describe("a decision-effect row is answered with the effect's own values", () =>
   });
 
   it.each([
-    ["a clause row (reserved)", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
+    [
+      "a clause row (reserved)",
+      { effect_kind: "clause", effect_ref: { id: "c-1" } },
+    ],
     ["an effect-less row", { effect_kind: "none", effect_ref: null }],
     ["a row from an older coord", {}],
   ])("keeps the free-text composer for %s", async (_l, extra) => {
@@ -1047,7 +1060,10 @@ describe("a decision-effect row is answered with the effect's own values", () =>
 
   it.each([
     ["a clause row", { effect_kind: "clause", effect_ref: { id: "c-1" } }],
-    ["an unknown effect kind", { effect_kind: "future_kind", effect_ref: { id: "x" } }],
+    [
+      "an unknown effect kind",
+      { effect_kind: "future_kind", effect_ref: { id: "x" } },
+    ],
     [
       "a gate row whose options mismatch",
       { ...GATE_ROW, options: ["met", "blocked"] },
@@ -1056,7 +1072,11 @@ describe("a decision-effect row is answered with the effect's own values", () =>
     "shows a non-admin the tenant-admin notice, not the composer, for %s",
     async (_l, extra) => {
       isCoordAdmin = false;
-      get.mockResolvedValue({ ...QUESTION, options: ["pin", "bump"], ...extra });
+      get.mockResolvedValue({
+        ...QUESTION,
+        options: ["pin", "bump"],
+        ...extra,
+      });
       render(<CoordQuestionDetailPage />);
       await waitFor(() =>
         expect(
@@ -1074,7 +1094,11 @@ describe("a decision-effect row is answered with the effect's own values", () =>
 
   it("[over-correction] still gives a non-admin the composer on an ordinary row", async () => {
     isCoordAdmin = false;
-    get.mockResolvedValue({ ...QUESTION, effect_kind: "none", effect_ref: null });
+    get.mockResolvedValue({
+      ...QUESTION,
+      effect_kind: "none",
+      effect_ref: null,
+    });
     render(<CoordQuestionDetailPage />);
     await waitFor(() =>
       expect(
