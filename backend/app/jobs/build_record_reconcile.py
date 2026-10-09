@@ -430,15 +430,18 @@ def _latest_publish_subquery() -> Any:
 async def _retract_stale(
     db: AsyncSession, tick: VisibilityTick, blamed: set[str]
 ) -> None:
-    """The staleness sweep. Runs after the tick's checks; no commit.
+    """The staleness sweep, in its own short transaction. Commits.
 
     * A page BLAMED this tick is retracted when its current run of unanswered
       attempts began more than :data:`VISIBILITY_STALE_AFTER` ago
-      (``first_unanswered_attempt_at``).
+      (``first_unanswered_attempt_at``, which only a blamed attempt starts).
     * Any live page is retracted when its staleness clock (last complete
       answer, latest publish) is older than
       :data:`VISIBILITY_UNREACHED_STALE_AFTER`.
     * A page answered this tick has a fresh clock and a cleared run.
+
+    Rows are taken ``FOR UPDATE SKIP LOCKED``: one a concurrent writer holds is
+    left to that writer.
     """
     now = datetime.now(UTC)
     latest = _latest_publish_subquery()
@@ -449,6 +452,8 @@ async def _retract_stale(
                 latest, latest.c.public_slug == BuildRecordPublicSlug.public_slug
             )
             .where(BuildRecordPublicSlug.unpublished_at.is_(None))
+            .with_for_update(skip_locked=True, of=BuildRecordPublicSlug)
+            .execution_options(populate_existing=True)
         )
     ).all()
     for owner, published_at in rows:
@@ -461,11 +466,11 @@ async def _retract_stale(
             and run_start < now - VISIBILITY_STALE_AFTER
         )
         too_old = clock is None or clock < now - VISIBILITY_UNREACHED_STALE_AFTER
-        if not (unanswerable_too_long or too_old):
-            continue
-        if await retract_live(db, owner.public_slug, owner.tenant_id):
+        if unanswerable_too_long or too_old:
+            owner.unpublished_at = now
             tick.retracted.append(owner.public_slug)
             tick.stale.append(owner.public_slug)
+    await db.commit()
 
 
 async def _check_capacity(db: AsyncSession, tick: VisibilityTick, token: bool) -> None:
@@ -523,6 +528,23 @@ async def _check_capacity(db: AsyncSession, tick: VisibilityTick, token: bool) -
         )
 
 
+async def _lock_live_owner(db: AsyncSession, slug: str) -> BuildRecordPublicSlug | None:
+    """The slug's owner row, still live, locked ``FOR UPDATE SKIP LOCKED`` —
+    ``None`` when it is gone, retracted, or held by a concurrent writer (an
+    unpublish, a retract), which always wins over the re-check."""
+    return (
+        await db.execute(
+            select(BuildRecordPublicSlug)
+            .where(
+                BuildRecordPublicSlug.public_slug == slug,
+                BuildRecordPublicSlug.unpublished_at.is_(None),
+            )
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+
+
 def _mark_complete(
     owner: BuildRecordPublicSlug, now: datetime, tick: VisibilityTick
 ) -> None:
@@ -570,10 +592,15 @@ async def recheck_visibility(
       can hold the head of the queue.
     * **Staleness sweep** at the end (:func:`_retract_stale`): a page BLAMED
       this tick is retracted once its current run of unanswered attempts
-      (``first_unanswered_attempt_at``) is older than 24 h — never on an
-      unblamed or tick-stopping attempt, and never measured from its last
-      answer, so a blip late in a long cycle does not retract it. Every live
-      page is retracted once its staleness clock passes 72 h.
+      (``first_unanswered_attempt_at``) is older than 24 h. Only a BLAMED
+      attempt starts or continues that run — an unblamed or tick-stopping one
+      never does — and a publish or reactivation resets it, so a blip late in
+      a long cycle does not retract a page. Every live page is retracted once
+      its staleness clock passes 72 h.
+    * **No lock across the network**: the queue is read and that transaction
+      ended before any GitHub call; each slug's result is written in its own
+      short transaction with the row taken ``FOR UPDATE SKIP LOCKED``, so a
+      concurrent unpublish or retract never waits on GitHub and always wins.
     * **Capacity**: when one full check cycle (live repos / throughput) takes
       longer than 24 h, a WARNING is logged and ``capacity_shortfall`` is set.
     * **Deadline**: no new GitHub call starts after
@@ -598,14 +625,16 @@ async def recheck_visibility(
         )
     tick = VisibilityTick()
     started = time.monotonic()
-    await _check_capacity(db, tick, token)
     blamed: set[str] = set()
+
+    # --- Read phase: a snapshot of the queue, then the transaction ENDS. No
+    # row lock (and no open transaction) is held while GitHub is awaited.
+    await _check_capacity(db, tick, token)
     if await github_rate_budget.reserved(db, reserve):
+        await db.commit()
         tick.stopped = "budget_reserved"
         await _retract_stale(db, tick, blamed)
-        await db.commit()
         return tick
-
     latest = _latest_publish_subquery()
     # GREATEST ignores NULLs in Postgres; all-NULL sorts first.
     queue_key = func.greatest(
@@ -613,33 +642,30 @@ async def recheck_visibility(
         latest.c.published_at,
         BuildRecordPublicSlug.last_visibility_attempt_at,
     )
-    owners = (
-        (
-            await db.execute(
-                select(BuildRecordPublicSlug)
-                .outerjoin(
-                    latest, latest.c.public_slug == BuildRecordPublicSlug.public_slug
-                )
-                .where(BuildRecordPublicSlug.unpublished_at.is_(None))
-                .order_by(
-                    queue_key.asc().nulls_first(), BuildRecordPublicSlug.public_slug
-                )
+    queue = (
+        await db.execute(
+            select(
+                BuildRecordPublicSlug.public_slug,
+                BuildRecordPublicSlug.visibility_check_offset,
             )
+            .outerjoin(
+                latest, latest.c.public_slug == BuildRecordPublicSlug.public_slug
+            )
+            .where(BuildRecordPublicSlug.unpublished_at.is_(None))
+            .order_by(queue_key.asc().nulls_first(), BuildRecordPublicSlug.public_slug)
         )
-        .scalars()
-        .all()
-    )
+    ).all()
+    repos_by_slug = {slug: await latest_repos(db, slug) for slug, _ in queue}
+    await db.commit()
+
     answers = []
     definite = 0  # PUBLIC / NOT_PUBLIC answers this tick
-    unanswered: list[BuildRecordPublicSlug] = []  # gave up on, blame decided below
-    for owner in owners:
+    unanswered: list[str] = []  # given up on; blame decided at the end
+    for slug, stored_offset in queue:
         if tick.calls >= budget or tick.stopped is not None:
             break
-        slug, tenant_id = owner.public_slug, owner.tenant_id
-        repos = await latest_repos(db, slug)
-        offset = owner.visibility_check_offset
-        if offset >= len(repos):
-            offset = 0
+        repos = repos_by_slug[slug]
+        offset = stored_offset if stored_offset < len(repos) else 0
         outcome = "pending"  # → complete | private | gave_up
         while offset < len(repos) and tick.calls < budget:
             if time.monotonic() - started > VISIBILITY_TICK_DEADLINE_SECONDS:
@@ -666,55 +692,67 @@ async def recheck_visibility(
                 break
         if outcome == "pending" and offset >= len(repos):
             outcome = "complete"
-
-        now = datetime.now(UTC)
-        if outcome == "gave_up" or (
-            outcome == "pending" and tick.stopped in ("rate_limited", "transport")
-        ):
-            # An unanswered attempt: start (or continue) this page's run.
-            if owner.first_unanswered_attempt_at is None:
-                owner.first_unanswered_attempt_at = now
         if outcome == "gave_up":
-            # Behind the others either way; whether it is BLAMED is decided
-            # once the tick knows if GitHub answered anyone at all.
-            owner.visibility_check_offset = offset
-            owner.last_visibility_attempt_at = now
-            unanswered.append(owner)
+            unanswered.append(slug)
             if definite == 0 and len(unanswered) >= 2:
                 # Nothing answered this tick: that is GitHub, not the slugs.
                 tick.stopped = "github_unanswering"
+
+        # --- Write phase for this slug: one short transaction, the row taken
+        # with SKIP LOCKED. A concurrent unpublish/retract holding it wins and
+        # this tick simply records nothing for the slug.
+        owner = await _lock_live_owner(db, slug)
+        if owner is None:
+            await db.commit()
+            continue
+        now = datetime.now(UTC)
+        if outcome == "gave_up":
+            # Behind the others either way; blame is decided at the end.
+            owner.visibility_check_offset = offset
+            owner.last_visibility_attempt_at = now
         elif outcome == "private":
-            if await retract_live(db, slug, tenant_id):
-                tick.retracted.append(slug)
+            owner.unpublished_at = now
+            tick.retracted.append(slug)
             _mark_complete(owner, now, tick)
         elif outcome == "complete":
             _mark_complete(owner, now, tick)
         else:  # pending: out of budget, or the tick stopped mid-slug
             owner.visibility_check_offset = offset  # resume here next time
             if tick.stopped is not None and tick.stopped != "deadline":
-                # The tick-stopping answer is not this slug's fault, but it
-                # must not let the slug hold the head of the queue either.
+                # A tick-stopping answer is not this slug's fault — it is
+                # neither blamed nor starts a run — but it must not let the
+                # slug hold the head of the queue either.
                 owner.last_visibility_attempt_at = now
+        await db.commit()
 
+    # --- Blame: only when GitHub demonstrably answered someone this tick.
     if definite > 0:
-        for owner in unanswered:
+        for slug in unanswered:
+            owner = await _lock_live_owner(db, slug)
+            if owner is None:
+                await db.commit()
+                continue
+            now = datetime.now(UTC)
             owner.visibility_unknown_attempts += 1
-            tick.gave_up.append(owner.public_slug)
-            blamed.add(owner.public_slug)
+            if owner.first_unanswered_attempt_at is None:
+                owner.first_unanswered_attempt_at = now  # the run starts HERE
+            tick.gave_up.append(slug)
+            blamed.add(slug)
             if owner.visibility_unknown_attempts >= VISIBILITY_UNKNOWN_RETRACT_AFTER:
-                if await retract_live(db, owner.public_slug, owner.tenant_id):
-                    tick.retracted.append(owner.public_slug)
-                _mark_complete(owner, datetime.now(UTC), tick)
+                owner.unpublished_at = now
+                tick.retracted.append(slug)
+                _mark_complete(owner, now, tick)
+            await db.commit()
     else:
-        tick.unblamed = [o.public_slug for o in unanswered]
+        tick.unblamed = list(unanswered)
     if tick.credential_error:
         logger.error(
             "build_record_visibility_token_dead",
             note="GITHUB_VISIBILITY_TOKEN rejected; this tick ran anonymously",
         )
     await github_rate_budget.record(db, answers)
-    await _retract_stale(db, tick, blamed)
     await db.commit()
+    await _retract_stale(db, tick, blamed)
     if tick.retracted:
         logger.info("build_record_visibility_retracted", slugs=tick.retracted)
     return tick

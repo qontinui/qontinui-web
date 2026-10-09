@@ -1908,12 +1908,17 @@ class TestVisibilityTick:
         ]
         await self._publish(client_a, coord, "vis-wide", repos=repos)
         coord.github_calls.clear()
+        # The publish itself was a complete answer; a partial tick must not
+        # advance it.
+        published_check = (
+            await self._owner(async_db_session, "vis-wide")
+        ).last_visibility_check_at
 
         tick = await recheck_visibility(async_db_session, budget=2)
         assert tick.calls == 2 and tick.completed == []
         owner = await self._owner(async_db_session, "vis-wide")
         assert owner.visibility_check_offset == 2
-        assert owner.last_visibility_check_at is None  # not a complete answer
+        assert owner.last_visibility_check_at == published_check
 
         tick = await recheck_visibility(async_db_session, budget=2)
         assert coord.github_calls[2] == "qontinui/r3"  # resumed, not restarted
@@ -2644,6 +2649,11 @@ class TestRev7:
             .where(BuildRecordSnapshot.public_slug == "x-a")
             .values(published_at=long_ago)
         )
+        await async_db_session.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == "x-a")
+            .values(last_visibility_check_at=long_ago)
+        )
         tick = await recheck_visibility(async_db_session, budget=8)
         assert tick.retracted == ["x-a"] and tick.stale == ["x-a"]
         assert (
@@ -3086,3 +3096,238 @@ class TestRev9:
         monkeypatch.setattr(job, "VISIBILITY_TICK_DEADLINE_SECONDS", -1.0)
         tick = await job.recheck_visibility(async_db_session)
         assert tick.stopped == "deadline" and tick.calls == 0 and asked == []
+
+
+# ===========================================================================
+# Tenth review — regression tests from rev10/t/tests/test_rev10*.py
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+class TestRev10:
+    @staticmethod
+    async def _publish(
+        client: httpx.AsyncClient, coord: _Coord, slug: str, repo: str, **body: Any
+    ) -> None:
+        if not any(p["slug"] == slug for p in coord.products.get(TENANT_A, [])):
+            coord.define(TENANT_A, slug, repos=[repo])
+            coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repo
+        r = await client.post(
+            f"/api/v1/build-records/{slug}/publish", json=body or None
+        )
+        assert r.status_code == 201, r.text
+
+    @staticmethod
+    async def _row(db: AsyncSession, slug: str) -> BuildRecordPublicSlug:
+        return (
+            await db.execute(
+                select(BuildRecordPublicSlug)
+                .where(BuildRecordPublicSlug.public_slug == slug)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+
+    @staticmethod
+    async def _to_head(db: AsyncSession, slug: str) -> None:
+        """Put ``slug`` at the head of the stalest-first queue."""
+        from app.models.build_record import GithubRateBudget
+
+        await db.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug != slug)
+            .values(last_visibility_attempt_at=datetime.now(UTC) + timedelta(hours=1))
+        )
+        await db.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == slug)
+            .values(
+                last_visibility_attempt_at=None,
+                last_visibility_check_at=datetime.now(UTC) - timedelta(hours=2),
+            )
+        )
+        await db.execute(GithubRateBudget.__table__.delete())
+
+    async def test_reactivation_resets_the_run_so_one_blip_does_not_retract(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for i in range(4):
+            await self._publish(client_a, coord, f"p{i}", f"tenant-a/r{i}")
+        # A blamed blip on p0 starts its run; it is then unpublished and, a
+        # week later, reactivated (the publish re-confirms GitHub PUBLIC).
+        _real_github(
+            monkeypatch,
+            lambda n: httpx.Response(502) if n == "tenant-a/r0" else _public(n),
+        )
+        assert "p0" in (await recheck_visibility(async_db_session)).gave_up
+        assert (
+            await client_a.delete("/api/v1/build-records/p0/publish")
+        ).status_code == 200
+        await async_db_session.execute(
+            update(BuildRecordPublicSlug)
+            .where(BuildRecordPublicSlug.public_slug == "p0")
+            .values(first_unanswered_attempt_at=datetime.now(UTC) - timedelta(days=7))
+        )
+        _real_github(monkeypatch, _public)
+        coord.documents[(TENANT_A, "p0")]["generated_at"] = _now_rfc3339()
+        await self._publish(client_a, coord, "p0", "tenant-a/r0", reactivate=True)
+        row = await self._row(async_db_session, "p0")
+        assert row.first_unanswered_attempt_at is None
+        assert row.visibility_unknown_attempts == 0
+        assert row.last_visibility_check_at is not None
+
+        await self._to_head(async_db_session, "p0")
+        _real_github(
+            monkeypatch,
+            lambda n: httpx.Response(502) if n == "tenant-a/r0" else _public(n),
+        )
+        tick = await recheck_visibility(async_db_session)
+        assert tick.gave_up == ["p0"] and tick.stale == []
+        assert (
+            await client_a.get("/api/v1/public/build-records/p0")
+        ).status_code == 200
+
+    async def test_a_transport_blip_does_not_start_the_24h_clock(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for i in range(4):
+            await self._publish(client_a, coord, f"q{i}", f"tenant-a/s{i}")
+        await self._to_head(async_db_session, "q0")
+
+        def boom(_: str) -> httpx.Response:
+            raise httpx.ConnectError("blip")
+
+        _real_github(monkeypatch, boom)
+        tick = await recheck_visibility(async_db_session)
+        assert tick.stopped == "transport"
+        assert (
+            await self._row(async_db_session, "q0")
+        ).first_unanswered_attempt_at is None
+
+        # An UNBLAMED give-up does not start it either.
+        await self._to_head(async_db_session, "q0")
+        _real_github(monkeypatch, lambda _: httpx.Response(503))
+        assert (await recheck_visibility(async_db_session)).unblamed
+        assert (
+            await self._row(async_db_session, "q0")
+        ).first_unanswered_attempt_at is None
+
+        # Only a BLAMED one does — and the run it starts is fresh, not stale.
+        await self._to_head(async_db_session, "q0")
+        _real_github(
+            monkeypatch,
+            lambda n: httpx.Response(502) if n == "tenant-a/s0" else _public(n),
+        )
+        tick = await recheck_visibility(async_db_session)
+        assert tick.gave_up == ["q0"] and tick.stale == []
+        assert (
+            await self._row(async_db_session, "q0")
+        ).first_unanswered_attempt_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_slow_tick_never_blocks_an_unpublish(
+    test_engine, coord: _Coord, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """rev10_lock: the tick must hold no row lock while awaiting GitHub."""
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.api.v1.endpoints.build_records import canonical_sha256
+    from app.jobs.build_record_reconcile import recheck_visibility
+    from app.models.build_record import GithubRateBudget
+    from app.services import github_repo_visibility
+
+    slugs = ["lock-rv-0", "lock-rv-1", "lock-rv-2"]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(UTC)
+    async with maker() as s:
+        await s.execute(GithubRateBudget.__table__.delete())
+        for i, slug in enumerate(slugs):
+            doc = _document(slug)
+            doc["product"]["repos"] = [f"tenant-a/l{i}"]
+            doc["prs"][0]["repo"] = f"tenant-a/l{i}"
+            s.add(
+                BuildRecordPublicSlug(
+                    public_slug=slug,
+                    tenant_id=TENANT_A,
+                    last_visibility_check_at=now - timedelta(hours=10 - i),
+                )
+            )
+            s.add(
+                BuildRecordSnapshot(
+                    tenant_id=TENANT_A,
+                    public_slug=slug,
+                    version=1,
+                    document=doc,
+                    content_sha256=canonical_sha256(doc),
+                    generated_at=now,
+                )
+            )
+        await s.commit()
+    try:
+
+        async def slow(request: httpx.Request) -> httpx.Response:
+            name = request.url.path.removeprefix("/repos/")
+            if name != "tenant-a/l0":
+                await asyncio.sleep(3)  # GitHub slow for the later repos
+            return _public(name)
+
+        _real_github(monkeypatch, _public)
+        monkeypatch.setattr(
+            github_repo_visibility,
+            "_client_factory",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(slow)),
+        )
+
+        async def tick() -> Any:
+            async with maker() as s:
+                return await recheck_visibility(s)
+
+        task = asyncio.create_task(tick())
+        await asyncio.sleep(1.0)  # lock-rv-0 answered; tick awaits GitHub now
+        async with maker() as s2:
+            async with _client(_build_app(s2, TENANT_A)) as c:
+                begun = time.monotonic()
+                r = await c.delete(f"/api/v1/build-records/{slugs[0]}/publish")
+                waited = time.monotonic() - begun
+                assert r.status_code == 200, r.text
+                assert waited < 2.0, waited
+                gone = await c.get(f"/api/v1/public/build-records/{slugs[0]}")
+                assert gone.status_code == 404
+        result = await task
+        assert slugs[0] in result.completed
+        async with maker() as s3:
+            row = (
+                await s3.execute(
+                    select(BuildRecordPublicSlug).where(
+                        BuildRecordPublicSlug.public_slug == slugs[0]
+                    )
+                )
+            ).scalar_one()
+            assert row.unpublished_at is not None  # the unpublish stuck
+    finally:
+        async with maker() as s:
+            await s.execute(
+                delete(BuildRecordSnapshot).where(
+                    BuildRecordSnapshot.public_slug.in_(slugs)
+                )
+            )
+            await s.execute(
+                delete(BuildRecordPublicSlug).where(
+                    BuildRecordPublicSlug.public_slug.in_(slugs)
+                )
+            )
+            await s.execute(GithubRateBudget.__table__.delete())
+            await s.commit()
