@@ -43,7 +43,6 @@ from app.schemas.plan_library import (
     WriteDoorCorrection,
 )
 from app.schemas.plan_library_scan_roots import ScanRootState, SlugCensusSource
-from app.services.plan_difficulty import MODEL_TIERS
 
 _PREFIX: Final = "/api/v1/plan-library"
 _UPSERT: Final = f"POST {_PREFIX}"
@@ -69,18 +68,20 @@ CAPTURED_BY_MEANINGS: Final[dict[str, str]] = {
     "operator": "A human wrote the row from the web console.",
 }
 
-#: The routing sense of each level; the model names come from
-#: ``plan_difficulty.MODEL_TIERS`` (the one served display copy), never retyped.
-_DIFFICULTY_LEVEL_SENSE: Final[dict[str, str]] = {
-    "low": "A fast model tier is enough to vet and implement it",
-    "medium": "A mid model tier is well suited to it",
-    "high": "Needs the strongest model tier",
-}
+#: The routing sense of each level. Deliberately names NO model: which family
+#: a level routes to is per organization and operator-editable (plan
+#: ``2026-10-08-operator-editable-model-family-per-plan-difficulty``), while
+#: this vocabulary is the same for every caller. The organization's map is the
+#: ``model_selectors`` / ``model_tiers`` pair on ``GET /plan-library``.
+_ROUTING_POINTER: Final = (
+    "the model family it routes to is this organization's model_selectors "
+    "map on GET /plan-library"
+)
 
 DIFFICULTY_LEVEL_MEANINGS: Final[dict[str, str]] = {
-    level: f"{sense} ({MODEL_TIERS[level]})."
-    for level, sense in _DIFFICULTY_LEVEL_SENSE.items()
-    if level in MODEL_TIERS
+    "low": f"A fast model tier is enough to vet and implement it ({_ROUTING_POINTER}).",
+    "medium": f"A mid model tier is well suited to it ({_ROUTING_POINTER}).",
+    "high": f"Needs the strongest model tier ({_ROUTING_POINTER}).",
 }
 
 SCAN_ROOT_STATE_MEANINGS: Final[dict[str, str]] = {

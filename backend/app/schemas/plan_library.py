@@ -619,8 +619,9 @@ class WorkArtifactListResponse(BaseModel):
     limit: int
     corpus_health: CorpusHealth
     #: The level → model maps, served on every page so a consumer routing on
-    #: an item's ``difficulty`` reads the map in the same call. Corpus
-    #: constants, so envelope-level rather than per item; byte-identical to
+    #: an item's ``difficulty`` reads the map in the same call. One map per
+    #: organization (operator-editable, ``GET/PUT /plan-library/model-routing``),
+    #: so envelope-level rather than per item; byte-identical to
     #: ``/candidates`` and ``/difficulty``. See :class:`PlanDifficultyResponse`.
     model_tiers: dict[str, str]
     model_selectors: dict[str, str]
@@ -774,7 +775,11 @@ class PlanDifficultyResponse(BaseModel):
     row that is still unrated is left OUT of ``items`` — absent here means
     "no rating", which the console renders as unrated, never as "low".
     ``model_tiers`` maps each level to the model tier it routes to, served so
-    every consumer names the same models. It is DISPLAY COPY — never parse it.
+    every consumer names the same models. It is DISPLAY COPY — never parse it —
+    derived from ``model_selectors``, so the two always agree. Both are the
+    caller's organization's map as the operator set it on
+    ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+    map when no row names it.
     ``model_selectors`` is the machine-readable twin: each level's harness
     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -800,6 +805,61 @@ class PlanDifficultyResponse(BaseModel):
     model_tiers: dict[str, str]
     model_selectors: dict[str, str]
     model_selector_vocabulary: str
+
+
+# ─────────────── model routing (operator-editable) ───────────────
+#
+# Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+
+#: The model families an operator may route a level to — the
+#: ``claude_code_agent_tool_v1`` selector vocabulary. Pinned against
+#: ``app.models.plan_model_route.MODEL_FAMILIES`` (the CHECK's source) by
+#: ``tests/test_plan_model_routing.py``.
+ModelFamily = Literal["fable", "opus", "sonnet", "haiku"]
+
+
+class ModelRoutingUpdate(BaseModel):
+    """``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+
+    Every level is required and an unknown key is refused, so a save is always
+    a whole, explicit map: there is no partial write whose omitted levels mean
+    either "keep" or "reset" depending on who reads the code.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    high: ModelFamily
+    medium: ModelFamily
+    low: ModelFamily
+
+
+class ModelFamilyOption(BaseModel):
+    """One family the console offers, with the copy ``model_tiers`` serves for it."""
+
+    family: str
+    display: str
+
+
+class ModelRoutingResponse(BaseModel):
+    """The caller's organization's routing map, as STORED and as SERVED.
+
+    ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+    exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+    serve this caller. ``sources`` says, per level, whether a stored row or the
+    shipped default answered (``default_selectors``). ``can_edit`` is false for
+    a principal with no personal organization: that scope is the shared NULL
+    bucket, which reads the defaults and refuses a write (409).
+    """
+
+    model_selectors: dict[str, str]
+    model_tiers: dict[str, str]
+    model_selector_vocabulary: str
+    sources: dict[str, Literal["stored", "default"]]
+    default_selectors: dict[str, str]
+    families: list[ModelFamilyOption]
+    updated_at: IsoDatetime | None = None
+    updated_by_user_id: UUID | None = None
+    can_edit: bool
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────

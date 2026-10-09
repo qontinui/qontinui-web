@@ -36,7 +36,7 @@ from app.schemas.plan_library import (
 )
 from app.schemas.plan_library_scan_roots import ScanRootState, SlugCensusSource
 from app.services import plan_library_vocabulary as vocab
-from app.services.plan_difficulty import MODEL_TIERS
+from app.services.plan_difficulty import MODEL_FAMILY_DISPLAY
 
 API_PREFIX = "/api/v1/plan-library"
 DEVICE_BEARER = "a-coord-issued-device-jwt"
@@ -104,9 +104,17 @@ def test_every_plan_library_closed_field_is_served() -> None:
         )
 
 
-def test_difficulty_meanings_name_the_served_model_tiers() -> None:
-    for level, tier in MODEL_TIERS.items():
-        assert tier in vocab.DIFFICULTY_LEVEL_MEANINGS[level], level
+def test_difficulty_meanings_name_no_model() -> None:
+    """The vocabulary is the same for every caller, while the level → family
+    map is per organization (plan
+    ``2026-10-08-operator-editable-model-family-per-plan-difficulty``), so a
+    meaning that named a model would be wrong for any organization that moved
+    it. Each meaning points at the served map instead."""
+    assert set(vocab.DIFFICULTY_LEVEL_MEANINGS) == {"low", "medium", "high"}
+    for level, meaning in vocab.DIFFICULTY_LEVEL_MEANINGS.items():
+        assert "model_selectors" in meaning, level
+        for family in MODEL_FAMILY_DISPLAY:
+            assert family not in meaning.lower(), (level, family)
 
 
 def test_vocabulary_equals_model_relations() -> None:
