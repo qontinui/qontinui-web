@@ -31,7 +31,10 @@
 
 import type { SessionRepositoryQuery } from "@/components/session-repository/api";
 import type { SessionArtifactListResponse } from "@/components/session-repository/types";
-import type { GetSessionOutputOptions, OutputTier } from "./api";
+import type {
+  GetSessionOutputOptions,
+  OutputTier,
+} from "@/lib/api/operations/sessions";
 import type { OutputHistoryResponse } from "./types";
 
 // ---------------------------------------------------------------------------

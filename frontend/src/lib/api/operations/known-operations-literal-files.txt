@@ -49,7 +49,6 @@ components/admin/coord/DeployRow.tsx
 components/admin/coord/GapRow.tsx
 components/admin/coord/LandRow.tsx
 components/admin/coord/RedMainBanner.tsx
-components/commits/api.ts
 components/operations/ConnectInstalledOrg.tsx
 components/operations/ConnectedOrgs.tsx
 components/operations/FleetOverview.tsx
@@ -74,10 +73,8 @@ components/operations/useFleetWorktreeCap.ts
 components/operations/useFleetWorktreeSlots.ts
 components/operations/useMergePipelineData.ts
 components/operations/usePrCheckDetails.ts
-components/operations/useRunnerWindDown.ts
 components/operations/useTrainHealth.ts
 components/operations/utils.ts
-components/sessions/api.ts
 lib/onboarding-connect-state.ts
 lib/onboarding-pending.ts
 services/runner-releases-service.ts

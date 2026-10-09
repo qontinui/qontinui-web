@@ -22,7 +22,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTenant, TenantCreateError } from "./api";
+import { createTenant, TenantCreateError } from "@/lib/api/operations/sessions";
 
 /** Stub `fetch` with a fixed status and count the POSTs that reach it. */
 function countedFetch(

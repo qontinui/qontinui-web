@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseTenantCreateError,
   TenantCreateError,
-} from "@/components/sessions/api";
+} from "@/lib/api/operations/sessions";
 import { projectCreateErrorMessage } from "./CoordProjectCreateDialog";
 import fixtures from "./projectSlug.fixtures.json";
 import {
