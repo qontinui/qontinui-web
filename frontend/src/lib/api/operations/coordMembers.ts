@@ -14,6 +14,10 @@
  * `response_model`), and each names the backend handler it mirrors in
  * `backend/app/api/v1/endpoints/operations/__init__.py`.
  *
+ * Writes whose result no caller reads resolve `null` for a 2xx whose body does
+ * not parse (a 204 included): the 2xx is the fact that the change landed, and
+ * failing it would invite a repeat of a write that already happened.
+ *
  * A shared `request(path)` helper underneath would make every call site a
  * wrapper-of-a-wrapper, which `route-walker.test.ts` cannot resolve.
  */
@@ -127,14 +131,16 @@ export async function fetchMembers(): Promise<MembersResponse> {
 export async function grantMemberRole(
   operatorId: string,
   role: CoordMemberRole
-): Promise<MemberRoleWriteResponse> {
+): Promise<MemberRoleWriteResponse | null> {
   const url = `${OPERATIONS_BASE}/coord/members/${encodeURIComponent(operatorId)}/roles`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ role }),
     idempotent: false,
   });
-  return readJson<MemberRoleWriteResponse>(res, `POST ${url}`);
+  return readJson<MemberRoleWriteResponse>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
@@ -145,14 +151,16 @@ export async function grantMemberRole(
 export async function revokeMemberRole(
   operatorId: string,
   role: string
-): Promise<MemberRoleWriteResponse> {
+): Promise<MemberRoleWriteResponse | null> {
   const url = `${OPERATIONS_BASE}/coord/members/${encodeURIComponent(operatorId)}/roles`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
     body: JSON.stringify({ role }),
     idempotent: true,
   });
-  return readJson<MemberRoleWriteResponse>(res, `DELETE ${url}`);
+  return readJson<MemberRoleWriteResponse>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
