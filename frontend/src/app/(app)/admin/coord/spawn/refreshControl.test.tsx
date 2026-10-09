@@ -25,9 +25,11 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
 
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    fetch: (url: string, init?: RequestInit) => fetchViaGetPost(url, init, get),
     post: vi.fn(),
   },
 }));
@@ -78,7 +80,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup();
     render(<CoordSpawnPage />);
@@ -110,7 +114,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : pollRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : pollRead.promise;
     });
     render(<CoordSpawnPage />);
     await screen.findByTestId("coord-spawn-plans-empty");
@@ -136,7 +142,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CoordSpawnPage />);

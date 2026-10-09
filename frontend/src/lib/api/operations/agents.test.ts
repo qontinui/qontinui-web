@@ -1,45 +1,62 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 
 /**
- * Pins each `agents` function's exact request: the RELATIVE URL (plan D6),
- * the method, and the retry policy the route walker cannot see. The spawn's
- * `idempotent: false` + `maxRetries: 0` is the load-bearing pair — a retried
- * spawn can mint two agents — so the whole options object is compared with
- * `toEqual`, and any change to it has to say so here.
+ * Pins each `agents` function's exact request: the RELATIVE URL (plan D6) on
+ * `httpClient.fetch` (the D6 amendment), the method, and the retry policy the
+ * route walker cannot see. The spawn's `idempotent: false` + `maxRetries: 0`
+ * is the load-bearing pair — a retried spawn can mint two agents — so the
+ * whole options object is compared with `toEqual`, and any change to it has
+ * to say so here.
  */
 
-const getMock = vi.fn();
 const fetchMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
     fetch: (...args: unknown[]) => fetchMock(...args),
   },
 }));
 
-const { fetchClaudeAccounts, spawnAgent } = await import("./agents");
+const {
+  fetchAgentLogsByAgent,
+  fetchClaudeAccounts,
+  fetchRecentAgentLogs,
+  spawnAgent,
+} = await import("./agents");
 
 describe("agents", () => {
   afterEach(() => {
-    getMock.mockReset();
     fetchMock.mockReset();
   });
 
   it("fetchClaudeAccounts GETs /claude-accounts, declared idempotent", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }));
     await fetchClaudeAccounts();
-    expect(getMock).toHaveBeenCalledTimes(1);
-    expect(getMock.mock.calls[0]).toEqual([
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/claude-accounts",
-      { idempotent: true },
+      { method: "GET", idempotent: true },
     ]);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("fetchClaudeAccounts resolves to the parsed body httpClient.get returned", async () => {
+  it("fetchClaudeAccounts resolves to the parsed body", async () => {
     const body = { accounts: [], table_provisioned: true };
-    getMock.mockResolvedValueOnce(body);
-    await expect(fetchClaudeAccounts()).resolves.toBe(body);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(body), { status: 200 })
+    );
+    await expect(fetchClaudeAccounts()).resolves.toEqual(body);
+  });
+
+  it("fetchClaudeAccounts rejects a non-2xx in httpClient.get's error shape", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("Not authenticated", { status: 401 })
+    );
+    const err = await fetchClaudeAccounts().catch((e: unknown) => e);
+    expect((err as Error).message).toBe(
+      "GET /api/v1/operations/claude-accounts failed: 401 - Not authenticated"
+    );
+    expect(httpStatusOf(err)).toBe(401);
   });
 
   it("spawnAgent POSTs the JSON body once, never retried", async () => {
@@ -56,12 +73,34 @@ describe("agents", () => {
         maxRetries: 0,
       },
     ]);
-    expect(getMock).not.toHaveBeenCalled();
   });
 
   it("spawnAgent returns the raw Response httpClient.fetch resolved", async () => {
     const res = new Response("not json", { status: 200 });
     fetchMock.mockResolvedValueOnce(res);
     await expect(spawnAgent({})).resolves.toBe(res);
+  });
+
+  it("fetchRecentAgentLogs GETs /agent-logs/recent with the query", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
+    await fetchRecentAgentLogs(new URLSearchParams({ limit: "200" }), {
+      maxRetries: 0,
+    });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/agent-logs/recent?limit=200",
+      { maxRetries: 0, method: "GET", idempotent: true },
+    ]);
+  });
+
+  it("fetchAgentLogsByAgent GETs /agent-logs/by-agent/{agent_id} with the id encoded", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
+    await fetchAgentLogsByAgent(
+      "a/b #1",
+      new URLSearchParams({ limit: "500" })
+    );
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/agent-logs/by-agent/a%2Fb%20%231?limit=500",
+      { method: "GET", idempotent: true },
+    ]);
   });
 });

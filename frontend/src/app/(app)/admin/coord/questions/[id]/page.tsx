@@ -132,7 +132,10 @@ import {
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchQuestion,
+  respondToQuestion,
+} from "@/lib/api/operations/coordQuestions";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   QUESTION_STATUS_PALETTE,
@@ -154,8 +157,6 @@ import {
   type QuestionEffect,
 } from "@/components/admin/coord/questionEffect";
 
-const API = "/api/v1/operations";
-
 /**
  * A 200 whose body is not a question row is UNKNOWN, not a missing question.
  *
@@ -175,7 +176,10 @@ const API = "/api/v1/operations";
 function extractQuestion(body: unknown): AgentQuestionRow {
   if (body && typeof body === "object" && !Array.isArray(body)) {
     const row = body as Partial<AgentQuestionRow>;
-    if (typeof row.question_id === "string" && typeof row.question === "string") {
+    if (
+      typeof row.question_id === "string" &&
+      typeof row.question === "string"
+    ) {
       return row as AgentQuestionRow;
     }
   }
@@ -262,9 +266,7 @@ export default function CoordQuestionDetailPage() {
     }
     setNotFound(false);
     try {
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/${encodeURIComponent(id)}`
-      );
+      const body = await fetchQuestion(id);
       if (seq !== fetchSeq.current) return;
       setQuestion(extractQuestion(body));
       setError(null);
@@ -323,13 +325,10 @@ export default function CoordQuestionDetailPage() {
       if (!id || !text.trim()) return;
       setSubmitting(true);
       try {
-        await httpClient.post(
-          `${API}/agent-questions/${encodeURIComponent(id)}/respond`,
-          {
-            response: text.trim(),
-            responded_by_operator: user?.email ?? "operator",
-          }
-        );
+        await respondToQuestion(id, {
+          response: text.trim(),
+          responded_by_operator: user?.email ?? "operator",
+        });
         toast.success("Response sent to agent");
         router.push("/admin/coord/questions");
       } catch (e) {
@@ -384,7 +383,9 @@ export default function CoordQuestionDetailPage() {
     }
     void postResponse(text);
   };
-  const confirmKind = confirmText ? decisiveValueFor(effect, confirmText) : null;
+  const confirmKind = confirmText
+    ? decisiveValueFor(effect, confirmText)
+    : null;
   // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
@@ -556,53 +557,47 @@ export default function CoordQuestionDetailPage() {
               decision buttons below — so the seed-the-composer cards would be
               a second, weaker control for the same act. */}
           {options.length > 0 && !decisions && (
-            <section
-              data-testid="coord-question-options"
-              className="space-y-2"
-            >
+            <section data-testid="coord-question-options" className="space-y-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Suggested options
               </h2>
               <div className="grid gap-2 sm:grid-cols-2">
-                  {options.map((opt, i) => {
-                    const value =
-                      opt.value ??
-                      opt.label ??
-                      `option-${i}`;
-                    const isSelected = selectedOption === value;
-                    return (
-                      <button
-                        type="button"
-                        key={`${value}-${i}`}
-                        data-testid="coord-question-option-card"
-                        // `terminal`, not `answered`: a withdrawn row is not
-                        // answerable either, and seeding a composer that must
-                        // not submit is the same invitation by another route.
-                        disabled={terminal}
-                        onClick={() => {
-                          setSelectedOption(value);
-                          setResponse(value);
-                        }}
-                        className={cn(
-                          "text-left border rounded-md p-3 transition-colors",
-                          "hover:bg-muted",
-                          isSelected
-                            ? "border-primary bg-primary/5"
-                            : "border-border",
-                          terminal && "opacity-60 cursor-not-allowed"
-                        )}
-                      >
-                        <div className="text-sm font-medium">
-                          {opt.label ?? opt.value ?? value}
+                {options.map((opt, i) => {
+                  const value = opt.value ?? opt.label ?? `option-${i}`;
+                  const isSelected = selectedOption === value;
+                  return (
+                    <button
+                      type="button"
+                      key={`${value}-${i}`}
+                      data-testid="coord-question-option-card"
+                      // `terminal`, not `answered`: a withdrawn row is not
+                      // answerable either, and seeding a composer that must
+                      // not submit is the same invitation by another route.
+                      disabled={terminal}
+                      onClick={() => {
+                        setSelectedOption(value);
+                        setResponse(value);
+                      }}
+                      className={cn(
+                        "text-left border rounded-md p-3 transition-colors",
+                        "hover:bg-muted",
+                        isSelected
+                          ? "border-primary bg-primary/5"
+                          : "border-border",
+                        terminal && "opacity-60 cursor-not-allowed"
+                      )}
+                    >
+                      <div className="text-sm font-medium">
+                        {opt.label ?? opt.value ?? value}
+                      </div>
+                      {opt.description && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {opt.description}
                         </div>
-                        {opt.description && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {opt.description}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -619,110 +614,107 @@ export default function CoordQuestionDetailPage() {
                   ? "Recorded response"
                   : "Respond"}
             </h2>
-              {withdrawn ? (
-                /* The retirement record, in the slot an answered row uses for
+            {withdrawn ? (
+              /* The retirement record, in the slot an answered row uses for
                    its response — the SAME component the inbox row renders, so
                    the two surfaces cannot drift about what a withdrawal looks
                    like or about what an absent reason means. */
-                <QuestionWithdrawalRecord
-                  question={shown}
-                  testId="coord-question-withdrawal-detail"
-                  className="text-sm"
-                />
-              ) : answered ? (
-                <>
-                  <p className="text-sm whitespace-pre-wrap">
-                    {shown.response}
+              <QuestionWithdrawalRecord
+                question={shown}
+                testId="coord-question-withdrawal-detail"
+                className="text-sm"
+              />
+            ) : answered ? (
+              <>
+                <p className="text-sm whitespace-pre-wrap">{shown.response}</p>
+                <p className="text-xs text-muted-foreground">
+                  answered {formatRelative(shown.responded_at ?? undefined)}
+                  {shown.responded_by_operator
+                    ? ` by ${shown.responded_by_operator}`
+                    : ""}
+                </p>
+              </>
+            ) : decisions ? (
+              <div className="space-y-2">
+                {effect?.kind === "proposal" && effect.href && (
+                  <p className="text-sm">
+                    <Link
+                      href={effect.href}
+                      className="underline underline-offset-2"
+                      data-testid="coord-question-effect-review-link"
+                    >
+                      Open proposal to review the diff
+                    </Link>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — approving applies it as written.
+                    </span>
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    answered{" "}
-                    {formatRelative(shown.responded_at ?? undefined)}
-                    {shown.responded_by_operator
-                      ? ` by ${shown.responded_by_operator}`
-                      : ""}
-                  </p>
-                </>
-              ) : decisions ? (
-                <div className="space-y-2">
-                  {effect?.kind === "proposal" && effect.href && (
-                    <p className="text-sm">
-                      <Link
-                        href={effect.href}
-                        className="underline underline-offset-2"
-                        data-testid="coord-question-effect-review-link"
-                      >
-                        Open proposal to review the diff
-                      </Link>
-                      <span className="text-muted-foreground">
-                        {" "}
-                        — approving applies it as written.
-                      </span>
-                    </p>
-                  )}
-                  {/* The server refuses a non-admin's answer to an effect row
+                )}
+                {/* The server refuses a non-admin's answer to an effect row
                       (403); do not offer a Developer a control that will fail. */}
-                  <CoordAdminOnly fallback={effectAdminNotice}>
-                    <div
-                      className="flex flex-wrap items-center gap-2"
-                      role="group"
-                      aria-label={
-                        effect?.kind === "proposal"
-                          ? "Decide this proposal"
-                          : "Decide this gate"
-                      }
-                      data-testid="coord-question-effect-decisions"
-                    >
-                      {decisions.map((d) => (
-                        <Button
-                          key={d.value}
-                          variant={d === decisions[0] ? "default" : "outline"}
-                          disabled={submitting}
-                          // A decisive value (approve / met) opens the confirm
-                          // step instead of posting.
-                          onClick={() => submitAnswer(d.value)}
-                          data-testid="coord-question-effect-decision"
-                          data-decision-value={d.value}
-                        >
-                          {d.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </CoordAdminOnly>
-                  <p className="text-xs text-muted-foreground">
-                    Decided through the {effect?.label}&apos;s own core
-                    {effect?.kind === "proposal"
-                      ? " — a stale proposal is still refused there"
-                      : ""}
-                    ; requires tenant admin, and the decision is recorded
-                    against your signed-in account by the server.
+                <CoordAdminOnly fallback={effectAdminNotice}>
+                  <div
+                    className="flex flex-wrap items-center gap-2"
+                    role="group"
+                    aria-label={
+                      effect?.kind === "proposal"
+                        ? "Decide this proposal"
+                        : "Decide this gate"
+                    }
+                    data-testid="coord-question-effect-decisions"
+                  >
+                    {decisions.map((d) => (
+                      <Button
+                        key={d.value}
+                        variant={d === decisions[0] ? "default" : "outline"}
+                        disabled={submitting}
+                        // A decisive value (approve / met) opens the confirm
+                        // step instead of posting.
+                        onClick={() => submitAnswer(d.value)}
+                        data-testid="coord-question-effect-decision"
+                        data-decision-value={d.value}
+                      >
+                        {d.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CoordAdminOnly>
+                <p className="text-xs text-muted-foreground">
+                  Decided through the {effect?.label}&apos;s own core
+                  {effect?.kind === "proposal"
+                    ? " — a stale proposal is still refused there"
+                    : ""}
+                  ; requires tenant admin, and the decision is recorded against
+                  your signed-in account by the server.
+                </p>
+              </div>
+            ) : (
+              <>
+                {decisionMismatch && (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="coord-question-effect-mismatch"
+                  >
+                    This row mirrors a {effect?.label}, but its options do not
+                    match the decisions this console knows (
+                    {effect?.decisions?.map((d) => d.value).join(" / ")}) —
+                    answer in free text; coord decides whether it applies.
                   </p>
-                </div>
-              ) : (
-                <>
-                  {decisionMismatch && (
-                    <p
-                      className="text-xs text-muted-foreground"
-                      data-testid="coord-question-effect-mismatch"
-                    >
-                      This row mirrors a {effect?.label}, but its options do
-                      not match the decisions this console knows (
-                      {effect?.decisions?.map((d) => d.value).join(" / ")}) —
-                      answer in free text; coord decides whether it applies.
-                    </p>
-                  )}
-                  {/* An effect row the console cannot route to buttons
+                )}
+                {/* An effect row the console cannot route to buttons
                       (clause, unknown kind, option mismatch) is still gated
                       server-side; a Developer gets the same notice, not a
                       composer whose answer will 403. */}
-                  {effect ? (
-                    <CoordAdminOnly fallback={effectAdminNotice}>
-                      {composer}
-                    </CoordAdminOnly>
-                  ) : (
-                    composer
-                  )}
-                </>
-              )}
+                {effect ? (
+                  <CoordAdminOnly fallback={effectAdminNotice}>
+                    {composer}
+                  </CoordAdminOnly>
+                ) : (
+                  composer
+                )}
+              </>
+            )}
             {/* One confirm step for both entry points — the decision buttons
                 and the fallback composer — so typing the value cannot skip it. */}
             <ConfirmDestructiveDialog

@@ -42,9 +42,11 @@ vi.mock("./usePlanDifficulty", () => ({
   }),
 }));
 
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    fetch: (url: string, init?: RequestInit) => fetchViaGetPost(url, init, get),
     post: vi.fn(),
   },
 }));

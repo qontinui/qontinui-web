@@ -9,8 +9,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: {
+    get: (...args: unknown[]) => httpGet(...args),
+    fetch: (url: string, init?: RequestInit) =>
+      fetchViaGetPost(url, init, httpGet),
+  },
 }));
 
 import { useDomainCost } from "./useDomainCost";
@@ -20,9 +25,7 @@ describe("useDomainCost", () => {
   beforeEach(() => httpGet.mockReset());
 
   it("a held read with a failed project list names that failure, and reads nothing", () => {
-    const { result } = renderHook(() =>
-      useDomainCost("t-1", true, "HTTP 502")
-    );
+    const { result } = renderHook(() => useDomainCost("t-1", true, "HTTP 502"));
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBe("project list unavailable: HTTP 502");
     expect(httpGet).not.toHaveBeenCalled();

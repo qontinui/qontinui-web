@@ -169,7 +169,10 @@ import {
   matchesDifficulty,
   type DifficultyFilter,
 } from "@/components/admin/coord/planDifficulty";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchPlans,
+  fetchPlansOverview,
+} from "@/lib/api/operations/coordPlans";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import {
   WALK_MAX_PAGES,
@@ -195,8 +198,6 @@ import {
   SHEPHERD_SLUG_PREFIX,
   type ShepherdFilter,
 } from "./plansHealth";
-
-const API = "/api/v1/operations";
 
 /** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
 const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
@@ -417,8 +418,7 @@ export default function CoordWorkUnitsListPage() {
           qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
         }
         const outcome = await walkWorkUnits(
-          (url) => httpClient.get(url),
-          `${API}/plans`,
+          (query) => fetchPlans(query),
           qs,
           order,
           guard.isNewest
@@ -426,9 +426,7 @@ export default function CoordWorkUnitsListPage() {
         if (outcome === null || !guard.isNewest()) return;
         let overview: WorkUnitOverview | null = null;
         if (outcome.kind !== "single_page") {
-          overview = await httpClient
-            .get<WorkUnitOverview>(`${API}/plans/overview`)
-            .catch(() => null);
+          overview = await fetchPlansOverview().catch(() => null);
           if (!guard.isNewest()) return;
         }
         setData({ outcome, overview, readAt: new Date().toISOString() });

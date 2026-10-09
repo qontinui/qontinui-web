@@ -9,8 +9,13 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const getMock = vi.fn();
 
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => getMock(...args) },
+  httpClient: {
+    get: (...args: unknown[]) => getMock(...args),
+    fetch: (url: string, init?: RequestInit) =>
+      fetchViaGetPost(url, init, getMock),
+  },
 }));
 
 import { useThroughput } from "./useThroughput";

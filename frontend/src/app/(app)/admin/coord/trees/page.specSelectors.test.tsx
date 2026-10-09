@@ -48,9 +48,11 @@ import { resolve } from "path";
 
 const get = vi.fn();
 
+import { fetchViaGetPost } from "@/test/operationsFetchShim";
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    fetch: (url: string, init?: RequestInit) => fetchViaGetPost(url, init, get),
     post: vi.fn(),
   },
 }));
@@ -131,7 +133,9 @@ describe("coord-trees Spec-CI selectors survive the Wave 1 migration", () => {
 
     // The tree rows arrive from the stubbed by-device fetch.
     await waitFor(() => {
-      expect(screen.getAllByTestId("coord-tree-card").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("coord-tree-card").length).toBeGreaterThan(
+        0
+      );
     });
 
     const missing: string[] = [];

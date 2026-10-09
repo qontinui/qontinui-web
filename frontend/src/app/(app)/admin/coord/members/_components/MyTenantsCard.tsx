@@ -5,13 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Building2 } from "lucide-react";
-import { fetchMyTenants } from "@/lib/api/operations/coordMembers";
+import {
+  fetchMyTenants,
+  type MyTenantsResponse,
+  type TenantRoleEntry,
+} from "@/lib/api/operations/coordMembers";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import {
   CoordProjectRenameDialog,
   type RenameTarget,
 } from "@/components/admin/coord/CoordProjectRenameDialog";
-import type { MyTenantsResponse, TenantRoleEntry } from "../_types";
 import { requireRows } from "../_lib/groupName";
 import {
   homeTenantName,
@@ -19,7 +23,6 @@ import {
   tierLabel,
   tenantName,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
@@ -32,7 +35,11 @@ import { log } from "../_lib/log";
  *   on this page render slugs — the group-mapping list and the Cognito groups'
  *   mapping chips — so the page re-reads them.
  */
-export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
+export function MyTenantsCard({
+  onSlugChanged,
+}: {
+  onSlugChanged: () => void;
+}) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +52,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchMyTenants();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as MyTenantsResponse | null;
+      const json = await fetchMyTenants();
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
       // leaves `data` null while `loading` and `error` are both false, and the
@@ -87,7 +92,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
       setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -107,26 +112,26 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
     // authored testid that vanishes with the fold would be a testid this wave
     // removed rather than moved.
     <div data-testid="coord-members-my-tenants">
-    <CollapsiblePanel
-      title="Your tenant & roles"
-      icon={<Building2 className="h-4 w-4" />}
-      titleAs="h2"
-      defaultOpen={false}
-      storageKey="coord-members-my-tenants"
-      summary={
-        <Badge
-          variant="outline"
-          // `error !== null`, not the sibling badges' `error ?`, and matching
-          // the `StatCluster` predicate above. `setError` stores
-          // `err.message`, which is `""` for `new Error()` — falsy, so `error ?`
-          // would drop the amber while the text below still read "unknown".
-          // One predicate for the tone and the word, so they cannot disagree.
-          className={`font-mono text-[11px]${
-            error !== null ? " text-amber-600 dark:text-amber-400" : ""
-          }`}
-          data-testid="coord-members-my-tenants-summary"
-        >
-          {/* The third `defaultOpen={false}` panel on this page, and the one
+      <CollapsiblePanel
+        title="Your tenant & roles"
+        icon={<Building2 className="h-4 w-4" />}
+        titleAs="h2"
+        defaultOpen={false}
+        storageKey="coord-members-my-tenants"
+        summary={
+          <Badge
+            variant="outline"
+            // `error !== null`, not the sibling badges' `error ?`, and matching
+            // the `StatCluster` predicate above. `setError` stores
+            // `err.message`, which is `""` for `new Error()` — falsy, so `error ?`
+            // would drop the amber while the text below still read "unknown".
+            // One predicate for the tone and the word, so they cannot disagree.
+            className={`font-mono text-[11px]${
+              error !== null ? " text-amber-600 dark:text-amber-400" : ""
+            }`}
+            data-testid="coord-members-my-tenants-summary"
+          >
+            {/* The third `defaultOpen={false}` panel on this page, and the one
               the sibling badges' fix skipped. `summary` renders inside
               `CollapsibleTrigger` (`CollapsiblePanel.tsx:138`), so while this
               panel is folded the error paragraph below is unmounted by Radix
@@ -148,98 +153,98 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
               `finally` only clears it after `data` or `error` is set — but the
               type is `MyTenantsResponse | null`, and spelling the arm is
               cheaper than a non-null assertion. */}
-          {loading
-            ? "–"
-            : error !== null
-              ? "unknown"
-              : data
-                ? homeTenantName(data)
-                : "–"}
-        </Badge>
-      }
-      contentClassName="space-y-3"
-    >
-      <>
-        {loading ? (
-          <Skeleton className="h-10 w-full" />
-        ) : error ? (
-          <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
-          </p>
-        ) : data ? (
-          <div className="space-y-2 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground">Home tenant:</span>
-              <span className="font-medium">{homeTenantName(data)}</span>
-            </div>
-            {data.tenants && data.tenants.length > 0 ? (
-              <div className="space-y-1.5">
-                {data.tenants.map((t, i) => {
-                  const renameTarget = renameTargetFor(t);
-                  return (
-                    <div
-                      key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <span className="font-medium">{tenantName(t)}</span>
-                      <span className="flex flex-wrap gap-1">
-                        {(t.roles ?? []).map((r) => (
-                          <Badge key={r} variant="secondary">
-                            {tierLabel(r)}
-                          </Badge>
-                        ))}
-                      </span>
-                      {renameTarget ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7"
-                          onClick={() => setRenaming(renameTarget)}
-                          data-testid={`coord-tenant-rename-open-${renameTarget.id}`}
-                          data-ui-bridge-id={`coord.tenant-rename.open.${renameTarget.id}`}
-                        >
-                          Rename
-                        </Button>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : data.roles && data.roles.length > 0 ? (
+            {loading
+              ? "–"
+              : error !== null
+                ? "unknown"
+                : data
+                  ? homeTenantName(data)
+                  : "–"}
+          </Badge>
+        }
+        contentClassName="space-y-3"
+      >
+        <>
+          {loading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : error ? (
+            <p className="text-sm text-destructive flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4" /> {error}
+            </p>
+          ) : data ? (
+            <div className="space-y-2 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground">Roles:</span>
-                {data.roles.map((r) => (
-                  <Badge key={r} variant="secondary">
-                    {tierLabel(r)}
-                  </Badge>
-                ))}
+                <span className="text-muted-foreground">Home tenant:</span>
+                <span className="font-medium">{homeTenantName(data)}</span>
               </div>
-            ) : (
-              <p className="text-muted-foreground">No roles found.</p>
-            )}
-          </div>
-        ) : null}
-      </>
-    </CollapsiblePanel>
-    {renaming ? (
-      <CoordProjectRenameDialog
-        open
-        tenant={renaming}
-        onOpenChange={(open) => {
-          if (!open) setRenaming(null);
-        }}
-        // The rows above show what this section's read returned, so re-read.
-        onRenamed={(result) => {
-          void load();
-          // `previous` absent is UNKNOWN, so it reloads rather than not.
-          if (result.previous?.slug !== result.slug) onSlugChanged();
-        }}
-        onOutcomeUnknown={() => {
-          void load();
-          onSlugChanged();
-        }}
-      />
-    ) : null}
+              {data.tenants && data.tenants.length > 0 ? (
+                <div className="space-y-1.5">
+                  {data.tenants.map((t, i) => {
+                    const renameTarget = renameTargetFor(t);
+                    return (
+                      <div
+                        key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <span className="font-medium">{tenantName(t)}</span>
+                        <span className="flex flex-wrap gap-1">
+                          {(t.roles ?? []).map((r) => (
+                            <Badge key={r} variant="secondary">
+                              {tierLabel(r)}
+                            </Badge>
+                          ))}
+                        </span>
+                        {renameTarget ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7"
+                            onClick={() => setRenaming(renameTarget)}
+                            data-testid={`coord-tenant-rename-open-${renameTarget.id}`}
+                            data-ui-bridge-id={`coord.tenant-rename.open.${renameTarget.id}`}
+                          >
+                            Rename
+                          </Button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : data.roles && data.roles.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">Roles:</span>
+                  {data.roles.map((r) => (
+                    <Badge key={r} variant="secondary">
+                      {tierLabel(r)}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No roles found.</p>
+              )}
+            </div>
+          ) : null}
+        </>
+      </CollapsiblePanel>
+      {renaming ? (
+        <CoordProjectRenameDialog
+          open
+          tenant={renaming}
+          onOpenChange={(open) => {
+            if (!open) setRenaming(null);
+          }}
+          // The rows above show what this section's read returned, so re-read.
+          onRenamed={(result) => {
+            void load();
+            // `previous` absent is UNKNOWN, so it reloads rather than not.
+            if (result.previous?.slug !== result.slug) onSlugChanged();
+          }}
+          onOutcomeUnknown={() => {
+            void load();
+            onSlugChanged();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

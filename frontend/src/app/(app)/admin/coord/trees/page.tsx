@@ -46,33 +46,19 @@ import {
   RecordRow,
 } from "@/components/console";
 import { TreeRow } from "@/components/admin/coord/TreeRow";
+import { deriveTreesHealth } from "@/components/admin/coord/treeStatus";
 import {
-  deriveTreesHealth,
-  type PrimaryTreeRow,
-} from "@/components/admin/coord/treeStatus";
-import { httpClient } from "@/services/service-factory";
+  fetchTreesByDevice,
+  fetchTreesContention,
+  type ContentionResponse,
+  type TreesByDeviceResponse,
+} from "@/lib/api/operations/coordPlans";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 type TreesView = "by-device" | "contention";
-
-interface ContentionRow {
-  repo: string;
-  primary_paths?: string[];
-  devices?: { device_id: string; hostname?: string; primary_path: string }[];
-}
-
-interface TreesByDeviceResponse {
-  device_id?: string;
-  trees?: PrimaryTreeRow[];
-}
-
-interface ContentionResponse {
-  overlaps?: ContentionRow[];
-}
 
 function TreesByDevicePanel({
   initialDeviceId,
@@ -100,8 +86,8 @@ function TreesByDevicePanel({
       }
       setLoading(true);
       try {
-        const body = await httpClient.get<TreesByDeviceResponse>(
-          `${API}/trees/by-device/${encodeURIComponent(deviceId)}`,
+        const body = await fetchTreesByDevice(
+          deviceId,
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;
@@ -233,10 +219,7 @@ function ContentionPanel({ onCount }: { onCount: (n: number | null) => void }) {
   // Single-flight, no retries — see `TreesByDevicePanel`.
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<ContentionResponse>(
-        `${API}/trees/contention`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchTreesContention(COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       setData(body);
       setError(null);
