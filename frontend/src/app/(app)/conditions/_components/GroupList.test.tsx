@@ -62,18 +62,19 @@ function route(answers: { groups: Answer; health: Answer; drain?: Answer }) {
   get.mockImplementation(async (url: string) => {
     const pick = url.endsWith("/conditions/groups")
       ? answers.groups
-      : url.endsWith("/fleet/drain")
-        ? (answers.drain ?? { drains: {} })
-        : new Error(`unexpected GET ${url}`);
+      : new Error(`unexpected GET ${url}`);
     if (pick instanceof Error) throw pick;
     return pick;
   });
-  // `/fleet/health` is read through `httpClient.fetch` (the typed client's
-  // `fetchFleetHealth`), so its answer arrives as a Response.
+  // `/fleet/health` and `/fleet/drain` are read through `httpClient.fetch`
+  // (the typed client's `fetchFleetHealth` / `fetchFleetDrain`), so their
+  // answers arrive as a Response.
   fetchMock.mockImplementation(async (url: string) => {
     const pick = url.endsWith("/fleet/health")
       ? answers.health
-      : new Error(`unexpected fetch ${url}`);
+      : url.endsWith("/fleet/drain")
+        ? (answers.drain ?? { drains: {} })
+        : new Error(`unexpected fetch ${url}`);
     if (pick instanceof Error) throw pick;
     return new Response(JSON.stringify(pick), { status: 200 });
   });
@@ -107,7 +108,7 @@ describe("GroupList runner hint", () => {
     render(<GroupList />);
     await screen.findByText("Menu");
     await waitFor(() =>
-      expect(get).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         "/api/v1/operations/fleet/drain",
         expect.anything()
       )

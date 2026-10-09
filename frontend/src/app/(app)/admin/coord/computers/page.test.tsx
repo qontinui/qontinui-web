@@ -24,6 +24,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 const COMPUTER_ID = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
@@ -35,7 +36,13 @@ vi.mock("next/navigation", () => ({
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...a: unknown[]) => httpGet(...a) },
+  httpClient: {
+    get: (...a: unknown[]) => httpGet(...a),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        get: httpGet,
+      }),
+  },
 }));
 
 import {

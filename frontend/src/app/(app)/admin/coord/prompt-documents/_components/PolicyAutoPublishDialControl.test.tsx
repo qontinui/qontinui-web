@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "../../_shared/fleetPolicy";
@@ -32,6 +33,11 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => getMock(...args),
     put: (...args: unknown[]) => putMock(...args),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        get: getMock,
+        put: putMock,
+      }),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),

@@ -4,12 +4,19 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 const getMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => getMock(...args) },
+  httpClient: {
+    get: (...args: unknown[]) => getMock(...args),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        get: getMock,
+      }),
+  },
 }));
 
 import { CI_HOSTING_NOT_SERVED, useCiHosting } from "./useCiHosting";

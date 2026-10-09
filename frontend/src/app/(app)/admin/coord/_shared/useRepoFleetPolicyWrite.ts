@@ -2,8 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
-import { FLEET_POLICY_API, type FleetPolicyWriteResult } from "./fleetPolicy";
+import { putFleetPolicy } from "@/lib/api/operations/coordFleet";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -91,19 +90,16 @@ export function useRepoFleetPolicyWrite<L extends string>(
           delete next[repo];
           return next;
         });
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain,
-            scope_band: "repo",
-            scope_key: repo,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ??
-              `Set ${label} for ${repo} to "${level}" from the console`,
-          }
-        );
+        const result = await putFleetPolicy({
+          domain,
+          scope_band: "repo",
+          scope_key: repo,
+          level,
+          master_enabled: true,
+          change_note:
+            changeNote ??
+            `Set ${label} for ${repo} to "${level}" from the console`,
+        });
         if (result.effective) {
           setReadbackErrors((prev) => {
             if (!(repo in prev)) return prev;

@@ -22,6 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import {
   fireEvent,
   render,
@@ -42,6 +43,11 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...a: unknown[]) => httpGet(...a),
     put: (...a: unknown[]) => httpPut(...a),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        get: httpGet,
+        put: httpPut,
+      }),
   },
 }));
 
@@ -529,7 +535,9 @@ function withHostedCi(opts: { canEdit: boolean }) {
         can_edit: opts.canEdit,
       });
     }
-    return base ? base(url) : Promise.reject(new Error(`unexpected GET ${url}`));
+    return base
+      ? base(url)
+      : Promise.reject(new Error(`unexpected GET ${url}`));
   });
 }
 
@@ -573,7 +581,9 @@ describe("/admin/coord/ci — GitHub-hosted CI (Phase 6)", () => {
           .textContent
       ).toBe("Off")
     );
-    expect(within(panel).getByTestId("github-hosted-ci-tenant-on")).toBeEnabled();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-on")
+    ).toBeEnabled();
     expect(within(panel).queryByTestId("github-hosted-ci-readonly")).toBeNull();
   });
 
