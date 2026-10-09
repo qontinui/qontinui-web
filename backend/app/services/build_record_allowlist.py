@@ -142,6 +142,95 @@ _INFIX_SYMBOL_RE: Final = re.compile(
     r"(?<=[A-Za-z0-9])\s*([^\x00-\x7f])\s*(?=[A-Za-z0-9])"
 )
 
+#: A compact confusable skeleton (in the spirit of Unicode TR39) for the
+#: scripts whose letters are drawn like Latin ones: Cyrillic and Greek
+#: lookalikes → the Latin letter they render as. No confusables library is a
+#: dependency of this backend; this table covers the letters an attacker can
+#: actually type to make ``acme/secret`` scan as something else. Applied to the
+#: scan form only — the stored document is never rewritten.
+_CONFUSABLES: Final = str.maketrans(
+    {
+        # Cyrillic lower
+        "\u0430": "a",
+        "\u0432": "b",
+        "\u0435": "e",
+        "\u043a": "k",
+        "\u043c": "m",
+        "\u043d": "h",
+        "\u043e": "o",
+        "\u0440": "p",
+        "\u0441": "c",
+        "\u0442": "t",
+        "\u0443": "y",
+        "\u0445": "x",
+        "\u0455": "s",
+        "\u0456": "i",
+        "\u0458": "j",
+        "\u0491": "r",
+        "\u04bb": "h",
+        "\u0501": "d",
+        "\u051b": "q",
+        "\u051d": "w",
+        "\u0475": "v",
+        "\u04cf": "l",
+        "\u0261": "g",
+        # Cyrillic upper
+        "\u0410": "A",
+        "\u0412": "B",
+        "\u0415": "E",
+        "\u041a": "K",
+        "\u041c": "M",
+        "\u041d": "H",
+        "\u041e": "O",
+        "\u0420": "P",
+        "\u0421": "C",
+        "\u0422": "T",
+        "\u0423": "Y",
+        "\u0425": "X",
+        "\u0405": "S",
+        "\u0406": "I",
+        "\u0408": "J",
+        "\u04c0": "I",
+        "\u051a": "Q",
+        "\u051c": "W",
+        # Greek lower
+        "\u03b1": "a",
+        "\u03b2": "b",
+        "\u03b5": "e",
+        "\u03b9": "i",
+        "\u03ba": "k",
+        "\u03bd": "v",
+        "\u03bf": "o",
+        "\u03c1": "p",
+        "\u03c4": "t",
+        "\u03c5": "u",
+        "\u03c7": "x",
+        "\u03b3": "y",
+        # Greek upper
+        "\u0391": "A",
+        "\u0392": "B",
+        "\u0395": "E",
+        "\u0396": "Z",
+        "\u0397": "H",
+        "\u0399": "I",
+        "\u039a": "K",
+        "\u039c": "M",
+        "\u039d": "N",
+        "\u039f": "O",
+        "\u03a1": "P",
+        "\u03a4": "T",
+        "\u03a5": "Y",
+        "\u03a7": "X",
+        # Latin-script lookalikes outside ASCII
+        "\u0131": "i",
+        "\u0269": "i",
+        "\u01c0": "l",
+    }
+)
+#: Every dash-punctuation (``Pd``) character, and U+2212 MINUS SIGN, scans as
+#: ``-`` — so a UUID or repo name written with en dashes is still seen.
+_EXTRA_DASHES: Final = frozenset("\u2212")
+
 #: Unicode ``Default_Ignorable_Code_Point`` — characters that render as
 #: NOTHING, whatever their general category (U+3164 is ``Lo``, the variation
 #: selectors are ``Mn``). As (first, last) inclusive ranges.
@@ -396,7 +485,9 @@ def normalize_for_scan(text: str) -> str:
     NFKD, then every combining mark (``Mn``/``Me``), format, control,
     unassigned, private-use and surrogate character and every
     default-ignorable code point is DROPPED, then NFKC (folds fullwidth and
-    other compatibility forms to ASCII). Lookalike slashes, and any non-ASCII
+    other compatibility forms to ASCII), then the confusable skeleton
+    (Cyrillic/Greek lookalikes → Latin) and every ``Pd`` dash → ``-``.
+    Lookalike slashes, and any non-ASCII
     ``Sm``/``Po`` between two ASCII alphanumerics, become ``/``; whitespace
     around ``/`` is removed. So ``acme ∕ secret``, ``acme⟋secret`` and
     ``secre\u0301t`` all scan as what they render as.
@@ -408,7 +499,11 @@ def normalize_for_scan(text: str) -> str:
         if unicodedata.category(ch) not in _STRIPPED_CATEGORIES
         and not is_default_ignorable(ch)
     )
-    folded = unicodedata.normalize("NFKC", kept).translate(_LOOKALIKE_SLASHES)
+    folded = unicodedata.normalize("NFKC", kept).translate(_CONFUSABLES)
+    folded = "".join(
+        "-" if unicodedata.category(ch) == "Pd" or ch in _EXTRA_DASHES else ch
+        for ch in folded
+    ).translate(_LOOKALIKE_SLASHES)
     folded = _INFIX_SYMBOL_RE.sub(_infix_to_slash, folded)
     return _SPACED_SLASH_RE.sub("/", folded)
 

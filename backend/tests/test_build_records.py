@@ -22,6 +22,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -1162,10 +1163,10 @@ class TestGithubVisibility:
 
     @staticmethod
     async def _ask(handler: Any, repo: str = "qontinui/tokens") -> Any:
-        from app.services.github_repo_visibility import repo_visibility
+        from app.services.github_repo_visibility import check_repo
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
-            return await repo_visibility(repo, client=c)
+            return (await check_repo(repo, client=c)).visibility
 
     @pytest.mark.asyncio
     async def test_answers(self) -> None:
@@ -1192,7 +1193,18 @@ class TestGithubVisibility:
             return httpx.Response(404, json={"message": "Not Found"})
 
         def rate_limited(_: httpx.Request) -> httpx.Response:
-            return httpx.Response(403, json={"message": "API rate limit exceeded"})
+            return httpx.Response(
+                403,
+                headers={"x-ratelimit-remaining": "0"},
+                json={"message": "API rate limit exceeded"},
+            )
+
+        def blocked(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                headers={"x-ratelimit-remaining": "57"},
+                json={"message": "Repository access blocked"},
+            )
 
         def down(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("unreachable", request=request)
@@ -1202,6 +1214,7 @@ class TestGithubVisibility:
         assert await self._ask(renamed) is Visibility.NOT_PUBLIC
         assert await self._ask(missing) is Visibility.NOT_PUBLIC
         assert await self._ask(rate_limited) is Visibility.UNKNOWN
+        assert await self._ask(blocked) is Visibility.NOT_PUBLIC
         assert await self._ask(down) is Visibility.UNKNOWN
 
 
@@ -1628,7 +1641,7 @@ class TestThirdReview:
         error: str | None,
     ) -> None:
         """Only the HTTP transport is fake: the route calls the REAL
-        ``repo_visibility``, which builds its client through the production
+        ``check_repo``, which builds its client through the production
         ``client=None`` branch (``_client_factory``)."""
         from app.api.v1.endpoints import build_records
         from app.services import github_repo_visibility
@@ -1927,27 +1940,29 @@ class TestVisibilityTick:
         assert tick.stopped == "transport"
         assert tick.completed == [] and tick.retracted == [] and tick.gave_up == []
         owner = await self._owner(async_db_session, "vis-a")
-        assert owner.last_visibility_attempt_at is None  # not the slug's fault
+        # Not the slug's fault (not counted), but stamped so it cannot hold
+        # the head of the queue.
+        assert owner.last_visibility_attempt_at is not None
         assert owner.visibility_unknown_attempts == 0
         assert owner.unpublished_at is None
 
-    async def test_other_unknown_gives_up_the_slug_and_moves_on(
+    async def test_when_nothing_answers_no_slug_is_blamed(
         self, client_a: httpx.AsyncClient, coord: _Coord, async_db_session
     ) -> None:
         from app.jobs.build_record_reconcile import recheck_visibility
         from app.services.github_repo_visibility import Visibility
 
-        for slug in ("vis-a", "vis-b"):
+        for slug in ("vis-a", "vis-b", "vis-c"):
             await self._publish(client_a, coord, slug)
         coord.visibility["qontinui/qontinui-design-tokens"] = Visibility.UNKNOWN
 
         tick = await recheck_visibility(async_db_session, budget=8)
-        assert tick.stopped is None
-        assert tick.gave_up == ["vis-a", "vis-b"]
+        assert tick.stopped == "github_unanswering"
+        assert tick.calls == 2  # stopped after the second all-unknown slug
+        assert tick.gave_up == [] and tick.unblamed == ["vis-a", "vis-b"]
         owner = await self._owner(async_db_session, "vis-a")
-        assert owner.visibility_unknown_attempts == 1
-        assert owner.last_visibility_attempt_at is not None
-        assert owner.last_visibility_check_at is None
+        assert owner.visibility_unknown_attempts == 0
+        assert owner.last_visibility_attempt_at is not None  # moved back
         assert owner.unpublished_at is None
 
     async def test_low_rate_limit_remaining_stops_the_tick(
@@ -2220,6 +2235,7 @@ class TestWedgeRegression:
 
         await self._publish(client_a, coord, "a-flaky", "tenant-a/flaky")
         await self._publish(client_a, coord, "b-private", "tenant-b/now-private")
+        await self._publish(client_a, coord, "c-public", "tenant-c/fine")
 
         def github(name: str) -> httpx.Response:
             if name == "tenant-a/flaky":
@@ -2229,19 +2245,18 @@ class TestWedgeRegression:
             return _public(name)
 
         _real_github(monkeypatch, github)
-        # Budget 1: the flaky slug is first (alphabetical, never attempted).
-        first = await recheck_visibility(async_db_session, budget=1)
-        assert first.gave_up == ["a-flaky"] and first.retracted == []
-        second = await recheck_visibility(async_db_session, budget=1)
-        assert second.retracted == ["b-private"]  # moved past the flaky one
+        first = await recheck_visibility(async_db_session, budget=8)
+        assert first.retracted == ["b-private"]  # not starved by a-flaky ahead
+        assert first.gave_up == ["a-flaky"]  # blamed: others DID get answers
 
-        # And the flaky one is retracted after K consecutive give-ups.
-        retracted: list[str] = []
+        # The flaky one is retracted after K consecutive BLAMED give-ups (the
+        # public slug keeps answering, so GitHub is demonstrably up).
+        retracted = list(first.retracted)
         for _ in range(VISIBILITY_UNKNOWN_RETRACT_AFTER - 1):
             retracted += (
-                await recheck_visibility(async_db_session, budget=1)
+                await recheck_visibility(async_db_session, budget=8)
             ).retracted
-        assert retracted == ["a-flaky"]
+        assert retracted == ["b-private", "a-flaky"]
 
     @pytest.mark.parametrize("status", [301, 302, 307, 308, 451])
     async def test_redirect_and_451_statuses_are_not_public(self, status: int) -> None:
@@ -2343,3 +2358,171 @@ class TestGithubBudget:
         assert seen == [None, "Bearer github_pat_x"]
         assert answer.rate_limit_remaining == 4999
         assert answer.rate_limit_reset is not None
+
+
+# ===========================================================================
+# Sixth review — regression tests from rev6/probe1.py and rev6/t/test_rev6.py
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+class TestRev6:
+    @staticmethod
+    async def _publish(client: httpx.AsyncClient, coord: _Coord, slug: str, repo: str):
+        coord.define(TENANT_A, slug, repos=[repo])
+        coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repo
+        r = await client.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    async def test_a_blocked_403_repo_is_not_public_and_never_wedges(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        await self._publish(client_a, coord, "a-blocked", "tenant-a/blocked")
+        await self._publish(client_a, coord, "b-private", "tenant-b/now-private")
+
+        def github(name: str) -> httpx.Response:
+            if name == "tenant-a/blocked":
+                return httpx.Response(
+                    403,
+                    headers={"x-ratelimit-remaining": "57"},
+                    json={"message": "Repository access blocked"},
+                )
+            if name == "tenant-b/now-private":
+                return httpx.Response(404, json={"message": "Not Found"})
+            return _public(name)
+
+        _real_github(monkeypatch, github)
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert tick.stopped is None
+        assert sorted(tick.retracted) == ["a-blocked", "b-private"]
+        r = await client_a.get("/api/v1/public/build-records/b-private")
+        assert r.status_code == 404
+
+    async def test_a_real_rate_limit_stops_but_cannot_hold_the_queue(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        await self._publish(client_a, coord, "a-first", "tenant-a/x")
+        await self._publish(client_a, coord, "b-second", "tenant-b/now-private")
+        limited = {"on": True}
+
+        def github(name: str) -> httpx.Response:
+            if name == "tenant-a/x" and limited["on"]:
+                # The window has already reset by the next tick (reset in the
+                # past), so the persisted budget does not hold tick two back.
+                return httpx.Response(
+                    403,
+                    headers={
+                        "x-ratelimit-remaining": "0",
+                        "retry-after": "60",
+                        "x-ratelimit-reset": str(int(time.time()) - 1),
+                    },
+                )
+            if name == "tenant-b/now-private":
+                return httpx.Response(404)
+            return _public(name)
+
+        _real_github(monkeypatch, github)
+        first = await recheck_visibility(async_db_session, budget=8)
+        assert first.stopped == "rate_limited" and first.retracted == []
+        # a-first was stamped, so the next tick starts with b-second.
+        second = await recheck_visibility(async_db_session, budget=8)
+        assert second.retracted == ["b-second"]
+
+    async def test_a_dead_operator_token_falls_back_and_retracts_nothing(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.core.config import settings
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services import github_repo_visibility
+
+        for slug in ("p-one", "p-two", "p-three"):
+            await self._publish(client_a, coord, slug, f"tenant-a/{slug}")
+        monkeypatch.setattr(settings, "GITHUB_VISIBILITY_TOKEN", "github_pat_dead")
+        monkeypatch.setattr(github_repo_visibility, "_token_rejected_at", None)
+        auth_seen: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            auth = request.headers.get("authorization")
+            auth_seen.append(auth)
+            if auth:
+                return httpx.Response(401, json={"message": "Bad credentials"})
+            return _public(request.url.path.removeprefix("/repos/"))
+
+        monkeypatch.setattr(github_repo_visibility, "check_repo", _REAL_CHECK_REPO)
+        monkeypatch.setattr(
+            github_repo_visibility,
+            "_client_factory",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        retracted: list[str] = []
+        for _ in range(6):
+            tick = await recheck_visibility(async_db_session, budget=8)
+            retracted += tick.retracted
+        assert retracted == []
+        # One rejected request, then anonymous for the rest of the window.
+        assert auth_seen[0] == "Bearer github_pat_dead"
+        assert auth_seen[1:] and all(a is None for a in auth_seen[1:])
+
+    async def test_a_github_wide_outage_retracts_nothing(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        for slug in ("p-one", "p-two", "p-three"):
+            await self._publish(client_a, coord, slug, f"tenant-a/{slug}")
+        _real_github(monkeypatch, lambda _: httpx.Response(503, text="unavailable"))
+        retracted: list[str] = []
+        for _ in range(12):
+            tick = await recheck_visibility(async_db_session, budget=8)
+            retracted += tick.retracted
+            assert tick.gave_up == []
+        assert retracted == []
+
+
+class TestConfusables:
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            ("port from acm\u0435/secret", "names an owner/name not in product.repos"),
+            ("port from acme/\u0455ecret", "names an owner/name not in product.repos"),
+            (
+                "device 1b4e28ba\u20132fa1\u201311d2\u2013883f\u20130016d3cca427",
+                "contains a UUID-shaped identifier",
+            ),
+            (
+                "device 1b4e28ba\u20102fa1\u201011d2\u2010883f\u20100016d3cca427",
+                "contains a UUID-shaped identifier",
+            ),
+        ],
+    )
+    def test_confusables_and_dashes_are_folded_before_scanning(
+        self, title: str, expected: str
+    ) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = title
+        assert build_record_violations(doc) == [f"work_units[0].title: {expected}"]
+
+    def test_excluded_name_with_a_cyrillic_letter_is_found(self) -> None:
+        from app.services.build_record_allowlist import names_token
+
+        assert names_token("sync \u0455ecret-billing schema", "secret-billing")
