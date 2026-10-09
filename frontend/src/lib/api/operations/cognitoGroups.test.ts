@@ -152,6 +152,15 @@ describe("cognitoGroups", () => {
     expect(fetchMock.mock.calls[0][1].body).toBe('{"group_name":"g"}');
   });
 
+  it("a write whose 2xx carries no JSON body still resolves (the change landed)", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(
+      deleteCognitoGroup(GROUP, { allowHomeGroup: false })
+    ).resolves.toBeNull();
+    fetchMock.mockResolvedValueOnce(new Response("not json", { status: 200 }));
+    await expect(removeCognitoGroupUser(GROUP, "u")).resolves.toBeNull();
+  });
+
   it("deleteCognitoGroup DELETEs the encoded group, with the home-group override only when asked", async () => {
     fetchMock.mockImplementation(async () => answer({ ok: true }));
     await deleteCognitoGroup(GROUP, { allowHomeGroup: false });
