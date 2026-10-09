@@ -2669,3 +2669,192 @@ class TestRev7:
         _real_github(monkeypatch, _public)
         tick = await recheck_visibility(async_db_session, budget=8)
         assert tick.retracted == [] and tick.completed == ["old-but-checked"]
+
+
+# ===========================================================================
+# Eighth review — regression tests from rev8/t/tests/test_rev8.py
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+class TestRev8:
+    @staticmethod
+    async def _publish(client: httpx.AsyncClient, coord: _Coord, slug: str, repo: str):
+        coord.define(TENANT_A, slug, repos=[repo])
+        coord.documents[(TENANT_A, slug)]["prs"][0]["repo"] = repo
+        r = await client.post(f"/api/v1/build-records/{slug}/publish")
+        assert r.status_code == 201, r.text
+
+    @staticmethod
+    async def _age(db: AsyncSession, by: timedelta, slugs: list[str] | None = None):
+        snap = update(BuildRecordSnapshot)
+        own = update(BuildRecordPublicSlug)
+        if slugs is not None:
+            snap = snap.where(BuildRecordSnapshot.public_slug.in_(slugs))
+            own = own.where(BuildRecordPublicSlug.public_slug.in_(slugs))
+        when = datetime.now(UTC) - by
+        await db.execute(snap.values(published_at=when))
+        await db.execute(
+            own.values(last_visibility_check_at=when, last_visibility_attempt_at=when)
+        )
+
+    async def test_resume_after_a_pause_retracts_nothing_github_calls_public(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        slugs = [f"p-{i:02d}" for i in range(20)]
+        for slug in slugs:
+            await self._publish(client_a, coord, slug, f"tenant-a/r{slug}")
+        await self._age(async_db_session, timedelta(hours=25))  # paused 25 h
+        _real_github(monkeypatch, _public)
+        tick = await recheck_visibility(async_db_session, budget=8)
+        assert len(tick.completed) == 8
+        assert tick.stale == [] and tick.retracted == []
+        for slug in slugs:
+            assert (
+                await client_a.get(f"/api/v1/public/build-records/{slug}")
+            ).status_code == 200
+
+    async def test_a_sub_24h_outage_retracts_nothing_after_recovery(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        slugs = [f"o-{i:02d}" for i in range(20)]
+        for slug in slugs:
+            await self._publish(client_a, coord, slug, f"tenant-a/r{slug}")
+        await self._age(async_db_session, timedelta(hours=23, minutes=50))
+        _real_github(monkeypatch, _public)
+        stale: list[str] = []
+        for _ in range(3):
+            tick = await recheck_visibility(async_db_session, budget=8)
+            stale += tick.stale
+            # Time passes: shift every stored timestamp back 10 minutes.
+            ten = timedelta(minutes=10)
+            await async_db_session.execute(
+                update(BuildRecordSnapshot).values(
+                    published_at=BuildRecordSnapshot.published_at - ten
+                )
+            )
+            await async_db_session.execute(
+                update(BuildRecordPublicSlug).values(
+                    last_visibility_check_at=(
+                        BuildRecordPublicSlug.last_visibility_check_at - ten
+                    ),
+                    last_visibility_attempt_at=(
+                        BuildRecordPublicSlug.last_visibility_attempt_at - ten
+                    ),
+                )
+            )
+        assert stale == []
+
+    async def test_the_queue_is_stalest_first(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+
+        await self._publish(client_a, coord, "a-fresh", "tenant-a/fresh")
+        await self._publish(client_a, coord, "b-stalest", "tenant-b/stalest")
+        await self._age(async_db_session, timedelta(hours=1), ["a-fresh"])
+        await self._age(async_db_session, timedelta(hours=30), ["b-stalest"])
+        _real_github(monkeypatch, _public)
+        tick = await recheck_visibility(async_db_session, budget=1)
+        assert tick.completed == ["b-stalest"]
+
+    async def test_an_unreached_page_waits_for_the_72h_ceiling(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+    ) -> None:
+        from app.jobs.build_record_reconcile import recheck_visibility
+        from app.services import github_rate_budget
+        from app.services.github_repo_visibility import Visibility, VisibilityAnswer
+
+        await self._publish(client_a, coord, "u-25h", "tenant-a/u25")
+        await self._publish(client_a, coord, "u-73h", "tenant-a/u73")
+        await self._age(async_db_session, timedelta(hours=25), ["u-25h"])
+        await self._age(async_db_session, timedelta(hours=73), ["u-73h"])
+        # Budget held: the tick reaches no page at all.
+        await github_rate_budget.record(
+            async_db_session,
+            [
+                VisibilityAnswer(
+                    Visibility.PUBLIC, 5, datetime.now(UTC) + timedelta(minutes=30)
+                )
+            ],
+        )
+        tick = await recheck_visibility(async_db_session)
+        assert tick.stopped == "budget_reserved"
+        assert tick.stale == ["u-73h"]
+
+    async def test_anonymous_throughput_is_thirty_per_hour(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs.build_record_reconcile import (
+            recheck_throughput_per_hour,
+            recheck_visibility,
+        )
+
+        assert recheck_throughput_per_hour(token=False) == 30
+        assert recheck_throughput_per_hour(token=True) == 480
+        for i in range(40):
+            await self._publish(client_a, coord, f"q-{i:02d}", f"tenant-a/q{i}")
+        state = {"remaining": 60}
+        reset = str(int(time.time()) + 3600)
+
+        def anonymous(name: str) -> httpx.Response:
+            state["remaining"] -= 1
+            return httpx.Response(
+                200,
+                headers={
+                    "x-ratelimit-remaining": str(state["remaining"]),
+                    "x-ratelimit-reset": reset,
+                },
+                json={"private": False, "full_name": name},
+            )
+
+        _real_github(monkeypatch, anonymous)
+        calls = 0
+        for _ in range(6):  # one hour at the */10 cadence
+            calls += (await recheck_visibility(async_db_session)).calls
+        assert calls == 30  # the documented ~720/day ceiling, not 48/hour
+
+    async def test_a_capacity_shortfall_is_warned_and_reported(
+        self,
+        client_a: httpx.AsyncClient,
+        coord: _Coord,
+        async_db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.jobs import build_record_reconcile as job
+
+        for i in range(3):
+            await self._publish(client_a, coord, f"c-{i}", f"tenant-a/c{i}")
+        _real_github(monkeypatch, _public)
+        tick = await job.recheck_visibility(async_db_session)
+        assert tick.capacity_shortfall is None
+        monkeypatch.setattr(job, "recheck_throughput_per_hour", lambda **_: 0)
+        tick = await job.recheck_visibility(async_db_session)
+        assert tick.capacity_shortfall == {
+            "live_repos": 3,
+            "capacity": 0,
+            "mode": "anonymous",
+        }
