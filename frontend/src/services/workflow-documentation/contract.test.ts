@@ -1,8 +1,8 @@
 /**
  * Characterization (contract) test for the workflow-documentation service.
  *
- * Written against the monolith `workflow-documentation-service.ts` first and
- * then re-pointed, unchanged, at the split `@/services/workflow-documentation`
+ * Written against the former single-file monolith first (commit dad4e634b)
+ * and then re-pointed, unchanged, at the split `@/services/workflow-documentation`
  * barrel: the committed snapshots are the behaviour-preservation proof that
  * the split carries the same contract (plan
  * 2026-10-04-web-frontend-half-finished-refactors-shadow-their-live-modules,
@@ -16,7 +16,7 @@ import {
   WorkflowDocumentationService,
   workflowDocumentation,
   type ExportOptions,
-} from "@/services/workflow-documentation-service";
+} from "@/services/workflow-documentation";
 
 const FIXED_NOW = new Date("2026-01-02T03:04:05.000Z");
 const STORAGE_KEYS = [
