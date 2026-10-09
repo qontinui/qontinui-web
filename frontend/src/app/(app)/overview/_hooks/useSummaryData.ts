@@ -18,8 +18,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { httpClient } from "@/services/service-factory";
 import { fetchPlans, planRowsOf } from "@/lib/api/operations/coordPlans";
+import { fetchProjectState } from "@/lib/api/operations/projectState";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
@@ -34,10 +34,7 @@ import {
   type IntentEntry,
   type SummaryIntentKind,
 } from "../_lib/intent";
-import {
-  PROJECT_STATE_API,
-  parseProjectState,
-} from "@/components/admin/coord/coordHomeStatus";
+import { parseProjectState } from "@/components/admin/coord/coordHomeStatus";
 import {
   progressFromOnTrack,
   recentlyFinishedFrom,
@@ -101,7 +98,7 @@ async function loadRecentlyFinished(): Promise<RecentlyFinished | null> {
  */
 async function loadProgress(): Promise<ProgressReading> {
   const [stateBody, finished] = await Promise.all([
-    httpClient.get<unknown>(PROJECT_STATE_API),
+    fetchProjectState(),
     loadRecentlyFinished(),
   ]);
   const view = parseProjectState(stateBody);
