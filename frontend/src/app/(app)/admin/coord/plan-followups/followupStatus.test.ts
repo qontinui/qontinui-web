@@ -30,7 +30,9 @@ function response(
     ],
     count: 1,
     total: 9,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 50,
     ordering: "oldest_first",
     ...over,
@@ -61,8 +63,24 @@ describe("the window reports the declared ordering", () => {
   it("reads an unserved total as UNKNOWN, never as items.length", () => {
     const w = describeFollowupWindow(response({ total: undefined }));
     expect(w.total).toBeNull();
-    // A full page still infers "more"; a short one does not.
-    expect(w.hasMore).toBe(false);
+  });
+
+  it("states 'more' only from truncated + a cursor, never from a full page", () => {
+    expect(
+      describeFollowupWindow(response({ truncated: null, next_cursor: null }))
+        .hasMore
+    ).toBe(false);
+    expect(
+      describeFollowupWindow(response({ truncated: false, next_cursor: null }))
+        .hasMore
+    ).toBe(false);
+    expect(describeFollowupWindow(response()).nextCursor).toBe("opaque");
+  });
+
+  it("adds the rows already walked to the route's from-here total", () => {
+    const w = describeFollowupWindow(response({ total: 4 }), 50);
+    expect(w.total).toBe(54);
+    expect(w.start).toBe(50);
   });
 });
 
@@ -127,7 +145,7 @@ describe("the strip", () => {
       )?.label
     ).toBe("oldest 31d");
     expect(
-      deriveFollowupHealth(response({ offset: 50 }), true, false).badges.find(
+      deriveFollowupHealth(response(), true, false, 50).badges.find(
         (b) => b.key === "oldest"
       )?.label
     ).toBe("oldest –");

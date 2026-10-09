@@ -24,6 +24,8 @@ The builders mirror the Rust ``Page`` constructors so both languages derive
 * :func:`from_count`       — ``Page::from_window_count`` (an exact count)
 * :func:`complete`         — ``Page::complete``
 * :func:`unknown`          — a read whose bound did not resolve
+* :func:`from_lower_bound` — a keyset walk over a population an upstream cap
+  left as a lower bound (``at_least`` / ``unknown``, never ``exact``)
 * :func:`unavailable`      — ``Page::unavailable`` (store unprovisioned)
 * :func:`not_pageable`     — ``Page::not_pageable`` (a ranked read from a
   ``limit + 1`` probe: never a cursor, ``enumerate_via`` names the walk)
@@ -40,15 +42,32 @@ Every key is ALWAYS serialized: ``null`` is a value here (``total: null`` =
 "no count ran", ``truncated: null`` = "unknown"), never an absence. Callers
 must therefore not serialize these models with ``exclude_none``.
 
-No keyset cursor codec lives here yet: no web door adopting the contract in
-this phase takes a cursor. It lands with the first one that does (Phase 4),
-over the Rust codec's wire format, not invented locally.
+The keyset cursor CODEC (Phase 4, first consumed by the plan-library doors) is
+the Rust codec's wire format, not one invented here: :class:`SortKey`,
+:class:`CursorScope` → :class:`ScopeFingerprint`, :class:`KeysetPosition` and
+:class:`CursorError` mirror their Rust namesakes byte for byte. The layout is
+pinned in ``qontinui-schemas/rust/src/page.rs``'s module doc; a token Rust
+mints decodes here, and a token minted here decodes in Rust
+(``tests/fixtures/bounded_read/rust_minted_cursors.json`` holds Rust-minted
+tokens and is the cross-language guard). :func:`cursor_refusal` turns a
+:class:`CursorError` into the typed ``400 cursor_malformed`` every door answers.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import json
+import struct
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from enum import Enum
 from typing import Any
+from uuid import UUID
 
+from fastapi import HTTPException, status
 from qontinui_schemas.generated.per_type.bounded_read_meta import (
     BoundedReadMeta,
     BoundKind,
@@ -56,13 +75,25 @@ from qontinui_schemas.generated.per_type.bounded_read_meta import (
 )
 
 __all__ = [
+    "BOUNDED_READ_HEADER",
+    "CURSOR_MAX_TOKEN_LEN",
+    "CURSOR_WIRE_VERSION",
     "BoundKind",
     "BoundedReadMeta",
+    "CursorError",
+    "CursorRejection",
+    "CursorScope",
     "FilterNarrowing",
+    "KeysetPosition",
+    "ScopeFingerprint",
+    "SortKey",
     "complete",
+    "cursor_refusal",
     "from_count",
+    "from_lower_bound",
     "from_probe",
     "from_ranked_pool",
+    "header_value",
     "merge_into",
     "not_pageable",
     "unavailable",
@@ -238,6 +269,40 @@ def unknown(
     )
 
 
+def from_lower_bound(
+    shown: int,
+    limit: int,
+    *,
+    more_read: bool,
+    next_cursor: str | None,
+    filter_narrowed: FilterNarrowing | None = None,
+) -> BoundedReadMeta:
+    """Meta for a keyset WALK over a population known only as a LOWER BOUND —
+    an upstream read that stopped at its own cap, so rows may exist that this
+    read never saw.
+
+    No exact count is possible, so ``total`` is ``null`` either way:
+
+    * ``more_read`` — rows past this page WERE read: ``at_least``,
+      ``truncated: true``, and the walk continues by ``next_cursor``
+      (required — refused otherwise).
+    * otherwise — this page shows everything that was read, and nothing
+      proves that was everything: ``unknown``, ``truncated: null``. Never
+      ``false``, which would claim a completeness the capped read cannot.
+    """
+    if more_read:
+        return _meta(
+            shown=shown,
+            limit=limit,
+            total=None,
+            truncated=True,
+            bound_kind=BoundKind.at_least,
+            next_cursor=next_cursor,
+            filter_narrowed=filter_narrowed,
+        )
+    return unknown(shown, limit, filter_narrowed=filter_narrowed)
+
+
 def unavailable(limit: int) -> BoundedReadMeta:
     """Meta for an UNPROVISIONED store: no rows, bound unknown, ``available``
     false — an empty page here is UNKNOWN, never "nothing matched"."""
@@ -353,3 +418,371 @@ def merge_into(target: dict[str, Any], meta: BoundedReadMeta) -> dict[str, Any]:
     """
     target.update(meta.model_dump(mode="json"))
     return target
+
+
+#: The response header a NON-JSON bounded read (a zip, a stream) carries its
+#: envelope in — the same ten keys, as compact JSON, so a binary body states
+#: its bound in the one shared vocabulary rather than a bespoke header per
+#: door. A cross-origin browser reads it only if CORS publishes it.
+BOUNDED_READ_HEADER = "X-Bounded-Read"
+
+
+def header_value(meta: BoundedReadMeta) -> str:
+    """:data:`BOUNDED_READ_HEADER`'s value: every key, ``null`` included,
+    as ASCII compact JSON with sorted keys (one spelling per envelope)."""
+    return json.dumps(
+        meta.model_dump(mode="json"), separators=(",", ":"), sort_keys=True
+    )
+
+
+# ============================================================================
+# The keyset cursor codec — the Rust ``page.rs`` codec, byte for byte
+# ============================================================================
+
+#: Wire version of the cursor payload (Rust ``CURSOR_WIRE_VERSION``). A token
+#: carrying any other version is refused, never reinterpreted.
+CURSOR_WIRE_VERSION = 1
+
+#: The longest token :meth:`ScopeFingerprint.decode` will look at (Rust
+#: ``CURSOR_MAX_TOKEN_LEN``), in BYTES — a hostile query string must not buy a
+#: large base64 + JSON decode.
+CURSOR_MAX_TOKEN_LEN = 1024
+
+#: Domain separator pinning the fingerprint's meaning to this layout.
+_FINGERPRINT_DOMAIN = b"qontinui.bounded-read.cursor"
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_ONE_MICROSECOND = timedelta(microseconds=1)
+_I64_MIN = -(2**63)
+_I64_MAX = 2**63 - 1
+_U8_MAX = 255
+_BASE64URL_ALPHABET = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+)
+_PAYLOAD_KEYS = frozenset({"v", "s", "k", "i", "f"})
+
+
+@dataclass(frozen=True, slots=True)
+class SortKey:
+    """A keyset sort key this codec may walk — Rust's ``SortKey`` marker.
+
+    **Declaring one is an assertion about the schema** (plan D8). Its four
+    clauses, the Rust trait doc's in meaning:
+
+    1. **The key is IMMUTABLE after insert** — a column with no UPDATE site
+       anywhere (``created_at``; never ``updated_at``, never a heartbeat, never
+       a ``COALESCE`` over a mutable column). Keyset survives INSERT and
+       DELETE, but an UPDATE that moves an unreached row's key across the
+       cursor drops that row from the walk silently. A surface whose natural
+       order is mutable keeps it for display only and walks on an immutable
+       key. Each surface pins this with a test that greps for an
+       ``UPDATE … SET <key>``.
+    2. **The tiebreak is the row's unique id**, so ``(key, id)`` is a total
+       order and the row comparison neither drops nor repeats rows that share
+       a timestamp.
+    3. **The statement orders by exactly ``(key, id)``** in one direction and
+       filters with exactly that row comparison. The Rust doc names ``DESC``;
+       a surface that walks ``ASC`` says so in :attr:`id`, because the
+       direction is part of WHICH sequence a token addresses.
+    4. **:attr:`id` names the sequence and changes when the key does.** It is
+       bound into every token and into the fingerprint, so a token minted
+       against an old key decodes as malformed instead of paging silently
+       wrong. Keep it short: ``<store>:<key>,<tiebreak>[ asc]``.
+    """
+
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
+class KeysetPosition:
+    """The last served row's sort key and id (Rust ``KeysetPosition``).
+
+    ``at`` round-trips at microsecond resolution — PostgreSQL ``timestamptz``'s
+    own, and Python ``datetime``'s.
+    """
+
+    at: datetime
+    id: UUID
+
+
+class CursorRejection(Enum):
+    """Why a supplied cursor was refused (Rust ``CursorRejection``). Every
+    reason is the same refusal on the wire; the value is the short human
+    reason, and it echoes NOTHING from the token."""
+
+    EMPTY = "the cursor is blank"
+    TOO_LONG = "the cursor is longer than any token this read mints"
+    ENCODING = "the cursor is not unpadded urlsafe base64"
+    PAYLOAD = "the cursor does not decode to a cursor payload"
+    VERSION = "the cursor was minted by a different version of this read"
+    SORT_KEY = "the cursor was minted for a different sort order"
+    SCOPE = (
+        "the cursor was minted under different filters or a different tenant; "
+        "a cursor addresses a position in ONE ordered sequence"
+    )
+    TIMESTAMP = "the cursor's position is out of range"
+
+
+class CursorError(ValueError):
+    """A malformed cursor (Rust ``CursorError``) — the typed refusal every door
+    answers with ``400 cursor_malformed`` via :func:`cursor_refusal`."""
+
+    #: One stable machine code for every reason, because every reason has the
+    #: one remedy: restart the walk.
+    code = "cursor_malformed"
+
+    def __init__(self, reason: CursorRejection) -> None:
+        self.reason = reason
+        super().__init__(
+            "invalid cursor — pass a `next_cursor` from a previous response "
+            f"verbatim, or omit `cursor` for the first page ({reason.value})"
+        )
+
+    def refusal(self, surface: str, *, parameter: str = "cursor") -> str:
+        """The refusal text naming the surface the cursor should have come
+        from — the fleet's standard wording (Rust ``CursorError::refusal``)."""
+        return (
+            f"invalid cursor — pass a `next_cursor` from a previous {surface} "
+            f"response verbatim, or omit `{parameter}` for the first page "
+            f"({self.reason.value})"
+        )
+
+
+def _to_micros(at: datetime) -> int:
+    """Microseconds since the Unix epoch. A naive value is read as UTC — every
+    column this codec walks is ``timestamptz``."""
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    return (at - _EPOCH) // _ONE_MICROSECOND
+
+
+class CursorScope:
+    """Builds the :class:`ScopeFingerprint` of a read (Rust ``CursorScope``).
+
+    Add every filter that changes WHICH rows the ordered sequence contains —
+    the tenant / org included — as the surface APPLIED it, in a fixed order,
+    and nothing that only changes which SLICE is taken (``limit`` stays out,
+    so resizing a page mid-walk needs no new cursor). Each method appends one
+    tagged, length-prefixed field, exactly the Rust layout::
+
+        0x1E <name utf-8> 0x1F <value>
+          'n'                                absent (None)
+          's' <u64 BE len> <utf-8>           a string
+          'u' <16 raw bytes>                 a uuid
+          'b' <0x00 | 0x01>                  a bool
+          'i' <i64 BE>                       an integer
+          'l' <u64 BE count> (<u64 BE len> <bytes>)*   a sorted, deduped set
+    """
+
+    def __init__(self, sort_key: SortKey) -> None:
+        self._sort_key = sort_key
+        self._hasher = hashlib.sha256()
+        self._hasher.update(_FINGERPRINT_DOMAIN)
+        self._hasher.update(bytes([0x1F, CURSOR_WIRE_VERSION, 0x1F]))
+        self._hasher.update(sort_key.id.encode("utf-8"))
+
+    def _field(self, name: str) -> None:
+        self._hasher.update(b"\x1e")
+        self._hasher.update(name.encode("utf-8"))
+        self._hasher.update(b"\x1f")
+
+    def _put_bytes(self, value: bytes) -> None:
+        self._hasher.update(struct.pack(">Q", len(value)))
+        self._hasher.update(value)
+
+    def opt_str(self, name: str, value: str | None) -> CursorScope:
+        """A string-valued filter; ``None`` is ABSENT, distinct from ``""``."""
+        self._field(name)
+        if value is None:
+            self._hasher.update(b"n")
+        else:
+            self._hasher.update(b"s")
+            self._put_bytes(value.encode("utf-8"))
+        return self
+
+    def uuid(self, name: str, value: UUID) -> CursorScope:
+        """A uuid-valued scope member (the tenant, the org)."""
+        self._field(name)
+        self._hasher.update(b"u")
+        self._hasher.update(value.bytes)
+        return self
+
+    def opt_uuid(self, name: str, value: UUID | None) -> CursorScope:
+        """An optional uuid; ``None`` is ABSENT."""
+        if value is not None:
+            return self.uuid(name, value)
+        self._field(name)
+        self._hasher.update(b"n")
+        return self
+
+    def boolean(self, name: str, value: bool) -> CursorScope:
+        """A boolean filter (Rust ``CursorScope::bool``)."""
+        self._field(name)
+        self._hasher.update(b"b")
+        self._hasher.update(b"\x01" if value else b"\x00")
+        return self
+
+    def i64(self, name: str, value: int) -> CursorScope:
+        """An integer filter. Out of the i64 range is a programming error."""
+        if not _I64_MIN <= value <= _I64_MAX:
+            raise ValueError(f"{name}={value} does not fit an i64")
+        self._field(name)
+        self._hasher.update(b"i")
+        self._hasher.update(struct.pack(">q", value))
+        return self
+
+    def str_set(self, name: str, values: Iterable[str]) -> CursorScope:
+        """A SET-valued filter, hashed sorted (by bytes) and deduplicated."""
+        members = sorted({v.encode("utf-8") for v in values})
+        self._field(name)
+        self._hasher.update(b"l")
+        self._hasher.update(struct.pack(">Q", len(members)))
+        for member in members:
+            self._put_bytes(member)
+        return self
+
+    def finish(self) -> ScopeFingerprint:
+        """Finish the scope."""
+        return ScopeFingerprint(self._sort_key, self._hasher.hexdigest())
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """serde's derived struct refuses a repeated field; ``json`` keeps the last."""
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise CursorError(CursorRejection.PAYLOAD)
+        payload[key] = value
+    return payload
+
+
+def _reject_constant(_: str) -> Any:
+    """``NaN`` / ``Infinity`` are not JSON, and serde refuses them."""
+    raise CursorError(CursorRejection.PAYLOAD)
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+@dataclass(frozen=True, slots=True)
+class ScopeFingerprint:
+    """The fingerprint of one read's scope under one sort key — and the codec
+    (Rust ``ScopeFingerprint``). A token can only resume the sequence it came
+    from."""
+
+    sort_key: SortKey
+    hex: str
+
+    def encode(self, pos: KeysetPosition) -> str:
+        """Mint the token addressing the position immediately AFTER ``pos``.
+
+        ``base64url_nopad`` over the compact JSON
+        ``{"v":1,"s":<id>,"k":<micros>,"i":<uuid>,"f":<hex>}`` in that field
+        order — serde_json's own compact form.
+        """
+        payload = {
+            "v": CURSOR_WIRE_VERSION,
+            "s": self.sort_key.id,
+            "k": _to_micros(pos.at),
+            "i": str(pos.id),
+            "f": self.hex,
+        }
+        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        encoded = base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+        return encoded.rstrip("=")
+
+    def decode(self, token: str) -> KeysetPosition:
+        """Decode a caller-supplied token STRICTLY. Anything this fingerprint
+        did not mint — garbage, empty, over-long, padded, another wire
+        version, another sort key, another scope, an out-of-range instant — is
+        a :class:`CursorError`, never a clamp and never a 500."""
+        token = token.strip()
+        if not token:
+            raise CursorError(CursorRejection.EMPTY)
+        if len(token.encode("utf-8")) > CURSOR_MAX_TOKEN_LEN:
+            raise CursorError(CursorRejection.TOO_LONG)
+        if not set(token) <= _BASE64URL_ALPHABET or len(token) % 4 == 1:
+            raise CursorError(CursorRejection.ENCODING)
+        try:
+            raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+        except (binascii.Error, ValueError) as exc:
+            raise CursorError(CursorRejection.ENCODING) from exc
+        # The Rust engine refuses non-canonical trailing bits; re-encoding is
+        # the exact test for them, and keeps decode a strict inverse of encode.
+        if base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=") != token:
+            raise CursorError(CursorRejection.ENCODING)
+        try:
+            payload = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_reject_duplicate_keys,
+                parse_constant=_reject_constant,
+            )
+        except CursorError:
+            raise
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            raise CursorError(CursorRejection.PAYLOAD) from exc
+        if not isinstance(payload, dict) or set(payload) != _PAYLOAD_KEYS:
+            raise CursorError(CursorRejection.PAYLOAD)
+        version, sort_key, micros = payload["v"], payload["s"], payload["k"]
+        tiebreak, fingerprint = payload["i"], payload["f"]
+        if not (
+            _is_int(version)
+            and 0 <= version <= _U8_MAX
+            and isinstance(sort_key, str)
+            and _is_int(micros)
+            and _I64_MIN <= micros <= _I64_MAX
+            and isinstance(tiebreak, str)
+            and isinstance(fingerprint, str)
+        ):
+            raise CursorError(CursorRejection.PAYLOAD)
+        try:
+            row_id = UUID(tiebreak)
+        except ValueError as exc:
+            raise CursorError(CursorRejection.PAYLOAD) from exc
+        if version != CURSOR_WIRE_VERSION:
+            raise CursorError(CursorRejection.VERSION)
+        if sort_key != self.sort_key.id:
+            raise CursorError(CursorRejection.SORT_KEY)
+        if fingerprint != self.hex:
+            raise CursorError(CursorRejection.SCOPE)
+        try:
+            # Python's datetime spans exactly AD 1 … 9999, the range the Rust
+            # decoder enforces explicitly; anything outside overflows here.
+            at = _EPOCH + timedelta(microseconds=micros)
+        except OverflowError as exc:
+            raise CursorError(CursorRejection.TIMESTAMP) from exc
+        return KeysetPosition(at=at, id=row_id)
+
+    def decode_param(
+        self, token: str | None, *, surface: str, parameter: str = "cursor"
+    ) -> KeysetPosition | None:
+        """:meth:`decode` for a route's optional query parameter: ``None`` is
+        the first page, and a malformed token is the typed 400."""
+        if token is None:
+            return None
+        try:
+            return self.decode(token)
+        except CursorError as exc:
+            raise cursor_refusal(exc, surface=surface, parameter=parameter) from exc
+
+
+def cursor_refusal(
+    error: CursorError, *, surface: str, parameter: str = "cursor"
+) -> HTTPException:
+    """The typed ``400 cursor_malformed`` naming the parameter.
+
+    One shape for every door: ``error`` is the machine code, ``parameter``
+    names the query key that carried the token, ``reason`` is the stable
+    rejection name, and ``message`` is the fleet's standard refusal wording.
+    Nothing from the token is echoed.
+    """
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "error": error.code,
+            "parameter": parameter,
+            "reason": error.reason.name.lower(),
+            "message": error.refusal(surface, parameter=parameter),
+        },
+    )
