@@ -233,7 +233,10 @@ export default function CoordHistoryPage() {
           <PlanRow plan={p} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
         empty={
-          current.error ? null : ( // message above is the honest rendering. // never answered is the empty-is-not-unknown mistake. The failure // Gated on `error`: asserting "no shipped plans" on a request that
+          // Gated on `error`: asserting "no shipped plans" on a request that
+          // never answered is the empty-is-not-unknown mistake. The failure
+          // message above is the honest rendering.
+          current.error ? null : (
             <p className="text-sm text-muted-foreground italic">
               No {active} plans in the last 50.
             </p>
