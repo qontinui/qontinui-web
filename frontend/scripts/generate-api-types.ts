@@ -4,7 +4,12 @@
  * OpenAPI TypeScript Type Generation Script
  *
  * This script generates TypeScript types from the backend's OpenAPI schema.
- * It can fetch the schema from a running backend or use a local file.
+ * It can fetch the schema from a running backend or use the committed file.
+ *
+ * The committed `openapi-schema.json` is CI-maintained (written by
+ * `backend/scripts/export_openapi.py` and drift-gated in backend-ci), so a
+ * schema fetched from a running backend goes to a temp file and is never
+ * written over it.
  *
  * Usage:
  *   npm run generate-api-types          # Fetch from running backend
@@ -12,6 +17,7 @@
  */
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
@@ -87,32 +93,32 @@ async function main() {
       fs.mkdirSync(apiClientDir, { recursive: true });
     }
 
+    let schemaPath = SCHEMA_PATH;
     if (!useLocal) {
-      // Download the schema from the running backend
+      // Download the schema from the running backend into a temp file, so the
+      // committed, drift-gated snapshot is never overwritten.
       console.log("📡 Fetching schema from the running backend...\n");
-
-      // Try to download backend schema
+      const fetchedPath = path.join(
+        os.tmpdir(),
+        `qontinui-openapi-schema-${process.pid}.json`
+      );
       try {
-        await downloadSchema(`${BACKEND_URL}/api/v1/openapi.json`, SCHEMA_PATH);
+        await downloadSchema(`${BACKEND_URL}/api/v1/openapi.json`, fetchedPath);
+        schemaPath = fetchedPath;
       } catch (_error) {
         console.warn(
-          "⚠️  Backend schema download failed, trying local file..."
+          "⚠️  Backend schema download failed, using the committed schema file..."
         );
-        if (!fs.existsSync(SCHEMA_PATH)) {
-          throw new Error(
-            "No local schema file found and backend is not accessible"
-          );
-        }
       }
     } else {
-      console.log("📁 Using local schema file...\n");
+      console.log("📁 Using the committed schema file...\n");
     }
 
     // Generate types for backend
-    if (fs.existsSync(SCHEMA_PATH)) {
-      await generateTypes(SCHEMA_PATH, OUTPUT_PATH, "Backend API");
+    if (fs.existsSync(schemaPath)) {
+      await generateTypes(schemaPath, OUTPUT_PATH, "Backend API");
     } else {
-      throw new Error(`Schema file not found at ${SCHEMA_PATH}`);
+      throw new Error(`Schema file not found at ${schemaPath}`);
     }
 
     console.log("\n✨ All done! Types are ready to use.");
