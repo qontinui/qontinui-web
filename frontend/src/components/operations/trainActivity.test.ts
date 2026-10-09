@@ -485,6 +485,37 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(held!.detail).toContain("blocking summary");
   });
 
+  it("gives dependency-upstream-closed its own blocking reason, outranking ci-pending, never the unknown-token row", () => {
+    // coord's dead-edge token (qontinui-coord#2819): the dep label names a
+    // CLOSED, unlanded upstream, so the hold never clears on its own. Left
+    // unmapped it fell into `unrecognized-status` — "a token this bundle
+    // cannot name", ranked below every real diagnosis — for a state coord
+    // fully diagnosed.
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 31, merge_status: "ci-pending" }),
+        pr({ pr_number: 32, merge_status: "dependency-upstream-closed" }),
+      ],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    const codes = row.reasons.map((r) => r.code);
+    expect(codes).not.toContain("unrecognized-status");
+    expect(codes.indexOf("dependency-upstream-closed")).toBeLessThan(
+      codes.indexOf("ci-pending")
+    );
+    const dead = row.reasons.find(
+      (r) => r.code === "dependency-upstream-closed"
+    );
+    expect(dead).toBeDefined();
+    expect(dead!.label).toBe("Depends on a closed PR");
+    expect(dead!.severity).toBe("blocking");
+    expect(dead!.prNumbers).toEqual([32]);
+    expect(dead!.detail).toContain("re-anchor the label");
+  });
+
   it("exonerates a terminal-proposal-held PR from coord's ready_unmerged stall list", () => {
     // coord's health `ready_unmerged` reads frozen CLEAN/green signals and
     // carries no verdict, so a held PR may still be listed there. It must not
