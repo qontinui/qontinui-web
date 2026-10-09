@@ -68,13 +68,14 @@ _REPO = "qontinui/oplog-keyset-test"
 # ``limit + 1`` probe). Source: qontinui-coord ``commit_effects.rs``
 # ``load_commit_page`` and ``edit_effects.rs`` ``load_fs_observation_page``.
 # tokio-postgres plans each ``query(&str, …)`` with its actual parameter values
-# (a custom plan), so ``NULL::text IS NULL`` constant-folds exactly as here.
+# (a custom plan), so ``NULL::text IS NULL`` and the first page's
+# ``NULL::timestamptz IS NULL`` keyset guard constant-fold exactly as here.
 _COMMITS_SQL = """
     SELECT id, observed_at FROM coord.commit_observations
      WHERE (NULL::text IS NULL OR repo = NULL::text)
        AND (NULL::text IS NULL OR branch = NULL::text)
        AND (false IS TRUE OR provenance IS DISTINCT FROM 'restack:coord')
-       {keyset}
+       AND ({ts} IS NULL OR (observed_at, id) < ({ts}, {bid}::bigint))
      ORDER BY observed_at DESC, id DESC
      LIMIT 3
 """
@@ -82,22 +83,18 @@ _COMMITS_SQL = """
 _FS_SQL = """
     SELECT id, observed_at FROM coord.fs_observations
      WHERE (NULL::text IS NULL OR repo = NULL::text)
-       {keyset}
+       AND ({ts} IS NULL OR (observed_at, id) < ({ts}, {bid}::bigint))
      ORDER BY observed_at DESC, id DESC
      LIMIT 3
 """
 
 
 def _page(sql: str, boundary: tuple[int, datetime] | None = None) -> str:
+    """The first page (``$ts``/``$id`` NULL) or a cursor page after ``boundary``."""
     if boundary is None:
-        return sql.format(keyset="")
+        return sql.format(ts="NULL::timestamptz", bid="NULL")
     bid, bts = boundary
-    return sql.format(
-        keyset=(
-            f"AND (observed_at, id) < ('{bts.isoformat()}'::timestamptz, "
-            f"{int(bid)}::bigint)"
-        )
-    )
+    return sql.format(ts=f"'{bts.isoformat()}'::timestamptz", bid=int(bid))
 
 
 def _index_is_valid(engine: Engine, index: str) -> bool:
