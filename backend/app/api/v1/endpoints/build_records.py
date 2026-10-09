@@ -73,13 +73,18 @@ from app.models.build_record import (
     BuildRecordPublicSlug,
     BuildRecordSnapshot,
 )
+from app.services import github_rate_budget
 from app.services.build_record_allowlist import (
     REPO_RE,
     build_record_violations,
     names_token,
     scanned_strings,
 )
-from app.services.github_repo_visibility import Visibility, repo_visibility
+from app.services.github_repo_visibility import (
+    Visibility,
+    VisibilityAnswer,
+    check_repo,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -95,6 +100,9 @@ GENERATED_AT_MAX_SKEW = timedelta(minutes=5)
 
 #: Concurrent anonymous GitHub reads per publish.
 GITHUB_CONCURRENCY = 4
+#: Most repos one publish will ask GitHub about; a larger product is refused
+#: rather than allowed to drain the shared rate budget in one request.
+MAX_REPOS_PER_PUBLISH = 50
 
 #: A product slug in a path: the coord contract's domain, checked before any
 #: value is interpolated into a coord URL.
@@ -353,19 +361,33 @@ def _product_refusal(
     return None
 
 
-async def _confirm_repos_public(slug: str, repos: list[str]) -> None:
-    """Refuse unless GitHub, asked anonymously, says every repo is public."""
+async def _confirm_repos_public(db: AsyncSession, slug: str, repos: list[str]) -> None:
+    """Refuse unless GitHub says every repo is public.
+
+    Refuses BEFORE asking when the product has more than
+    :data:`MAX_REPOS_PER_PUBLISH` repos, or while the persisted GitHub budget
+    is at or below ``github_rate_budget.PUBLISH_RESERVE``. Asks at most
+    :data:`GITHUB_CONCURRENCY` at a time and records the rate-limit reading
+    GitHub returns (commits it).
+    """
     unique = sorted({r.lower(): r for r in repos}.values())
+    if len(unique) > MAX_REPOS_PER_PUBLISH:
+        _refuse(409, "build_record_too_many_repos", slug, limit=MAX_REPOS_PER_PUBLISH)
+    if await github_rate_budget.reserved(db, github_rate_budget.PUBLISH_RESERVE):
+        _refuse(502, "build_record_repo_visibility_budget_reserved", slug)
     gate = asyncio.Semaphore(GITHUB_CONCURRENCY)
 
-    async def ask(repo: str) -> Visibility:
+    async def ask(repo: str) -> VisibilityAnswer:
         async with gate:
-            return await repo_visibility(repo)
+            return await check_repo(repo)
 
     answers = await asyncio.gather(*(ask(r) for r in unique))
-    if any(a is Visibility.NOT_PUBLIC for a in answers):
+    await github_rate_budget.record(db, answers)
+    await db.commit()
+    verdicts = [a.visibility for a in answers]
+    if any(v is Visibility.NOT_PUBLIC for v in verdicts):
         _refuse(502, "build_record_repo_not_public", slug)
-    if any(a is not Visibility.PUBLIC for a in answers):
+    if any(v is not Visibility.PUBLIC for v in verdicts):
         _refuse(502, "build_record_repo_visibility_unknown", slug)
 
 
@@ -458,6 +480,9 @@ async def publish_build_record(
     * GitHub, asked anonymously, does not confirm a listed repo is public →
       502 ``build_record_repo_not_public`` (it said private / absent) or
       ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
+      refused without asking when the product has more than 50 repos (409
+      ``build_record_too_many_repos``) or the shared GitHub budget is at its
+      publish reserve (502 ``build_record_repo_visibility_budget_reserved``);
     * the slug was retracted or re-activated while coord was being asked → 409
       ``build_record_retraction_changed``;
     * the document is older than the latest snapshot → 409
@@ -508,7 +533,7 @@ async def publish_build_record(
     if not (now - GENERATED_AT_MAX_AGE <= generated_at <= now + GENERATED_AT_MAX_SKEW):
         _refuse(502, "build_record_generated_at_out_of_window", slug)
 
-    await _confirm_repos_public(slug, document["product"].get("repos") or [])
+    await _confirm_repos_public(db, slug, document["product"].get("repos") or [])
 
     snapshot = await _store_next_version(
         db,

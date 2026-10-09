@@ -44,9 +44,14 @@ removed (:func:`normalize_for_scan`):
   session, user and tenant ids);
 * an email-shaped substring, ``user@host`` included (operator identities).
 
-A string carrying a format (``Cf``) or control (``Cc``) character, or a
-combining overlay (U+0334–U+0338, U+20D2/3, U+20E5/6), is refused outright:
-those split a token for every check above while rendering as nothing.
+Two layers against characters that hide a token. (1) A string carrying a
+format, control, unassigned, private-use or surrogate character, any
+``Default_Ignorable_Code_Point``, or a combining overlay (U+0334–U+0338,
+U+20D2/3, U+20E5/6) is refused outright. (2) Every check runs on a STRIPPED
+form anyway (:func:`normalize_for_scan`: NFKD, drop marks and invisibles,
+NFKC, lookalike and infix-symbol slashes), so a character outside the refusal
+set still cannot split a token. Neither layer is claimed complete; together
+they close every probe in ``tests/test_build_records.py``.
 
 :func:`names_token` is the token-bounded check the publish route also runs
 for the NAMES of repos coord excluded (defined but not in the document).
@@ -120,10 +125,52 @@ _UUID_RE: Final = re.compile(
 )
 #: ``user@host`` is enough — an internal host needs no dot to identify a person.
 _EMAIL_RE: Final = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+")
-#: Characters that render as ``/`` but are not it (NFKC already folds U+FF0F).
+#: Characters that render as ``/`` but are not it (NFKC already folds U+FF0F
+#: and U+FF89 to U+30CE, both listed anyway). Any OTHER non-ASCII math symbol
+#: or "other punctuation" sitting between two ASCII alphanumerics is treated
+#: as a slash too (:data:`_INFIX_SYMBOL_RE`).
 _LOOKALIKE_SLASHES: Final = dict.fromkeys(
-    map(ord, "\u2215\u2044\u29f8\u2571\u1735"), "/"
+    map(
+        ord,
+        "\u2215\u2044\u29f8\u2571\u1735\u27cb\u2afb\u2afd\u30ce\uff89\u4e3f\u2f03",
+    ),
+    "/",
 )
+#: A non-ASCII character between two ASCII alphanumerics (spaces allowed);
+#: :func:`_infix_to_slash` keeps it only when it is ``Sm`` or ``Po``.
+_INFIX_SYMBOL_RE: Final = re.compile(
+    r"(?<=[A-Za-z0-9])\s*([^\x00-\x7f])\s*(?=[A-Za-z0-9])"
+)
+
+#: Unicode ``Default_Ignorable_Code_Point`` — characters that render as
+#: NOTHING, whatever their general category (U+3164 is ``Lo``, the variation
+#: selectors are ``Mn``). As (first, last) inclusive ranges.
+DEFAULT_IGNORABLE_RANGES: Final[tuple[tuple[int, int], ...]] = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+#: Categories a string is REFUSED for carrying (with the default-ignorables
+#: and the overlays): format, control, unassigned, private use, surrogate.
+_REFUSED_CATEGORIES: Final = frozenset({"Cf", "Cc", "Cn", "Co", "Cs"})
+#: Categories dropped from the STRIPPED scan form (adds the combining marks,
+#: which are not refused — an accent is legitimate — but must not split a
+#: token: ``secre\u0301t`` scans as ``secret``).
+_STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs"})
 _SPACED_SLASH_RE: Final = re.compile(r"\s*/\s*")
 #: Combining marks that draw a stroke THROUGH the previous character, so
 #: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
@@ -331,17 +378,44 @@ def _walk(
         strings.append((where, value))
 
 
+def is_default_ignorable(ch: str) -> bool:
+    code = ord(ch)
+    return any(lo <= code <= hi for lo, hi in DEFAULT_IGNORABLE_RANGES)
+
+
+def _infix_to_slash(match: re.Match[str]) -> str:
+    ch = match.group(1)
+    if ch == "/" or unicodedata.category(ch) in ("Sm", "Po"):
+        return "/"
+    return match.group(0)
+
+
 def normalize_for_scan(text: str) -> str:
-    """The form every content check reads: NFKC (folds fullwidth and other
-    compatibility forms to ASCII), lookalike slashes mapped to ``/``, and
-    whitespace around ``/`` removed — so ``acme ∕ secret`` scans as
-    ``acme/secret``."""
-    folded = unicodedata.normalize("NFKC", text).translate(_LOOKALIKE_SLASHES)
+    """The STRIPPED form every content check reads.
+
+    NFKD, then every combining mark (``Mn``/``Me``), format, control,
+    unassigned, private-use and surrogate character and every
+    default-ignorable code point is DROPPED, then NFKC (folds fullwidth and
+    other compatibility forms to ASCII). Lookalike slashes, and any non-ASCII
+    ``Sm``/``Po`` between two ASCII alphanumerics, become ``/``; whitespace
+    around ``/`` is removed. So ``acme ∕ secret``, ``acme⟋secret`` and
+    ``secre\u0301t`` all scan as what they render as.
+    """
+    decomposed = unicodedata.normalize("NFKD", text)
+    kept = "".join(
+        ch
+        for ch in decomposed
+        if unicodedata.category(ch) not in _STRIPPED_CATEGORIES
+        and not is_default_ignorable(ch)
+    )
+    folded = unicodedata.normalize("NFKC", kept).translate(_LOOKALIKE_SLASHES)
+    folded = _INFIX_SYMBOL_RE.sub(_infix_to_slash, folded)
     return _SPACED_SLASH_RE.sub("/", folded)
 
 
 def _repo_tokens(text: str) -> list[str]:
-    """Every ``a/b`` pair in ``text``, lowercased (GitHub names are case-blind)."""
+    """Every ``a/b`` pair in ``text``'s stripped form, lowercased (GitHub
+    names are case-blind)."""
     pairs: list[str] = []
     for run in _PATH_RUN_RE.findall(normalize_for_scan(text)):
         segments = [s.strip(".-") for s in run.split("/")]
@@ -353,13 +427,18 @@ def _repo_tokens(text: str) -> list[str]:
 
 
 def _has_hidden_characters(text: str) -> bool:
-    """Format (``Cf``: zero-width space, soft hyphen, word joiner, bidi marks…)
-    and control (``Cc``) characters split a token for a regex while rendering
-    as nothing, and overlay marks draw a slash that is not one. Every scanned
-    string carrying any of them is refused outright — no scan can be trusted
-    on it."""
+    """Characters that render as nothing (format ``Cf``, control ``Cc``, every
+    default-ignorable code point whatever its category), that have no agreed
+    rendering at all (unassigned ``Cn``, private use ``Co``, surrogates
+    ``Cs``), or that draw a slash which is not one (overlay marks). A scanned
+    string carrying any of them is refused outright. The scans ALSO run on the
+    stripped form (:func:`normalize_for_scan`), so this refusal is one layer,
+    not the only one."""
     return any(
-        unicodedata.category(ch) in ("Cf", "Cc") or ch in _OVERLAY_MARKS for ch in text
+        unicodedata.category(ch) in _REFUSED_CATEGORIES
+        or is_default_ignorable(ch)
+        or ch in _OVERLAY_MARKS
+        for ch in text
     )
 
 
@@ -372,7 +451,7 @@ def scanned_strings(document: Any) -> list[tuple[str, str]]:
 
 
 def names_token(text: str, name: str) -> bool:
-    """Whether normalised ``text`` contains ``name`` as a whole token
+    """Whether the stripped form of ``text`` contains ``name`` as a whole token
     (case-insensitive; bounded by anything that is not a letter or digit)."""
     pattern = rf"(?<![a-z0-9]){re.escape(name.lower())}(?![a-z0-9])"
     return re.search(pattern, normalize_for_scan(text).lower()) is not None
