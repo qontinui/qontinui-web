@@ -73,8 +73,13 @@ export function MergeOrchestrationSettings() {
     // statuses, then parse bodies. The typed reads parse as they go, so all
     // three are SETTLED first and judged in that same order:
     //   1. a read that never got an answer (a network failure) rejects the
-    //      whole batch, the first of settings, repos, slo — only the
-    //      top-level error is set and profile/repos stay unset;
+    //      whole batch — only the top-level error is set and profile/repos
+    //      stay unset. When several fail, the first by POSITION (settings,
+    //      repos, slo) wins; `Promise.all` reported whichever failed first in
+    //      TIME, so this is deterministic where the original was not. A 2xx
+    //      whose body stream breaks mid-read (a `TypeError` from `res.json()`)
+    //      also lands here, which the original would have reported only after
+    //      the status checks; it needs a truncated 2xx, so it is accepted;
     //   2. otherwise a refused settings, then a refused repos, is worded
     //      `settings: HTTP <status>` / `repos: HTTP <status>`, before any body
     //      is looked at;
