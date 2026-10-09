@@ -24,10 +24,7 @@ const __dirname = path.dirname(__filename);
 // bundled into the app, so its dev-stack defaults are the point of it.
 const BACKEND_URL =
   // eslint-disable-next-line @qontinui-web/no-dev-stack-fallback -- maintainer codegen tool, run against a local dev backend; never shipped.
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-const QONTINUI_URL =
-  // eslint-disable-next-line @qontinui-web/no-dev-stack-fallback -- maintainer codegen tool, run against a local dev backend; never shipped.
-  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SCHEMA_PATH = path.resolve(
   __dirname,
   "../src/lib/api-client/openapi-schema.json"
@@ -35,10 +32,6 @@ const SCHEMA_PATH = path.resolve(
 const OUTPUT_PATH = path.resolve(
   __dirname,
   "../src/lib/api-client/generated-types.ts"
-);
-const QONTINUI_OUTPUT_PATH = path.resolve(
-  __dirname,
-  "../src/lib/api-client/qontinui-generated-types.ts"
 );
 
 async function downloadSchema(url: string, outputPath: string): Promise<void> {
@@ -95,8 +88,8 @@ async function main() {
     }
 
     if (!useLocal) {
-      // Download schemas from running backends
-      console.log("📡 Fetching schemas from running backends...\n");
+      // Download the schema from the running backend
+      console.log("📡 Fetching schema from the running backend...\n");
 
       // Try to download backend schema
       try {
@@ -111,31 +104,8 @@ async function main() {
           );
         }
       }
-
-      // Try to download Qontinui schema
-      const qontinuiSchemaPath = path.resolve(
-        __dirname,
-        "../src/lib/api-client/qontinui-openapi-schema.json"
-      );
-      try {
-        await downloadSchema(
-          `${QONTINUI_URL}/api/v1/openapi.json`,
-          qontinuiSchemaPath
-        );
-
-        // Generate Qontinui types if schema was downloaded
-        await generateTypes(
-          qontinuiSchemaPath,
-          QONTINUI_OUTPUT_PATH,
-          "Qontinui API"
-        );
-      } catch (_error) {
-        console.warn(
-          "⚠️  Qontinui API not available, skipping type generation for it"
-        );
-      }
     } else {
-      console.log("📁 Using local schema files...\n");
+      console.log("📁 Using local schema file...\n");
     }
 
     // Generate types for backend
