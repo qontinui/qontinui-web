@@ -6071,6 +6071,54 @@
         "title": "BuildRecordProductWrite",
         "type": "object"
       },
+      "BuildRecordPublication": {
+        "description": "What ``GET /{slug}/publication`` returns, for the CALLER's tenant.",
+        "properties": {
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "owned_by_caller_tenant": {
+            "title": "Owned By Caller Tenant",
+            "type": "boolean"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "unpublished": {
+            "title": "Unpublished",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "public_slug",
+          "owned_by_caller_tenant",
+          "unpublished",
+          "version",
+          "content_sha256"
+        ],
+        "title": "BuildRecordPublication",
+        "type": "object"
+      },
       "BuildRecordPublishRequest": {
         "additionalProperties": false,
         "description": "Optional body of ``POST /{slug}/publish``.",
@@ -70948,6 +70996,50 @@
         ]
       }
     },
+    "/api/v1/build-records/{slug}/publication": {
+      "get": {
+        "description": "The caller's tenant's publication state for ``slug`` (any member):\nwhether it owns the public address, whether it is currently unpublished,\nand the latest snapshot's version and digest. Read-only; no coord call.",
+        "operationId": "api_v1_build_records_slug_publication_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordPublication"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Build Record Publication",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
     "/api/v1/build-records/{slug}/publish": {
       "delete": {
         "description": "D7's one-step unpublish: retract the public address immediately.\n\n``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment\nthis commits. Every snapshot row is kept as history and the tenant keeps\nthe slug; ``POST /{slug}/publish`` with ``{\"reactivate\": true}``\nre-activates it as the next version. Idempotent: unpublishing a retracted\nslug keeps its first retraction time.\n\nRefuses with the publish route's own answers: 404\n``build_record_not_published`` when nothing was ever published under the\nslug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns\nit. coord is not consulted \u2014 retraction must work while coord is down.",
@@ -116132,7 +116224,7 @@
     },
     "/api/v1/public/build-records/{slug}": {
       "get": {
-        "description": "The latest published snapshot of a product's build record, without\nauthentication.\n\nServes ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,\nwhich refuses a product that is not opted in (``is_public``) and\nre-validates the D3 allowlist before storing. It never proxies to coord,\nso the authed export is never reachable from here. 404 when nothing has\nbeen published under ``slug``, or when its owner has unpublished it\n(``DELETE /api/v1/build-records/{slug}/publish``).\n\nThe stored document is re-validated against the CURRENT allowlist on every\nread and 404s if it fails, and every answer carries ``Cache-Control:\nno-store`` so an unpublish is not outlived by a cached copy.\n\n``content_sha256`` is the SHA-256 of ``document`` serialized with sorted\nkeys and no insignificant whitespace, so a reader can verify it.",
+        "description": "The latest published snapshot of a product's build record, without\nauthentication.\n\nServes ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,\nwhich refuses a product that is not opted in (``is_public``) and\nre-validates the D3 allowlist before storing. It never proxies to coord,\nso the authed export is never reachable from here. 404 when nothing has\nbeen published under ``slug``, or when its owner has unpublished it\n(``DELETE /api/v1/build-records/{slug}/publish``).\n\nA snapshot validated under an older allowlist version is re-validated\nagainst the current one (once per process, cached, off the event loop\nunder a dedicated limiter) and 404s if it fails; one validated under the\ncurrent version is served on its stored verdict. Rate-limited per peer\n(:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries\n``Cache-Control: no-store`` so an unpublish is not outlived by a cached\ncopy.\n\n``content_sha256`` is the SHA-256 of ``document`` serialized with sorted\nkeys and no insignificant whitespace, so a reader can verify it.",
         "operationId": "api_v1_public_build_records_slug_get",
         "parameters": [
           {

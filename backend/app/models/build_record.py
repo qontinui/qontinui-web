@@ -129,6 +129,8 @@ class BuildRecordSnapshot(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     document: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The allowlist version the document passed at publish.
+    allowlist_version: Mapped[int] = mapped_column(Integer, nullable=False)
     #: coord's ``generated_at`` for this document (stale-publish guard).
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

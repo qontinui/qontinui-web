@@ -47,8 +47,8 @@ def _seed(engine: Engine, slug: str, *, retracted: bool) -> None:
             text(
                 "INSERT INTO web.build_record_snapshots "
                 "(tenant_id, public_slug, version, document, content_sha256, "
-                " generated_at) "
-                "VALUES (:tid, :slug, 1, '{}'::jsonb, repeat('a', 64), now())"
+                " generated_at, allowlist_version) "
+                "VALUES (:tid, :slug, 1, '{}'::jsonb, repeat('a', 64), now(), 1)"
             ),
             {"slug": slug, "tid": _TENANT},
         )

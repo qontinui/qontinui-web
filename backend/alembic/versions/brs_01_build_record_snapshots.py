@@ -96,6 +96,11 @@ def upgrade() -> None:
         # coord's ``generated_at`` for the frozen document: a publish whose
         # document is OLDER than the latest snapshot's is refused as stale.
         sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
+        # The allowlist version (app/services/build_record_allowlist.py
+        # ALLOWLIST_VERSION) the document passed at publish. The public route
+        # trusts that stored verdict while the version is current and
+        # re-validates only an older one.
+        sa.Column("allowlist_version", sa.Integer(), nullable=False),
         sa.Column(
             "published_at",
             sa.DateTime(timezone=True),
