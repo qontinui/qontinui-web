@@ -9,6 +9,12 @@
  * Phase 4). Do not update these snapshots to make a refactor pass — a diff
  * here is a behaviour change.
  *
+ * The monolith is deleted now. To add or legitimately re-record a case,
+ * restore it temporarily from the last commit that had it
+ * (`git show eb9429e1f:frontend/src/services/workflow-documentation-service.ts`),
+ * point this import at it, record with `-u`, point the import back here and
+ * require a pass WITHOUT `-u`. That is how every snapshot here was made.
+ *
  * Known, deliberate difference the snapshots do not cover: storage failures
  * are logged through the structured logger, so the console line gains a
  * "[WorkflowDocumentation]" prefix. The failure test below asserts the
@@ -189,6 +195,7 @@ describe("workflow-documentation service contract", () => {
     // the first, or the snapshot only ever sees one comment.
     vi.setSystemTime(new Date(FIXED_NOW.getTime() + 1000));
     svc.addActionComment(wf.id, "try", "Falls back to logout");
+    vi.setSystemTime(FIXED_NOW);
 
     const formats: ExportOptions["format"][] = ["markdown", "html", "pdf"];
     const out: Record<string, string | null> = {};
@@ -278,7 +285,7 @@ describe("workflow-documentation service contract", () => {
   it("swallows storage failures, keeps in-memory state, and logs the error", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    // Save path: setItem throws (quota exceeded, Safari private mode).
+    // Save path: setItem throws (quota exceeded, or storage disabled).
     const quota = new Error("QuotaExceededError");
     const setItem = vi
       .spyOn(Storage.prototype, "setItem")
@@ -296,17 +303,31 @@ describe("workflow-documentation service contract", () => {
     expect(saveCall!.at(-1)).toBe(quota);
     setItem.mockRestore();
 
-    // Load path: a corrupt stored value leaves the service empty, not broken.
-    localStorage.setItem("workflow-documentation", "{not json");
+    // Load path: keys load in order (docs, comments, versions) and a corrupt
+    // one stops the load there — what loaded before it is kept, nothing after
+    // it is, and the service still works.
+    const seeded = freshService();
+    seeded.createDocumentation("wf2", "kept body");
+    seeded.addActionComment("wf2", "a1", "lost comment");
+    seeded.updateDocumentation("wf2", "kept body v2");
+    localStorage.setItem("workflow-action-comments", "{not json");
     errorSpy.mockClear();
     const reloaded = freshService();
-    expect(reloaded.getDocumentation("wf")).toBeNull();
+    expect(reloaded.getDocumentation("wf2")?.content).toBe("kept body v2");
+    expect(reloaded.getAllActionComments("wf2")).toEqual([]);
+    expect(reloaded.getDocumentationHistory("wf2")).toEqual([]);
     expect(
       errorSpy.mock.calls.some((c) =>
         String(c[0]).includes("Failed to load documentation from storage")
       ),
       "load failure is logged"
     ).toBe(true);
+
+    // A corrupt first key leaves the service empty, not broken.
+    localStorage.setItem("workflow-documentation", "{not json");
+    const empty = freshService();
+    expect(empty.getDocumentation("wf2")).toBeNull();
+    expect(empty.createDocumentation("wf3", "fresh").content).toBe("fresh");
   });
 
   it("round-trips through localStorage under the same three keys", () => {
