@@ -41,8 +41,11 @@ key/value settings table to put it in.
 
 And ``web.build_record_pending_not_public`` — (slug, repo) pairs GitHub
 answered NOT_PUBLIC for but whose retraction could not take the owner row
-lock in time. The next tick applies them before anything else, so a
-"not public" verdict is deferred, never dropped. No FK to the owner table on
+lock in time. The next tick applies them at its very start — before the
+budget check, which they do not need — so a "not public" verdict is
+deferred, never dropped; unless the version it was about has since been
+replaced or re-published, in which case that publish's own GitHub check
+superseded it. No FK to the owner table on
 purpose: inserting a child row takes a KEY SHARE lock on the parent, which
 would wait on exactly the lock holder that made the deferral necessary.
 
@@ -129,6 +132,10 @@ def upgrade() -> None:
         "build_record_pending_not_public",
         sa.Column("public_slug", sa.Text(), primary_key=True),
         sa.Column("repo", sa.Text(), primary_key=True),
+        # The snapshot version the verdict was about; it is applied only if
+        # that version is still the latest (and was published before
+        # observed_at) — a later publish re-confirmed every repo itself.
+        sa.Column("snapshot_version", sa.Integer(), nullable=False),
         sa.Column(
             "observed_at",
             sa.DateTime(timezone=True),
