@@ -63,21 +63,12 @@ import {
   MEMORY_STATUS_PALETTE,
   deriveMemoryStatus,
 } from "@/components/admin/coord/memoryStatus";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchMemoryVersion,
+  restoreMemoryVersion,
+  type CoordMemoryVersionDetail,
+} from "@/lib/api/operations/coordMemory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-
-const API = "/api/v1/operations";
-
-interface CoordMemoryVersionDetail {
-  name: string;
-  version: number;
-  content: string;
-  description?: string | null;
-  type?: string | null;
-  written_at?: string | null;
-  written_by_agent?: string | null;
-  written_by_device?: string | null;
-}
 
 export default function CoordMemoryVersionPage() {
   const params = useParams<{ name: string; version: string }>();
@@ -105,9 +96,7 @@ export default function CoordMemoryVersionPage() {
   const fetchVersion = useCallback(async () => {
     if (!name || !version) return;
     try {
-      const body = await httpClient.get<CoordMemoryVersionDetail>(
-        `${API}/memory/${encodeURIComponent(name)}/version/${encodeURIComponent(version)}`
-      );
+      const body = await fetchMemoryVersion(name, version);
       setEntry(body);
       setError(null);
       setNotFound(false);
@@ -136,10 +125,7 @@ export default function CoordMemoryVersionPage() {
     if (!name || !version) return;
     setRestoring(true);
     try {
-      await httpClient.post(
-        `${API}/memory/${encodeURIComponent(name)}/restore`,
-        { version: Number(version) }
-      );
+      await restoreMemoryVersion(name, { version: Number(version) });
       toast.success(`Restored v${version} as the new head version`);
       router.push(`/admin/coord/memory/${encodeURIComponent(name)}`);
     } catch (e) {

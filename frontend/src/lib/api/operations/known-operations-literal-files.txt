@@ -6,16 +6,6 @@ app/(app)/admin/coord/agents/page.tsx
 app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts
 app/(app)/admin/coord/ci/_lib/useCiReads.ts
 app/(app)/admin/coord/computers/_lib/useComputers.ts
-app/(app)/admin/coord/deploys/page.tsx
-app/(app)/admin/coord/federation/page.tsx
-app/(app)/admin/coord/findings/page.tsx
-app/(app)/admin/coord/git-ops/page.tsx
-app/(app)/admin/coord/history/page.tsx
-app/(app)/admin/coord/lands/page.tsx
-app/(app)/admin/coord/memory/[name]/page.tsx
-app/(app)/admin/coord/memory/[name]/version/[version]/page.tsx
-app/(app)/admin/coord/memory/page.tsx
-app/(app)/admin/coord/notifications/page.tsx
 app/(app)/admin/coord/onboarding-status/page.tsx
 app/(app)/admin/coord/plans/useDeriveMode.ts
 app/(app)/admin/coord/plans/useThroughput.ts
@@ -44,10 +34,6 @@ app/(app)/settings/coordination/_hooks/useNextStepSettings.ts
 app/(app)/settings/coordination/_hooks/usePrioritySets.ts
 app/(app)/settings/repos/page.tsx
 components/admin/agent-claims/AgentClaimsDashboard.tsx
-components/admin/coord/CoordNav.tsx
-components/admin/coord/DeployRow.tsx
-components/admin/coord/GapRow.tsx
-components/admin/coord/LandRow.tsx
 components/admin/coord/RedMainBanner.tsx
 components/operations/ConnectInstalledOrg.tsx
 components/operations/ConnectedOrgs.tsx
@@ -77,4 +63,3 @@ components/operations/useTrainHealth.ts
 components/operations/utils.ts
 lib/onboarding-connect-state.ts
 lib/onboarding-pending.ts
-services/runner-releases-service.ts

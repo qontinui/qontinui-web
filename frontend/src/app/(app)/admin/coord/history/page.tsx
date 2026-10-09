@@ -46,11 +46,10 @@ import {
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchCoordPlans } from "@/lib/api/operations/coordLands";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 type SectionId = "shipped" | "archived";
@@ -95,11 +94,8 @@ function useSection(status: SectionId): SectionState & { refetch: () => void } {
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const qs = new URLSearchParams();
-        qs.set("status", status);
-        qs.set("limit", "50");
-        const body = await httpClient.get<{ plans?: CoordPlanRow[] }>(
-          `${API}/plans?${qs.toString()}`,
+        const body = await fetchCoordPlans(
+          { status, limit: 50 },
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;
@@ -237,9 +233,10 @@ export default function CoordHistoryPage() {
           <PlanRow plan={p} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
         empty={
-          current.error ? // never answered is the empty-is-not-unknown mistake. The failure // Gated on `error`: asserting "no shipped plans" on a request that
+          // Gated on `error`: asserting "no shipped plans" on a request that
+          // never answered is the empty-is-not-unknown mistake. The failure
           // message above is the honest rendering.
-          null : (
+          current.error ? null : (
             <p className="text-sm text-muted-foreground italic">
               No {active} plans in the last 50.
             </p>
