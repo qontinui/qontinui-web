@@ -660,8 +660,10 @@ def install_default_tasks(service: SchedulerService) -> None:
     # Public build records, second question — does GitHub (asked anonymously)
     # still say every repo on a live page is public? Its own task so it has its
     # own kill switch and its own timeout, and never shares a tick with the
-    # coord reconcile above. At most 8 GitHub calls per tick (48/hour of the
-    # 60/hour anonymous limit); offset to :05 so the two never fire together.
+    # coord reconcile above. At most 8 GitHub calls per tick anonymously (80
+    # with GITHUB_VISIBILITY_TOKEN); real anonymous throughput is ~30 repos/
+    # hour because it stops at 30 remaining of GitHub's 60/hour window — see
+    # recheck_throughput_per_hour. Offset to :05 so the two never fire together.
     service.register(
         ScheduledTask(
             name="build_record_visibility_recheck",
