@@ -1,14 +1,17 @@
-from typing import Any
+from datetime import datetime
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import not_found_error
+from app.models.build_record import BUILD_RECORD_SLUG_PATTERN, BuildRecordSnapshot
 from app.models.project import Project as ProjectModel
 from app.schemas.project import Project
 
@@ -79,3 +82,52 @@ async def read_public_project(
     )
 
     return Project.model_validate(project)
+
+
+class PublicBuildRecord(BaseModel):
+    """The latest frozen version of a published build record."""
+
+    public_slug: str
+    version: int
+    published_at: datetime
+    content_sha256: str
+    document: dict[str, Any]
+
+
+@router.get("/build-records/{slug}", response_model=PublicBuildRecord)
+async def read_public_build_record(
+    slug: Annotated[str, Path(pattern=BUILD_RECORD_SLUG_PATTERN)],
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """
+    The latest published snapshot of a product's build record, without
+    authentication.
+
+    Serves ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,
+    which refuses a product that is not opted in (``is_public``) and
+    re-validates the D3 allowlist before storing. It never proxies to coord,
+    so the authed export is never reachable from here. 404 when nothing has
+    been published under ``slug``.
+
+    ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
+    keys and no insignificant whitespace, so a reader can verify it.
+    """
+    stmt = (
+        select(BuildRecordSnapshot)
+        .where(BuildRecordSnapshot.public_slug == slug)
+        .order_by(BuildRecordSnapshot.version.desc())
+        .limit(1)
+    )
+    snapshot = (await db.execute(stmt)).scalar_one_or_none()
+    if snapshot is None:
+        raise not_found_error(
+            "Public build record not found",
+            ErrorCode.RESOURCE_NOT_FOUND,
+        )
+    return PublicBuildRecord(
+        public_slug=snapshot.public_slug,
+        version=snapshot.version,
+        published_at=snapshot.published_at,
+        content_sha256=snapshot.content_sha256,
+        document=snapshot.document,
+    )
