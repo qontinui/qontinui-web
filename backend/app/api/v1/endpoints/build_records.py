@@ -55,7 +55,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.operations import (
@@ -76,10 +75,10 @@ from app.models.build_record import (
 )
 from app.services import github_rate_budget
 from app.services.build_record_allowlist import (
+    ALLOWLIST_VERSION,
     REPO_RE,
     build_record_violations,
-    names_token,
-    scanned_strings,
+    scan_off_loop,
 )
 from app.services.github_repo_visibility import (
     Visibility,
@@ -104,6 +103,9 @@ GITHUB_CONCURRENCY = 4
 #: Most repos one publish will ask GitHub about; a larger product is refused
 #: rather than allowed to drain the shared rate budget in one request.
 MAX_REPOS_PER_PUBLISH = 50
+#: Most repos a product may define that coord left out of the document; each
+#: excluded name is scanned for in every string, so this bounds that cost.
+MAX_EXCLUDED_REPOS = 50
 
 #: A product slug in a path: the coord contract's domain, checked before any
 #: value is interpolated into a coord URL.
@@ -308,11 +310,36 @@ async def _find_product(slug: str, tenant_id: UUID) -> dict[str, Any] | None:
     return None
 
 
+def _excluded_names(document: Any, product: dict[str, Any]) -> set[str]:
+    """Names of repos the product DEFINES but coord left out of the document
+    — the ones it could not establish as public."""
+    defined = product.get("repos")
+    defined_repos = (
+        {r.lower() for r in defined if isinstance(r, str)}
+        if isinstance(defined, list)
+        else set()
+    )
+    doc_product = document.get("product") if isinstance(document, dict) else None
+    doc_repos = doc_product.get("repos") if isinstance(doc_product, dict) else None
+    in_document = (
+        {r.lower() for r in doc_repos if isinstance(r, str)}
+        if isinstance(doc_repos, list)
+        else set()
+    )
+    return {
+        repo.split("/", 1)[1]
+        for repo in defined_repos - in_document
+        if "/" in repo and repo.split("/", 1)[1]
+    }
+
+
 def _document_violations(
-    document: Any, slug: str, product: dict[str, Any]
+    document: Any, slug: str, product: dict[str, Any], excluded_names: set[str]
 ) -> list[str]:
-    """The D3 allowlist, plus the two checks that need the product definition."""
-    violations = build_record_violations(document)
+    """The D3 allowlist — including the excluded-repo-name scan, done in the
+    same single normalising pass — plus the checks that need the product
+    definition. CPU-bound: callers run it via ``scan_off_loop``."""
+    violations = build_record_violations(document, excluded_names=excluded_names)
     if violations:
         return violations
     doc_product = document.get("product") or {}
@@ -331,21 +358,6 @@ def _document_violations(
             )
     if "generated_at" not in document:
         violations.append("generated_at: required to publish")
-
-    # Repos the product defines but coord left out of the document are the
-    # ones it could NOT establish as public — their names must not leak
-    # through a title or a slug either. Token-bounded, case-insensitive,
-    # after the same normalisation as the allowlist scan; the slot is
-    # reported, never the name.
-    in_document = {r.lower() for r in doc_product.get("repos") or []}
-    excluded_names = {
-        repo.split("/", 1)[1]
-        for repo in defined_repos - in_document
-        if "/" in repo and repo.split("/", 1)[1]
-    }
-    for where, text in scanned_strings(document):
-        if any(names_token(text, name) for name in excluded_names):
-            violations.append(f"{where}: names a repo excluded as not known public")
     return violations
 
 
@@ -438,6 +450,9 @@ async def _store_next_version(
         document=document,
         content_sha256=canonical_sha256(document),
         generated_at=generated_at,
+        # Validated (and passed) under this allowlist version: the public
+        # route trusts the stored verdict while the version is current.
+        allowlist_version=ALLOWLIST_VERSION,
     )
     db.add(snapshot)
     # This publish just confirmed every repo with GitHub (``_confirm_repos_public``
@@ -530,8 +545,19 @@ async def publish_build_record(
     document = await _proxy_coord_get(
         f"/coord/build-records/{slug}", tenant_id=tenant_id, structured_errors=True
     )
-    # CPU-bound (Unicode normalisation, regexes): off the event loop.
-    violations = await run_in_threadpool(_document_violations, document, slug, product)
+    excluded_names = _excluded_names(document, product)
+    if len(excluded_names) > MAX_EXCLUDED_REPOS:
+        _refuse(
+            409,
+            "build_record_too_many_excluded_repos",
+            slug,
+            limit=MAX_EXCLUDED_REPOS,
+        )
+    # CPU-bound (Unicode normalisation, regexes): off the event loop, under
+    # the scan's own small capacity limiter.
+    violations = await scan_off_loop(
+        _document_violations, document, slug, product, excluded_names
+    )
     if violations:
         logger.warning(
             "build_record_publish_refused_allowlist",
@@ -656,4 +682,46 @@ async def reconcile_build_records(
         )
     return BuildRecordReconcileResult(
         retracted=await reconcile_tenant(db, tenant_id, products)
+    )
+
+
+class BuildRecordPublication(BaseModel):
+    """What ``GET /{slug}/publication`` returns, for the CALLER's tenant."""
+
+    public_slug: str
+    #: True only when the caller's tenant owns this public slug. False — with
+    #: every other field null/false — when another tenant owns it OR it was
+    #: never published: the two are indistinguishable on purpose, so this
+    #: route never reveals that (or which) another tenant holds a slug.
+    owned_by_caller_tenant: bool
+    unpublished: bool
+    version: int | None
+    content_sha256: str | None
+
+
+@router.get("/{slug}/publication", response_model=BuildRecordPublication)
+async def get_build_record_publication(
+    slug: SlugPath,
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_async_db),
+) -> BuildRecordPublication:
+    """The caller's tenant's publication state for ``slug`` (any member):
+    whether it owns the public address, whether it is currently unpublished,
+    and the latest snapshot's version and digest. Read-only; no coord call."""
+    owner = await _read_owner(db, slug, lock=False)
+    if owner is None or owner.tenant_id != tenant_id:
+        return BuildRecordPublication(
+            public_slug=slug,
+            owned_by_caller_tenant=False,
+            unpublished=False,
+            version=None,
+            content_sha256=None,
+        )
+    latest = await _latest_snapshot(db, slug)
+    return BuildRecordPublication(
+        public_slug=slug,
+        owned_by_caller_tenant=True,
+        unpublished=owner.unpublished_at is not None,
+        version=latest.version if latest is not None else None,
+        content_sha256=latest.content_sha256 if latest is not None else None,
     )

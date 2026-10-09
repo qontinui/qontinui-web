@@ -81,6 +81,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from typing import Any, Final
@@ -113,11 +114,22 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
     }
 )
 
-#: Longest string the content scan will read. Every real title, slug and
-#: unknown is far shorter; a longer one is refused before any regex runs.
+#: The version of THIS allowlist and its scanner. A snapshot stores the
+#: version it was validated under at publish; the public route re-validates
+#: only a snapshot stored under a different version. BUMP IT on any change to
+#: the key set, a slot rule, a pattern, normalisation or a cap.
+ALLOWLIST_VERSION: Final = 14
+
+#: Longest string the content scan will read — measured on the string AND on
+#: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
+#: U+FDFA), and the decomposition may be at most 2× the original. Every real
+#: title, slug and unknown is far shorter; a longer one is refused before any
+#: normalisation or regex runs.
 MAX_SCANNED_STRING_CHARS: Final = 512
-#: Largest serialized document accepted (UTF-8 JSON).
-MAX_DOCUMENT_BYTES: Final = 1024 * 1024
+MAX_NFKD_EXPANSION: Final = 2
+#: Largest serialized document accepted (UTF-8 JSON). A real build record is
+#: a few KiB per hundred work units; 256 KiB bounds the worst-case scan cost.
+MAX_DOCUMENT_BYTES: Final = 256 * 1024
 
 SLUG_RE: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 #: A work-unit slug. ``coord.work_units.slug`` is unconstrained ``TEXT``
@@ -478,7 +490,7 @@ def _walk(
     if isinstance(value, dict | list):
         out.append(f"{where}: expected a scalar, got {type(value).__name__}")
         return
-    if isinstance(value, str) and len(value) > MAX_SCANNED_STRING_CHARS:
+    if isinstance(value, str) and _too_long(value):
         out.append(f"{where}: longer than {MAX_SCANNED_STRING_CHARS} characters")
         return
     if not _slot_ok(shape, value):
@@ -488,6 +500,18 @@ def _walk(
     # owner/name pair), already checked exactly; every other string is scanned.
     if isinstance(value, str) and shape is not Slot.SCHEMA:
         strings.append((where, value))
+
+
+def _too_long(value: str) -> bool:
+    """Over the cap as written, or once decomposed (NFKD), or expanding more
+    than :data:`MAX_NFKD_EXPANSION`×. The raw check comes first, so NFKD only
+    ever runs on a string already within the cap."""
+    if len(value) > MAX_SCANNED_STRING_CHARS:
+        return True
+    decomposed = len(unicodedata.normalize("NFKD", value))
+    return decomposed > MAX_SCANNED_STRING_CHARS or decomposed > (
+        MAX_NFKD_EXPANSION * max(len(value), 1)
+    )
 
 
 def is_default_ignorable(ch: str) -> bool:
@@ -531,11 +555,11 @@ def normalize_for_scan(text: str) -> str:
     return _SPACED_SLASH_RE.sub("/", folded)
 
 
-def _repo_tokens(text: str) -> list[str]:
-    """Every ``a/b`` pair in ``text``'s stripped form, lowercased (GitHub
+def _repo_tokens(normalized: str) -> list[str]:
+    """Every ``a/b`` pair in an ALREADY-normalised string, lowercased (GitHub
     names are case-blind)."""
     pairs: list[str] = []
-    for run in _PATH_RUN_RE.findall(normalize_for_scan(text)):
+    for run in _PATH_RUN_RE.findall(normalized):
         segments = [s.strip(".-") for s in run.split("/")]
         for left, right in zip(segments, segments[1:], strict=False):
             if not left or not right or (left.isdigit() and right.isdigit()):
@@ -568,11 +592,22 @@ def scanned_strings(document: Any) -> list[tuple[str, str]]:
     return strings
 
 
+def names_pattern(names: Iterable[str]) -> re.Pattern[str] | None:
+    """ONE token-bounded, case-insensitive alternation over ``names``
+    (escaped), matched against already-normalised lower-cased text."""
+    escaped = sorted({re.escape(n.lower()) for n in names if n}, key=len, reverse=True)
+    if not escaped:
+        return None
+    return re.compile(rf"(?<![a-z0-9])(?:{'|'.join(escaped)})(?![a-z0-9])")
+
+
 def names_token(text: str, name: str) -> bool:
     """Whether the stripped form of ``text`` contains ``name`` as a whole token
     (case-insensitive; bounded by anything that is not a letter or digit)."""
-    pattern = rf"(?<![a-z0-9]){re.escape(name.lower())}(?![a-z0-9])"
-    return re.search(pattern, normalize_for_scan(text).lower()) is not None
+    pattern = names_pattern([name])
+    return pattern is not None and (
+        pattern.search(normalize_for_scan(text).lower()) is not None
+    )
 
 
 def _too_large(document: Any) -> bool:
@@ -583,12 +618,18 @@ def _too_large(document: Any) -> bool:
     return len(encoded.encode("utf-8")) > MAX_DOCUMENT_BYTES
 
 
-def build_record_violations(document: Any) -> list[str]:
+def build_record_violations(
+    document: Any, *, excluded_names: Iterable[str] = ()
+) -> list[str]:
     """Every way ``document`` breaks the allowlist; empty when it is publishable.
 
     Size first: a document over :data:`MAX_DOCUMENT_BYTES` is refused without
     being walked, and a string over :data:`MAX_SCANNED_STRING_CHARS` is
     refused without being scanned — no input can make this function slow.
+
+    ``excluded_names``: names of repos the product defines but the document
+    left out (not known public). Every scanned string is normalised ONCE and
+    checked against one alternation over all of them.
     """
     if _too_large(document):
         return [f"<root>: larger than {MAX_DOCUMENT_BYTES} bytes serialized"]
@@ -608,12 +649,15 @@ def build_record_violations(document: Any) -> list[str]:
         else set()
     )
 
+    excluded = names_pattern(excluded_names)
     for where, text in strings:
         if _has_hidden_characters(text):
             out.append(f"{where}: contains an invisible, control or overlay character")
             continue
         normalized = normalize_for_scan(text)
-        if any(token not in public_repos for token in _repo_tokens(text)):
+        if excluded is not None and excluded.search(normalized.lower()):
+            out.append(f"{where}: names a repo excluded as not known public")
+        if any(token not in public_repos for token in _repo_tokens(normalized)):
             out.append(f"{where}: names an owner/name not in product.repos")
         if _UUID_RE.search(normalized):
             out.append(f"{where}: contains a UUID-shaped identifier")
@@ -639,3 +683,23 @@ def validate_build_record(document: Any) -> dict[str, Any]:
         raise BuildRecordRejected(violations)
     assert isinstance(document, dict)  # guaranteed by an empty violation list
     return document
+
+
+_scan_limiter: Any = None
+
+
+async def scan_off_loop(fn: Any, *args: Any) -> Any:
+    """Run a CPU-bound scan in a worker thread under a DEDICATED small
+    :class:`anyio.CapacityLimiter` (:data:`SCAN_CONCURRENCY`), never the shared
+    default pool, so scans can neither block the event loop nor starve every
+    other ``run_in_threadpool`` caller."""
+    import anyio
+
+    global _scan_limiter
+    if _scan_limiter is None:
+        _scan_limiter = anyio.CapacityLimiter(SCAN_CONCURRENCY)
+    return await anyio.to_thread.run_sync(fn, *args, limiter=_scan_limiter)
+
+
+#: Concurrent scans across the process (:func:`scan_off_loop`).
+SCAN_CONCURRENCY: Final = 2
