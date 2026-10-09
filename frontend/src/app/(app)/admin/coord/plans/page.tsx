@@ -144,7 +144,11 @@ import { usePlanDifficulty } from "../work-units/usePlanDifficulty";
 import { CorpusHealthPanel } from "./CorpusHealthPanel";
 import { PlanPageFilters, PAGE_ONLY_NOTE } from "./PlanPageFilters";
 import { PlanRowBadges } from "./PlanRowBadges";
-import { PlanDocumentPanel, PlanTriageDetail } from "./PlanRowDetail";
+import {
+  PlanDocumentPanel,
+  PlanShippedBy,
+  PlanTriageDetail,
+} from "./PlanRowDetail";
 import { PlanSearchBox, SearchEcho } from "./PlanSearchBox";
 import { ThroughputPanel } from "./ThroughputPanel";
 import { pageForkCount } from "./corpusHealth";
@@ -797,7 +801,12 @@ export default function CoordPlansListPage() {
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
             badges={<PlanRowBadges row={row} difficulty={difficulty} />}
-            detailExtra={<PlanTriageDetail row={row} />}
+            detailExtra={
+              <>
+                <PlanTriageDetail row={row} />
+                <PlanShippedBy row={row} />
+              </>
+            }
             actions={<PlanDocumentPanel row={row} actions={documentActions} />}
           />
         )}

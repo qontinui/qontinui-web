@@ -96789,6 +96789,52 @@
         ]
       }
     },
+    "/api/v1/operations/plans/{slug}/attribution": {
+      "get": {
+        "description": "Return who shipped a work unit, as session DISPLAY NAMES (operator only).\n\nProxies coord's admin-console-only ``GET /coord/work-units/{slug}/attribution``\n(plan ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase\n0d / Phase 7, ``work_unit_attribution.rs``): ``{\"slug\",\n\"attribution_available\", \"shipped_by\": [{\"session_name\", \"pr_refs\":\n[{\"repo\", \"pr_number\", \"merged\", \"attribution_is_single_session\"}]}],\n\"unnamed_session_count\", \"unattributed_pr_count\"}`` \u2014 or, when coord cannot\ntenant-confine the lineage join, ``attribution_available: false`` with an\n``unavailable_reason`` and both counts ``null``. Passed through UNMODELLED;\ncoord never puts a raw session id on this body, and nothing here adds one.\n\nOperator tier ONLY, mechanically: :func:`get_tenant_id` resolves the\ncaller through coord's operator ``/admin/coord/me`` door, which a device\nor agent JWT can never pass, and the forwarded Cognito bearer is what coord\nauthorizes on. There is deliberately no device/agent twin of this route.\n\nA foreign slug and a nonexistent one are the same coord 404, forwarded.",
+        "operationId": "api_v1_operations_plans_slug_attribution_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Plan Attribution Api V1 Operations Plans  Slug  Attribution Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Plan Attribution",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/plans/{slug}/history": {
       "get": {
         "description": "Return the status-transition history for a work-unit (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}/history``.",
