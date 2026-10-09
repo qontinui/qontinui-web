@@ -83,8 +83,11 @@
  * recovery path.
  */
 
-import { ApiConfig } from "@/services/api-config";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  postConnectState,
+  type ConnectStateMintRequest,
+} from "@/lib/api/operations/prMergeOnboarding";
 
 export type ConnectFlow = "connect" | "runner-clone";
 
@@ -184,9 +187,6 @@ export function assertNonceStorageAvailable(): void {
 /** Legacy value hardcoded by `/connect-runner-github` before the token existed. */
 const LEGACY_RUNNER_CLONE = "runner-clone";
 
-/** Web-backend proxy for coord's connect-state mint. */
-const CONNECT_STATE_MINT_URL = `${ApiConfig.API_BASE_URL}/api/v1/operations/pr-merge/onboarding/connect-state`;
-
 function randomNonce(): string {
   const buf = new Uint8Array(16);
   crypto.getRandomValues(buf);
@@ -272,7 +272,7 @@ export async function mintConnectState({
   targetLogin = null,
   targetInstallationId = null,
 }: MintConnectStateRequest): Promise<string> {
-  const payload: Record<string, unknown> = { flow };
+  const payload: ConnectStateMintRequest = { flow };
   // Omit rather than send an empty/absent target: coord distinguishes "this
   // flow named no target" (skip the assertion) from "this flow named a target"
   // (assert it), and a blank string would be a third, meaningless state.
@@ -282,21 +282,22 @@ export async function mintConnectState({
   // numbers and both `JSON.stringify` to `null`, which would emit exactly the
   // explicit-null the line above refuses to send.
   if (Number.isInteger(targetInstallationId)) {
-    payload.target_installation_id = targetInstallationId;
+    payload.target_installation_id = targetInstallationId as number;
   }
-  const res = await httpClient.fetch(CONNECT_STATE_MINT_URL, {
-    method: "POST",
-    body: JSON.stringify(payload),
-    // A mint is a write that allocates a single-use row; retrying it silently
-    // would leak rows and mask a genuine coord outage.
-    maxRetries: 0,
-  });
-  if (!res.ok) {
+  let body: Record<string, unknown> | null;
+  try {
+    // One request only (`maxRetries: 0`, in the client): a mint is a write
+    // that allocates a single-use row; retrying it silently would leak rows
+    // and mask a genuine coord outage.
+    body = await postConnectState(payload);
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
     throw new Error(
-      `Couldn't start the GitHub connect (HTTP ${res.status}) — please retry.`
+      `Couldn't start the GitHub connect (HTTP ${status}) — please retry.`
     );
   }
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  body = body ?? {};
   // Coord's envelope key is `connect_state`; `token` is accepted as an alias
   // because the coord half of this plan lands in a separate PR. Anything else
   // throws rather than producing an unusable `undefined` segment.

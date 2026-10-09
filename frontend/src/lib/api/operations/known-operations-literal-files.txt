@@ -3,7 +3,6 @@ app/(app)/admin/coord/_shared/fleetPolicy.ts
 app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus.ts
 app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts
 app/(app)/admin/coord/computers/_lib/useComputers.ts
-app/(app)/admin/coord/onboarding-status/page.tsx
 app/(app)/admin/coord/policies/page.tsx
 app/(app)/admin/coord/prompt-document-proposals/_hooks/usePromptDocumentProposals.ts
 app/(app)/admin/coord/prompt-documents/_hooks/useClauses.ts
@@ -15,23 +14,12 @@ app/(app)/admin/coord/prompt-documents/_hooks/useSessionCompliance.ts
 app/(app)/admin/coord/tenant-policy/types.ts
 app/(app)/admin/coord/unfinished/types.ts
 app/(app)/conditions/_hooks/runnerAvailability.ts
-app/(app)/settings/coordination/_hooks/useAutoFixPrSetting.ts
 app/(app)/settings/coordination/_hooks/useNextStepSettings.ts
 app/(app)/settings/coordination/_hooks/usePrioritySets.ts
-app/(app)/settings/repos/page.tsx
 components/admin/coord/RedMainBanner.tsx
-components/operations/ConnectInstalledOrg.tsx
-components/operations/ConnectedOrgs.tsx
 components/operations/FleetOverview.tsx
-components/operations/MergeOrchestrationOnboarding.tsx
-components/operations/MergeOrchestrationSettings.tsx
-components/operations/OnboardingDoctor.tsx
 components/operations/OperatorAuditPanel.tsx
 components/operations/OutputViewer.tsx
-components/operations/merge-settings/MergeEnabledControl.tsx
-components/operations/merge-settings/RepoOverrideCard.tsx
-components/operations/merge-settings/TenantDefaultsCard.tsx
-components/operations/merge-settings/TenantMergePauseControl.tsx
 components/operations/useCiRunnerMirror.ts
 components/operations/useFaultToVisibility.ts
 components/operations/useFleetDispatchRoles.ts
@@ -40,5 +28,3 @@ components/operations/useFleetResourceSamples.ts
 components/operations/useFleetWorktreeCap.ts
 components/operations/useFleetWorktreeSlots.ts
 components/operations/utils.ts
-lib/onboarding-connect-state.ts
-lib/onboarding-pending.ts

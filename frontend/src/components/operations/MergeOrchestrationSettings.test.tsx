@@ -1152,7 +1152,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
   it("keeps (and still sends) a value typed before the profile read lands", async () => {
     const get = deferred<Response>();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        init?.method === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED));
@@ -1182,7 +1185,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
       auto_merge_label_budget: 9,
     };
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        init?.method === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED, saved));
@@ -1314,7 +1320,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     const get = deferred<Response>();
     const saved: Raw = { ...STORED, confidence_threshold_override: 0.6 };
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        init?.method === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED, saved));
@@ -1341,7 +1350,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
 
   it("shows a notice when the profile read fails, and clears it once a save adopts a response", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        init?.method === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return Promise.resolve(new Response("boom", { status: 500 }));
       }
       return Promise.resolve(route(url, init, STORED));

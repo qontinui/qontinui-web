@@ -38,19 +38,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchMergeSlo,
+  fetchTenantMergeRepos,
+  fetchTenantMergeSettings,
+} from "@/lib/api/operations/prMerge";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-import { OPERATIONS_API } from "./utils";
 import { TenantDefaultsCard } from "./merge-settings/TenantDefaultsCard";
 import { RepoOverrideCard } from "./merge-settings/RepoOverrideCard";
 import { SloDashboardCard } from "./merge-settings/SloDashboardCard";
 import { ffLandHeadSyncSupported } from "./merge-settings/format";
+import { httpErrorText } from "./merge-settings/httpError";
 import type {
   EffectiveProfile,
   SloResponse,
   TenantRepoRow,
-  TenantReposResponse,
-  TenantSettingsResponse,
 } from "./merge-settings/types";
 
 const log = createLogger("MergeOrchestrationSettings");
@@ -68,29 +70,30 @@ export function MergeOrchestrationSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/repos`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/slo`),
+    Promise.allSettled([
+      fetchTenantMergeSettings(),
+      fetchTenantMergeRepos(),
+      fetchMergeSlo(),
     ])
-      .then(async ([s, r, sl]) => {
-        if (!s.ok) throw new Error(`settings: HTTP ${s.status}`);
-        if (!r.ok) throw new Error(`repos: HTTP ${r.status}`);
+      .then(([s, r, sl]) => {
+        if (s.status === "rejected") {
+          throw new Error(`settings: ${httpErrorText(s.reason)}`);
+        }
+        if (r.status === "rejected") {
+          throw new Error(`repos: ${httpErrorText(r.reason)}`);
+        }
+        if (cancelled) return;
+        setProfile(s.value.profile);
+        setRepos(r.value.repos);
+        setError(null);
         // SLO is best-effort — a failure (e.g. coord down) shouldn't
         // block the rest of the page from rendering.
-        const sb = (await s.json()) as TenantSettingsResponse;
-        const rb = (await r.json()) as TenantReposResponse;
-        if (cancelled) return;
-        setProfile(sb.profile);
-        setRepos(rb.repos);
-        setError(null);
-        if (sl.ok) {
-          const slBody = (await sl.json()) as SloResponse;
-          if (!cancelled) setSlo(slBody);
+        if (sl.status === "fulfilled") {
+          setSlo(sl.value);
         } else {
           // Log but don't propagate to top-level error banner — the
           // SLO card surfaces its own loading state.
-          log.warn("slo fetch failed", await sl.text().catch(() => "?"));
+          log.warn("slo fetch failed", httpErrorText(sl.reason));
         }
       })
       .catch((err) => {
