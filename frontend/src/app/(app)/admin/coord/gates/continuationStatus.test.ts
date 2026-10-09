@@ -709,6 +709,23 @@ describe("humanizeDeferralReason", () => {
     );
   });
 
+  it("reads duplicate_anchor:reserved as a reservation, not as a terminal named 'reserved'", () => {
+    const text = humanizeDeferralReason("duplicate_anchor:reserved");
+    expect(text).toContain("this anchor was already reserved");
+    expect(text).not.toContain("terminal reserved");
+  });
+
+  it("expands both device_drain classes the runner writes", () => {
+    expect(humanizeDeferralReason("device_drain:drained")).toContain(
+      "found this device drained by coord"
+    );
+    expect(humanizeDeferralReason("device_drain:unknown")).toContain(
+      "could not establish this device's coord drain state"
+    );
+    // A class the producer never writes is not guessed at.
+    expect(humanizeDeferralReason("device_drain:clear")).toBe("device_drain:clear");
+  });
+
   it("returns an unrecognised reason verbatim rather than blanking it", () => {
     // coord writes this one directly, and it is already plain English.
     expect(humanizeDeferralReason("no runner online")).toBe("no runner online");
