@@ -31,10 +31,11 @@ scheduled only (never from the on-demand route: anonymous GitHub reads are
 capped at 60/hour per egress IP, and a caller-triggered loop could spend the
 publish route's share). Per tick it makes at most
 :data:`VISIBILITY_CALLS_PER_TICK` GitHub calls, counted in repos and never
-exceeded, oldest-checked slug first, resuming a wide slug at its stored offset
-(revision ``brs_03_build_record_visibility_check``). It stops at the first
-unanswered read or rate-limit signal. NOT_PUBLIC retracts; UNKNOWN leaves the
-page live and the slug first in line.
+exceeded, least-recently-attempted slug first, resuming a wide slug at its
+stored offset (revision ``brs_03_build_record_visibility_check``). It stops
+the tick only on a transport error or a rate-limit signal; any other
+unanswered repo gives up that slug for the tick and moves it to the back, and
+six consecutive give-ups retract it. NOT_PUBLIC retracts.
 
 Retraction only sets ``unpublished_at``; snapshots are kept, and
 ``POST /{slug}/publish`` with ``reactivate`` undoes it.
@@ -70,12 +71,15 @@ TENANT_TIMEOUT_SECONDS = 30.0
 #: the tenants it did not reach are counted rather than lost to a cancel.
 TENANT_PHASE_DEADLINE_SECONDS = 300.0
 
-#: Hard cap on GitHub calls per visibility tick. The task runs every 10
-#: minutes, so 8 per tick is at most 48/hour of the 60/hour anonymous limit,
-#: leaving the rest for the publish route's own checks.
+#: Hard cap on GitHub calls per visibility tick: at most 48/hour at a
+#: 10-minute cadence. That is a CAP, not a reservation — the anonymous limit
+#: (60/hour) is per egress IP and shared with this backend's other GitHub
+#: reads. What protects publish is the persisted budget
+#: (``app/services/github_rate_budget.py``): the re-check stops at
+#: ``RECHECK_RESERVE``, publish refuses only at the lower ``PUBLISH_RESERVE``.
 VISIBILITY_CALLS_PER_TICK = 8
-#: Stop the tick once GitHub reports this few requests left in its window.
-RATE_LIMIT_RESERVE = 10
+#: Consecutive give-ups on an unanswerable repo before the page is retracted.
+VISIBILITY_UNKNOWN_RETRACT_AFTER = 6
 
 
 @dataclass
@@ -348,6 +352,8 @@ class VisibilityTick:
     calls: int = 0
     retracted: list[str] = field(default_factory=list)
     completed: list[str] = field(default_factory=list)
+    #: Slugs given up on this tick (an unanswerable repo) — moved to the back.
+    gave_up: list[str] = field(default_factory=list)
     #: Why the tick stopped early, or ``None`` when the budget or list ran out.
     stopped: str | None = None
 
@@ -356,23 +362,37 @@ async def recheck_visibility(
     db: AsyncSession,
     *,
     budget: int = VISIBILITY_CALLS_PER_TICK,
-    reserve: int = RATE_LIMIT_RESERVE,
+    reserve: int | None = None,
 ) -> VisibilityTick:
-    """Re-ask GitHub about the repos on live pages, oldest-checked first.
+    """Re-ask GitHub about the repos on live pages, least-recently-attempted
+    first.
 
     * **Hard cap**: at most ``budget`` GitHub calls, one per repo. A slug wider
       than what is left is checked as far as the budget reaches and resumed at
       its stored offset next tick — never skipped, never over budget.
-    * ``last_visibility_check_at`` advances ONLY when every repo of the slug
-      got a definite answer (or one answered NOT_PUBLIC and the page was
-      retracted); a cut-short slug stays first in line.
-    * **Stops** at the first UNKNOWN (outage, rate limit — a 403/429 is
-      reported as one) and when GitHub reports ``reserve`` or fewer requests
-      left in its window.
+    * **NOT_PUBLIC** (404, 451, a redirect for a moved repo, ``private``) →
+      retract.
+    * **Stops the whole tick** only on a transport error or a rate-limit signal
+      (403/429, or remaining at/below ``reserve`` — default
+      :data:`~app.services.github_rate_budget.RECHECK_RESERVE`, which keeps the
+      band above the publish reserve free for publishes). Also refuses to start
+      while the persisted budget is already at the reserve.
+    * **Any other UNKNOWN** (a 5xx, an unparseable body) gives up THAT slug for
+      this tick: its attempt time moves it behind the others, and after
+      :data:`VISIBILITY_UNKNOWN_RETRACT_AFTER` consecutive give-ups the page is
+      retracted — a repo that stays unanswerable is not known public.
+    * ``last_visibility_check_at`` advances only on a COMPLETE definite answer.
 
     Commits.
     """
+    from app.services import github_rate_budget
     from app.services.github_repo_visibility import Visibility, check_repo
+
+    reserve = github_rate_budget.RECHECK_RESERVE if reserve is None else reserve
+    tick = VisibilityTick()
+    if await github_rate_budget.reserved(db, reserve):
+        tick.stopped = "budget_reserved"
+        return tick
 
     owners = (
         (
@@ -380,7 +400,7 @@ async def recheck_visibility(
                 select(BuildRecordPublicSlug)
                 .where(BuildRecordPublicSlug.unpublished_at.is_(None))
                 .order_by(
-                    BuildRecordPublicSlug.last_visibility_check_at.asc().nulls_first(),
+                    BuildRecordPublicSlug.last_visibility_attempt_at.asc().nulls_first(),
                     BuildRecordPublicSlug.public_slug,
                 )
             )
@@ -388,7 +408,7 @@ async def recheck_visibility(
         .scalars()
         .all()
     )
-    tick = VisibilityTick()
+    answers = []
     for owner in owners:
         if tick.calls >= budget or tick.stopped is not None:
             break
@@ -397,31 +417,48 @@ async def recheck_visibility(
         offset = owner.visibility_check_offset
         if offset >= len(repos):
             offset = 0
-        went_private = False
+        outcome = "pending"  # → complete | private | gave_up
         while offset < len(repos) and tick.calls < budget:
             answer = await check_repo(repos[offset])
+            answers.append(answer)
             tick.calls += 1
+            if answer.transport_error or answer.rate_limited:
+                tick.stopped = "rate_limited" if answer.rate_limited else "transport"
+                break
             if answer.visibility is Visibility.UNKNOWN:
-                tick.stopped = "rate_limited" if answer.rate_limited else "unanswered"
+                outcome = "gave_up"
                 break
             if answer.visibility is Visibility.NOT_PUBLIC:
-                went_private = True
+                outcome = "private"
                 break
             offset += 1
             remaining = answer.rate_limit_remaining
             if remaining is not None and remaining <= reserve:
                 tick.stopped = "rate_limit_low"
                 break
-        if went_private:
+        if outcome == "pending" and offset >= len(repos):
+            outcome = "complete"
+
+        now = datetime.now(UTC)
+        if outcome == "gave_up":
+            owner.visibility_unknown_attempts += 1
+            owner.last_visibility_attempt_at = now
+            tick.gave_up.append(slug)
+            if owner.visibility_unknown_attempts >= VISIBILITY_UNKNOWN_RETRACT_AFTER:
+                outcome = "private"
+        if outcome == "private":
             if await retract_live(db, slug, tenant_id):
                 tick.retracted.append(slug)
-            offset = len(repos)  # a definite answer ends the pass
-        if offset >= len(repos):
+            outcome = "complete"
+        if outcome == "complete":
             owner.visibility_check_offset = 0
-            owner.last_visibility_check_at = datetime.now(UTC)
+            owner.visibility_unknown_attempts = 0
+            owner.last_visibility_attempt_at = now
+            owner.last_visibility_check_at = now
             tick.completed.append(slug)
-        else:
-            owner.visibility_check_offset = offset
+        elif outcome == "pending":
+            owner.visibility_check_offset = offset  # resume here next tick
+    await github_rate_budget.record(db, answers)
     await db.commit()
     if tick.retracted:
         logger.info("build_record_visibility_retracted", slugs=tick.retracted)
@@ -438,6 +475,7 @@ async def recheck_visibility_all(
         "github_calls": tick.calls,
         "retracted": len(tick.retracted),
         "completed": len(tick.completed),
+        "gave_up": len(tick.gave_up),
         "stopped": tick.stopped,
     }
     logger.info("build_record_visibility_recheck_completed", **totals)

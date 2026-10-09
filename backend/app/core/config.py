@@ -246,6 +246,17 @@ class Settings(BaseSettings):
         default="qontinui-web-strategy",
         description="sub=service:<name> the web backend mints at coord",
     )
+    GITHUB_VISIBILITY_TOKEN: str | None = Field(
+        default=None,
+        description=(
+            "OPERATOR RESOURCE. Optional GitHub token for the build-record "
+            "repo-visibility checks (app/services/github_repo_visibility.py): a "
+            "fine-grained PAT or app token granted NO repository access. It only "
+            "lifts the rate limit from 60/hour (anonymous, shared per egress IP) "
+            "to 5000/hour; a private repo still answers 404 or private:true to it, "
+            "and the verdict never depends on it. Unset = anonymous."
+        ),
+    )
 
     # AWS Cognito user-pool identity (unified-Cognito-identity Phase 1).
     # The web backend dual-accepts Cognito user-pool JWTs alongside the

@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -62,6 +63,12 @@ class BuildRecordPublicSlug(Base):
     unpublished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: When the visibility re-check last finished with this slug, whatever
+    #: the outcome — the queue order (revision
+    #: ``brs_03_build_record_visibility_check``).
+    last_visibility_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: When the scheduled reconcile last asked GitHub whether this page's repos
     #: are still public, set only when every repo got a definite answer
     #: (revision ``brs_03_build_record_visibility_check``).
@@ -71,6 +78,11 @@ class BuildRecordPublicSlug(Base):
     #: How many of the slug's (sorted) repos the current check pass has
     #: already answered — a slug wider than one tick's budget spans ticks.
     visibility_check_offset: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    #: Consecutive re-checks that gave up on an unanswerable repo; the page
+    #: is retracted at ``VISIBILITY_UNKNOWN_RETRACT_AFTER``.
+    visibility_unknown_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), default=0
     )
 
@@ -117,5 +129,31 @@ class BuildRecordSnapshot(Base):
         DateTime(timezone=True), nullable=False
     )
     published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class GithubRateBudget(Base):
+    """The singleton row holding GitHub's last reported rate-limit window.
+
+    Written by every GitHub visibility read (publish and the scheduled
+    re-check); read by publish, which refuses while ``remaining`` is at or
+    below its reserve and ``reset_at`` has not passed.
+    """
+
+    __tablename__ = "github_rate_budget"
+    __table_args__ = (
+        CheckConstraint("id", name="ck_github_rate_budget_singleton"),
+        {"schema": "web"},
+    )
+
+    id: Mapped[bool] = mapped_column(
+        Boolean, primary_key=True, server_default=text("true"), default=True
+    )
+    remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

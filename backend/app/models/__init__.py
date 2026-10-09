@@ -23,7 +23,11 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.bridge_audit_log import BridgeAuditLog
-from app.models.build_record import BuildRecordPublicSlug, BuildRecordSnapshot
+from app.models.build_record import (
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+    GithubRateBudget,
+)
 from app.models.capture import (
     CaptureAction,
     CaptureDetectedElement,
@@ -310,6 +314,7 @@ __all__ = [
     # 2026-10-09-factory-built-product-portfolio-and-launch-kit
     "BuildRecordPublicSlug",
     "BuildRecordSnapshot",
+    "GithubRateBudget",
     # Analytics
     "AnalyticsEvent",
     # Detected Issues
