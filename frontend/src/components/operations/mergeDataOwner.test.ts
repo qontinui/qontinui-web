@@ -66,14 +66,33 @@ function relative(file: string, root: string): string {
 }
 
 /**
- * Files whose source CALLS the endpoint, not merely names it. Comments and
- * wire-type docs reference these paths freely and must keep being allowed to;
- * only the `${OPERATIONS_API}/…` request form counts.
+ * The typed-client functions (`lib/api/operations/prMergeTrain.ts`) that reach
+ * each endpoint. Since Phase 7 of the typed `/operations` client no module
+ * types the URL; a module reads an endpoint by CALLING one of these.
+ */
+const ENDPOINT_CALLS: Record<string, string[]> = {
+  "/pr-merge/suggestions": ["fetchMergeSuggestions(", "actOnMergeSuggestion("],
+  "/pr-merge/blast-radius-blocks": ["fetchBlastRadiusBlocks("],
+  "/merge/queue": ["fetchMergeQueue("],
+  "/pr-merge/prs": [
+    "fetchPrMergePrs(",
+    "fetchPrMergePrsWithMergedCount(",
+    "fetchPrMergePrsIncludingMerged(",
+  ],
+};
+
+/**
+ * Files whose source CALLS the endpoint's client function, not merely names
+ * it. Comments and wire-type docs reference these paths freely and must keep
+ * being allowed to; only the call form counts.
  */
 function fetchSites(endpoint: string, root = OPERATIONS_DIR): string[] {
-  const needle = "${OPERATIONS_API}" + endpoint;
+  const needles = ENDPOINT_CALLS[endpoint] ?? [];
   return moduleFiles(root)
-    .filter((f) => readFileSync(f, "utf8").includes(needle))
+    .filter((f) => {
+      const source = readFileSync(f, "utf8");
+      return needles.some((needle) => source.includes(needle));
+    })
     .map((f) => relative(f, root))
     .sort();
 }

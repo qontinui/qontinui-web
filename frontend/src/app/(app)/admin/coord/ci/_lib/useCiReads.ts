@@ -23,8 +23,10 @@ import {
 import { normalizeMergeEconomics } from "@/components/operations/mergeEconomics";
 import type { MergeEconomics } from "@/components/operations/mergeTypes";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { OPERATIONS_API } from "@/components/operations/utils";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchCiOverview,
+  fetchMergeEconomics,
+} from "@/lib/api/operations/prMergeTrain";
 import {
   CI_OVERVIEW_POLL_MS,
   type CiOverviewWire,
@@ -32,8 +34,6 @@ import {
   type OverviewRead,
 } from "./ciDashboardStatus";
 
-export const CI_OVERVIEW_API = `${OPERATIONS_API}/ci/overview`;
-export const CI_ECONOMICS_API = `${OPERATIONS_API}/pr-merge/merge-economics`;
 /** Economics changes on lands, not on a telemetry tick (plan Phase 4: 60 s). */
 export const CI_ECONOMICS_POLL_MS = 60_000;
 
@@ -62,10 +62,7 @@ export function useCiOverview(): CiOverviewPoll {
     async (isCurrent: () => boolean) => {
       const seq = issue();
       try {
-        const body = await httpClient.get<unknown>(
-          CI_OVERVIEW_API,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchCiOverview(COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
         if (!isOverviewBody(body)) {
           // A 2xx without the arrays is not "no pools": it is no answer.
@@ -110,10 +107,7 @@ export function useCiEconomics(): EconomicsRead {
     async (isCurrent: () => boolean) => {
       const seq = issue();
       try {
-        const body = await httpClient.get<unknown>(
-          CI_ECONOMICS_API,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchMergeEconomics(COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
         settle(seq, { value: normalizeMergeEconomics(body) });
         setFailed(false);

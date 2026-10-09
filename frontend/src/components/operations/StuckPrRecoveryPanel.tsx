@@ -24,20 +24,22 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, LifeBuoy, Lock, Terminal } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  cancelMergeProposal,
+  fetchPrMergePrs,
+  fetchPrMergeVerdict,
+  fetchStuckNudges,
+  reevaluatePr,
+} from "@/lib/api/operations/prMergeTrain";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import type { PrListResponse, PrRow } from "./mergeTypes";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import {
-  OPERATIONS_API,
   STUCK_PR_MAX_CARDS,
   STUCK_PR_MAX_VERDICT_READS,
   STUCK_PR_POLL_MS,
-  prMergeVerdictUrl,
-  prReevaluateUrl,
-  proposalCancelUrl,
-  stuckNudgesUrl,
 } from "./utils";
 import {
   CANCEL_REASON,
@@ -141,6 +143,28 @@ export function fuseStuckCandidates(
     }
   }
   return [...byPr.values()].sort((a, b) => a.prNumber - b.prNumber);
+}
+
+/**
+ * Resolve a read that coord ANSWERED with a non-2xx as `null` ("no answer"),
+ * and let anything else — a network failure, a body that is not JSON — reject.
+ */
+async function nullOnStatusFailure<T>(read: Promise<T>): Promise<T | null> {
+  try {
+    return await read;
+  } catch (err) {
+    if (httpStatusOf(err) !== null) return null;
+    throw err;
+  }
+}
+
+/** coord's error body as JSON; `{}` when it is not (as a failed `res.json()` was). */
+function parseErrorBody(text: string | null): unknown {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return {};
+  }
 }
 
 /** Split `owner/name`. Returns `null` for anything that isn't that shape. */
@@ -386,12 +410,13 @@ export function StuckPrDiagnosisCard({
       setResult(null);
       setBusy(kind);
       try {
-        let res: Response;
+        let answer: unknown;
         if (kind === "reevaluate") {
           if (!parts) throw new Error(`unrecognized repo "${repo}"`);
-          res = await httpClient.fetch(
-            prReevaluateUrl(parts.owner, parts.name, candidate.prNumber),
-            { method: "POST", body: JSON.stringify({}) }
+          answer = await reevaluatePr(
+            parts.owner,
+            parts.name,
+            candidate.prNumber
           );
         } else {
           if (!proposal) {
@@ -399,24 +424,23 @@ export function StuckPrDiagnosisCard({
             // proposal has been read) but stated rather than swallowed.
             throw new Error("no merge attempt to cancel");
           }
-          res = await httpClient.fetch(proposalCancelUrl(proposal.proposalId), {
-            method: "POST",
-            body: JSON.stringify({
-              unblock: kind === "cancel_unblock",
-              reason: CANCEL_REASON,
-            }),
+          answer = await cancelMergeProposal(proposal.proposalId, {
+            unblock: kind === "cancel_unblock",
+            reason: CANCEL_REASON,
           });
         }
-        const body: unknown = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setActionError(describeActionError(res.status, body));
-          return;
-        }
-        setResult(describeActionSuccess(kind, body));
+        setResult(describeActionSuccess(kind, answer ?? {}));
         // The panel's refresh re-reads the verdict too, so one call re-syncs
         // both the candidate list and this card's proposal.
         onActed();
       } catch (err) {
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          setActionError(
+            describeActionError(status, parseErrorBody(httpBodyOf(err)))
+          );
+          return;
+        }
         setActionError({
           code: "web_error",
           message: err instanceof Error ? err.message : String(err),
@@ -587,18 +611,12 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
       if (!activeRepo) return;
       const parts = splitRepo(activeRepo);
       try {
-        const [nudgeRes, prRes] = await Promise.all([
-          httpClient.fetch(
-            stuckNudgesUrl(activeRepo),
-            COORD_DASHBOARD_POLL_OPTIONS
+        const [nudgeBody, prBody] = await Promise.all([
+          nullOnStatusFailure(
+            fetchStuckNudges(activeRepo, COORD_DASHBOARD_POLL_OPTIONS)
           ),
-          httpClient.fetch(
-            `${OPERATIONS_API}/pr-merge/prs`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
+          nullOnStatusFailure(fetchPrMergePrs(COORD_DASHBOARD_POLL_OPTIONS)),
         ]);
-        const nudgeBody: unknown = nudgeRes.ok ? await nudgeRes.json() : null;
-        const prBody: unknown = prRes.ok ? await prRes.json() : null;
         const nudges = parseStuckNudges(nudgeBody);
         const prs = ((prBody as PrListResponse | null)?.prs ?? []) as PrRow[];
         const fused = fuseStuckCandidates(
@@ -610,7 +628,7 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
         if (!isCurrent()) return;
         setCandidates(fused);
         setNudgesEnabled(nudges?.enabled ?? true);
-        setStaleRead(!nudgeRes.ok && !prRes.ok);
+        setStaleRead(nudgeBody === null && prBody === null);
 
         // Verdicts for the candidates that can plausibly be rendered — bounded,
         // with headroom above STUCK_PR_MAX_CARDS so a retraction that promotes
@@ -620,18 +638,16 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
           const read = await Promise.all(
             wanted.map(async (c) => {
               try {
-                const res = await httpClient.fetch(
-                  prMergeVerdictUrl(parts.owner, parts.name, c.prNumber),
+                const verdict = await fetchPrMergeVerdict(
+                  parts.owner,
+                  parts.name,
+                  c.prNumber,
                   COORD_DASHBOARD_POLL_OPTIONS
                 );
+                return [c.prNumber, parseProposalView(verdict)] as const;
+              } catch {
                 // A verdict coord will not serve is not a failure of the panel —
                 // the diagnosis proceeds without proposal evidence and says so.
-                if (!res.ok) return [c.prNumber, null] as const;
-                return [
-                  c.prNumber,
-                  parseProposalView(await res.json()),
-                ] as const;
-              } catch {
                 return [c.prNumber, null] as const;
               }
             })
