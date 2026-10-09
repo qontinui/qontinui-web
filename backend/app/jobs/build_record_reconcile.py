@@ -57,10 +57,16 @@ from uuid import UUID
 
 import httpx
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.build_record import BuildRecordPublicSlug, BuildRecordSnapshot
+from app.models.build_record import (
+    BuildRecordPendingNotPublic,
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -103,6 +109,12 @@ VISIBILITY_UNREACHED_STALE_AFTER = timedelta(hours=72)
 #: The capacity warning fires when one full check cycle (live repos /
 #: throughput) takes longer than this.
 VISIBILITY_CYCLE_WARN_AFTER = timedelta(hours=24)
+#: ``lock_timeout`` for taking a slug's owner row to apply a NOT_PUBLIC
+#: verdict. No holder of that lock does network I/O, so a wait this long means
+#: something is wrong; the verdict is then retried once and, failing that,
+#: persisted for the next tick rather than dropped.
+NOT_PUBLIC_LOCK_TIMEOUT_SECONDS = 5.0
+
 #: Stop starting GitHub calls this long into a tick, so a token-mode tick
 #: (up to 80 sequential calls) records, sweeps and commits well inside the
 #: task's 300 s timeout instead of being cancelled with nothing saved.
@@ -181,21 +193,32 @@ async def retract_live(db: AsyncSession, slug: str, tenant_id: UUID) -> bool:
     return True
 
 
-async def latest_repos(db: AsyncSession, slug: str) -> list[str]:
-    """``product.repos`` of the slug's newest snapshot, sorted, de-duplicated."""
-    document = (
+async def latest_version_and_repos(
+    db: AsyncSession, slug: str
+) -> tuple[int | None, list[str]]:
+    """The slug's newest snapshot version and its ``product.repos`` (sorted,
+    de-duplicated); ``(None, [])`` when it has none."""
+    row = (
         await db.execute(
-            select(BuildRecordSnapshot.document)
+            select(BuildRecordSnapshot.version, BuildRecordSnapshot.document)
             .where(BuildRecordSnapshot.public_slug == slug)
             .order_by(BuildRecordSnapshot.version.desc())
             .limit(1)
         )
-    ).scalar_one_or_none()
+    ).first()
+    if row is None:
+        return None, []
+    version, document = row
     product = document.get("product") if isinstance(document, dict) else None
     repos = product.get("repos") if isinstance(product, dict) else None
     if not isinstance(repos, list):
-        return []
-    return sorted({r.lower(): r for r in repos if isinstance(r, str)}.values())
+        return version, []
+    return version, sorted({r.lower(): r for r in repos if isinstance(r, str)}.values())
+
+
+async def latest_repos(db: AsyncSession, slug: str) -> list[str]:
+    """``product.repos`` of the slug's newest snapshot, sorted, de-duplicated."""
+    return (await latest_version_and_repos(db, slug))[1]
 
 
 async def repos_outside(db: AsyncSession, slug: str, allowed: set[str]) -> bool:
@@ -406,6 +429,9 @@ class VisibilityTick:
     unblamed: list[str] = field(default_factory=list)
     #: The operator token was rejected (401); the tick fell back to anonymous.
     credential_error: bool = False
+    #: NOT_PUBLIC verdicts that could not take the owner row lock and were
+    #: persisted for the next tick (``build_record_pending_not_public``).
+    deferred: list[str] = field(default_factory=list)
     #: Retracted by the staleness sweep (also listed in ``retracted``).
     stale: list[str] = field(default_factory=list)
     #: Set when one full check cycle (live repos / throughput) exceeds
@@ -545,6 +571,94 @@ async def _lock_live_owner(db: AsyncSession, slug: str) -> BuildRecordPublicSlug
     ).scalar_one_or_none()
 
 
+def _is_lock_timeout(exc: DBAPIError) -> bool:
+    """SQLSTATE 55P03 (``lock_not_available``), through either driver."""
+    orig = getattr(exc, "orig", None)
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        code = getattr(candidate, "sqlstate", None) or getattr(
+            candidate, "pgcode", None
+        )
+        if code == "55P03":
+            return True
+    return False
+
+
+async def _apply_not_public(
+    db: AsyncSession, slug: str, repo: str, tick: VisibilityTick
+) -> bool:
+    """Apply "GitHub says ``repo`` is not public" to ``slug``. Commits.
+
+    Takes the owner row with a BLOCKING ``FOR UPDATE`` under
+    :data:`NOT_PUBLIC_LOCK_TIMEOUT_SECONDS` (never SKIP LOCKED: a not-public
+    verdict must not be skipped because someone else held the row). Under the
+    lock it retracts the page iff ``repo`` is in the CURRENT latest snapshot's
+    repos — whatever version the tick read — and otherwise leaves it (the repo
+    is no longer published there). Retries once on a lock timeout. Returns
+    ``False`` only when both attempts timed out; the caller then persists the
+    verdict for the next tick.
+    """
+    timeout_ms = int(NOT_PUBLIC_LOCK_TIMEOUT_SECONDS * 1000)
+    for _ in range(2):
+        try:
+            await db.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
+            owner = (
+                await db.execute(
+                    select(BuildRecordPublicSlug)
+                    .where(BuildRecordPublicSlug.public_slug == slug)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+        except DBAPIError as exc:
+            await db.rollback()
+            if _is_lock_timeout(exc):
+                logger.warning("build_record_not_public_lock_timeout", slug=slug)
+                continue
+            raise
+        if owner is not None and owner.unpublished_at is None:
+            _, current = await latest_version_and_repos(db, slug)
+            if repo.lower() in {r.lower() for r in current}:
+                now = datetime.now(UTC)
+                owner.unpublished_at = now
+                tick.retracted.append(slug)
+                _mark_complete(owner, now, tick)
+        await db.commit()
+        return True
+    return False
+
+
+async def _defer_not_public(db: AsyncSession, slug: str, repo: str) -> None:
+    """Persist a NOT_PUBLIC verdict the tick could not apply. Commits."""
+    await db.execute(
+        pg_insert(BuildRecordPendingNotPublic)
+        .values(public_slug=slug, repo=repo)
+        .on_conflict_do_nothing()
+    )
+    await db.commit()
+
+
+async def _apply_pending_not_public(db: AsyncSession, tick: VisibilityTick) -> None:
+    """Apply verdicts earlier ticks had to defer; keep any still blocked."""
+    pending = (
+        await db.execute(
+            select(
+                BuildRecordPendingNotPublic.public_slug,
+                BuildRecordPendingNotPublic.repo,
+            )
+        )
+    ).all()
+    await db.commit()
+    for slug, repo in pending:
+        if await _apply_not_public(db, slug, repo, tick):
+            await db.execute(
+                BuildRecordPendingNotPublic.__table__.delete().where(
+                    BuildRecordPendingNotPublic.public_slug == slug,
+                    BuildRecordPendingNotPublic.repo == repo,
+                )
+            )
+            await db.commit()
+
+
 def _mark_complete(
     owner: BuildRecordPublicSlug, now: datetime, tick: VisibilityTick
 ) -> None:
@@ -597,10 +711,18 @@ async def recheck_visibility(
       never does — and a publish or reactivation resets it, so a blip late in
       a long cycle does not retract a page. Every live page is retracted once
       its staleness clock passes 72 h.
-    * **No lock across the network**: the queue is read and that transaction
-      ended before any GitHub call; each slug's result is written in its own
-      short transaction with the row taken ``FOR UPDATE SKIP LOCKED``, so a
-      concurrent unpublish or retract never waits on GitHub and always wins.
+    * **No lock across the network**: the queue (with each slug's latest
+      snapshot VERSION) is read and that transaction ended before any GitHub
+      call; each slug's result is written in its own short transaction.
+    * **Verdicts are about a version**: an offset, attempt, completion or
+      blame is written only if the slug still serves the version the tick
+      read (rows taken ``FOR UPDATE SKIP LOCKED``; a publish in between
+      confirmed the new version itself and reset the cursor).
+    * **NOT_PUBLIC is never dropped**: it is applied under a blocking
+      ``FOR UPDATE`` with a 5 s ``lock_timeout`` (no holder of that lock does
+      network I/O), retracting iff the private repo is in the CURRENT latest
+      snapshot; on a second timeout it is persisted
+      (``build_record_pending_not_public``) and applied first next tick.
     * **Capacity**: when one full check cycle (live repos / throughput) takes
       longer than 24 h, a WARNING is logged and ``capacity_shortfall`` is set.
     * **Deadline**: no new GitHub call starts after
@@ -655,8 +777,11 @@ async def recheck_visibility(
             .order_by(queue_key.asc().nulls_first(), BuildRecordPublicSlug.public_slug)
         )
     ).all()
-    repos_by_slug = {slug: await latest_repos(db, slug) for slug, _ in queue}
+    snapshot_of: dict[str, tuple[int | None, list[str]]] = {
+        slug: await latest_version_and_repos(db, slug) for slug, _ in queue
+    }
     await db.commit()
+    await _apply_pending_not_public(db, tick)
 
     answers = []
     definite = 0  # PUBLIC / NOT_PUBLIC answers this tick
@@ -664,8 +789,9 @@ async def recheck_visibility(
     for slug, stored_offset in queue:
         if tick.calls >= budget or tick.stopped is not None:
             break
-        repos = repos_by_slug[slug]
+        read_version, repos = snapshot_of[slug]
         offset = stored_offset if stored_offset < len(repos) else 0
+        private_repo: str | None = None
         outcome = "pending"  # → complete | private | gave_up
         while offset < len(repos) and tick.calls < budget:
             if time.monotonic() - started > VISIBILITY_TICK_DEADLINE_SECONDS:
@@ -684,6 +810,7 @@ async def recheck_visibility(
             definite += 1
             if answer.visibility is Visibility.NOT_PUBLIC:
                 outcome = "private"
+                private_repo = repos[offset]
                 break
             offset += 1
             remaining = answer.rate_limit_remaining
@@ -698,22 +825,31 @@ async def recheck_visibility(
                 # Nothing answered this tick: that is GitHub, not the slugs.
                 tick.stopped = "github_unanswering"
 
-        # --- Write phase for this slug: one short transaction, the row taken
-        # with SKIP LOCKED. A concurrent unpublish/retract holding it wins and
-        # this tick simply records nothing for the slug.
+        # --- A NOT_PUBLIC verdict is never dropped: applied against the
+        # CURRENT snapshot under a blocking, time-limited lock, else deferred.
+        if outcome == "private" and private_repo is not None:
+            if not await _apply_not_public(db, slug, private_repo, tick):
+                await _defer_not_public(db, slug, private_repo)
+                tick.deferred.append(slug)
+            continue
+
+        # --- Every other write: one short transaction, the row taken SKIP
+        # LOCKED (a concurrent unpublish/retract wins), and only if the slug
+        # still serves the VERSION this verdict was about — a publish in the
+        # meantime confirmed the new version itself and reset the cursor.
         owner = await _lock_live_owner(db, slug)
-        if owner is None:
+        if owner is None or (await latest_version_and_repos(db, slug))[0] != (
+            read_version
+        ):
             await db.commit()
+            if outcome == "gave_up":
+                unanswered.remove(slug)
             continue
         now = datetime.now(UTC)
         if outcome == "gave_up":
             # Behind the others either way; blame is decided at the end.
             owner.visibility_check_offset = offset
             owner.last_visibility_attempt_at = now
-        elif outcome == "private":
-            owner.unpublished_at = now
-            tick.retracted.append(slug)
-            _mark_complete(owner, now, tick)
         elif outcome == "complete":
             _mark_complete(owner, now, tick)
         else:  # pending: out of budget, or the tick stopped mid-slug
@@ -729,7 +865,11 @@ async def recheck_visibility(
     if definite > 0:
         for slug in unanswered:
             owner = await _lock_live_owner(db, slug)
-            if owner is None:
+            if (
+                owner is None
+                or (await latest_version_and_repos(db, slug))[0]
+                != (snapshot_of[slug][0])
+            ):
                 await db.commit()
                 continue
             now = datetime.now(UTC)
@@ -771,6 +911,7 @@ async def recheck_visibility_all(
         "gave_up": len(tick.gave_up),
         "unblamed": len(tick.unblamed),
         "stale": len(tick.stale),
+        "deferred": len(tick.deferred),
         "capacity_shortfall": tick.capacity_shortfall,
         "credential_error": tick.credential_error,
         "stopped": tick.stopped,
