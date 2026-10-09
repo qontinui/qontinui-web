@@ -22,10 +22,12 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchComputer,
+  fetchComputers,
+} from "@/lib/api/operations/coordComputers";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { OPERATIONS_API } from "@/components/operations/utils";
 import {
   classifyComputersError,
   isSchemaPendingBody,
@@ -33,12 +35,6 @@ import {
   type ComputersListWire,
   type ComputersReadIssue,
 } from "./computerStatus";
-
-export const COMPUTERS_API = `${OPERATIONS_API}/computers`;
-
-export function computerApi(computerId: string): string {
-  return `${COMPUTERS_API}/${encodeURIComponent(computerId)}`;
-}
 
 /** Matches the 30 s sample cadence: polling faster reads the same sample twice. */
 export const COMPUTERS_POLL_MS = 30_000;
@@ -53,7 +49,10 @@ export interface ComputersRead<T> {
   refresh: () => Promise<void> | void;
 }
 
-function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
+function useComputersRead<T>(
+  read: () => Promise<T>,
+  detail: boolean
+): ComputersRead<T> {
   const [data, setData] = useState<T | null>(null);
   const [issue, setIssue] = useState<ComputersReadIssue | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +61,7 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await httpClient.get<T>(url, COORD_DASHBOARD_POLL_OPTIONS);
+        const body = await read();
         if (!isCurrent()) return;
         // A 2xx that SAYS the schema is pending is not a body to render: an
         // empty `computers` beside it would read as a measured empty fleet.
@@ -94,19 +93,25 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
         if (isCurrent()) setLoading(false);
       }
     },
-    [url, detail]
+    [read, detail]
   );
 
   const { refresh } = useSingleFlightPoll(poll, COMPUTERS_POLL_MS);
   return { data, issue, loading, fetchedAtMs, refresh };
 }
 
+// One request per poll, no client retries: the next tick is the retry.
+const readComputers = () => fetchComputers(COORD_DASHBOARD_POLL_OPTIONS);
+const readComputer = (computerId: string) =>
+  fetchComputer(computerId, COORD_DASHBOARD_POLL_OPTIONS);
+
 export function useComputers(): ComputersRead<ComputersListWire> {
-  return useComputersRead<ComputersListWire>(COMPUTERS_API, false);
+  return useComputersRead<ComputersListWire>(readComputers, false);
 }
 
 export function useComputer(
   computerId: string
 ): ComputersRead<ComputerDetailWire> {
-  return useComputersRead<ComputerDetailWire>(computerApi(computerId), true);
+  const read = useCallback(() => readComputer(computerId), [computerId]);
+  return useComputersRead<ComputerDetailWire>(read, true);
 }

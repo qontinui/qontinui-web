@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isNotFoundError } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
-import { CI_HOSTING_API, type CiHostingView } from "../_lib/hostedCiStatus";
+import { fetchCiHosting } from "@/lib/api/operations/coordFleet";
+import type { CiHostingView } from "../_lib/hostedCiStatus";
 
 /** What the panel says when the read route is not there to answer. */
 export const CI_HOSTING_NOT_SERVED =
@@ -57,7 +57,7 @@ export function useCiHosting() {
     const ticket = (issued.current += 1);
     setLoading(true);
     try {
-      const next = await httpClient.get<CiHostingView>(CI_HOSTING_API);
+      const next = await fetchCiHosting();
       if (ticket < settled.current) return false;
       settled.current = ticket;
       setView(next);

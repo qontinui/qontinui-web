@@ -1,15 +1,1 @@
-app/(app)/admin/coord/_shared/fleetPolicy.ts
-app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts
-app/(app)/admin/coord/computers/_lib/useComputers.ts
-app/(app)/conditions/_hooks/runnerAvailability.ts
-components/admin/coord/RedMainBanner.tsx
-components/operations/FleetOverview.tsx
-components/operations/OutputViewer.tsx
-components/operations/useCiRunnerMirror.ts
-components/operations/useFaultToVisibility.ts
-components/operations/useFleetDispatchRoles.ts
-components/operations/useFleetDrain.ts
-components/operations/useFleetResourceSamples.ts
-components/operations/useFleetWorktreeCap.ts
-components/operations/useFleetWorktreeSlots.ts
 components/operations/utils.ts

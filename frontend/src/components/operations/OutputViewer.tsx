@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchRunnerOutput } from "@/lib/api/operations/coordFleet";
+import { POLL_INTERVAL_MS } from "./utils";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
@@ -28,17 +29,25 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const fetchOutput = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
-        const res = await httpClient.fetch(url, COORD_DASHBOARD_POLL_OPTIONS);
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "Unknown error");
+        let data;
+        try {
+          data = await fetchRunnerOutput(
+            runnerId,
+            taskRunId,
+            8000,
+            COORD_DASHBOARD_POLL_OPTIONS
+          );
+        } catch (err) {
+          // A non-2xx rejects as `<METHOD> <url> failed: <status> - <body>`;
+          // anything else (transport, unreadable body) is reported as itself.
+          const status = httpStatusOf(err);
+          if (status === null) throw err;
           if (!isCurrent()) return;
-          setError(`Failed to fetch output: ${res.status} - ${text}`);
+          setError(
+            `Failed to fetch output: ${status} - ${httpBodyOf(err) ?? ""}`
+          );
           return;
         }
-
-        const data = await res.json();
         if (!isCurrent()) return;
         setOutput(data.output ?? data.text ?? JSON.stringify(data, null, 2));
         setError(null);

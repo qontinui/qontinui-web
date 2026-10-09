@@ -22,6 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchViaVerbs } from "@/test/httpClientVerbs";
 import {
   fireEvent,
   render,
@@ -58,6 +59,11 @@ vi.mock("@/services/service-factory", () => ({
       }
     },
     put: (...a: unknown[]) => httpPut(...a),
+    fetch: async (url: string, init?: RequestInit) =>
+      fetchViaVerbs(url, init, {
+        get: httpGet,
+        put: httpPut,
+      }),
   },
 }));
 

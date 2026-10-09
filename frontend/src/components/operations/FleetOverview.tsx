@@ -21,10 +21,10 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchFleet, fetchFleetTasks } from "@/lib/api/operations/coordFleet";
 import {
   formatBytes,
-  OPERATIONS_API,
   POLL_INTERVAL_MS,
   relativeTime,
   volumeSeverity,
@@ -473,28 +473,29 @@ export function FleetOverview({
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
-        httpClient.fetch(`${OPERATIONS_API}/fleet`),
-        httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
+        fetchFleet(),
+        fetchFleetTasks(),
       ]);
 
-      if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
-        const data: FleetStatus = await fleetRes.value.json();
+      if (fleetRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setFleet(data);
+        setFleet(fleetRes.value);
         setError(null);
       } else {
         if (!isCurrent()) return;
+        // A non-2xx rejects as `<METHOD> <url> failed: <status> - <body>`;
+        // anything else (transport) is reported as its own message.
+        const status = httpStatusOf(fleetRes.reason);
         const reason =
-          fleetRes.status === "rejected"
-            ? (fleetRes.reason as Error).message
-            : `HTTP ${fleetRes.value.status}`;
+          status !== null
+            ? `HTTP ${status}`
+            : (fleetRes.reason as Error).message;
         setError(`Operations API unreachable: ${reason}`);
       }
 
-      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
-        const data: AggregatedTaskRuns = await tasksRes.value.json();
+      if (tasksRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setTasks(data);
+        setTasks(tasksRes.value);
       } else {
         if (!isCurrent()) return;
         // Tasks endpoint failing is non-critical

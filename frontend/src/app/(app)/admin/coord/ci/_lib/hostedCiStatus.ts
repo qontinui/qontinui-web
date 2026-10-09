@@ -40,9 +40,6 @@ import {
 /** The fleet-policy domain coord stores this setting under. */
 export const GITHUB_HOSTED_CI_DOMAIN = "github_hosted_ci";
 
-/** The web proxy of coord's hosted-CI read. */
-export const CI_HOSTING_API = "/api/v1/operations/ci-hosting";
-
 export type HostedCiLevel = "on" | "off";
 export const HOSTED_CI_LEVELS: readonly HostedCiLevel[] = ["on", "off"];
 
