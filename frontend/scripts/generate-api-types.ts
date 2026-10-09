@@ -115,10 +115,15 @@ async function main() {
     }
 
     // Generate types for backend
-    if (fs.existsSync(schemaPath)) {
-      await generateTypes(schemaPath, OUTPUT_PATH, "Backend API");
-    } else {
-      throw new Error(`Schema file not found at ${schemaPath}`);
+    try {
+      if (fs.existsSync(schemaPath)) {
+        await generateTypes(schemaPath, OUTPUT_PATH, "Backend API");
+      } else {
+        throw new Error(`Schema file not found at ${schemaPath}`);
+      }
+    } finally {
+      // Never delete the committed snapshot — only a schema this run fetched.
+      if (schemaPath !== SCHEMA_PATH) fs.rmSync(schemaPath, { force: true });
     }
 
     console.log("\n✨ All done! Types are ready to use.");
