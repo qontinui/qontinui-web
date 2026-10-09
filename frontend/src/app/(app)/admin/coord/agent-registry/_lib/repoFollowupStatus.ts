@@ -43,11 +43,6 @@ import {
   type StatusPalette,
 } from "@/components/console";
 
-export const POST_MERGE_SCOPE_API =
-  "/api/v1/operations/post-merge-followup-scope";
-export const CONTINUATION_DELIVERY_API =
-  "/api/v1/operations/continuation-delivery-mode";
-
 export type FollowupScope = "all" | "code_only" | "none";
 export const FOLLOWUP_SCOPES: readonly FollowupScope[] = [
   "all",

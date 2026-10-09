@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   authorityForAudience,
   buildCreateBody,

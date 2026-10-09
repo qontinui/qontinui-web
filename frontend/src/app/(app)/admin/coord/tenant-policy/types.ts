@@ -32,9 +32,6 @@ export interface TranscriptSyncWriteResult {
   readback_error: string | null;
 }
 
-export const TRANSCRIPT_SYNC_API =
-  "/api/v1/operations/tenant-policy/transcript-sync";
-
 // ──────────────────────── command-safety rewrite dial ────────────────────────
 
 /**

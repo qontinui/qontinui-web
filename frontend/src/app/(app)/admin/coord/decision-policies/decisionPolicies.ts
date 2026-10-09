@@ -13,7 +13,7 @@
  *
  * The stack underneath is NOT new: `/admin/coord/gate-clearance` already
  * authors v2 rows through `_shared/useCoordPolicies` +
- * `_shared/coordPolicyApi`. This is that surface for a different domain
+ * `lib/api/operations/coordPolicies`. This is that surface for a different domain
  * family, and it inherits gate-clearance's two hard coord facts —
  * see [`DecisionPolicyUpdate`] (no `payload`, no `enabled`).
  *
@@ -48,7 +48,7 @@
  * [`CREATE_IS_INERT`].
  */
 
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 // ---------------------------------------------------------------------------
 // Domains
@@ -317,7 +317,8 @@ export function validateDecisionPayload(
   if ("notes" in value && typeof value.notes !== "string") {
     warnings.push({
       path: "notes",
-      message: "coord reads `notes` only when it is a string; this value is dropped.",
+      message:
+        "coord reads `notes` only when it is a string; this value is dropped.",
     });
   }
   if (mode === "data_driven" && !("query" in value)) {
@@ -391,7 +392,8 @@ function checkRubric(raw: unknown, out: PayloadIssue[]): void {
   }
   if (
     "score_on" in r &&
-    (!Array.isArray(r.score_on) || r.score_on.some((s) => typeof s !== "string"))
+    (!Array.isArray(r.score_on) ||
+      r.score_on.some((s) => typeof s !== "string"))
   ) {
     drops("rubric.score_on", "score_on must be an array of strings.");
   }

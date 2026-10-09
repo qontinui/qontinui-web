@@ -1,12 +1,12 @@
 "use client";
 
 import { toast } from "sonner";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   createCoordPolicy,
   deleteCoordPolicy,
   patchCoordPolicy,
-} from "../../_shared/coordPolicyApi";
+} from "@/lib/api/operations/coordPolicies";
 import { useCoordPolicies } from "../../_shared/useCoordPolicies";
 import {
   buildCreateBody,

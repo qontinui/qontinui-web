@@ -58,7 +58,3 @@ export interface ResumeUnfinishedWriteResult {
   effective: ResumeUnfinishedView | null;
   readback_error: string | null;
 }
-
-export const UNFINISHED_API = "/api/v1/operations/unfinished-sessions";
-export const RESUME_UNFINISHED_API =
-  "/api/v1/operations/tenant-policy/resume-unfinished";

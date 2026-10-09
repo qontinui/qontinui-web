@@ -55,7 +55,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { RotateCcw, Scale, TriangleAlert } from "lucide-react";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import { DecisionPolicyEditorDialog } from "./_components/DecisionPolicyEditorDialog";
 import { DecisionPolicyList } from "./_components/DecisionPolicyList";
 import { useDecisionPolicies } from "./_hooks/useDecisionPolicies";

@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  UNFINISHED_API,
-  type UnfinishedSession,
-  type UnfinishedSessionsView,
-} from "../types";
+  dismissUnfinishedSession,
+  fetchUnfinishedSessions,
+  resumeUnfinishedSession,
+} from "@/lib/api/operations/coordSettings";
+import type { UnfinishedSession, UnfinishedSessionsView } from "../types";
 import { resumeAccount, resumeBlockedReason } from "../_lib/unfinished";
 
 function message(err: unknown, fallback: string): string {
@@ -35,7 +35,7 @@ export function useUnfinishedSessions() {
     const mine = ++generation.current;
     try {
       setLoading(true);
-      const next = await httpClient.get<UnfinishedSessionsView>(UNFINISHED_API);
+      const next = await fetchUnfinishedSessions();
       if (mine !== generation.current) return;
       setView(next);
       setError(null);
@@ -55,10 +55,7 @@ export function useUnfinishedSessions() {
     async (row: UnfinishedSession): Promise<boolean> => {
       setBusyId(row.claude_session_id);
       try {
-        await httpClient.post(
-          `${UNFINISHED_API}/${row.claude_session_id}/dismiss`,
-          {}
-        );
+        await dismissUnfinishedSession(row.claude_session_id);
         toast.success("Dismissed — the session is marked finished.");
         await load();
         return true;
@@ -80,13 +77,10 @@ export function useUnfinishedSessions() {
       if (resumeBlockedReason(row) !== null || account === null) return false;
       setBusyId(row.claude_session_id);
       try {
-        await httpClient.post(
-          `${UNFINISHED_API}/${row.coord_session_id}/resume`,
-          {
-            target_device_id: row.device_id,
-            account,
-          }
-        );
+        await resumeUnfinishedSession(row.coord_session_id, {
+          target_device_id: row.device_id,
+          account,
+        });
         toast.success(
           "Resume requested — the device will pick it up; this row clears once a child session exists."
         );
