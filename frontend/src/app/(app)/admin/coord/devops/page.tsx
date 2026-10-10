@@ -75,10 +75,12 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens SIX POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
- * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence,
+ * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
+ * `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node` Phase 6),
+ * `/fleet/ci-runners` here at coord's own registrar cadence,
  * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
  * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
  * `/alerts/fault-to-visibility` here at 60 s (plan
@@ -128,6 +130,7 @@ import {
   FleetConditionsPanel,
   FleetOverview,
   FleetResourcesSection,
+  FleetRolesSection,
   FleetWorktreeSlotsSection,
   OperatorAuditPanel,
 } from "@/components/operations";
@@ -147,7 +150,7 @@ import {
   buildResolvabilityBadge,
   faultToVisibilityBadge,
 } from "@/components/operations/fleetReadout";
-import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
 // defeats every downstream useMemo keyed on it.
@@ -551,6 +554,15 @@ export default function CoordDevOpsPage() {
         deviceStatus={deviceStatus}
         nowMs={nowMs}
       />
+
+      {/* Roles — each machine's standing dispatch role (Workhorse / Bench /
+          CI node), plan `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node`
+          Phase 6. Its own poll of /fleet/dispatch-roles (one route, one poll):
+          coord's role read is its own spine, because it also lists machines
+          assigned by host name that have no device row yet. Directly under
+          the machine list because a role is what explains a machine that
+          takes no sessions while not drained. */}
+      <FleetRolesSection />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine
