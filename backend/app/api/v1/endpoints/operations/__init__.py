@@ -3826,6 +3826,8 @@ async def get_dev_action_detail(
 # - GET    /operations/plans/overview                    — corpus status tally
 # - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
+# - GET    /operations/plans/{slug}/attribution          — shipped-by session
+#                                                          names (operator)
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
@@ -4272,6 +4274,46 @@ async def get_coord_plan_history(
     """
     return await _proxy_coord_get(
         f"/coord/work-units/{slug}/history", tenant_id=tenant_id
+    )
+
+
+#: A work-unit slug as coord mints them (dated or opaque stems): it starts with
+#: an alphanumeric, so ``.``/``..`` can never reach the proxied path as a
+#: segment and re-point the forwarded operator bearer at another coord route.
+_ATTRIBUTION_SLUG_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+
+
+@router.get("/plans/{slug}/attribution")
+async def get_coord_plan_attribution(
+    slug: str = Path(
+        ..., min_length=1, max_length=255, pattern=_ATTRIBUTION_SLUG_PATTERN
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return who shipped a work unit, as session DISPLAY NAMES (operator only).
+
+    Proxies coord's admin-console-only ``GET /coord/work-units/{slug}/attribution``
+    (plan ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase
+    0d / Phase 7, ``work_unit_attribution.rs``): ``{"slug",
+    "attribution_available", "shipped_by": [{"session_name", "pr_refs":
+    [{"repo", "pr_number", "merged", "attribution_is_single_session"}]}],
+    "unnamed_session_count", "unverified_session_count",
+    "unattributed_pr_count"}`` — or, when coord cannot tenant-confine the
+    attribution, ``attribution_available: false`` with ``unavailable_reason``,
+    ``unavailable_detail`` and every count ``null``. A coord that predates
+    ``unverified_session_count`` omits it; the console reads that as "not
+    reported", never as zero. Passed through UNMODELLED;
+    coord never puts a raw session id on this body, and nothing here adds one.
+
+    Operator tier ONLY, mechanically: :func:`get_tenant_id` resolves the
+    caller through coord's operator ``/admin/coord/me`` door, which a device
+    or agent JWT can never pass, and the forwarded Cognito bearer is what coord
+    authorizes on. There is deliberately no device/agent twin of this route.
+
+    A foreign slug and a nonexistent one are the same coord 404, forwarded.
+    """
+    return await _proxy_coord_get(
+        f"/coord/work-units/{slug}/attribution", tenant_id=tenant_id
     )
 
 
