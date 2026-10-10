@@ -50,7 +50,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Network } from "lucide-react";
-import { getSession } from "./api";
+import { getSession } from "@/lib/api/operations/sessions";
 import { classifyLifecycleError, type LifecycleHalf } from "./sessionKeyResolution";
 import { SessionCardView } from "./SessionCardView";
 import { SessionDetail } from "./SessionDetail";

@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/components/operations/utils";
 import { listMachines, type Machine } from "@/services/devenv-api";
-import { getSessionRestoreRecord, SessionsApiError } from "./api";
+import { getSessionRestoreRecord, SessionsApiError } from "@/lib/api/operations/sessions";
 import { HandoffModal, type HandoffTarget } from "./HandoffModal";
 import type {
   RestoreRecordPayload,

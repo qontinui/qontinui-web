@@ -18,7 +18,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionCard } from "@/services/agent-sessions-api";
 import type { SessionRow } from "./types";
 
@@ -32,8 +32,8 @@ vi.mock("@/services/devenv-api", () => ({
   listMachines: vi.fn(async () => []),
 }));
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
+vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     // The panes fetch on mount. None of them is what this file is about.

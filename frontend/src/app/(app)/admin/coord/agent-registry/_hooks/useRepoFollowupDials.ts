@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createReadSequence, type ReadSequence } from "@/components/console";
-import { listRegisteredRepos } from "@/components/sessions/api";
+import { listRegisteredRepos } from "@/lib/api/operations/tenants";
 import { httpClient } from "@/services/service-factory";
 import {
   CONTINUATION_DELIVERY_API,

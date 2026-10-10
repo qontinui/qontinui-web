@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import { AgentSessionsApiError } from "@/services/agent-sessions-api";
-import { SessionsApiError } from "@/components/sessions/api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionCard } from "@/services/agent-sessions-api";
 
 let mockKey = "brave-otter";
@@ -49,9 +49,9 @@ vi.mock("@/services/agent-sessions-api", async (importOriginal) => {
 });
 
 const getSession = vi.fn();
-vi.mock("@/components/sessions/api", async (importOriginal) => {
+vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
   const actual = await importOriginal<
-    typeof import("@/components/sessions/api")
+    typeof import("@/lib/api/operations/sessions")
   >();
   return {
     ...actual,

@@ -80,20 +80,20 @@ describe("the surviving gates surface", () => {
     // The panel's set. If one of these disappears from GateActions, the
     // consolidation stopped being lossless and this catches it.
     for (const url of [
-      "gateApproveUrl",
-      "gateReopenUrl",
-      "gateMuteUrl",
-      "gateUnmuteUrl",
-      "gateSnoozeUrl",
+      "approveGate",
+      "reopenGate",
+      "muteGate",
+      "unmuteGate",
+      "snoozeGate",
     ]) {
       expect(GATE_ACTIONS).toContain(url);
     }
     // The page-only superset — the reason this side won.
     for (const url of [
-      "gateRejectUrl",
-      "gateForceClearUrl",
-      "gateContinuationCancelUrl",
-      "gateAudienceUrl",
+      "rejectGate",
+      "forceClearGate",
+      "cancelGateContinuation",
+      "setGateAudience",
     ]) {
       expect(GATE_ACTIONS).toContain(url);
     }

@@ -6,12 +6,13 @@
  * Renders a compact overflow menu (⋯) whose items are gated by the gate's
  * current state, plus confirm dialogs for the destructive verbs. Every action
  * POSTs/PATCHes the EXISTING web-backend coord proxies under
- * `/api/v1/operations/gates/{id}/*` via the shared `httpClient` — the same
- * bearer-forwarding + tenant-switcher (`X-Qontinui-Active-Tenant`) plumbing the
- * read side (`admin-dev-service`) already uses. The frontend never talks to
- * coord directly.
+ * `/operations/gates/{id}/*` through the typed client
+ * (`@/lib/api/operations/coordGates`) — the same bearer-forwarding +
+ * tenant-switcher (`X-Qontinui-Active-Tenant`) plumbing the read side
+ * (`admin-dev-service`) already uses. The frontend never talks to coord
+ * directly.
  *
- * These builders were shared with `components/operations/GatesPanel` until
+ * These verbs were shared with `components/operations/GatesPanel` until
  * Phase 4 of `2026-08-25-coord-console-intent-and-devops-sections` deleted it.
  * That the two surfaces already mutated through ONE set of helpers is why the
  * delete cost no capability: this page's action set was a strict superset
@@ -61,18 +62,18 @@ import {
 import { Loader2, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
-  gateApproveUrl,
-  gateAudienceUrl,
-  gateContinuationCancelUrl,
-  gateForceClearUrl,
-  gateMuteUrl,
-  gateRejectUrl,
-  gateReopenUrl,
-  gateSnoozeUrl,
-  gateUnmuteUrl,
-} from "@/components/operations/utils";
+  approveGate,
+  cancelGateContinuation,
+  forceClearGate,
+  muteGate,
+  rejectGate,
+  reopenGate,
+  setGateAudience,
+  snoozeGate,
+  unmuteGate,
+} from "@/lib/api/operations/coordGates";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
 
 const log = createLogger("GateActions");
@@ -145,37 +146,34 @@ export function GateActions({
     gate.continuation_cancelled_at == null &&
     gate.continuation_expired_at == null;
 
-  // Shared request runner — surfaces coord's error message on failure and
-  // refetches on success. Handles POST (default) and PATCH.
+  // Shared action runner — surfaces coord's error message on failure and
+  // refetches on success. `action` is one `coordGates` call. A non-2xx
+  // rejects in `readJson`'s `<METHOD> <url> failed: <status> - <body>` shape
+  // and is read back here, so a coord refusal still toasts "<verb> failed"
+  // with coord's own text and only a transport error says "Action failed".
   const runAction = useCallback(
     async (
-      url: string,
-      opts: {
-        method?: "POST" | "PATCH";
-        body?: Record<string, unknown>;
-        successMsg: string;
-      },
+      action: () => Promise<unknown>,
+      opts: { successMsg: string },
     ): Promise<boolean> => {
       setBusy(true);
       try {
-        const res = await httpClient.fetch(url, {
-          method: opts.method ?? "POST",
-          body: JSON.stringify(opts.body ?? {}),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn("gate action failed", url, res.status, text);
-          toast.error(opts.successMsg.replace(/…$/, "") + " failed", {
-            description: text || `HTTP ${res.status}`,
-          });
-          return false;
-        }
+        await action();
         toast.success(opts.successMsg);
         onActed();
         return true;
       } catch (err) {
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          const text = httpBodyOf(err) ?? "";
+          log.warn("gate action failed", opts.successMsg, status, text);
+          toast.error(opts.successMsg.replace(/…$/, "") + " failed", {
+            description: text || `HTTP ${status}`,
+          });
+          return false;
+        }
         const msg = err instanceof Error ? err.message : String(err);
-        log.warn("gate action threw", url, msg);
+        log.warn("gate action threw", opts.successMsg, msg);
         toast.error("Action failed", { description: msg });
         return false;
       } finally {
@@ -192,7 +190,7 @@ export function GateActions({
   // behind a `DestructiveButton` (synthetic-click protection), so Approve opens
   // a confirm dialog rather than firing straight from the menu item.
   const onConfirmApprove = useCallback(() => {
-    void runAction(gateApproveUrl(id), { successMsg: "Gate approved" }).then(
+    void runAction(() => approveGate(id), { successMsg: "Gate approved" }).then(
       (ok) => {
         if (ok) setDialog(null);
       },
@@ -202,21 +200,20 @@ export function GateActions({
   // ---- Non-destructive actions --------------------------------------------
 
   const onReopen = useCallback(() => {
-    void runAction(gateReopenUrl(id), { successMsg: "Gate reopened" });
+    void runAction(() => reopenGate(id), { successMsg: "Gate reopened" });
   }, [runAction, id]);
 
   const onToggleMute = useCallback(() => {
     if (gate.muted) {
-      void runAction(gateUnmuteUrl(id), { successMsg: "Gate unmuted" });
+      void runAction(() => unmuteGate(id), { successMsg: "Gate unmuted" });
     } else {
-      void runAction(gateMuteUrl(id), { successMsg: "Gate muted" });
+      void runAction(() => muteGate(id), { successMsg: "Gate muted" });
     }
   }, [runAction, id, gate.muted]);
 
   const onSnooze = useCallback(
     (secs: number, label: string) => {
-      void runAction(gateSnoozeUrl(id), {
-        body: { until: snoozeUntilIso(secs) },
+      void runAction(() => snoozeGate(id, snoozeUntilIso(secs)), {
         successMsg: `Gate snoozed for ${label}`,
       });
     },
@@ -225,9 +222,7 @@ export function GateActions({
 
   const onSetAudience = useCallback(
     (next: "operator" | "agent") => {
-      void runAction(gateAudienceUrl(id), {
-        method: "PATCH",
-        body: { audience: next },
+      void runAction(() => setGateAudience(id, next), {
         successMsg: `Audience set to ${next}`,
       });
     },
@@ -242,8 +237,7 @@ export function GateActions({
 
   const onConfirmReject = useCallback(() => {
     const body = reason.trim() ? { reason: reason.trim() } : {};
-    void runAction(gateRejectUrl(id), {
-      body,
+    void runAction(() => rejectGate(id, body), {
       successMsg: "Gate rejected",
     }).then((ok) => {
       if (ok) closeDialog();
@@ -251,8 +245,7 @@ export function GateActions({
   }, [runAction, id, reason, closeDialog]);
 
   const onConfirmForceClear = useCallback(() => {
-    void runAction(gateForceClearUrl(id), {
-      body: { reason: reason.trim() },
+    void runAction(() => forceClearGate(id, reason.trim()), {
       successMsg: "Gate force-cleared",
     }).then((ok) => {
       if (ok) closeDialog();
@@ -260,10 +253,14 @@ export function GateActions({
   }, [runAction, id, reason, closeDialog]);
 
   const onConfirmCancelContinuation = useCallback(() => {
-    void runAction(gateContinuationCancelUrl(id), {
-      body: { cancelled_by: OPERATOR_ACTOR, reason: reason.trim() },
-      successMsg: "Continuation cancelled",
-    }).then((ok) => {
+    void runAction(
+      () =>
+        cancelGateContinuation(id, {
+          cancelled_by: OPERATOR_ACTOR,
+          reason: reason.trim(),
+        }),
+      { successMsg: "Continuation cancelled" },
+    ).then((ok) => {
       if (ok) closeDialog();
     });
   }, [runAction, id, reason, closeDialog]);

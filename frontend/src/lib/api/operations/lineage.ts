@@ -1,27 +1,38 @@
-// ============================================================================
-// Commit lineage — API client
-//
-// Thin wrapper around the web-backend commit-lineage proxy
-// (`/api/v1/operations/lineage/*`). Requests route through the shared
-// `httpClient`, which attaches the operator Bearer token, handles
-// 401-refresh, and adds CSRF headers — so unlike the supervisor's Lineage
-// tab there is NO manual JWT paste; the logged-in operator's credential is
-// forwarded to coord server-side.
-//
-// Coord returns enveloped bodies; these helpers unwrap to the array/object
-// the components actually want.
-// ============================================================================
+/**
+ * `/operations/lineage/*` — the commit-lineage proxy: the newest attributed
+ * commits, the lineage census, and one session's commits.
+ *
+ * Part of the typed `/operations` client (plan
+ * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
+ * D5, Phase 7 batch 1). MOVED here from `components/commits/api.ts`; the
+ * behaviour is that file's, with two changes: the base is the RELATIVE
+ * `OPERATIONS_BASE` (D6 — a transport change from the absolute
+ * `OPERATIONS_API`), and each read states its retry policy.
+ *
+ * Requests route through the shared `httpClient`, which attaches the operator
+ * Bearer token, handles 401-refresh, and adds CSRF headers — so unlike the
+ * supervisor's Lineage tab there is NO manual JWT paste; the logged-in
+ * operator's credential is forwarded to coord server-side.
+ *
+ * Coord returns enveloped bodies; these helpers unwrap to the array/object
+ * the components actually want. The wire types live in
+ * `components/commits/types.ts` and mirror `get_lineage_recent`,
+ * `get_lineage_stats` and `get_lineage_session_commits` in
+ * `backend/app/api/v1/endpoints/operations/__init__.py`.
+ *
+ * Errors stay the typed {@link CommitsApiError} rather than `readJson`'s
+ * shape: `CommitLineage` branches on it (`isSchemaMigrationPending`) and
+ * renders its message, so the move keeps both.
+ */
 
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../operations/utils";
 import type {
   LineageRow,
   LineageStats,
   RecentCommitsResponse,
   SessionCommitsResponse,
-} from "./types";
-
-const LINEAGE_API = `${OPERATIONS_API}/lineage`;
+} from "@/components/commits/types";
+import { httpClient } from "@/services/service-factory";
+import { OPERATIONS_BASE } from "./base";
 
 /** Stable empty array — never hand a fresh `[]` to identity-memoing consumers. */
 const EMPTY_ROWS: LineageRow[] = [];
@@ -85,7 +96,9 @@ function parseSchemaMigrationPending(
 }
 
 /** Read the body (once) and throw the right CommitsApiError for a non-ok
- *  response. Ordinary errors keep today's exact message/status behavior. */
+ *  response. Ordinary errors keep today's exact message/status behavior.
+ *  Takes the `Response`, never a URL to fetch — `url` only words the error —
+ *  so `route-walker.test.ts` still resolves each caller's own call. */
 async function throwApiError(url: string, res: Response): Promise<never> {
   let bodyText = "";
   try {
@@ -107,13 +120,20 @@ async function throwApiError(url: string, res: Response): Promise<never> {
   throw new CommitsApiError(`GET ${url} failed: ${res.status}`, res.status);
 }
 
-/** Newest commit-lineage rows (default 100, coord caps at 500). */
+/**
+ * `GET /lineage/recent` — `get_lineage_recent`. Newest commit-lineage rows
+ * (default 100, coord caps at 500).
+ */
 export async function getRecentCommits(
   limit = 100,
   signal?: AbortSignal
 ): Promise<LineageRow[]> {
-  const url = `${LINEAGE_API}/recent?limit=${encodeURIComponent(limit)}`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/lineage/recent?limit=${encodeURIComponent(limit)}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     await throwApiError(url, res);
   }
@@ -123,25 +143,40 @@ export async function getRecentCommits(
     : EMPTY_ROWS;
 }
 
-/** Aggregate commit-lineage census (totals + by_source + top_sessions). */
+/**
+ * `GET /lineage/stats` — `get_lineage_stats`. Aggregate commit-lineage census
+ * (totals + by_source + top_sessions).
+ */
 export async function getLineageStats(
   signal?: AbortSignal
 ): Promise<LineageStats> {
-  const url = `${LINEAGE_API}/stats`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/lineage/stats`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     await throwApiError(url, res);
   }
   return (await res.json()) as LineageStats;
 }
 
-/** Every commit attributed to a single session (for the drill-down drawer). */
+/**
+ * `GET /lineage/sessions/{session_id}/commits` —
+ * `get_lineage_session_commits`. Every commit attributed to a single session
+ * (for the drill-down drawer).
+ */
 export async function getSessionCommits(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<LineageRow[]> {
-  const url = `${LINEAGE_API}/sessions/${encodeURIComponent(sessionId)}/commits`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/lineage/sessions/${encodeURIComponent(sessionId)}/commits`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     await throwApiError(url, res);
   }

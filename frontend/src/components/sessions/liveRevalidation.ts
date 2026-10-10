@@ -49,7 +49,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { subscribeSessionEvents } from "./api";
+import { subscribeSessionEvents } from "@/lib/api/operations/sessions";
 
 /**
  * Trailing window a burst of events collapses into. Sized for the connect-time

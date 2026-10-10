@@ -38,7 +38,7 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
-import { listTenants } from "@/components/sessions/api";
+import { listTenants } from "@/lib/api/operations/tenants";
 import type { TenantListResponse } from "@/components/sessions/types";
 
 export interface Tenant {

@@ -64,10 +64,12 @@ import {
   getSessionAgentStatus,
   getSessionLineage,
   subscribeSessionEvents,
+} from "@/lib/api/operations/sessions";
+import {
   listRegisteredRepos,
   findRegisteredRepo,
   registeredRepoSlugs,
-} from "./api";
+} from "@/lib/api/operations/tenants";
 import { LineageTimeline } from "./LineageTimeline";
 import {
   isRevalidatingEvent,

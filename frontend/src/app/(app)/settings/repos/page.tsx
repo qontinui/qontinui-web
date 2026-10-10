@@ -24,23 +24,14 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
-
-interface CanonicalRepo {
-  repo: string;
-  mirror_state?: string | null;
-  last_reconciled_at?: string | null;
-  created_at?: string | null;
-}
-
-interface ReposResponse {
-  repos: CanonicalRepo[];
-}
-
-const FETCH_OPTS: RequestInit = {
-  credentials: "include",
-  cache: "no-store",
-};
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { relativeTime } from "@/components/operations/utils";
+import type { RegisteredRepo as CanonicalRepo } from "@/components/sessions/types";
+import {
+  deregisterRepo,
+  fetchRepos as fetchRepoList,
+  registerRepo,
+} from "@/lib/api/operations/tenants";
 
 function mirrorBadgeVariant(state: string | null | undefined) {
   switch (state) {
@@ -67,6 +58,19 @@ function isValidRepoSlug(slug: string): boolean {
   return (owner ?? "").length > 0 && (name ?? "").length > 0;
 }
 
+/**
+ * What the register toast has always said after "Failed to register
+ * repository: " — the backend's response text, or the bare status when the
+ * body was empty. The client rejects a non-2xx as
+ * `<METHOD> <url> failed: <status> - <body>`, so both are read back out of
+ * that; a transport error keeps its own message.
+ */
+function registerErrorText(err: unknown): string {
+  const status = httpStatusOf(err);
+  if (status === null) return err instanceof Error ? err.message : String(err);
+  return httpBodyOf(err) || `${status}`;
+}
+
 export default function ReposSettingsPage() {
   const [repos, setRepos] = useState<CanonicalRepo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,9 +79,7 @@ export default function ReposSettingsPage() {
 
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, FETCH_OPTS);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = (await res.json()) as ReposResponse;
+      const data = await fetchRepoList();
       setRepos(data.repos ?? []);
     } catch {
       toast.error("Failed to load repositories");
@@ -98,23 +100,12 @@ export default function ReposSettingsPage() {
     }
     setAdding(true);
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: trimmed }),
-      });
-      if (!res.ok) {
-        const detail = await res.text();
-        throw new Error(detail || `${res.status}`);
-      }
+      await registerRepo(trimmed);
       toast.success(`Registered ${trimmed}`);
       setSlug("");
       await fetchRepos();
     } catch (err) {
-      toast.error(
-        `Failed to register repository: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Failed to register repository: ${registerErrorText(err)}`);
     } finally {
       setAdding(false);
     }
@@ -122,11 +113,7 @@ export default function ReposSettingsPage() {
 
   const handleDelete = async (repo: string) => {
     try {
-      const res = await fetch(
-        `${OPERATIONS_API}/repos?repo=${encodeURIComponent(repo)}`,
-        { ...FETCH_OPTS, method: "DELETE" }
-      );
-      if (!res.ok) throw new Error(`${res.status}`);
+      await deregisterRepo(repo);
       toast.success(`Removed ${repo}`);
       await fetchRepos();
     } catch {
