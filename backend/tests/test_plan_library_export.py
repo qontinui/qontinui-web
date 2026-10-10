@@ -270,13 +270,20 @@ class TestBulkExport:
 
         cut = await client.get(f"{API_PREFIX}/export?limit=1")
         assert cut.status_code == 200
-        assert cut.headers["x-export-truncated"] == "true"
-        assert cut.headers["x-export-artifact-count"] == "1"
-        assert json.loads(_open_archive(cut.content).read("manifest.json"))["truncated"]
+        # The bound rides in the SHARED bounded-read vocabulary — one header,
+        # all ten keys — not a bespoke X-Export-* pair.
+        bound = json.loads(cut.headers["x-bounded-read"])
+        assert bound["truncated"] is True
+        assert bound["count"] == bound["shown"] == 1
+        assert bound["bound_kind"] == "at_least"
+        assert bound["next_cursor"] is None
+        assert bound["enumerate_via"] == "GET /api/v1/plan-library"
+        manifest = json.loads(_open_archive(cut.content).read("manifest.json"))
+        assert {k: manifest[k] for k in bound} == bound
 
         # The header must be present — and false — when nothing was cut.
         whole = await client.get(f"{API_PREFIX}/export?limit=500")
-        assert whole.headers["x-export-truncated"] == "false"
+        assert json.loads(whole.headers["x-bounded-read"])["truncated"] is False
 
     async def test_same_slug_from_two_repos_both_survive(
         self, async_db_session: AsyncSession, client: httpx.AsyncClient

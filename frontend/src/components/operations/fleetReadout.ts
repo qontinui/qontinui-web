@@ -19,7 +19,7 @@
 
 import type { HealthBadge } from "@/components/console";
 import type { UseFaultToVisibilityResult } from "./useFaultToVisibility";
-import type { FleetHealthPayload } from "./useFleetHealth";
+import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 
 /** Seconds as the operator reads an interval: `45s`, `12m`, `1h 12m`, `2d 3h`. */
 export function formatDurationSecs(secs: number): string {

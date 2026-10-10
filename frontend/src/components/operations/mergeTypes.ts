@@ -234,6 +234,14 @@ export type MergeStatusToken =
    *  the verdict surface and this one tell ONE story about a PR. */
   | "required-checks-missing"
   | "blast-radius-block"
+  /** A `coord:stacked-on=` / `coord:downstream-of=` edge names an upstream PR
+   *  that is CLOSED and did not land — an edge that can never clear on its
+   *  own. coord's `BlockReason::DependencyUpstreamClosed` wire code, emitted
+   *  from the predicate-token arm (ahead of every ready/queued arm) and given
+   *  its own token by qontinui-coord#2819 so it stops reading as an ordinary
+   *  cross-repo wait. The move is the author's: re-anchor the label onto the
+   *  successor PR, or remove it if the upstream's content already landed. */
+  | "dependency-upstream-closed"
   | "ready"
   | "queued"
   /** coord cannot clone the repo (deleted/renamed, or the GitHub App's access
@@ -244,6 +252,18 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** Green + CLEAN + open, and the train's only proposal at this head is
+   *  TERMINAL and HELD — coord will not re-cut it (already-landed,
+   *  merge-resolution-discarded, reap-hardcap, superseded-empty candidate,
+   *  merged, plain cancelled). Split out of `ready-but-unlanded`, which keeps
+   *  the no-proposal half (a genuine orchestrator stall) and every terminal
+   *  coord re-cuts or re-probes itself (infra / transient errors, content and
+   *  textual conflicts, shadow-landed). NOT a stall: coord diagnosed it, and the move —
+   *  sometimes the author's, sometimes the operator's — is named in
+   *  `blocking_summary`.
+   *  Plan
+   *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
+  | "terminal-proposal-held"
   /** coord LANDED this PR at its CURRENT head and GitHub still shows it open —
    *  the phantom-open ff-land window, keyed on coord's `land_stamp ==
    *  current_head`. NOT a pause: the work is on the base branch already.
