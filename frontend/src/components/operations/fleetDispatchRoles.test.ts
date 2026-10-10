@@ -16,6 +16,7 @@ import {
   parseEffectsNotApplied,
   parseLane,
   parseRoleMachine,
+  readDispatchRole,
   validateRoleForm,
 } from "./fleetDispatchRoles";
 
@@ -120,7 +121,7 @@ describe("parseDispatchRoles", () => {
     const read = parseDispatchRoles({
       state: "known",
       machines: [
-        machine({ role: roleRow("bench") }),
+        machine({ role: roleRow("testbed") }),
         machine({
           kind: "ci_host",
           machine_key: "host:dell-2020",
@@ -154,7 +155,8 @@ describe("parseDispatchRoles", () => {
     // No device rows: every lane reads not_registered.
     expect(dell.lanes?.agent.effective).toBe("not_registered");
     expect(dell.lanes?.ci.role).toBe("not_registered");
-    expect(msi.role).toBe("bench");
+    expect(msi.role).toBe("testbed");
+    expect(msi.legacyRoleSpelling).toBeNull();
     expect(msi.version).toBe(2);
     expect(msi.updatedBy).toBe("op@example.com");
   });
@@ -182,7 +184,7 @@ describe("parseRoleMachine", () => {
 
   it("a redacted operator email is kept as served", () => {
     const m = parseRoleMachine(
-      machine({ role: { ...roleRow("bench"), updated_by: "[redacted]" } })
+      machine({ role: { ...roleRow("testbed"), updated_by: "[redacted]" } })
     );
     expect(m?.updatedBy).toBe("[redacted]");
     expect(
@@ -192,6 +194,43 @@ describe("parseRoleMachine", () => {
         drain: { state: "drained", drained_by: "[redacted]" },
       }).drain
     ).toMatchObject({ drainedBy: "[redacted]" });
+  });
+
+  it("a legacy `bench` role reads as Testbed and keeps its wire spelling", () => {
+    const m = parseRoleMachine(machine({ role: roleRow("bench") }));
+    expect(m?.role).toBe("testbed");
+    expect(m?.legacyRoleSpelling).toBe("bench");
+    expect(m?.unrecognisedRole).toBeNull();
+    expect(describeRole(m!)).toBe('Testbed (legacy "bench")');
+  });
+
+  it("a legacy `bench` suggestion is offered as Testbed", () => {
+    const m = parseRoleMachine(
+      machine({
+        suggestion: {
+          dispatch_role: "bench",
+          mem_total_bytes: 33e9,
+          sample_age_secs: 1,
+        },
+      })
+    );
+    expect(m?.suggestion?.role).toBe("testbed");
+  });
+
+  it("a near-spelling of testbed is unrecognised, never coerced", () => {
+    for (const raw of ["Testbed", "test_bed", "Bench"]) {
+      const m = parseRoleMachine(machine({ role: roleRow(raw) }));
+      expect(m?.role).toBeNull();
+      expect(m?.unrecognisedRole).toBe(raw);
+      expect(m?.legacyRoleSpelling).toBeNull();
+    }
+  });
+
+  it("legacy spellings never shadow a prototype key", () => {
+    expect(readDispatchRole("toString")).toBeNull();
+    expect(readDispatchRole("constructor")).toBeNull();
+    expect(readDispatchRole("bench")).toBe("testbed");
+    expect(readDispatchRole("testbed")).toBe("testbed");
   });
 
   it("a null role row is unassigned", () => {
@@ -346,13 +385,13 @@ describe("describeRoleEffect", () => {
       "dell-2020 → CI node: coord will send no sessions here; CI stays open."
     );
   });
-  it("bench closes both", () => {
-    expect(describeRoleEffect("nomad", "workhorse", "bench")).toBe(
-      "nomad → Bench: coord will send no sessions here; coord will send no CI here."
+  it("testbed closes both", () => {
+    expect(describeRoleEffect("nomad", "workhorse", "testbed")).toBe(
+      "nomad → Testbed: coord will send no sessions here; coord will send no CI here."
     );
   });
   it("reopening says so", () => {
-    expect(describeRoleEffect("msi", "bench", "ci_node")).toBe(
+    expect(describeRoleEffect("msi", "testbed", "ci_node")).toBe(
       "msi → CI node: still no sessions; coord may send CI here again."
     );
   });
@@ -502,7 +541,7 @@ describe("describeRoleWriteError", () => {
     ).toContain("No coord tenant is selected");
   });
   it("the effect sentence's 'before' follows coord's served role layer", () => {
-    // A co-tenant's Bench already closes sessions here.
+    // A co-tenant's Testbed already closes sessions here.
     expect(
       describeRoleEffect("msi", null, "ci_node", false, {
         agent: "closed",

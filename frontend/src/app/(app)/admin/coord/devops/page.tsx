@@ -555,7 +555,7 @@ export default function CoordDevOpsPage() {
         nowMs={nowMs}
       />
 
-      {/* Roles — each machine's standing dispatch role (Workhorse / Bench /
+      {/* Roles — each machine's standing dispatch role (Workhorse / Testbed /
           CI node), plan `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node`
           Phase 6. Its own poll of /fleet/dispatch-roles (one route, one poll):
           coord's role read is its own spine, because it also lists machines
