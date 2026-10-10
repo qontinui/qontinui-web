@@ -45,9 +45,10 @@ Deploy ordering (load-bearing)
 
 The four landings of step 3 exist so no tenant's ``off`` is ever unhonoured:
 
-* (a) qontinui-coord, FIRST: the ingest refusal reads the domain AND, for the
-  ``transcript`` stream, still the column; ``PATCH /tenant-policy`` refuses
-  every write, which FREEZES the column.
+* (a) qontinui-coord, FIRST: the ingest refusal reads the domain AND still
+  the column, which refuses BOTH streams (``transcript`` and ``pty``) while it
+  is ``false``; ``PATCH /tenant-policy`` refuses (422) any body naming
+  ``transcript_sync_enabled``, which FREEZES the column.
 * (b) THIS revision, only after (a) is deployed (verified by reading coord's
   ``/health`` build): the column can no longer change, so the copy taken here
   is final.
