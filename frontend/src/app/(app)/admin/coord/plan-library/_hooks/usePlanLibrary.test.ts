@@ -51,6 +51,7 @@ function row(overrides: Record<string, unknown> = {}) {
     kind: "plan",
     kind_locked: false,
     slug: "2026-08-10-a-plan",
+    spec_ref: null,
     title: "A plan",
     status: "VETTED",
     content_sha256: "abc123",

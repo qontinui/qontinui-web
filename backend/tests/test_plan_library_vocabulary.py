@@ -28,6 +28,7 @@ from app.models.work_artifact import (
     WORK_ARTIFACT_RELATIONS,
 )
 from app.schemas.plan_library import (
+    SPEC_KIND_STATUS_LITERALS,
     CapturedBy,
     DifficultyLevel,
     DifficultySource,
@@ -50,6 +51,13 @@ _LITERALS: dict[str, tuple[Any, dict[str, str]]] = {
     "difficulty_source": (DifficultySource, vocab.DIFFICULTY_SOURCE_MEANINGS),
     "state": (ScanRootState, vocab.SCAN_ROOT_STATE_MEANINGS),
     "censuses[].source": (SlugCensusSource, vocab.SLUG_CENSUS_SOURCE_MEANINGS),
+    **{
+        vocab.spec_status_field_name(kind): (
+            literal,
+            vocab.SPEC_STATUS_MEANINGS[kind],
+        )
+        for kind, literal in SPEC_KIND_STATUS_LITERALS.items()
+    },
 }
 
 

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import {
   KIND_LABELS,
-  WORK_ARTIFACT_KINDS,
+  correctableKinds,
   kindLabel,
   type CandidateCoordLink,
   type WorkArtifactDetail,
@@ -443,7 +443,7 @@ export function ArtifactDetailPanel({
       </h3>
       <p className="text-xs text-muted-foreground">
         {detail
-          ? `${detail.slug} · v${detail.current_version} · captured by ${detail.captured_by}`
+          ? `${detail.spec_ref ? `${detail.spec_ref} · ` : ""}${detail.slug} · v${detail.current_version} · captured by ${detail.captured_by}`
           : failed
             ? "Could not be loaded"
             : "Loading…"}
@@ -513,7 +513,7 @@ export function ArtifactDetailPanel({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WORK_ARTIFACT_KINDS.map((k) => (
+                  {correctableKinds(detail.kind).map((k) => (
                     <SelectItem key={k} value={k}>
                       {KIND_LABELS[k]}
                     </SelectItem>

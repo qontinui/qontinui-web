@@ -39,7 +39,7 @@ from app.services.plan_difficulty import DifficultyLevel, DifficultySource
 #: to key on the exact same expression the index enforces.
 NIL_ORGANIZATION_ID = UUID("00000000-0000-0000-0000-000000000000")
 
-#: The seven artifact families the library tracks. Enforced in Postgres by
+#: The artifact families the library tracks. Enforced in Postgres by
 #: ``ck_work_artifacts_kind``; mirrored here so the API can 422 a bad kind
 #: instead of letting it become an IntegrityError 500.
 WORK_ARTIFACT_KINDS: tuple[str, ...] = (
@@ -55,7 +55,103 @@ WORK_ARTIFACT_KINDS: tuple[str, ...] = (
     #: stay separable on the one structured filter the API offers. Added by
     #: ``plan_library_04_diagnostic_refutes``.
     "diagnostic",
+    # ── The specification family (``plan_library_11_spec_artifacts``) ──
+    # Analyst artifacts — see :data:`SPEC_ARTIFACT_KINDS`.
+    "request",
+    "requirement",
+    "interface_mapping",
+    "story",
+    "test_case",
+    "doc_correction",
 )
+
+#: The specification family: what an analyst writes BEFORE there is a plan.
+#: Added by ``plan_library_11_spec_artifacts``. Three properties set these
+#: kinds apart from the rest of the library, and all three are enforced:
+#:
+#: * each row carries a stable, human-readable ``spec_ref`` (``REQ-0042``)
+#:   assigned on create from a per-organization, per-kind counter that only
+#:   ever moves forward, so a number is never handed out twice — not even
+#:   after the row it named is deleted (``ck_work_artifacts_spec_ref``);
+#: * ``status`` is a closed lifecycle per kind (:data:`SPEC_KIND_STATUSES`),
+#:   where every other kind's status stays opaque free text;
+#: * the kind can never be corrected across the family boundary, because the
+#:   ``spec_ref`` prefix names the kind and an ID that changed meaning would
+#:   not be stable. A different kind of thing is a new artifact, linked by
+#:   ``derives_from`` / ``refines``.
+#:
+#: Never written by the runner's plan scanner — these rows are authored, so a
+#: heuristic (``kind_is_heuristic``) write of one is refused.
+SPEC_ARTIFACT_KINDS: tuple[str, ...] = (
+    "request",
+    "requirement",
+    "interface_mapping",
+    "story",
+    "test_case",
+    "doc_correction",
+)
+
+#: The ``spec_ref`` prefix per spec kind. The CHECK
+#: ``ck_work_artifacts_spec_ref`` spells the same table, and
+#: ``tests/test_plan_library_spec_artifacts.py`` holds the two equal.
+SPEC_REF_PREFIXES: dict[str, str] = {
+    "request": "RQ",
+    "requirement": "REQ",
+    "interface_mapping": "IFM",
+    "story": "STY",
+    "test_case": "TC",
+    "doc_correction": "DOC",
+}
+
+#: The minimum width of a ``spec_ref``'s number — ``REQ-0042``. Wider numbers
+#: simply grow (``REQ-12345``); the width is presentation, never a cap.
+SPEC_REF_MIN_DIGITS = 4
+
+#: The lifecycle of each spec kind, in lifecycle order; the FIRST member is
+#: the status a write that omits ``status`` gets. Mirrors the per-kind
+#: ``Literal``s in ``app.schemas.plan_library`` (held equal by test). Checked
+#: by the API only — no CHECK, because ``status`` predates the spec family
+#: and stays opaque for every other kind.
+SPEC_KIND_STATUSES: dict[str, tuple[str, ...]] = {
+    "request": ("new", "triaged", "accepted", "rejected", "withdrawn"),
+    "requirement": (
+        "draft",
+        "proposed",
+        "approved",
+        "implemented",
+        "verified",
+        "deprecated",
+        "rejected",
+    ),
+    "interface_mapping": ("draft", "in_review", "approved", "deprecated"),
+    "story": ("draft", "ready", "in_progress", "done", "cancelled"),
+    "test_case": ("draft", "ready", "passing", "failing", "blocked", "retired"),
+    "doc_correction": ("proposed", "accepted", "applied", "rejected"),
+}
+
+
+def format_spec_ref(kind: str, number: int) -> str:
+    """``("requirement", 42)`` → ``"REQ-0042"``."""
+    return f"{SPEC_REF_PREFIXES[kind]}-{number:0{SPEC_REF_MIN_DIGITS}d}"
+
+
+def _spec_ref_check_sql() -> str:
+    """The body of ``ck_work_artifacts_spec_ref``, spelled once.
+
+    A spec kind REQUIRES a ``spec_ref`` carrying its own prefix; every other
+    kind REQUIRES none. ``IS NOT NULL AND`` is load-bearing: ``NULL ~ '…'`` is
+    NULL, and a CHECK passes on NULL, so without it a spec row with no ref
+    would be admitted. The migration embeds this exact string.
+    """
+    arms = " ".join(
+        f"WHEN '{kind}' THEN spec_ref IS NOT NULL "
+        f"AND spec_ref ~ '^{prefix}-[0-9]{{{SPEC_REF_MIN_DIGITS},}}$'"
+        for kind, prefix in SPEC_REF_PREFIXES.items()
+    )
+    return f"CASE kind {arms} ELSE spec_ref IS NULL END"
+
+
+SPEC_REF_CHECK_SQL = _spec_ref_check_sql()
 
 #: How the row got here. Enforced by ``ck_work_artifacts_captured_by``.
 WORK_ARTIFACT_CAPTURE_SOURCES: tuple[str, ...] = (
@@ -77,6 +173,12 @@ WORK_ARTIFACT_RELATIONS: tuple[str, ...] = (
     #: "a newer version of the same thing". Added by
     #: ``plan_library_04_diagnostic_refutes``.
     "refutes",
+    # ── Traceability (``plan_library_11_spec_artifacts``) — all two-ended ──
+    "derives_from",
+    "refines",
+    "implements",
+    "verifies",
+    "traces_to",
 )
 
 #: The relation for work a plan SURFACED but deliberately did not do —
@@ -220,6 +322,16 @@ class WorkArtifact(Base):
             text(SEARCH_TSVECTOR_SQL),
             postgresql_using="gin",
         ),
+        # A spec ref names ONE artifact within its organization scope. Mirrors
+        # ``plan_library_11_spec_artifacts``.
+        Index(
+            "uq_work_artifacts_spec_ref",
+            text(_IDENTITY_ORG_EXPR),
+            text("spec_ref"),
+            unique=True,
+            postgresql_where=text("spec_ref IS NOT NULL"),
+        ),
+        CheckConstraint(SPEC_REF_CHECK_SQL, name="ck_work_artifacts_spec_ref"),
         # Mirror ``plan_library_07_plan_difficulty``. NULL passes: unrated.
         CheckConstraint(
             "difficulty IN ('low', 'medium', 'high')",
@@ -277,14 +389,22 @@ class WorkArtifact(Base):
 
     slug: Mapped[str] = mapped_column(Text, nullable=False)
 
+    #: The stable, human-readable identifier of a spec-family artifact
+    #: (``REQ-0042``); NULL on every other kind. Assigned once, on create, by
+    #: ``crud.work_artifact.allocate_spec_ref`` and never rewritten — no
+    #: request model carries it. See :data:`SPEC_ARTIFACT_KINDS`.
+    spec_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     title: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
 
-    # OPAQUE free-form text — no CHECK, no Literal, no vocabulary. Plan
-    # front-matter statuses are authored by humans and agents ("VETTED",
-    # "IN PROGRESS", "SHIPPED", "draft", ...) and the library mirrors what
-    # was written rather than policing it. Never validated, never a 422.
+    # OPAQUE free-form text for every kind outside the spec family — no
+    # CHECK, no vocabulary. Plan front-matter statuses are authored by humans
+    # and agents ("VETTED", "IN PROGRESS", "SHIPPED", "draft", ...) and the
+    # library mirrors what was written rather than policing it. A SPEC kind's
+    # status is its lifecycle and IS closed (:data:`SPEC_KIND_STATUSES`,
+    # checked by the API, a 422 on a value outside it).
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
@@ -399,6 +519,34 @@ class WorkArtifact(Base):
         passive_deletes=True,
         order_by="WorkArtifactVersion.version_number",
     )
+
+
+class WorkArtifactSpecRefCounter(Base):
+    """The high-water mark of ``spec_ref`` numbers per organization and kind.
+
+    One row per ``(organization scope, kind)``; ``last_number`` only ever
+    increases (``crud.work_artifact.allocate_spec_ref`` bumps it with an
+    atomic ``INSERT … ON CONFLICT DO UPDATE … RETURNING``). That is what makes
+    a ref never reused: deleting ``REQ-0042`` leaves the counter at 42 or
+    beyond. Numbers may have GAPS (a write that rolls back after allocating),
+    which is harmless — stability, not density, is the contract.
+
+    ``organization_scope`` is the same NULL-collapsed key the identity index
+    uses, so a NULL-org artifact numbers under :data:`NIL_ORGANIZATION_ID`.
+    Mirrors ``plan_library_11_spec_artifacts``.
+    """
+
+    __tablename__ = "work_artifact_spec_ref_counters"
+    __table_args__ = (
+        CheckConstraint("last_number >= 1", name="ck_spec_ref_counters_positive"),
+        {"schema": "agent"},
+    )
+
+    organization_scope: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_number: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class WorkArtifactVersion(Base):

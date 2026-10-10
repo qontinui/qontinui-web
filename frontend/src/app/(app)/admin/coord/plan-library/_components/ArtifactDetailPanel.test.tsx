@@ -48,7 +48,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { ArtifactDetailPanel } from "./ArtifactDetailPanel";
-import { KIND_LABELS } from "../types";
+import { KIND_LABELS, SPEC_ARTIFACT_KINDS } from "../types";
 import type { CandidateCoordLink, WorkArtifactDetail } from "../types";
 
 const UNLINKED: CandidateCoordLink = {
@@ -71,6 +71,7 @@ function detail(
     kind: "plan",
     kind_locked: false,
     slug: "2026-08-10-a-plan",
+    spec_ref: null,
     title: "A plan",
     status: "VETTED",
     content_sha256: "abcdef0123",
@@ -694,5 +695,41 @@ describe("ArtifactDetailPanel — the kind correction obeys the same guard", () 
     expect(
       screen.queryByTestId("artifact-kind-select")
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ArtifactDetailPanel — the specification family boundary", () => {
+  async function openKindOptions(): Promise<string[]> {
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("artifact-kind-select"));
+    const options = await screen.findAllByRole("option");
+    return options.map((o) => o.textContent ?? "");
+  }
+
+  it("offers a spec artifact only its own kind, and shows its stable ref", async () => {
+    renderDialog(
+      detail({
+        kind: "requirement",
+        kind_locked: true,
+        spec_ref: "REQ-0042",
+        status: "approved",
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/REQ-0042 · /)).toBeInTheDocument()
+    );
+    expect(await openKindOptions()).toEqual([KIND_LABELS.requirement]);
+  });
+
+  it("never offers a non-spec artifact a spec kind", async () => {
+    renderDialog(detail());
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-kind-select")).toBeInTheDocument()
+    );
+    const offered = await openKindOptions();
+    expect(offered).toContain(KIND_LABELS.handoff);
+    for (const kind of SPEC_ARTIFACT_KINDS) {
+      expect(offered).not.toContain(KIND_LABELS[kind]);
+    }
   });
 });

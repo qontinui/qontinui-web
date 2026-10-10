@@ -80,6 +80,7 @@ function artifact(id: string, overrides: Record<string, unknown> = {}) {
     kind: "plan",
     kind_locked: false,
     slug: `2026-08-10-${id}`,
+    spec_ref: null,
     title: `Title of ${id}`,
     status: "VETTED",
     source_repo: "qontinui-web",

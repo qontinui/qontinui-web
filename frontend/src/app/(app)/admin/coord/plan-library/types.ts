@@ -40,9 +40,46 @@ export const WORK_ARTIFACT_KINDS = [
   // `investigation_report` (the `/chart` gap verdicts) so the two families
   // stay separable on the kind filter. `plan_library_04_diagnostic_refutes`.
   "diagnostic",
+  // The specification family (`plan_library_11_spec_artifacts`): analyst
+  // artifacts with a stable `spec_ref` and a closed per-kind status lifecycle.
+  "request",
+  "requirement",
+  "interface_mapping",
+  "story",
+  "test_case",
+  "doc_correction",
 ] as const;
 
 export type WorkArtifactKind = (typeof WORK_ARTIFACT_KINDS)[number];
+
+/**
+ * The specification family. Mirrors `SPEC_ARTIFACT_KINDS` in
+ * `backend/app/models/work_artifact.py`. A spec artifact's kind is fixed for
+ * life (its `spec_ref` prefix names it) and no other artifact can be re-kinded
+ * into the family — the backend answers 409 `spec_family_boundary` — so the
+ * kind-correction control offers only kinds on the artifact's own side.
+ */
+export const SPEC_ARTIFACT_KINDS = [
+  "request",
+  "requirement",
+  "interface_mapping",
+  "story",
+  "test_case",
+  "doc_correction",
+] as const satisfies readonly WorkArtifactKind[];
+
+export function isSpecKind(kind: string): boolean {
+  return (SPEC_ARTIFACT_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * The kinds an artifact of `kind` may be corrected to: just itself for a spec
+ * artifact, every non-spec kind otherwise.
+ */
+export function correctableKinds(kind: string): readonly WorkArtifactKind[] {
+  if (isSpecKind(kind)) return [kind as WorkArtifactKind];
+  return WORK_ARTIFACT_KINDS.filter((k) => !isSpecKind(k));
+}
 
 export const KIND_LABELS: Record<WorkArtifactKind, string> = {
   investigation_prompt: "Investigation prompt",
@@ -52,6 +89,12 @@ export const KIND_LABELS: Record<WorkArtifactKind, string> = {
   handoff: "Handoff",
   plan: "Plan",
   diagnostic: "Diagnostic",
+  request: "Request",
+  requirement: "Requirement",
+  interface_mapping: "Interface mapping",
+  story: "Story",
+  test_case: "Test case",
+  doc_correction: "Doc correction",
 };
 
 /** Render an unrecognised kind as itself rather than as blank. */
@@ -59,16 +102,25 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind as WorkArtifactKind] ?? kind;
 }
 
-export type WorkArtifactRelation =
-  | "produced_report"
-  | "feeds"
-  | "authored_plan"
-  | "supersedes"
-  | "depends_on"
-  /** One-ended: `to_id` is null until someone claims the surfaced work. */
-  | "spawned_followup"
-  /** A measurement that FALSIFIES the target claim. Two-ended. */
-  | "refutes";
+export const WORK_ARTIFACT_RELATIONS = [
+  "produced_report",
+  "feeds",
+  "authored_plan",
+  "supersedes",
+  "depends_on",
+  // One-ended: `to_id` is null until someone claims the surfaced work.
+  "spawned_followup",
+  // A measurement that FALSIFIES the target claim. Two-ended.
+  "refutes",
+  // Traceability (`plan_library_11_spec_artifacts`) — all two-ended.
+  "derives_from",
+  "refines",
+  "implements",
+  "verifies",
+  "traces_to",
+] as const;
+
+export type WorkArtifactRelation = (typeof WORK_ARTIFACT_RELATIONS)[number];
 
 /**
  * How current a row's `status` can be taken to be — the closed vocabulary of
@@ -115,8 +167,16 @@ export interface WorkArtifactSummary {
   /** `true` when a human/agent asserted the kind and re-scans may not move it. */
   kind_locked: boolean;
   slug: string;
+  /**
+   * The stable, human-readable ID of a specification artifact (`REQ-0042`),
+   * assigned once on create and never reused. `null` on every other kind.
+   */
+  spec_ref: string | null;
   title: string;
-  /** Opaque free text mirroring plan front-matter. No vocabulary. */
+  /**
+   * Opaque free text mirroring plan front-matter for most kinds; for a spec
+   * kind, a member of that kind's closed lifecycle.
+   */
   status: string;
   content_sha256: string;
   source_path: string | null;

@@ -147,6 +147,7 @@ function route(over: Record<string, Answer> = {}) {
       kind: "plan",
       kind_locked: false,
       slug: "2026-09-05-a-draft-plan",
+      spec_ref: null,
       title: "A draft plan",
       status: "draft",
       content_sha256: "abc",
