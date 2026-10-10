@@ -9,7 +9,7 @@ import {
   transcriptText,
   verdictLabel,
 } from "../_lib/unfinished";
-import type { UnfinishedSession } from "../types";
+import type { UnfinishedSession } from "@/lib/api/operations/unfinished";
 
 interface Props {
   row: UnfinishedSession;
