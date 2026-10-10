@@ -96,14 +96,19 @@ def _configure_mock_client(MockClient, mock_instance):
 
 
 class TestReadRoles:
-    def test_proxies_coords_read_untouched(self, auth_client: TestClient):
+    # Both spellings: during the rename coord may serve either, and the read
+    # path must stay untyped (passed through), never validated against ours.
+    @pytest.mark.parametrize("suggested", ["testbed", "bench"])
+    def test_proxies_coords_read_untouched(
+        self, auth_client: TestClient, suggested: str
+    ):
         body = {
             "machines": [
                 {
                     "device_id": DEVICE_ID,
                     "name": "monster",
                     "dispatch_role": "unassigned",
-                    "suggestion": {"role": "testbed", "mem_total_bytes": 33e9},
+                    "suggestion": {"role": suggested, "mem_total_bytes": 33e9},
                     "lanes": {
                         "agent": {"state": "closed_by_drain"},
                         "ci": {"state": "open"},
