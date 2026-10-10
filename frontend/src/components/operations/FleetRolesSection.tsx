@@ -257,8 +257,12 @@ function RoleButtons({
       >
         {DISPATCH_ROLES.map((r) => {
           // A row served under a legacy spelling (`bench`) IS this role, so it
-          // is current like any other. No re-save is offered: coord compares
-          // parsed roles, so writing `testbed` over `bench` changes nothing.
+          // is current like any other. No re-save is offered: coord's write
+          // is a no-op when the PARSED stored role equals the request
+          // (`previous_role == Some(put.role)` → `changed: false`,
+          // qontinui-coord#3015 @9da842476732 dispatch_role_routes.rs), so
+          // once coord parses `bench` as Testbed, writing `testbed` over a
+          // `bench` row changes nothing.
           const current = m.role === r;
           const legacyCurrent = current && m.legacyRoleSpelling !== null;
           const refused = r === "workhorse" && m.hostOnly;
