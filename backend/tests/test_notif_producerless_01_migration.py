@@ -44,7 +44,7 @@ from tests._alembic_harness import (
     scalar,
 )
 
-_PARENT_REVISION_ID = "sched_cond_01_scheduled_tasks_conditions"
+_PARENT_REVISION_ID = "census_idx_01_device_repo_path_observed"
 _REVISION_ID = "notif_producerless_01_drop_enum_values"
 
 _DEAD_LABELS = (

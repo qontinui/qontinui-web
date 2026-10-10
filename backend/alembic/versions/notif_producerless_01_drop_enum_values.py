@@ -82,7 +82,7 @@ cannot run inside the migration transaction — same shape as
 ``notif_gate_action_03``'s downgrade). Deleted rows are not restored.
 
 Revision ID: notif_producerless_01_drop_enum_values
-Revises: sched_cond_01_scheduled_tasks_conditions
+Revises: census_idx_01_device_repo_path_observed
 Create Date: 2026-09-30
 """
 
@@ -92,7 +92,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "notif_producerless_01_drop_enum_values"
-down_revision: str | Sequence[str] | None = "sched_cond_01_scheduled_tasks_conditions"
+down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
