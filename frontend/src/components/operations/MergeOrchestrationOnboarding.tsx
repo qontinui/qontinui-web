@@ -29,13 +29,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { resolveRunnerRoute, useRunnerTarget } from "@/lib/runner";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  acceptStarterProfile,
+  dispatchRepoAudit,
+  fetchAuditStatus,
+  fetchPreconditionStatus,
+  startDevicePairing,
+  type AcceptBody,
+  type AcceptResponse,
+  type AuditDispatch,
+  type AuditResponse,
+  type EscalatePathEntry,
+  type PairStartResponse,
+  type PairedElsewhereDevice,
+  type PreconditionStatus,
+  type StarterProfile,
+} from "@/lib/api/operations/prMergeOnboarding";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
 import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
-import { OPERATIONS_API } from "./utils";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight, useSingleFlightPoll } from "./useSingleFlightPoll";
 
@@ -53,78 +68,9 @@ const AUDIT_POLL_MS = 4_000;
 const AUDIT_POLL_CAP_MS = 8 * 60_000;
 
 // ----------------------------------------------------------------------------
-// Wire types (mirrors coord's pr_merge::onboarding_routes shapes)
+// Wire types live in `lib/api/operations/prMergeOnboarding.ts` (mirrors of
+// coord's pr_merge::onboarding_routes shapes); the readings of them stay here.
 // ----------------------------------------------------------------------------
-
-// A device the calling USER has paired to a DIFFERENT tenant. Coord computes
-// this from the forwarded X-Qontinui-User-Id header (plan
-// 2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b; the entry
-// may repeat per binding once coord reads coord.tenant_devices). Older
-// coord omits the field entirely — the poll site normalizes missing → [].
-interface PairedElsewhereDevice {
-  hostname: string;
-  name: string | null;
-  last_seen_at: string | null;
-}
-
-interface PreconditionStatus {
-  paired: boolean;
-  claude_code_available: boolean;
-  ready: boolean;
-  // Pairing is ADDITIVE m:n (plan
-  // 2026-07-02-session-scoped-multi-tenant-device-binding Phase 3/9):
-  // non-empty means these devices also serve OTHER tenants — purely
-  // informational, pairing here adds a binding and leaves the existing
-  // ones untouched. Optional so the wizard degrades against older coord.
-  paired_elsewhere?: PairedElsewhereDevice[];
-}
-
-interface PairStartResponse {
-  state: string;
-  redirect_url: string;
-  expires_in: number;
-}
-
-interface EscalatePathEntry {
-  path: string;
-  reason: string;
-  memory_citation: string | null;
-}
-
-interface StarterProfile {
-  framework_signals?: string[];
-  escalate_paths?: (string | EscalatePathEntry)[];
-  line_budget?: number;
-  line_budget_rationale?: string;
-  min_green_dwell_secs?: number;
-  confidence_threshold?: number;
-  auto_merge_enabled_for?: string[];
-  tag_push_on_version_bump?: boolean;
-  rulebook_addendum?: string;
-  audit_confidence?: number;
-  audit_notes?: string;
-}
-
-interface AuditResponse {
-  agent_id: string;
-  repo: string;
-  starter_profile: StarterProfile;
-  audit_confidence: number | null;
-  // Legacy synchronous-path field. The async status response no longer
-  // carries it (the latency is a process-local Instant in coord, lost across
-  // the stateless poll), so it's optional and the cards guard its render.
-  audit_latency_secs?: number;
-}
-
-// Response of GET /pr-merge/onboarding/audit-status (the async poll). Mirrors
-// coord's stateless status wrapper over poll_starter_profile_once.
-interface AuditStatusResponse {
-  status: "running" | "ready" | "failed";
-  agent_id: string;
-  starter_profile?: StarterProfile;
-  audit_confidence?: number;
-  error?: string;
-}
 
 // --- Accept: coord now registers + provisions the repo ----------------------
 //
@@ -156,17 +102,6 @@ const WORKTREE_ALLOCATION_VALUES: readonly string[] = [
 // failed step reads "failed: <reason>". Keys are open-ended (coord may add
 // steps), so this is a plain string map rather than a closed shape.
 type ProvisioningSteps = Record<string, string>;
-
-interface AcceptResponse {
-  repo: string;
-  profile_version?: number;
-  profile_source?: string;
-  updated_at?: string;
-  // Both optional: an older coord returns the pre-parity envelope with
-  // neither, which renders as UNKNOWN rather than as success.
-  provisioning?: ProvisioningSteps;
-  worktree_allocation?: string;
-}
 
 // Coord's machine-readable refusal contract for this route.
 interface CoordErrorBody {
@@ -385,18 +320,15 @@ export function PairDeviceStep({
         device_hostname: "operator-workstation",
         web_pair_url: `${window.location.origin}/operations/pair-runner`,
       };
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/devices/pair-start`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        }
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
+      let data: PairStartResponse;
+      try {
+        data = await startDevicePairing(body);
+      } catch (err) {
+        const status = httpStatusOf(err);
+        if (status === null) throw err;
+        const text = httpBodyOf(err) ?? "";
+        throw new Error(`HTTP ${status}${text ? `: ${text}` : ""}`);
       }
-      const data = (await res.json()) as PairStartResponse;
       setPairCode(data.state);
       setRedirectUrl(data.redirect_url);
     } catch (err) {
@@ -611,35 +543,35 @@ export function AuditStep({ ready }: AuditStepProps) {
       // {agent_id, repo, status:"running"} immediately. The POST is fast, so
       // the default client-side timeout is correct — the slow audit work
       // happens off-connection and we poll audit-status for the result.
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/audit`,
-        {
-          method: "POST",
-          body: JSON.stringify({ repo: repo.trim() }),
-        }
-      );
-      if (!res.ok) {
-        if (res.status === 409) {
-          const body = await res
-            .json()
-            .catch(() => ({}) as Record<string, unknown>);
-          if ((body as { next_step?: string }).next_step === "pair_device") {
+      let dispatch: AuditDispatch;
+      try {
+        dispatch = await dispatchRepoAudit(repo.trim());
+      } catch (err) {
+        const status = httpStatusOf(err);
+        if (status === null) throw err;
+        const text = httpBodyOf(err) ?? "";
+        if (status === 409) {
+          let body: unknown = {};
+          try {
+            body = JSON.parse(text);
+          } catch {
+            // not JSON — falls through to the generic HTTP error below
+          }
+          if (
+            (body as { next_step?: string } | null)?.next_step === "pair_device"
+          ) {
             setError(
               "No audit-capable device. Complete step 1 (pair) and step 2 (sign into Claude Code) first."
             );
             return;
           }
         }
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
+        throw new Error(`HTTP ${status}: ${text}`);
       }
-      const data = (await res.json()) as Partial<AuditResponse> & {
-        agent_id?: string;
-        status?: string;
-      };
+      const data = dispatch.body;
       // Defensive: if a synchronous 200 with a profile ever comes back (legacy
       // coord), use it directly — not the primary path.
-      if (res.status === 200 && data.starter_profile) {
+      if (dispatch.httpStatus === 200 && data.starter_profile) {
         const landed = data as AuditResponse;
         setAuditResult(landed);
         setEditedProfile(data.starter_profile);
@@ -680,19 +612,10 @@ export function AuditStep({ ready }: AuditStepProps) {
     async (isCurrent: () => boolean) => {
       if (!auditAgentId) return;
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/audit-status?agent_id=${encodeURIComponent(
-            auditAgentId
-          )}`,
+        const data = await fetchAuditStatus(
+          auditAgentId,
           COORD_DASHBOARD_POLL_OPTIONS
         );
-        if (!isCurrent()) return;
-        if (!res.ok) {
-          // Transient proxy/coord hiccup — keep polling rather than fail.
-          log.warn("audit-status poll non-ok", res.status);
-          return;
-        }
-        const data = (await res.json()) as AuditStatusResponse;
         if (!isCurrent()) return;
         if (data.status === "ready" && data.starter_profile) {
           setAuditResult({
@@ -715,6 +638,12 @@ export function AuditStep({ ready }: AuditStepProps) {
         // status === "running" → keep polling.
       } catch (err) {
         if (!isCurrent()) return;
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          // Transient proxy/coord hiccup — keep polling rather than fail.
+          log.warn("audit-status poll non-ok", status);
+          return;
+        }
         // Network blip — keep polling; the cap will eventually stop us.
         log.warn("audit-status poll error", err);
       }
@@ -777,26 +706,21 @@ export function AuditStep({ ready }: AuditStepProps) {
       // wizard silently re-synthesizing what the operator just deleted is
       // exactly the lie this phase removes.
       const remote = githubRemote.trim();
-      const body: {
-        repo: string;
-        profile: StarterProfile;
-        github_remote?: string;
-      } = { repo: auditResult.repo, profile: editedProfile };
+      const body: AcceptBody = {
+        repo: auditResult.repo,
+        profile: editedProfile,
+      };
       if (remote) body.github_remote = remote;
 
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/accept`,
-        { method: "POST", body: JSON.stringify(body) }
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        setAcceptFailure(decodeAcceptFailure(res.status, text));
-        return;
-      }
-      const data = (await res.json()) as AcceptResponse;
+      const data = await acceptStarterProfile(body);
       setAcceptResult(data);
       setAccepted(true);
     } catch (err) {
+      const status = httpStatusOf(err);
+      if (status !== null) {
+        setAcceptFailure(decodeAcceptFailure(status, httpBodyOf(err) ?? ""));
+        return;
+      }
       log.warn("accept failed", err);
       setAcceptFailure({
         status: null,
@@ -1241,13 +1165,14 @@ export function MergeOrchestrationOnboarding() {
 
   const pollStatus = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!isCurrent()) return;
-      if (!res.ok) {
-        if (res.status === 404) {
+      let data: PreconditionStatus;
+      try {
+        data = await fetchPreconditionStatus(COORD_DASHBOARD_POLL_OPTIONS);
+      } catch (err) {
+        const status = httpStatusOf(err);
+        if (status === null) throw err;
+        if (!isCurrent()) return;
+        if (status === 404) {
           // Coord doesn't have the Phase 8 endpoint yet — degrade
           // gracefully. The wizard is still usable; step 3 will 404
           // its own audit call.
@@ -1259,9 +1184,8 @@ export function MergeOrchestrationOnboarding() {
           });
           return;
         }
-        throw new Error(`HTTP ${res.status}`);
+        throw new Error(`HTTP ${status}`);
       }
-      const data = (await res.json()) as PreconditionStatus;
       if (!isCurrent()) return;
       // Older coord omits paired_elsewhere entirely — normalize missing to
       // [] here so every consumer can treat the field as always-present.
