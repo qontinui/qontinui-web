@@ -3698,8 +3698,6 @@ class TestRedos:
     @pytest.mark.parametrize(
         ("pattern", "make", "full"),
         [
-            ("_SPACED_SLASH_RE", lambda n: " " * n + "x", False),
-            ("_SPACED_SLASH_RE", lambda n: "a" + " " * n, False),
             ("_EMAIL_RE", lambda n: "a." * (n // 2), False),
             ("_EMAIL_RE", lambda n: "a" * n, False),
             ("_INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "b", False),
@@ -4043,3 +4041,130 @@ class TestRevalidationHerd:
         assert all(isinstance(r, RuntimeError) for r in results)
         assert public._IN_FLIGHT == {}
         assert public._REVALIDATION_CACHE == {}
+
+
+# ===========================================================================
+# Parity round (F3, F6): excluded-name exemptions and the scan-vector fixture
+# ===========================================================================
+
+
+def test_spaced_slash_collapse_is_linear_and_per_slash() -> None:
+    from app.services.build_record_allowlist import (
+        _collapse_spaced_slashes,
+        normalize_for_scan,
+    )
+
+    assert normalize_for_scan("a / / b") == "a//b"
+    assert normalize_for_scan(" a / b ") == " a/b "
+
+    def run(n: int) -> None:
+        _collapse_spaced_slashes(" " * n + "/" + " " * n)
+        _collapse_spaced_slashes("/ " * n)
+
+    assert _scaling_ratio(run, 20_000, 40_000) < 3.0
+
+
+class TestExcludedNameExemptions:
+    """F3: fixed-vocabulary slots are not scanned for excluded repo NAMES."""
+
+    def test_the_product_slug_may_equal_an_excluded_name(self) -> None:
+        doc = _document("design-tokens")
+        doc["product"]["repos"] = ["acme/public-app"]
+        doc["prs"][0]["repo"] = "acme/public-app"
+        assert build_record_violations(doc, excluded_names={"design-tokens"}) == []
+
+    def test_the_census_unknown_survives_an_excluded_repo_named_sessions(self) -> None:
+        doc = _document()
+        doc["sessions"]["unknown_reason"] = "sessions.count: census_provisional"
+        doc["unknowns"].append("sessions.count: census_provisional")
+        assert build_record_violations(doc, excluded_names={"sessions"}) == []
+
+    def test_a_coded_unknown_survives_an_excluded_repo_named_review(self) -> None:
+        doc = _document()
+        doc["unknowns"].append(
+            "self_corrections.review_findings_fixed: not_established"
+        )
+        assert build_record_violations(doc, excluded_names={"review"}) == []
+
+    def test_free_text_is_still_scanned(self) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = "tokens for review"
+        assert build_record_violations(doc, excluded_names={"review"}) == [
+            "work_units[0].title: names a repo excluded as not known public"
+        ]
+
+    def test_every_exempt_path_is_a_fixed_vocabulary_slot(self) -> None:
+        """The constant may only name slots whose value cannot be free text."""
+        from app.services.build_record_allowlist import (
+            BUILD_RECORD_ALLOWLIST,
+            EXCLUDED_NAME_EXEMPT_PATHS,
+            Slot,
+        )
+
+        fixed = {
+            Slot.SLUG,
+            Slot.STATUS,
+            Slot.STATUS_OR_NULL,
+            Slot.TIMESTAMP,
+            Slot.TIMESTAMP_OR_NULL,
+            Slot.UNKNOWN,
+            Slot.UNKNOWN_OR_NULL,
+        }
+
+        def slot_at(path: str) -> Any:
+            shape: Any = BUILD_RECORD_ALLOWLIST
+            for part in path.split("."):
+                listed = part.endswith("[]")
+                shape = shape[part.removesuffix("[]")]
+                if listed:
+                    shape = shape[0]
+            return shape
+
+        assert list(EXCLUDED_NAME_EXEMPT_PATHS) == sorted(EXCLUDED_NAME_EXEMPT_PATHS)
+        for path in EXCLUDED_NAME_EXEMPT_PATHS:
+            assert slot_at(path) in fixed, path
+        # The product slug is the one SLUG-kind slot; work-unit slugs are free.
+        assert slot_at("work_units[].slug") is Slot.WORK_UNIT_SLUG
+        assert "work_units[].slug" not in EXCLUDED_NAME_EXEMPT_PATHS
+
+
+def test_the_scan_vector_fixture_is_current() -> None:
+    """F6: coord copies this fixture verbatim; it must be what web's scanner
+    produces today. Regenerate with
+    ``python -I backend/scripts/gen_build_record_scan_vectors.py``."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parents[1]
+    script = backend / "scripts" / "gen_build_record_scan_vectors.py"
+    result = subprocess.run(
+        [sys.executable, "-I", str(script), "--check"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stderr
+    fixture = json.loads(
+        (backend / "tests" / "fixtures" / "build_record_scan_vectors.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert fixture["allowlist_version"] == ALLOWLIST_VERSION
+    assert fixture["generator"] == "backend/scripts/gen_build_record_scan_vectors.py"
+    assert fixture["unidata_version"]
+    ids = {v["id"] for v in fixture["document_vectors"]}
+    assert {
+        "title_u1fae9",
+        "title_u1ccd6",
+        "excluded_name_through_u1171e",
+        "excluded_name_overlapping",
+        "excluded_name_upper_case_in_text",
+        "greek_confusables_repo_token",
+        "minus_sign_uuid",
+        "spaced_double_slash",
+        "f3_product_slug_equals_excluded_name",
+        "f3_unknown_names_excluded_sessions",
+        "f3_unknown_names_excluded_review",
+    } <= ids

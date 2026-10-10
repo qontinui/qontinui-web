@@ -60,7 +60,8 @@ set still cannot split a token. Neither layer is claimed complete; together
 they close every probe in ``tests/test_build_records.py``.
 
 :func:`names_token` is the token-bounded check the publish route also runs
-for the NAMES of repos coord excluded (defined but not in the document).
+for the NAMES of repos coord excluded (defined but not in the document) —
+on every scanned slot except :data:`EXCLUDED_NAME_EXEMPT_PATHS`.
 
 **Cross-field.** A ``schema`` other than :data:`BUILD_RECORD_SCHEMA`; a PR
 whose ``repo`` is not one of ``product.repos`` (coord lists only repos
@@ -118,7 +119,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 14
+ALLOWLIST_VERSION: Final = 15
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -289,10 +290,6 @@ _REFUSED_CATEGORIES: Final = frozenset({"Cf", "Cc", "Cn", "Co", "Cs"})
 #: which are not refused — an accent is legitimate — but must not split a
 #: token: ``secre\u0301t`` scans as ``secret``).
 _STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs"})
-#: Starts only at the first whitespace of a run (or at the ``/`` itself) and
-#: is possessive: ``\s*/\s*`` restarted at every position of a long
-#: whitespace run, which was O(n²) (a 100k-space title took 14.7 s).
-_SPACED_SLASH_RE: Final = re.compile(r"(?<!\s)\s*+/\s*+")
 #: Combining marks that draw a stroke THROUGH the previous character, so
 #: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
 _OVERLAY_MARKS: Final = frozenset(
@@ -391,6 +388,35 @@ def _key_paths(shape: Any, prefix: str) -> list[str]:
 #: (``prs[].repo``). The flat form a test pins against the contract.
 BUILD_RECORD_ALLOWED_PATHS: Final[frozenset[str]] = frozenset(
     _key_paths(BUILD_RECORD_ALLOWLIST, "")
+)
+
+
+#: Slots the EXCLUDED-REPO-NAME check skips (and only that check: the
+#: hidden-character, repo-token, UUID and email checks still read them). Each
+#: holds a fixed vocabulary or a value the operator chose, never free text a
+#: private repo name could leak through: the coded-unknown grammar
+#: (``<allowlisted path>: <reason_code>``, validated strictly), work-unit
+#: statuses (coord's enum), RFC 3339 timestamps, and the product slug. Without
+#: this, an excluded repo named ``sessions`` or ``review`` made the
+#: always-present unknown ``sessions.count: census_provisional`` unpublishable,
+#: and ``acme/design-tokens`` refused its own product ``design-tokens``.
+#: coord's scanner mirrors this tuple byte for byte (the parity fixture
+#: ``tests/fixtures/build_record_scan_vectors.json`` carries it).
+EXCLUDED_NAME_EXEMPT_PATHS: Final[tuple[str, ...]] = (
+    "generated_at",
+    "product.slug",
+    "product.window_end",
+    "product.window_start",
+    "prs[].landed_at",
+    "prs[].opened_at",
+    "sessions.unknown_reason",
+    "timeline[].at",
+    "timeline[].from_status",
+    "timeline[].to_status",
+    "unknowns[]",
+    "work_units[].shipped_at",
+    "work_units[].status",
+    "work_units[].vetted_at",
 )
 
 
@@ -526,6 +552,24 @@ def _infix_to_slash(match: re.Match[str]) -> str:
     return match.group(0)
 
 
+def _collapse_spaced_slashes(text: str) -> str:
+    """Remove the whitespace on both sides of EVERY ``/`` — and nothing else.
+
+    A split, not a regex: linear by construction, and each slash is handled
+    on its own, so ``a / / b`` becomes ``a//b``. (The earlier lookbehind
+    pattern left the second slash's trailing space, ``a// b``, because its
+    lookbehind saw the space the first match had consumed.)
+    """
+    pieces = text.split("/")
+    if len(pieces) == 1:
+        return text
+    last = len(pieces) - 1
+    return "/".join(
+        piece.rstrip() if i == 0 else piece.lstrip() if i == last else piece.strip()
+        for i, piece in enumerate(pieces)
+    )
+
+
 def normalize_for_scan(text: str) -> str:
     """The STRIPPED form every content check reads.
 
@@ -552,7 +596,7 @@ def normalize_for_scan(text: str) -> str:
         for ch in folded
     ).translate(_LOOKALIKE_SLASHES)
     folded = _INFIX_SYMBOL_RE.sub(_infix_to_slash, folded)
-    return _SPACED_SLASH_RE.sub("/", folded)
+    return _collapse_spaced_slashes(folded)
 
 
 def _repo_tokens(normalized: str) -> list[str]:
@@ -655,7 +699,11 @@ def build_record_violations(
             out.append(f"{where}: contains an invisible, control or overlay character")
             continue
         normalized = normalize_for_scan(text)
-        if excluded is not None and excluded.search(normalized.lower()):
+        if (
+            excluded is not None
+            and _INDEX_RE.sub("[]", where) not in EXCLUDED_NAME_EXEMPT_PATHS
+            and excluded.search(normalized.lower())
+        ):
             out.append(f"{where}: names a repo excluded as not known public")
         if any(token not in public_repos for token in _repo_tokens(normalized)):
             out.append(f"{where}: names an owner/name not in product.repos")
