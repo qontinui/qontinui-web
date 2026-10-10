@@ -119,7 +119,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 16
+ALLOWLIST_VERSION: Final = 17
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -290,6 +290,13 @@ _REFUSED_CATEGORIES: Final = frozenset({"Cf", "Cc", "Cn", "Co", "Cs"})
 #: which are not refused — an accent is legitimate — but must not split a
 #: token: ``secre\u0301t`` scans as ``secret``).
 _STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs"})
+#: Glyphs that render as blank space but are neither whitespace nor
+#: default-ignorable, so they survive normalisation and split a token:
+#: ``acme\u2800/\u2800secret`` (U+2800 BRAILLE PATTERN BLANK, category So)
+#: renders as "acme / secret". Refused as hidden characters. The other blank
+#: fillers (U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0) are already
+#: default-ignorable (:data:`DEFAULT_IGNORABLE_RANGES`), so are not repeated.
+BLANK_RENDERING_GLYPHS: Final = frozenset("\u2800")
 #: Combining marks that draw a stroke THROUGH the previous character, so
 #: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
 _OVERLAY_MARKS: Final = frozenset(
@@ -630,6 +637,7 @@ def _has_hidden_characters(text: str) -> bool:
         unicodedata.category(ch) in _REFUSED_CATEGORIES
         or is_default_ignorable(ch)
         or ch in _OVERLAY_MARKS
+        or ch in BLANK_RENDERING_GLYPHS
         for ch in text
     )
 
