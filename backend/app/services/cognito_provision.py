@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -140,21 +141,28 @@ async def _user_by_oidc_identity(
 
 
 async def _user_by_email(session: AsyncSession, email: str | None) -> User | None:
-    """The account holding ``email``, ROW-LOCKED for the rest of the transaction.
-
-    Only the linking path calls this, and it decides on what the row says
-    (``cognito_sub``) and on the account's identity rows. ``FOR UPDATE`` makes
-    a concurrent first link for the same account wait until this transaction
-    ends; it then re-reads the row (``populate_existing``) and the identity
-    rows the winner committed, and is refused — so two identities can never
-    both attach to one identity-less account.
-    """
+    """The account holding ``email`` (an unlocked read; see :func:`_claim_for_link`)."""
     if not email:
         return None
+    found = await session.execute(select(User).where(func.lower(User.email) == email))
+    return found.scalar_one_or_none()
+
+
+async def _lock_user(session: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """Re-read the account row under ``FOR NO KEY UPDATE`` until the
+    transaction ends.
+
+    ``NO KEY UPDATE`` (``key_share=True``) conflicts with itself — so a
+    concurrent first link for the same account waits — but not with the
+    ``KEY SHARE`` lock a foreign-key insert takes, so unrelated writes that
+    reference ``auth.users`` (sessions, audit rows...) are not blocked.
+    ``populate_existing`` replaces any stale copy in the identity map with
+    the row as it stands once the lock is held.
+    """
     found = await session.execute(
         select(User)
-        .where(func.lower(User.email) == email)
-        .with_for_update()
+        .where(User.id == user_id)
+        .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
     return found.scalar_one_or_none()
@@ -180,36 +188,63 @@ def _refuse_link(reason: str, existing: User, log_fields: dict[str, Any]) -> Non
     )
 
 
-async def _check_link_allowed(
+async def _claim_for_link(
     session: AsyncSession,
     existing: User,
     *,
     link_existing_by_email: bool,
     email_verified: bool,
+    find_own: Callable[[], Awaitable[User | None]],
     log_fields: dict[str, Any],
-) -> None:
-    """Raise :class:`IdentityLinkRefusedError` unless ``existing`` may be linked.
+) -> tuple[User, bool]:
+    """Decide a first sign-in whose email matches ``existing``.
+
+    Returns ``(user, True)`` when the sign-in's OWN identity turned out to be
+    resolvable after all — a concurrent first request for the SAME identity
+    won — and ``(locked_account, False)`` when ``existing`` may be linked; the
+    account row is then locked until the transaction ends. Otherwise raises
+    :class:`IdentityLinkRefusedError`.
 
     Linking by email hands an existing account to whoever holds a verified
     email at the presenting issuer, so it needs the issuer's explicit opt-in,
     a verified email, a non-superuser target — and a target that holds NO
-    federated identity yet. The last rule is symmetric across issuers: an
+    federated identity yet. That last rule is symmetric across issuers: an
     account that already signs in through Cognito (any ``cognito_sub``,
     including a different sub in the same pool) or through any generic issuer
     (another issuer, or the same issuer under a different ``sub``) belongs to
-    that identity, and a matching email at some other identity does not
-    transfer it. Only a local account with no identity can be claimed.
+    that identity. Only a local account with no identity can be claimed.
+
+    Order: own-identity re-check; the refusals that need no lock (opt-in,
+    verified, superuser); then the row lock; then the own-identity re-check
+    AGAIN (the request we waited behind may have created exactly our
+    identity — that is the same user, not a conflict); then the identity
+    refusals, read under the lock so two different identities can never both
+    attach.
     """
+    own = await find_own()
+    if own is not None:
+        return own, True
     if not link_existing_by_email:
         _refuse_link("issuer_not_opted_in", existing, log_fields)
     if not email_verified:
         _refuse_link("email_unverified", existing, log_fields)
     if existing.is_superuser:
         _refuse_link("superuser_account", existing, log_fields)
-    if existing.cognito_sub is not None:
-        _refuse_link("account_has_cognito_identity", existing, log_fields)
-    if await _holds_oidc_identity(session, existing):
-        _refuse_link("account_has_oidc_identity", existing, log_fields)
+
+    locked = await _lock_user(session, existing.id)
+    if locked is None:
+        # The account was deleted between the read and the lock.
+        raise _insert_conflict(log_fields)
+    own = await find_own()
+    if own is not None:
+        return own, True
+    if locked.is_superuser:
+        _refuse_link("superuser_account", locked, log_fields)
+    if locked.cognito_sub is not None:
+        _refuse_link("account_has_cognito_identity", locked, log_fields)
+    if await _holds_oidc_identity(session, locked):
+        _refuse_link("account_has_oidc_identity", locked, log_fields)
+    return locked, False
 
 
 def _insert_conflict(log_fields: dict[str, Any]) -> IdentityLinkRefusedError:
@@ -282,13 +317,16 @@ async def resolve_user_for_cognito_claims(
     # 2. An existing account shares this email.
     existing = await _user_by_email(session, email)
     if existing is not None:
-        await _check_link_allowed(
+        existing, resolved = await _claim_for_link(
             session,
             existing,
             link_existing_by_email=link_existing_by_email,
             email_verified=email_verified,
+            find_own=lambda: _user_by_cognito_sub(session, sub),
             log_fields=log_fields,
         )
+        if resolved:
+            return existing
         try:
             async with session.begin_nested():
                 existing.cognito_sub = sub
@@ -388,13 +426,16 @@ async def resolve_user_for_oidc_claims(
 
     existing = await _user_by_email(session, email)
     if existing is not None:
-        await _check_link_allowed(
+        existing, resolved = await _claim_for_link(
             session,
             existing,
             link_existing_by_email=link_existing_by_email,
             email_verified=email_verified,
+            find_own=lambda: _user_by_oidc_identity(session, issuer, sub),
             log_fields=log_fields,
         )
+        if resolved:
+            return existing
         try:
             async with session.begin_nested():
                 session.add(

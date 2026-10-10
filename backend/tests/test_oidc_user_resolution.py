@@ -596,3 +596,86 @@ async def test_concurrent_first_links_attach_exactly_one_identity(
             )
             await cleanup.execute(delete(User).where(User.id == local.id))
             await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_requests_for_the_same_identity_resolve_alike(
+    issuers: dict[str, LocalIssuer],
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two first requests for the SAME (issuer, sub) — e.g. a page firing
+    parallel API calls on first sign-in — in separate transactions, linking
+    one identity-less account: the one that waited on the row lock must
+    resolve to the same user (its own identity now exists), not get a 409."""
+    import asyncio
+
+    from sqlalchemy import delete
+
+    from app.services import cognito_provision
+
+    email = f"same-sub-{uuid.uuid4().hex[:8]}@example.test"
+    async with AsyncSession(test_engine, expire_on_commit=False) as setup:
+        local = await _local_account(setup, email)
+        await setup.commit()
+
+    real = cognito_provision._holds_oidc_identity
+
+    async def slow_check(session: AsyncSession, user: User) -> bool:
+        # The winner holds the row lock a while, so the other request does its
+        # first own-identity lookup (a miss) and then queues on the lock.
+        held = await real(session, user)
+        await asyncio.sleep(0.3)
+        return held
+
+    monkeypatch.setattr(cognito_provision, "_holds_oidc_identity", slow_check)
+    fields = _unique(email=email, email_verified=True)
+    token = issuers["okta"].mint("k1", **fields)
+
+    async def attempt() -> uuid.UUID | Exception:
+        async with AsyncSession(test_engine, expire_on_commit=False) as session:
+            try:
+                user = await verify_cognito_token_and_resolve_user(token, session)
+                await session.commit()
+                return user.id
+            except Exception as exc:  # noqa: BLE001 — reported by the assert
+                await session.rollback()
+                return exc
+
+    try:
+        results = await asyncio.gather(attempt(), attempt())
+        assert results == [local.id, local.id], results
+        async with AsyncSession(test_engine) as check:
+            rows = (
+                await check.execute(
+                    select(UserOIDCIdentity.issuer, UserOIDCIdentity.subject).where(
+                        UserOIDCIdentity.user_id == local.id
+                    )
+                )
+            ).all()
+        assert [tuple(r) for r in rows] == [(_OKTA, fields["sub"])]
+    finally:
+        async with AsyncSession(test_engine) as cleanup:
+            await cleanup.execute(
+                delete(UserOIDCIdentity).where(UserOIDCIdentity.user_id == local.id)
+            )
+            await cleanup.execute(delete(User).where(User.id == local.id))
+            await cleanup.commit()
+
+
+def test_the_link_lock_is_for_no_key_update() -> None:
+    """FOR NO KEY UPDATE: blocks a second link, not FK inserts into auth.users
+    children (which take KEY SHARE)."""
+    from sqlalchemy.dialects import postgresql
+
+    stmt = select(User).where(User.id == uuid.uuid4()).with_for_update(key_share=True)
+    sql = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "FOR NO KEY UPDATE" in sql
+
+    import inspect
+
+    from app.services import cognito_provision
+
+    assert "with_for_update(key_share=True)" in inspect.getsource(
+        cognito_provision._lock_user
+    )
