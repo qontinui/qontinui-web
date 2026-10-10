@@ -166,7 +166,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.run_outcomes.id IS
-            'Row id. Breaks a recorded_at tie when picking the latest row.'
+            'Row id. Breaks a run_completed_at tie when picking the latest row.'
         """
     )
     op.execute(
