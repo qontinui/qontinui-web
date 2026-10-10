@@ -1,7 +1,7 @@
 """coord.run_outcomes: the durable store behind the run_outcome anchor's metric arm
 
 Revision ID: run_outcomes_01
-Revises: plan_library_10_keyset_walk_indexes
+Revises: coord_wt_cargo_lock_01
 Create Date: 2026-10-10
 
 Plan ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 2, step 2.
@@ -81,9 +81,8 @@ SQLSTATE 42P01 until then (the resolver reads it as unknown, never as a verdict)
 
 ## Head choice
 
-``down_revision`` is ``plan_library_10_keyset_walk_indexes``, the single head of
-``origin/main`` at ``ea4c5e494`` (``scripts/ci/count_alembic_heads.py`` reported
-``HEAD_COUNT=1``). If main has moved before it lands, re-point
+``down_revision`` is ``coord_wt_cargo_lock_01``, the single head of
+``origin/main`` at ``96e5e4ff8`` (``alembic heads`` printed exactly that one head). If main has moved before it lands, re-point
 ``down_revision``, the ``Revises:`` header and ``_PARENT_REVISION_ID`` in the
 migration test at the new single head. Do not add an ``alembic merge``.
 
@@ -102,7 +101,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "run_outcomes_01"
-down_revision: str | Sequence[str] | None = "plan_library_10_keyset_walk_indexes"
+down_revision: str | Sequence[str] | None = "coord_wt_cargo_lock_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -70,7 +70,7 @@ _REVISION_FILENAME = "run_outcomes_01_coord_run_outcomes.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "plan_library_10_keyset_walk_indexes"
+_PARENT_REVISION_ID = "coord_wt_cargo_lock_01"
 
 _SCHEMA = "coord"
 _TABLE = "run_outcomes"
