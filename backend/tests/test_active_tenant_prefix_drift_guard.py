@@ -134,6 +134,21 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/devices/pair-confirm": (
         "identity is a gate only; coord resolves the tenant from the pair flow"
     ),
+    # The operator credential controls (plan 2026-09-26-authenticate-and-
+    # perpetually-renew-a-specific-runner-from-qontinui-web) admit a device
+    # whose tenant is ANY of the caller's coord memberships
+    # (``identity.tenant_ids()``), never the selection: the Project selector
+    # must not hide, or refuse to authenticate/revoke, one of the caller's own
+    # runners. The tenant a bound code is minted in is the DEVICE's.
+    "/api/v1/devices/credential-overview": (
+        "scoped by the caller's full membership set, not the selection"
+    ),
+    "/api/v1/devices/{device_id}/authorize-redeem": (
+        "membership-set gate; the code's tenant is the device's own"
+    ),
+    "/api/v1/devices/{device_id}/machine-credential/revoke": (
+        "membership-set gate; revokes one device, scopes no rows"
+    ),
     # The helper-role grant POST does not forward the header, so it lands in
     # the caller's home tenant; the ``already_granted`` check must read that
     # same tenant. Sending the header would make the check and the write
@@ -166,21 +181,6 @@ _EXCLUSIONS: dict[str, str] = {
     # behind it), so the header is never read; the row is scoped by user_id.
     "/api/v1/scheduled-runs/{run_id}/run-now": (
         "dispatches as NO_CALLER: the scheduler path never reads the header"
-    ),
-    # The designation PUT stamps AND overwrites ``coord.test_targets.tenant_id``
-    # from ``get_tenant_id`` checking only device ownership and app existence,
-    # while coord's own writer requires a ``coord.tenant_devices`` binding and
-    # the runner poll returns only rows whose tenant is one of the device's
-    # bindings. With the header, an operator switched to a project the device
-    # is not bound to would re-stamp the row there and the designation would
-    # silently vanish from the device's runner. Follow-up: route the PUT
-    # through coord's binding-checked test-targets upsert, then add the prefix.
-    # Do NOT drop this entry without that backend fix: it is the only thing
-    # that fails if the prefix is re-added (the raw-read rule cannot see it).
-    "/api/v1/fleet/test-targets/{device_id}/{app_id}": (
-        "PUT re-stamps tenant_id with no coord.tenant_devices binding check; "
-        "follow-up: route it through coord's binding-checked upsert, then add "
-        "the prefix"
     ),
 }
 
@@ -293,6 +293,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/devices/{device_id}/machine-credential/exchange",
                 "/api/v1/devices/{device_id}/machine-credential/mint",
                 "/api/v1/devices/{device_id}/machine-credential/self-mint",
+                "/api/v1/devices/{device_id}/pending-redeem",
             }
         ),
     ),
@@ -390,7 +391,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads/writes; only the designation PUT stamps a tenant",
+        "device-owner scoped reads and the project.apps config edit; only the "
+        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "binding-checked test-targets writer)",
         frozenset(
             {
                 "/api/v1/fleet/apps",
