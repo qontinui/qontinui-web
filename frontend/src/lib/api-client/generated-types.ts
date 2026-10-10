@@ -7283,15 +7283,35 @@ export interface paths {
          * Designate Test Target
          * @description Designate ``device_id`` as a test host for ``app_id`` (upsert).
          *
-         *     Writes ``coord.test_targets`` stamped with the caller's effective coord
-         *     tenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent — re-designating updates ``auto_fresh``. The device
-         *     must be owned by the caller and the app must be registered.
+         *     The write is coord's: ``POST /coord/trees/test-targets/upsert`` with the
+         *     caller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is
+         *     stamped with the caller's EFFECTIVE tenant and refused unless the device is
+         *     bound to it. Idempotent — re-designating updates ``auto_fresh``.
+         *
+         *     Web checks what coord does not, BEFORE calling it: the device must be owned
+         *     by the caller (404), the app must be registered (404), and an existing row
+         *     for the pair must not be stamped with another project (409
+         *     ``designation_in_other_project``) — coord's upsert would update that row
+         *     in place and keep its old stamp. A device the effective tenant has no
+         *     binding for is a 409 ``device_not_bound_to_project`` naming that project.
+         *     The response is the row as it now reads, joined with device + freshness.
          */
         put: operations["api_v1_fleet_test_targets_device_id_app_id_put"];
         post?: never;
         /**
          * Undesignate Test Target
-         * @description Remove a test-host designation (idempotent — 204 even if absent).
+         * @description Remove a test-host designation through coord.
+         *
+         *     coord's DELETE is scoped to the caller's EFFECTIVE tenant and answers
+         *     ``200 {"deleted": false}`` for a row stamped with any other tenant — which
+         *     is NOT a removal. So ``deleted: false`` is never taken as success on its
+         *     own: the row is read back. Absent means the designation the operator asked
+         *     to remove is gone (204, idempotent as before). Still present means it
+         *     lives in another project — 409 ``designation_in_other_project`` naming
+         *     it, since reporting success there would leave the device's runner serving
+         *     a designation the operator believes is removed — or, when it is still in
+         *     the selected project (a concurrent re-designation), 409
+         *     ``designation_not_removed``.
          */
         delete: operations["api_v1_fleet_test_targets_device_id_app_id_delete"];
         options?: never;
