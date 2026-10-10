@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  RESUME_UNFINISHED_API,
+  fetchResumeUnfinishedPolicy,
+  patchResumeUnfinishedPolicy,
   type ResumeUnfinishedView,
-  type ResumeUnfinishedWriteResult,
-} from "../types";
+} from "@/lib/api/operations/unfinished";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -33,9 +32,7 @@ export function useResumeUnfinishedPolicy() {
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await httpClient.get<ResumeUnfinishedView>(
-        RESUME_UNFINISHED_API
-      );
+      const view = await fetchResumeUnfinishedPolicy();
       if (generation !== writeGeneration.current) return;
       setPolicy(view);
       setError(null);
@@ -61,10 +58,7 @@ export function useResumeUnfinishedPolicy() {
     async (enabled: boolean): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.patch<ResumeUnfinishedWriteResult>(
-          RESUME_UNFINISHED_API,
-          { resume_unfinished_enabled: enabled }
-        );
+        const result = await patchResumeUnfinishedPolicy(enabled);
         supersedeReads();
         if (result.effective) {
           setPolicy(result.effective);
