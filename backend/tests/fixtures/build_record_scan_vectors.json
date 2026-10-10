@@ -1,8 +1,8 @@
 {
  "generator": "backend/scripts/gen_build_record_scan_vectors.py",
  "generator_command": "python -I backend/scripts/gen_build_record_scan_vectors.py",
- "allowlist_version": 16,
- "unidata_version": "15.1.0",
+ "allowlist_version": 17,
+ "unidata_version": "15.0.0",
  "excluded_name_exempt_paths": [
   "generated_at",
   "product.repos[]",
@@ -120,6 +120,9 @@
   8403,
   8421,
   8422
+ ],
+ "blank_rendering_glyphs": [
+  10240
  ],
  "category_overrides": {
   "method": "web's own category membership as inclusive code point ranges (no Unicode 17 UnicodeData.txt is fetched); diff against your tables",
@@ -1298,6 +1301,10 @@
      12271
     ],
     [
+     12284,
+     12287
+    ],
+    [
      12352,
      12352
     ],
@@ -1319,7 +1326,7 @@
     ],
     [
      12772,
-     12782
+     12783
     ],
     [
      12831,
@@ -3011,10 +3018,6 @@
     ],
     [
      191457,
-     191471
-    ],
-    [
-     192094,
      194559
     ],
     [
@@ -5146,6 +5149,72 @@
    "excluded_repos": [],
    "excluded_names": [],
    "violations": []
+  },
+  {
+   "id": "braille_blank_split_repo_token",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "acme\u2800/\u2800secret",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: contains an invisible, control or overlay character"
+   ]
   },
   {
    "id": "f3_product_slug_equals_excluded_name",
