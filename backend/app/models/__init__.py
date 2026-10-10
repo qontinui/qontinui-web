@@ -215,6 +215,7 @@ from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.unified_workflow import UnifiedWorkflow
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
+from app.models.user_oidc_identity import UserOIDCIdentity
 from app.models.verification_test import (
     VerificationTest,
     VerificationTestCategory,
@@ -263,6 +264,7 @@ from app.models.wrapper_entry import (
 __all__ = [
     # User and Auth
     "User",
+    "UserOIDCIdentity",
     # Projects
     "Project",
     "ProjectScreenshot",

@@ -13,12 +13,15 @@ from urllib.parse import urlparse
 
 from pydantic import (
     AnyHttpUrl,
+    BaseModel,
     Field,
     PostgresDsn,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings
+
+from app.auth.identity_roles import IdentityRole
 
 # Trust posture is derived FAIL-CLOSED (see ``is_production_posture``): only a
 # literal ``development`` ENVIRONMENT is a local/dev posture that may trust the
@@ -65,6 +68,162 @@ def derived_cognito_issuer(*, region: str, pool_id: str) -> str:
     if not pool_id or not region:
         return ""
     return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+
+def issuer_is_loopback(issuer: str) -> bool:
+    """True when the issuer URL points at a loopback/local host.
+
+    Deliberately broad — this backs the prod guardrail, so it must catch
+    loopback-equivalent forms, not just the exact strings used by the dev
+    flow: the named set (0.0.0.0, host.docker.internal), any ``.localhost``
+    name (RFC 6761), a trailing-dot FQDN, every IP form the stdlib
+    recognises as loopback (127.0.0.0/8, ``::1`` in any expansion, and the
+    IPv4-mapped ``::ffff:127.0.0.1``), AND the numeric/short/octal/hex IPv4
+    spellings the OS resolver still routes to loopback but ``ipaddress``
+    rejects (``127.1``, ``2130706433``, ``0x7f000001``, ``0177.0.0.1``).
+
+    Shared by ``COGNITO_ISSUER`` and every ``OIDC_PROVIDERS`` issuer: any
+    trusted issuer served from this machine is a token any local process can
+    mint, whichever setting named it.
+    """
+    # urlparse strips IPv6 brackets; normalise case and a trailing dot.
+    host = (urlparse(issuer).hostname or "").lower().rstrip(".")
+    if not host:
+        return False
+    if host in _LOOPBACK_ISSUER_HOSTS:
+        return True
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Not a canonical IP literal. Before giving up, catch the numeric
+        # IPv4 forms a real resolver still accepts (short/octal/decimal/hex)
+        # — 127.1 / 2130706433 / 0x7f000001 / 0177.0.0.1 all resolve to
+        # loopback. Only attempt this for a numeric-ish host so a genuine
+        # hostname can never be mis-normalised into loopback.
+        if _NUMERIC_IPV4_RE.match(host):
+            try:
+                packed = socket.inet_aton(host)
+            except OSError:
+                return False
+            return ipaddress.IPv4Address(packed).is_loopback
+        return False
+    if ip.is_loopback:
+        return True
+    # IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — unwrap and re-check.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return bool(mapped is not None and mapped.is_loopback)
+
+
+def _coerce_group_role_map(v: Any) -> Any:
+    """Accept ``"group": "role"`` as shorthand for ``"group": ["role"]``,
+    and a JSON string (as an env var delivers it)."""
+    if isinstance(v, str):
+        v = json.loads(v) if v.strip() else {}
+    if isinstance(v, dict):
+        return {k: [r] if isinstance(r, str) else r for k, r in v.items()}
+    return v
+
+
+class OIDCProviderSetting(BaseModel):
+    """One additional OpenID Connect issuer this backend accepts user tokens from.
+
+    Configured as a JSON list in ``OIDC_PROVIDERS``, e.g.::
+
+        OIDC_PROVIDERS='[{"issuer": "https://login.example.com/realms/acme",
+                          "audiences": ["qontinui-web"],
+                          "groups_claim": "groups"}]'
+
+    The issuer's signing keys are found through OIDC discovery
+    (``<issuer>/.well-known/openid-configuration`` -> ``jwks_uri``), so any
+    conformant issuer works — Entra ID, Keycloak, Okta, Auth0, or a second
+    Cognito pool. Tokens must carry a ``kid`` header naming a key in that
+    JWKS (every mainstream issuer sets it); a token without one is refused
+    rather than tried against every key.
+    """
+
+    issuer: str = Field(description="Exact `iss` value the issuer stamps.")
+    audiences: list[str] = Field(
+        min_length=1,
+        description=(
+            "Accepted client ids. REQUIRED and non-empty: a multi-tenant "
+            "issuer signs tokens for every client registered with it, so an "
+            "unconstrained audience would accept tokens minted for other "
+            "applications."
+        ),
+    )
+    audience_claims: list[str] = Field(
+        default_factory=lambda: ["aud"],
+        min_length=1,
+        description=(
+            "Claims checked against `audiences`; a token is accepted when "
+            "any of them names an allowed client. `aud` per OIDC Core."
+        ),
+    )
+    groups_claim: str = Field(
+        default="groups",
+        description=(
+            "Claim carrying the user's groups (dotted path allowed, e.g. "
+            "`realm_access.roles` for Keycloak realm roles). Entra ID omits "
+            "`groups` when a user is in more groups than fit in a token (its "
+            "'groups overage' case, documented at https://learn.microsoft.com/"
+            "en-us/entra/identity-platform/id-token-claims-reference) and "
+            "points at Microsoft Graph via `_claim_names` instead; that is "
+            "NOT resolved — such a user gets no roles from groups (fail "
+            "closed). Configuring Entra to emit only groups assigned to the "
+            "application, or app roles, avoids the overage."
+        ),
+    )
+    group_role_map: dict[str, list[IdentityRole]] = Field(
+        default_factory=dict,
+        description=(
+            "THIS issuer's group -> role mapping: a group as it appears in "
+            "`groups_claim` mapped to one or more of analyst, knowledge_owner, "
+            "developer, tester, support, admin, auditor (a single role string "
+            "is accepted as shorthand). Per issuer, because group names are "
+            "only meaningful within the issuer that asserts them."
+        ),
+    )
+    link_existing_by_email: bool = Field(
+        default=False,
+        description=(
+            "Whether a first sign-in from this issuer may attach to an "
+            "EXISTING account with the same email (requires the token's "
+            "`email_verified` to be true). Off by default: otherwise anyone "
+            "who can obtain a verified-email token for that address at this "
+            "issuer takes over the account. Even when on, accounts with "
+            "is_superuser are never linked automatically. When off, a "
+            "colliding email is refused (409), not linked."
+        ),
+    )
+
+    @field_validator("group_role_map", mode="before")
+    @classmethod
+    def _coerce_roles(cls, v: Any) -> Any:
+        return _coerce_group_role_map(v)
+
+    @field_validator("issuer")
+    @classmethod
+    def _normalise_issuer(cls, v: str) -> str:
+        issuer = v.strip().rstrip("/")
+        parsed = urlparse(issuer)
+        if parsed.scheme not in ("https", "http") or not parsed.hostname:
+            raise ValueError(f"OIDC issuer must be an absolute URL: {v!r}")
+        if parsed.scheme == "http" and not issuer_is_loopback(issuer):
+            raise ValueError(
+                f"OIDC issuer {v!r} must use https; plain http is accepted "
+                "only for a loopback development issuer."
+            )
+        return issuer
+
+    @field_validator("audiences")
+    @classmethod
+    def _strip_audiences(cls, v: list[str]) -> list[str]:
+        cleaned = [a.strip() for a in v if a.strip()]
+        if not cleaned:
+            raise ValueError("OIDC provider audiences must name at least one client")
+        return cleaned
 
 
 class Settings(BaseSettings):
@@ -314,6 +473,80 @@ class Settings(BaseSettings):
             for a in (self.COGNITO_ALLOWED_AUDIENCES or "").split(",")
             if a.strip()
         ]
+
+    COGNITO_GROUPS_CLAIM: str = Field(
+        default="cognito:groups",
+        description=(
+            "Claim of a Cognito token that carries the user's groups, read "
+            "for the COGNITO_GROUP_ROLE_MAP role mapping."
+        ),
+    )
+
+    # Generic OpenID Connect issuers accepted IN ADDITION to the Cognito pool
+    # above (spec-front-end Phase 9). Empty = Cognito only. Each entry's keys
+    # are found through OIDC discovery, and each entry's subjects live in
+    # their own namespace (auth.user_oidc_identities keyed by issuer + sub),
+    # so a `sub` minted by one issuer can never resolve to another issuer's
+    # user. See OIDCProviderSetting.
+    OIDC_PROVIDERS: list[OIDCProviderSetting] = Field(
+        default_factory=list,
+        description="JSON list of additional OIDC issuers (see OIDCProviderSetting).",
+    )
+    COGNITO_GROUP_ROLE_MAP: dict[str, list[IdentityRole]] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a Cognito group (COGNITO_GROUPS_CLAIM) to one "
+            "or more roles: analyst, knowledge_owner, developer, tester, "
+            'support, admin, auditor. e.g. {"analysts": ["analyst"], '
+            '"it-admins": "admin"}. Generic issuers carry their own map on '
+            "their OIDC_PROVIDERS entry."
+        ),
+    )
+    COGNITO_LINK_EXISTING_BY_EMAIL: bool = Field(
+        default=True,
+        description=(
+            "Whether a first Cognito sign-in may attach to an existing account "
+            "with the same verified email. Even when on, it never attaches to "
+            "an account that already signs in through a generic OIDC issuer, "
+            "nor to an is_superuser account."
+        ),
+    )
+    OIDC_METADATA_CACHE_TTL_SECONDS: int = Field(
+        default=3600,
+        ge=60,
+        description=(
+            "How long a fetched discovery document and JWKS are reused before "
+            "a scheduled refetch. An unknown `kid` refetches sooner (rate "
+            "limited), which is what absorbs a signing-key rotation."
+        ),
+    )
+
+    @field_validator("COGNITO_GROUP_ROLE_MAP", mode="before")
+    @classmethod
+    def _coerce_cognito_roles(cls, v: Any) -> Any:
+        return _coerce_group_role_map(v)
+
+    @model_validator(mode="after")
+    def _oidc_issuers_are_distinct(self) -> "Settings":
+        """Each accepted issuer is configured exactly once.
+
+        Tokens are routed to a verifier by their ``iss``; two entries for one
+        issuer would make which audience set and groups claim applies an
+        accident of list order.
+        """
+        # Compared in the verifier's routing form (trimmed, no trailing
+        # slash) — the form OIDC_PROVIDERS issuers are already stored in.
+        cognito = self.COGNITO_ISSUER.strip().rstrip("/")
+        seen: set[str] = {cognito} if cognito else set()
+        for provider in self.OIDC_PROVIDERS:
+            if provider.issuer in seen:
+                raise ValueError(
+                    f"OIDC issuer {provider.issuer!r} is configured more than "
+                    "once (OIDC_PROVIDERS entries must be distinct from each "
+                    "other and from COGNITO_ISSUER)."
+                )
+            seen.add(provider.issuer)
+        return self
 
     # Dev-local-auth on-ramp (local web UI-Bridge verification on-ramp, Phase 1).
     # Master gate for the hermetic local-IdP login flow. When set, the backend is
@@ -606,45 +839,13 @@ class Settings(BaseSettings):
 
     @property
     def cognito_issuer_is_loopback(self) -> bool:
-        """True when COGNITO_ISSUER points at a loopback/local host.
+        """True when COGNITO_ISSUER points at a loopback/local host."""
+        return issuer_is_loopback(self.COGNITO_ISSUER)
 
-        Deliberately broad — this backs the prod guardrail, so it must catch
-        loopback-equivalent forms, not just the exact strings used by the dev
-        flow: the named set (0.0.0.0, host.docker.internal), any ``.localhost``
-        name (RFC 6761), a trailing-dot FQDN, every IP form the stdlib
-        recognises as loopback (127.0.0.0/8, ``::1`` in any expansion, and the
-        IPv4-mapped ``::ffff:127.0.0.1``), AND the numeric/short/octal/hex IPv4
-        spellings the OS resolver still routes to loopback but ``ipaddress``
-        rejects (``127.1``, ``2130706433``, ``0x7f000001``, ``0177.0.0.1``).
-        """
-        # urlparse strips IPv6 brackets; normalise case and a trailing dot.
-        host = (urlparse(self.COGNITO_ISSUER).hostname or "").lower().rstrip(".")
-        if not host:
-            return False
-        if host in _LOOPBACK_ISSUER_HOSTS:
-            return True
-        if host == "localhost" or host.endswith(".localhost"):
-            return True
-        try:
-            ip = ipaddress.ip_address(host)
-        except ValueError:
-            # Not a canonical IP literal. Before giving up, catch the numeric
-            # IPv4 forms a real resolver still accepts (short/octal/decimal/hex)
-            # — 127.1 / 2130706433 / 0x7f000001 / 0177.0.0.1 all resolve to
-            # loopback. Only attempt this for a numeric-ish host so a genuine
-            # hostname can never be mis-normalised into loopback.
-            if _NUMERIC_IPV4_RE.match(host):
-                try:
-                    packed = socket.inet_aton(host)
-                except OSError:
-                    return False
-                return ipaddress.IPv4Address(packed).is_loopback
-            return False
-        if ip.is_loopback:
-            return True
-        # IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — unwrap and re-check.
-        mapped = getattr(ip, "ipv4_mapped", None)
-        return bool(mapped is not None and mapped.is_loopback)
+    @property
+    def loopback_oidc_issuers(self) -> list[str]:
+        """Every ``OIDC_PROVIDERS`` issuer that points at a loopback/local host."""
+        return [p.issuer for p in self.OIDC_PROVIDERS if issuer_is_loopback(p.issuer)]
 
     @staticmethod
     def _database_name(database_url: str) -> str:
@@ -662,15 +863,17 @@ class Settings(BaseSettings):
         (before the app can boot):
 
         1. **Prod guardrail (the security core).** Under a production-posture
-           ENVIRONMENT (staging/production), REFUSE TO BOOT if either the
-           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR ``COGNITO_ISSUER``
-           resolves to a loopback/local host. Both would let a locally-minted
-           token be trusted in prod — impossible by construction now.
+           ENVIRONMENT (staging/production), REFUSE TO BOOT if the
+           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set, if ``COGNITO_ISSUER``
+           resolves to a loopback/local host, OR if any ``OIDC_PROVIDERS``
+           issuer does. Each would let a locally-minted token be trusted in
+           prod — impossible by construction now.
 
         2. **Isolated dev DB (anomaly fix).** When dev-local-auth is active —
-           EITHER the ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR
-           ``COGNITO_ISSUER`` resolves to a loopback/local host (only reachable
-           under a dev posture, per protection 1) — refuse to run against the
+           the ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set, OR
+           ``COGNITO_ISSUER`` or any ``OIDC_PROVIDERS`` issuer resolves to a
+           loopback/local host (only reachable under a dev posture, per
+           protection 1) — refuse to run against the
            shared dev database so the JIT-provisioned dev user cannot pollute
            it, forcing an explicit isolated ``DATABASE_URL``. The loopback
            signal is included because it is what ACTUALLY activates local-auth:
@@ -688,6 +891,11 @@ class Settings(BaseSettings):
                     "COGNITO_ISSUER resolves to a loopback/local host "
                     f"({self.COGNITO_ISSUER!r})"
                 )
+            if self.loopback_oidc_issuers:
+                reasons.append(
+                    "OIDC_PROVIDERS names a loopback/local issuer "
+                    f"({self.loopback_oidc_issuers!r})"
+                )
             if reasons:
                 raise ValueError(
                     "Refusing to boot: dev-local-auth is forbidden under a "
@@ -696,19 +904,30 @@ class Settings(BaseSettings):
                     + " and ".join(reasons)
                     + ". The hermetic local IdP must NEVER be trusted in "
                     "production. Unset QONTINUI_DEV_LOCAL_AUTH and point "
-                    "COGNITO_ISSUER at the real Cognito issuer, or run with "
+                    "COGNITO_ISSUER (and every OIDC_PROVIDERS issuer) at a "
+                    "real issuer, or run with "
                     "ENVIRONMENT=development for local-auth."
                 )
 
-        if self.QONTINUI_DEV_LOCAL_AUTH or self.cognito_issuer_is_loopback:
+        if (
+            self.QONTINUI_DEV_LOCAL_AUTH
+            or self.cognito_issuer_is_loopback
+            or self.loopback_oidc_issuers
+        ):
             db_name = self._database_name(str(self.DATABASE_URL)).lower()
             if db_name in _SHARED_DEV_DB_NAMES:
-                trigger = (
-                    "QONTINUI_DEV_LOCAL_AUTH=1"
-                    if self.QONTINUI_DEV_LOCAL_AUTH
-                    else "COGNITO_ISSUER points at the local IdP "
-                    f"({self.COGNITO_ISSUER!r})"
-                )
+                if self.QONTINUI_DEV_LOCAL_AUTH:
+                    trigger = "QONTINUI_DEV_LOCAL_AUTH=1"
+                elif self.cognito_issuer_is_loopback:
+                    trigger = (
+                        "COGNITO_ISSUER points at the local IdP "
+                        f"({self.COGNITO_ISSUER!r})"
+                    )
+                else:
+                    trigger = (
+                        "OIDC_PROVIDERS names a local IdP "
+                        f"({self.loopback_oidc_issuers!r})"
+                    )
                 raise ValueError(
                     f"Refusing to boot: {trigger} activates dev-local-auth, "
                     "which must run against an ISOLATED database, but "

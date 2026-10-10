@@ -1,9 +1,10 @@
-"""Tests for ``app.services.cognito_jwks`` — Cognito user-pool JWT verifier.
+"""Tests for ``app.services.oidc_jwks`` configured as the Cognito pool.
 
 Strategy mirrors ``tests/services/test_coord_jwks.py``: mint an RS256
 JWT in-process with a fresh RSA keypair, serialize the public side into
-a Cognito-shaped JWKS, stub ``CognitoJWKSClient._fetch_jwks`` to return
+a Cognito-shaped JWKS, stub ``OIDCIssuerClient._fetch_metadata`` to return
 it, then exercise ``verify_token``. No live Cognito / network required.
+The discovery + HTTP half is covered by ``test_oidc_conformance.py``.
 
 Covers the four verification gates: signature, issuer, audience
 (``aud`` for ID tokens / ``client_id`` for access tokens), and expiry,
@@ -19,16 +20,31 @@ import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.services.cognito_jwks import (
+from app.services.oidc_jwks import (
     _MAX_KID_CHARS,
-    CognitoJWKSClient,
-    CognitoTokenInvalidError,
+    OIDCIssuerClient,
+    OIDCProvider,
+    OIDCTokenInvalidError,
 )
 
 _ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_rgTB9dbZ1"
 _WEB_CLIENT = "q6ns1a8bokf2np1mj8v8arl31"
 _RUNNER_CLIENT = "67f2a1a0cmgileob23lniud5t7"
 _KID = "cognito-rsa-test-1"
+_JWKS_URI = f"{_ISSUER}/.well-known/jwks.json"
+
+
+def _provider(audiences: list[str]) -> OIDCProvider:
+    """The Cognito provider shape ``build_providers`` produces."""
+    return OIDCProvider(
+        issuer=_ISSUER,
+        audiences=frozenset(audiences),
+        audience_claims=("aud", "client_id"),
+        groups_claim="cognito:groups",
+        issuer_setting="COGNITO_ISSUER",
+        kind="cognito",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -89,21 +105,17 @@ def _access_token_claims(
     }
 
 
-class _FakeClient(CognitoJWKSClient):
+class _FakeClient(OIDCIssuerClient):
     """Bypass the HTTP fetch — use a pre-baked JWKS in-process."""
 
     def __init__(self, jwks: dict[str, Any], **kw: Any) -> None:
-        super().__init__(
-            issuer=_ISSUER,
-            allowed_audiences=[_WEB_CLIENT, _RUNNER_CLIENT],
-            **kw,
-        )
+        super().__init__(_provider([_WEB_CLIENT, _RUNNER_CLIENT]), **kw)
         self._baked = jwks
         self.fetch_count = 0
 
-    async def _fetch_jwks(self) -> dict[str, Any]:
+    async def _fetch_metadata(self) -> tuple[str, dict[str, Any]]:
         self.fetch_count += 1
-        return self._baked
+        return _JWKS_URI, self._baked
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +170,7 @@ async def test_verify_wrong_audience_rejected() -> None:
     client = _FakeClient({"keys": [jwk]})
 
     token = _mint(private, _id_token_claims(aud="some-other-client"))
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(token)
     assert "audience" in str(exc.value).lower()
 
@@ -170,7 +182,7 @@ async def test_verify_wrong_issuer_rejected() -> None:
 
     claims = _id_token_claims()
     claims["iss"] = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_OTHER"
-    with pytest.raises(CognitoTokenInvalidError):
+    with pytest.raises(OIDCTokenInvalidError):
         await client.verify_token(_mint(private, claims))
 
 
@@ -183,7 +195,7 @@ async def test_verify_expired_token_rejected() -> None:
     claims = _id_token_claims()
     claims["iat"] = now - 3600
     claims["exp"] = now - 600  # 10 min ago, outside leeway
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(_mint(private, claims))
     assert "expired" in str(exc.value).lower()
 
@@ -195,7 +207,7 @@ async def test_verify_wrong_signature_rejected() -> None:
     _, jwk_in_set = _rsa_keypair(kid=_KID)  # same kid, different key
     client = _FakeClient({"keys": [jwk_in_set]})
 
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(_mint(minter, _id_token_claims()))
     assert "verification failed" in str(exc.value).lower()
 
@@ -208,7 +220,7 @@ async def test_verify_missing_kid_rejected() -> None:
     token = pyjwt.encode(
         _id_token_claims(), private, algorithm="RS256", headers={"typ": "JWT"}
     )
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(token)
     assert "kid" in str(exc.value).lower()
 
@@ -217,7 +229,7 @@ async def test_verify_missing_kid_rejected() -> None:
 async def test_verify_malformed_token_rejected() -> None:
     private, jwk = _rsa_keypair()
     client = _FakeClient({"keys": [jwk]})
-    with pytest.raises(CognitoTokenInvalidError):
+    with pytest.raises(OIDCTokenInvalidError):
         await client.verify_token("not-a-jwt")
 
 
@@ -227,8 +239,8 @@ async def test_verify_malformed_token_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_jwks_cached_for_process_lifetime() -> None:
-    """Multiple verifies fetch the JWKS exactly once (no TTL refetch)."""
+async def test_jwks_cached_within_its_ttl() -> None:
+    """Multiple verifies inside the TTL fetch the metadata exactly once."""
     private, jwk = _rsa_keypair()
     client = _FakeClient({"keys": [jwk]})
 
@@ -252,15 +264,15 @@ async def test_kid_miss_forces_one_refresh() -> None:
 
     sets = [{"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}]
 
-    class _RotatingClient(CognitoJWKSClient):
+    class _RotatingClient(OIDCIssuerClient):
         def __init__(self) -> None:
-            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            super().__init__(_provider([_WEB_CLIENT]))
             self.fetch_count = 0
 
-        async def _fetch_jwks(self) -> dict[str, Any]:
+        async def _fetch_metadata(self) -> tuple[str, dict[str, Any]]:
             idx = min(self.fetch_count, len(sets) - 1)
             self.fetch_count += 1
-            return sets[idx]
+            return _JWKS_URI, sets[idx]
 
     client = _RotatingClient()
     token = _mint(new_private, _id_token_claims(), kid="rotated-key")
@@ -277,7 +289,7 @@ async def test_unknown_kid_after_refresh_rejected() -> None:
     client = _FakeClient({"keys": [jwk]})
 
     token = _mint(private, _id_token_claims(), kid="never-present")
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(token)
     assert "never-present" in str(exc.value) or "no jwk" in str(exc.value).lower()
     # Cold fetch + one forced refresh = 2.
@@ -306,7 +318,7 @@ async def test_unknown_kid_is_capped_before_it_reaches_the_message() -> None:
     oversized = "A" * (_MAX_KID_CHARS * 20)
     token = _mint(private, _id_token_claims(), kid=oversized)
 
-    with pytest.raises(CognitoTokenInvalidError) as exc:
+    with pytest.raises(OIDCTokenInvalidError) as exc:
         await client.verify_token(token)
 
     message = str(exc.value)
@@ -332,20 +344,20 @@ async def test_forced_refetch_is_rate_limited() -> None:
     """
     private, jwk = _rsa_keypair(kid="present")
 
-    class _CountingClient(CognitoJWKSClient):
+    class _CountingClient(OIDCIssuerClient):
         def __init__(self) -> None:
-            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            super().__init__(_provider([_WEB_CLIENT]))
             self.fetch_count = 0
 
-        async def _fetch_jwks(self) -> dict[str, Any]:
+        async def _fetch_metadata(self) -> tuple[str, dict[str, Any]]:
             self.fetch_count += 1
-            return {"keys": [jwk]}
+            return _JWKS_URI, {"keys": [jwk]}
 
     client = _CountingClient()
     unknown = _mint(private, _id_token_claims(), kid="never-in-this-set")
 
     for _ in range(6):
-        with pytest.raises(CognitoTokenInvalidError):
+        with pytest.raises(OIDCTokenInvalidError):
             await client.verify_token(unknown)
 
     # 1 cold fetch + exactly 1 forced refetch — not 6.
@@ -364,15 +376,15 @@ async def test_cooldown_does_not_block_the_cold_fetch_or_real_rotation() -> None
     _, old_jwk = _rsa_keypair(kid="old-key")
     sets = [{"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}]
 
-    class _ZeroCooldownClient(CognitoJWKSClient):
+    class _ZeroCooldownClient(OIDCIssuerClient):
         def __init__(self) -> None:
-            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            super().__init__(_provider([_WEB_CLIENT]))
             self.fetch_count = 0
 
-        async def _fetch_jwks(self) -> dict[str, Any]:
+        async def _fetch_metadata(self) -> tuple[str, dict[str, Any]]:
             idx = min(self.fetch_count, len(sets) - 1)
             self.fetch_count += 1
-            return sets[idx]
+            return _JWKS_URI, sets[idx]
 
     client = _ZeroCooldownClient()
     # This used to pre-set ``client._forced_at = -1e9`` to force the window
@@ -415,15 +427,15 @@ async def test_a_kid_miss_just_after_boot_is_not_read_as_a_recent_refetch(
     _, old_jwk = _rsa_keypair(kid="old-key")
     sets = [{"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}]
 
-    class _RotatingClient(CognitoJWKSClient):
+    class _RotatingClient(OIDCIssuerClient):
         def __init__(self) -> None:
-            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            super().__init__(_provider([_WEB_CLIENT]))
             self.fetch_count = 0
 
-        async def _fetch_jwks(self) -> dict[str, Any]:
+        async def _fetch_metadata(self) -> tuple[str, dict[str, Any]]:
             idx = min(self.fetch_count, len(sets) - 1)
             self.fetch_count += 1
-            return sets[idx]
+            return _JWKS_URI, sets[idx]
 
     # Five seconds since boot — inside the 30s cooldown, which is the whole
     # point. Pinned rather than left to the host: on a long-uptime box

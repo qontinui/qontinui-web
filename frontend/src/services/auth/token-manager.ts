@@ -51,6 +51,15 @@ export class TokenManager {
   }
 
   /**
+   * Replace ONLY the stored refresh token, leaving the bearer and expiries
+   * untouched. For a refresh that failed after the issuer had already rotated
+   * the refresh token: the old one may be dead, so the new one must be kept.
+   */
+  replaceRefreshToken(token: string): void {
+    this.storage.saveRefreshToken(token);
+  }
+
+  /**
    * Persist the authentication flag without setting tokens.
    *
    * Used by cookie-based session restore when a valid HttpOnly-cookie session
