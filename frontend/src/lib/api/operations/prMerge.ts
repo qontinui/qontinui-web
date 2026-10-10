@@ -369,3 +369,20 @@ export async function fireKillSwitch(
     unparseable: "null",
   });
 }
+
+/**
+ * `GET /pr-merge/merge-economics` — `get_pr_merge_merge_economics`, a proxy
+ * of coord's per-repo merge economics (candidate-CI p90 and friends).
+ * Resolves `unknown`: every caller normalizes it through
+ * `normalizeMergeEconomics` (`components/operations/mergeEconomics.ts`),
+ * which owns the shape. A dashboard poll: no client retries (`maxRetries: 0`).
+ */
+export async function fetchMergeEconomics(): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/merge-economics`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}

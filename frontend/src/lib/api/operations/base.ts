@@ -36,12 +36,58 @@
  */
 
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { ApiConfig } from "@/services/api-config";
 import {
   MAX_SENTENCE_LENGTH,
   messageFromErrorBody,
 } from "@/lib/errors/backend-error-message";
 
 export const OPERATIONS_BASE = "/api/v1/operations";
+
+/**
+ * The WebSocket URL of an `/operations` push channel: `path` (which starts
+ * with `/`, and carries its own query string) under the operations base,
+ * with the scheme translated for a WS upgrade.
+ *
+ * Unlike every REST read here this is ABSOLUTE — `ApiConfig.API_BASE_URL`
+ * plus {@link OPERATIONS_BASE} — because a WebSocket upgrade cannot ride the
+ * Next.js `/api/:path*` rewrite the relative REST form goes through. It is
+ * built exactly as `operationsWsBase()` in `components/operations/utils.ts`
+ * builds it: `https://` → `wss://`, `http://` → `ws://`, and a base with no
+ * scheme (an unset `NEXT_PUBLIC_API_URL`) prefixed with `ws://`. Auth is not
+ * this helper's business: each channel's builder puts its own `token` (and
+ * {@link activeTenantWsParam}) into `path`, since a browser WebSocket cannot
+ * set headers on the upgrade.
+ */
+export function wsUrl(path: string): string {
+  const base = `${ApiConfig.API_BASE_URL}${OPERATIONS_BASE}`;
+  if (base.startsWith("https://")) {
+    return "wss://" + base.slice("https://".length) + path;
+  }
+  if (base.startsWith("http://")) {
+    return "ws://" + base.slice("http://".length) + path;
+  }
+  return "ws://" + base + path;
+}
+
+/**
+ * The dashboard tenant-switcher selection as a WS query param
+ * (`&active_tenant=<id>`), or `""` when none is selected or storage is
+ * unreadable. A browser WebSocket cannot send the `X-Qontinui-Active-Tenant`
+ * header the REST calls carry (HttpClient attaches it from the same
+ * localStorage key), so the WS bridges read `active_tenant` from the query
+ * string instead; the backend membership-validates it. Same reading as the
+ * private helper of the same name in `components/operations/utils.ts`.
+ */
+export function activeTenantWsParam(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const active = window.localStorage.getItem("qontinui.active_tenant_id");
+    return active ? `&active_tenant=${encodeURIComponent(active)}` : "";
+  } catch {
+    return "";
+  }
+}
 
 /** How {@link readJson} treats a 2xx whose body does not parse as JSON. */
 export interface ReadJsonOptions {
@@ -112,4 +158,22 @@ export function operationsErrorMessage(
     return messageFromErrorBody(httpBodyOf(err) ?? "", status, limit);
   }
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The terse `HTTP <status>` wording the dashboard's polling streams have
+ * always shown for a non-2xx (`useCiStatusStream`, `useSymbolClaimsStream`,
+ * `useDevActionsStream`, `useMigrationQueueStream`, the dev-action detail and
+ * `notify-when-green` writes), applied to a client-function rejection.
+ *
+ * Those call sites threw `new Error(\`HTTP ${resp.status}\`)` themselves before
+ * the reads moved onto {@link readJson}; this keeps the text they render
+ * unchanged. A {@link readJson} status rejection becomes `HTTP <status>`;
+ * any other `Error` (network `TypeError`, a malformed body) is its own
+ * `message`; a non-`Error` throw is `fallback`.
+ */
+export function statusOnlyErrorText(err: unknown, fallback: string): string {
+  const status = httpStatusOf(err);
+  if (status !== null) return `HTTP ${status}`;
+  return err instanceof Error ? err.message : fallback;
 }

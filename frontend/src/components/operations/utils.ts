@@ -8,24 +8,6 @@ import { ApiConfig } from "@/services/api-config";
 export const OPERATIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 
 /**
- * REST endpoint for the Phase 1.3 device-status surface. Tenant-scoped
- * server-side via the operator → tenant_id resolver; the caller
- * doesn't need to pass tenant_id.
- */
-export const DEVICE_STATUS_API = `${OPERATIONS_API}/device-status`;
-
-/**
- * WebSocket URL for the Phase 1.3 device-status push channel. Bridges
- * to coord's `/ws/device-status` after minting a tenant-scoped
- * service JWT on the server side. The frontend authenticates via the
- * same `token` query-param pattern used elsewhere (the JS WS API
- * can't set custom headers on the upgrade).
- */
-export function deviceStatusWsUrl(token: string): string {
-  return `${operationsWsBase()}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
-}
-
-/**
  * `OPERATIONS_API` with its scheme translated for a WS upgrade. The base
  * begins with `http://` or `https://`; the browser's URL constructor can't
  * help because we're inserting the WS scheme on top of an HTTP-shaped URL.
@@ -55,8 +37,9 @@ export type CoordEventSubscription = "merge" | "claims" | "branches";
 /**
  * WebSocket URL for the coord-events bridge,
  * `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`.
- * Same shape as `deviceStatusWsUrl`: the backend authenticates the
- * operator from `token`, mints a tenant-scoped coord service JWT, opens
+ * Same shape as `deviceStatusWsUrl` (`lib/api/operations/deviceStatus.ts`):
+ * the backend authenticates the operator from `token`, mints a
+ * tenant-scoped coord service JWT, opens
  * `wss://<coord>/ws?token=<minted>&subscribe=<name>` and relays every
  * `{channel, payload}` frame verbatim. Replaces the direct browser→coord
  * sockets the strategy and merge-pipeline hooks used to open on
@@ -87,31 +70,6 @@ function activeTenantWsParam(): string {
   } catch {
     return "";
   }
-}
-
-/**
- * REST endpoint for the CI Status Dashboard surface. Tenant-scoped
- * server-side via the operator → tenant_id resolver (same as
- * device-status); the caller doesn't pass tenant_id.
- * Plan `2026-05-25-ci-status-dashboard-plan.md` Phase 3.
- */
-export const CI_STATUS_API = `${OPERATIONS_API}/ci-status`;
-
-/**
- * POST endpoint that arms a `CiGreen` gate for a repo's current main
- * tip. The web backend resolves the head SHA / tenant and forwards to
- * coord's `POST /coord/gates/register`. Plan Phase 5.
- */
-export const CI_STATUS_NOTIFY_API = `${OPERATIONS_API}/ci-status/notify-when-green`;
-
-/**
- * WebSocket URL for the CI-status push channel. Mirrors
- * `deviceStatusWsUrl`: bridges to coord's CI-status WS after the web
- * backend mints a tenant-scoped service JWT. Authenticates via the
- * `token` query-param (the JS WS API can't set headers on upgrade).
- */
-export function ciStatusWsUrl(token: string): string {
-  return `${operationsWsBase()}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**
@@ -307,15 +265,6 @@ export function prDraftStateUrl(
 }
 
 /**
- * REST endpoint for the Phase 4.4 symbol-claims surface. Proxies coord's
- * `/coord/claims/list?kind=symbol` so the dashboard can render the
- * per-machine "currently editing" sub-line without the browser hitting
- * coord cross-origin. No tenant scoping in the pilot (matches Phase 4.3
- * design note); coord-side scoping is a follow-up.
- */
-export const SYMBOL_CLAIMS_API = `${OPERATIONS_API}/symbol-claims`;
-
-/**
  * Polling interval for `useSymbolClaimsStream` in milliseconds.
  * Coord defaults `Symbol` claims to 300s TTL; 30s polling is fresh
  * enough to surface edits within ~1 frame and slow enough to keep
@@ -353,21 +302,6 @@ export function extractSymbol(resourceKey: string): string {
   return name.slice(0, SYMBOL_NAME_MAX_LEN - 1) + "…";
 }
 
-/**
- * REST endpoints for the dev-action ledger surface (plan
- * `2026-06-07-twin-dev-event-cause-effect-ledger.md`). Both proxy coord's
- * public `/coord/dev-actions/*` routes through the web backend so the
- * browser doesn't hit coord cross-origin and the operator bearer is
- * forwarded consistently with the other dashboard proxies.
- *
- * - `DEV_ACTIONS_API`         — GET recent dev actions.
- * - `devActionDetailUrl(id)`  — GET one action + its outcome signatures.
- */
-export const DEV_ACTIONS_API = `${OPERATIONS_API}/dev-actions/recent`;
-export function devActionDetailUrl(actionId: string): string {
-  return `${OPERATIONS_API}/dev-actions/${encodeURIComponent(actionId)}`;
-}
-
 /** Default number of recent dev actions to request. */
 export const DEV_ACTIONS_LIMIT = 50;
 
@@ -379,30 +313,12 @@ export const DEV_ACTIONS_LIMIT = 50;
 export const DEV_ACTIONS_POLL_MS = 10_000;
 
 /**
- * Migration reservation queue surface (coord-authoritative reservation
- * queue, `migration_reservations.rs`). Proxies coord's
- * `GET /coord/migrations/queue?repo=` through the web backend so the browser
- * doesn't hit coord cross-origin and the operator bearer is forwarded
- * consistently with the other dashboard proxies.
- */
-export const MIGRATIONS_QUEUE_API = `${OPERATIONS_API}/migrations/queue`;
-
-/**
  * Polling interval for the migration queue (ms). Reservations change at
  * author/merge cadence (a slot is taken, a PR binds, a merge flips it) —
  * 15s surfaces a transition promptly without hot-looping coord, matching
  * the gates-panel cadence.
  */
 export const MIGRATIONS_QUEUE_POLL_MS = 15_000;
-
-/**
- * Build the migration-queue request URL for a given repo. `repo` is
- * required by coord (the queue is per-repo).
- */
-export function migrationsQueueUrl(repo: string): string {
-  const q = new URLSearchParams({ repo });
-  return `${MIGRATIONS_QUEUE_API}?${q.toString()}`;
-}
 
 /**
  * PATCH endpoint to set (or clear) a machine's operator-friendly display name.

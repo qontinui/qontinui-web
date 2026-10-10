@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  ciStatusWsUrl,
   coordEventsWsUrl,
-  deviceStatusWsUrl,
   extractSymbol,
   formatBytes,
   percentFree,
@@ -317,11 +315,10 @@ describe("readingAgeMs", () => {
 });
 
 describe("operations WS URL builders", () => {
-  // All three bridges derive from OPERATIONS_API (http[s]:// → ws[s]://) and
-  // carry the session token as `token=`; the coord-events bridge adds the
-  // fixed subscription name that coord's closed set resolves server-side.
-  const wsBase = (url: string) => url.replace(/\?.*$/, "");
-
+  // The coord-events bridge derives from OPERATIONS_API (http[s]:// →
+  // ws[s]://), carries the session token as `token=`, and adds the fixed
+  // subscription name that coord's closed set resolves server-side. The
+  // device- and CI-status bridges live in `lib/api/operations`.
   it("coordEventsWsUrl targets the backend bridge with subscribe + token", () => {
     const url = coordEventsWsUrl("merge", "a b+c");
     expect(url).toMatch(/^wss?:\/\//);
@@ -337,17 +334,5 @@ describe("operations WS URL builders", () => {
 
   it("coordEventsWsUrl carries the merge name (coord maps it to events.merge.*)", () => {
     expect(coordEventsWsUrl("merge", "t")).toContain("subscribe=merge&token=t");
-  });
-
-  it("shares one scheme translation with the device- and CI-status bridges", () => {
-    const events = wsBase(coordEventsWsUrl("claims", "t"));
-    const device = wsBase(deviceStatusWsUrl("t"));
-    const ci = wsBase(ciStatusWsUrl("t"));
-    const root = (u: string) => u.replace(/\/[a-z-]+\/ws$/, "");
-    expect(root(events)).toBe(root(device));
-    expect(root(events)).toBe(root(ci));
-    expect(events.endsWith("/coord-events/ws")).toBe(true);
-    expect(device.endsWith("/device-status/ws")).toBe(true);
-    expect(ci.endsWith("/ci-status/ws")).toBe(true);
   });
 });

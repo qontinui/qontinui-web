@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchMigrationQueue } from "@/lib/api/operations/migrations";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import { MIGRATIONS_QUEUE_POLL_MS, migrationsQueueUrl } from "./utils";
-import type { MigrationQueueResponse, MigrationReservation } from "./types";
+import { MIGRATIONS_QUEUE_POLL_MS } from "./utils";
+import type { MigrationReservation } from "./types";
 
 const log = createLogger("MigrationQueueStream");
 
@@ -64,14 +64,7 @@ export function useMigrationQueueStream(
       return;
     }
     try {
-      const resp = await httpClient.fetch(
-        migrationsQueueUrl(requested),
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as MigrationQueueResponse;
+      const data = await fetchMigrationQueue(requested);
       // Drop the response if the operator switched repos mid-flight.
       if (cleanedUpRef.current || repoRef.current !== requested) return;
       setLive(data.live ?? []);
@@ -79,7 +72,7 @@ export function useMigrationQueueStream(
       setSeeded(true);
     } catch (err) {
       if (cleanedUpRef.current || repoRef.current !== requested) return;
-      const msg = err instanceof Error ? err.message : "fetch failed";
+      const msg = statusOnlyErrorText(err, "fetch failed");
       log.warn(`GET /migrations/queue?repo=${requested} failed:`, msg);
       setError(msg);
       // An error is still an answer — the tile shows its error state, not an
