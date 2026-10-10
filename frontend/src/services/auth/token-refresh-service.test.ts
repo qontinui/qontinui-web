@@ -312,6 +312,14 @@ describe("TokenRefreshService.refreshAccessToken", () => {
         "a 400 that is NOT invalid_grant",
         () => stubHttpFailure(400, '{"error":"temporarily_unavailable"}'),
       ],
+      [
+        "a 200 that carries no id_token",
+        () =>
+          stubHttpFailure(
+            200,
+            '{"access_token":"a.b.c","refresh_token":"rotated","expires_in":300}'
+          ),
+      ],
     ];
 
     for (const [label, stub] of TRANSIENT_CASES) {
@@ -329,6 +337,9 @@ describe("TokenRefreshService.refreshAccessToken", () => {
         // may well still be good, and the bearer is very likely still valid.
         expect(result).toBe(false);
         expect(tm.clearTokens).not.toHaveBeenCalled();
+        // Nothing overwrites the current tokens (a 200 without an id_token
+        // must not blank the bearer).
+        expect(tm.setTokens).not.toHaveBeenCalled();
         expect(events).toBe(0);
         expect(tm.state.refreshToken).toBe("stored-refresh-token");
       });

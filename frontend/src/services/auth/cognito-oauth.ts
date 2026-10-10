@@ -59,8 +59,8 @@ export const OIDC_ISSUER = (process.env.NEXT_PUBLIC_OIDC_ISSUER || "")
 export const OIDC_CLIENT_ID = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID || "";
 
 // Scopes requested from the generic issuer. `offline_access` asks for the
-// refresh token that silent renewal spends (Entra ID / Okta issue none without
-// it; Keycloak ignores it).
+// refresh token that silent renewal spends (OIDC Core §11; issuers commonly
+// issue no refresh token to a browser client without it).
 export const OIDC_SCOPES =
   process.env.NEXT_PUBLIC_OIDC_SCOPES || "openid email profile offline_access";
 
@@ -131,15 +131,26 @@ function isAcceptableUrl(value: string): boolean {
   }
 }
 
-/** An absolute https (or loopback http) URL from the document, or an error. */
+/**
+ * An endpoint URL from the document, or an error. It must be acceptable on
+ * its own (https, or http on localhost) AND never weaker than the issuer: an
+ * https issuer's endpoints must be https — no downgrade, not even to a
+ * localhost http URL, which would hand the code/tokens to whatever listens
+ * on the user's machine.
+ */
 function requireEndpoint(doc: Record<string, unknown>, key: string): string {
   const value = doc[key];
   if (typeof value === "string" && value && isAcceptableUrl(value)) {
-    return value;
+    const downgrade =
+      new URL(OIDC_ISSUER).protocol === "https:" &&
+      new URL(value).protocol !== "https:";
+    if (!downgrade) {
+      return value;
+    }
   }
   throw new Error(
     `The identity provider's discovery document has no usable ${key} ` +
-      "(it must be an https URL, or http on localhost)."
+      "(it must use https — or http only for a localhost issuer)."
   );
 }
 
@@ -280,9 +291,10 @@ export class CognitoRefreshError extends Error {
  *
  * Cognito does NOT rotate/return a refresh token on this grant, so the caller
  * keeps the one it already holds (it stays valid for the app client's much
- * longer `RefreshTokenValidity`). Generic issuers commonly DO rotate (Okta,
- * Keycloak, Entra ID): when `refresh_token` is present it replaces the old
- * one, which a rotating issuer has just invalidated.
+ * longer `RefreshTokenValidity`). Generic issuers may rotate refresh tokens
+ * (OAuth 2.0 Security BCP recommends rotation for public clients): when
+ * `refresh_token` is present it replaces the old one, which a rotating
+ * issuer may have just invalidated.
  */
 export interface CognitoRefreshResponse {
   id_token: string;
@@ -667,8 +679,9 @@ export async function refreshCognitoTokens(
     );
   }
 
+  let parsed: CognitoRefreshResponse;
   try {
-    return (await response.json()) as CognitoRefreshResponse;
+    parsed = (await response.json()) as CognitoRefreshResponse;
   } catch (error) {
     // A 200 we cannot parse (truncated response, captive-portal HTML) says
     // nothing about the refresh token's validity.
@@ -678,6 +691,18 @@ export async function refreshCognitoTokens(
       response.status
     );
   }
+
+  // The ID token IS the bearer. A 200 without one (an issuer that returns
+  // only an access token on refresh, or a truncated body) must not blank the
+  // session: report a failed attempt so the caller keeps every token as is.
+  if (!parsed || typeof parsed.id_token !== "string" || !parsed.id_token) {
+    throw new CognitoRefreshError(
+      "Token refresh returned no id_token; keeping the current session.",
+      "transient",
+      response.status
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -723,11 +748,11 @@ export function consumePkceState(): void {
  * Cognito: the hosted `/logout` endpoint with `client_id` + `logout_uri`.
  * Generic OIDC: the discovered `end_session_endpoint` (RP-Initiated Logout
  * 1.0) with `client_id`, `post_logout_redirect_uri` and, when supplied, the
- * `id_token_hint`. The hint is sent whenever we hold the ID token: the spec
- * RECOMMENDS it, Okta requires it, Keycloak and Entra ID use it to skip the
- * "sign out?" confirmation, and an OP must accept an expired one — so sending
- * it costs nothing and omitting it breaks some issuers. It is the user's own
- * ID token going to the issuer that minted it, over the same top-level
+ * `id_token_hint`. The hint is sent whenever we hold the ID token: RP-Initiated
+ * Logout 1.0 RECOMMENDS it and says an OP SHOULD accept one whose `exp` has
+ * passed (https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout);
+ * some issuers require it, and others use it to skip a "sign out?" prompt. It
+ * is the user's own ID token going to the issuer that minted it, over a top-level
  * navigation, so it discloses nothing new. An issuer that advertises no
  * end-session endpoint — or whose discovery document cannot be read — gets a
  * local sign-out only: straight to `/login`, the tokens already cleared.

@@ -222,6 +222,27 @@ describe("generic OIDC mode", () => {
     );
   });
 
+  it("refuses an https issuer's endpoint downgraded to localhost http", async () => {
+    stubIssuer({ ...DOC, token_endpoint: "http://127.0.0.1:9999/token" });
+    const mod = await loadGeneric();
+    await expect(mod.resolveOAuthEndpoints()).rejects.toThrow(/token_endpoint/);
+  });
+
+  it("treats a refresh response without id_token as a failed refresh", async () => {
+    stubIssuer(DOC, {
+      access_token: "access.only",
+      refresh_token: "rotated",
+      expires_in: 300,
+      token_type: "Bearer",
+    });
+    const mod = await loadGeneric();
+    const error = await mod.refreshCognitoTokens("rt").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(mod.CognitoRefreshError);
+    expect((error as InstanceType<typeof mod.CognitoRefreshError>).kind).toBe(
+      "transient"
+    );
+  });
+
   it("isLoopbackHost recognises only this machine", async () => {
     const { isLoopbackHost } = await loadGeneric();
     for (const host of [
