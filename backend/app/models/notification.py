@@ -33,6 +33,14 @@ class NotificationType(StrEnum):
     SHARE = "share"
     COMMENT = "comment"
     REPLY = "reply"
+    # RETIRED — the five labels below have no producer (plan
+    # 2026-09-19-delete-producerless-notification-types-and-their-toggles
+    # re-verified by repo-wide grep). Kept ONLY so a row stored before
+    # migration notif_producerless_01_drop_enum_values deleted them still
+    # loads if this image serves first (Enum(NotificationType) maps stored
+    # member NAMES). Nothing may write them. Removed, with the dead
+    # email_team_invites / in_app_team_invites / in_app_project_updates
+    # columns, by Phase 3 of that plan once this image is the one serving.
     LOCK_RELEASED = "lock_released"
     PROJECT_UPDATE = "project_update"
     TEAM_INVITE = "team_invite"
@@ -137,13 +145,21 @@ class NotificationPreferences(Base):
     email_comments = Column(Boolean, default=True, nullable=False)
     email_shares = Column(Boolean, default=True, nullable=False)
     email_replies = Column(Boolean, default=True, nullable=False)
-    email_team_invites = Column(Boolean, default=True, nullable=False)
 
     # In-app notification preferences
     in_app_mentions = Column(Boolean, default=True, nullable=False)
     in_app_comments = Column(Boolean, default=True, nullable=False)
     in_app_shares = Column(Boolean, default=True, nullable=False)
     in_app_replies = Column(Boolean, default=True, nullable=False)
+
+    # RETIRED — these three toggles gate nothing (their notification types
+    # have no producer) and are no longer read or exposed anywhere. The
+    # mappings stay ONLY so this image's INSERTs still supply a value if it
+    # serves before migration notif_producerless_01_drop_enum_values: the
+    # columns are NOT NULL and have no server default until that revision
+    # gives them one. Removed, with the columns, by Phase 3 of plan
+    # 2026-09-19-delete-producerless-notification-types-and-their-toggles.
+    email_team_invites = Column(Boolean, default=True, nullable=False)
     in_app_team_invites = Column(Boolean, default=True, nullable=False)
     in_app_project_updates = Column(Boolean, default=True, nullable=False)
 
@@ -172,7 +188,6 @@ class NotificationPreferences(Base):
             NotificationType.COMMENT: self.email_comments,
             NotificationType.SHARE: self.email_shares,
             NotificationType.REPLY: self.email_replies,
-            NotificationType.TEAM_INVITE: self.email_team_invites,
         }
         # Email defaults OFF for unmapped types (conservative).
         result = mapping.get(notification_type, False)
@@ -185,8 +200,6 @@ class NotificationPreferences(Base):
             NotificationType.COMMENT: self.in_app_comments,
             NotificationType.SHARE: self.in_app_shares,
             NotificationType.REPLY: self.in_app_replies,
-            NotificationType.TEAM_INVITE: self.in_app_team_invites,
-            NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
         }
         # In-app defaults ON for unmapped types.
         result = mapping.get(notification_type, True)
