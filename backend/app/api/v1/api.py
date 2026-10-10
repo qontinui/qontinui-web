@@ -1,7 +1,7 @@
 """API v1 router configuration.
 
 This file mounts every router that ships with the OSS qontinui-web. The
-qontinui.cloud deployment additionally attaches its proprietary cloud-only
+qontinui.cloud deployment additionally attaches its cloud-only
 routers (billing, cloud-admin, organizations multi-tenant, fleet-health,
 beta-signup, cross-tenant audit-logs) by registering them with the
 extension hook ``register_cloud_extensions(api_router)`` called at the
