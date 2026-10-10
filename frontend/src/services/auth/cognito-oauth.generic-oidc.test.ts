@@ -241,6 +241,10 @@ describe("generic OIDC mode", () => {
     expect((error as InstanceType<typeof mod.CognitoRefreshError>).kind).toBe(
       "transient"
     );
+    expect(
+      (error as InstanceType<typeof mod.CognitoRefreshError>)
+        .rotatedRefreshToken
+    ).toBe("rotated");
   });
 
   it("isLoopbackHost recognises only this machine", async () => {

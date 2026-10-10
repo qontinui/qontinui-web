@@ -90,6 +90,9 @@ function makeTokenManager(opts: {
         validator.extractExpiry(tokens.access_token) ??
         (tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null);
     }),
+    replaceRefreshToken: vi.fn((token: string) => {
+      state.refreshToken = token;
+    }),
     clearTokens: vi.fn(() => {
       state.refreshToken = null;
       state.expiry = null;
@@ -315,10 +318,7 @@ describe("TokenRefreshService.refreshAccessToken", () => {
       [
         "a 200 that carries no id_token",
         () =>
-          stubHttpFailure(
-            200,
-            '{"access_token":"a.b.c","refresh_token":"rotated","expires_in":300}'
-          ),
+          stubHttpFailure(200, '{"access_token":"a.b.c","expires_in":300}'),
       ],
     ];
 
@@ -344,6 +344,24 @@ describe("TokenRefreshService.refreshAccessToken", () => {
         expect(tm.state.refreshToken).toBe("stored-refresh-token");
       });
     }
+
+    it("keeps a ROTATED refresh token from a 200 that carries no id_token", async () => {
+      stubHttpFailure(
+        200,
+        '{"access_token":"a.b.c","refresh_token":"rotated-rt","expires_in":300}'
+      );
+      const tm = makeTokenManager({});
+      const service = new TokenRefreshService(asTokenManager(tm));
+
+      await expect(service.refreshAccessToken()).resolves.toBe(false);
+
+      // The bearer is untouched, the session kept, and the new refresh token
+      // (the old one may already be dead at a rotating issuer) persisted.
+      expect(tm.setTokens).not.toHaveBeenCalled();
+      expect(tm.clearTokens).not.toHaveBeenCalled();
+      expect(tm.replaceRefreshToken).toHaveBeenCalledWith("rotated-rt");
+      expect(tm.state.refreshToken).toBe("rotated-rt");
+    });
 
     it("reports the failure class through refreshWithOutcome()", async () => {
       stubNetworkFailure();

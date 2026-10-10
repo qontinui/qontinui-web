@@ -271,18 +271,27 @@ export class CognitoRefreshError extends Error {
   readonly status: number | null;
   /** Cognito's OAuth `error` code, when the body carried one. */
   readonly oauthError: string | null;
+  /**
+   * A NEW refresh token the issuer returned even though the refresh failed
+   * (a 200 with a rotated `refresh_token` but no `id_token`). A rotating
+   * issuer may already have invalidated the old one, so the caller must
+   * persist this before retrying.
+   */
+  readonly rotatedRefreshToken: string | null;
 
   constructor(
     message: string,
     kind: CognitoRefreshFailureKind,
     status: number | null = null,
-    oauthError: string | null = null
+    oauthError: string | null = null,
+    rotatedRefreshToken: string | null = null
   ) {
     super(message);
     this.name = "CognitoRefreshError";
     this.kind = kind;
     this.status = status;
     this.oauthError = oauthError;
+    this.rotatedRefreshToken = rotatedRefreshToken;
   }
 }
 
@@ -696,10 +705,16 @@ export async function refreshCognitoTokens(
   // only an access token on refresh, or a truncated body) must not blank the
   // session: report a failed attempt so the caller keeps every token as is.
   if (!parsed || typeof parsed.id_token !== "string" || !parsed.id_token) {
+    const rotated =
+      parsed && typeof parsed.refresh_token === "string" && parsed.refresh_token
+        ? parsed.refresh_token
+        : null;
     throw new CognitoRefreshError(
       "Token refresh returned no id_token; keeping the current session.",
       "transient",
-      response.status
+      response.status,
+      null,
+      rotated
     );
   }
   return parsed;

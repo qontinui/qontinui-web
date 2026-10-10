@@ -257,6 +257,12 @@ export class TokenRefreshService {
       this.sessionExpiryDispatched = false;
       return "refreshed";
     } catch (error) {
+      if (error instanceof CognitoRefreshError && error.rotatedRefreshToken) {
+        // The issuer rotated the refresh token before the attempt failed;
+        // the old one may already be invalid, so keep the new one for the
+        // retry. The bearer itself is left exactly as it was.
+        this.tokenManager.replaceRefreshToken(error.rotatedRefreshToken);
+      }
       if (
         error instanceof CognitoRefreshError &&
         error.kind === "authoritative"
