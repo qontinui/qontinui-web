@@ -9,7 +9,7 @@ export async function PATCH(
   const { id, findingId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/ai-tasks/${id}/findings/${findingId}`,
+    `/api/v1/ai-tasks/${encodeURIComponent(id)}/findings/${encodeURIComponent(findingId)}`,
     {
       tokenSources: ["cookie", "header"],
       onMissingToken: "401",

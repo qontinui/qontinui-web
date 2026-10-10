@@ -213,22 +213,28 @@ describe("the verdict badge carries the route's verdict, never a re-derivation",
 describe("the window is a measurement", () => {
   const res: ReconciliationResponse = {
     items: [row({ slug: "2026-01-01-a" }), row({ slug: "2026-02-02-b" })],
-    total: 1991,
-    offset: 50,
+    // The route's `total` counts from THIS page's start; the population is
+    // the facets' denominator.
+    total: 1941,
+    truncated: true,
+    next_cursor: "opaque",
     limit: 25,
-    ordering: "slug_asc",
+    ordering: "stem_date_asc",
+    facets: { denominator: 1991 },
   };
 
-  it("states total, offset, limit, ordering and both boundary stems", () => {
-    const w = describeWindow(res);
+  it("states the population, the walked start, limit, ordering and both boundary stems", () => {
+    const w = describeWindow(res, 50);
     expect(w).toMatchObject({
       total: 1991,
-      offset: 50,
+      start: 50,
       limit: 25,
       shown: 2,
-      ordering: "slug_asc",
+      ordering: "stem_date_asc",
       firstStem: "2026-01-01-a",
       lastStem: "2026-02-02-b",
+      hasMore: true,
+      nextCursor: "opaque",
     });
   });
 
@@ -239,6 +245,7 @@ describe("the window is a measurement", () => {
     const w = describeWindow({
       items: [],
       total: 1887,
+      facets: { denominator: 1887 },
       work_unit_population_state: "unavailable",
     });
     expect(w.total).toBe(1887);
@@ -255,17 +262,22 @@ describe("the window is a measurement", () => {
   });
 
   it("reports an absent total as UNKNOWN rather than as items.length", () => {
-    const w = describeWindow({ ...res, total: undefined });
+    const w = describeWindow({ ...res, facets: {} });
     expect(w.total).toBeNull();
   });
 
-  it("infers 'more' from a full page when the total is unknown", () => {
+  it("never infers 'more' from a full page — only truncated + a cursor", () => {
+    expect(describeWindow({ items: [row(), row()], limit: 2 }).hasMore).toBe(
+      false
+    );
     expect(
-      describeWindow({ items: [row(), row()], limit: 2, offset: 0 }).hasMore
+      describeWindow({
+        items: [row(), row()],
+        limit: 2,
+        truncated: true,
+        next_cursor: "c",
+      }).hasMore
     ).toBe(true);
-    expect(
-      describeWindow({ items: [row()], limit: 2, offset: 0 }).hasMore
-    ).toBe(false);
   });
 });
 
@@ -567,7 +579,10 @@ describe("the health strip never publishes an inadmissible histogram", () => {
       {
         total: 1991,
         work_unit_population_state: "included",
-        facets: { by_verdict: { agree: 19, disagree: 2, unknown: 1970 } },
+        facets: {
+          denominator: 1991,
+          by_verdict: { agree: 19, disagree: 2, unknown: 1970 },
+        },
       },
       true,
       false

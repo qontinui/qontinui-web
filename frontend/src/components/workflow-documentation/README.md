@@ -331,7 +331,7 @@ import {
   DocumentationViewer,
   ActionCommentsPanel,
 } from "@/components/workflow-documentation";
-import { WorkflowDocumentationService } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentationService } from "@/services/workflow-documentation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function WorkflowDocumentationPage({

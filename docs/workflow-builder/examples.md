@@ -8,8 +8,6 @@ Complete working examples for common use cases.
 - [Organization Examples](#organization-examples)
 - [Dependency Management](#dependency-management)
 - [Testing Examples](#testing-examples)
-- [Version Control Examples](#version-control-examples)
-- [Performance Optimization](#performance-optimization)
 - [Component Examples](#component-examples)
 - [Complete Workflows](#complete-workflows)
 
@@ -19,7 +17,6 @@ Complete working examples for common use cases.
 
 ```typescript
 import { workflowFolderManager } from '@/services/workflow-folder-manager';
-import { workflowVersionControl } from '@/services/workflow-version-control';
 
 // Create a new workflow
 const loginWorkflow: Workflow = {
@@ -82,22 +79,6 @@ workflowFolderManager.moveWorkflow(loginWorkflow.id, '/Authentication');
 // Add tags
 workflowFolderManager.addTag(loginWorkflow.id, 'critical');
 workflowFolderManager.addTag(loginWorkflow.id, 'authentication');
-
-// Create version control
-const branch = workflowVersionControl.createBranch(
-  loginWorkflow.id,
-  'main',
-  undefined,
-  'Main branch'
-);
-
-workflowVersionControl.saveVersion(
-  loginWorkflow.id,
-  branch.id,
-  loginWorkflow,
-  'Initial version',
-  'developer@example.com'
-);
 ```
 
 ## Organization Examples
@@ -350,137 +331,6 @@ async function runLoginTests() {
 runLoginTests();
 ```
 
-## Version Control Examples
-
-### Feature Branch Workflow
-
-```typescript
-// 1. Create feature branch from main
-const mainBranch = workflowVersionControl.getAllBranches(workflowId)
-  .find(b => b.name === 'main');
-
-const featureBranch = workflowVersionControl.createBranch(
-  workflowId,
-  'feature/oauth-login',
-  mainBranch!.id,
-  'Adding OAuth authentication'
-);
-
-// 2. Switch to feature branch
-workflowVersionControl.switchBranch(workflowId, featureBranch.id);
-
-// 3. Make changes and commit
-// ... modify workflow ...
-
-workflowVersionControl.saveVersion(
-  workflowId,
-  featureBranch.id,
-  modifiedWorkflow,
-  'Add OAuth provider selection',
-  'developer@example.com'
-);
-
-// ... more changes ...
-
-workflowVersionControl.saveVersion(
-  workflowId,
-  featureBranch.id,
-  modifiedWorkflow,
-  'Add OAuth callback handling',
-  'developer@example.com'
-);
-
-// 4. Compare changes
-const diff = workflowVersionControl.compareWorkflows(
-  mainBranch.currentVersionId
-    ? workflowVersionControl.getVersion(mainBranch.currentVersionId)!.workflow
-    : workflow,
-  modifiedWorkflow
-);
-
-console.log(`Changes: ${diff.summary.totalChanges}`);
-console.log(`  Actions added: ${diff.summary.actionsAdded}`);
-console.log(`  Actions modified: ${diff.summary.actionsModified}`);
-
-// 5. Merge feature branch to main
-const mergeResult = workflowVersionControl.mergeBranch(
-  featureBranch.id,
-  mainBranch!.id,
-  'developer@example.com'
-);
-
-if (mergeResult.success) {
-  console.log('Merge successful!');
-
-  // 6. Tag the release
-  const latestVersion = workflowVersionControl.getLatestVersion(
-    workflowId,
-    mainBranch!.id
-  );
-
-  workflowVersionControl.createTag(
-    workflowId,
-    latestVersion!.id,
-    'v2.0.0',
-    'OAuth authentication release'
-  );
-} else {
-  console.error('Merge failed:', mergeResult.message);
-  console.log('Conflicts:', mergeResult.conflicts);
-}
-```
-
-## Performance Optimization
-
-### Analyze and Optimize Workflow
-
-```typescript
-import { workflowPerformanceAnalyzer } from '@/services/workflow-performance-analyzer';
-
-// Analyze performance
-const analysis = workflowPerformanceAnalyzer.analyzePerformance(workflow);
-
-console.log(`Performance Score: ${analysis.performanceScore}/100`);
-console.log(`Bottleneck Score: ${analysis.bottleneckScore}/100`);
-console.log(`Estimated Execution Time: ${analysis.estimatedExecutionTime}ms`);
-
-// Review bottlenecks
-console.log('\nBottlenecks:');
-analysis.bottlenecks.forEach((bottleneck, index) => {
-  console.log(`\n${index + 1}. ${bottleneck.type} (Severity: ${bottleneck.severity})`);
-  console.log(`   ${bottleneck.description}`);
-  console.log(`   Estimated impact: ${bottleneck.estimatedImpact}ms`);
-  console.log('   Suggestions:');
-  bottleneck.suggestions.forEach(s => console.log(`     - ${s}`));
-});
-
-// Review optimization suggestions
-console.log('\nTop Optimization Suggestions:');
-analysis.suggestions.slice(0, 5).forEach((suggestion, index) => {
-  console.log(`\n${index + 1}. [Priority ${suggestion.priority}/5] ${suggestion.title}`);
-  console.log(`   ${suggestion.description}`);
-  if (suggestion.expectedSpeedup) {
-    console.log(`   Expected speedup: ${suggestion.expectedSpeedup}`);
-  }
-  if (suggestion.difficulty) {
-    console.log(`   Difficulty: ${suggestion.difficulty}/5`);
-  }
-});
-
-// Check parallelization opportunities
-console.log('\nParallelization Opportunities:');
-analysis.parallelizationOpportunities.forEach((opp, index) => {
-  const actionCount = opp.groups.reduce((sum, g) => sum + g.length, 0);
-  console.log(`\n${index + 1}. ${actionCount} actions can be parallelized`);
-  console.log(`   Estimated speedup: ${opp.estimatedSpeedup}ms`);
-  console.log(`   Reason: ${opp.reason}`);
-});
-
-// Generate report
-const report = workflowPerformanceAnalyzer.generatePerformanceReport(workflow);
-console.log('\n' + report);
-```
-
 ## Component Examples
 
 ### Create and Use Reusable Component
@@ -647,16 +497,6 @@ workflowFolderManager.addTag(e2eWorkflow.id, 'smoke');
 workflowFolderManager.addTag(e2eWorkflow.id, 'checkout');
 workflowFolderManager.addTag(e2eWorkflow.id, 'critical');
 
-// Version it
-const branch = workflowVersionControl.createBranch(e2eWorkflow.id, 'main');
-workflowVersionControl.saveVersion(
-  e2eWorkflow.id,
-  branch.id,
-  e2eWorkflow,
-  'Initial E2E checkout test',
-  'qa@example.com'
-);
-
 // Test it
 const testCase = workflowTestingService.createTestCase({
   name: 'Verify checkout completes',
@@ -669,15 +509,10 @@ const testCase = workflowTestingService.createTestCase({
     }
   ]
 });
-
-// Analyze it
-const performance = workflowPerformanceAnalyzer.analyzePerformance(e2eWorkflow);
-console.log(`Performance score: ${performance.performanceScore}/100`);
 ```
 
 ## See Also
 
 - [Organization Guide](./organization.md) - Organize workflows
 - [Testing Guide](./testing.md) - Create tests
-- [Version Control](./version-control.md) - Version workflows
 - [API Reference](./api-reference.md) - Complete API

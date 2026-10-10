@@ -6,7 +6,9 @@ repos:
       - id: check-added-large-files
         # The OpenAPI snapshots are generated artifacts kept authoritative by
         # the backend-ci drift check; size is inherent (600+ paths), not waste.
-        exclude: 'tests/spec-ci/schemas\.json$|frontend/src/lib/api-client/openapi-schema(\.base)?\.json$'
+        # generated-types.ts is generated from them and drift-gated in
+        # frontend-ci.yml.
+        exclude: 'tests/spec-ci/schemas\.json$|frontend/src/lib/api-client/openapi-schema(\.base)?\.json$|frontend/src/lib/api-client/generated-types\.ts$'
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

@@ -1,10 +1,12 @@
 /**
- * The blast-radius contract for a Cognito group delete: the verdict type, the
- * two preview-read cause codes, the 200-body parser and the plural helpers.
- * Pure (no React) — `renderAffected`, its only JSX consumer, stays with the
- * group row. Mirrors backend `_BlastRadius` / `_coord_group_blast_radius`.
+ * The blast-radius contract for a Cognito group delete: the two preview-read
+ * cause codes, the 200-body parser and the plural helpers. Pure (no React) —
+ * `renderAffected`, its only JSX consumer, stays with the group row. Mirrors
+ * backend `_BlastRadius` / `_coord_group_blast_radius`; the verdict's wire
+ * type, `BlastRadiusVerdict`, is the client's (`cognitoGroups.ts`).
  */
 
+import type { BlastRadiusVerdict } from "@/lib/api/operations/cognitoGroups";
 import {
   bounded,
   MAX_CAUSE_LENGTH,
@@ -14,32 +16,6 @@ import {
 
 /** Suffix coord treats as a home-tenant pin (`auth_sso::HOME_GROUP_SUFFIX`). */
 export const HOME_GROUP_SUFFIX = "-home";
-
-/**
- * What deleting one Cognito group would take down, POOL-WIDE — the delete's
- * own verdict, read ahead of the click from
- * `GET /coord/cognito/groups/{name}/blast-radius`.
- *
- * Partial by design: slugs are named for the caller's OWN tenant only and
- * every other tenant is an integer, so the two `*_total` fields are the honest
- * sizes and the lists never are. A reader that renders a list as "everything
- * affected" is reading it wrong.
- */
-export interface BlastRadiusVerdict {
-  group_name: string;
-  /** ROW count, pool-wide. */
-  mapped_total: number;
-  /** Own-tenant slugs, sorted + deduplicated by the backend. */
-  mapped_own_tenant: string[];
-  /** ROWS in tenants the caller does not administer. */
-  mapped_other_tenant_rows: number;
-  /** ROWS whose tenant is not materialised yet. */
-  mapped_unmaterialized_rows: number;
-  /** Distinct TENANTS the delete would leave with no admin at all. */
-  strands_total: number;
-  strands_own_tenant: string[];
-  strands_other_tenant_count: number;
-}
 
 /** The two codes `_coord_group_blast_radius` raises when the PREVIEW read
  * fails. Named rather than inferred, because at the level this now reads them
@@ -61,14 +37,16 @@ function isBlastRadiusCauseCode(
 }
 
 /**
- * A short cause for a failed blast-radius PREVIEW read.
+ * A short cause for a failed blast-radius PREVIEW read, from the refusal's
+ * body `text` and HTTP `status` (the halves `httpBodyOf` / `httpStatusOf` read
+ * back out of the client's rejection).
  *
  * The backend's 502 detail is structured (`{error, coord_status, message}`)
  * and its `message` is the delete's own refusal sentence. For a preview the
  * useful part is the code and coord's status — "mapping_check_unavailable,
  * coord answered 404" tells an operator the route is not deployed yet; the
  * message's "Nothing was deleted" tells them about a click they never made.
- * Anything not in that shape falls back to `backendErrorMessage`.
+ * Anything not in that shape falls back to `messageFromErrorBody`.
  *
  * ## It has to read the ENVELOPE too, not only `detail`
  *
@@ -91,8 +69,7 @@ function isBlastRadiusCauseCode(
  * with its sentence discarded, while production rendered the sentence. One
  * rule, both arms.
  */
-export async function blastRadiusReadCause(res: Response): Promise<string> {
-  const text = await res.text();
+export function blastRadiusReadCause(text: string, status: number): string {
   try {
     const parsed = JSON.parse(text) as { detail?: unknown };
     // `detail` when the middleware did not run, the body ITSELF when it did.
@@ -164,7 +141,7 @@ export async function blastRadiusReadCause(res: Response): Promise<string> {
   // `ENVIRONMENT == "development"`. Passing the limit costs one argument and
   // removes the need to re-derive that reachability argument every time a
   // refusal is added to the route.
-  return messageFromErrorBody(text, res.status, MAX_CAUSE_LENGTH);
+  return messageFromErrorBody(text, status, MAX_CAUSE_LENGTH);
 }
 
 /**
