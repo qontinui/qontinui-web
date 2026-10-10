@@ -92992,6 +92992,58 @@
         ]
       }
     },
+    "/api/v1/operations/coord/verification/metrics": {
+      "get": {
+        "description": "Return coord's verification metrics object for the operator's tenant.\n\nThe tenant is coord's to resolve from the forwarded bearer; nothing from\nthe request names it. The body is coord's, verbatim \u2014 including the\n``degraded: true`` answer, which the page renders as \"could not look\".",
+        "operationId": "api_v1_operations_coord_verification_metrics_get",
+        "parameters": [
+          {
+            "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Verification Metrics Api V1 Operations Coord Verification Metrics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Verification Metrics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/deploys": {
       "get": {
         "description": "List recent declared deploys + their latest verification from coord.\n\nForwards the optional ``service`` / ``environment`` filters and the\n``limit`` cap to coord.",

@@ -7,7 +7,10 @@
  * Phase 1).
  *
  * The prose comes from the project's intent documents; the progress column
- * from its work units. The prose is editable in place, through the overview's
+ * from its work units, and — under it — "Can I trust 'done'?" from coord's
+ * independent-verification metrics (plan
+ * `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+ * Phase 5). The prose is editable in place, through the overview's
  * authoring contract (plan `2026-09-20-overview-authoring-layer`, Phase 1),
  * by whoever the server says may edit it for THIS project.
  */
@@ -21,6 +24,7 @@ import { DomainCostSection } from "./_components/DomainCostSection";
 import { IntentSection } from "./_components/IntentSection";
 import { useDomainCost } from "./_hooks/useDomainCost";
 import { ProgressPanel } from "./_components/ProgressPanel";
+import { TrustTile } from "./_components/TrustTile";
 import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
 
@@ -173,6 +177,11 @@ export default function OverviewSummaryPage() {
         {progress.state === "ready" && (
           <ProgressPanel progress={progress.progress} />
         )}
+        <TrustTile
+          tenantId={activeTenantId}
+          hold={tenantsLoading}
+          tenantError={tenantsError}
+        />
       </aside>
     </div>
   );

@@ -13167,6 +13167,79 @@ async def get_coord_findings(
     return body
 
 
+# ---------------------------------------------------------------------------
+# Verification metrics — `GET /operations/coord/verification/metrics`
+#                      → coord `GET /coord/verification/metrics`
+#
+# Backs the overview's "Can I trust 'done'?" tile and its drill-down at
+# `/admin/coord/verification`. Plan
+# `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+# Phase 5 (web half).
+#
+# **A pass-through that never manufactures an answer.** coord's body is ONE
+# object — trust calibration (Wilson+fpc), independent-verification coverage,
+# unknowns, the pre-land review record beside coverage, the sampling posture,
+# the lane's freshness and a 12-week series — and its "could not look" answer
+# is already a body of its own (`200 {"degraded": true, "reason", …}` with
+# every number `null`). Both are forwarded byte-for-byte. Every NON-2xx is an
+# error here too, never a `200` with an empty or zeroed body: a tile that read
+# `{}` as "no verifications" would render the stale-green this surface exists
+# to rule out. That is the opposite of the findings proxy above, which
+# converts an absent coord into a `200` degrade envelope; this page renders
+# its own "could not look" from the error instead, so no envelope is needed
+# and none can be mistaken for data.
+#
+# One status IS rewritten: coord's `401` / `403`. The web backend forwards the
+# operator's Cognito bearer, and qontinui-coord 3088dc5d mounted this door on
+# a `require_jwt` sub-router (device / agent JWT only), which refuses that
+# bearer. Passed through as a `401`, the frontend http client would treat it
+# as a spent session and run its token-refresh branch on every tile read. It
+# is re-raised as a `502` whose detail names the refusal, so the page says
+# "could not look — coord refused the operator's credential" and nothing about
+# the user's own session changes.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_METRICS_PATH = "/coord/verification/metrics"
+
+
+@router.get("/coord/verification/metrics")
+async def get_coord_verification_metrics(
+    window: str | None = Query(
+        default=None,
+        description=(
+            "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord "
+            "owns the default (28d) and answers a malformed value with a "
+            "typed 422, which is passed through."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's verification metrics object for the operator's tenant.
+
+    The tenant is coord's to resolve from the forwarded bearer; nothing from
+    the request names it. The body is coord's, verbatim — including the
+    ``degraded: true`` answer, which the page renders as "could not look".
+    """
+    params = {"window": window} if window is not None else None
+    try:
+        return await _proxy_coord_get(
+            _COORD_VERIFICATION_METRICS_PATH, params=params, tenant_id=tenant_id
+        )
+    except CoordTransportUnavailable:
+        raise
+    except HTTPException as exc:
+        if exc.status_code in (401, 403):
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"coord refused the operator's credential on "
+                    f"{_COORD_VERIFICATION_METRICS_PATH} (HTTP {exc.status_code}): "
+                    f"{exc.detail}"
+                ),
+            ) from exc
+        raise
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
