@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * Roles — set each machine's dispatch role (Workhorse / Bench / CI node).
+ * Roles — set each machine's dispatch role (Workhorse / Testbed / CI node).
+ * Testbed was "Bench" until plan Amendment 2026-10-10 (A2); a role coord
+ * still serves as `bench` renders as Testbed, marked legacy.
  *
  * Plan `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node` Phase 6, the
  * MINIMAL cut (operator request 2026-10-08, from coord finding e4a7e7e9:
@@ -63,6 +65,7 @@ import {
   DISPATCH_ROLES,
   LANES,
   LANE_LABEL,
+  ROLE_DESCRIPTION,
   ROLE_LABEL,
   ROLE_OPENS,
   describeEffectNotApplied,
@@ -177,7 +180,7 @@ function NotRegisteredBadge({
 
 /**
  * Per lane: coord's role layer and drain layer, side by side (§D2). The role
- * layer is coord's FLEET-effective role, so a co-tenant's Bench shows here as
+ * layer is coord's FLEET-effective role, so a co-tenant's Testbed shows here as
  * closed even when this tenant assigned Workhorse.
  */
 function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
@@ -253,7 +256,15 @@ function RoleButtons({
         aria-label={`Dispatch role for ${m.name}`}
       >
         {DISPATCH_ROLES.map((r) => {
+          // A row served under a legacy spelling (`bench`) IS this role, so it
+          // is current like any other. No re-save is offered: coord's write
+          // is a no-op when the PARSED stored role equals the request
+          // (`previous_role == Some(put.role)` → `changed: false`,
+          // qontinui-coord#3015 @9da842476732 dispatch_role_routes.rs), so
+          // once coord parses `bench` as Testbed, writing `testbed` over a
+          // `bench` row changes nothing.
           const current = m.role === r;
+          const legacyCurrent = current && m.legacyRoleSpelling !== null;
           const refused = r === "workhorse" && m.hostOnly;
           return (
             <Button
@@ -265,7 +276,9 @@ function RoleButtons({
               title={
                 refused
                   ? "No workstation runner on this machine — it cannot host agent sessions."
-                  : undefined
+                  : legacyCurrent
+                    ? `${ROLE_DESCRIPTION[r]} Coord stores it under the legacy name "${m.legacyRoleSpelling}".`
+                    : ROLE_DESCRIPTION[r]
               }
               onClick={() => onPick(r)}
               data-testid={`fleet-roles-set-${r}`}
@@ -381,7 +394,8 @@ export function FleetRolesSection() {
               .join("; ")}.`
           : null;
       // Stays until dismissed: this is the only place the page says what coord
-      // did not do (e.g. GitHub still routes jobs to a machine just benched).
+      // did not do (e.g. GitHub still routes jobs to a machine just made a
+      // Testbed).
       toast.success(message);
       if (notApplied)
         toast.warning(notApplied, { duration: Infinity, closeButton: true });
@@ -445,8 +459,9 @@ export function FleetRolesSection() {
     >
       <p className="mb-2 text-xs text-muted-foreground break-words">
         What kind of work coord may send each machine. Workhorse takes CI and
-        agent sessions; Bench takes nothing; CI node takes CI only. A role is
-        standing and separate from a drain, which is a temporary hold.
+        agent sessions; Testbed is for UI testing and takes no coord work (no
+        CI, no sessions); CI node takes CI only. A role is standing and separate
+        from a drain, which is a temporary hold.
       </p>
 
       {read.state === "unknown" ? (
@@ -690,13 +705,14 @@ export function FleetRolesSection() {
               data-testid="fleet-roles-host-input"
             />
             <div className="flex gap-1" role="group" aria-label="Role for host">
-              {(["ci_node", "bench"] as const).map((r) => (
+              {(["ci_node", "testbed"] as const).map((r) => (
                 <Button
                   key={r}
                   type="button"
                   size="sm"
                   variant={hostRole === r ? "default" : "outline"}
                   aria-pressed={hostRole === r}
+                  title={ROLE_DESCRIPTION[r]}
                   onClick={() => setHostRole(r)}
                   data-testid={`fleet-roles-host-role-${r}`}
                 >

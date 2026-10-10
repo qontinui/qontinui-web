@@ -66,7 +66,7 @@ const MACHINES = {
       role: null,
       behaves_as: "workhorse",
       suggestion: {
-        dispatch_role: "bench",
+        dispatch_role: "testbed",
         mem_total_bytes: 33_000_000_000,
         sample_age_secs: 30,
       },
@@ -105,6 +105,8 @@ const MACHINES = {
       name: "nomad",
       registration: "registered",
       assignment: "assigned",
+      // Served under the PRE-RENAME spelling `bench` (a coord predating plan
+      // Amendment 2026-10-10 A2): the panel must read it as Testbed.
       role: {
         dispatch_role: "bench",
         reason: "local box",
@@ -113,6 +115,7 @@ const MACHINES = {
         updated_by: "[redacted]",
         updated_at: "2026-10-08T10:00:00Z",
       },
+      // Legacy spelling too, deliberately: the panel does not parse it.
       behaves_as: "bench",
       suggestion: null,
       lanes: {
@@ -158,7 +161,7 @@ describe("FleetRolesSection", () => {
       await screen.findByText("Unassigned — behaves as Workhorse")
     ).toBeTruthy();
     expect(screen.getByTestId("fleet-roles-suggestion").textContent).toContain(
-      "Bench"
+      "Testbed"
     );
     expect(
       screen.getByText("CI node — assigned, not yet registered")
@@ -231,7 +234,7 @@ describe("FleetRolesSection", () => {
     ];
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("monster"));
-    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-testbed"));
     fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
       target: { value: "rebuild" },
     });
@@ -241,6 +244,8 @@ describe("FleetRolesSection", () => {
     expect(refusal.textContent).toContain(
       "no heartbeat-fresh workstation would take agent sessions"
     );
+    // The renamed role goes on the wire under its new name.
+    expect(puts[0].body.dispatch_role).toBe("testbed");
     fireEvent.click(screen.getByTestId("fleet-roles-force"));
     await waitFor(() => expect(puts).toHaveLength(2));
     expect(puts[1].body.force).toBe(true);
@@ -251,7 +256,7 @@ describe("FleetRolesSection", () => {
     putAnswers = [json(422, { error: "no_agent_host" })];
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("monster"));
-    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-testbed"));
     fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
       target: { value: "x" },
     });
@@ -285,30 +290,30 @@ describe("FleetRolesSection", () => {
   });
 
   it("warns only on a CI host row whose role closes CI; workstation lanes show role and drain apart", async () => {
-    // nomad (a workstation, Bench): no GitHub-runner warning on its row.
+    // nomad (a workstation, Testbed): no GitHub-runner warning on its row.
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("nomad"));
     expect(
       screen.queryByTestId("fleet-roles-github-runner-warning")
     ).toBeNull();
-    // Role and drain shown separately: Bench closes the lane AND it is drained.
+    // Role and drain shown separately: Testbed closes the lane AND it is drained.
     expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
       "drained until"
     );
   });
 
-  it("a registered Bench CI host row carries the GitHub-runner warning; an unregistered one does not", async () => {
-    const benchHost = {
+  it("a registered Testbed CI host row carries the GitHub-runner warning; an unregistered one does not", async () => {
+    const testbedHost = {
       ...MACHINES.machines[1],
-      role: { ...MACHINES.machines[1].role!, dispatch_role: "bench" },
+      role: { ...MACHINES.machines[1].role!, dispatch_role: "testbed" },
     };
     fetchMock.mockImplementation(async () =>
       json(200, {
         ...MACHINES,
         machines: [
-          benchHost,
+          testbedHost,
           {
-            ...benchHost,
+            ...testbedHost,
             // Coord names a CI host by the bare runner name (no gh-runner-).
             machine_key: "/msi-wsl",
             ci_host_name: "msi-wsl",
@@ -349,7 +354,7 @@ describe("FleetRolesSection", () => {
     const { toast } = await import("sonner");
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("monster"));
-    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-testbed"));
     fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
       target: { value: "x" },
     });
@@ -359,7 +364,7 @@ describe("FleetRolesSection", () => {
     await waitFor(() => expect(puts).toHaveLength(2));
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        "monster is Bench — the earlier attempt may have applied it."
+        "monster is Testbed — the earlier attempt may have applied it."
       )
     );
   });
@@ -497,7 +502,7 @@ describe("FleetRolesSection", () => {
     putAnswers = [
       json(200, {
         changed: true,
-        dispatch_role: "bench",
+        dispatch_role: "testbed",
         live_sessions_on_machine: 2,
         effects_not_applied: [
           { effect: "linked_ci_host_fanout", plan_phase: 3, detail: "z" },
@@ -509,7 +514,7 @@ describe("FleetRolesSection", () => {
     vi.mocked(toast.warning).mockClear();
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("monster"));
-    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-testbed"));
     fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
       target: { value: "rebuild" },
     });
@@ -522,11 +527,26 @@ describe("FleetRolesSection", () => {
     );
   });
 
+  it("a role coord still serves as legacy `bench` reads as Testbed, marked legacy, and is current", async () => {
+    // nomad's fixture row is stored under the pre-rename spelling (plan
+    // Amendment 2026-10-10 A2/A6): it is Testbed, never "unrecognised".
+    render(<FleetRolesSection />);
+    expect(await screen.findByText('Testbed (legacy "bench")')).toBeTruthy();
+    expect(screen.queryByText(/Unrecognised role/)).toBeNull();
+    fireEvent.click(screen.getByText("nomad"));
+    const current = screen.getByTestId(
+      "fleet-roles-set-testbed"
+    ) as HTMLButtonElement;
+    expect(current.disabled).toBe(true);
+    expect(current.getAttribute("aria-pressed")).toBe("true");
+    expect(current.title).toContain('legacy name "bench"');
+  });
+
   it("hides the write controls from a non-admin", async () => {
     authState.isCoordAdmin = false;
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText("monster"));
-    expect(screen.queryByTestId("fleet-roles-set-bench")).toBeNull();
+    expect(screen.queryByTestId("fleet-roles-set-testbed")).toBeNull();
     expect(screen.queryByTestId("fleet-roles-by-host")).toBeNull();
   });
 });

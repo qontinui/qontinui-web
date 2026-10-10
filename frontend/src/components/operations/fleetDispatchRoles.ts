@@ -8,8 +8,14 @@
  * | role        | `ci` lane | `agent` lane |
  * |-------------|-----------|--------------|
  * | `workhorse` | open      | open         |
- * | `bench`     | closed    | closed       |
+ * | `testbed`   | closed    | closed       |
  * | `ci_node`   | open      | closed       |
+ *
+ * `testbed` was called `bench` until plan Amendment 2026-10-10 (A2): the
+ * machine kept empty for hand-driven UI Bridge testing. The lanes did not
+ * change. A wire value of `bench` (a coord predating the rename, or a row it
+ * wrote) is read as Testbed and marked legacy — never as an unrecognised role,
+ * and never coerced silently (`legacyRoleSpelling` keeps what coord sent).
  *
  * Pure and DOM-free so each rule is pinned by `fleetDispatchRoles.test.ts`.
  * `FleetRolesSection.tsx` renders it; `useFleetDispatchRoles.ts` is transport.
@@ -34,16 +40,32 @@
  * role or lane value is surfaced as such, never coerced to a default.
  */
 
-export const DISPATCH_ROLES = ["workhorse", "bench", "ci_node"] as const;
+export const DISPATCH_ROLES = ["workhorse", "testbed", "ci_node"] as const;
 export type DispatchRole = (typeof DISPATCH_ROLES)[number];
+
+/**
+ * Pre-rename spellings coord may still serve, and the role each one IS (plan
+ * Amendment 2026-10-10 A2/A6: coord keeps parsing `bench` as Testbed until
+ * coord's own contract step). Read-side only — this console never writes one.
+ */
+export const LEGACY_ROLE_SPELLINGS: Readonly<Record<string, DispatchRole>> = {
+  bench: "testbed",
+};
 
 export const LANES = ["agent", "ci"] as const;
 export type Lane = (typeof LANES)[number];
 
 export const ROLE_LABEL: Record<DispatchRole, string> = {
   workhorse: "Workhorse",
-  bench: "Bench",
+  testbed: "Testbed",
   ci_node: "CI node",
+};
+
+/** One line per role: what the operator is choosing (§D1, A2). */
+export const ROLE_DESCRIPTION: Record<DispatchRole, string> = {
+  workhorse: "Takes CI and agent sessions.",
+  testbed: "UI testing — takes no coord work (no CI, no sessions).",
+  ci_node: "CI only, sized by its own specs — no sessions.",
 };
 
 export const LANE_LABEL: Record<Lane, string> = {
@@ -54,7 +76,7 @@ export const LANE_LABEL: Record<Lane, string> = {
 /** §D1 — the whole semantics of a role. A DEFINITION, not a verdict. */
 export const ROLE_OPENS: Record<DispatchRole, Record<Lane, boolean>> = {
   workhorse: { agent: true, ci: true },
-  bench: { agent: false, ci: false },
+  testbed: { agent: false, ci: false },
   ci_node: { agent: false, ci: true },
 };
 
@@ -62,6 +84,18 @@ export function isDispatchRole(v: unknown): v is DispatchRole {
   return (
     typeof v === "string" && (DISPATCH_ROLES as readonly string[]).includes(v)
   );
+}
+
+/**
+ * A wire role value as the role it names: a current spelling, or a legacy one
+ * (`bench` → `testbed`). `null` for anything else — the caller surfaces that
+ * as unrecognised rather than defaulting it.
+ */
+export function readDispatchRole(v: unknown): DispatchRole | null {
+  if (isDispatchRole(v)) return v;
+  if (typeof v === "string" && Object.hasOwn(LEGACY_ROLE_SPELLINGS, v))
+    return LEGACY_ROLE_SPELLINGS[v] ?? null;
+  return null;
 }
 
 /** The DRAIN layer of one lane, as coord serves it — separate from the role. */
@@ -126,6 +160,11 @@ export interface RoleMachine {
   role: DispatchRole | null;
   /** A role value this build does not know, verbatim — never coerced. */
   unrecognisedRole: string | null;
+  /**
+   * The wire spelling when coord served a LEGACY name for `role` (e.g.
+   * `bench` for Testbed), verbatim; `null` for a current spelling.
+   */
+  legacyRoleSpelling: string | null;
   /** `false` for `registration: assigned_not_registered`. */
   registered: boolean;
   /**
@@ -239,10 +278,11 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
   // `role` is this tenant's row (`RoleView`) or null when unassigned.
   const roleRow = isRecord(v.role) ? v.role : null;
   const rawRole = roleRow ? roleRow.dispatch_role : null;
-  let role: DispatchRole | null = null;
+  const role: DispatchRole | null = readDispatchRole(rawRole);
   let unrecognisedRole: string | null = null;
-  if (isDispatchRole(rawRole)) role = rawRole;
-  else if (rawRole !== null && rawRole !== undefined)
+  const legacyRoleSpelling: string | null =
+    role !== null && !isDispatchRole(rawRole) ? String(rawRole) : null;
+  if (role === null && rawRole !== null && rawRole !== undefined)
     unrecognisedRole = String(rawRole);
   // A role field that is neither null nor an object is a shape we do not know.
   if (v.role !== null && v.role !== undefined && roleRow === null)
@@ -252,12 +292,11 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
   const sug = v.suggestion;
   // Coord's RAM rule may suggest `workhorse` for a CI host, which coord would
   // refuse (`no_agent_host`); an unusable suggestion is not offered.
+  const sugRole = isRecord(sug) ? readDispatchRole(sug.dispatch_role) : null;
   const suggestion: RoleSuggestion | null =
-    isRecord(sug) &&
-    isDispatchRole(sug.dispatch_role) &&
-    !(hostOnly && sug.dispatch_role === "workhorse")
+    isRecord(sug) && sugRole !== null && !(hostOnly && sugRole === "workhorse")
       ? {
-          role: sug.dispatch_role,
+          role: sugRole,
           memTotalBytes: num(sug.mem_total_bytes),
           sampleAgeSecs: num(sug.sample_age_secs),
         }
@@ -289,6 +328,7 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
     name: str(v.name) ?? ciHostName ?? (deviceId as string),
     role,
     unrecognisedRole,
+    legacyRoleSpelling,
     registered,
     hostOnly,
     heartbeatFresh:
@@ -376,7 +416,11 @@ export function describeRole(m: RoleMachine): string {
           .map((l) => (l === "agent" ? "sessions" : "CI"))
           .join(" and ")}`;
   }
-  const base = ROLE_LABEL[m.role];
+  const label = ROLE_LABEL[m.role];
+  const base =
+    m.legacyRoleSpelling === null
+      ? label
+      : `${label} (legacy "${m.legacyRoleSpelling}")`;
   return m.registered ? base : `${base} — assigned, not yet registered`;
 }
 
@@ -481,6 +525,26 @@ export type RoleWriteRefusal =
     };
 
 /**
+ * True when a 422 body carries a validation entry refusing the VALUE of
+ * `dispatch_role` (`literal_error`), in either envelope the web backend can
+ * send: FastAPI's `{detail: [{type, loc}]}` or the deployed
+ * `{error: "VALIDATION_ERROR", details: [{type, field}]}`.
+ */
+function refusesDispatchRoleValue(parsed: unknown): boolean {
+  if (!isRecord(parsed)) return false;
+  const entries = [parsed.detail, parsed.details].flatMap((v) =>
+    Array.isArray(v) ? v : []
+  );
+  return entries.some(
+    (e) =>
+      isRecord(e) &&
+      e.type === "literal_error" &&
+      ((Array.isArray(e.loc) && e.loc.at(-1) === "dispatch_role") ||
+        (typeof e.field === "string" && /(^|\.)dispatch_role$/.test(e.field)))
+  );
+}
+
+/**
  * Turn a non-2xx role write into a readable refusal. The web proxy passes
  * coord's typed refusal through as a structured object — at the top level or
  * under `detail`, depending on the deployed error envelope — so both are read.
@@ -577,7 +641,26 @@ export function describeRoleWriteError(
       message:
         "Coord refused: this machine has no workstation runner, so it cannot " +
         "host agent sessions and cannot be a Workhorse. Choose CI node or " +
-        `Bench.${coordMsg ? ` Coord: ${coordMsg}` : ""}`,
+        `Testbed.${coordMsg ? ` Coord: ${coordMsg}` : ""}`,
+    };
+  }
+  // The Testbed rename (plan Amendment 2026-10-10 A2) deploys in steps: a
+  // coord predating it answers `unknown_dispatch_role` for `testbed`, and a
+  // web backend predating it refuses the role in its own body validation — a
+  // `literal_error` entry naming `dispatch_role`, in FastAPI's `detail` list
+  // or the deployed envelope's `details` list (`middleware/error_handler.py`).
+  // Either way nothing changed, and the operator should hear that the role is
+  // not live yet — not a raw status.
+  if (
+    code === "unknown_dispatch_role" ||
+    (status === 422 && refusesDispatchRoleValue(parsed))
+  ) {
+    return {
+      kind: "other",
+      message:
+        "This deployment does not accept that role yet — coord or the web " +
+        "backend predates the Testbed rename. Nothing was changed." +
+        (coordMsg ? ` Coord: ${coordMsg}` : ""),
     };
   }
   if (code === "tenant_not_resolved" || /tenant_not_resolved/.test(body)) {
