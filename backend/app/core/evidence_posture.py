@@ -202,6 +202,14 @@ STORES: Final[dict[str, Store]] = {
         states=("never_held", "held", "released"),
         terminal=("held", "released"),
     ),
+    # An overview record (a page, an estimate, a milestone, a file, a phase's
+    # progress). Nothing automatic moves either state: a live record rests
+    # until somebody edits it, and a deleted one is gone from its table, with
+    # its last full read shape kept in ``overview.change_log.before``.
+    "overview_records": Store(
+        states=("live", "deleted"),
+        terminal=("live", "deleted"),
+    ),
 }
 
 
@@ -254,6 +262,52 @@ Posture = Read | Ephemeral | Evidence
 _MEMORY_SUPERSEDE = f"POST {_V1}/memory/records/{{memory_id}}/supersede"
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
+_OVERVIEW = f"{_V1}/overview"
+#: Owns the overview's device-principal door (qontinui-web: agents publish
+#: documents; every overview write admits a coord device JWT since).
+OVERVIEW_PUBLISHING_PLAN: Final = (
+    "2026-10-07-agents-publish-documents-to-the-project-overview"
+)
+
+
+def _overview_record_rows(
+    path: str, *, create: tuple[str, ...], update: tuple[str, ...], deletion: Gap | None
+) -> dict[tuple[str, str], Posture]:
+    """The three generic-contract rows of one overview resource.
+
+    Every overview write appends ``overview.change_log`` with the record's
+    read shape before and after, and every update takes ``If-Match``. So a
+    wrong create or update is corrected forward by a PATCH, and a wrong
+    delete by re-creating from the deleted shape the change log keeps (a new
+    id). What a re-create cannot bring back is named as the delete row's gap.
+    """
+    item = f"{path}/{{record_id}}"
+    rows: dict[tuple[str, str], Posture] = {
+        ("POST", path): Evidence(
+            closed_fields=create,
+            store="overview_records",
+            correction=Verb(verb=f"PATCH {item}", admits=("live",)),
+            aspects=(
+                (
+                    "a field fixed at create",
+                    Verb(verb=f"POST {path}", first=f"DELETE {item}", admits=("live",)),
+                ),
+            ),
+        ),
+        ("PATCH", item): Evidence(
+            closed_fields=update,
+            store="overview_records",
+            correction=Verb(verb=f"PATCH {item}", admits=("live",)),
+        ),
+    }
+    rows[("DELETE", item)] = Evidence(
+        closed_fields=(),
+        store="overview_records",
+        correction=Verb(verb=f"POST {path}", admits=("deleted",)),
+        aspects=(() if deletion is None else (("what a re-create loses", deletion),)),
+    )
+    return rows
+
 
 #: One row per device-JWT-admitted write route. Classified by reading each
 #: handler, not its summary.
@@ -608,6 +662,121 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             "row would falsify the audit trail, so a later outcome is a new row"
         ),
     ),
+    # ── project overview (``get_overview_principal``) ───────────────────
+    #
+    # A device acts as its owning user, with that user's roles, in a project
+    # it is bound to (plan 2026-10-07-agents-publish-documents-to-the-project-
+    # overview D1), so every overview write admits a device JWT — except the
+    # rules ``permissions.DEVICE_REFUSALS`` refuses a device outright
+    # (coord-backed resources and the project settings), whose rows below
+    # are refusals.
+    **_overview_record_rows(
+        f"{_OVERVIEW}/pages",
+        create=("kind",),
+        update=(),
+        deletion=Gap(
+            tracked_by=OVERVIEW_PUBLISHING_PLAN,
+            what=(
+                "a wrongly deleted page's version history. Its page_versions "
+                "rows cascade with it and the change log keeps every version's "
+                "metadata but not its body, so re-creating restores the last "
+                "version's content under a new id and nothing earlier"
+            ),
+        ),
+    ),
+    ("POST", f"{_OVERVIEW}/pages/{{page_id}}/versions/{{version}}/revert"): Evidence(
+        closed_fields=(),
+        store="overview_records",
+        # A revert writes a NEW version; a wrong one is reverted again.
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/pages/{{page_id}}/versions/{{version}}/revert",
+            admits=("live",),
+        ),
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/estimates",
+        create=(
+            "content.cost_lines[].kind",
+            "content.phases[].tasks[].status",
+            "purpose",
+            "status",
+        ),
+        update=(
+            "content.cost_lines[].kind",
+            "content.phases[].tasks[].status",
+            "purpose",
+            "status",
+        ),
+        deletion=Gap(
+            tracked_by=EVIDENCE_POSTURE_PLAN,
+            what=(
+                "a wrongly deleted estimate's recorded progress and ids. The "
+                "change log keeps the whole graph, so a re-create restores the "
+                "plan, but its phases get new ids: the phase_progress recorded "
+                "against the old ones and the milestones it detached do not "
+                "come back"
+            ),
+        ),
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/milestones",
+        create=("kind", "status"),
+        update=("kind", "status"),
+        deletion=None,
+    ),
+    ("PATCH", f"{_OVERVIEW}/phase-progress/{{record_id}}"): Evidence(
+        closed_fields=("gate_status",),
+        store="overview_records",
+        correction=Verb(
+            verb=f"PATCH {_OVERVIEW}/phase-progress/{{record_id}}", admits=("live",)
+        ),
+    ),
+    ("POST", f"{_OVERVIEW}/files"): Evidence(
+        closed_fields=(),
+        store="overview_records",
+        # Files are immutable: a wrong upload is deleted and uploaded again.
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/files",
+            first=f"DELETE {_OVERVIEW}/files/{{record_id}}",
+            admits=("live",),
+        ),
+    ),
+    ("DELETE", f"{_OVERVIEW}/files/{{record_id}}"): Evidence(
+        closed_fields=(),
+        correction=Gap(
+            tracked_by=EVIDENCE_POSTURE_PLAN,
+            what=(
+                "a wrongly deleted file. Its stored bytes are removed once the "
+                "delete commits and the change log keeps only its metadata, so "
+                "nothing on the server can restore it; only a writer still "
+                "holding the file can upload it again, under a new id"
+            ),
+        ),
+    ),
+    # The settings decide who may edit (``editing_roles``), so a device may
+    # not write them: ``project_admin`` is in ``DEVICE_REFUSALS``.
+    ("PUT", f"{_OVERVIEW}/settings"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_project_admin before the settings row is read "
+        "or written, so a device mutates nothing through this door; a person's "
+        "write (a project administrator's) keeps its expected_version re-PUT "
+        "and is outside this table's scope"
+    ),
+    # Coord stores these behind its operator-only prompt-document routes. A
+    # device is refused (403 device_not_supported_for_coord_backed_resource)
+    # before any store runs, and its bearer is never forwarded there.
+    ("POST", f"{_OVERVIEW}/intent-documents"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_coord_backed_resource before the coord store "
+        "runs, so a device mutates nothing through this door; a person's write "
+        "is coord's, proxied, and outside this table's scope"
+    ),
+    ("PATCH", f"{_OVERVIEW}/intent-documents/{{record_id}}"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_coord_backed_resource before the coord store "
+        "runs, so a device mutates nothing through this door; a person's write "
+        "is coord's, proxied, and outside this table's scope"
+    ),
 }
 
 
@@ -661,6 +830,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
     from app.api import deps
     from app.api.v1.endpoints.memory import get_memory_tenant
     from app.api.v1.endpoints.testing.deps import get_runner_user
+    from app.overview.permissions import get_overview_principal
 
     return frozenset(
         {
@@ -673,6 +843,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
             deps.get_paired_device,
             deps.get_reporting_device,
             get_memory_tenant,
+            get_overview_principal,
             get_runner_user,
         }
     )

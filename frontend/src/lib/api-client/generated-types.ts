@@ -28081,6 +28081,10 @@ export interface components {
             version_after: number | null;
             /** Version Before */
             version_before: number | null;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** ChangeLogPage */
         ChangeLogPage: {
@@ -41056,6 +41060,12 @@ export interface components {
             related?: string[];
             /** Slug */
             slug?: string | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title: string;
         };
@@ -41095,6 +41105,12 @@ export interface components {
             related: string[];
             /** Slug */
             slug: string;
+            /** Source Path */
+            source_path: string | null;
+            /** Source Repo */
+            source_repo: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /**
@@ -41106,6 +41122,10 @@ export interface components {
             updated_by: string | null;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageRef */
         PageRef: {
@@ -41126,6 +41146,11 @@ export interface components {
          * @description Absent fields are left alone; ``null`` clears the metadata fields.
          *     ``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:
          *     links name it, and renaming would orphan every one of them.
+         *
+         *     ``source_repo`` + ``source_path`` do not CHANGE a page's source: they name
+         *     the source the writer believes the page mirrors, and a page whose source
+         *     is absent or different refuses the write (409 ``source_mismatch``).
+         *     ``source_sha`` is the commit the new content mirrors.
          */
         PageUpdate: {
             /** Body Md */
@@ -41138,6 +41163,12 @@ export interface components {
             owner?: string | null;
             /** Related */
             related?: string[] | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title?: string | null;
         };
@@ -41165,10 +41196,16 @@ export interface components {
             doc_status: string | null;
             /** Owner */
             owner: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageVersionSummary */
         PageVersionSummary: {
@@ -41179,10 +41216,16 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PagesItem */
         PagesItem: {
@@ -76740,6 +76783,8 @@ export interface operations {
                 /** @description A registry name, e.g. intent_documents */
                 resource: string;
                 record_id?: string | null;
+                /** @description Only writes from this surface (X-Overview-Source). */
+                source?: string | null;
                 limit?: number;
             };
             header?: never;

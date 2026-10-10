@@ -59,7 +59,11 @@ async def api_user(async_db_session: AsyncSession):
 
 
 def _app(db: AsyncSession, user, tenant: UUID, roles: tuple[str, ...]) -> FastAPI:
-    from app.api.deps import current_active_user, get_async_db
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.overview import router as overview_router
     from app.middleware.security_headers import SecurityHeadersMiddleware
     from app.overview.permissions import OverviewCaller, get_overview_caller
@@ -68,7 +72,11 @@ def _app(db: AsyncSession, user, tenant: UUID, roles: tuple[str, ...]) -> FastAP
     app = FastAPI()
     # As in production, so a route's own headers are tested against it.
     app.add_middleware(SecurityHeadersMiddleware)
-    app.dependency_overrides[current_active_user] = lambda: user
+    # The overview principal resolves a Cognito user through the OPTIONAL
+    # dependency (a device JWT is its other arm), so both are stood in for.
+    app.dependency_overrides[current_active_user] = app.dependency_overrides[
+        current_active_user_optional
+    ] = lambda: user
 
     async def _db():
         yield db

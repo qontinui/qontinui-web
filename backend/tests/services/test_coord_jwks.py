@@ -1239,3 +1239,38 @@ async def test_grace_still_enforces_not_yet_valid() -> None:
 
     with pytest.raises(CoordTokenNotYetValidError):
         await client.verify_token(token, expired_grace_s=_GRACE_30D)
+
+
+# ---------------------------------------------------------------------------
+# kid_outside_coord_family — the header-only refusal for a non-coord bearer
+# ---------------------------------------------------------------------------
+
+
+def _token_with_header(header: dict[str, Any]) -> str:
+    return pyjwt.encode(
+        {"sub": "x"},
+        "a-throwaway-hmac-key-that-is-long-enough!",
+        algorithm="HS256",
+        headers=header,
+    )
+
+
+@pytest.mark.parametrize(
+    ("token", "outside"),
+    [
+        # A Cognito user-pool key: the one shape this exists to refuse.
+        (_token_with_header({"kid": "us-east-1_TestPool-signing-key"}), True),
+        (_token_with_header({"kid": "abc123="}), True),
+        # Coord's family, served here or not, is the verifier's to judge.
+        (_token_with_header({"kid": "coord-ed25519-deadbeefdeadbeef"}), False),
+        (_token_with_header({"kid": "coord-ed25519-v1"}), False),
+        # No kid, or no parseable header: not a statement about anyone's key.
+        (_token_with_header({}), False),
+        ("not.a.jwt", False),
+        ("device-token-admin", False),
+    ],
+)
+def test_kid_outside_coord_family(token: str, outside: bool) -> None:
+    from app.services.coord_jwks import kid_outside_coord_family
+
+    assert kid_outside_coord_family(token) is outside
