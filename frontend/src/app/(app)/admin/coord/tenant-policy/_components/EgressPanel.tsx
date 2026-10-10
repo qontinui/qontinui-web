@@ -164,6 +164,12 @@ function EgressRow({ spec, dial }: { spec: EgressFlowSpec; dial: EgressDial }) {
  * Visible to every member; the switch is enabled only for a tenant admin
  * (`can_edit`), and coord re-checks the write. A row whose read failed renders
  * UNKNOWN with its switch disabled, never "on".
+ *
+ * Deploy ordering: this panel lands only after qontinui-coord step 3(c) is
+ * deployed AND `GET /tenant-policy` serves `egress_legacy_column = "retired"`.
+ * Before that, coord still refuses session output for a tenant whose frozen
+ * `transcript_sync_enabled` column is false, so a row here could read "on"
+ * while coord refuses the flow.
  */
 export function EgressPanel() {
   const dials = useEgressPolicies();
