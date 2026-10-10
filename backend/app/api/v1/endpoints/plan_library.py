@@ -4640,7 +4640,11 @@ async def upsert_work_artifact(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "error": "spec_family_boundary",
+                "error": (
+                    "spec_family_boundary"
+                    if exc.reason == "kind_change"
+                    else "spec_artifact_key_collision"
+                ),
                 "message": str(exc),
                 "from_kind": exc.from_kind,
                 "to_kind": exc.to_kind,
@@ -4838,7 +4842,11 @@ async def patch_work_artifact_kind(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "error": "spec_family_boundary",
+                "error": (
+                    "spec_family_boundary"
+                    if exc.reason == "kind_change"
+                    else "spec_artifact_key_collision"
+                ),
                 "message": str(exc),
                 "from_kind": exc.from_kind,
                 "to_kind": exc.to_kind,

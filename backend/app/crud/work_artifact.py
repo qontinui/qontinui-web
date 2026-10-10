@@ -65,6 +65,7 @@ import typing
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID, uuid5
 
 from sqlalchemy import (
@@ -241,33 +242,89 @@ class AmbiguousArtifactKind(Exception):
 
 
 class SpecFamilyBoundary(Exception):
-    """A kind change would move an artifact into or out of the spec family.
+    """A write would cross the specification-family boundary.
 
     A specification artifact's ``spec_ref`` prefix names its kind
     (``REQ-0042`` is a requirement), and the ref is the artifact's stable
-    identity — so its kind is fixed for life, and a non-spec artifact cannot
-    become one either (it has no ref, and minting one for a re-kind would make
-    "created" and "relabelled" indistinguishable). A different kind of thing
-    is a NEW artifact linked by ``derives_from`` / ``refines``. Raised before
-    anything is written; surfaced as a 409.
+    identity — so its kind is fixed for life, a non-spec artifact cannot
+    become one either, and a write of the other family may not update one.
+    Raised before anything is written; surfaced as a 409. Two cases, told
+    apart by ``reason`` so the caller gets the sentence that fits:
+
+    * ``"kind_change"`` — a kind correction (``PATCH .../kind``, or a kind
+      move on the upsert path) into, out of, or within the spec family. A
+      different kind of thing is a NEW artifact linked by ``derives_from`` /
+      ``refines``.
+    * ``"key_resolves_to_other_family"`` — an upsert whose target row is of
+      the other family. The heuristic scan path filters its candidates to the
+      incoming kind's family first (:func:`_same_family`), so a scanned plan
+      sharing a spec row's ``(org, slug, source_repo)`` lands on its own plan
+      row; this arm is the backstop for any path that still resolves across.
     """
 
-    def __init__(self, *, from_kind: str, to_kind: str, spec_ref: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        from_kind: str,
+        to_kind: str,
+        spec_ref: str | None,
+        reason: Literal["kind_change", "key_resolves_to_other_family"] = "kind_change",
+    ) -> None:
         self.from_kind = from_kind
         self.to_kind = to_kind
         self.spec_ref = spec_ref
-        super().__init__(
-            f"cannot change kind {from_kind!r} -> {to_kind!r}: a specification "
-            "artifact's kind is fixed by its stable spec_ref"
-            + (f" ({spec_ref})" if spec_ref else "")
-            + ", and no other artifact can become one; create a new artifact "
-            "and link it with derives_from or refines instead"
-        )
+        self.reason = reason
+        ref = f" ({spec_ref})" if spec_ref else ""
+        if reason == "key_resolves_to_other_family":
+            if is_spec_kind(from_kind):
+                message = (
+                    f"this key resolves to a specification artifact{ref}, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Write the artifact under a different slug or source_repo"
+                )
+            else:
+                message = (
+                    f"this key resolves to a non-specification artifact, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Create the specification artifact under its own slug"
+                )
+        else:
+            message = (
+                f"cannot change kind {from_kind!r} -> {to_kind!r}: a "
+                f"specification artifact's kind is fixed by its stable "
+                f"spec_ref{ref}, and no other artifact can become one; create "
+                "a new artifact and link it with derives_from or refines instead"
+            )
+        super().__init__(message)
 
 
 def is_spec_kind(kind: str) -> bool:
     """Whether ``kind`` is in the specification family."""
     return kind in SPEC_ARTIFACT_KINDS
+
+
+def _same_family(rows: list[WorkArtifact], kind: str) -> list[WorkArtifact]:
+    """Only the rows in ``kind``'s family (spec or non-spec).
+
+    Applied to the heuristic scan's kind-less candidates BEFORE
+    :func:`resolve_scan_target`: a scanned plan that shares a spec row's
+    ``(org, slug, source_repo)`` must neither land on that row nor count it
+    toward an ambiguity — it lands on, or inserts, its own plan row. The
+    identity index includes ``kind``, so the two rows coexist.
+    """
+    spec = is_spec_kind(kind)
+    return [row for row in rows if is_spec_kind(row.kind) == spec]
+
+
+def _check_key_family(existing: WorkArtifact, kind: str) -> None:
+    """Backstop: refuse an upsert whose resolved row is of the other family."""
+    if is_spec_kind(existing.kind) != is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=existing.kind,
+            to_kind=kind,
+            spec_ref=existing.spec_ref,
+            reason="key_resolves_to_other_family",
+        )
 
 
 def _check_spec_family_boundary(row: WorkArtifact, kind: str) -> None:
@@ -1163,8 +1220,12 @@ async def upsert_artifact(
     digest = compute_content_sha256(body)
 
     if kind_is_heuristic:
-        matches = await list_by_scan_identity(
-            db, org_id=org_id, slug=slug, source_repo=source_repo
+        # Own family only — see ``_same_family``.
+        matches = _same_family(
+            await list_by_scan_identity(
+                db, org_id=org_id, slug=slug, source_repo=source_repo
+            ),
+            kind,
         )
         # Raises AmbiguousArtifactKind on an unresolvable fork — deliberately
         # NOT caught here: no row is touched and the endpoint 409s.
@@ -1214,8 +1275,11 @@ async def upsert_artifact(
             await db.rollback()
             if kind_is_heuristic:
                 existing = resolve_scan_target(
-                    await list_by_scan_identity(
-                        db, org_id=org_id, slug=slug, source_repo=source_repo
+                    _same_family(
+                        await list_by_scan_identity(
+                            db, org_id=org_id, slug=slug, source_repo=source_repo
+                        ),
+                        kind,
                     ),
                     slug=slug,
                     source_repo=source_repo,
@@ -1243,16 +1307,12 @@ async def upsert_artifact(
 
     assert existing is not None  # narrowed by both branches above
 
-    # The family boundary holds on EVERY write, not only when the kind would
-    # move. A heuristic scan resolves its target ignoring ``kind``, so a
-    # scanned plan sharing a spec row's ``(org, slug, source_repo)`` resolves
-    # ONTO that spec row; ``kind_locked`` then keeps the kind but the write
-    # would still overwrite its status (outside the lifecycle), title, body and
-    # source_path. Refuse before anything is written.
-    if is_spec_kind(existing.kind) != is_spec_kind(kind):
-        raise SpecFamilyBoundary(
-            from_kind=existing.kind, to_kind=kind, spec_ref=existing.spec_ref
-        )
+    # Backstop. The scan path already resolves within the incoming kind's
+    # family (``_same_family``) and the exact-identity path cannot return
+    # another kind, so this should never fire — but if any path resolved
+    # across, ``kind_locked`` would keep the kind while the write overwrote a
+    # spec row's status, title, body and source_path. Refuse before writing.
+    _check_key_family(existing, kind)
 
     metadata = _HeadMetadata(
         title=title,

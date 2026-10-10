@@ -330,12 +330,11 @@ async def _scan_write(
 
 @pytest.mark.asyncio
 class TestScannerCannotOverwriteASpecRow:
-    """A heuristic write resolves its target IGNORING kind, so a scanned plan
-    that shares a spec row's ``(org, slug, source_repo)`` resolves onto it.
-    ``kind_locked`` keeps the kind, but without the family check the write
-    would still overwrite the row's status, title, body and source_path."""
+    """A heuristic write resolves its target IGNORING kind. A scanned plan that
+    shares a spec row's ``(org, slug, source_repo)`` must land on — or insert —
+    its OWN plan row, never the spec row, and must not 409 on every cycle."""
 
-    async def test_a_scan_onto_a_spec_row_is_refused_and_writes_nothing(
+    async def test_a_colliding_scan_inserts_its_own_plan_row(
         self, async_db_session: AsyncSession
     ) -> None:
         org = uuid4()
@@ -343,40 +342,71 @@ class TestScannerCannotOverwriteASpecRow:
         req = await _create(
             async_db_session, org_id=org, kind="requirement", slug=slug, body="spec"
         )
-        before = (req.status, req.title, req.body, req.source_path, req.current_version)
-
-        with pytest.raises(crud.SpecFamilyBoundary) as excinfo:
-            await _scan_write(async_db_session, org_id=org, slug=slug)
-        assert excinfo.value.spec_ref == "REQ-0001"
-        assert (excinfo.value.from_kind, excinfo.value.to_kind) == (
-            "requirement",
-            "plan",
+        before = (
+            req.status,
+            req.title,
+            req.body,
+            req.source_path,
+            req.current_version,
         )
 
-        await async_db_session.refresh(req)
-        after = (req.status, req.title, req.body, req.source_path, req.current_version)
-        assert after == before
-        assert req.kind == "requirement"
+        plan, created, changed = await _scan_write(
+            async_db_session, org_id=org, slug=slug
+        )
+        assert (created, changed) == (True, True)
+        assert plan.id != req.id
+        assert (plan.kind, plan.spec_ref, plan.kind_locked) == ("plan", None, False)
+        assert plan.status == "SHIPPED"
 
-    async def test_an_identical_body_scan_is_refused_too(
+        await async_db_session.refresh(req)
+        after = (
+            req.status,
+            req.title,
+            req.body,
+            req.source_path,
+            req.current_version,
+        )
+        assert after == before
+        assert (req.kind, req.spec_ref) == ("requirement", "REQ-0001")
+
+    async def test_the_next_scan_cycle_updates_that_plan_row(
         self, async_db_session: AsyncSession
     ) -> None:
-        """The unchanged-digest arm settles metadata only — it must be
-        refused as well, or a same-body scan rewrites status and title."""
+        """No 409 on every cycle: the second scan resolves to the plan row it
+        inserted — the spec row is not a second candidate, so no ambiguity."""
         org = uuid4()
-        slug = _slug("same-body")
-        req = await _create(
+        slug = _slug("cycle")
+        req = await _create(async_db_session, org_id=org, kind="requirement", slug=slug)
+        first, _, _ = await _scan_write(async_db_session, org_id=org, slug=slug)
+        again, created, changed = await _scan_write(
+            async_db_session, org_id=org, slug=slug
+        )
+        assert again.id == first.id
+        assert (created, changed) == (False, False)
+
+        revised, created, changed = await crud.upsert_artifact(
             async_db_session,
             org_id=org,
-            kind="requirement",
+            user_id=None,
+            kind="plan",
             slug=slug,
-            body="a scanned body",
+            title="scanned title",
+            status="SHIPPED",
+            body="a REVISED scanned body",
+            source_path="plans/scanned.md",
+            source_repo=None,
+            work_unit_slug=None,
+            repos=[],
+            authored_at=None,
+            captured_by="runner_scan",
+            change_description=None,
+            created_by="scanner",
+            kind_is_heuristic=True,
         )
-        with pytest.raises(crud.SpecFamilyBoundary):
-            await _scan_write(async_db_session, org_id=org, slug=slug)
+        assert revised.id == first.id
+        assert (created, changed, revised.current_version) == (False, True, 2)
         await async_db_session.refresh(req)
-        assert req.status == "draft"
-        assert req.title == "t"
+        assert req.current_version == 1
 
     async def test_a_scan_with_no_spec_row_still_lands(
         self, async_db_session: AsyncSession
@@ -387,6 +417,39 @@ class TestScannerCannotOverwriteASpecRow:
         assert created is True
         assert artifact.kind == "plan"
         assert artifact.spec_ref is None
+
+
+class TestKeyFamilyBackstop:
+    """The backstop for any path that still resolves across the family — the
+    scan path no longer does, so it is exercised directly."""
+
+    def test_a_spec_row_refuses_a_plan_write_with_the_key_wording(self) -> None:
+        row = WorkArtifact(kind="requirement", slug="s", spec_ref="REQ-0007")
+        with pytest.raises(crud.SpecFamilyBoundary) as excinfo:
+            crud._check_key_family(row, "plan")
+        exc = excinfo.value
+        assert exc.reason == "key_resolves_to_other_family"
+        assert "this key resolves to a specification artifact (REQ-0007)" in str(exc)
+        assert "cannot change kind" not in str(exc)
+
+    def test_a_plan_row_refuses_a_spec_write(self) -> None:
+        row = WorkArtifact(kind="plan", slug="s")
+        with pytest.raises(crud.SpecFamilyBoundary) as excinfo:
+            crud._check_key_family(row, "story")
+        assert "non-specification artifact" in str(excinfo.value)
+
+    def test_same_family_passes(self) -> None:
+        crud._check_key_family(WorkArtifact(kind="plan", slug="s"), "handoff")
+        crud._check_key_family(
+            WorkArtifact(kind="story", slug="s", spec_ref="STY-0001"), "story"
+        )
+
+    def test_a_kind_change_keeps_the_kind_change_wording(self) -> None:
+        exc = crud.SpecFamilyBoundary(
+            from_kind="requirement", to_kind="plan", spec_ref="REQ-0001"
+        )
+        assert exc.reason == "kind_change"
+        assert str(exc).startswith("cannot change kind 'requirement' -> 'plan'")
 
 
 @pytest.mark.asyncio
@@ -581,7 +644,7 @@ class TestHttpSurface:
         assert detail["error"] == "spec_family_boundary"
         assert detail["spec_ref"] == artifact["spec_ref"]
 
-    async def test_a_scan_onto_a_spec_row_is_a_409(
+    async def test_a_colliding_scan_lands_beside_the_spec_row(
         self, client: httpx.AsyncClient
     ) -> None:
         slug = _slug("collide")
@@ -591,20 +654,25 @@ class TestHttpSurface:
         assert created.status_code == 201, created.text
         artifact = created.json()["artifact"]
 
-        scan = await client.post(
-            API_PREFIX,
-            json={
-                "kind": "plan",
-                "slug": slug,
-                "title": "overwritten?",
-                "status": "SHIPPED",
-                "body": "scanned",
-                "kind_is_heuristic": True,
-                "captured_by": "runner_scan",
-            },
-        )
-        assert scan.status_code == 409, scan.text
-        assert scan.json()["detail"]["error"] == "spec_family_boundary"
+        scan_body = {
+            "kind": "plan",
+            "slug": slug,
+            "title": "scanned",
+            "status": "SHIPPED",
+            "body": "scanned",
+            "kind_is_heuristic": True,
+            "captured_by": "runner_scan",
+        }
+        scan = await client.post(API_PREFIX, json=scan_body)
+        assert scan.status_code == 201, scan.text
+        plan = scan.json()["artifact"]
+        assert plan["id"] != artifact["id"]
+        assert (plan["kind"], plan["spec_ref"]) == ("plan", None)
+
+        # The next cycle is a no-op on the same plan row — not a 409.
+        again = await client.post(API_PREFIX, json=scan_body)
+        assert again.status_code == 200, again.text
+        assert again.json()["artifact"]["id"] == plan["id"]
 
         detail = (await client.get(f"{API_PREFIX}/{artifact['id']}")).json()
         assert detail["title"] == "R"
