@@ -1,7 +1,7 @@
 """coord.agent_questions — the recommendation and what overturning it changes
 
 Revision ID: coord_agent_questions_recommendation
-Revises: coordtouch_02_operator_touch_closes
+Revises: devcred_01_credential_deny_and_bound_pair_codes
 Create Date: 2026-09-30
 
 Phase 3 (qontinui-web half) of plan
@@ -111,7 +111,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_recommendation"
-down_revision: str | Sequence[str] | None = "coordtouch_02_operator_touch_closes"
+down_revision: str | Sequence[str] | None = "devcred_01_credential_deny_and_bound_pair_codes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
