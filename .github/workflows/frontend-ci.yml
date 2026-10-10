@@ -81,8 +81,8 @@ jobs:
         run: npm ci
 
       # generated-types.ts is a pure function of the committed, backend-ci-
-      # gated openapi-schema.json. Nothing checked that, and it fell to 50 of
-      # 848 paths before anyone noticed (coord finding 01de0d9c). Regenerate
+      # gated openapi-schema.json. Nothing checked that, and it fell to 51 of
+      # 859 paths before anyone noticed (coord finding 01de0d9c). Regenerate
       # it with the repo's own generator and fail on any byte of drift. A
       # backend PR that changes the schema therefore also commits the
       # regenerated types. The file is in .prettierignore, so it stays raw
