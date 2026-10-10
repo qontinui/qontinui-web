@@ -7695,6 +7695,29 @@
               }
             ],
             "title": "Version Before"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -7708,7 +7731,9 @@
           "version_before",
           "version_after",
           "before",
-          "after"
+          "after",
+          "via_device",
+          "via_session"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -35990,6 +36015,42 @@
             ],
             "title": "Slug"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
@@ -36110,6 +36171,39 @@
             "title": "Slug",
             "type": "string"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36133,6 +36227,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36150,7 +36267,12 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "source_repo",
+          "source_path",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageRead",
         "type": "object"
@@ -36188,7 +36310,7 @@
         "type": "object"
       },
       "PageUpdate": {
-        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the commit the new content mirrors.",
         "properties": {
           "body_md": {
             "anyOf": [
@@ -36252,6 +36374,42 @@
               }
             ],
             "title": "Related"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
           },
           "title": {
             "anyOf": [
@@ -36346,6 +36504,17 @@
             ],
             "title": "Owner"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36353,6 +36522,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36360,6 +36552,9 @@
           "title",
           "created_at",
           "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
           "body_md",
           "doc_number",
           "doc_status",
@@ -36386,6 +36581,17 @@
             ],
             "title": "Created By"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36393,13 +36599,39 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
           "version",
           "title",
           "created_at",
-          "created_by"
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageVersionSummary",
         "type": "object"
@@ -106188,6 +106420,25 @@
             }
           },
           {
+            "description": "Only writes from this surface (X-Overview-Source).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(ui|api|import)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only writes from this surface (X-Overview-Source).",
+              "title": "Source"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -106225,6 +106476,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Change Log",
@@ -106251,6 +106505,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Estimates",
@@ -106314,6 +106571,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Estimates",
@@ -106363,6 +106623,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Forecast",
@@ -106413,6 +106676,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Rollup",
@@ -106469,6 +106735,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Estimates",
@@ -106515,6 +106784,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Estimates",
@@ -106587,6 +106859,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Estimates",
@@ -106614,6 +106889,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Files",
@@ -106678,6 +106956,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Upload File",
@@ -106734,6 +107015,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Download File",
@@ -106790,6 +107074,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Files",
@@ -106836,6 +107123,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Files",
@@ -106863,6 +107153,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Intent Documents",
@@ -106926,6 +107219,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Intent Documents",
@@ -106974,6 +107270,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Intent Documents",
@@ -107046,6 +107345,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Intent Documents",
@@ -107073,6 +107375,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Milestones",
@@ -107136,6 +107441,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Milestones",
@@ -107193,6 +107501,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Milestones",
@@ -107239,6 +107550,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Milestones",
@@ -107311,6 +107625,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Milestones",
@@ -107338,6 +107655,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Pages",
@@ -107401,6 +107721,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Pages",
@@ -107454,6 +107777,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Page Backlinks",
@@ -107502,6 +107828,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Page Versions",
@@ -107558,6 +107887,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Page Version",
@@ -107631,6 +107963,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Revert Page",
@@ -107687,6 +108022,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Pages",
@@ -107733,6 +108071,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Pages",
@@ -107805,6 +108146,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Pages",
@@ -107832,6 +108176,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Phase Progress",
@@ -107880,6 +108227,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Phase Progress",
@@ -107952,6 +108302,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Phase Progress",
@@ -107980,6 +108333,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Catalog",
@@ -108007,6 +108363,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Settings",
@@ -108052,6 +108411,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Write Settings",
