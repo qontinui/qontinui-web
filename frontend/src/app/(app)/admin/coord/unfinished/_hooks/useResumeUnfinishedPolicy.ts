@@ -15,7 +15,7 @@ function message(err: unknown, fallback: string): string {
 /**
  * The tenant's `resume_unfinished_enabled` flag.
  *
- * Same honesty properties as `useTranscriptSyncPolicy`: what is shown comes
+ * Same honesty properties as `useTenantFleetPolicyDial`: what is shown comes
  * from a READ (the GET or coord's post-write re-read), never the value we
  * asked for; a failed read keeps the last confirmed value and never resolves
  * to ON; a read begun before a landed write is discarded.

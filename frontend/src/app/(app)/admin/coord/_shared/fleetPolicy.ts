@@ -48,6 +48,14 @@ export interface FleetPolicyView {
    * about `fleet_resources` itself. `null` — coord sent none.
    */
   keys_not_shown_source: "fleet_resources_row" | "this_domain" | null;
+  /**
+   * Where a NO-ROW answer's level came from: `"deployment_profile"` (a
+   * self-hosted coord's egress default) or `"product"` (the product's own
+   * default). `null` when a row decided, or when coord predates the field —
+   * absent is UNKNOWN, never a guessed source. Optional because a backend that
+   * predates the field omits it.
+   */
+  default_source?: string | null;
 }
 
 export interface FleetPolicyWriteResult {

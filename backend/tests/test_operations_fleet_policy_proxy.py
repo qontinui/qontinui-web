@@ -215,6 +215,69 @@ class TestGetFleetPolicy:
         assert body["effective_level"] == "off"
         assert body["resolved_scope"] == "none"
 
+    def test_default_source_passes_through_on_a_no_row_answer(self, client: TestClient):
+        """A deployment-profile default and a product default stay distinguishable.
+
+        Plan ``2026-10-10-spec-front-end-phase-9-generic-boundary`` Phase 8:
+        the egress panel labels a no-row level by where it came from, which it
+        can only do if the view declares the field (pydantic drops the rest).
+        """
+        for source in ("deployment_profile", "product"):
+            instance = MagicMock()
+            instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200,
+                    {
+                        "domain": "egress_code_mirror",
+                        "effective_level": "off"
+                        if source == "deployment_profile"
+                        else "on",
+                        "master_enabled": source == "product",
+                        "resolved_scope": "none",
+                        "default_source": source,
+                    },
+                )
+            )
+            patcher = _patch_httpx(instance)
+            try:
+                with _patch_identity():
+                    resp = client.get(
+                        f"{API_PREFIX}/fleet-policy?domain=egress_code_mirror"
+                    )
+            finally:
+                patcher.stop()
+            assert resp.json()["default_source"] == source
+
+    def test_default_source_is_null_when_a_row_decided_or_coord_omits_it(
+        self, client: TestClient
+    ):
+        for coord_body in (
+            {
+                "effective_level": "off",
+                "master_enabled": True,
+                "resolved_scope": "tenant",
+                "default_source": None,
+            },
+            {"effective_level": "on", "master_enabled": True, "resolved_scope": "none"},
+            {
+                "effective_level": "on",
+                "master_enabled": True,
+                "resolved_scope": "none",
+                "default_source": 7,
+            },
+        ):
+            instance = MagicMock()
+            instance.get = AsyncMock(return_value=_mock_response(200, coord_body))
+            patcher = _patch_httpx(instance)
+            try:
+                with _patch_identity():
+                    resp = client.get(
+                        f"{API_PREFIX}/fleet-policy?domain=egress_code_mirror"
+                    )
+            finally:
+                patcher.stop()
+            assert resp.json()["default_source"] is None
+
     def test_a_coord_answer_missing_the_level_fails_safe_to_off(
         self, client: TestClient
     ):
