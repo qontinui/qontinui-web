@@ -35,7 +35,7 @@ import {
   getLineageStats,
   getRecentCommits,
   isSchemaMigrationPending,
-} from "./api";
+} from "@/lib/api/operations/lineage";
 import type { LineageRow, LineageStats } from "./types";
 import { commitUrl, formatTs, shortSha } from "./format";
 

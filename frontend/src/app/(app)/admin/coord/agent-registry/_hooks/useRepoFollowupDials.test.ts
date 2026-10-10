@@ -33,7 +33,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-vi.mock("@/components/sessions/api", () => ({
+vi.mock("@/lib/api/operations/tenants", () => ({
   listRegisteredRepos: (...a: unknown[]) => listRepos(...a),
 }));
 
