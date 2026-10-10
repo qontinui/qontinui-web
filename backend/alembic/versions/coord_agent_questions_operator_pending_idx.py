@@ -1,7 +1,7 @@
 """coord.agent_questions — operator-audience pending partial index
 
 Revision ID: coord_agent_questions_operator_pending_idx
-Revises: prbody_citation_01
+Revises: census_idx_01_device_repo_path_observed
 Create Date: 2026-09-22
 
 Backend half of plan
@@ -134,8 +134,9 @@ sibling and the ``coord_substrate_*`` revisions. Touches **only**
 ``coord_agent_questions``.
 
 ``down_revision`` chains off the single current head of ``origin/main``,
-``prbody_citation_01`` (re-pointed 2026-10-08 from ``overlord_01_interventions``,
-itself re-pointed 2026-10-01 from the original
+``census_idx_01_device_repo_path_observed`` (re-pointed 2026-10-10 from
+``prbody_citation_01``, itself re-pointed 2026-10-08 from
+``overlord_01_interventions``, itself re-pointed 2026-10-01 from the original
 ``cinode_03_dispatch_pr_head_base_sha`` when this change was adopted from
 qontinui-web#1461, whose parent had since been built on), computed from the chain itself with the
 repo's own counter (``scripts/ci/count_alembic_heads.py --report-only
@@ -157,7 +158,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_operator_pending_idx"
-down_revision: str | Sequence[str] | None = "prbody_citation_01"
+down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
